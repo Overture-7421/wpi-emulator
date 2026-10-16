@@ -109,6 +109,39 @@ TEST_CASE("json: doubles use the shortest round-trip form") {
     }
 }
 
+TEST_CASE("json: floating-point limits and signed zero round-trip") {
+    const double values[] = {0.0,
+                             -0.0,
+                             std::numeric_limits<double>::denorm_min(),
+                             -std::numeric_limits<double>::denorm_min(),
+                             std::numeric_limits<double>::min(),
+                             std::numeric_limits<double>::max(),
+                             std::numeric_limits<double>::lowest()};
+    for (const double value : values) {
+        const Value back = parseOk(formatDouble(value).c_str());
+        REQUIRE(back.isDouble());
+        CHECK(back.asDouble() == value);
+        CHECK(std::signbit(back.asDouble()) == std::signbit(value));
+    }
+    CHECK_FALSE(JsonValueCodec{}.parse("1e309").ok());
+    CHECK_FALSE(JsonValueCodec{}.parse("-1e309").ok());
+}
+
+TEST_CASE("json: float conversion preserves limits and signed zero") {
+    const float values[] = {0.0f,
+                            -0.0f,
+                            std::numeric_limits<float>::denorm_min(),
+                            std::numeric_limits<float>::min(),
+                            std::numeric_limits<float>::max(),
+                            std::numeric_limits<float>::lowest()};
+    for (const float value : values) {
+        const double converted = floatToDouble(value);
+        CHECK(std::isfinite(converted));
+        CHECK(static_cast<float>(converted) == value);
+        CHECK(std::signbit(converted) == std::signbit(value));
+    }
+}
+
 TEST_CASE("json: dump compact and pretty round-trip") {
     Value v = Value::makeObject();
     v["name"] = "robot \"x\"\n";
