@@ -40,11 +40,16 @@ public:
     bool restoreLastProject();
     void closeProject();
 
-    // Called after the wizard saved a model: switches to the editor and optionally detects devices.
-    void setupCompleted(bool detectDevices);
-    void startDiscovery();
-    void startRobot();
+    // Called after the wizard saved a model: switches to the editor and launches the robot (device detection).
+    void setupCompleted();
+    // Launches the robot program when it is not running yet; idempotent.
+    void launchRobot();
+    void startSimulation();
+    void stopSimulation();
+    // Kills the robot process (it is relaunched when the editor or run tab is entered again).
     void stopRobot();
+    // Relaunches the robot to detect devices again.
+    void rescanDevices();
 
 signals:
     void modeChanged(wpiemu::app::AppMode mode);

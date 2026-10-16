@@ -45,8 +45,6 @@ enum class LinkState {
     Stalled,           // lock-step watchdog expired (robot not answering)
 };
 
-enum class RealDsState { NotConfigured, Disconnected, Connected };
-
 enum class LogStream { Stdout, Stderr, Emulator };
 
 struct RunStatus {
@@ -54,6 +52,10 @@ struct RunStatus {
     LinkState link = LinkState::Disconnected;
     int exitCode = 0;
     QString detail;  // human readable cause (error text, version mismatch details), may be empty
+    // The robot program finished starting: devices are announced and the simulation may begin.
+    bool programStarted = false;
+    // Lock-step simulation running. False while the robot merely waits ("armed") and detects devices.
+    bool simulating = false;
 
     bool operator==(const RunStatus&) const = default;
 };
@@ -85,11 +87,14 @@ public:
     virtual RunSceneInfo sceneInfo() const = 0;
     // Latest published snapshot; may be null before the first tick. Cheap: call at UI frame rate.
     virtual std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const = 0;
-    virtual RealDsState realDsState() const { return RealDsState::NotConfigured; }
 
 public slots:
-    virtual void startRobot() = 0;
-    virtual void stopRobot() = 0;
+    // The robot program is launched once and stays alive (detecting devices) between simulations:
+    // launchRobot() is idempotent, startSimulation() begins lock-step at t = 0 (launching first when needed),
+    // stopSimulation() returns to idle with the robot still running, restartRobot() relaunches the program.
+    virtual void launchRobot() = 0;
+    virtual void startSimulation() = 0;
+    virtual void stopSimulation() = 0;
     virtual void restartRobot() = 0;
     virtual void resetSimulation() = 0;
     virtual void setPaused(bool paused) = 0;
@@ -100,7 +105,6 @@ public slots:
 signals:
     void statusChanged();
     void sceneInfoChanged();
-    void realDsStateChanged();
     void logEntry(const wpiemu::app::runview::RunLogEntry& entry);
 };
 

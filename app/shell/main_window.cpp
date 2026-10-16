@@ -8,8 +8,8 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QMimeData>
-#include <QStatusBar>
 #include <QUrl>
 
 #include "common/ui_helpers.h"
@@ -32,6 +32,7 @@ MainWindow::MainWindow(AppServices& services, ShellController& controller, const
     folderPicker_ = [this] {
         return QFileDialog::getExistingDirectory(this, tr("Open WPILib robot project"), services_.recentProjects().lastProject());
     };
+    messageRunner_ = [this](const QString& text) { QMessageBox::information(this, tr("WPI Emulator"), text); };
 
     setObjectName(QStringLiteral("MainWindow"));
     setAcceptDrops(true);
@@ -42,12 +43,15 @@ MainWindow::MainWindow(AppServices& services, ShellController& controller, const
     stack_->addWidget(welcome_);
     stack_->addWidget(pages_.editor);
     stack_->addWidget(pages_.run);
+    modeSwitcher_ = new ModeSwitcher(ui_);
     setCentralWidget(stack_);
 
     buildActions();
     buildMenus();
-    buildToolbar();
-    buildStatusBar();
+    // Centred in the menu bar row (a menu bar only offers left/right corners, so it is positioned by hand).
+    modeSwitcher_->setParent(menuBar());
+    menuBar()->installEventFilter(this);
+    centerModeSwitcher();
 
     connect(welcome_, &WelcomePage::openRequested, this, &MainWindow::browseForProject);
     connect(welcome_, &WelcomePage::projectChosen, this, &MainWindow::openProjectPath);
@@ -67,6 +71,20 @@ MainWindow::MainWindow(AppServices& services, ShellController& controller, const
     rebuildRecentMenu();
     refreshIcons();
     refresh();
+}
+
+void MainWindow::centerModeSwitcher() {
+    QMenuBar* bar = menuBar();
+    modeSwitcher_->adjustSize();
+    modeSwitcher_->move((bar->width() - modeSwitcher_->width()) / 2, (bar->height() - modeSwitcher_->height()) / 2);
+    modeSwitcher_->show();
+    modeSwitcher_->raise();
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == menuBar() && (event->type() == QEvent::Resize || event->type() == QEvent::Show || event->type() == QEvent::LayoutRequest))
+        centerModeSwitcher();
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::buildActions() {
@@ -109,15 +127,6 @@ void MainWindow::buildActions() {
     runAction_->setCheckable(true);
     connect(runAction_, &QAction::triggered, this, [this] { controller_.setMode(AppMode::Run); });
 
-    detectAction_ = new QAction(tr("&Detect devices"), this);
-    detectAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+D")));
-    detectAction_->setToolTip(tr("Run the robot code once to find its motors and sensors"));
-    connect(detectAction_, &QAction::triggered, &controller_, &ShellController::startDiscovery);
-
-    startStopAction_ = new QAction(tr("&Start robot"), this);
-    startStopAction_->setShortcut(QKeySequence(QStringLiteral("F5")));
-    connect(startStopAction_, &QAction::triggered, this, &MainWindow::toggleRobot);
-
     aboutAction_ = new QAction(tr("&About WPI Emulator"), this);
     aboutAction_->setMenuRole(QAction::AboutRole);
     connect(aboutAction_, &QAction::triggered, this, &MainWindow::showAbout);
@@ -141,55 +150,14 @@ void MainWindow::buildMenus() {
     QMenu* view = menuBar()->addMenu(tr("&View"));
     view->addAction(editorAction_);
     view->addAction(runAction_);
-
-    QMenu* robot = menuBar()->addMenu(tr("&Robot"));
-    robot->addAction(detectAction_);
-    robot->addAction(startStopAction_);
+    if (!pages_.runViewActions.isEmpty()) {
+        view->addSeparator();
+        view->addActions(pages_.runViewActions);
+    }
 
     QMenu* help = menuBar()->addMenu(tr("&Help"));
     help->addAction(aboutAction_);
     help->addAction(aboutQtAction_);
-}
-
-void MainWindow::buildToolbar() {
-    toolbar_ = addToolBar(tr("Main"));
-    toolbar_->setMovable(false);
-    toolbar_->setFloatable(false);
-    toolbar_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    toolbar_->setContextMenuPolicy(Qt::PreventContextMenu);
-    toolbar_->addAction(openAction_);
-    toolbar_->addAction(setupAction_);
-
-    const auto spacer = [] {
-        auto* s = new QWidget;
-        s->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-        return s;
-    };
-    toolbar_->addWidget(spacer());
-    modeSwitcher_ = new ModeSwitcher(ui_);
-    toolbar_->addWidget(modeSwitcher_);
-    toolbar_->addWidget(spacer());
-    toolbar_->addAction(detectAction_);
-    toolbar_->addAction(startStopAction_);
-    toolbar_->addSeparator();
-    toolbar_->addAction(settingsAction_);
-}
-
-void MainWindow::buildStatusBar() {
-    projectChip_ = new QLabel;
-    projectChip_->setProperty("chip", QStringLiteral("true"));
-    gameChip_ = new QLabel;
-    gameChip_->setProperty("chip", QStringLiteral("true"));
-    runtimeLabel_ = new QLabel;
-    demoChip_ = new QLabel(tr("Demo mode"));
-    demoChip_->setProperty("chip", QStringLiteral("warning"));
-    demoChip_->setToolTip(tr("Simulated devices and motion; no robot code is launched."));
-    demoChip_->setVisible(services_.demo());
-    statusBar()->setSizeGripEnabled(false);
-    statusBar()->addWidget(projectChip_);
-    statusBar()->addWidget(gameChip_);
-    statusBar()->addPermanentWidget(runtimeLabel_);
-    statusBar()->addPermanentWidget(demoChip_);
 }
 
 void MainWindow::refreshIcons() {
@@ -197,7 +165,6 @@ void MainWindow::refreshIcons() {
     setupAction_->setIcon(ui_.icon(QStringLiteral("robot")));
     closeAction_->setIcon(ui_.icon(QStringLiteral("close-project")));
     settingsAction_->setIcon(ui_.icon(QStringLiteral("settings")));
-    detectAction_->setIcon(ui_.icon(QStringLiteral("search")));
     editorAction_->setIcon(ui_.icon(QStringLiteral("edit-3d")));
     runAction_->setIcon(ui_.icon(QStringLiteral("run")));
     aboutAction_->setIcon(ui_.icon(QStringLiteral("info")));
@@ -232,41 +199,21 @@ void MainWindow::refresh() {
     runAction_->setEnabled(ready);
 
     setupAction_->setEnabled(controller_.hasProject());
+    for (QAction* a : pages_.runViewActions) a->setEnabled(inRun);   // these act on the run page only
     closeAction_->setEnabled(controller_.hasProject());
     saveAction_->setEnabled(ready && !inRun && static_cast<bool>(pages_.saveEditor));
-    detectAction_->setEnabled(ready);
 
-    const HostStatus rs = services_.runtime().status();
-    const bool active = rs.active();
-    startStopAction_->setEnabled(ready);
-    startStopAction_->setText(active ? tr("&Stop robot") : tr("&Start robot"));
-    startStopAction_->setIcon(ui_.icon(active ? QStringLiteral("stop") : QStringLiteral("play")));
-    startStopAction_->setShortcut(QKeySequence(active ? QStringLiteral("Shift+F5") : QStringLiteral("F5")));
-
-    setWindowTitle(controller_.windowTitle());
-    projectChip_->setText(controller_.hasProject() ? controller_.projectName() : tr("No project"));
-    gameChip_->setVisible(controller_.hasProject());
-    gameChip_->setText(controller_.gameLabel());
-    gameChip_->setProperty("chip", controller_.gameModuleAvailable() ? QStringLiteral("success") : QStringLiteral("warning"));
-    gameChip_->setToolTip(controller_.gameModuleAvailable() ? tr("Game module for this season is active")
-                                                            : tr("No game module for this season: running with core features only"));
-    repolish(gameChip_);
-    runtimeLabel_->setText(controller_.runtimeLabel());
+    setWindowTitle(services_.demo() ? tr("%1 [Demo]").arg(controller_.windowTitle()) : controller_.windowTitle());
 }
 
 void MainWindow::showMessage(const QString& text) {
     lastMessage_ = text;
-    statusBar()->showMessage(text, 10000);
+    messageRunner_(text);
 }
 
 void MainWindow::browseForProject() {
     const QString dir = folderPicker_();
     if (!dir.isEmpty()) openProjectPath(dir);
-}
-
-void MainWindow::toggleRobot() {
-    if (services_.runtime().status().active()) controller_.stopRobot();
-    else controller_.startRobot();
 }
 
 void MainWindow::openProjectPath(const QString& path) {
@@ -284,7 +231,7 @@ void MainWindow::runSetupWizard(const QString& projectPath) {
     const int code = wizardRunner_(dialog);
     if (code == QDialog::Accepted) {
         if (!dialog.wizardResult().message.isEmpty()) showMessage(dialog.wizardResult().message);
-        controller_.setupCompleted(dialog.wizardResult().detectDevices);
+        controller_.setupCompleted();
     } else if (services_.session().needsSetup()) {
         controller_.closeProject();   // cancelled before a model existed: back to the welcome page
     }

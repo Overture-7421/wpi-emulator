@@ -104,13 +104,13 @@ std::chrono::milliseconds SessionRunner::waitHint(std::chrono::milliseconds maxW
     if (link_ && helloDone_ && !finished_) {
         if (window_.outstanding()) return until(tickDeadline_);
         if (awaitingResetAck_ || stopping_) return until(ackDeadline_);
-        if (!paused_ && !window_.stalled() && !options_.discoveryOnly && programStarted_ && timeScale_ > 0.0) return until(nextTickAt_);
+        if (!paused_ && !window_.stalled() && !armed_ && programStarted_ && timeScale_ > 0.0) return until(nextTickAt_);
     }
     return maxWait;
 }
 
 bool SessionRunner::shouldTick(Clock::time_point now) const {
-    if (finished_ || stopping_ || !link_ || !helloDone_ || !programStarted_ || options_.discoveryOnly || awaitingResetAck_) return false;
+    if (finished_ || stopping_ || !link_ || !helloDone_ || !programStarted_ || armed_ || awaitingResetAck_) return false;
     if (!window_.canSend()) return false;  // one outstanding tick, or stalled
     if (paused_) return stepCredits_ > 0;
     return timeScale_ <= 0.0 || now >= nextTickAt_;
@@ -229,6 +229,45 @@ void SessionRunner::applyControl(const proto::SimControl& c) {
             }
             break;
         }
+        case proto::SimCommand::BeginLockstep: {
+            if (!link_ || !helloDone_ || !armed_ || !programStarted_ || awaitingBeginAck_) {
+                logger_.warn("runner", "BeginLockstep ignored: not armed with a started robot program");
+                break;
+            }
+            beginEpoch();
+            proto::SimControl begin;
+            begin.command = proto::SimCommand::BeginLockstep;
+            begin.commandId = ++commandCounter_;
+            begin.sessionId = window_.sessionId();
+            begin.runEpoch = window_.runEpoch();
+            resetCommandId_ = begin.commandId;
+            awaitingResetAck_ = true;
+            awaitingBeginAck_ = true;
+            ackDeadline_ = clock_.now() + std::chrono::milliseconds(watchdogMs_);
+            sendToRobot(begin);
+            armed_ = false;  // ticks start once the ack arrives (shouldTick waits for awaitingResetAck_)
+            sendDriverStation();
+            break;
+        }
+        case proto::SimCommand::EndLockstep: {
+            if (!link_ || !helloDone_ || armed_) {
+                logger_.warn("runner", "EndLockstep ignored: not in lock-step");
+                break;
+            }
+            beginEpoch();
+            proto::SimControl end;
+            end.command = proto::SimCommand::EndLockstep;
+            end.commandId = ++commandCounter_;
+            end.sessionId = window_.sessionId();
+            end.runEpoch = window_.runEpoch();
+            awaitingResetAck_ = false;
+            awaitingBeginAck_ = false;
+            armed_ = true;
+            paused_ = false;
+            sendToRobot(end);
+            sendDriverStation();
+            break;
+        }
         case proto::SimCommand::Stop: {
             if (link_ && helloDone_ && !stopping_) {
                 proto::SimControl stop;
@@ -306,7 +345,15 @@ void SessionRunner::handleMessage(proto::Message& message) {
     } else if (const auto* ack = std::get_if<proto::SimControlAck>(&message)) {
         if (ack->commandId == resetCommandId_ && awaitingResetAck_) {
             awaitingResetAck_ = false;
-            if (ack->result != proto::ControlResult::Applied) logger_.warn("runner", "Reset was not applied by the robot: " + ack->detail);
+            if (awaitingBeginAck_) {
+                awaitingBeginAck_ = false;
+                if (ack->result != proto::ControlResult::Applied) {
+                    armed_ = true;
+                    logger_.warn("runner", "the robot refused to start lock-step: " + ack->detail);
+                }
+            } else if (ack->result != proto::ControlResult::Applied) {
+                logger_.warn("runner", "Reset was not applied by the robot: " + ack->detail);
+            }
         } else if (ack->commandId == stopCommandId_ && stopping_) {
             finish();
         } else if (ack->commandId == pauseCommandId_ && ack->result != proto::ControlResult::Applied) {
@@ -363,7 +410,9 @@ void SessionRunner::handleHello(const proto::Hello& hello) {
     ack.clockMode = proto::ClockMode::Lockstep;
     ack.stepUs = static_cast<std::uint32_t>(session_.clock().fixedStepUs());
     ack.sessionId = window_.sessionId();
-    ack.discoveryOnly = options_.discoveryOnly;
+    armed_ = options_.discoveryOnly;
+    awaitingBeginAck_ = false;
+    ack.discoveryOnly = armed_;
     ack.enableL3Hooks = options_.enableL3Hooks;
     ack.runEpoch = window_.runEpoch();
     ack.watchdogTimeoutMs = watchdogMs_;

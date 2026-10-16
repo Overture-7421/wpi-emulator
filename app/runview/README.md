@@ -1,7 +1,7 @@
 # Run view (`app/runview`)
 
-The run-time page of the emulator: toolbar (Start / Stop / Restart / Reset sim, Pause / Step, speed), live
-Qt Quick 3D scene, game HUD, mechanism overlays, status strip, console and the built-in Driver Station.
+The run-time page of the emulator: a telemetry bar, with Restart (and its robot-code restart option), speed and the home-view button as icon buttons at the bottom-right of the 3D view (overlay and console toggles are exposed via `viewActions()` for the shell's View menu), live
+Qt Quick 3D scene, game HUD, mechanism overlays, toolbar telemetry, console and the built-in Driver Station (bottom-left, with Setup/Joysticks in a popup).
 
 Static library `wpiemu_app_runview` (links only `wpiemu_sdk` + Qt). The shell constructs
 `RunPage(IRunBackend&)` and supplies the real backend adapter; `FakeRunBackend` is a complete in-process
@@ -23,12 +23,11 @@ implementation used by the tests, the demo and screenshots.
 
 | Key | Action |
 |---|---|
-| `Space` | Disable the robot immediately (like the real DS) |
-| `Ctrl+Space` | Latch the emergency stop (cleared from the panel or by a robot restart) |
-| `F5` / `Shift+F5` / `Ctrl+R` | Start / Stop / Restart the robot program |
-| `Ctrl+Shift+R` | Reset the simulation (robot + game pieces) |
-| `F8` / `F10` | Pause-resume / step one robot loop |
-| `Ctrl+1/2/3`, `Ctrl+0` | Orbit / Follow / Top-down camera, reset view |
+| `Enter` | Disable the robot immediately (like the real DS) |
+| `Space` | Latch the emergency stop (cleared from the panel or by a robot restart) |
+| `Ctrl+R` | Restart: reset the physics and game state; the robot code keeps running |
+| `Ctrl+Shift+R` | Restart robot code (Restart dropdown): reboot it and reset the simulation |
+| `Ctrl+0` | Return the orbit camera to its home position |
 | `Ctrl+J` | Show / hide the console |
 
 The keyboard joystick (slot 0 by default) uses `W A S D` (left stick), arrow keys (right stick), `U`/`O`
@@ -52,7 +51,7 @@ The keyboard joystick (slot 0 by default) uses `W A S D` (left stick), arrow key
 Gamepad input is behind `IJoystickProvider` / `IJoystickSource`; every pad is normalised to the WPILib Xbox
 layout. The SDL2 implementation (`SdlGamepadProvider`) is compiled when SDL2 is found
 (`find_package(SDL2 CONFIG)`) or when `-DWPIEMU_RUNVIEW_FETCH_SDL2=ON` lets CMake download and statically
-build SDL 2.30 (needs network at configure time; default OFF). Without it the keyboard still works and the
+build SDL 2.30 (needs network at configure time; default ON). Without it the keyboard still works and the
 Joysticks tab says so. Disable with `-DWPIEMU_RUNVIEW_SDL2=OFF`.
 
 ## Demo and tests

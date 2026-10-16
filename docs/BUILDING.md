@@ -56,7 +56,7 @@ The presets also read `$QT_ROOT_DIR` (set by `jurplel/install-qt-action` in CI) 
 | `WPIEMU_WARNINGS_AS_ERRORS` | OFF | `/WX` / `-Werror` for first-party code (CI-quality check; see below). |
 | `WPIEMU_BUILD_UI_DEMOS` | ON | Standalone `wpiemu_runview_demo` / `wpiemu_editor_demo` executables. |
 | `WPIEMU_WPILIB_ROOT`, `WPIEMU_WPILIB_VERSION`, `WPIEMU_WPILIB_DOWNLOAD` | auto, 2026.2.1, OFF | Where the WPILib HAL comes from (see Prerequisites). |
-| `WPIEMU_RUNVIEW_SDL2`, `WPIEMU_RUNVIEW_FETCH_SDL2` | ON, OFF | Gamepad support in the run view. |
+| `WPIEMU_RUNVIEW_SDL2`, `WPIEMU_RUNVIEW_FETCH_SDL2` | ON, ON | Gamepad support in the run view. |
 
 Build trees live in `build/<preset>/`; binaries and DLLs land in `build/<preset>/bin/<Config>/`. Use `-B <dir>` after the
 preset to pick another directory, e.g. a clean warnings-as-errors check (this is how the release verification is done):

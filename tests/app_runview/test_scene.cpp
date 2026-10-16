@@ -213,9 +213,19 @@ TEST_CASE("camera modes: orbit, follow and top-down") {
     cam.zoom(2.f);
     CHECK(cam.distance() < d0);
     cam.orbit(0.f, 10000.f);
-    CHECK(cam.pitch() <= 1.52f);   // pitch is clamped
+    CHECK(std::abs(cam.pitch()) <= 3.1416f);   // pitch wraps instead of being clamped
+    cam.reset();
+    cam.orbit(0.f, -300.f);                    // 300 px down: well below the floor
+    CHECK(cam.pitch() < 0.f);
+    CHECK(cam.pose().position.z < 0.f);
+    CHECK(cam.pitch() < -1.57f);               // went past the pole: no stop
     cam.reset();
     CHECK(cam.distance() == doctest::Approx(d0));
+    // Home view is side-on: the camera sits along the field's width axis, centred on the field length.
+    const CameraPose home = cam.pose();
+    CHECK(home.position.x == doctest::Approx(8.f).epsilon(1e-3));
+    CHECK(home.position.y < 4.f);
+    CHECK(home.position.z > 0.f);
 
     cam.setMode(CameraMode::Follow);
     for (int i = 0; i < 200; ++i) cam.advance(0.016);
@@ -297,7 +307,7 @@ TEST_CASE("scene model follows the snapshot and exposes zone toggles") {
     CHECK(scene.zoneLabels().contains(QStringLiteral("Shooter zone")));
     CHECK(scene.robotModel().rowCount() == 22);
 
-    backend.startRobot();
+    backend.startSimulation();
     backend.tick(10);
     const auto snap = backend.latestSnapshot();
     REQUIRE(snap != nullptr);

@@ -24,7 +24,7 @@
 namespace wpiemu::app::runview {
 namespace {
 
-constexpr int kPollMs = 16;        // ~60 Hz
+constexpr int kPollMs = 16;         // ~60 Hz
 constexpr int kDsPublishMs = 20;   // like a real DS: 50 Hz
 constexpr int kRobotLoopUs = 20000;
 
@@ -65,80 +65,52 @@ RunPage::~RunPage() {
 void RunPage::build() {
     theme_.setPalette(palette());
 
-    buildToolBar();
-
-    statusChip_ = new StatusChip(this);
-    statusChip_->setObjectName(QStringLiteral("runview.statusChip"));
-    realDsChip_ = new StatusChip(this);
-    realDsChip_->setObjectName(QStringLiteral("runview.realDsChip"));
-    simTimeLabel_ = new QLabel(this);
-    rateLabel_ = new QLabel(this);
-    batteryLabel_ = new QLabel(this);
-    extraLabel_ = new QLabel(this);
-    const QFont mono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    for (QLabel* l : {simTimeLabel_, rateLabel_, batteryLabel_, extraLabel_}) {
-        l->setFont(mono);
-        l->setEnabled(false);
-    }
-    simTimeLabel_->setToolTip(tr("Simulated time"));
-    rateLabel_->setToolTip(tr("Simulation ticks per second and speed relative to real time"));
-    batteryLabel_->setToolTip(tr("Simulated battery voltage"));
-    extraLabel_->setToolTip(tr("Physics step time and entity count"));
-
-    auto* strip = new QWidget(this);
-    auto* stripLayout = new QHBoxLayout(strip);
-    stripLayout->setContentsMargins(10, 4, 10, 4);
-    stripLayout->setSpacing(10);
-    stripLayout->addWidget(statusChip_);
-    stripLayout->addWidget(realDsChip_);
-    stripLayout->addStretch(1);
-    stripLayout->addWidget(simTimeLabel_);
-    stripLayout->addWidget(rateLabel_);
-    stripLayout->addWidget(batteryLabel_);
-    stripLayout->addWidget(extraLabel_);
+    buildActions();
 
     viewport_ = new RunViewport(scene_, hud_, mechanisms_, theme_, viewOptions_, this);
+
+    // Restart (with its robot-code option) and speed float at the bottom-right of the 3D view, beside Home view.
+    viewport_->addRestartControl(restartAction_, restartMenu_);
+    viewport_->addSpeedControl(speedCombo_);
     console_ = new ConsolePanel(this);
     dsPanel_ = new DriverStationPanel(ds_, joysticks_, this);
 
+    // The Driver Station sits bottom-left, beside the console; the 3D view takes the full width above them.
+    auto* bottom = new QSplitter(Qt::Horizontal, this);
+    bottom->addWidget(dsPanel_);
+    bottom->addWidget(console_);
+    bottom->setStretchFactor(0, 0);
+    bottom->setStretchFactor(1, 1);
+    bottom->setChildrenCollapsible(false);
+    dsPanel_->setMinimumWidth(500);
+    bottom->setSizes({520, 800});
+    bottom->setMinimumHeight(200);
+
     verticalSplit_ = new QSplitter(Qt::Vertical, this);
     verticalSplit_->addWidget(viewport_);
-    verticalSplit_->addWidget(console_);
+    verticalSplit_->addWidget(bottom);
     verticalSplit_->setStretchFactor(0, 4);
-    verticalSplit_->setStretchFactor(1, 1);
+    verticalSplit_->setStretchFactor(1, 0);
     verticalSplit_->setChildrenCollapsible(false);
-    verticalSplit_->setSizes({600, 170});
+    verticalSplit_->setSizes({600, 210});
     viewport_->setMinimumSize(320, 240);
     console_->setMinimumHeight(110);
-
-    auto* horizontal = new QSplitter(Qt::Horizontal, this);
-    horizontal->addWidget(verticalSplit_);
-    horizontal->addWidget(dsPanel_);
-    horizontal->setStretchFactor(0, 1);
-    horizontal->setStretchFactor(1, 0);
-    horizontal->setChildrenCollapsible(false);
-    dsPanel_->setMinimumWidth(380);
-    horizontal->setSizes({900, 400});
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
-    layout->addWidget(toolBar_);
-    layout->addWidget(strip);
-    layout->addWidget(horizontal, 1);
+    layout->addWidget(verticalSplit_, 1);
 
     connect(&backend_, &IRunBackend::statusChanged, this, &RunPage::applyStatus);
     connect(&backend_, &IRunBackend::sceneInfoChanged, this, &RunPage::onSceneInfoChanged);
-    connect(&backend_, &IRunBackend::realDsStateChanged, this, [this] {
-        realDsChip_->setStatus(realDsTone(backend_.realDsState()), realDsText(backend_.realDsState()));
-    });
     connect(&backend_, &IRunBackend::logEntry, console_, &ConsolePanel::append);
     connect(&ds_, &DriverStationModel::stateReady, &backend_, &IRunBackend::setDriverStation);
-    connect(viewport_->overlay(), &StateOverlay::startRequested, &backend_, &IRunBackend::startRobot);
     connect(viewport_->overlay(), &StateOverlay::restartRequested, this, [this] {
         ds_.disable();
         backend_.restartRobot();
     });
+    connect(dsPanel_, &DriverStationPanel::matchClockChanged, viewport_, &RunViewport::setMatchClock);
+    connect(viewport_, &RunViewport::homeRequested, this, [this] { scene_.resetCamera(); });
     connect(viewport_->overlay(), &StateOverlay::showConsoleRequested, this, [this] { setConsoleVisible(true); });
     connect(&scene_, &SceneModel::zoneLabelsChanged, this, &RunPage::rebuildZoneMenu);
     connect(&joysticks_, &JoystickManager::gamepadConnected, this, [this](const JoystickSourceInfo& info, int slot) {
@@ -155,142 +127,78 @@ void RunPage::build() {
     connect(dsTimer_, &QTimer::timeout, this, &RunPage::publishDriverStation);
     dsTimer_->start();
 
-    realDsChip_->setStatus(realDsTone(backend_.realDsState()), realDsText(backend_.realDsState()));
     onSceneInfoChanged();
     applyStatus();
     setConsoleVisible(true);
 }
 
-void RunPage::buildToolBar() {
-    toolBar_ = new QToolBar(tr("Run controls"), this);
-    toolBar_->setObjectName(QStringLiteral("runview.toolbar"));
-    toolBar_->setMovable(false);
-    toolBar_->setFloatable(false);
-    toolBar_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    toolBar_->setIconSize(QSize(18, 18));
-
-    QStyle* st = style();
-    startAction_ = toolBar_->addAction(st->standardIcon(QStyle::SP_MediaPlay), tr("Start"));
-    startAction_->setShortcut(QKeySequence(Qt::Key_F5));
-    startAction_->setToolTip(tr("Launch the robot program in simulation (F5)"));
-    stopAction_ = toolBar_->addAction(st->standardIcon(QStyle::SP_MediaStop), tr("Stop"));
-    stopAction_->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F5));
-    stopAction_->setToolTip(tr("Stop the robot program (Shift+F5)"));
-    restartAction_ = toolBar_->addAction(st->standardIcon(QStyle::SP_BrowserReload), tr("Restart"));
+void RunPage::buildActions() {    restartAction_ = new QAction(reloadIcon(), tr("Restart"), this);
     restartAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
-    restartAction_->setToolTip(tr("Stop and start the robot program again (Ctrl+R)"));
-    resetAction_ = toolBar_->addAction(st->standardIcon(QStyle::SP_DialogResetButton), tr("Reset sim"));
-    resetAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R));
-    resetAction_->setToolTip(tr("Put the robot and game pieces back to their starting state, keeping the program running (Ctrl+Shift+R)"));
-    toolBar_->addSeparator();
+    restartAction_->setToolTip(tr("Put the robot and game pieces back to their starting state; the robot code keeps running (Ctrl+R). Use the arrow to also restart the robot code."));
+    auto* restartMenu = new QMenu(this);
+    restartMenu_ = restartMenu;
+    connect(restartMenu->addAction(tr("Restart physics only")), &QAction::triggered, restartAction_, &QAction::trigger);
+    restartRobotAction_ = restartMenu->addAction(tr("Restart robot code"));
+    restartRobotAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R));
+    restartRobotAction_->setToolTip(tr("Reboot the robot code and reset the physics and game state (Ctrl+Shift+R)"));
 
-    pauseAction_ = toolBar_->addAction(st->standardIcon(QStyle::SP_MediaPause), tr("Pause"));
-    pauseAction_->setCheckable(true);
-    pauseAction_->setShortcut(QKeySequence(Qt::Key_F8));
-    pauseAction_->setToolTip(tr("Pause / resume the simulation clock (F8)"));
-    stepAction_ = toolBar_->addAction(st->standardIcon(QStyle::SP_MediaSeekForward), tr("Step"));
-    stepAction_->setShortcut(QKeySequence(Qt::Key_F10));
-    stepAction_->setToolTip(tr("Advance one robot loop (20 ms) while paused (F10)"));
-
-    toolBar_->addWidget(new QLabel(tr(" Speed "), this));
     speedCombo_ = new QComboBox(this);
     speedCombo_->setObjectName(QStringLiteral("runview.speed"));
     speedCombo_->setToolTip(tr("Simulation speed relative to real time"));
     for (double s : {0.1, 0.25, 0.5, 1.0, 2.0, 4.0}) speedCombo_->addItem(QStringLiteral("%1×").arg(s), s);
     speedCombo_->setCurrentIndex(3);
-    toolBar_->addWidget(speedCombo_);
-    toolBar_->addSeparator();
+    speedCombo_->setFixedSize(58, 34);
 
-    cameraGroup_ = new QActionGroup(this);
-    const std::pair<QString, QString> cameras[] = {{tr("Orbit"), tr("Free orbit: drag to rotate, right-drag to pan, wheel to zoom (Ctrl+1)")},
-                                                   {tr("Follow"), tr("Chase camera behind the robot (Ctrl+2)")},
-                                                   {tr("Top-down"), tr("Top-down field view (Ctrl+3)")}};
-    for (int i = 0; i < 3; ++i) {
-        QAction* a = toolBar_->addAction(cameras[i].first);
-        a->setCheckable(true);
-        a->setToolTip(cameras[i].second);
-        a->setShortcut(QKeySequence(Qt::CTRL | static_cast<Qt::Key>(Qt::Key_1 + i)));
-        cameraGroup_->addAction(a);
-        a->setData(i);
-        if (i == 0) a->setChecked(true);
-    }
-    QAction* resetView = toolBar_->addAction(tr("Reset view"));
+    // The Home view button is an icon inside the 3D view; the action only carries the shortcut.
+    QAction* resetView = new QAction(tr("Home view"), this);
     resetView->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
-    resetView->setToolTip(tr("Restore the default camera (Ctrl+0, or double-click the view)"));
-    toolBar_->addSeparator();
+    resetView->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    addAction(resetView);
 
-    auto* viewButton = new QToolButton(this);
-    viewButton->setText(tr("Overlays"));
-    viewButton->setToolTip(tr("Choose which overlays are drawn on the 3D view"));
-    viewButton->setPopupMode(QToolButton::InstantPopup);
-    viewButton->setStyleSheet(QStringLiteral("QToolButton { padding-right: 16px; }"));
-    auto* viewMenu = new QMenu(viewButton);
-    QAction* hudAction = viewMenu->addAction(tr("Game HUD"));
-    hudAction->setCheckable(true);
-    hudAction->setChecked(viewOptions_.showHud());
-    QAction* mechAction = viewMenu->addAction(tr("Mechanism values"));
-    mechAction->setCheckable(true);
-    mechAction->setChecked(viewOptions_.showMechanisms());
-    QAction* zonesAction = viewMenu->addAction(tr("Zones (intake, shooter, ...)"));
-    zonesAction->setCheckable(true);
-    zonesAction->setChecked(scene_.zonesVisible());
-    zoneMenu_ = viewMenu->addMenu(tr("Individual zones"));
+    // Overlay and console toggles are exposed through viewActions() so the shell can list them in its View menu.
+    hudAction_ = new QAction(tr("Game HUD"), this);
+    hudAction_->setCheckable(true);
+    hudAction_->setChecked(viewOptions_.showHud());
+    mechAction_ = new QAction(tr("Mechanism values"), this);
+    mechAction_->setCheckable(true);
+    mechAction_->setChecked(viewOptions_.showMechanisms());
+    zonesAction_ = new QAction(tr("Zones (intake, shooter, ...)"), this);
+    zonesAction_->setCheckable(true);
+    zonesAction_->setChecked(scene_.zonesVisible());
+    zoneMenu_ = new QMenu(tr("Individual zones"), this);
     zoneMenu_->setEnabled(false);
-    viewButton->setMenu(viewMenu);
-    toolBar_->addWidget(viewButton);
 
-    consoleAction_ = toolBar_->addAction(tr("Console"));
+    consoleAction_ = new QAction(tr("Console"), this);
     consoleAction_->setCheckable(true);
     consoleAction_->setChecked(true);
     consoleAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_J));
     consoleAction_->setToolTip(tr("Show or hide the console (Ctrl+J)"));
-
-    connect(startAction_, &QAction::triggered, this, [this] { backend_.startRobot(); });
-    connect(stopAction_, &QAction::triggered, this, [this] {
-        ds_.disable();
-        backend_.stopRobot();
-    });
     connect(restartAction_, &QAction::triggered, this, [this] {
-        ds_.disable();
-        backend_.restartRobot();
-    });
-    connect(resetAction_, &QAction::triggered, this, [this] {
         ds_.onSimReset();
         backend_.resetSimulation();
     });
-    connect(pauseAction_, &QAction::toggled, this, [this](bool paused) {
-        if (!syncingPause_) backend_.setPaused(paused);
-    });
-    connect(stepAction_, &QAction::triggered, this, [this] {
-        const auto cfg = backend_.sceneInfo().config;
-        const std::int64_t stepUs = cfg ? std::max<std::int64_t>(1, cfg->sim.stepUs) : 5000;
-        backend_.stepTicks(static_cast<int>(std::max<std::int64_t>(1, kRobotLoopUs / stepUs)));
+    connect(restartRobotAction_, &QAction::triggered, this, [this] {
+        ds_.disable();
+        ds_.onSimReset();
+        backend_.restartRobot();
+        backend_.startSimulation();
     });
     connect(speedCombo_, &QComboBox::activated, this, [this](int i) { backend_.setTimeScale(speedCombo_->itemData(i).toDouble()); });
-    connect(cameraGroup_, &QActionGroup::triggered, this, [this](QAction* a) { scene_.setCameraMode(a->data().toInt()); });
     connect(resetView, &QAction::triggered, this, [this] { scene_.resetCamera(); });
-    connect(hudAction, &QAction::toggled, &viewOptions_, &ViewportOptions::setShowHud);
-    connect(mechAction, &QAction::toggled, &viewOptions_, &ViewportOptions::setShowMechanisms);
-    connect(zonesAction, &QAction::toggled, &scene_, &SceneModel::setZonesVisible);
+    connect(hudAction_, &QAction::toggled, &viewOptions_, &ViewportOptions::setShowHud);
+    connect(mechAction_, &QAction::toggled, &viewOptions_, &ViewportOptions::setShowMechanisms);
+    connect(zonesAction_, &QAction::toggled, &scene_, &SceneModel::setZonesVisible);
     connect(consoleAction_, &QAction::toggled, this, [this](bool on) { setConsoleVisible(on); });
 }
 
-void RunPage::setCameraMode(int mode) {
-    mode = std::clamp(mode, 0, 2);
-    scene_.setCameraMode(mode);
-    for (QAction* a : cameraGroup_->actions())
-        if (a->data().toInt() == mode) a->setChecked(true);
-}
+QList<QAction*> RunPage::viewActions() const { return {hudAction_, mechAction_, zonesAction_, zoneMenu_->menuAction(), consoleAction_}; }
 
+void RunPage::setCameraMode(int mode) { scene_.setCameraMode(std::clamp(mode, 0, 2)); }
 void RunPage::setConsoleVisible(bool visible) {
     console_->setVisible(visible);
     if (consoleAction_ != nullptr && consoleAction_->isChecked() != visible) {
         const QSignalBlocker block(consoleAction_);
         consoleAction_->setChecked(visible);
-    }
-    if (visible && verticalSplit_ != nullptr) {
-        const QList<int> sizes = verticalSplit_->sizes();
-        if (sizes.size() == 2 && sizes[1] < 80) verticalSplit_->setSizes({std::max(300, sizes[0] - 170), 170});
     }
 }
 
@@ -320,11 +228,10 @@ void RunPage::applyStatus() {
     const RunStatus status = backend_.status();
     const auto snapshot = backend_.latestSnapshot();
     const StatusPresentation p = presentStatus(status, snapshot != nullptr && snapshot->robotConnected());
-    statusChip_->setStatus(p.tone, p.chipText, p.detail);
     viewport_->overlay()->setPresentation(p);
     refreshControls(snapshot.get());
 
-    const bool available = status.process == RobotProcessState::Running && status.link == LinkState::Connected;
+    const bool available = status.process == RobotProcessState::Running && status.link == LinkState::Connected && status.simulating;
     ds_.setRobotAvailable(available);
     dsPanel_->setRobotConnected(available);
 
@@ -339,19 +246,9 @@ void RunPage::applyStatus() {
 void RunPage::refreshControls(const sdk::ISimSnapshot* snapshot) {
     const bool paused = snapshot != nullptr && snapshot->paused();
     const RunControlState c = deriveControlState(backend_.status(), paused);
-    startAction_->setEnabled(c.canStart);
-    stopAction_->setEnabled(c.canStop);
-    restartAction_->setEnabled(c.canRestart);
-    resetAction_->setEnabled(c.canReset);
-    pauseAction_->setEnabled(c.canPause);
-    stepAction_->setEnabled(c.canStep);
-    speedCombo_->setEnabled(c.canPause);
-    if (pauseAction_->isChecked() != paused) {
-        syncingPause_ = true;
-        pauseAction_->setChecked(paused);
-        syncingPause_ = false;
-    }
-    pauseAction_->setText(paused ? tr("Resume") : tr("Pause"));
+    restartAction_->setEnabled(c.simulating);
+    restartRobotAction_->setEnabled(c.canRestart);
+    speedCombo_->setEnabled(c.simulating);
 }
 
 void RunPage::pollNow() {
@@ -368,34 +265,13 @@ void RunPage::pollNow() {
     mechanisms_.update(s);
     refreshControls(s);
 
-    const StatusPresentation p = presentStatus(backend_.status(), s != nullptr && s->robotConnected());
-    if (p.chipText != statusChip_->accessibleName()) statusChip_->setStatus(p.tone, p.chipText, p.detail);
-
     if (stats_.update(s, now) || now - lastLabelMs_ > 250) {
         lastLabelMs_ = now;
         refreshStatsLabels();
     }
 }
 
-void RunPage::refreshStatsLabels() {
-    const SimStatsValues& v = stats_.values();
-    if (!v.hasData) {
-        simTimeLabel_->setText(QStringLiteral("—"));
-        rateLabel_->clear();
-        batteryLabel_->clear();
-        extraLabel_->clear();
-        return;
-    }
-    simTimeLabel_->setText(tr("sim %1%2").arg(formatSimTime(v.simTimeS), v.paused ? tr(" (paused)") : QString()));
-    rateLabel_->setText(tr("%1 Hz · %2×").arg(v.tickRateHz, 0, 'f', 0).arg(v.realtimeFactor, 0, 'f', 2));
-    batteryLabel_->setText(tr("%1 V").arg(v.batteryV, 0, 'f', 1));
-    const QColor c = v.batteryV < 7.0 ? toneColor(Tone::Error) : (v.batteryV < 9.0 ? toneColor(Tone::Warning) : palette().color(QPalette::Text));
-    QPalette pal = batteryLabel_->palette();
-    pal.setColor(QPalette::Disabled, QPalette::WindowText, c);
-    batteryLabel_->setPalette(pal);
-    extraLabel_->setText(v.entities > 0 ? tr("%1 ms · %n entities", nullptr, v.entities).arg(v.physicsStepMs, 0, 'f', 2)
-                                        : tr("%1 ms").arg(v.physicsStepMs, 0, 'f', 2));
-}
+void RunPage::refreshStatsLabels() { dsPanel_->setStats(stats_.values()); }
 
 void RunPage::publishDriverStation() {
     const auto& js = joysticks_.sample();
@@ -404,7 +280,8 @@ void RunPage::publishDriverStation() {
 
 bool RunPage::handleKey(int qtKey, bool down) {
     if (isModifier(qtKey)) return false;
-    if (down && qtKey == Qt::Key_Space && !joysticks_.learning()) return false;   // Space is the disable shortcut
+    // Enter disables and Space latches the e-stop, like the real DS: they must reach the shortcuts, not the joystick keys.
+    if (down && (qtKey == Qt::Key_Space || qtKey == Qt::Key_Return || qtKey == Qt::Key_Enter) && !joysticks_.learning()) return false;
     return joysticks_.handleKey(qtKey, down);
 }
 

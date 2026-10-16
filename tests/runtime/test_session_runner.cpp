@@ -852,6 +852,39 @@ TEST_CASE("runner: discovery-only runs announce devices but never step") {
     REQUIRE(rig.run([&] { return rig.slot.latest()->devices().size() == 7; }));
 }
 
+TEST_CASE("runner: an armed run steps from tick one after BeginLockstep and returns to armed on EndLockstep") {
+    RunnerOptions o = Rig::fast();
+    o.discoveryOnly = true;
+    Rig rig(o);
+    rig.connect();
+    rig.ext->hello();
+    rig.ext->announceAll();
+    REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value() && rig.session->hub().discovered().size() == 7; }));
+    CHECK(rig.runner->armed());
+
+    proto::SimControl begin;
+    begin.command = proto::SimCommand::BeginLockstep;
+    rig.runner->control(begin);
+    REQUIRE(rig.run([&] { return !rig.ext->controls.empty(); }));
+    CHECK(rig.ext->controls.back().command == proto::SimCommand::BeginLockstep);
+    CHECK(rig.ext->controls.back().commandId != 0);
+    REQUIRE(rig.run([&] { return rig.runner->ticksSent() >= 1; }));
+    CHECK_FALSE(rig.runner->armed());
+    CHECK(rig.ext->sensorFrames.front().runEpoch == rig.ext->controls.back().runEpoch);
+
+    proto::SimControl end;
+    end.command = proto::SimCommand::EndLockstep;
+    rig.runner->control(end);
+    REQUIRE(rig.run([&] { return rig.runner->armed(); }));
+    CHECK(rig.ext->controls.back().command == proto::SimCommand::EndLockstep);
+    const std::uint64_t ticks = rig.runner->ticksSent();
+    for (int i = 0; i < 20; ++i) {
+        rig.runner->poll(2ms);
+        rig.ext->pump();
+    }
+    CHECK(rig.runner->ticksSent() == ticks);
+}
+
 TEST_CASE("runner: robot logs are forwarded, stray and malformed traffic is ignored safely") {
     Rig rig;
     rig.connect();

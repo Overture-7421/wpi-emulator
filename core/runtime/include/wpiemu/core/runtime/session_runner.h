@@ -33,7 +33,9 @@ struct RunnerOptions {
     double timeScale = 1.0;                     // 1 = real time, 0 = as fast as the robot allows, 0.5 = half speed
     std::uint32_t preferredWatchdogMs = 0;      // 0 = no preference (negotiated with the extension's proposal)
     sdk::proto::WatchdogPolicy watchdogPolicy = sdk::proto::WatchdogPolicy::ResumeRealtime;
-    bool discoveryOnly = false;                 // "Detect devices": announce only, never step
+    // Start ARMED: announce devices and keep the robot running in real time without stepping until
+    // SimCommand::BeginLockstep (and again after EndLockstep). One robot process serves detection and the run.
+    bool discoveryOnly = false;
     bool enableL3Hooks = false;
     bool startPaused = false;
     // Hold the first SensorFrame (and the watchdog) until the extension reports `program_started` (lifecycle Log, sdk/ipc/lifecycle.h):
@@ -89,6 +91,8 @@ public:
     std::optional<sdk::proto::Hello> robotHello() const;
     // True once the robot program started (always true after the handshake unless RunnerOptions::awaitProgramStart).
     bool programStarted() const { return programStarted_.load(); }
+    // True while connected and not stepping (armed start, before BeginLockstep or after EndLockstep).
+    bool armed() const { return armed_.load(); }
     // Periodic iterations the robot reported in its last ActuatorFrame (diagnostics; resets with the robot process).
     std::uint64_t robotLoopCount() const { return robotLoops_.load(); }
     // Why the last connection was refused in the handshake (e.g. protocol too old); empty when none was.
@@ -171,6 +175,8 @@ private:
     std::optional<sdk::proto::Hello> hello_;
     std::string refusal_;
     std::atomic<bool> programStarted_{false};
+    std::atomic<bool> armed_{false};
+    bool awaitingBeginAck_ = false;
     std::atomic<std::uint64_t> robotLoops_{0};
     std::atomic<RunnerState> state_{RunnerState::WaitingForRobot};
     std::atomic<std::uint64_t> ticksSent_{0};

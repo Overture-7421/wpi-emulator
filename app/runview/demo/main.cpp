@@ -67,9 +67,9 @@ int main(int argc, char* argv[]) {
 
     const int cam = camera == QLatin1String("follow") ? 1 : (camera == QLatin1String("top") ? 2 : 0);
     page.setCameraMode(cam);
-    if (args.contains(QStringLiteral("--joysticks"))) page.driverStationPanel()->findChild<QTabWidget*>()->setCurrentIndex(1);
+    if (args.contains(QStringLiteral("--joysticks"))) page.driverStationPanel()->showSettings(1);
 
-    if (scenario != QLatin1String("idle")) backend.startRobot();
+    if (scenario != QLatin1String("idle")) backend.startSimulation();
     if (scenario == QLatin1String("running")) {
         QTimer::singleShot(1200, &app, [&] {
             page.driverStation().setEnabled(true);

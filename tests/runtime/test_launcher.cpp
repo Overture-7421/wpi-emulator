@@ -213,29 +213,24 @@ TEST_CASE("init script: ADR 0001 content, no machine specific paths") {
     const std::string s = generateInitScript();
     CHECK(s == generateInitScript());  // deterministic: identical for every run
     CHECK(s.find("WPIEMU_EXT") != std::string::npos);
-    CHECK(s.find("WPIEMU_EXTRA_EXT") != std::string::npos);
     CHECK(s.find("HALSIM_EXTENSIONS") != std::string::npos);
     CHECK(s.find("defaultEnabled.set(false)") != std::string::npos);
     CHECK(s.find("JavaSimulationTask") != std::string::npos);
     CHECK(s.find("NativeSimulationTask") != std::string::npos);
-    CHECK(s.find("File.pathSeparator") != std::string::npos);
     CHECK(s.find("C:\\") == std::string::npos);
     CHECK(s.find("/home/") == std::string::npos);
 }
 
 // ---- launch planning ------------------------------------------------------------------------------------------------------
 
-TEST_CASE("launch env: contract variables, separators, extras") {
+TEST_CASE("launch env: contract variables and overrides") {
     ScratchDir dir;
     LaunchRequest r = makeRequest(dir);
-    r.extraHalExtensions = {fs::path("/x/ds.so"), fs::path("/y/other.so")};
     r.javaHome = "/opt/jdk";
     r.extraEnv = {{"CUSTOM", "1"}, {"WPIEMU_CLOCK", "override"}};
-    CHECK(halExtensionsValue(r, true) == r.extensionLibrary.string() + ";" + fs::path("/x/ds.so").string() + ";" + fs::path("/y/other.so").string());
-    CHECK(halExtensionsValue(r, false).find(':') != std::string::npos);
+    CHECK(halExtensionsValue(r, true) == r.extensionLibrary.string());
     const auto env = emulatorEnvironment(r, false);
     CHECK(env.at(env_var::kExtension) == r.extensionLibrary.string());
-    CHECK(env.at(env_var::kExtraExtensions) == fs::path("/x/ds.so").string() + ":" + fs::path("/y/other.so").string());
     CHECK(env.at(env_var::kEndpoint) == r.ipcEndpoint);
     CHECK(env.at(env_var::kEndpointAlias) == r.ipcEndpoint);
     CHECK(env.at("JAVA_HOME") == fs::path("/opt/jdk").string());
@@ -244,11 +239,9 @@ TEST_CASE("launch env: contract variables, separators, extras") {
     CHECK(env.at(env_var::kProgramName) == "robot");
     r.extraEnv.clear();
     r.realtimeClock = true;
-    r.extraHalExtensions.clear();
     r.javaHome.clear();
     const auto plain = emulatorEnvironment(r, true);
     CHECK(plain.at(env_var::kClock) == "realtime");
-    CHECK(plain.count(env_var::kExtraExtensions) == 0);
     CHECK(plain.count("JAVA_HOME") == 0);
 }
 

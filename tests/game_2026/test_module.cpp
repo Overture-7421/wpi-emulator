@@ -94,20 +94,18 @@ TEST_CASE("HUD widgets are namespaced, unique, and well-formed") {
     sdk::GamePluginRegistry registry;
     REQUIRE(registerPlugin(registry).ok());
     const auto widgets = registry.find("game_2026")->contributeHud();
-    CHECK(widgets.size() >= 8);
+    CHECK(widgets.size() >= 7);
     std::vector<std::string> ids;
-    bool hasMeter = false, hasTimer = false, hasBadge = false;
+    bool hasMeter = false, hasBadge = false;
     for (const sdk::HudWidgetDescriptor& w : widgets) {
         CHECK(w.id.rfind("game_2026.", 0) == 0);
         CHECK(w.valueKey.rfind("game_2026.", 0) == 0);
         CHECK(std::find(ids.begin(), ids.end(), w.id) == ids.end());
         ids.push_back(w.id);
         hasMeter |= w.kind == sdk::HudWidgetKind::Meter && !w.maxKey.empty();
-        hasTimer |= w.kind == sdk::HudWidgetKind::Timer;
         hasBadge |= w.kind == sdk::HudWidgetKind::Badge;
     }
     CHECK(hasMeter);
-    CHECK(hasTimer);
     CHECK(hasBadge);
 }
 

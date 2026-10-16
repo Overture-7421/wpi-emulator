@@ -5,7 +5,7 @@
 
 option(WPIEMU_BUILD_UI_DEMOS "Build the standalone UI demo executables (wpiemu_runview_demo)" ON)
 option(WPIEMU_RUNVIEW_SDL2 "Gamepad support for the run view through SDL2 (system package, or fetched below)" ON)
-option(WPIEMU_RUNVIEW_FETCH_SDL2 "Download and build SDL2 when no system SDL2 is found (needs network at configure time)" OFF)
+option(WPIEMU_RUNVIEW_FETCH_SDL2 "Download and build SDL2 when no system SDL2 is found (needs network at configure time)" ON)
 
 # No .ui files here; AUTOUIC would mistake the SDK header ui_descriptors.h for a generated "ui_*.h".
 set(CMAKE_AUTOUIC OFF)

@@ -17,8 +17,9 @@ public:
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const override { return services_.runtime().latestSnapshot(); }
 
 public slots:
-    void startRobot() override;
-    void stopRobot() override;
+    void launchRobot() override;
+    void startSimulation() override;
+    void stopSimulation() override;
     void restartRobot() override;
     void resetSimulation() override;
     void setPaused(bool paused) override;

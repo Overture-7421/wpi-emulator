@@ -9,8 +9,8 @@
 namespace wpiemu::app {
 
 // Scripted stand-in for the real runtime (`--demo`, tests, screenshots): "launches" instantly,
-// announces plausible devices one after another in Discovery mode and drives the chassis around
-// from the Driver Station state in Run mode. No process, no physics, no sockets.
+// announces plausible devices one after another while armed and drives the chassis around
+// from the Driver Station state once the simulation starts. No process, no physics, no sockets.
 class DemoRuntimeHost final : public IRuntimeHost {
     Q_OBJECT
 public:
@@ -30,7 +30,9 @@ public:
     }
 
 public slots:
-    void start(wpiemu::app::RuntimeMode mode) override;
+    void launch() override;
+    void startSimulation() override;
+    void stopSimulation() override;
     void stop() override;
     void restart() override;
     void resetSimulation() override;
@@ -44,6 +46,7 @@ private:
     void log(sdk::LogLevel level, const QString& source, const QString& text);
     void advanceStartup();
     void announceNextDevice();
+    void beginIfReady();
     void tickSimulation();
     void integrate(double dt);
     void publish();
@@ -63,6 +66,7 @@ private:
 
     sdk::proto::DsState ds_;
     bool paused_ = false;
+    bool beginWhenReady_ = false;
     double timeScale_ = 1.0;
     std::uint64_t tick_ = 0;
     double x_ = 0.0, y_ = 0.0, yaw_ = 0.0;

@@ -50,7 +50,9 @@ ShellPages createShellPages([[maybe_unused]] AppServices& services, [[maybe_unus
 #ifdef WPIEMU_APP_HAS_RUNVIEW
     {
         auto* backend = new RunBackendAdapter(services, backendParent);
-        pages.run = new runview::RunPage(*backend);
+        auto* runPage = new runview::RunPage(*backend);
+        pages.run = runPage;
+        pages.runViewActions = runPage->viewActions();
         pages.runIsReal = true;
     }
 #else

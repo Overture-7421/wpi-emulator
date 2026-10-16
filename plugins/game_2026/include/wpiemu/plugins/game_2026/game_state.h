@@ -33,6 +33,9 @@ inline constexpr const char* kScoreBlue = "game_2026.score.blue";
 inline constexpr const char* kHubRedActive = "game_2026.hub.red.active";
 inline constexpr const char* kHubBlueActive = "game_2026.hub.blue.active";
 inline constexpr const char* kHubOwnActive = "game_2026.hub.own.active";
+// "Active 0:25" (time left in the current active window) or "Inactive"; drives the hub badges.
+inline constexpr const char* kHubRedStatus = "game_2026.hub.red.status";
+inline constexpr const char* kHubBlueStatus = "game_2026.hub.blue.status";
 inline constexpr const char* kFirstInactive = "game_2026.hub.first_inactive";
 inline constexpr const char* kMatchPhase = "game_2026.match.phase";
 inline constexpr const char* kMatchTime = "game_2026.match.period_remaining";
@@ -98,7 +101,7 @@ private:
     MatchStatus status_;
     HubRules hub_;
     Alliance ownAlliance_ = Alliance::Red;
-
+    bool matchTimed_ = false;   // the DS runs a timed match (Practice); otherwise free play without game timing
     int meter_ = 0;
     int shots_ = 0;
     int lost_ = 0;

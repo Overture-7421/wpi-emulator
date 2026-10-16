@@ -166,6 +166,23 @@ TEST_CASE("bump mesh is a closed outward-wound prism with the expected volume") 
     CHECK(maxZ == doctest::Approx(b.ridgeHeightM));
 }
 
+TEST_CASE("bump ramp visuals rise toward the ridge, never form a valley") {
+    const FieldLayout l = buildFieldLayout();
+    for (const BumpSpec& b : l.bumps) {
+        int found = 0;
+        for (const sdk::FieldVisual& v : l.description.visuals) {
+            const bool low = v.name == b.name + "_ramp_a";   // on the -X side of the ridge
+            const bool high = v.name == b.name + "_ramp_b";  // on the +X side
+            if (!low && !high) continue;
+            ++found;
+            const float slopeAlongX = v.pose.rotation.rotate({1.f, 0.f, 0.f}).z;
+            if (low) CHECK(slopeAlongX > 0.f);
+            else CHECK(slopeAlongX < 0.f);
+        }
+        CHECK(found == 2);
+    }
+}
+
 TEST_CASE("field is built from the layout and removed again by RAII") {
     sdk::testing::FakePhysicsWorld world;
     const FieldLayout layout = buildFieldLayout();

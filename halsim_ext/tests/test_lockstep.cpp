@@ -410,6 +410,47 @@ TEST_CASE("discovery-only: devices are announced, nothing is stepped, no watchdo
           }).has_value());
 }
 
+TEST_CASE("armed session: BeginLockstep pauses HAL time and steps, EndLockstep returns to free-running") {
+    proto::HelloAck ack = defaultAck();
+    ack.discoveryOnly = true;
+    Rig rig(ack);
+    rig.addBridge();
+    REQUIRE(rig.start());
+    rig.clock.started = true;
+    REQUIRE(rig.emulator->waitForLifecycle(2000ms));
+
+    rig.emulator->epoch = 2;
+    REQUIRE(rig.emulator->sendControl(proto::SimCommand::BeginLockstep, 1));
+    const auto begin = rig.emulator->take<proto::SimControlAck>(1000ms);
+    REQUIRE(begin);
+    CHECK(begin->result == proto::ControlResult::Applied);
+    CHECK(begin->runEpoch == 2);
+
+    const auto first = rig.emulator->tick();
+    REQUIRE(first);
+    CHECK(first->result == proto::TickResult::Completed);
+    CHECK(first->ackedTick() == 1);
+    CHECK(rig.clock.steps == 1);
+
+    rig.emulator->epoch = 3;
+    REQUIRE(rig.emulator->sendControl(proto::SimCommand::EndLockstep, 2));
+    const auto end = rig.emulator->take<proto::SimControlAck>(1000ms);
+    REQUIRE(end);
+    CHECK(end->result == proto::ControlResult::Applied);
+
+    REQUIRE(rig.emulator->sendControl(proto::SimCommand::EndLockstep, 3));  // already armed
+    CHECK(rig.emulator->take<proto::SimControlAck>(1000ms)->result == proto::ControlResult::Rejected);
+}
+
+TEST_CASE("lockstep: BeginLockstep while already in lock-step is rejected") {
+    Started t;
+    t.rig.emulator->epoch = 2;
+    REQUIRE(t.rig.emulator->sendControl(proto::SimCommand::BeginLockstep, 1));
+    const auto ack = t.rig.emulator->take<proto::SimControlAck>(1000ms);
+    REQUIRE(ack);
+    CHECK(ack->result == proto::ControlResult::Rejected);
+}
+
 TEST_CASE("extension log lines are forwarded to the emulator as Log messages") {
     Started t;
     t.rig.runtime->logger().warn("bridge.test", "something odd");

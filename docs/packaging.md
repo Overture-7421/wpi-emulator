@@ -177,7 +177,7 @@ libraries, `libx11-dev`-style headers for the static SDL2, `libudev-dev`, `libas
 | `WPIEMU_PACKAGE_WPILIB_RUNTIME` | OFF | also install `wpiHal` / `wpiutil` next to the extension |
 | `WPIEMU_MACOS_BUNDLE_ID` | `org.wpiemulator.app` | `CFBundleIdentifier` |
 | `WPIEMU_WPILIB_DOWNLOAD` | OFF | fetch the WPILib HAL zips from frcmaven (always ON in CI) |
-| `WPIEMU_RUNVIEW_FETCH_SDL2` | OFF | build SDL2 (static) for gamepad support (always ON in CI; no DLL to ship) |
+| `WPIEMU_RUNVIEW_FETCH_SDL2` | ON | build SDL2 (static) for gamepad support (always ON in CI; no DLL to ship) |
 
 ## Release workflow (`.github/workflows/release.yml`)
 

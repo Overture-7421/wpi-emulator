@@ -4,12 +4,14 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QComboBox>
+#include <QDialog>
 #include <QKeySequence>
 #include <QLabel>
 #include <QPushButton>
 #include <QSettings>
 #include <QTemporaryDir>
-#include <QToolBar>
+#include <QFrame>
+#include <QToolButton>
 
 #include "fake_joystick.h"
 #include "fake_run_backend.h"
@@ -45,7 +47,7 @@ struct Fixture {
     }
 
     void connectRobot() {
-        page.startAction()->trigger();
+        backend.startSimulation();
         page.pollNow();
     }
 };
@@ -56,12 +58,13 @@ TEST_CASE("run page: the 3D scene loads and the idle state invites the user to s
     Fixture f;
     CHECK_MESSAGE(f.page.viewport()->sceneLoaded(), f.page.viewport()->sceneError().toStdString());
     CHECK(f.page.viewport()->overlay()->isVisible());
-    CHECK(f.page.viewport()->overlay()->startButton()->isVisible());
-    CHECK(f.page.startAction()->isEnabled());
-    CHECK_FALSE(f.page.stopAction()->isEnabled());
-    CHECK_FALSE(f.page.resetAction()->isEnabled());
+    CHECK(f.page.viewport()->overlay()->restartButton()->isVisible());
+    CHECK(f.page.restartRobotAction()->isEnabled());
+    CHECK_FALSE(f.page.restartAction()->isEnabled());
+    CHECK_FALSE(f.page.speedCombo()->isEnabled());
     CHECK_FALSE(f.page.driverStationPanel()->enableButton()->isEnabled());   // no robot to enable
-    CHECK(f.page.statusChip()->accessibleName() == QStringLiteral("Robot stopped"));
+    CHECK(f.page.driverStationPanel()->modeButton(DsMode::Teleop)->isChecked());   // Teleop is selected from the start
+    CHECK(f.page.viewActions().size() == 5);   // overlays and console live in the shell's View menu
 }
 
 TEST_CASE("run page: start connects, drives the view models and enables the DS") {
@@ -69,17 +72,63 @@ TEST_CASE("run page: start connects, drives the view models and enables the DS")
     f.connectRobot();
     CHECK(f.backend.startCount() == 1);
     CHECK(f.backend.status().link == LinkState::Connected);
-    CHECK(f.page.statusChip()->accessibleName() == QStringLiteral("Connected"));
+    CHECK(f.backend.status().simulating);
     CHECK_FALSE(f.page.viewport()->overlay()->isVisible());
-    CHECK(f.page.stopAction()->isEnabled());
-    CHECK_FALSE(f.page.startAction()->isEnabled());
-    CHECK(f.page.resetAction()->isEnabled());
+    CHECK(f.page.restartRobotAction()->isEnabled());
+    CHECK(f.page.restartAction()->isEnabled());
+    CHECK(f.page.speedCombo()->isEnabled());
     CHECK(f.page.scene().robotVisible());
     CHECK(f.page.hud().rowCount() == 5);
     CHECK(f.page.mechanisms().rowCount() == 3);
     CHECK(f.page.stats().hasData);
     CHECK(f.page.driverStationPanel()->enableButton()->isEnabled());
     CHECK(f.page.console()->totalLineCount() >= 3);   // start-up output arrived through the log signal
+}
+
+TEST_CASE("run page: simulation stats live in a framed group of the Driver Station panel") {
+    Fixture f;
+    f.connectRobot();
+    f.page.pollNow();
+    auto* frame = f.page.driverStationPanel()->findChild<QFrame*>(QStringLiteral("runview.dsStats"));
+    REQUIRE(frame != nullptr);
+    bool sawHz = false;
+    for (QLabel* l : frame->findChildren<QLabel*>()) sawHz = sawHz || l->text().contains(QStringLiteral(" Hz"));
+    CHECK(sawHz);
+}
+
+TEST_CASE("run page: practice highlights the running segment; setup and joysticks open in a popup") {
+    Fixture f;
+    f.connectRobot();
+    auto* panel = f.page.driverStationPanel();
+    auto& ds = f.page.driverStation();
+    const auto live = [&](DsMode m) { return panel->modeButton(m)->property("live").toBool(); };
+
+    ds.setDsMode(DsMode::Practice);
+    ds.setEnabled(true);
+    panel->refresh();
+    CHECK(panel->modeButton(DsMode::Practice)->isChecked());
+    CHECK(live(DsMode::Auto));
+    CHECK(f.page.viewport()->matchClockLabel()->text().contains(QStringLiteral(":")));   // timer shows in the 3D view
+    CHECK_FALSE(live(DsMode::Teleop));
+
+    const double auto_s = ds.matchSettings().autoSeconds;
+    ds.onSimTime(0);
+    const auto jumpTo = [&](double s) {
+        for (double t = 0.5; t <= s; t += 0.5) ds.onSimTime(static_cast<std::int64_t>(t * 1e6));
+    };
+    jumpTo(auto_s + ds.matchSettings().gapSeconds + 1.0);   // into teleop
+    panel->refresh();
+    CHECK(live(DsMode::Teleop));
+    CHECK_FALSE(live(DsMode::Auto));
+
+    ds.disable();
+    panel->refresh();
+    CHECK_FALSE(live(DsMode::Teleop));
+
+    CHECK_FALSE(panel->settingsDialog()->isVisible());
+    panel->showSettings(1);
+    CHECK(panel->settingsDialog()->isVisible());
+    panel->settingsDialog()->hide();
 }
 
 TEST_CASE("run page: enable, space to disable, e-stop and mode") {
@@ -91,10 +140,17 @@ TEST_CASE("run page: enable, space to disable, e-stop and mode") {
     f.page.publishDriverStation();
     CHECK(f.backend.lastDriverStation().enabled);
 
-    panel->disableAction()->trigger();   // what the Space shortcut triggers
+    panel->disableAction()->trigger();   // what the Enter shortcut triggers
     f.page.publishDriverStation();
     CHECK_FALSE(f.backend.lastDriverStation().enabled);
-    CHECK(panel->disableButton()->isChecked());
+    CHECK_FALSE(panel->enableButton()->isChecked());
+
+    panel->enableButton()->click();   // the enable button toggles
+    f.page.publishDriverStation();
+    CHECK(f.backend.lastDriverStation().enabled);
+    panel->enableButton()->click();
+    f.page.publishDriverStation();
+    CHECK_FALSE(f.backend.lastDriverStation().enabled);
 
     panel->enableButton()->click();
     panel->eStopAction()->trigger();
@@ -105,8 +161,9 @@ TEST_CASE("run page: enable, space to disable, e-stop and mode") {
     panel->eStopButton()->click();                     // clears
     CHECK(panel->enableButton()->isEnabled());
 
-    // Space has no effect as a joystick input.
+    // Enter disables and Space is the e-stop: neither is a joystick input.
     CHECK_FALSE(f.page.handleKey(Qt::Key_Space, true));
+    CHECK_FALSE(f.page.handleKey(Qt::Key_Return, true));
     CHECK_FALSE(f.page.handleKey(Qt::Key_Shift, true));
 }
 
@@ -136,27 +193,27 @@ TEST_CASE("run page: a robot crash shows the error state and offers a restart") 
     auto* overlay = f.page.viewport()->overlay();
     CHECK(overlay->isVisible());
     CHECK(overlay->titleLabel()->text().contains(QStringLiteral("crashed")));
-    CHECK(f.page.statusChip()->accessibleName().contains(QStringLiteral("3")));
     CHECK(f.page.consoleVisible());
-    CHECK(overlay->startButton()->isVisible());
-    CHECK(f.page.startAction()->isEnabled());
+    CHECK(overlay->restartButton()->isVisible());
+    CHECK(f.page.restartRobotAction()->isEnabled());
     CHECK_FALSE(f.page.driverStationPanel()->enableButton()->isEnabled());
     CHECK_FALSE(f.page.scene().robotVisible());
 
-    overlay->startButton()->click();
+    overlay->restartButton()->click();
     CHECK(f.backend.startCount() == 2);
     f.page.pollNow();
-    CHECK(f.page.statusChip()->accessibleName() == QStringLiteral("Connected"));
+    f.backend.startSimulation();
+    f.page.pollNow();
+    CHECK_FALSE(overlay->isVisible());
 }
 
 TEST_CASE("run page: handshake timeout and protocol mismatch are explained") {
     Fixture f;
-    f.backend.startRobot();
+    f.backend.launchRobot();
     f.backend.simulateHandshakeTimeout();
     f.page.pollNow();
     auto* overlay = f.page.viewport()->overlay();
     CHECK(overlay->isVisible());
-    CHECK(f.page.statusChip()->accessibleName().contains(QStringLiteral("Handshake")));
     CHECK(overlay->restartButton()->isVisible());
     overlay->restartButton()->click();
     CHECK(f.backend.status().link == LinkState::Connected);
@@ -164,36 +221,32 @@ TEST_CASE("run page: handshake timeout and protocol mismatch are explained") {
     f.backend.simulateProtocolMismatch(QStringLiteral("robot v1, app v2"));
     f.page.pollNow();
     CHECK(overlay->detailLabel()->text() == QStringLiteral("robot v1, app v2"));
-    CHECK(f.page.statusChip()->accessibleName().contains(QStringLiteral("mismatch")));
 }
 
-TEST_CASE("run page: pause, step, speed and reset reach the backend") {
+TEST_CASE("run page: restart resets the physics, the dropdown also reboots the robot code, and speed reaches the backend") {
     Fixture f;
     f.connectRobot();
-    CHECK_FALSE(f.page.stepAction()->isEnabled());
-    f.page.pauseAction()->trigger();
-    CHECK(f.backend.paused());
-    f.page.pollNow();
-    CHECK(f.page.stepAction()->isEnabled());
-    f.page.stepAction()->trigger();
-    CHECK(f.backend.stepRequests() == 1);
-
     f.page.speedCombo()->setCurrentIndex(4);
     emit f.page.speedCombo()->activated(4);
     CHECK(f.backend.timeScale() == doctest::Approx(2.0));
 
-    f.page.pauseAction()->trigger();
-    CHECK_FALSE(f.backend.paused());
-
     f.page.driverStation().setEnabled(true);
-    f.page.resetAction()->trigger();
+    f.page.restartAction()->trigger();
     CHECK(f.backend.resetCount() == 1);
+    CHECK(f.backend.startCount() == 1);   // the robot code was not relaunched
     CHECK_FALSE(f.page.driverStation().enabled());
 
-    f.page.stopAction()->trigger();
+    f.page.driverStation().setEnabled(true);
+    f.page.restartRobotAction()->trigger();
+    CHECK(f.backend.startCount() == 2);
+    CHECK_FALSE(f.page.driverStation().enabled());
     f.page.pollNow();
-    CHECK(f.backend.status().process == RobotProcessState::Exited);
-    CHECK(f.page.viewport()->overlay()->isVisible());
+    CHECK(f.backend.status().simulating);   // the simulation resumes by itself after the reboot
+
+    auto* viewport = f.page.viewport();
+    CHECK(viewport->findChild<QToolButton*>(QStringLiteral("runview.restartButton")) != nullptr);
+    CHECK(viewport->findChild<QToolButton*>(QStringLiteral("runview.speedButton")) != nullptr);
+    CHECK(f.page.findChild<QToolButton*>(QStringLiteral("runview.homeButton")) != nullptr);
 }
 
 TEST_CASE("run page: console receives logs and can be searched and copied") {
@@ -212,6 +265,18 @@ TEST_CASE("run page: console receives logs and can be searched and copied") {
     CHECK(console->totalLineCount() == 0);
 }
 
+TEST_CASE("run page: home button in the 3D view resets the camera") {
+    Fixture f;
+    f.connectRobot();
+    auto* home = f.page.findChild<QToolButton*>(QStringLiteral("runview.homeButton"));
+    REQUIRE(home != nullptr);
+    const float homeDistance = f.page.scene().camera().distance();
+    f.page.scene().camera().zoom(5.f);
+    CHECK(f.page.scene().camera().distance() != doctest::Approx(homeDistance));
+    home->click();
+    CHECK(f.page.scene().camera().distance() == doctest::Approx(homeDistance));
+}
+
 TEST_CASE("run page: camera and overlay controls") {
     Fixture f;
     f.connectRobot();
@@ -223,9 +288,6 @@ TEST_CASE("run page: camera and overlay controls") {
     CHECK_FALSE(f.page.consoleVisible());
     f.page.setConsoleVisible(true);
     CHECK(f.page.consoleVisible());
-
-    f.backend.setRealDsState(RealDsState::Connected);
-    CHECK(f.page.findChild<StatusChip*>(QStringLiteral("runview.realDsChip"))->accessibleName().contains(QStringLiteral("connected")));
 }
 
 TEST_CASE("run page: joystick editor learns a key binding and a gamepad appears") {

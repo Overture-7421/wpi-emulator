@@ -24,7 +24,6 @@ namespace wpiemu::core::launcher {
 // core may not include them).
 namespace env_var {
 inline constexpr const char* kExtension = "WPIEMU_EXT";             // consumed by the generated init script
-inline constexpr const char* kExtraExtensions = "WPIEMU_EXTRA_EXT";  // consumed by the generated init script
 inline constexpr const char* kEndpoint = "WPIEMU_IPC_ENDPOINT";      // authoritative (ADR 0007)
 inline constexpr const char* kEndpointAlias = "WPIEMU_ENDPOINT";
 inline constexpr const char* kClock = "WPIEMU_CLOCK";                // "master" (lock-step) | "realtime"
@@ -43,8 +42,7 @@ struct LaunchRequest {
     LaunchMode mode = LaunchMode::GradleInitScript;
     bool release = true;                          // ExternalDirect: Release vs Debug variant
     std::filesystem::path extensionLibrary;       // absolute path of halsim_wpiemu.{dll,so,dylib}
-    std::vector<std::filesystem::path> extraHalExtensions;  // e.g. halsim_ds_socket for a real driver station
-    std::string ipcEndpoint;                      // from ITransportServer::endpoint()
+    std::string ipcEndpoint;                       // from ITransportServer::endpoint()
     bool realtimeClock = false;                   // WPIEMU_CLOCK=realtime instead of master
     std::filesystem::path scratchDir;             // where the init script is written (app data); needed for GradleInitScript
     std::filesystem::path javaHome;               // optional JDK (the WPILib one); sets JAVA_HOME and is used for the direct launch
@@ -66,7 +64,7 @@ void sanitizePackagedEnvironment(ProcessSpec& spec, const config::EnvLookup& hos
 
 // ---- planning (pure apart from the init script file; unit-tested) -----------------------------------------------------
 
-// HALSIM_EXTENSIONS value: our library, then the extras, joined with the platform separator (';' Windows, ':' elsewhere).
+// HALSIM_EXTENSIONS value: our library (the emulator is the only Driver Station).
 std::string halExtensionsValue(const LaunchRequest& request, bool windows);
 // WPIEMU_* contract variables + JAVA_HOME + extraEnv (not HALSIM_EXTENSIONS: the init script sets that inside the task).
 std::map<std::string, std::string> emulatorEnvironment(const LaunchRequest& request, bool windows);

@@ -54,7 +54,7 @@ std::vector<sdk::Issue> EditorBackendAdapter::validate(const sdk::RobotConfig& c
 
 bool EditorBackendAdapter::detecting() const {
     const HostStatus s = services_.runtime().status();
-    return s.active() && s.mode == RuntimeMode::Discovery;
+    return s.process == HostProcessState::Starting || (s.process == HostProcessState::Running && !s.programStarted);
 }
 
 void EditorBackendAdapter::submitConfig(const sdk::RobotConfig& config) {
@@ -80,7 +80,7 @@ void EditorBackendAdapter::saveConfig() {
         emit logMessage(sdk::Severity::Info, tr("Saved robot configuration to %1").arg(outcome.exportPath));
 }
 
-void EditorBackendAdapter::startDetection() { services_.runtime().start(RuntimeMode::Discovery); }
+void EditorBackendAdapter::startDetection() { services_.runtime().restart(); }
 
 void EditorBackendAdapter::stopDetection() { services_.runtime().stop(); }
 

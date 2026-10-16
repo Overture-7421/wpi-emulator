@@ -108,20 +108,13 @@ void sanitizePackagedEnvironment(ProcessSpec& spec, const config::EnvLookup& hos
     }
 }
 
-std::string halExtensionsValue(const LaunchRequest& r, bool windows) {
-    std::vector<std::string> parts{r.extensionLibrary.string()};
-    for (const fs::path& p : r.extraHalExtensions) parts.push_back(p.string());
-    return join(parts, windows ? ';' : ':');
+std::string halExtensionsValue(const LaunchRequest& r, bool /*windows*/) {
+    return r.extensionLibrary.string();
 }
 
-std::map<std::string, std::string> emulatorEnvironment(const LaunchRequest& r, bool windows) {
+std::map<std::string, std::string> emulatorEnvironment(const LaunchRequest& r, bool /*windows*/) {
     std::map<std::string, std::string> env;
     env[env_var::kExtension] = r.extensionLibrary.string();
-    if (!r.extraHalExtensions.empty()) {
-        std::vector<std::string> extras;
-        for (const fs::path& p : r.extraHalExtensions) extras.push_back(p.string());
-        env[env_var::kExtraExtensions] = join(extras, windows ? ';' : ':');
-    }
     env[env_var::kEndpoint] = r.ipcEndpoint;
     env[env_var::kEndpointAlias] = r.ipcEndpoint;
     env[env_var::kClock] = r.realtimeClock ? "realtime" : "master";

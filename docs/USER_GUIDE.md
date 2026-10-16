@@ -105,7 +105,7 @@ game settings.
 
 ## 3. The editor
 
-The **Editor** and **Run** buttons in the toolbar (`Ctrl+1` / `Ctrl+2`) switch between the editing page and the run page.
+The **Editor** and **Run** tabs centred in the menu bar row (`Ctrl+1` / `Ctrl+2`) switch between the editing page and the run page.
 
 ```
 +---------------------+-----------------------------------+------------------+
@@ -159,9 +159,10 @@ attached to. Plant models are documented in [mechanisms.md](mechanisms.md).
 Your robot code creates devices (motor controllers, encoders, gyros, solenoids...) at run time. The simulator needs to
 know which mechanism slot each one drives:
 
-1. **Robot > Detect devices** (`Ctrl+D`, also in the toolbar and the *Detected devices* panel). The app launches your
-   project once in discovery mode; the panel button changes to **Stop detecting** and shows *"Listening... run your
-   robot code. New devices are added as they announce themselves."* Devices appear as your code creates them.
+1. Entering the **Editor / Run** tab launches your robot project once (the first launch builds it and can take a
+   while). The same instance detects devices and later runs the simulation; the *Detected devices* panel shows
+   *"Starting robot program..."* until it connects. The robot code is always running, so devices appear
+   as your code creates them.
 2. The **Detected devices** table lists **Device**, **Type**, **ID**, **Bus** and **Status**
    (`unmapped (loopback)`, `gone`, alias warnings).
 3. **Drag a detected device** from the table onto a slot row in the inspector (mechanism slots or a wheel's
@@ -205,20 +206,25 @@ property tables are in [game_2026.md section 5](game_2026.md#5-robot-side-meter-
 
 ## 5. The run view and the driver station
 
-Press **Start robot** (`F5`, toolbar or **Robot** menu) to launch your project. The first start builds the project and
-can take a while. The shell shows the state: *Starting robot...*, *Waiting for the robot to connect...*,
-*Robot connected*, *Robot stopped / crashed / failed to start*. The window title and chips show the project and
-whether the game module is active.
+Your robot launches automatically when you enter the Editor/Run tab and stays alive until you close the project or
+use **Restart robot code**. Entering the **Run** tab starts the simulation at sim time zero automatically and it keeps running;
+there are no start, stop, pause or step controls. The shell shows *Starting robot program...*, *Robot ready*,
+*Simulating*, or *Robot stopped / crashed / failed to start*.
+
+The **Driver Station** has four modes: **Auto**, **Teleop**, **Test** (Enable runs until you disable) and
+**Practice** (Enable runs autonomous, a short disabled gap, then teleop, on the match clock; durations are in the
+*Setup* tab). Enter disables, Space is the emergency stop (as on the real DS). Match timing, hub shifts and the score
+and phase widgets only apply in Practice; the other modes are free play.
 
 ### Run view
 
 | Area | What it does |
 |---|---|
-| Toolbar | **Start** (`F5`), **Stop** (`Shift+F5`), **Restart** (`Ctrl+R`), **Reset sim** (`Ctrl+Shift+R`, robot and game pieces back to the start while the program keeps running), **Pause** (`F8`), **Step** (`F10`, one robot loop of 20 ms while paused), **Speed** (relative to real time) |
-| Camera | **Orbit**, **Follow** (chase camera), **Top-down**, **Reset view** (double-click the view as well) |
-| Overlays | game HUD, mechanism values, zones (intake / shooter), individually switchable |
-| Status strip | simulated time, ticks per second and speed, battery voltage, physics step time and entity count, gamepad status |
-| Console | `Ctrl+J`; filter by level and source (robot stdout, robot stderr, emulator), search, copy, clear, follow |
+| View controls | Icon buttons at the bottom-right of the 3D view: **Restart** (`Ctrl+R`, puts the robot and game pieces back to the start; the robot code keeps running). Its dropdown adds **Restart robot code** (`Ctrl+Shift+R`, reboots the code and resets everything). **Speed** (relative to real time) |
+| Camera | Orbit camera (drag to rotate, right-drag to pan, wheel to zoom) and **Home view** (⌂ button, last in the bottom-right controls, `Ctrl+0`, or double-click the view) |
+| Overlays | **View** menu: game HUD, mechanism values, zones (intake / shooter), individually switchable (Run tab only) |
+| Telemetry (right side of the toolbar) | simulated time, ticks per second and speed, battery voltage, physics step time and entity count, gamepad status |
+| Console | **View > Console** (`Ctrl+J`); filter by level and source (robot stdout, robot stderr, emulator), search, copy, clear, follow |
 
 In the 2026 HUD you see the fuel meter, match timer and phase, hub active badges, scores, shots fired and fuel on the
 field.
@@ -227,17 +233,19 @@ field.
 > window. Use the toolbar buttons if a shortcut does not respond.
 
 ### Driver station panel
-Built into the run page; it replaces the real Driver Station.
+Built into the run page; it replaces the real Driver Station. It sits at the bottom-left, next to the console. The **cog**
+button next to the match clock opens a popup window (Setup and Joysticks tabs) with alliance/station, game message, match durations and joystick bindings.
+In **Practice**, the running segment (Auto or Teleop) is highlighted green on the mode buttons while the match runs.
 
 | Control | Behaviour |
 |---|---|
-| **Enable** / **Disable** (`Space` disables immediately) | the mode can only change while disabled, like the real DS |
-| **EMERGENCY STOP** (`Ctrl+Space`) | latches until cleared (*E-STOPPED - click to clear*) or the robot restarts |
+| **Enable** (a toggle: click again to disable; `Enter` disables immediately) | the mode can only change while disabled, like the real DS |
+| **EMERGENCY STOP** (`Space`) | latches until cleared (*E-STOPPED - click to clear*) or the robot restarts |
 | Mode | Teleoperated / Autonomous / Test |
 | Alliance and station | Red / Blue, Station 1-3 |
 | Game message | free text the robot reads with `getGameSpecificMessage()`; when the game plugin provides FMS data (2026 hub order `R`/`B`) it overrides this text |
 | **Start match** | enables the robot and runs Autonomous (default 20 s), a 3 s disabled gap, then Teleop (default 140 s). The match time seen by the robot counts down. The durations are editable. |
-| Joysticks tab | six ports; each port takes the keyboard or a gamepad. Default keyboard: `W A S D` left stick, arrow keys right stick, `U` / `O` triggers, `Z X C V Q E R F G H N M` buttons 1-12, `I J K L` POV. Rebind by clicking a binding and pressing the key or moving the control (`Esc` cancels). |
+| Joysticks (popup) | six ports; each port takes the keyboard or a gamepad. Default keyboard: `W A S D` left stick, arrow keys right stick, `U` / `O` triggers, `Z X C V Q E R F G H N M` buttons 1-12, `I J K L` POV. Rebind by clicking a binding and pressing the key or moving the control (`Esc` cancels). |
 
 Gamepads need SDL2 in the build (a build without it still works with the keyboard; the Joysticks tab then says that
 gamepad support is not available).
@@ -269,10 +277,10 @@ extension inert).
 |---|---|
 | **Robot won't start** ("Robot failed to start") | Open the console (`Ctrl+J`). Typical causes: the project has no Gradle wrapper (*"This project has no Gradle wrapper"*); the build fails (read the Gradle output in the console and fix the project; build once from VS Code to prove it compiles); no JDK/WPILib found (wizard step 2 or Settings > Toolchain); the HALSim extension `halsim_wpiemu` was not found next to the app (*"Reinstall the emulator or set WPIEMU_EXTENSION"*); the robot configuration has validation errors (fix them in the Validation tab); the first build is simply slow, wait for it. For C++ projects make sure the compiler of step 2 is installed. |
 | **"Robot crashed"** | The process ended with a non-zero exit code. The console tail shows the stack trace or the Java exception from your own code. |
-| **No devices detected** | Devices are listed only when the robot code *creates* them, so the code must reach its constructors (`robotInit`/`RobotContainer`). Leave **Stop detecting** running until your subsystems are built; check the console for exceptions that abort startup. Vendor libraries other than CTRE (e.g. REV) are not bridged in v1, so only their raw CAN traffic is seen (see [Limitations](#8-limitations)). Make sure the project's season is 2026 and that detection actually started (status *Detecting devices...*). |
+| **No devices detected** | Devices are listed only when the robot code *creates* them, so the code must reach its constructors (`robotInit`/`RobotContainer`). Give the code a moment to build your subsystems are built; check the console for exceptions that abort startup. Vendor libraries other than CTRE (e.g. REV) are not bridged in v1, so only their raw CAN traffic is seen (see [Limitations](#8-limitations)). Make sure the project's season is 2026 and that detection actually started (status *Detecting devices...*). |
 | **Handshake timeout** ("The simulator extension did not connect") | The robot process runs but the HALSim extension never said hello (timeout 5 minutes). Look for an extension load error in the console (wrong WPILib year, antivirus blocking the DLL or the named pipe), and make sure the project actually ran the simulation task and simulation is enabled. Reinstall the emulator so the app and `halsim_wpiemu` match. |
 | **Protocol mismatch** | "Incompatible simulator extension": the extension and the app are from different builds. Reinstall / rebuild both. |
-| **"Robot not responding"** | The lock-step watchdog expired: your code is blocked or in an infinite loop. **Stop** and **Restart**. |
+| **"Robot not responding"** | The lock-step watchdog expired: your code is blocked or in an infinite loop. Use **Restart robot code**. |
 | **Unsupported WPILib year** | v1 ships a game module only for **2026**. For other seasons the wizard shows *Core-only mode* and the game chip is yellow: chassis, drivetrain and mechanisms simulate on an empty field. The HALSim extension is built and validated against WPILib 2026.2.1 only; other years may fail to load it. If the year shows as *Unknown*, the GradleRIO version in `build.gradle` could not be read (use a literal `id "edu.wpi.first.GradleRIO" version "2026.2.1"`). |
 | **Phoenix 6 notes** | Devices are seen through WPILib's SimDevice layer; the emulator drives the **rotor**, so Phoenix applies its own `SensorToMechanismRatio` and offsets (set your real gear ratios in the robot code, not in the emulator's slot). TalonFX/TalonFXS, CANcoder, Pigeon 2, CANdle, CANrange and CANdi are supported; temperature and faults are not simulated; Pigeon 2 has no acceleration input in CTRE's simulation. Phoenix 5 is included but derived from documentation, not tested against the real library. Do not drive a Phoenix device's sim state from your own robot code at the same time as the emulator (two writers); see [bridges-vendor.md](bridges-vendor.md) for the details. |
 | **CANivore bus labels** | Phoenix simulation keys devices by type and CAN ID only, so the **Bus** column in the detected-devices table is blank/unknown: the app cannot tell a CANivore from the roboRIO bus (and never invents a label). The same type + ID on two buses is the same simulated device; mapping it twice shows an *alias conflict*, and the conflicting device runs unmapped until fixed. |

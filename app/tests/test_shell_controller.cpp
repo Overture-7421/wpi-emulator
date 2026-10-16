@@ -106,38 +106,40 @@ TEST_CASE("the runtime follows the open project") {
     CHECK(env.demo->scene().config == nullptr);
 }
 
-TEST_CASE("starting device detection discovers the demo devices through the runtime host") {
+TEST_CASE("opening a project launches the robot, which detects the demo devices while armed") {
     TestEnvironment env;
     ShellController controller(*env.services);
     TestProject p;
     configure(*env.services, p);
     REQUIRE(controller.openProject(p.path()) == OpenOutcome::Opened);
 
-    controller.startDiscovery();
-    CHECK(env.demo->status().mode == RuntimeMode::Discovery);
+    CHECK(env.demo->status().active());
+    CHECK_FALSE(env.demo->status().simulating);
     const size_t expected = DemoRuntimeHost::demoDevicesFor(*env.services->session().config()).size();
     REQUIRE(waitFor([&] {
         const auto snap = env.demo->latestSnapshot();
         return snap && snap->devices().size() == expected;
     }));
     CHECK(env.demo->status().link == HostLinkState::Connected);
-    CHECK(controller.runtimeLabel().contains(QStringLiteral("Detecting")));
+    CHECK(env.demo->status().programStarted);
+    CHECK(controller.runtimeLabel().contains(QStringLiteral("ready")));
 
     controller.stopRobot();
     CHECK(!env.demo->status().active());
 }
 
-TEST_CASE("starting the robot switches to run mode and replaces a detection run") {
+TEST_CASE("starting the simulation reuses the launched robot and stopping leaves it running") {
     TestEnvironment env;
     ShellController controller(*env.services);
     TestProject p;
     configure(*env.services, p);
     REQUIRE(controller.openProject(p.path()) == OpenOutcome::Opened);
-    controller.startDiscovery();
-    controller.startRobot();
+    REQUIRE(waitFor([&] { return env.demo->status().programStarted; }));
+
+    controller.startSimulation();
     CHECK(controller.mode() == AppMode::Run);
-    CHECK(env.demo->status().mode == RuntimeMode::Run);
-    REQUIRE(waitFor([&] { return env.demo->status().link == HostLinkState::Connected; }));
+    REQUIRE(waitFor([&] { return env.demo->status().simulating; }));
+    CHECK(controller.runtimeLabel() == QStringLiteral("Simulating"));
 
     // enabling the robot in the demo moves the chassis
     sdk::proto::DsState ds;
@@ -147,19 +149,37 @@ TEST_CASE("starting the robot switches to run mode and replaces a detection run"
         const auto snap = env.demo->latestSnapshot();
         return snap && snap->chassis().pose.position.x != 0.f;
     }));
+
+    controller.stopSimulation();
+    CHECK_FALSE(env.demo->status().simulating);
+    CHECK(env.demo->status().active());   // the robot process stays alive
     controller.stopRobot();
 }
 
-TEST_CASE("setup completion switches to the editor and can launch detection") {
+TEST_CASE("entering the run tab starts the simulation by itself") {
+    TestEnvironment env;
+    ShellController controller(*env.services);
+    TestProject p;
+    configure(*env.services, p);
+    REQUIRE(controller.openProject(p.path()) == OpenOutcome::Opened);
+    CHECK_FALSE(env.demo->status().simulating);
+
+    controller.setMode(AppMode::Run);
+    REQUIRE(waitFor([&] { return env.demo->status().simulating; }));
+    controller.stopRobot();
+}
+
+TEST_CASE("setup completion switches to the editor and launches the robot") {
     TestEnvironment env;
     ShellController controller(*env.services);
     TestProject p;
     configure(*env.services, p);
     REQUIRE(controller.openProject(p.path()) == OpenOutcome::Opened);
     controller.setMode(AppMode::Run);
-    controller.setupCompleted(/*detectDevices=*/true);
+    controller.stopRobot();
+    controller.setupCompleted();
     CHECK(controller.mode() == AppMode::Editor);
     CHECK(env.demo->status().active());
-    CHECK(env.demo->status().mode == RuntimeMode::Discovery);
+    CHECK_FALSE(env.demo->status().simulating);
     controller.stopRobot();
 }

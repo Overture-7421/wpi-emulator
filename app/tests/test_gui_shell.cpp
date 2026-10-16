@@ -1,4 +1,8 @@
 #include <doctest/doctest.h>
+#include <QApplication>
+#include <QMenuBar>
+#include <cmath>
+#include <QToolBar>
 
 #include <QFileInfo>
 
@@ -25,7 +29,9 @@ struct ShellFixture {
     int wizardRuns = 0;
 
     explicit ShellFixture(bool healthy = true)
-        : env(healthy), controller(*env.services), window(*env.services, controller, env.ui, createShellPages(*env.services, env.ui, &controller)) {}
+        : env(healthy), controller(*env.services), window(*env.services, controller, env.ui, createShellPages(*env.services, env.ui, &controller)) {
+        window.setMessageRunner([](const QString&) {});
+    }
 
     // Walks the wizard like a user who accepts the defaults, or cancels.
     void acceptWizard() {
@@ -55,12 +61,14 @@ TEST_CASE("shell starts on the welcome page with project actions disabled") {
     CHECK(f.window.windowTitle() == QStringLiteral("WPI Emulator"));
     CHECK(!f.window.setupAction()->isEnabled());
     CHECK(!f.window.closeAction()->isEnabled());
-    CHECK(!f.window.detectAction()->isEnabled());
-    CHECK(!f.window.startStopAction()->isEnabled());
     CHECK(!f.window.modeSwitcher()->isEnabled());
+    QApplication::processEvents();
+    auto* sw = f.window.modeSwitcher();
+    CHECK(sw->isVisible());
+    CHECK(sw->parentWidget() == f.window.menuBar());
+    CHECK(std::abs(sw->geometry().center().x() - f.window.menuBar()->width() / 2) <= 2);
     CHECK(f.window.openAction()->isEnabled());
     CHECK(f.window.welcomePage()->openButton()->isVisible());
-    CHECK(!f.window.projectChip()->text().isEmpty());
 }
 
 TEST_CASE("opening an unconfigured project runs the wizard and lands in the editor") {
@@ -76,16 +84,15 @@ TEST_CASE("opening an unconfigured project runs the wizard and lands in the edit
     CHECK(f.controller.canRun());
     CHECK(f.window.currentPage() == MainWindow::PageId::Editor);
     CHECK(f.window.windowTitle().contains(QFileInfo(project.path()).fileName()));
-    CHECK(f.window.gameChip()->text().contains(QStringLiteral("2026")));
+    CHECK(f.window.windowTitle().contains(QStringLiteral("2026")));
     CHECK(f.window.setupAction()->isEnabled());
     CHECK(f.window.closeAction()->isEnabled());
-    CHECK(f.window.detectAction()->isEnabled());
-    CHECK(f.window.modeSwitcher()->runButton()->isEnabled());
+    CHECK(f.window.modeSwitcher()->runEnabled());
     CHECK(QFileInfo::exists(project.path() + "/.wpiemu/robot.json"));
     CHECK(f.env.services->recentProjects().lastProject() == project.path());
-    // the "detect devices now" box of the summary was ticked: the robot is launched in discovery mode
+    // the robot launches as soon as the editor shows, armed and detecting devices
     CHECK(f.env.demo->status().active());
-    CHECK(f.env.demo->status().mode == RuntimeMode::Discovery);
+    CHECK_FALSE(f.env.demo->status().simulating);
 }
 
 TEST_CASE("an already configured project opens straight into the editor") {
@@ -133,35 +140,40 @@ TEST_CASE("mode switcher and shortcuts switch between editor and run") {
     f.window.openProjectPath(project.path());
     REQUIRE(f.window.currentPage() == MainWindow::PageId::Editor);
 
-    f.window.modeSwitcher()->runButton()->click();
+    f.window.modeSwitcher()->requestMode(AppMode::Run);
     CHECK(f.controller.mode() == AppMode::Run);
     CHECK(f.window.currentPage() == MainWindow::PageId::Run);
     CHECK(f.window.modeSwitcher()->mode() == AppMode::Run);
 
-    f.window.modeSwitcher()->editorButton()->click();
+    f.window.modeSwitcher()->requestMode(AppMode::Editor);
     CHECK(f.window.currentPage() == MainWindow::PageId::Editor);
 
     f.window.close();   // closing the window stops a running robot
     CHECK(!f.env.demo->status().active());
 }
 
-TEST_CASE("start/stop action follows the robot state") {
+TEST_CASE("the app has no toolbar; project and simulation actions live in the menus") {
+    ShellFixture f;
+    f.window.show();
+    CHECK(f.window.findChildren<QToolBar*>().isEmpty());
+    QList<QAction*> menuActions;
+    for (QAction* top : f.window.menuBar()->actions())
+        if (top->menu() != nullptr) menuActions += top->menu()->actions();
+    CHECK(menuActions.contains(f.window.openAction()));
+    CHECK(menuActions.contains(f.window.setupAction()));
+    CHECK(menuActions.size() > 8);   // the View menu also lists the run page's overlay toggles
+}
+
+TEST_CASE("the simulation starts by itself when the run tab opens") {
     ShellFixture f;
     f.acceptWizard();
     TestProject project;
     f.env.addProject(project);
     f.window.openProjectPath(project.path());
-    f.controller.stopRobot();   // the wizard may have started detection
 
-    CHECK(f.window.startStopAction()->text().contains(QStringLiteral("Start")));
-    f.window.startStopAction()->trigger();
+    f.window.modeSwitcher()->requestMode(AppMode::Run);
     CHECK(f.controller.mode() == AppMode::Run);
-    CHECK(f.env.demo->status().active());
-    CHECK(f.window.startStopAction()->text().contains(QStringLiteral("Stop")));
-    CHECK(f.window.runtimeLabel()->text() == f.controller.runtimeLabel());
-    f.window.startStopAction()->trigger();
-    CHECK(!f.env.demo->status().active());
-    CHECK(f.window.startStopAction()->text().contains(QStringLiteral("Start")));
+    REQUIRE(waitFor([&] { return f.env.demo->status().simulating; }));
 }
 
 TEST_CASE("recent projects menu lists opened projects and reopens them") {

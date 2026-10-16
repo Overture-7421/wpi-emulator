@@ -87,24 +87,22 @@ TEST_CASE("real host: a project whose build fails is reported as FailedToStart w
     CHECK(f.host().scene().gameName.contains("2026"));
     CHECK(f.host().scene().field != nullptr);   // the field the plugin builds, for the viewport
 
-    f.controller.startDiscovery();
+    f.controller.launchRobot();
     REQUIRE(f.waitProcess(HostProcessState::FailedToStart));
     const HostStatus s = f.host().status();
-    CHECK(s.mode == RuntimeMode::Discovery);
     CHECK(s.exitCode == 3);
     CHECK(s.detail.contains("BUILD FAILED"));
     CHECK(!s.active());
     CHECK(f.controller.runtimeLabel() == QStringLiteral("Robot failed to start"));
     CHECK(f.logged("fake gradle: BUILD FAILED"));
     // the user can try again after fixing the project
-    f.controller.startRobot();
-    REQUIRE(waitFor([&] { return f.host().status().mode == RuntimeMode::Run; }));
+    f.controller.rescanDevices();
     REQUIRE(f.waitProcess(HostProcessState::FailedToStart));
 }
 
 TEST_CASE("real host: Stop ends a starting robot and the process tree, restart starts a fresh run") {
     RealFixture f(kWaitScript);
-    f.host().start(RuntimeMode::Discovery);
+    f.host().launch();
     CHECK(f.host().status().process == HostProcessState::Starting);
     CHECK(f.host().status().active());
     CHECK(f.controller.runtimeLabel() == QStringLiteral("Starting robot…"));
@@ -117,9 +115,10 @@ TEST_CASE("real host: Stop ends a starting robot and the process tree, restart s
     CHECK(spy.count() >= 1);
     CHECK(f.logged("fake gradle started"));
 
-    f.host().start(RuntimeMode::Run);   // after a stop a new run starts cleanly
+    f.host().launch();   // after a stop a new run starts cleanly
     CHECK(f.host().status().process == HostProcessState::Starting);
-    CHECK(f.host().status().mode == RuntimeMode::Run);
+    f.host().launch();   // launching twice keeps the one instance
+    CHECK(f.host().status().process == HostProcessState::Starting);
     f.host().restart();
     CHECK(f.host().status().process == HostProcessState::Starting);
     f.host().stop();
@@ -130,7 +129,7 @@ TEST_CASE("real host: the window shows a failed start and closing the project st
     RealFixture f(kWaitScript);
     MainWindow window(*f.env.services, f.controller, f.env.ui, createShellPages(*f.env.services, f.env.ui, &f.controller));
     window.show();
-    f.controller.startDiscovery();
+    f.controller.launchRobot();
     CHECK(f.host().status().active());
     f.controller.closeProject();
     REQUIRE(waitFor([&] { return !f.host().status().active(); }));
@@ -184,7 +183,7 @@ TEST_CASE("real host e2e (opt-in): the shell discovers the devices of a real rob
         if (const auto snap = host.latestSnapshot()) discovered = static_cast<int>(snap->devices().size());
     });
 
-    controller.startDiscovery();
+    controller.launchRobot();
     REQUIRE_MESSAGE(waitFor([&] { return discovered >= 25 || !host.status().active(); }, 240000), host.status().detail.toStdString());
     CHECK(discovered >= 25);
     CHECK(host.status().process == HostProcessState::Running);
@@ -197,7 +196,7 @@ TEST_CASE("real host e2e (opt-in): the shell discovers the devices of a real rob
     ds.enabled = true;
     ds.mode = sdk::proto::RobotMode::Teleop;
     host.setDriverStation(ds);
-    controller.startRobot();
+    controller.startSimulation();
     std::shared_ptr<const sdk::ISimSnapshot> snap;
     REQUIRE_MESSAGE(waitFor(
                         [&] {

@@ -148,7 +148,7 @@ struct HelloAck {
     ClockMode clockMode = ClockMode::Lockstep;
     std::uint32_t stepUs = 5000;         // must divide the robot period (20 ms) evenly
     std::uint64_t sessionId = 0;
-    bool discoveryOnly = false;          // "Detect devices" run: announce only, no physics
+    bool discoveryOnly = false;          // armed start: announce only, no physics, until BeginLockstep (SDK 1.3)
     bool enableL3Hooks = false;          // opt-in CTRE hooks (ADR 0002 L3)
     // ---- v2 (absent in a v1 HelloAck => these defaults) ----
     std::uint64_t runEpoch = kFirstRunEpoch;  // epoch in force for this connection (monotonic across reconnects)
@@ -251,6 +251,13 @@ enum class SimCommand : std::uint8_t {
     Reset = 3,      // reset physics/game state; robot keeps running (bumps runEpoch, MUST be acked)
     Stop = 4,       // end the session (extension resumes timing and exits cleanly; MUST be acked)
     SetTimeScale = 5,
+    // SDK 1.3: one long-lived robot process. A session whose HelloAck said `discoveryOnly` is ARMED: devices are
+    // announced and HAL time runs free. BeginLockstep switches it to lock-step; EndLockstep returns it to armed.
+    // Both follow the Reset rules (first message of a NEW epoch, MUST carry a commandId and be acked); the
+    // extension answers ControlResult::Rejected when the transition is impossible (already there, program not
+    // started, real-time clock preference) and ::Unsupported when it predates SDK 1.3.
+    BeginLockstep = 6,
+    EndLockstep = 7,
 };
 
 // Receiver rules (v2):

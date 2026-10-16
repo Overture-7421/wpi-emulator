@@ -161,7 +161,7 @@ public:
         std::string detail;
         if (c.command == SimCommand::Stop) {
             d.apply = true;  // honoured whatever the epoch
-        } else if (c.command == SimCommand::Reset) {
+        } else if (c.command == SimCommand::Reset || c.command == SimCommand::BeginLockstep || c.command == SimCommand::EndLockstep) {
             if (disp == FrameDisposition::NewerEpoch || c.runEpoch == kUnspecified || epoch_ == kUnspecified) {
                 if (c.runEpoch != kUnspecified) epoch_ = c.runEpoch;
                 haveTick_ = false;
@@ -169,7 +169,7 @@ public:
                 d.apply = true;
             } else {
                 result = ControlResult::StaleEpoch;
-                detail = "Reset must carry a newer runEpoch";
+                detail = "Reset, BeginLockstep and EndLockstep must carry a newer runEpoch";
             }
         } else if (disp == FrameDisposition::DropStaleEpoch) {
             result = ControlResult::StaleEpoch;

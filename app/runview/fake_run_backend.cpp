@@ -213,11 +213,18 @@ void FakeRunBackend::resetWorld() {
 }
 
 void FakeRunBackend::setStatus(RobotProcessState process, LinkState link, int exitCode, const QString& detail) {
-    const RunStatus next{process, link, exitCode, detail};
+    const bool live = process == RobotProcessState::Running && link == LinkState::Connected;
+    if (!live) {
+        programStarted_ = false;
+        simulating_ = false;
+    }
+    const RunStatus next{process, link, exitCode, detail, programStarted_, simulating_};
     if (next == status_) return;
     status_ = next;
     emit statusChanged();
 }
+
+void FakeRunBackend::refreshFlags() { setStatus(status_.process, status_.link, status_.exitCode, status_.detail); }
 
 void FakeRunBackend::beginTransition(int delayMs, std::function<void()> fn) {
     if (delayMs <= 0) {
@@ -234,13 +241,7 @@ void FakeRunBackend::emitLog(sdk::LogLevel level, LogStream stream, const QStrin
     emit logEntry({QDateTime::currentMSecsSinceEpoch(), level, stream, source, text});
 }
 
-void FakeRunBackend::setRealDsState(RealDsState state) {
-    if (state == realDs_) return;
-    realDs_ = state;
-    emit realDsStateChanged();
-}
-
-void FakeRunBackend::startRobot() {
+void FakeRunBackend::launchRobot() {
     if (status_.process == RobotProcessState::Starting || status_.process == RobotProcessState::Running) return;
     ++startCount_;
     ++transitionGeneration_;
@@ -255,32 +256,51 @@ void FakeRunBackend::startRobot() {
         beginTransition(options_.startupDelayMs, [this] {
             resetWorld();
             setStatus(RobotProcessState::Running, LinkState::Connected);
+            programStarted_ = true;
+            refreshFlags();
             emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("extension"), QStringLiteral("Extension connected (protocol v2)"));
             publish();
+            beginIfReady();
         });
     });
 }
 
-void FakeRunBackend::stopRobot() {
-    if (status_.process != RobotProcessState::Starting && status_.process != RobotProcessState::Running) return;
+void FakeRunBackend::startSimulation() {
+    beginWhenReady_ = true;
+    if (status_.process != RobotProcessState::Starting && status_.process != RobotProcessState::Running) launchRobot();
+    beginIfReady();
+}
+
+void FakeRunBackend::beginIfReady() {
+    if (!beginWhenReady_ || !programStarted_) return;
+    beginWhenReady_ = false;
+    if (simulating_) return;
+    resetWorld();
+    timeAccum_ = 0.0;
+    simulating_ = true;
+    refreshFlags();
+    emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Simulation started (lock-step, t = 0)"));
+    publish();
+}
+
+void FakeRunBackend::stopSimulation() {
+    beginWhenReady_ = false;
+    if (!simulating_) return;
     ++stopCount_;
-    ++transitionGeneration_;
-    setStatus(RobotProcessState::Stopping, LinkState::Disconnected);
-    emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Stopping robot…"));
-    beginTransition(options_.startupDelayMs / 2, [this] {
-        slot_.publish(nullptr);
-        setStatus(RobotProcessState::Exited, LinkState::Disconnected, 0);
-    });
+    simulating_ = false;
+    refreshFlags();
+    emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Simulation stopped; the robot keeps running"));
 }
 
 void FakeRunBackend::restartRobot() {
     ++transitionGeneration_;
+    const bool resume = simulating_ || beginWhenReady_;
     if (status_.process == RobotProcessState::Starting || status_.process == RobotProcessState::Running) {
-        ++stopCount_;
         slot_.publish(nullptr);
         setStatus(RobotProcessState::Exited, LinkState::Disconnected, 0);
     }
-    startRobot();
+    launchRobot();
+    beginWhenReady_ = resume;
 }
 
 void FakeRunBackend::resetSimulation() {
@@ -341,11 +361,14 @@ void FakeRunBackend::setLinkSettled() {
     ++transitionGeneration_;
     resetWorld();
     setStatus(RobotProcessState::Running, LinkState::Connected);
+    programStarted_ = true;
+    simulating_ = true;
+    refreshFlags();
     publish();
 }
 
 void FakeRunBackend::onTimer() {
-    if (status_.process != RobotProcessState::Running || status_.link != LinkState::Connected) return;
+    if (!simulating_ || status_.process != RobotProcessState::Running || status_.link != LinkState::Connected) return;
     int steps = 0;
     if (paused_) {
         steps = pendingSteps_;
@@ -361,7 +384,7 @@ void FakeRunBackend::onTimer() {
 }
 
 void FakeRunBackend::tickOnce() {
-    if (status_.process != RobotProcessState::Running || status_.link != LinkState::Connected) return;
+    if (!simulating_ || status_.process != RobotProcessState::Running || status_.link != LinkState::Connected) return;
     stepWorld();
     publish();
 }

@@ -141,7 +141,7 @@ TEST_CASE("an invalid model refuses a run but not device discovery") {
     REQUIRE_FALSE(run.ok());
     CHECK(run.error().message.find("errors") != std::string::npos);
 
-    auto discovery = RobotSession::start(reg.view(), c, p.options(Mode::Discovery));
+    auto discovery = RobotSession::start(reg.view(), c, p.options(Mode::Armed));
     REQUIRE_MESSAGE(discovery.ok(), (discovery.ok() ? "" : discovery.error().message));   // falls back to the bare model
     discovery.value()->requestStop();
     discovery.value()->waitUntilFinished();

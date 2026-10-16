@@ -20,7 +20,7 @@ namespace wpiemu::app {
 
 class WizardDialog;
 
-// The application window: menus, toolbar, mode switch, status bar and the stacked pages
+// The application window: menus, mode switch and the stacked pages
 // (welcome / editor / run). Behaviour lives in ShellController; this class only wires widgets.
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -36,8 +36,13 @@ public:
     // Replaceable dialogs: the defaults are the real modal dialogs; tests inject non-blocking ones.
     using WizardRunner = std::function<int(WizardDialog&)>;
     using FolderPicker = std::function<QString()>;
+    using MessageRunner = std::function<void(const QString&)>;
     void setWizardRunner(WizardRunner runner) { wizardRunner_ = std::move(runner); }
     void setFolderPicker(FolderPicker picker) { folderPicker_ = std::move(picker); }
+    void setMessageRunner(MessageRunner runner) { messageRunner_ = std::move(runner); }
+
+    // Tells the user something once, in a modal dialog.
+    void showMessage(const QString& text);
 
     // Introspection used by tests.
     enum class PageId { Welcome = 0, Editor = 1, Run = 2 };
@@ -47,13 +52,9 @@ public:
     QAction* openAction() const { return openAction_; }
     QAction* setupAction() const { return setupAction_; }
     QAction* saveAction() const { return saveAction_; }
+    QAction* settingsAction() const { return settingsAction_; }
     QAction* closeAction() const { return closeAction_; }
-    QAction* detectAction() const { return detectAction_; }
-    QAction* startStopAction() const { return startStopAction_; }
     QMenu* recentMenu() const { return recentMenu_; }
-    QLabel* projectChip() const { return projectChip_; }
-    QLabel* gameChip() const { return gameChip_; }
-    QLabel* runtimeLabel() const { return runtimeLabel_; }
     QString lastMessage() const { return lastMessage_; }
 
 protected:
@@ -63,15 +64,13 @@ protected:
 
 private:
     void buildActions();
+    void centerModeSwitcher();
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void buildMenus();
-    void buildToolbar();
-    void buildStatusBar();
     void refresh();
     void refreshIcons();
     void rebuildRecentMenu();
     void browseForProject();
-    void toggleRobot();
-    void showMessage(const QString& text);
 
     AppServices& services_;
     ShellController& controller_;
@@ -79,6 +78,7 @@ private:
     ShellPages pages_;
     WizardRunner wizardRunner_;
     FolderPicker folderPicker_;
+    MessageRunner messageRunner_;
     bool busyOpening_ = false;
     QString lastMessage_;
 
@@ -94,17 +94,10 @@ private:
     QAction* quitAction_ = nullptr;
     QAction* editorAction_ = nullptr;
     QAction* runAction_ = nullptr;
-    QAction* detectAction_ = nullptr;
-    QAction* startStopAction_ = nullptr;
     QAction* aboutAction_ = nullptr;
     QAction* aboutQtAction_ = nullptr;
     QMenu* recentMenu_ = nullptr;
-    QToolBar* toolbar_ = nullptr;
 
-    QLabel* projectChip_ = nullptr;
-    QLabel* gameChip_ = nullptr;
-    QLabel* runtimeLabel_ = nullptr;
-    QLabel* demoChip_ = nullptr;
 };
 
 }  // namespace wpiemu::app

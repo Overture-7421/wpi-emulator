@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QAction>
+#include <QList>
 #include <QWidget>
 
 #include <functional>
@@ -17,6 +19,7 @@ struct ShellPages {
     bool editorIsReal = false;
     bool runIsReal = false;
     std::function<void()> saveEditor;   // File > Save
+    QList<QAction*> runViewActions;     // View menu entries owned by the run page (overlays, console)
 };
 
 // Creates the pages with their backend adapters; the adapters are children of `backendParent`.

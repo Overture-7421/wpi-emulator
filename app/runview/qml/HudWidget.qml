@@ -22,6 +22,8 @@ Rectangle {
     border.color: theme.panelBorder
     border.width: 1
     opacity: valid ? 1.0 : 0.65
+    // Values the game does not publish right now (e.g. match timing outside Practice) hide the widget.
+    visible: valid
 
     Column {
         id: content

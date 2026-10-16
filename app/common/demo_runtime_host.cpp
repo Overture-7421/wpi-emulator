@@ -100,23 +100,44 @@ void DemoRuntimeHost::log(sdk::LogLevel level, const QString& source, const QStr
     emit logLine(line);
 }
 
-void DemoRuntimeHost::start(RuntimeMode mode) {
-    if (status_.active()) {
-        if (status_.mode == mode) return;
-        stop();   // a run in the other mode is replaced
-    }
+void DemoRuntimeHost::launch() {
+    if (status_.active()) return;
     if (!scene_.config) {
         setStatus(HostProcessState::FailedToStart, HostLinkState::Disconnected, tr("No robot configuration loaded."));
         return;
     }
-    status_.mode = mode;
     status_.exitCode = 0;
+    status_.programStarted = false;
+    status_.simulating = false;
     startupStage_ = 0;
     announced_.clear();
     setStatus(HostProcessState::Starting, HostLinkState::Disconnected);
-    log(sdk::LogLevel::Info, QStringLiteral("demo"),
-        mode == RuntimeMode::Discovery ? tr("Demo: launching robot in discovery mode") : tr("Demo: launching robot"));
+    log(sdk::LogLevel::Info, QStringLiteral("demo"), tr("Demo: launching robot"));
     startupTimer_.start(startupMs_);
+}
+
+void DemoRuntimeHost::startSimulation() {
+    beginWhenReady_ = true;
+    if (!status_.active()) launch();
+    beginIfReady();
+}
+
+void DemoRuntimeHost::beginIfReady() {
+    if (!beginWhenReady_ || !status_.programStarted) return;
+    beginWhenReady_ = false;
+    resetSimulation();
+    status_.simulating = true;
+    setStatus(status_.process, status_.link, status_.detail);
+    emit statusChanged();
+    publish();
+}
+
+void DemoRuntimeHost::stopSimulation() {
+    beginWhenReady_ = false;
+    if (!status_.simulating) return;
+    status_.simulating = false;
+    emit statusChanged();
+    publish();
 }
 
 void DemoRuntimeHost::advanceStartup() {
@@ -126,19 +147,18 @@ void DemoRuntimeHost::advanceStartup() {
             startupTimer_.start(startupMs_);
             break;
         case 1:
+            status_.programStarted = true;
             setStatus(HostProcessState::Running, HostLinkState::Connected);
             log(sdk::LogLevel::Info, QStringLiteral("extension"), tr("Demo: HALSim extension connected"));
             simTimer_.start();
-            if (status_.mode == RuntimeMode::Discovery) {
-                startupTimer_.start(announceMs_);
-            }
+            startupTimer_.start(announceMs_);
+            beginIfReady();
             break;
         default: announceNextDevice(); break;
     }
 }
 
 void DemoRuntimeHost::announceNextDevice() {
-    if (status_.mode != RuntimeMode::Discovery) return;
     if (announced_.size() >= plannedDevices_.size()) {
         log(sdk::LogLevel::Info, QStringLiteral("discovery"), tr("Demo: %1 devices announced").arg(announced_.size()));
         return;
@@ -157,19 +177,23 @@ void DemoRuntimeHost::announceNextDevice() {
 }
 
 void DemoRuntimeHost::stop() {
+    beginWhenReady_ = false;
     if (!status_.active()) return;
     startupTimer_.stop();
     simTimer_.stop();
+    status_.simulating = false;
+    status_.programStarted = false;
     setStatus(HostProcessState::Exited, HostLinkState::Disconnected);
     log(sdk::LogLevel::Info, QStringLiteral("demo"), tr("Demo: robot stopped"));
     publish();
 }
 
 void DemoRuntimeHost::restart() {
-    const RuntimeMode mode = status_.mode;
+    const bool resume = status_.simulating || beginWhenReady_;
     stop();
     resetSimulation();
-    start(mode);
+    launch();
+    beginWhenReady_ = resume;
 }
 
 void DemoRuntimeHost::resetSimulation() {
@@ -199,7 +223,7 @@ void DemoRuntimeHost::setDriverStation(const sdk::proto::DsState& state) {
 }
 
 void DemoRuntimeHost::tickSimulation() {
-    if (paused_ || status_.mode != RuntimeMode::Run) return;
+    if (paused_ || !status_.simulating) return;
     integrate(kSimIntervalMs / 1000.0 * timeScale_);
     publish();
 }

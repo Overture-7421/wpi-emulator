@@ -17,24 +17,26 @@
 
 namespace wpiemu::app {
 
-// Run the robot to look at it (Run) or only to find out which devices its code declares (Discovery).
-enum class RuntimeMode { Run, Discovery };
-
 enum class HostProcessState { Idle, Starting, Running, Stopping, Exited, Crashed, FailedToStart };
 enum class HostLinkState { Disconnected, Connecting, Connected, HandshakeTimeout, ProtocolMismatch, Stalled };
 enum class HostLogStream { Stdout, Stderr, Emulator };
 
 struct HostStatus {
-    RuntimeMode mode = RuntimeMode::Run;
     HostProcessState process = HostProcessState::Idle;
     HostLinkState link = HostLinkState::Disconnected;
     int exitCode = 0;
     QString detail;
+    // The robot program finished its constructor: devices are announced and the simulation may start.
+    bool programStarted = false;
+    // The lock-step simulation is running (as opposed to the robot merely being alive and detecting devices).
+    bool simulating = false;
 
     bool active() const {
         return process == HostProcessState::Starting || process == HostProcessState::Running ||
                process == HostProcessState::Stopping;
     }
+    // Robot alive and connected, simulation idle: the state in which devices are detected.
+    bool armed() const { return process == HostProcessState::Running && link != HostLinkState::Disconnected && !simulating; }
     bool operator==(const HostStatus&) const = default;
 };
 
@@ -75,8 +77,14 @@ public:
                             const sdk::IGameModule* game) = 0;
 
 public slots:
-    // start(): when a run in the other mode is active it is stopped first; the same mode is a no-op.
-    virtual void start(wpiemu::app::RuntimeMode mode) = 0;
+    // launch(): starts the robot code once (idempotent while one is alive). The single instance detects devices
+    // while idle ("armed") and is the one the simulation runs on.
+    virtual void launch() = 0;
+    // startSimulation() begins lock-step from t = 0 on the live robot (launching it first when needed);
+    // stopSimulation() returns to idle and the robot stays alive.
+    virtual void startSimulation() = 0;
+    virtual void stopSimulation() = 0;
+    // stop(): ends the robot process. restart(): relaunches it (robot init runs again).
     virtual void stop() = 0;
     virtual void restart() = 0;
     virtual void resetSimulation() = 0;

@@ -46,10 +46,13 @@ private:
 
 struct MatchSettings {
     double autoSeconds = 20.0;
-    double gapSeconds = 3.0;       // robot disabled between auto and teleop
+    double gapSeconds = 3.0;       // robot disabled between auto and teleop (Practice)
     double teleopSeconds = 140.0;  // 2:20
-    bool sequence = true;          // auto -> teleop, otherwise only the selected mode
 };
+
+// What the user picks on the DS. Auto / Teleop / Test map to the wire RobotMode; Practice is a DS-only
+// concept: Enable runs autonomous, a disabled gap, then teleop on the match clock.
+enum class DsMode { Auto, Teleop, Practice, Test };
 
 bool equalDsState(const sdk::proto::DsState& a, const sdk::proto::DsState& b);
 
@@ -62,7 +65,10 @@ public:
 
     bool enabled() const { return enabled_; }
     bool eStopped() const { return eStopped_; }
-    sdk::proto::RobotMode mode() const { return mode_; }
+    // The mode the robot sees right now (follows the segments of a running Practice match).
+    sdk::proto::RobotMode mode() const;
+    DsMode dsMode() const;
+    bool practice() const { return practice_; }
     Alliance alliance() const { return alliance_; }
     int station() const { return station_; }
     const QString& gameMessage() const { return gameMessage_; }
@@ -77,12 +83,14 @@ public:
     // The robot-visible state without joysticks. matchTimeS is -1 outside a timed match.
     sdk::proto::DsState state() const;
 
-    // Enabling needs an available robot and no latched e-stop. Disabling also ends a running match.
+    // Enabling needs an available robot and no latched e-stop; in Practice it starts the match sequence.
+    // Disabling also ends a running match.
     void setEnabled(bool enabled);
     void disable() { setEnabled(false); }
     void eStop();
     void clearEStop();
-    void setMode(sdk::proto::RobotMode mode);
+    void setMode(sdk::proto::RobotMode mode);   // selects Auto / Teleop / Test (leaves Practice)
+    void setDsMode(DsMode mode);
     void setAlliance(Alliance alliance);
     void setStation(int station);   // 1..3
     void setGameMessage(const QString& message);
@@ -114,6 +122,7 @@ private:
     bool eStopped_ = false;
     bool robotAvailable_ = false;
     sdk::proto::RobotMode mode_ = sdk::proto::RobotMode::Teleop;
+    bool practice_ = false;
     Alliance alliance_ = Alliance::Red;
     int station_ = 1;
     QString gameMessage_;

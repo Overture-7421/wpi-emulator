@@ -287,7 +287,11 @@ TEST_CASE("driver station: auto -> teleop sequencing follows sim time and respec
     m.teleopSeconds = 3.0;
     ds.setMatchSettings(m);
 
-    CHECK(ds.startMatch());
+    ds.setDsMode(DsMode::Practice);
+    CHECK(ds.dsMode() == DsMode::Practice);
+    CHECK_FALSE(ds.enabled());
+    ds.setEnabled(true);   // Enable starts the practice sequence
+    CHECK(ds.matchActive());
     CHECK(ds.enabled());
     CHECK(ds.mode() == sdk::proto::RobotMode::Autonomous);
     CHECK(ds.state().matchTimeS == doctest::Approx(2.0));
@@ -308,12 +312,16 @@ TEST_CASE("driver station: auto -> teleop sequencing follows sim time and respec
     CHECK_FALSE(ds.matchActive());
     CHECK(ds.state().matchTimeS == doctest::Approx(-1.0));
 
+    CHECK(ds.dsMode() == DsMode::Practice);
+    CHECK(ds.mode() == sdk::proto::RobotMode::Autonomous);   // ready for the next run
+
     // A manual disable ends the match.
-    CHECK(ds.startMatch());
+    ds.setEnabled(true);
+    CHECK(ds.matchActive());
     ds.disable();
     CHECK_FALSE(ds.matchActive());
     // A sim reset ends it too, and a jump backwards in sim time never advances the clock.
-    CHECK(ds.startMatch());
+    ds.setEnabled(true);
     ds.onSimReset();
     CHECK_FALSE(ds.matchActive());
     CHECK_FALSE(ds.enabled());
@@ -323,14 +331,18 @@ TEST_CASE("driver station: single-period match and test mode") {
     DriverStationModel ds;
     ds.setRobotAvailable(true);
     MatchSettings m;
-    m.sequence = false;
     m.autoSeconds = 1.0;
     ds.setMatchSettings(m);
-    ds.setMode(sdk::proto::RobotMode::Autonomous);
+    ds.setDsMode(DsMode::Auto);
+    CHECK(ds.dsMode() == DsMode::Auto);
     CHECK(ds.startMatch());
-    CHECK(ds.state().matchTimeS == doctest::Approx(1.0));
+    CHECK(ds.enabled());
+    CHECK_FALSE(ds.matchActive());   // only Practice has a match clock
+    CHECK(ds.state().matchTimeS == doctest::Approx(-1.0));
     ds.onSimTime(0);
     ds.onSimTime(1'100'000);
+    CHECK(ds.enabled());   // runs until Disable
+    ds.disable();
     CHECK_FALSE(ds.enabled());
 
     ds.setMode(sdk::proto::RobotMode::Test);
@@ -370,7 +382,7 @@ TEST_CASE("driver station settings persist alliance, station, message and match 
         ds.setGameMessage(QStringLiteral("ABC"));
         MatchSettings m = ds.matchSettings();
         m.autoSeconds = 15;
-        m.sequence = false;
+        m.gapSeconds = 5;
         ds.setMatchSettings(m);
     }
     QSettings s = ts.make();
@@ -379,5 +391,5 @@ TEST_CASE("driver station settings persist alliance, station, message and match 
     CHECK(again.station() == 2);
     CHECK(again.gameMessage() == QStringLiteral("ABC"));
     CHECK(again.matchSettings().autoSeconds == doctest::Approx(15.0));
-    CHECK_FALSE(again.matchSettings().sequence);
+    CHECK(again.matchSettings().gapSeconds == doctest::Approx(5.0));
 }

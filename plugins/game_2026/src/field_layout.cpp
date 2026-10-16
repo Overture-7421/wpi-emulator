@@ -197,7 +197,7 @@ void addBumpVisuals(sdk::FieldDescription& desc, const BumpSpec& b) {
         sdk::FieldVisual v;
         v.name = b.name + (side < 0 ? "_ramp_a" : "_ramp_b");
         v.kind = sdk::FieldVisual::Kind::Box;
-        v.pose = {{b.center.x + side * a / 2, b.center.y, midZ}, Quat::fromAxisAngle({0.f, 1.f, 0.f}, -side * kRampAngleRad)};
+        v.pose = {{b.center.x + side * a / 2, b.center.y, midZ},         Quat::fromAxisAngle({0.f, 1.f, 0.f}, side * kRampAngleRad)};
         v.sizeM = {slabLen, b.widthM, thickness};
         v.color = b.color;
         desc.visuals.push_back(std::move(v));
@@ -362,7 +362,7 @@ sdk::Result<std::unique_ptr<Game2026Field>> Game2026Field::create(sdk::IPhysicsW
         base.category = sdk::layer::Field;
         if (!add(base)) return fail(b.name);
         for (const float side : {-1.f, 1.f}) {
-            const Quat q = Quat::fromAxisAngle({0.f, 1.f, 0.f}, -side * kRampAngleRad);
+            const Quat q = Quat::fromAxisAngle({0.f, 1.f, 0.f}, side * kRampAngleRad);
             const Vec3 surface{b.center.x + side * a / 2, b.center.y, (b.edgeHeightM + b.ridgeHeightM) * 0.5f};
             sdk::ShapeDesc slab;
             slab.geometry = sdk::BoxShape{{slabLen * 0.5f, b.widthM * 0.5f, thickness * 0.5f}};

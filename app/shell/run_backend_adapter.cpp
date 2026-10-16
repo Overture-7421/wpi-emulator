@@ -54,6 +54,8 @@ runview::RunStatus RunBackendAdapter::status() const {
     out.link = mapLink(s.link);
     out.exitCode = s.exitCode;
     out.detail = s.detail;
+    out.programStarted = s.programStarted;
+    out.simulating = s.simulating;
     return out;
 }
 
@@ -68,7 +70,9 @@ runview::RunSceneInfo RunBackendAdapter::sceneInfo() const {
     return out;
 }
 
-void RunBackendAdapter::startRobot() {
+void RunBackendAdapter::launchRobot() { services_.runtime().launch(); }
+
+void RunBackendAdapter::startSimulation() {
     if (!dsSent_) {
         // Until the DS panel says otherwise the emulated DS sits at the station chosen in the wizard.
         const ProjectPrefs& prefs = services_.session().prefs();
@@ -77,10 +81,10 @@ void RunBackendAdapter::startRobot() {
         ds.station = static_cast<sdk::proto::AllianceStation>(offset + prefs.station - 1);
         services_.runtime().setDriverStation(ds);
     }
-    services_.runtime().start(RuntimeMode::Run);
+    services_.runtime().startSimulation();
 }
 
-void RunBackendAdapter::stopRobot() { services_.runtime().stop(); }
+void RunBackendAdapter::stopSimulation() { services_.runtime().stopSimulation(); }
 void RunBackendAdapter::restartRobot() { services_.runtime().restart(); }
 void RunBackendAdapter::resetSimulation() { services_.runtime().resetSimulation(); }
 void RunBackendAdapter::setPaused(bool paused) { services_.runtime().setPaused(paused); }

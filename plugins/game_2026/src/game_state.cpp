@@ -28,6 +28,32 @@ sdk::Vec3 perturbDirection(const sdk::Vec3& dir, double yawJitter, double pitchJ
     return sdk::normalized(dir + right * static_cast<float>(std::tan(yawJitter)) + up * static_cast<float>(std::tan(pitchJitter)));
 }
 
+// Seconds the hub stays active from now: the rest of the current phase plus every directly following phase in which
+// it is still active (a hub that scores in AUTO also does through TRANSITION).
+double activeRemainingS(Alliance a, const MatchStatus& st, Alliance firstInactive, bool enforceShifts) {
+    if (!enforceShifts || st.phase == MatchPhase::Auto) return st.periodRemainingS;
+    static constexpr MatchPhase kOrder[] = {MatchPhase::Transition, MatchPhase::Shift1, MatchPhase::Shift2,
+                                            MatchPhase::Shift3,     MatchPhase::Shift4, MatchPhase::EndGame};
+    static constexpr double kLen[] = {kTransitionDurationS, kShiftDurationS, kShiftDurationS,
+                                      kShiftDurationS,      kShiftDurationS, kEndGameDurationS};
+    double total = st.phaseRemainingS;
+    bool seen = false;
+    for (std::size_t i = 0; i < 6; ++i) {
+        if (!seen) { seen = kOrder[i] == st.phase; continue; }
+        if (!hubActiveInPhase(a, kOrder[i], firstInactive)) break;
+        total += kLen[i];
+    }
+    return total;
+}
+
+std::string hubStatusText(bool active, double remainingS) {
+    if (!active) return "Inactive";
+    const int s = std::max(0, static_cast<int>(std::ceil(remainingS)));
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "Active %d:%02d", s / 60, s % 60);
+    return buf;
+}
+
 }  // namespace
 
 Game2026State::Game2026State(sdk::SimContext& ctx, GameConfig config, FieldLayout layout)
@@ -44,6 +70,7 @@ void Game2026State::reset(sdk::SimContext&) {
     clock_.reset();
     status_ = MatchStatus{};
     hub_.reset();
+    matchTimed_ = false;
     meter_ = std::min(config_.preloadFuel, config_.capacity);
     shots_ = 0;
     lost_ = 0;
@@ -60,7 +87,21 @@ sdk::Pose3 Game2026State::chassisPose(sdk::SimContext& ctx) const {
 void Game2026State::step(sdk::SimContext& ctx, double dt) {
     const sdk::proto::DsState& ds = ctx.driverStation();
     ownAlliance_ = allianceOf(ds.station);
-    status_ = clock_.update(ds, dt);
+    // A DS match time (Practice) means a timed match: phases, shifts and scores apply. Without one the robot is in
+    // free play: when enabled it behaves like test mode (both hubs scoring, no phases) and the match HUD is hidden.
+    const bool timed = ds.matchTimeS >= 0.0;
+    if (timed && !matchTimed_) {
+        clock_.reset();
+        hub_.reset();
+    }
+    matchTimed_ = timed;
+    if (timed || ds.mode == sdk::proto::RobotMode::Test || !ds.enabled || ds.eStop) {
+        status_ = clock_.update(ds, dt);
+    } else {
+        sdk::proto::DsState freePlay = ds;
+        freePlay.mode = sdk::proto::RobotMode::Test;
+        status_ = clock_.update(freePlay, dt);
+    }
     hub_.update(status_, ds, dt, ctx.rng());
     pool_.updateGhosts(ctx.clock().simTimeUs());
 
@@ -258,16 +299,23 @@ void Game2026State::publish(sdk::SnapshotBuilder& out) const {
     out.setHud(hud::kFuelCapacity, config_.capacity);
     out.setHud(hud::kFuelOnField, static_cast<int>(fuelPositions_.size()));
     out.setHud(hud::kShots, shots_);
-    out.setHud(hud::kScoreRed, hub_.score(Alliance::Red).points());
-    out.setHud(hud::kScoreBlue, hub_.score(Alliance::Blue).points());
-    out.setHud(hud::kHubRedActive, hub_.active(Alliance::Red));
-    out.setHud(hud::kHubBlueActive, hub_.active(Alliance::Blue));
-    out.setHud(hud::kHubOwnActive, hub_.active(ownAlliance_));
-    out.setHud(hud::kFirstInactive,
-               hub_.firstInactiveKnown() ? std::string(allianceName(hub_.firstInactive())) : std::string("unknown"));
-    out.setHud(hud::kMatchPhase, std::string(phaseName(status_.phase)));
-    out.setHud(hud::kMatchTime, status_.periodRemainingS);
-    out.setHud(hud::kPhaseTime, status_.phaseRemainingS);
+    if (matchTimed_) {
+        out.setHud(hud::kScoreRed, hub_.score(Alliance::Red).points());
+        out.setHud(hud::kScoreBlue, hub_.score(Alliance::Blue).points());
+        out.setHud(hud::kHubRedActive, hub_.active(Alliance::Red));
+        out.setHud(hud::kHubBlueActive, hub_.active(Alliance::Blue));
+        out.setHud(hud::kHubOwnActive, hub_.active(ownAlliance_));
+        const Alliance fi = hub_.firstInactive();
+        out.setHud(hud::kHubRedStatus, hubStatusText(hub_.active(Alliance::Red),
+                                                     activeRemainingS(Alliance::Red, status_, fi, config_.enforceHubShifts)));
+        out.setHud(hud::kHubBlueStatus, hubStatusText(hub_.active(Alliance::Blue),
+                                                      activeRemainingS(Alliance::Blue, status_, fi, config_.enforceHubShifts)));
+        out.setHud(hud::kFirstInactive,
+                   hub_.firstInactiveKnown() ? std::string(allianceName(hub_.firstInactive())) : std::string("unknown"));
+        out.setHud(hud::kMatchPhase, std::string(phaseName(status_.phase)));
+        out.setHud(hud::kMatchTime, status_.periodRemainingS);
+        out.setHud(hud::kPhaseTime, status_.phaseRemainingS);
+    }
     out.setHud(hud::kOutpostRed, outposts_[index(Alliance::Red)].stock);
     out.setHud(hud::kOutpostBlue, outposts_[index(Alliance::Blue)].stock);
 }

@@ -27,8 +27,8 @@ Item {
                 position: scene.cameraPosition
                 rotation: scene.cameraRotation
                 fieldOfView: scene.cameraFov
-                clipNear: 0.05
-                clipFar: 500
+                clipNear: 0.1
+                clipFar: 300
             }
 
             DirectionalLight {
@@ -44,9 +44,9 @@ Item {
             // Ground far beyond the field.
             Model {
                 source: "#Rectangle"
-                position: Qt.vector3d(scene.fieldCenter.x, scene.fieldCenter.y, -0.06)
+                position: Qt.vector3d(scene.fieldCenter.x, scene.fieldCenter.y, -0.1)
                 scale: Qt.vector3d(1.2, 1.2, 1)
-                materials: PrincipledMaterial { baseColor: theme.ground; roughness: 1.0; metalness: 0.0 }
+                materials: PrincipledMaterial { baseColor: theme.ground; roughness: 1.0; metalness: 0.0; cullMode: Material.NoCulling }
             }
 
             Repeater3D {
@@ -120,7 +120,7 @@ Item {
         HudStack { anchorIndex: 2; hAlign: 2; anchors.right: parent.right; anchors.top: parent.top }
         HudStack { anchorIndex: 3; hAlign: 0; anchors.left: parent.left; anchors.bottom: parent.bottom }
         HudStack { anchorIndex: 4; hAlign: 1; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom }
-        HudStack { anchorIndex: 5; hAlign: 2; anchors.right: parent.right; anchors.bottom: parent.bottom }
+        HudStack { anchorIndex: 5; hAlign: 2; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.bottomMargin: 54 }
         HudStack { anchorIndex: 6; hAlign: 1; anchors.centerIn: parent }
     }
 

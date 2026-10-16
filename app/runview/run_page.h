@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QList>
 #include <QSettings>
 #include <QWidget>
 
@@ -19,7 +20,6 @@
 #include "status_chip.h"
 
 class QAction;
-class QActionGroup;
 class QComboBox;
 class QLabel;
 class QMenu;
@@ -35,7 +35,7 @@ struct RunPageOptions {
     bool useDefaultGamepadBackend = true;        // create the build's gamepad backend (SDL2) when `gamepads` is null
 };
 
-// The run-time view: toolbar, live 3D scene with game HUD, status strip, console and the built-in
+// The run-time view: live 3D scene with game HUD, console and the built-in
 // Driver Station. All logic lives in view models; the page only wires them to an IRunBackend.
 class RunPage : public QWidget {
     Q_OBJECT
@@ -53,23 +53,20 @@ public:
     HudModel& hud() { return hud_; }
     MechanismOverlayModel& mechanisms() { return mechanisms_; }
     RunViewport* viewport() const { return viewport_; }
-    QToolBar* toolBar() const { return toolBar_; }
-    StatusChip* statusChip() const { return statusChip_; }
     const SimStatsValues& stats() const { return stats_.values(); }
 
-    QAction* startAction() const { return startAction_; }
-    QAction* stopAction() const { return stopAction_; }
     QAction* restartAction() const { return restartAction_; }
-    QAction* resetAction() const { return resetAction_; }
-    QAction* pauseAction() const { return pauseAction_; }
-    QAction* stepAction() const { return stepAction_; }
+    QAction* restartRobotAction() const { return restartRobotAction_; }
+    // Overlay toggles, the zone submenu and the console toggle; listed in the shell's View menu.
+    QList<QAction*> viewActions() const;
+    QAction* hudAction() const { return hudAction_; }
     QComboBox* speedCombo() const { return speedCombo_; }
 
     // Polls the backend once (normally driven by a ~60 Hz timer): snapshot -> view models.
     void pollNow();
     // Samples joysticks and publishes the DS state once (normally a 50 Hz timer).
     void publishDriverStation();
-    // Selects the camera (0 orbit, 1 follow, 2 top-down) and updates the toolbar.
+    // Selects the camera (0 orbit, 1 follow, 2 top-down); the toolbar only offers the orbit camera and its home view.
     void setCameraMode(int mode);
     void setConsoleVisible(bool visible);
     bool consoleVisible() const;
@@ -85,7 +82,7 @@ protected:
 
 private:
     void build();
-    void buildToolBar();
+    void buildActions();
     void applyStatus();
     void refreshControls(const sdk::ISimSnapshot* snapshot);
     void refreshStatsLabels();
@@ -111,29 +108,20 @@ private:
     DriverStationPanel* dsPanel_ = nullptr;
     RunViewport* viewport_ = nullptr;
     QSplitter* verticalSplit_ = nullptr;
-    QToolBar* toolBar_ = nullptr;
-    StatusChip* statusChip_ = nullptr;
-    StatusChip* realDsChip_ = nullptr;
-    QLabel* simTimeLabel_ = nullptr;
-    QLabel* rateLabel_ = nullptr;
-    QLabel* batteryLabel_ = nullptr;
-    QLabel* extraLabel_ = nullptr;
     QComboBox* speedCombo_ = nullptr;
     QMenu* zoneMenu_ = nullptr;
-    QActionGroup* cameraGroup_ = nullptr;
-    QAction* startAction_ = nullptr;
-    QAction* stopAction_ = nullptr;
     QAction* restartAction_ = nullptr;
-    QAction* resetAction_ = nullptr;
-    QAction* pauseAction_ = nullptr;
-    QAction* stepAction_ = nullptr;
+    QAction* restartRobotAction_ = nullptr;
+    QMenu* restartMenu_ = nullptr;
     QAction* consoleAction_ = nullptr;
+    QAction* hudAction_ = nullptr;
+    QAction* mechAction_ = nullptr;
+    QAction* zonesAction_ = nullptr;
     QTimer* pollTimer_ = nullptr;
     QTimer* dsTimer_ = nullptr;
 
     qint64 lastPollMs_ = 0;
     qint64 lastLabelMs_ = 0;
-    bool syncingPause_ = false;
     bool consoleAutoShown_ = false;
 };
 

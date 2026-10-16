@@ -72,7 +72,6 @@ void DriverStationModel::load() {
     matchSettings_.autoSeconds = std::clamp(settings_->value(QStringLiteral("runview/ds/autoSeconds"), 20.0).toDouble(), 1.0, 600.0);
     matchSettings_.teleopSeconds = std::clamp(settings_->value(QStringLiteral("runview/ds/teleopSeconds"), 140.0).toDouble(), 1.0, 1200.0);
     matchSettings_.gapSeconds = std::clamp(settings_->value(QStringLiteral("runview/ds/gapSeconds"), 3.0).toDouble(), 0.0, 60.0);
-    matchSettings_.sequence = settings_->value(QStringLiteral("runview/ds/sequence"), true).toBool();
 }
 
 void DriverStationModel::save() const {
@@ -83,7 +82,21 @@ void DriverStationModel::save() const {
     settings_->setValue(QStringLiteral("runview/ds/autoSeconds"), matchSettings_.autoSeconds);
     settings_->setValue(QStringLiteral("runview/ds/teleopSeconds"), matchSettings_.teleopSeconds);
     settings_->setValue(QStringLiteral("runview/ds/gapSeconds"), matchSettings_.gapSeconds);
-    settings_->setValue(QStringLiteral("runview/ds/sequence"), matchSettings_.sequence);
+}
+
+// Between Practice runs the DS sits on Autonomous, ready for the next Enable.
+sdk::proto::RobotMode DriverStationModel::mode() const {
+    return practice_ && !match_.running() ? sdk::proto::RobotMode::Autonomous : mode_;
+}
+
+DsMode DriverStationModel::dsMode() const {
+    if (practice_) return DsMode::Practice;
+    switch (mode_) {
+        case sdk::proto::RobotMode::Autonomous: return DsMode::Auto;
+        case sdk::proto::RobotMode::Test: return DsMode::Test;
+        case sdk::proto::RobotMode::Teleop: break;
+    }
+    return DsMode::Teleop;
 }
 
 QString DriverStationModel::matchPhaseText() const {
@@ -99,7 +112,7 @@ sdk::proto::DsState DriverStationModel::state() const {
     s.fmsAttached = false;
     s.enabled = enabled_ && !eStopped_;
     s.eStop = eStopped_;
-    s.mode = mode_;
+    s.mode = mode();
     s.station = static_cast<sdk::proto::AllianceStation>((alliance_ == Alliance::Blue ? 3 : 0) + station_ - 1);
     s.matchTimeS = match_.running() ? match_.remainingS() : -1.0;
     s.gameSpecificMessage = gameMessage_.toStdString();
@@ -109,6 +122,10 @@ sdk::proto::DsState DriverStationModel::state() const {
 void DriverStationModel::setEnabled(bool enabled) {
     if (enabled) {
         if (!canEnable() || enabled_) return;
+        if (practice_) {
+            startMatch();
+            return;
+        }
         enabled_ = true;
     } else {
         if (!enabled_ && !match_.running()) return;
@@ -132,11 +149,27 @@ void DriverStationModel::clearEStop() {
 }
 
 void DriverStationModel::setMode(sdk::proto::RobotMode mode) {
-    if (mode == mode_) return;
+    if (mode == mode_ && !practice_) return;
     // Like the real DS: the mode only changes while disabled.
     enabled_ = false;
     match_.stop();
+    practice_ = false;
     mode_ = mode;
+    emit changed();
+}
+
+void DriverStationModel::setDsMode(DsMode mode) {
+    switch (mode) {
+        case DsMode::Auto: setMode(sdk::proto::RobotMode::Autonomous); return;
+        case DsMode::Teleop: setMode(sdk::proto::RobotMode::Teleop); return;
+        case DsMode::Test: setMode(sdk::proto::RobotMode::Test); return;
+        case DsMode::Practice: break;
+    }
+    if (practice_) return;
+    enabled_ = false;
+    match_.stop();
+    practice_ = true;
+    mode_ = sdk::proto::RobotMode::Autonomous;
     emit changed();
 }
 
@@ -171,20 +204,15 @@ void DriverStationModel::setMatchSettings(const MatchSettings& settings) {
 bool DriverStationModel::startMatch() {
     if (!canEnable()) return false;
     std::vector<MatchSegment> segments;
-    if (mode_ == sdk::proto::RobotMode::Test) {
-        // Test mode has no clock: just enable.
+    if (!practice_) {
+        // Auto / Teleop / Test have no match clock (and so no game timing): Enable just enables until Disable.
         enabled_ = true;
         emit changed();
         return true;
     }
-    if (matchSettings_.sequence) {
-        segments.push_back({sdk::proto::RobotMode::Autonomous, true, matchSettings_.autoSeconds});
-        if (matchSettings_.gapSeconds > 0.0) segments.push_back({sdk::proto::RobotMode::Teleop, false, matchSettings_.gapSeconds});
-        segments.push_back({sdk::proto::RobotMode::Teleop, true, matchSettings_.teleopSeconds});
-    } else {
-        const bool isAuto = mode_ == sdk::proto::RobotMode::Autonomous;
-        segments.push_back({mode_, true, isAuto ? matchSettings_.autoSeconds : matchSettings_.teleopSeconds});
-    }
+    segments.push_back({sdk::proto::RobotMode::Autonomous, true, matchSettings_.autoSeconds});
+    if (matchSettings_.gapSeconds > 0.0) segments.push_back({sdk::proto::RobotMode::Teleop, false, matchSettings_.gapSeconds});
+    segments.push_back({sdk::proto::RobotMode::Teleop, true, matchSettings_.teleopSeconds});
     match_.begin(std::move(segments));
     applySegment();
     emit changed();

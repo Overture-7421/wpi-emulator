@@ -71,7 +71,8 @@ std::shared_ptr<const sdk::ISimSnapshot> RealRuntimeHost::latestSnapshot() const
 
 HostStatus RealRuntimeHost::map(const host::SessionStatus& s) {
     HostStatus out;
-    out.mode = s.mode == host::Mode::Discovery ? RuntimeMode::Discovery : RuntimeMode::Run;
+    out.programStarted = s.programStarted;
+    out.simulating = s.simulating;
     out.exitCode = s.exitCode;
     out.detail = fromStd(s.detail);
     switch (s.process) {
@@ -110,9 +111,8 @@ void RealRuntimeHost::emitLog(sdk::LogLevel level, const QString& source, const 
     emit logLine(line);
 }
 
-void RealRuntimeHost::failToStart(RuntimeMode mode, const QString& detail) {
+void RealRuntimeHost::failToStart(const QString& detail) {
     HostStatus s;
-    s.mode = mode;
     s.process = HostProcessState::FailedToStart;
     s.link = HostLinkState::Disconnected;
     s.detail = detail;
@@ -166,25 +166,21 @@ void RealRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<con
     emit sceneChanged();
 }
 
-void RealRuntimeHost::start(RuntimeMode mode) {
-    if (session_ && status_.active()) {
-        if (status_.mode == mode) return;
-        releaseSession();   // a run in the other mode is replaced
-    } else {
-        releaseSession();
-    }
+void RealRuntimeHost::launch() {
+    if (session_ && status_.active()) return;   // one robot instance serves detection and the run
+    releaseSession();
     if (!config_ || projectPath_.isEmpty()) {
-        failToStart(mode, tr("No robot configuration loaded."));
+        failToStart(tr("No robot configuration loaded."));
         return;
     }
 
     host::Options o;
-    o.mode = mode == RuntimeMode::Discovery ? host::Mode::Discovery : host::Mode::Run;
+    o.mode = host::Mode::Armed;
     o.projectDir = std::filesystem::path(projectPath_.toStdU16String());
     o.extensionLibrary = extensionPath();
     if (o.extensionLibrary.empty()) {
-        failToStart(mode, tr("The HALSim extension (%1) was not found next to the application. Reinstall the emulator or set WPIEMU_EXTENSION.")
-                              .arg(fromStd(core::launcher::halsimExtensionFileName())));
+        failToStart(tr("The HALSim extension (%1) was not found next to the application. Reinstall the emulator or set WPIEMU_EXTENSION.")
+                        .arg(fromStd(core::launcher::halsimExtensionFileName())));
         return;
     }
     o.scratchDir = options_.scratchDir;
@@ -194,33 +190,64 @@ void RealRuntimeHost::start(RuntimeMode mode) {
     o.preStartPolling = envFlag("WPIEMU_PRESTART_POLLING");
     o.driverStation = ds_;
     o.timeScale = timeScale_;
-    o.startPaused = paused_ && mode == RuntimeMode::Run;
     if (options_.tweak) options_.tweak(o);
 
-    emitLog(sdk::LogLevel::Info, QStringLiteral("runtime"),
-            mode == RuntimeMode::Discovery ? tr("Detecting devices: launching the robot with the HALSim extension") : tr("Launching the robot with the HALSim extension"));
+    emitLog(sdk::LogLevel::Info, QStringLiteral("runtime"), tr("Launching the robot with the HALSim extension"));
     auto started = host::RobotSession::start(registries_, *config_, std::move(o));
     if (!started) {
-        failToStart(mode, fromStd(started.error().message));
+        failToStart(fromStd(started.error().message));
         return;
     }
     session_ = std::move(started).value();
+    launchedConfig_ = config_;
     lastSnapshot_.reset();
     setStatus(map(session_->status()));
     emit snapshotPublished();
     timer_.start();
 }
 
+void RealRuntimeHost::startSimulation() {
+    beginWhenReady_ = true;
+    // The armed robot holds the model it was launched with: relaunch when the project was edited since.
+    if (session_ && status_.active() && config_ != launchedConfig_) releaseSession();
+    if (!session_ || !status_.active()) launch();
+    sendBeginIfReady();
+}
+
+void RealRuntimeHost::sendBeginIfReady() {
+    if (!beginWhenReady_ || !session_ || !status_.programStarted) return;
+    if (status_.simulating) {
+        beginWhenReady_ = false;
+        return;
+    }
+    beginWhenReady_ = false;
+    sdk::proto::SimControl c;
+    c.command = sdk::proto::SimCommand::BeginLockstep;
+    session_->controller().control(c);
+    if (timeScale_ != 1.0) setTimeScale(timeScale_);
+    if (paused_) setPaused(true);
+}
+
+void RealRuntimeHost::stopSimulation() {
+    beginWhenReady_ = false;
+    if (!session_ || !status_.simulating) return;
+    sdk::proto::SimControl c;
+    c.command = sdk::proto::SimCommand::EndLockstep;
+    session_->controller().control(c);
+}
+
 void RealRuntimeHost::stop() {
+    beginWhenReady_ = false;
     if (!session_) return;
     if (status_.active() || !session_->finished()) session_->requestStop();
     pump();
 }
 
 void RealRuntimeHost::restart() {
-    const RuntimeMode mode = status_.mode;
+    const bool resume = status_.simulating || beginWhenReady_;
     releaseSession();
-    start(mode);
+    launch();
+    beginWhenReady_ = resume;
 }
 
 void RealRuntimeHost::resetSimulation() {
@@ -276,7 +303,7 @@ void RealRuntimeHost::pump() {
     }
     const host::SessionStatus s = session_->status();
     setStatus(map(s));
-
+    sendBeginIfReady();
     if (auto snapshot = session_->latestSnapshot(); snapshot && snapshot != lastSnapshot_) {
         lastSnapshot_ = std::move(snapshot);
         emit snapshotPublished();

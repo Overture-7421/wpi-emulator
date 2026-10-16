@@ -42,7 +42,9 @@ public:
     std::filesystem::path extensionPath() const;
 
 public slots:
-    void start(wpiemu::app::RuntimeMode mode) override;
+    void launch() override;
+    void startSimulation() override;
+    void stopSimulation() override;
     void stop() override;
     void restart() override;
     void resetSimulation() override;
@@ -54,7 +56,8 @@ public slots:
 private:
     void pump();
     void setStatus(const HostStatus& status);
-    void failToStart(RuntimeMode mode, const QString& detail);
+    void failToStart(const QString& detail);
+    void sendBeginIfReady();
     void emitLog(sdk::LogLevel level, const QString& source, const QString& text);
     void releaseSession();
     static HostStatus map(const host::SessionStatus& s);
@@ -67,6 +70,7 @@ private:
     HostScene scene_;
     QString projectPath_;
     std::shared_ptr<const sdk::RobotConfig> config_;
+    std::shared_ptr<const sdk::RobotConfig> launchedConfig_;
     std::string gamePluginId_;
     std::shared_ptr<const sdk::FieldDescription> field_;
     std::string fieldPluginId_;
@@ -77,6 +81,7 @@ private:
 
     sdk::proto::DsState ds_;
     bool paused_ = false;
+    bool beginWhenReady_ = false;   // startSimulation() was requested before the robot program finished starting
     double timeScale_ = 1.0;
 };
 

@@ -27,6 +27,7 @@ sdk::Vec3 hubSensorCentre(Alliance a) {
 void autoEnabled(Session& s) {
     s.env.driverStation.enabled = true;
     s.env.driverStation.mode = sdk::proto::RobotMode::Autonomous;
+    s.env.driverStation.matchTimeS = 15.0;   // a timed match (Practice); without it the game is in free play
 }
 
 // DS in TELEOP showing `elapsed` seconds into the period (WPILib reports the remaining time).
@@ -257,6 +258,26 @@ TEST_CASE("reset restores the initial layout, the meter and every counter") {
     CHECK(s.env.physics.stats().bodies == 1 /*field*/ + 1 /*chassis*/ + 360 + 48);
 }
 
+TEST_CASE("without a timed match the game is free play: no phases, no match HUD, both hubs score") {
+    Session s;
+    s.start();
+    s.env.driverStation.enabled = true;
+    s.env.driverStation.mode = sdk::proto::RobotMode::Teleop;   // matchTimeS stays -1
+    s.tick(2);
+    CHECK(s.game->match().phase == MatchPhase::Test);
+    CHECK(s.game->hubActive(Alliance::Red));
+    CHECK(s.game->hubActive(Alliance::Blue));
+
+    sdk::SnapshotBuilder out;
+    s.stateOwner->publish(out);
+    const auto snap = out.build();
+    CHECK(snap->hudValue(hud::kFuelCount) != nullptr);
+    CHECK(snap->hudValue(hud::kMatchPhase) == nullptr);
+    CHECK(snap->hudValue(hud::kMatchTime) == nullptr);
+    CHECK(snap->hudValue(hud::kScoreRed) == nullptr);
+    CHECK(snap->hudValue(hud::kHubRedActive) == nullptr);
+}
+
 TEST_CASE("destroying the game state removes its fuel from the world") {
     Session s;
     s.start();
@@ -291,6 +312,9 @@ TEST_CASE("publish exposes the fuel entity group and every HUD value the widgets
     CHECK(snap->hudValue(hud::kHubBlueActive)->asBool());
     CHECK(snap->hudValue(hud::kHubOwnActive)->asBool());   // blue station => blue hub
     CHECK(snap->hudValue(hud::kMatchPhase)->asString() == "AUTO");
+    // AUTO: both hubs stay active for the remainder of the period.
+    CHECK(snap->hudValue(hud::kHubBlueStatus)->asString().rfind("Active ", 0) == 0);
+    CHECK(snap->hudValue(hud::kHubRedStatus)->asString().rfind("Active ", 0) == 0);
     CHECK(snap->hudValue(hud::kFirstInactive)->asString() == "unknown");
 
     for (const sdk::HudWidgetDescriptor& w : s.module().contributeHud()) {

@@ -1,7 +1,6 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
-#include <QStatusBar>
 #include <QTimer>
 
 #include <cstring>
@@ -72,7 +71,7 @@ int main(int argc, char* argv[]) {
     // Start-up (after the window is visible so dialogs have a parent): explicit project, else resume the last one.
     QTimer::singleShot(0, &window, [&] {
         if (!services.startupProblems().isEmpty())
-            window.statusBar()->showMessage(services.startupProblems().join(QStringLiteral("; ")), 15000);
+            window.showMessage(services.startupProblems().join(QStringLiteral("\n")));
         if (parser.isSet(projectOption)) window.openProjectPath(parser.value(projectOption));
         else controller.restoreLastProject();
     });

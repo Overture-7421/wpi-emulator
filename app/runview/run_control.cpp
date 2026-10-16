@@ -13,13 +13,9 @@ RunControlState deriveControlState(const RunStatus& status, bool paused) {
     const bool idleLike = status.process == RobotProcessState::Idle || status.process == RobotProcessState::Exited ||
                           status.process == RobotProcessState::Crashed || status.process == RobotProcessState::FailedToStart;
     const bool active = status.process == RobotProcessState::Starting || status.process == RobotProcessState::Running;
-    s.canStart = idleLike;
-    s.canStop = active;
+    const bool live = status.process == RobotProcessState::Running && status.link == LinkState::Connected;
     s.canRestart = active || idleLike;
-    // Reset restarts the simulation (physics/game state) of a live session; it needs a connected robot.
-    s.canReset = status.process == RobotProcessState::Running && status.link == LinkState::Connected;
-    s.canPause = s.canReset;
-    s.canStep = s.canReset && paused;
+    s.simulating = live && status.simulating;
     return s;
 }
 
@@ -29,11 +25,11 @@ StatusPresentation presentStatus(const RunStatus& st, bool snapshotConnected) {
     switch (st.process) {
         case RobotProcessState::Idle:
             p.tone = Tone::Neutral;
-            p.chipText = tr("Robot stopped");
-            p.title = tr("Ready to run your robot code");
-            if (p.detail.isEmpty()) p.detail = tr("Press Start to launch the robot program in simulation.");
+            p.chipText = tr("Robot not running");
+            p.title = tr("The robot program is not running");
+            if (p.detail.isEmpty()) p.detail = tr("The robot launches automatically when you open the Run tab. Press Restart to launch it now.");
             p.showOverlay = true;
-            p.offerStart = true;
+            p.offerRestart = true;
             return p;
         case RobotProcessState::Starting:
             p.tone = Tone::Info;
@@ -52,9 +48,9 @@ StatusPresentation presentStatus(const RunStatus& st, bool snapshotConnected) {
             p.tone = Tone::Neutral;
             p.chipText = tr("Robot exited (code %1)").arg(st.exitCode);
             p.title = tr("Robot program exited");
-            if (p.detail.isEmpty()) p.detail = tr("Exit code %1. Press Start to run it again.").arg(st.exitCode);
+            if (p.detail.isEmpty()) p.detail = tr("Exit code %1. Restart the robot to run it again.").arg(st.exitCode);
             p.showOverlay = true;
-            p.offerStart = true;
+            p.offerRestart = true;
             p.offerShowConsole = true;
             return p;
         case RobotProcessState::Crashed:
@@ -63,7 +59,7 @@ StatusPresentation presentStatus(const RunStatus& st, bool snapshotConnected) {
             p.title = tr("The robot program crashed");
             if (p.detail.isEmpty()) p.detail = tr("The process ended unexpectedly with exit code %1. Check the console for the stack trace.").arg(st.exitCode);
             p.showOverlay = true;
-            p.offerStart = true;
+                        p.offerRestart = true;
             p.offerShowConsole = true;
             return p;
         case RobotProcessState::FailedToStart:
@@ -72,7 +68,7 @@ StatusPresentation presentStatus(const RunStatus& st, bool snapshotConnected) {
             p.title = tr("The robot could not be started");
             if (p.detail.isEmpty()) p.detail = tr("Check the toolchain settings and the build output in the console.");
             p.showOverlay = true;
-            p.offerStart = true;
+                        p.offerRestart = true;
             p.offerShowConsole = true;
             return p;
         case RobotProcessState::Running:
@@ -81,8 +77,22 @@ StatusPresentation presentStatus(const RunStatus& st, bool snapshotConnected) {
 
     switch (st.link) {
         case LinkState::Connected:
+            if (!st.programStarted) {
+                p.tone = Tone::Info;
+                p.chipText = tr("Starting robot program…");
+                p.title = tr("Starting robot program…");
+                if (p.detail.isEmpty()) p.detail = tr("Waiting for the robot to finish initializing and announce its devices.");
+                p.showOverlay = true;
+                p.offerShowConsole = true;
+                return p;
+            }
+            if (!st.simulating) {
+                p.tone = Tone::Success;
+                p.chipText = tr("Robot ready");
+                return p;
+            }
             p.tone = Tone::Success;
-            p.chipText = snapshotConnected ? tr("Connected") : tr("Connected · waiting for data");
+            p.chipText = snapshotConnected ? tr("Simulating") : tr("Simulating · waiting for data");
             return p;
         case LinkState::Connecting:
         case LinkState::Disconnected:
@@ -118,30 +128,12 @@ StatusPresentation presentStatus(const RunStatus& st, bool snapshotConnected) {
             p.chipText = tr("Robot not responding");
             p.offerRestart = true;
             p.title = tr("The robot stopped responding");
-            if (p.detail.isEmpty()) p.detail = tr("The lock-step watchdog expired. The robot may be blocked in your code; Stop and Restart to recover.");
+            if (p.detail.isEmpty()) p.detail = tr("The lock-step watchdog expired. The robot may be blocked in your code; Restart to recover.");
             p.showOverlay = false;
             p.offerShowConsole = true;
             return p;
     }
     return p;
-}
-
-QString realDsText(RealDsState state) {
-    switch (state) {
-        case RealDsState::NotConfigured: return tr("Real DS: off");
-        case RealDsState::Disconnected: return tr("Real DS: waiting");
-        case RealDsState::Connected: return tr("Real DS: connected");
-    }
-    return {};
-}
-
-Tone realDsTone(RealDsState state) {
-    switch (state) {
-        case RealDsState::NotConfigured: return Tone::Neutral;
-        case RealDsState::Disconnected: return Tone::Warning;
-        case RealDsState::Connected: return Tone::Success;
-    }
-    return Tone::Neutral;
 }
 
 }  // namespace wpiemu::app::runview

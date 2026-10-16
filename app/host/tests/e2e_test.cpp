@@ -220,7 +220,7 @@ TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven t
     std::int64_t discoveryRobotPid = 0;
     {
         app::host::Options o = base;
-        o.mode = app::host::Mode::Discovery;
+        o.mode = app::host::Mode::Armed;
         const Clock::time_point t = Clock::now();
         auto started = app::host::RobotSession::start(registries.view(), baseConfig(project), o);
         REQUIRE_MESSAGE(started.ok(), (started.ok() ? "" : started.error().message));

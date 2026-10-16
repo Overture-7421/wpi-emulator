@@ -249,8 +249,8 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     // ---- simulation session ----
     const std::shared_ptr<const FieldDescription> field = describeField(module);
     auto built = buildSession(reg, cfg, log, module, field.get());
-    if (!built && options.mode == Mode::Discovery) {
-        // Discovery only needs the device hub: fall back to the bare chassis when the full model cannot be built.
+    if (!built && options.mode == Mode::Armed) {
+        // An armed session only needs the device hub until the simulation starts: fall back to the bare chassis when the full model cannot be built.
         log.warn("session", "the robot model could not be built (" + built.error().message + "); discovering with an empty model");
         RobotConfig bare = cfg;
         bare.mechanisms.clear();
@@ -274,7 +274,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     runtime::RunnerOptions ro;
     ro.timeScale = options.timeScale;
     ro.startPaused = options.startPaused;
-    ro.discoveryOnly = options.mode == Mode::Discovery;
+    ro.discoveryOnly = options.mode == Mode::Armed;
     ro.awaitProgramStart = true;
     ro.preferredWatchdogMs = options.watchdogMs;
     self->runner_ = std::make_unique<runtime::SessionRunner>(*self->session_, self->inbox_, self->slot_, log, ro);
@@ -302,7 +302,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     self->launcher_ = std::make_unique<launcher::RobotLauncher>(launcher::systemProcessFactory(), *reg.json, log);
     self->startedAt_ = std::chrono::steady_clock::now();
     if (Status s = self->launcher_->launch(req, *self->sink_); !s) return makeError(s.error().code, "The robot could not be launched: " + s.error().message);
-    log.info("session", std::string(options.mode == Mode::Discovery ? "discovering devices" : "starting the robot") + " (" + req.language + ", " +
+    log.info("session", std::string(options.mode == Mode::Armed ? "launching the robot (armed)" : "starting the robot") + " (" + req.language + ", " +
                             (req.mode == launcher::LaunchMode::GradleInitScript ? "gradle simulate task" : "simulateExternal direct launch") + ")");
     self->status_.process = ProcessState::Starting;
     self->status_.link = LinkState::Connecting;
@@ -334,12 +334,14 @@ SessionStatus RobotSession::status() {
     const runtime::RunnerState rs = runner_->state();
     const bool linked = rs == runtime::RunnerState::Running || rs == runtime::RunnerState::Paused || rs == runtime::RunnerState::RobotStalled;
     s.programStarted = linked && runner_->programStarted();
+    s.simulating = linked && !runner_->armed();
     if (linked) seenConnection_ = true;
 
     if (stopRequested_) {
         s.process = teardownDone_ ? ProcessState::Exited : ProcessState::Stopping;
         s.link = LinkState::Disconnected;
         s.programStarted = false;
+        s.simulating = false;
         s.exitCode = 0;
         s.detail = teardownDone_ ? "Stopped" : "Stopping the robot...";
         return s;
@@ -359,6 +361,7 @@ SessionStatus RobotSession::status() {
         s.exitCode = code;
         s.link = LinkState::Disconnected;
         s.programStarted = false;
+        s.simulating = false;
         if (seenConnection_) {
             if (launch.phase == launcher::LaunchPhase::Failed) {
                 fail(ProcessState::Crashed, LinkState::Disconnected,

@@ -82,7 +82,8 @@ void SimSession::touch() { lastActivityNs_.store(nowNs(), std::memory_order_rela
 void SimSession::post(proto::Message message) { link_->post(std::move(message)); }
 
 SessionEnd SimSession::run() {
-    if (lockstep_ && s_.config.watchdogEnabled) watchdog_ = std::thread([this] { watchdogLoop(); });
+    const bool lockstepCapable = ack_.clockMode == proto::ClockMode::Lockstep && s_.config.clock == ClockPreference::FollowEmulator;
+    if (lockstepCapable && s_.config.watchdogEnabled) watchdog_ = std::thread([this] { watchdogLoop(); });
 
     SessionEnd end = SessionEnd::Shutdown;
     if (const std::optional<SessionEnd> early = waitForProgramStart()) end = *early;
@@ -162,9 +163,9 @@ SessionEnd SimSession::serve() {
         deferredFrame_.reset();
         onSensorFrame(std::move(frame));
     }
-    const std::chrono::milliseconds idleTimeout = lockstep_ ? kLockstepIdle : kFreeIdle;
     for (;;) {
         if (shutdown_) return SessionEnd::Shutdown;
+        const std::chrono::milliseconds idleTimeout = lockstep_ ? kLockstepIdle : kFreeIdle;
         proto::Message message;
         switch (link_->pop(message, idleTimeout)) {
             case IpcLink::PopResult::Message:
@@ -309,6 +310,17 @@ std::optional<SessionEnd> SimSession::onControl(const proto::SimControl& control
         return std::nullopt;
     }
 
+    if (control.command == proto::SimCommand::BeginLockstep) {
+        if (lockstep_) return rejectWith(proto::ControlResult::Rejected, "already in lock-step"), std::nullopt;
+        if (ack_.clockMode != proto::ClockMode::Lockstep || s_.config.clock != ClockPreference::FollowEmulator)
+            return rejectWith(proto::ControlResult::Rejected, "this session does not follow the emulator's clock"), std::nullopt;
+        if (!programStarted_) return rejectWith(proto::ControlResult::Rejected, "the robot program has not started"), std::nullopt;
+    }
+    if (control.command == proto::SimCommand::EndLockstep && !lockstep_) {
+        rejectWith(proto::ControlResult::Rejected, "not in lock-step");
+        return std::nullopt;
+    }
+
     proto::ControlDecision decision = follower_.onControl(control);
     epoch_ = follower_.runEpoch();
     if (decision.apply) {
@@ -325,6 +337,27 @@ std::optional<SessionEnd> SimSession::onControl(const proto::SimControl& control
                     s_.ports.clock.pauseTiming();
                     s_.logger.info(kLog, "lock-step re-engaged by Reset");
                 }
+                break;
+            case proto::SimCommand::BeginLockstep:
+                delta_.reset();
+                ticksSinceFull_ = 0;
+                paused_ = false;
+                unblocked_ = false;
+                degraded_ = Degraded::None;
+                s_.ports.clock.pauseTiming();
+                lockstep_ = true;
+                touch();
+                armed_ = true;
+                s_.logger.info(kLog, "lock-step started by the emulator");
+                break;
+            case proto::SimCommand::EndLockstep:
+                armed_ = false;
+                paused_ = false;
+                lockstep_ = false;
+                unblocked_ = false;
+                degraded_ = Degraded::None;
+                s_.ports.clock.resumeTiming();
+                s_.logger.info(kLog, "lock-step ended by the emulator; the robot keeps running in real time");
                 break;
             case proto::SimCommand::Stop: armed_ = false; break;
         }

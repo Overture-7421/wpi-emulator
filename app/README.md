@@ -23,7 +23,7 @@ Qt Widgets shell around the editor and run view. This folder is split by stream:
 Everything that runs the simulation sits behind `IRuntimeHost` (start / stop / reset / pause / step / DS state, status, scene, snapshots, log lines). `EditorBackendAdapter` and `RunBackendAdapter` share one host, so a device found in the editor is the one the run view shows.
 
 * `--demo` uses `DemoRuntimeHost` (scripted device discovery and chassis motion, no processes).
-* Without it `AppServices` creates `RealRuntimeHost` (`common/`): it validates the model, builds the Box3D/game-plugin session, serves the IPC endpoint, launches the unmodified project through Gradle with the HALSim extension and reports process/link state, snapshots and console lines. The Qt-free work is `host/RobotSession` (see docs/runtime.md section 6); failures (no gradlew, build failure, handshake timeout, protocol mismatch, crash, user stop, app exit) map to `HostStatus`. Detect devices = `RuntimeMode::Discovery`.
+* Without it `AppServices` creates `RealRuntimeHost` (`common/`): it validates the model, builds the Box3D/game-plugin session, serves the IPC endpoint, launches the unmodified project through Gradle with the HALSim extension and reports process/link state, snapshots and console lines. The Qt-free work is `host/RobotSession` (see docs/runtime.md section 6); failures (no gradlew, build failure, handshake timeout, protocol mismatch, crash, user stop, app exit) map to `HostStatus`. Detect devices = the Armed phase of the single long-lived robot (ADR 0011): `launch()` starts it, `startSimulation()` sends `BeginLockstep`, `stopSimulation()` sends `EndLockstep`, `restart()` relaunches.
 
 ## Command line
 `wpiemu_app [--demo] [--project <folder>] [--version]`

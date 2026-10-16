@@ -27,7 +27,10 @@
 
 namespace wpiemu::app::host {
 
-enum class Mode { Run, Discovery };
+// Run: lock-step from the first tick (refuses an invalid model). Armed: the one long-lived robot instance of the app:
+// devices are announced and the robot runs in real time until BeginLockstep (see SimCommand::BeginLockstep); an invalid
+// model only warns so devices can still be detected.
+enum class Mode { Run, Armed };
 enum class ProcessState { Idle, Starting, Running, Stopping, Exited, Crashed, FailedToStart };
 enum class LinkState { Disconnected, Connecting, Connected, HandshakeTimeout, ProtocolMismatch, Stalled };
 enum class LogStream { Stdout, Stderr, Emulator };
@@ -47,6 +50,7 @@ struct SessionStatus {
     int exitCode = 0;
     std::string detail;            // human readable reason / progress
     bool programStarted = false;   // the robot constructor finished (devices announced, lock-step may start)
+    bool simulating = false;       // lock-step is running (always true in Mode::Run once connected; false while armed)
 
     bool active() const { return process == ProcessState::Starting || process == ProcessState::Running || process == ProcessState::Stopping; }
     bool operator==(const SessionStatus&) const = default;

@@ -9,8 +9,6 @@ def emuExt = System.getenv('WPIEMU_EXT')              // absolute path of halsim
 if (emuExt == null || emuExt.trim().isEmpty()) {
     throw new GradleException('wpi-emulator: WPIEMU_EXT is not set')
 }
-def extraExt = System.getenv('WPIEMU_EXTRA_EXT')      // optional further extensions (e.g. halsim_ds_socket), path-separator separated
-def halExtensions = (extraExt == null || extraExt.trim().isEmpty()) ? emuExt : emuExt + File.pathSeparator + extraExt
 
 allprojects { p ->
     p.afterEvaluate {
@@ -22,7 +20,7 @@ allprojects { p ->
             def n = it.class.name   // decorated class names carry a suffix -> startsWith
             n.startsWith('edu.wpi.first.gradlerio.simulation.JavaSimulationTask') ||
             n.startsWith('edu.wpi.first.gradlerio.simulation.NativeSimulationTask')
-        }.configureEach { t -> t.environment('HALSIM_EXTENSIONS', halExtensions) }
+        }.configureEach { t -> t.environment('HALSIM_EXTENSIONS', emuExt) }
     }
 }
 )groovy";

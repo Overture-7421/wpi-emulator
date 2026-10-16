@@ -29,7 +29,6 @@ public:
     RunStatus status() const override { return status_; }
     RunSceneInfo sceneInfo() const override { return scene_; }
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const override { return slot_.latest(); }
-    RealDsState realDsState() const override { return realDs_; }
 
     // ---- test / demo hooks ----
     void tickOnce();                              // advance one 5 ms sim tick and publish a snapshot
@@ -42,7 +41,6 @@ public:
     int resetCount() const { return resetCount_; }
     int stepRequests() const { return stepRequests_; }
     void emitLog(sdk::LogLevel level, LogStream stream, const QString& source, const QString& text);
-    void setRealDsState(RealDsState state);
 
     void simulateCrash(int exitCode = 1, const QString& detail = {});
     void simulateHandshakeTimeout();
@@ -55,8 +53,9 @@ public:
     static sdk::FieldDescription makeDemoField();
 
 public slots:
-    void startRobot() override;
-    void stopRobot() override;
+    void launchRobot() override;
+    void startSimulation() override;
+    void stopSimulation() override;
     void restartRobot() override;
     void resetSimulation() override;
     void setPaused(bool paused) override;
@@ -72,6 +71,8 @@ private:
     };
 
     void setStatus(RobotProcessState process, LinkState link, int exitCode = 0, const QString& detail = {});
+    void refreshFlags();
+    void beginIfReady();
     void beginTransition(int delayMs, std::function<void()> fn);
     void onTimer();
     void stepWorld();
@@ -85,10 +86,12 @@ private:
     RunStatus status_;
     RunSceneInfo scene_;
     sdk::LatestSnapshotSlot slot_;
-    RealDsState realDs_ = RealDsState::NotConfigured;
     sdk::proto::DsState ds_;
 
     bool paused_ = false;
+    bool programStarted_ = false;
+    bool simulating_ = false;
+    bool beginWhenReady_ = false;
     int pendingSteps_ = 0;
     double timeScale_ = 1.0;
     double timeAccum_ = 0.0;

@@ -256,7 +256,8 @@ FieldParts buildFieldParts(const sdk::FieldDescription* field) {
     ScenePart floor;
     floor.name = "field.floor";
     floor.size = {out.lengthM, out.widthM, 0.04f};
-    floor.pose.position = {out.center.x, out.center.y, -0.02f};
+    // Top face sits just below z=0 so it never shares a plane with a field's own ground/carpet box.
+    floor.pose.position = {out.center.x, out.center.y, -0.03f};
     floor.color = "#2d333c";
     out.parts.insert(out.parts.begin(), std::move(floor));
     return out;

@@ -28,6 +28,40 @@ set_target_properties(wpiemu_app PROPERTIES
     WIN32_EXECUTABLE OFF
     MACOSX_BUNDLE ON)
 
+# Dev convenience (Visual Studio): the Qt runtime is not deployed next to the exe (the shared bin/ directory also holds the
+# test executables, which must keep resolving Qt from PATH), so generate the git-ignored .vs/launch.vs.json that puts the
+# Qt bin directory on PATH when debugging wpiemu_app.
+if(WIN32 AND PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    get_target_property(_qmake_exe Qt6::qmake IMPORTED_LOCATION)
+    get_filename_component(_qt_bin_dir "${_qmake_exe}" DIRECTORY)
+    file(TO_NATIVE_PATH "${_qt_bin_dir}" _qt_bin_native)
+    string(REPLACE "\\" "\\\\" _qt_bin_json "${_qt_bin_native}")
+    set(_launch_json
+"{
+  \"version\": \"0.2.1\",
+  \"defaults\": {},
+  \"configurations\": [
+    {
+      \"type\": \"default\",
+      \"project\": \"CMakeLists.txt\",
+      \"projectTarget\": \"wpiemu_app.exe\",
+      \"name\": \"wpiemu_app.exe\",
+      \"env\": { \"PATH\": \"${_qt_bin_json};\${env.PATH}\" }
+    },
+    {
+      \"type\": \"default\",
+      \"project\": \"CMakeLists.txt\",
+      \"projectTarget\": \"wpiemu_app.exe\",
+      \"name\": \"wpiemu_app.exe --demo\",
+      \"args\": [ \"--demo\" ],
+      \"env\": { \"PATH\": \"${_qt_bin_json};\${env.PATH}\" }
+    }
+  ]
+}
+")
+    file(WRITE "${PROJECT_SOURCE_DIR}/.vs/launch.vs.json" "${_launch_json}")
+endif()
+
 if(WPIEMU_BUILD_TESTS)
     enable_testing()   # the root enables it after this directory; tests registered here need it earlier
     add_subdirectory(tests)

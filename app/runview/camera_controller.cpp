@@ -47,9 +47,9 @@ void CameraController::setMode(CameraMode mode) {
 void CameraController::reset() {
     const float tanHalf = std::tan(kFov * 0.5f * kPi / 180.f);
     target_ = fieldCenter_;
-    yaw_ = kPi;
-    pitch_ = 0.7f;
-    distance_ = std::max(fieldLength_, fieldWidth_) * 0.8f;
+    yaw_ = -kPi * 0.5f;   // side-on, so both alliance walls are visible
+    pitch_ = 0.4f;
+    distance_ = std::max(fieldLength_, fieldWidth_) * 1.05f;
     followYawOffset_ = 0.f;
     followPitch_ = 0.45f;
     followDistance_ = 3.5f;
@@ -60,11 +60,12 @@ void CameraController::reset() {
 }
 
 void CameraController::clampState() {
-    pitch_ = std::clamp(pitch_, 0.05f, 1.52f);
-    followPitch_ = std::clamp(followPitch_, 0.05f, 1.5f);
+    // Pitch is unrestricted: it wraps so the camera can pass over the poles and under the ground.
+    pitch_ = wrapPi(pitch_);
+    followPitch_ = wrapPi(followPitch_);
     const float span = std::max(fieldLength_, fieldWidth_);
-    distance_ = std::clamp(distance_, 0.8f, span * 3.f);
-    followDistance_ = std::clamp(followDistance_, 1.2f, 30.f);
+    distance_ = std::clamp(distance_, 0.2f, span * 6.f);
+    followDistance_ = std::clamp(followDistance_, 0.5f, 60.f);
     topHeight_ = std::clamp(topHeight_, 3.f, span * 3.f);
 }
 
@@ -153,16 +154,19 @@ CameraPose CameraController::pose() const {
     CameraPose p;
     p.fieldOfViewDeg = kFov;
     const sdk::Vec3 up{0.f, 0.f, 1.f};
+    // Past the poles the camera is upside down; flip the up hint so the view rolls over smoothly.
+    const sdk::Vec3 orbitUp = std::cos(pitch_) < 0.f ? sdk::Vec3{0.f, 0.f, -1.f} : up;
+    const sdk::Vec3 followUp = std::cos(followPitch_) < 0.f ? sdk::Vec3{0.f, 0.f, -1.f} : up;
     switch (mode_) {
         case CameraMode::Orbit: {
             p.position = target_ + sphericalOffset(yaw_, pitch_, distance_);
-            p.rotation = lookRotation(target_ - p.position, up);
+            p.rotation = lookRotation(target_ - p.position, orbitUp);
             break;
         }
         case CameraMode::Follow: {
             const sdk::Vec3 focus = followTarget_ + sdk::Vec3{0.f, 0.f, 0.25f};
             p.position = focus + sphericalOffset(followYaw_ + kPi + followYawOffset_, followPitch_, followDistance_);
-            p.rotation = lookRotation(focus - p.position, up);
+            p.rotation = lookRotation(focus - p.position, followUp);
             break;
         }
         case CameraMode::TopDown: {

@@ -22,7 +22,7 @@ QString ShellController::projectName() const {
 }
 
 QString ShellController::windowTitle() const {
-    return hasProject() ? tr("%1 — WPI Emulator").arg(projectName()) : tr("WPI Emulator");
+    return hasProject() ? tr("%1 — %2 — WPI Emulator").arg(projectName(), gameLabel()) : tr("WPI Emulator");
 }
 
 QString ShellController::gameLabel() const {
@@ -38,8 +38,10 @@ QString ShellController::runtimeLabel() const {
         case HostProcessState::Idle: return tr("Robot not running");
         case HostProcessState::Starting: return tr("Starting robot…");
         case HostProcessState::Running:
-            if (s.link == HostLinkState::Connected)
-                return s.mode == RuntimeMode::Discovery ? tr("Detecting devices…") : tr("Robot connected");
+            if (s.link == HostLinkState::Connected) {
+                if (s.simulating) return tr("Simulating");
+                return s.programStarted ? tr("Robot ready") : tr("Starting robot program…");
+            }
             return tr("Waiting for the robot to connect…");
         case HostProcessState::Stopping: return tr("Stopping robot…");
         case HostProcessState::Exited: return tr("Robot stopped");
@@ -54,10 +56,11 @@ void ShellController::setMode(AppMode mode) {
     if (mode == mode_) return;
     mode_ = mode;
     emit modeChanged(mode_);
+    if (mode_ == AppMode::Run) services_.runtime().startSimulation();   // launches first if needed; Begin is sent once armed
+    else launchRobot();
 }
 
-void ShellController::syncRuntime() {
-    ProjectSession& session = services_.session();
+void ShellController::syncRuntime() {    ProjectSession& session = services_.session();
     if (const sdk::IGameModule* module = session.gameModule()) {
         // Plugin mechanism templates must be registered before anything validates or builds against them.
         if (auto* mutableModule = services_.plugins().find(module->metadata().id)) {
@@ -79,6 +82,7 @@ OpenOutcome ShellController::openProject(const QString& path) {
     if (session.needsSetup()) return OpenOutcome::NeedsSetup;
     mode_ = AppMode::Editor;
     emit modeChanged(mode_);
+    launchRobot();
     return OpenOutcome::Opened;
 }
 
@@ -99,6 +103,7 @@ bool ShellController::restoreLastProject() {
     }
     mode_ = AppMode::Editor;
     emit modeChanged(mode_);
+    launchRobot();
     return true;
 }
 
@@ -109,30 +114,36 @@ void ShellController::closeProject() {
     emit modeChanged(mode_);
 }
 
-void ShellController::setupCompleted(bool detectDevices) {
+void ShellController::setupCompleted() {
     mode_ = AppMode::Editor;
     emit modeChanged(mode_);
-    if (detectDevices) startDiscovery();
+    launchRobot();
 }
 
-void ShellController::startDiscovery() {
+void ShellController::launchRobot() {
+    if (canRun()) services_.runtime().launch();
+}
+
+// Starts the simulation on the (already launched) robot; the Run tab is shown while it runs.
+void ShellController::startSimulation() {
     if (!canRun()) {
         emit errorOccurred(tr("Set up the robot first."));
         return;
     }
-    setMode(AppMode::Editor);
-    services_.runtime().start(RuntimeMode::Discovery);
+    if (mode_ != AppMode::Run) setMode(AppMode::Run);   // entering the Run tab starts the simulation
+    else services_.runtime().startSimulation();
 }
 
-void ShellController::startRobot() {
-    if (!canRun()) {
-        emit errorOccurred(tr("Set up the robot first."));
-        return;
-    }
-    setMode(AppMode::Run);
-    services_.runtime().start(RuntimeMode::Run);
-}
+void ShellController::stopSimulation() { services_.runtime().stopSimulation(); }
 
 void ShellController::stopRobot() { services_.runtime().stop(); }
+
+void ShellController::rescanDevices() {
+    if (!canRun()) {
+        emit errorOccurred(tr("Set up the robot first."));
+        return;
+    }
+    services_.runtime().restart();
+}
 
 }  // namespace wpiemu::app

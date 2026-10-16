@@ -7,60 +7,64 @@ using namespace wpiemu::app::runview;
 using wpiemu::sdk::LogLevel;
 
 namespace {
-RunStatus status(RobotProcessState p, LinkState l = LinkState::Disconnected, int code = 0) {
+RunStatus status(RobotProcessState p, LinkState l = LinkState::Disconnected, int code = 0, bool started = false, bool simulating = false) {
     RunStatus s;
     s.process = p;
     s.link = l;
     s.exitCode = code;
+    s.programStarted = started;
+    s.simulating = simulating;
     return s;
 }
 }  // namespace
 
-TEST_CASE("control state follows the robot process lifecycle") {
+TEST_CASE("control state follows the robot and simulation lifecycle") {
     const auto idle = deriveControlState(status(RobotProcessState::Idle), false);
-    CHECK(idle.canStart);
-    CHECK_FALSE(idle.canStop);
     CHECK(idle.canRestart);
-    CHECK_FALSE(idle.canReset);
-    CHECK_FALSE(idle.canPause);
+    CHECK_FALSE(idle.simulating);
 
     const auto starting = deriveControlState(status(RobotProcessState::Starting, LinkState::Connecting), false);
-    CHECK_FALSE(starting.canStart);
-    CHECK(starting.canStop);
-    CHECK_FALSE(starting.canReset);
+    CHECK(starting.canRestart);
+    CHECK_FALSE(starting.simulating);
 
-    const auto running = deriveControlState(status(RobotProcessState::Running, LinkState::Connected), false);
-    CHECK_FALSE(running.canStart);
-    CHECK(running.canStop);
-    CHECK(running.canReset);
-    CHECK(running.canPause);
-    CHECK_FALSE(running.canStep);
+    const auto armed = deriveControlState(status(RobotProcessState::Running, LinkState::Connected, 0, true), false);
+    CHECK(armed.canRestart);
+    CHECK_FALSE(armed.simulating);
 
-    const auto paused = deriveControlState(status(RobotProcessState::Running, LinkState::Connected), true);
-    CHECK(paused.canStep);
+    const auto running = deriveControlState(status(RobotProcessState::Running, LinkState::Connected, 0, true, true), false);
+    CHECK(running.canRestart);
+    CHECK(running.simulating);
+
+    const auto paused = deriveControlState(status(RobotProcessState::Running, LinkState::Connected, 0, true, true), true);
     CHECK(paused.paused);
 
-    for (auto p : {RobotProcessState::Exited, RobotProcessState::Crashed, RobotProcessState::FailedToStart}) {
-        const auto s = deriveControlState(status(p), false);
-        CHECK(s.canStart);
-        CHECK_FALSE(s.canStop);
-    }
-    CHECK_FALSE(deriveControlState(status(RobotProcessState::Stopping), false).canStart);
+    for (auto p : {RobotProcessState::Exited, RobotProcessState::Crashed, RobotProcessState::FailedToStart}) CHECK(deriveControlState(status(p), false).canRestart);
+    CHECK_FALSE(deriveControlState(status(RobotProcessState::Stopping), false).canRestart);
 }
 
 TEST_CASE("status presentation covers empty, loading and error states") {
     const auto idle = presentStatus(status(RobotProcessState::Idle), false);
     CHECK(idle.showOverlay);
-    CHECK(idle.offerStart);
+    CHECK(idle.offerRestart);
 
     const auto starting = presentStatus(status(RobotProcessState::Starting), false);
     CHECK(starting.tone == Tone::Info);
     CHECK(starting.showOverlay);
-    CHECK_FALSE(starting.offerStart);
+    CHECK_FALSE(starting.offerRestart);
 
-    const auto ok = presentStatus(status(RobotProcessState::Running, LinkState::Connected), true);
+    const auto initializing = presentStatus(status(RobotProcessState::Running, LinkState::Connected), false);
+    CHECK(initializing.tone == Tone::Info);
+    CHECK(initializing.showOverlay);
+
+    const auto armed = presentStatus(status(RobotProcessState::Running, LinkState::Connected, 0, true), false);
+    CHECK(armed.tone == Tone::Success);
+    CHECK_FALSE(armed.showOverlay);
+    CHECK(armed.chipText.contains(QStringLiteral("ready")));
+
+    const auto ok = presentStatus(status(RobotProcessState::Running, LinkState::Connected, 0, true, true), true);
     CHECK(ok.tone == Tone::Success);
     CHECK_FALSE(ok.showOverlay);
+    CHECK(ok.chipText == QStringLiteral("Simulating"));
 
     const auto waiting = presentStatus(status(RobotProcessState::Running, LinkState::Connecting), false);
     CHECK(waiting.showOverlay);
@@ -81,7 +85,7 @@ TEST_CASE("status presentation covers empty, loading and error states") {
 
     const auto crashed = presentStatus(status(RobotProcessState::Crashed, LinkState::Disconnected, 137), false);
     CHECK(crashed.tone == Tone::Error);
-    CHECK(crashed.offerStart);
+    CHECK(crashed.offerRestart);
     CHECK(crashed.chipText.contains(QStringLiteral("137")));
 
     RunStatus failed = status(RobotProcessState::FailedToStart);
@@ -89,12 +93,6 @@ TEST_CASE("status presentation covers empty, loading and error states") {
     const auto f = presentStatus(failed, false);
     CHECK(f.detail == QStringLiteral("gradlew missing"));
     CHECK(f.tone == Tone::Error);
-}
-
-TEST_CASE("real DS chip is neutral unless configured") {
-    CHECK(realDsTone(RealDsState::NotConfigured) == Tone::Neutral);
-    CHECK(realDsTone(RealDsState::Connected) == Tone::Success);
-    CHECK(realDsTone(RealDsState::Disconnected) == Tone::Warning);
 }
 
 TEST_CASE("log level guessing from raw robot output") {
