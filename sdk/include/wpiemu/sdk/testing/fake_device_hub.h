@@ -59,7 +59,11 @@ public:
         return id;
     }
 
-    void setMotorOutput(const SlotAddress& slot, const MotorOutput& output) { motorOutputs_[slot] = output; }
+    void setMotorOutput(const SlotAddress& slot, const MotorOutput& output) {
+        MotorOutput validOutput = output;
+        validOutput.valid = true;
+        motorOutputs_[slot] = validOutput;
+    }
     void setDigitalOutput(const SlotAddress& slot, bool output) { digitalOutputs_[slot] = output; }
     void setBatteryVoltage(double volts) { batteryVoltage_ = volts; }
 
@@ -80,9 +84,10 @@ public:
     }
 
     MotorOutput motorOutput(const SlotAddress& slot) const override {
-        if (!resolve(slot)) return {};
         const auto it = motorOutputs_.find(slot);
-        return it == motorOutputs_.end() ? MotorOutput{} : it->second;
+        MotorOutput output = it == motorOutputs_.end() ? MotorOutput{} : it->second;
+        if (!resolve(slot)) output.valid = false;
+        return output;
     }
 
     bool digitalOutput(const SlotAddress& slot) const override {

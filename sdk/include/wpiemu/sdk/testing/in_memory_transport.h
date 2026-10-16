@@ -86,9 +86,11 @@ struct MemoryCodecState {
 
 }  // namespace detail
 
+using InMemoryTransport = detail::InMemoryTransport;
+
 struct InMemoryTransportPair {
-    std::unique_ptr<proto::ITransport> a;
-    std::unique_ptr<proto::ITransport> b;
+    std::unique_ptr<InMemoryTransport> a;
+    std::unique_ptr<InMemoryTransport> b;
 };
 
 inline InMemoryTransportPair makeInMemoryTransportPair() {

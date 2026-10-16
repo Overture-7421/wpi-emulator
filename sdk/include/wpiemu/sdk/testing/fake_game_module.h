@@ -42,6 +42,9 @@ public:
         int onTickCalls = 0;
         int migrateRobotConfigCalls = 0;
         int lastPersistedVersion = 0;
+        int registerMechanismsCalls = 0;
+        int createFieldCalls = 0;
+        int createGameStateCalls = 0;
     };
 
     FakeGameModule() : FakeGameModule("game_fake", 2999) {}
@@ -56,16 +59,27 @@ public:
     }
 
     Status registerMechanisms(MechanismFactory& factory) override {
+        ++counters_->registerMechanismsCalls;
         MechanismTemplateInfo info;
         info.type = id_ + ".fake_mechanism";
         info.displayName = "Fake mechanism";
         info.origin = id_;
+        info.slotSpecs.push_back({"motor", "Motor", SlotType::Motor, true, ""});
+        PropertySpec gearRatio;
+        gearRatio.key = "gearRatio";
+        gearRatio.label = "Gear ratio";
+        gearRatio.type = PropertyType::Double;
+        gearRatio.defaultValue = 1.0;
+        gearRatio.min = 0.01;
+        gearRatio.max = 1000.0;
+        info.properties.properties.push_back(std::move(gearRatio));
         return factory.registerTemplate(std::move(info), [](const MechanismBuildContext& context) {
             return std::make_unique<FakeMechanism>(context);
         });
     }
 
     Result<std::unique_ptr<IField>> createField(IPhysicsWorld&) override {
+        ++counters_->createFieldCalls;
         class FakeField final : public IField {
         public:
             FakeField() {
@@ -82,6 +96,7 @@ public:
     }
 
     Result<std::unique_ptr<IGameState>> createGameState(SimContext&) override {
+        ++counters_->createGameStateCalls;
         class FakeState final : public IGameState {
         public:
             FakeState(std::string pluginId, std::shared_ptr<Counters> counters)
@@ -107,6 +122,14 @@ public:
     PluginConfigSchema contributeConfigSchema() const override {
         PluginConfigSchema schema;
         schema.schemaVersion = 2;
+        PropertySpec capacity;
+        capacity.key = "capacity";
+        capacity.label = "Capacity";
+        capacity.type = PropertyType::Int;
+        capacity.defaultValue = 3;
+        capacity.min = 1;
+        capacity.max = 100;
+        schema.properties.properties.push_back(std::move(capacity));
         return schema;
     }
 
@@ -117,7 +140,8 @@ public:
             int toVersion() const override { return 2; }
             Status migrate(Value& data) const override {
                 if (const Value* old = data.find("cap")) {
-                    data["capacity"] = *old;
+                    const Value value = *old;
+                    data["capacity"] = value;
                     data.object().erase("cap");
                 }
                 return okStatus();

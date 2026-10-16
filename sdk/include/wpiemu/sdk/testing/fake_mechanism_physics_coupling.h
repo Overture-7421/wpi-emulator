@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "wpiemu/sdk/mechanisms/physics_coupling.h"
+#include "wpiemu/sdk/physics/physics_world.h"
 
 namespace wpiemu::sdk::testing {
 
@@ -86,7 +87,19 @@ public:
         }
         scriptedLoads_.clear();
     }
-    void setChassisMass(const MassProperties& mass) { chassisMass_ = mass; }
+    void flushTo(IPhysicsWorld& world, BodyId chassis) {
+        if (hasChassisMass_) world.setMassProperties(chassis, composedMass(chassisMass_));
+        const Pose3 chassisPose = world.pose(chassis);
+        for (const PendingWrench& pending : consumePendingWrenches()) {
+            world.applyForce(chassis, pending.wrench.force, chassisPose.transformPoint(pending.point));
+            world.applyTorque(chassis, pending.wrench.torque);
+        }
+    }
+    void endStep() { completeStep(); }
+    void setChassisMass(const MassProperties& mass) {
+        chassisMass_ = mass;
+        hasChassisMass_ = true;
+    }
     const std::map<std::string, PayloadMass, std::less<>>& payloads() const { return payloads_; }
     MassProperties composedMass(const MassProperties& base) const {
         std::vector<PayloadMass> values;
@@ -108,6 +121,7 @@ private:
     std::map<ConstraintHandle, ConstraintLoad> scriptedLoads_;
     std::map<std::string, PayloadMass, std::less<>> payloads_;
     MassProperties chassisMass_;
+    bool hasChassisMass_ = false;
 };
 
 }  // namespace wpiemu::sdk::testing
