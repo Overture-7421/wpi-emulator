@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: windows, os: windows-latest, preset: windows-vs2022, qt_arch: win64_msvc2022_64 }
+          - { name: windows, os: windows-2022, preset: windows-vs2022, qt_arch: win64_msvc2022_64 }
           - { name: linux, os: ubuntu-latest, preset: linux, qt_arch: "" }
           - { name: macos, os: macos-latest, preset: macos, qt_arch: "" }
     steps:
