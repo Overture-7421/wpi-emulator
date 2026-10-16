@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>wpiemu</id>
+  <name>WPI Emulator</name>
+  <summary>Run unmodified WPILib robot projects in a simulator</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <description>
+    <p>WPI Emulator runs an unmodified WPILib robot project (Java or C++) in simulation. A HALSim extension inside the
+    robot process talks to this application, which owns the physics, the mechanisms and the 3D view.</p>
+  </description>
+  <launchable type="desktop-id">wpiemu.desktop</launchable>
+  <provides>
+    <binary>wpiemu_app</binary>
+  </provides>
+  <categories>
+    <category>Development</category>
+    <category>Education</category>
+  </categories>
+</component>

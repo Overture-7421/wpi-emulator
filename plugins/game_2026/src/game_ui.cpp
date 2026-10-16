@@ -1,0 +1,125 @@
+#include "wpiemu/plugins/game_2026/game_ui.h"
+
+#include <initializer_list>
+#include <string>
+#include <utility>
+
+#include "wpiemu/plugins/game_2026/config.h"
+#include "wpiemu/plugins/game_2026/fuel_intake.h"
+#include "wpiemu/plugins/game_2026/fuel_shooter.h"
+#include "wpiemu/plugins/game_2026/game_state.h"
+
+namespace wpiemu::plugins::game_2026 {
+
+namespace {
+
+using sdk::HudAnchor;
+using sdk::HudWidgetDescriptor;
+using sdk::HudWidgetKind;
+
+HudWidgetDescriptor widget(std::string id, std::string title, HudWidgetKind kind, const char* valueKey, HudAnchor anchor,
+                           int order) {
+    HudWidgetDescriptor w;
+    w.id = "game_2026." + std::move(id);
+    w.title = std::move(title);
+    w.kind = kind;
+    w.valueKey = valueKey;
+    w.anchor = anchor;
+    w.order = order;
+    return w;
+}
+
+sdk::PropertySchema subset(const sdk::PropertySchema& all, std::initializer_list<const char*> keys) {
+    sdk::PropertySchema out;
+    for (const char* key : keys)
+        if (const sdk::PropertySpec* spec = all.find(key)) out.properties.push_back(*spec);
+    return out;
+}
+
+}  // namespace
+
+std::vector<HudWidgetDescriptor> hudWidgets() {
+    std::vector<HudWidgetDescriptor> w;
+
+    HudWidgetDescriptor meter = widget("fuel_meter", "Fuel", HudWidgetKind::Meter, hud::kFuelCount, HudAnchor::BottomCenter, 0);
+    meter.maxKey = hud::kFuelCapacity;
+    meter.unit = "fuel";
+    meter.color = "#ffd000";
+    w.push_back(std::move(meter));
+
+    w.push_back(widget("match_time", "Match", HudWidgetKind::Timer, hud::kMatchTime, HudAnchor::TopCenter, 0));
+    w.push_back(widget("match_phase", "Phase", HudWidgetKind::Text, hud::kMatchPhase, HudAnchor::TopCenter, 1));
+
+    HudWidgetDescriptor own = widget("hub_own", "Our hub", HudWidgetKind::Badge, hud::kHubOwnActive, HudAnchor::TopCenter, 2);
+    w.push_back(std::move(own));
+
+    HudWidgetDescriptor red = widget("score_red", "Red fuel points", HudWidgetKind::Counter, hud::kScoreRed, HudAnchor::TopLeft, 0);
+    red.color = "#d93025";
+    w.push_back(std::move(red));
+    HudWidgetDescriptor blue = widget("score_blue", "Blue fuel points", HudWidgetKind::Counter, hud::kScoreBlue, HudAnchor::TopRight, 0);
+    blue.color = "#1a73e8";
+    w.push_back(std::move(blue));
+    HudWidgetDescriptor redHub = widget("hub_red", "Red hub", HudWidgetKind::Badge, hud::kHubRedActive, HudAnchor::TopLeft, 1);
+    redHub.color = "#d93025";
+    w.push_back(std::move(redHub));
+    HudWidgetDescriptor blueHub = widget("hub_blue", "Blue hub", HudWidgetKind::Badge, hud::kHubBlueActive, HudAnchor::TopRight, 1);
+    blueHub.color = "#1a73e8";
+    w.push_back(std::move(blueHub));
+
+    w.push_back(widget("shots", "Shots fired", HudWidgetKind::Counter, hud::kShots, HudAnchor::BottomLeft, 0));
+    w.push_back(widget("fuel_on_field", "Fuel on field", HudWidgetKind::Counter, hud::kFuelOnField, HudAnchor::BottomLeft, 1));
+    return w;
+}
+
+std::vector<sdk::EditorPanelDescriptor> editorPanels() {
+    const sdk::PropertySchema config = configPropertySchema();
+    std::vector<sdk::EditorPanelDescriptor> panels;
+
+    sdk::EditorPanelDescriptor meter;
+    meter.id = "game_2026.fuel_meter";
+    meter.title = "Fuel meter";
+    meter.scope = sdk::PanelScope::PluginConfig;
+    meter.properties = subset(config, {"capacity", "preloadFuel"});
+    meter.order = 0;
+    panels.push_back(std::move(meter));
+
+    sdk::EditorPanelDescriptor staging;
+    staging.id = "game_2026.field_staging";
+    staging.title = "Field staging";
+    staging.scope = sdk::PanelScope::PluginConfig;
+    staging.properties = subset(config, {"neutralFuel", "depotFuel", "outpostChuteFuel", "humanPlayer", "humanPlayerPeriodS"});
+    staging.order = 1;
+    panels.push_back(std::move(staging));
+
+    sdk::EditorPanelDescriptor rules;
+    rules.id = "game_2026.match_rules";
+    rules.title = "Match rules";
+    rules.scope = sdk::PanelScope::PluginConfig;
+    rules.properties = subset(config, {"enforceHubShifts", "firstInactiveHub", "hubProcessingDelayS", "recycleScoredFuel"});
+    rules.order = 2;
+    panels.push_back(std::move(rules));
+
+    sdk::EditorPanelDescriptor zone;
+    zone.id = "game_2026.intake_zone";
+    zone.title = "Pickup zone";
+    zone.scope = sdk::PanelScope::Mechanism;
+    zone.mechanismTypes = {kIntakeType};
+    zone.properties = subset(fuelIntakeTemplate().properties, {"pickupZone"});
+    zone.overlays.push_back({"pickupZone", "Fuel pickup zone", "#44cc66", true});
+    zone.order = 10;
+    panels.push_back(std::move(zone));
+
+    sdk::EditorPanelDescriptor muzzle;
+    muzzle.id = "game_2026.shooter_muzzle";
+    muzzle.title = "Muzzle";
+    muzzle.scope = sdk::PanelScope::Mechanism;
+    muzzle.mechanismTypes = {kShooterType};
+    muzzle.properties = subset(fuelShooterTemplate().properties, {"muzzleOffset"});
+    muzzle.overlays.push_back({"muzzleOffset", "Fuel exit point", "#ff7043", true});
+    muzzle.order = 11;
+    panels.push_back(std::move(muzzle));
+
+    return panels;
+}
+
+}  // namespace wpiemu::plugins::game_2026

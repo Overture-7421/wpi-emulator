@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  WPILIB_VERSION: "2026.2.1"   # must match WPIEMU_WPILIB_VERSION in halsim_ext/cmake/WpiEmuWpilib.cmake
+  QT_QPA_PLATFORM: offscreen    # every Qt test / smoke run is headless
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows, os: windows-latest, preset: windows-vs2022, qt_arch: win64_msvc2022_64 }
+          - { name: linux, os: ubuntu-latest, preset: linux, qt_arch: "" }
+          - { name: macos, os: macos-latest, preset: macos, qt_arch: "" }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Architecture boundary check
+        run: python tools/check_boundaries.py --root .
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-0 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+            libxcb-xinerama0 libegl1 libvulkan-dev \
+            libx11-dev libxext-dev libxrandr-dev libxi-dev libxcursor-dev libxfixes-dev libxss-dev \
+            libudev-dev libasound2-dev
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.*"
+          arch: ${{ matrix.qt_arch }}
+          modules: qtquick3d qtshadertools
+          cache: true
+
+      # The WPILib HAL zips (frcmaven) are fetched by CMake; cache them so reruns stay offline.
+      - name: Cache WPILib downloads
+        uses: actions/cache@v4
+        with:
+          path: build/${{ matrix.preset }}/_wpilib/downloads
+          key: wpilib-${{ env.WPILIB_VERSION }}-${{ matrix.name }}
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }} -DWPIEMU_WPILIB_DOWNLOAD=ON -DWPIEMU_RUNVIEW_FETCH_SDL2=ON
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}-release
+
+      - name: Test (includes boundaries.check and the headless app smoke test)
+        run: ctest --preset ${{ matrix.preset }}-release
+
+      # Catches install() / Qt deployment regressions long before a release tag is pushed.
+      - name: Install smoke test
+        shell: bash
+        run: |
+          cmake --install build/${{ matrix.preset }} --config Release --prefix "$PWD/stage"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            stage/wpiemu_app.app/Contents/MacOS/wpiemu_app --version
+            test -f stage/wpiemu_app.app/Contents/PlugIns/wpiemu/libhalsim_wpiemu.dylib
+          elif [ "$RUNNER_OS" = "Windows" ]; then
+            stage/bin/wpiemu_app.exe --version
+            test -f stage/extensions/halsim_wpiemu.dll
+            test -f stage/plugins/platforms/qwindows.dll
+          else
+            stage/bin/wpiemu_app --version
+            test -f stage/lib/wpiemu/libhalsim_wpiemu.so
+          fi

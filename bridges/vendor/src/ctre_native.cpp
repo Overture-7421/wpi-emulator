@@ -1,0 +1,191 @@
+#include "wpiemu/bridges/vendor/ctre_native.h"
+
+#include <bit>
+#include <charconv>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <set>
+
+namespace wpiemu::bridges::vendor {
+
+std::string_view ctreModelName(CtreDeviceType type) {
+    switch (type) {
+        case CtreDeviceType::P6_TalonFX: return "talon fx";
+        case CtreDeviceType::P6_TalonFXS: return "talon fxs";
+        case CtreDeviceType::P6_CANcoder: return "cancoder";
+        case CtreDeviceType::P6_Pigeon2: return "pigeon 2";
+        case CtreDeviceType::P6_CANdle: return "candle";
+        case CtreDeviceType::P6_CANrange: return "canrange";
+        case CtreDeviceType::P6_CANdi: return "candi";
+        default: return {};
+    }
+}
+
+std::optional<CtreDeviceType> ctreDeviceTypeFromDescriptorType(std::string_view t) {
+    if (t == "talonfx") return CtreDeviceType::P6_TalonFX;
+    if (t == "talonfxs") return CtreDeviceType::P6_TalonFXS;
+    if (t == "cancoder") return CtreDeviceType::P6_CANcoder;
+    if (t == "pigeon2") return CtreDeviceType::P6_Pigeon2;
+    if (t == "candle") return CtreDeviceType::P6_CANdle;
+    if (t == "canrange") return CtreDeviceType::P6_CANrange;
+    if (t == "candi") return CtreDeviceType::P6_CANdi;
+    if (t == "talonsrx") return CtreDeviceType::TalonSRX;
+    if (t == "victorspx") return CtreDeviceType::VictorSPX;
+    if (t == "pigeonimu") return CtreDeviceType::PigeonIMU;
+    return std::nullopt;
+}
+
+namespace {
+
+const std::set<int>& floatSpns() {
+    static const std::set<int> kFloat{spn::kCancoderMagnetOffset,    spn::kStatorCurrentLimit,
+                                      spn::kSupplyCurrentLimit,      spn::kPeakForwardDutyCycle,
+                                      spn::kPeakReverseDutyCycle,    spn::kPeakForwardVoltage,
+                                      spn::kPeakReverseVoltage,      spn::kSensorToMechanismRatio,
+                                      spn::kRotorToSensorRatio};
+    return kFloat;
+}
+
+template <class T>
+bool parseNumber(std::string_view s, T& out) {
+    const auto res = std::from_chars(s.data(), s.data() + s.size(), out);
+    return res.ec == std::errc{} && res.ptr == s.data() + s.size();
+}
+
+std::string_view trim(std::string_view s) {
+    while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r')) s.remove_prefix(1);
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r' || s.back() == '\0')) s.remove_suffix(1);
+    return s;
+}
+
+}  // namespace
+
+CtreConfigSnapshot CtreConfigSnapshot::parse(std::string_view text) {
+    CtreConfigSnapshot snap;
+    while (!text.empty()) {
+        const auto nl = text.find('\n');
+        std::string_view line = trim(text.substr(0, nl));
+        text = nl == std::string_view::npos ? std::string_view{} : text.substr(nl + 1);
+        const auto comma = line.find(',');
+        if (comma == std::string_view::npos) continue;
+        int id = 0;
+        if (!parseNumber(trim(line.substr(0, comma)), id)) continue;
+        snap.raw_[id] = std::string(trim(line.substr(comma + 1)));
+    }
+    return snap;
+}
+
+std::optional<double> CtreConfigSnapshot::number(int spnId) const {
+    const auto it = raw_.find(spnId);
+    if (it == raw_.end()) return std::nullopt;
+    std::string_view token = it->second;
+    if (token.starts_with("f_")) {
+        token.remove_prefix(2);
+        const std::string text(token);  // from_chars(double) is missing in older libc++
+        char* end = nullptr;
+        const double d = std::strtod(text.c_str(), &end);
+        if (end != text.c_str() && *end == '\0') return d;
+        return std::nullopt;
+    }
+    if (token.starts_with("s_")) token.remove_prefix(2);
+    if (floatSpns().count(spnId) != 0) {
+        std::uint32_t bits = 0;
+        if (!parseNumber(token, bits)) return std::nullopt;
+        return static_cast<double>(std::bit_cast<float>(bits));
+    }
+    long long n = 0;
+    if (parseNumber(token, n)) return static_cast<double>(n);
+    return std::nullopt;
+}
+
+std::optional<int> CtreConfigSnapshot::integer(int spnId) const {
+    const auto v = number(spnId);
+    if (!v) return std::nullopt;
+    return static_cast<int>(*v);
+}
+
+std::optional<bool> CtreConfigSnapshot::clockwisePositive() const {
+    const auto inverted = integer(spn::kInverted);
+    if (inverted) return *inverted == 1;
+    const auto direction = integer(spn::kCancoderSensorDirection);
+    if (direction) return *direction == 1;
+    return std::nullopt;
+}
+
+std::string CtreConfigSnapshot::summary() const {
+    std::string out;
+    const auto add = [&out](const char* label, const std::string& value) {
+        if (!out.empty()) out += ' ';
+        out += label;
+        out += '=';
+        out += value;
+    };
+    const auto fmt = [](double d) {
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%g", d);
+        return std::string(buf);
+    };
+    if (const auto cw = clockwisePositive()) add("cw+", *cw ? "true" : "false");
+    if (const auto v = sensorToMechanismRatio()) add("sensorToMechanism", fmt(*v));
+    if (const auto v = rotorToSensorRatio()) add("rotorToSensor", fmt(*v));
+    if (const auto v = feedbackSensorSource()) add("feedbackSource", std::to_string(*v));
+    if (const auto v = remoteSensorId()) add("remoteSensorId", std::to_string(*v));
+    if (const auto v = magnetOffsetRot()) add("magnetOffsetRot", fmt(*v));
+    if (const auto v = forwardLimitType()) add("fwdLimitType", std::to_string(*v));
+    if (const auto v = reverseLimitType()) add("revLimitType", std::to_string(*v));
+    if (out.empty()) out = std::to_string(raw_.size()) + " config entries";
+    return out;
+}
+
+CtreSimNative::CtreSimNative(std::shared_ptr<const ISymbolResolver> resolver) : resolver_(std::move(resolver)) {
+    if (!resolver_) return;
+    encodeDevice_ = reinterpret_cast<EncodeDeviceFn>(resolver_->resolve("c_ctre_phoenix6_encode_device"));
+    getConfigs_ = reinterpret_cast<GetConfigsNoMallocFn>(resolver_->resolve("c_ctre_phoenix6_get_configs_no_malloc"));
+    getPhysics_ = reinterpret_cast<GetPhysicsFn>(resolver_->resolve("c_ctre_phoenix6_platform_sim_get_physics_value"));
+    setPhysics_ = reinterpret_cast<SetPhysicsFn>(resolver_->resolve("c_ctre_phoenix6_platform_sim_set_physics_input"));
+}
+
+sdk::Result<std::string> CtreSimNative::readConfigs(CtreDeviceType type, int id, std::string_view bus) const {
+    if (!hasConfigReadback()) return sdk::makeError(sdk::ErrorCode::Unsupported, "CTRE config API not available");
+    const std::string_view model = ctreModelName(type);
+    if (model.empty()) return sdk::makeError(sdk::ErrorCode::Unsupported, "no config API for this CTRE device type");
+    const std::string modelStr(model);
+    const std::string busStr(bus.empty() ? std::string_view("rio") : bus);
+
+    std::uint32_t hash = 0;
+    const int encoded = encodeDevice_(id, modelStr.c_str(), busStr.c_str(), &hash);
+    if (encoded < 0) return sdk::makeError(sdk::ErrorCode::InvalidArgument, "encode_device failed: " + std::to_string(encoded));
+
+    std::string buffer(64 * 1024, '\0');
+    const int status = getConfigs_(0, busStr.c_str(), static_cast<int>(hash), configTimeoutSeconds, buffer.data(),
+                                   static_cast<std::uint32_t>(buffer.size()), false);
+    if (status < 0) return sdk::makeError(sdk::ErrorCode::IoError, "get_configs failed: " + std::to_string(status));
+    buffer.resize(std::strlen(buffer.c_str()));
+    if (buffer.empty()) return sdk::makeError(sdk::ErrorCode::NotFound, "device returned no configuration");
+    return buffer;
+}
+
+int CtreSimNative::getPhysicsValue(CtreDeviceType type, int id, const char* key, double* value) const {
+    if (getPhysics_ == nullptr) return kCtreNativeUnavailable;
+    return getPhysics_(static_cast<int>(type), id, key, value);
+}
+
+int CtreSimNative::setPhysicsInput(CtreDeviceType type, int id, const char* key, double value) {
+    if (setPhysics_ == nullptr) return kCtreNativeUnavailable;
+    return setPhysics_(static_cast<int>(type), id, key, value);
+}
+
+std::shared_ptr<ICtreSimNative> makeCtreSimNative(std::shared_ptr<const ISymbolResolver> resolver) {
+    if (!resolver) {
+        std::unique_ptr<ModuleSymbolResolver> module =
+            ModuleSymbolResolver::open(ctreSimModuleName(), ModuleLoadMode::AttachOnly);
+        if (!module) return nullptr;
+        resolver = std::move(module);
+    }
+    auto native = std::make_shared<CtreSimNative>(std::move(resolver));
+    if (!native->hasConfigReadback() && !native->hasPhysicsApi()) return nullptr;
+    return native;
+}
+
+}  // namespace wpiemu::bridges::vendor

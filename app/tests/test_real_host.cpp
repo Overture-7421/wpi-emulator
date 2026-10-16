@@ -1,0 +1,217 @@
+// The real runtime host (RealRuntimeHost, the default of AppServices) driven headlessly against a synthetic project whose
+// "gradlew" is a tiny script: start-up failures, stop, restart and the shell's view of them. No WPILib, JDK or display needed.
+#include <doctest/doctest.h>
+
+#include <QDir>
+#include <QFile>
+#include <QSignalSpy>
+
+#include "common/real_runtime_host.h"
+#include "common/robot_basics.h"
+#include "gui_support.h"
+#include "shell/main_window.h"
+#include "shell/page_factory.h"
+#include "shell/shell_controller.h"
+
+using namespace wpiemu::app;
+using namespace wpiemu::app::testing;
+namespace sdk = wpiemu::sdk;
+
+namespace {
+
+#if defined(_WIN32)
+constexpr const char* kWaitScript = "@echo off\r\necho fake gradle started\r\n:loop\r\nping -n 2 127.0.0.1 >nul\r\ngoto loop\r\n";
+constexpr const char* kFailScript = "@echo off\r\necho fake gradle: BUILD FAILED\r\nexit /b 3\r\n";
+constexpr const char* kWrapper = "/gradlew.bat";
+#else
+constexpr const char* kWaitScript = "#!/bin/sh\necho fake gradle started\nwhile true; do sleep 1; done\n";
+constexpr const char* kFailScript = "#!/bin/sh\necho fake gradle: BUILD FAILED\nexit 3\n";
+constexpr const char* kWrapper = "/gradlew";
+#endif
+
+// App services with the real host, one open project with a saved robot model, and a stand-in for halsim_wpiemu.
+struct RealFixture {
+    GuiEnvironment env{true, true};
+    ShellController controller{*env.services};
+    TestProject project;
+    QTemporaryDir extensionDir;
+    QStringList logs;
+    QByteArray previousExtensionEnv = qgetenv("WPIEMU_EXTENSION");
+
+    explicit RealFixture(const char* script) {
+        writeFile(project.path() + kWrapper, script);
+#if !defined(_WIN32)
+        QFile::setPermissions(project.path() + kWrapper, QFile::permissions(project.path() + kWrapper) | QFile::ExeOwner);
+#endif
+        env.addProject(project);
+        const QString extension = extensionDir.path() + "/halsim_wpiemu_fake";
+        writeFile(extension, "x");
+        qputenv("WPIEMU_EXTENSION", extension.toUtf8());
+
+        REQUIRE(controller.openProject(project.path()) == OpenOutcome::NeedsSetup);
+        ProjectSession& session = env.services->session();
+        const sdk::RobotConfig config = buildRobotConfig(defaultBasicsFor(sdk::drivetrain_kind::kSwerve), env.services->buildContext(session.inspection()));
+        REQUIRE(session.commit(config, session.prefs()).ok());
+        QObject::connect(&env.services->runtime(), &IRuntimeHost::logLine, [this](const HostLogLine& l) { logs << l.text; });
+    }
+    ~RealFixture() {
+        env.services->runtime().stop();
+        waitFor([&] { return !env.services->runtime().status().active(); }, 15000);
+        if (previousExtensionEnv.isEmpty()) qunsetenv("WPIEMU_EXTENSION");
+        else qputenv("WPIEMU_EXTENSION", previousExtensionEnv);
+    }
+
+    IRuntimeHost& host() { return env.services->runtime(); }
+    bool waitProcess(HostProcessState state, int timeoutMs = 20000) {
+        return waitFor([&] { return host().status().process == state; }, timeoutMs);
+    }
+    bool logged(const QString& fragment) const {
+        for (const QString& l : logs)
+            if (l.contains(fragment)) return true;
+        return false;
+    }
+};
+
+}  // namespace
+
+TEST_CASE("the default runtime is the real host, not the 'no runtime' placeholder") {
+    TestEnvironment env(true, true);
+    CHECK(dynamic_cast<RealRuntimeHost*>(&env.services->runtime()) != nullptr);
+    CHECK(env.services->runtime().status().process == HostProcessState::Idle);
+}
+
+TEST_CASE("real host: a project whose build fails is reported as FailedToStart with the console tail") {
+    RealFixture f(kFailScript);
+    REQUIRE(dynamic_cast<RealRuntimeHost*>(&f.host()) != nullptr);
+    CHECK(f.host().scene().config != nullptr);
+    CHECK(f.host().scene().gameName.contains("2026"));
+    CHECK(f.host().scene().field != nullptr);   // the field the plugin builds, for the viewport
+
+    f.controller.startDiscovery();
+    REQUIRE(f.waitProcess(HostProcessState::FailedToStart));
+    const HostStatus s = f.host().status();
+    CHECK(s.mode == RuntimeMode::Discovery);
+    CHECK(s.exitCode == 3);
+    CHECK(s.detail.contains("BUILD FAILED"));
+    CHECK(!s.active());
+    CHECK(f.controller.runtimeLabel() == QStringLiteral("Robot failed to start"));
+    CHECK(f.logged("fake gradle: BUILD FAILED"));
+    // the user can try again after fixing the project
+    f.controller.startRobot();
+    REQUIRE(waitFor([&] { return f.host().status().mode == RuntimeMode::Run; }));
+    REQUIRE(f.waitProcess(HostProcessState::FailedToStart));
+}
+
+TEST_CASE("real host: Stop ends a starting robot and the process tree, restart starts a fresh run") {
+    RealFixture f(kWaitScript);
+    f.host().start(RuntimeMode::Discovery);
+    CHECK(f.host().status().process == HostProcessState::Starting);
+    CHECK(f.host().status().active());
+    CHECK(f.controller.runtimeLabel() == QStringLiteral("Starting robot…"));
+    CHECK(f.host().latestSnapshot() != nullptr);   // an idle model snapshot is available right away
+
+    QSignalSpy spy(&f.host(), &IRuntimeHost::statusChanged);
+    f.host().stop();
+    CHECK(f.host().status().process == HostProcessState::Stopping);
+    REQUIRE(f.waitProcess(HostProcessState::Exited));
+    CHECK(spy.count() >= 1);
+    CHECK(f.logged("fake gradle started"));
+
+    f.host().start(RuntimeMode::Run);   // after a stop a new run starts cleanly
+    CHECK(f.host().status().process == HostProcessState::Starting);
+    CHECK(f.host().status().mode == RuntimeMode::Run);
+    f.host().restart();
+    CHECK(f.host().status().process == HostProcessState::Starting);
+    f.host().stop();
+    REQUIRE(f.waitProcess(HostProcessState::Exited));
+}
+
+TEST_CASE("real host: the window shows a failed start and closing the project stops the robot") {
+    RealFixture f(kWaitScript);
+    MainWindow window(*f.env.services, f.controller, f.env.ui, createShellPages(*f.env.services, f.env.ui, &f.controller));
+    window.show();
+    f.controller.startDiscovery();
+    CHECK(f.host().status().active());
+    f.controller.closeProject();
+    REQUIRE(waitFor([&] { return !f.host().status().active(); }));
+    CHECK(f.host().status().process == HostProcessState::Idle);   // no project: nothing to report
+    CHECK(window.currentPage() == MainWindow::PageId::Welcome);
+}
+
+// ---- opt-in: the real shell host against a real WPILib project (WPIEMU_E2E=1; see app/host/tests/e2e_test.cpp for the full run) ----
+namespace {
+
+void copyTree(const QString& from, const QString& to) {
+    QDir().mkpath(to);
+    const QDir src(from);
+    for (const QFileInfo& e : src.entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden)) {
+        const QString name = e.fileName();
+        if (name == ".git" || name == "build" || name == ".gradle" || name == "logs") continue;
+        if (e.isDir()) copyTree(e.absoluteFilePath(), to + "/" + name);
+        else QFile::copy(e.absoluteFilePath(), to + "/" + name);
+    }
+}
+
+}  // namespace
+
+TEST_CASE("real host e2e (opt-in): the shell discovers the devices of a real robot and runs it") {
+    if (qEnvironmentVariableIsEmpty("WPIEMU_E2E")) {
+        MESSAGE("skipped: set WPIEMU_E2E=1 to run the shell against a real WPILib project");
+        return;
+    }
+    const QString original = !qEnvironmentVariableIsEmpty("WPIEMU_E2E_PROJECT")
+                                 ? qEnvironmentVariable("WPIEMU_E2E_PROJECT")
+                                 : QDir::cleanPath(QFileInfo(QString::fromUtf8(__FILE__)).absolutePath() + "/../../../FRC-Shelby-2026OS");
+    if (!QFileInfo::exists(original + "/gradlew.bat") && !QFileInfo::exists(original + "/gradlew")) {
+        MESSAGE("skipped: no robot project at " << original.toStdString());
+        return;
+    }
+    qunsetenv("WPIEMU_EXTENSION");   // exercise the real lookup (install layout, then the build-tree fallback)
+
+    GuiEnvironment env(true, true);
+    ShellController controller(*env.services);
+    QTemporaryDir work;
+    const QString project = work.path() + "/project";
+    copyTree(original, project);
+    env.probe->files.insert(QDir::cleanPath(project + "/gradlew"));
+    REQUIRE(controller.openProject(project) == OpenOutcome::NeedsSetup);
+    ProjectSession& session = env.services->session();
+    const sdk::RobotConfig config = buildRobotConfig(defaultBasicsFor(sdk::drivetrain_kind::kSwerve), env.services->buildContext(session.inspection()));
+    REQUIRE(session.commit(config, session.prefs()).ok());
+    IRuntimeHost& host = env.services->runtime();
+    int discovered = 0;
+    QObject::connect(&host, &IRuntimeHost::snapshotPublished, [&] {
+        if (const auto snap = host.latestSnapshot()) discovered = static_cast<int>(snap->devices().size());
+    });
+
+    controller.startDiscovery();
+    REQUIRE_MESSAGE(waitFor([&] { return discovered >= 25 || !host.status().active(); }, 240000), host.status().detail.toStdString());
+    CHECK(discovered >= 25);
+    CHECK(host.status().process == HostProcessState::Running);
+    CHECK(host.status().link == HostLinkState::Connected);
+    host.stop();
+    REQUIRE(waitFor([&] { return !host.status().active(); }, 30000));
+    CHECK(host.status().process == HostProcessState::Exited);
+
+    sdk::proto::DsState ds;
+    ds.enabled = true;
+    ds.mode = sdk::proto::RobotMode::Teleop;
+    host.setDriverStation(ds);
+    controller.startRobot();
+    std::shared_ptr<const sdk::ISimSnapshot> snap;
+    REQUIRE_MESSAGE(waitFor(
+                        [&] {
+                            snap = host.latestSnapshot();
+                            return (snap && snap->robotConnected() && snap->simTimeUs() > 3'000'000) || !host.status().active();
+                        },
+                        240000),
+                    host.status().detail.toStdString());
+    REQUIRE(snap != nullptr);
+    CHECK(snap->robotConnected());
+    CHECK(snap->simTimeUs() > 3'000'000);
+    CHECK(snap->driverStation().enabled);
+    CHECK(host.status().link == HostLinkState::Connected);
+    host.stop();
+    REQUIRE(waitFor([&] { return !host.status().active(); }, 30000));
+    CHECK(host.status().process == HostProcessState::Exited);
+}

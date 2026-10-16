@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- WPI Emulator application icon. Original artwork (top view of a robot on a circular field); same
+     geometry as make_icons.py, which renders the PNG / ICO / ICNS files from these primitives. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <rect width="1024" height="1024" rx="224" ry="224" fill="#16213e"/>
+  <circle cx="512" cy="512" r="372" fill="none" stroke="#2ec4b6" stroke-width="34"/>
+  <rect x="322" y="280" width="380" height="464" rx="58" ry="58" fill="#f4a261"/>
+  <rect x="246" y="278" width="68" height="168" rx="20" ry="20" fill="#e8ecf1"/>
+  <rect x="710" y="278" width="68" height="168" rx="20" ry="20" fill="#e8ecf1"/>
+  <rect x="246" y="578" width="68" height="168" rx="20" ry="20" fill="#e8ecf1"/>
+  <rect x="710" y="578" width="68" height="168" rx="20" ry="20" fill="#e8ecf1"/>
+  <circle cx="512" cy="372" r="58" fill="#0b132b"/>
+  <circle cx="512" cy="372" r="26" fill="#2ec4b6"/>
+  <rect x="416" y="592" width="192" height="36" rx="18" ry="18" fill="#0b132b"/>
+</svg>

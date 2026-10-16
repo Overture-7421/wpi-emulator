@@ -1,0 +1,23 @@
+WPI Emulator - third-party software notices
+===========================================
+
+This product bundles or links the following third-party components. Review the license terms of each
+component (and refresh this list) before every public release.
+
+Qt 6 (Core, Gui, Widgets, Quick, Quick3D, Svg and the platform plugins)
+    Licensed under the GNU LGPL v3 (and other licenses per module). Qt is linked dynamically and the
+    shared libraries shipped with this application are unmodified Qt binaries; you may replace them with
+    your own build of the same Qt version. Source code and license texts: https://www.qt.io/download-open-source
+
+Box3D (physics)
+    https://github.com/erincatto/box3d - statically linked. See the upstream repository for its license.
+
+SDL2 (optional gamepad input, only when built with WPIEMU_RUNVIEW_FETCH_SDL2=ON)
+    https://www.libsdl.org - statically linked, zlib license.
+
+WPILib (wpiHal / wpiutil headers and import libraries; used to build halsim_wpiemu)
+    https://github.com/wpilibsuite/allwpilib - BSD 3-Clause. The WPILib libraries themselves are not
+    redistributed by this installer: the robot process loads its own copies.
+
+Microsoft Visual C++ runtime (Windows installer only)
+    Redistributable under the Microsoft Visual Studio redistribution terms (vcruntime140*.dll, msvcp140*.dll).

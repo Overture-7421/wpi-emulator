@@ -1,0 +1,363 @@
+#include <doctest/doctest.h>
+
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "fakes.h"
+#include "wpiemu/bridges/vendor/hal_sim_device_backend.h"
+#include "wpiemu/bridges/vendor/vendor_bridges.h"
+
+using namespace wpiemu::vendor_tests;
+namespace vendor = wpiemu::bridges::vendor;
+namespace ctre = wpiemu::bridges::vendor::ctre;
+namespace sg = wpiemu::sdk::signal;
+
+namespace {
+
+class FakeNative final : public vendor::ICtreSimNative {
+public:
+    bool hasConfigReadback() const override { return configApi; }
+    bool hasPhysicsApi() const override { return false; }
+    Result<std::string> readConfigs(vendor::CtreDeviceType type, int id, std::string_view bus) const override {
+        ++reads;
+        lastBus = std::string(bus);
+        lastType = type;
+        lastId = id;
+        if (failWith) return Error{*failWith, "forced failure"};
+        return text;
+    }
+    int getPhysicsValue(vendor::CtreDeviceType, int, const char*, double*) const override { return -1; }
+    int setPhysicsInput(vendor::CtreDeviceType, int, const char*, double) override { return -1; }
+
+    bool configApi = true;
+    std::string text = "1901,s_1\n1918,s_1070945649\n1919,s_1065353216\n1920,s_1\n1921,s_7\n";
+    std::optional<ErrorCode> failWith;
+    mutable int reads = 0;
+    mutable std::string lastBus;
+    mutable vendor::CtreDeviceType lastType = vendor::CtreDeviceType::P6_TalonFX;
+    mutable int lastId = -1;
+};
+
+class FakeHooks final : public vendor::ICtreHookProvider {
+public:
+    std::string_view name() const override { return "fake-hooks"; }
+    Status install(vendor::ICtreObservationSink& s) override {
+        ++installs;
+        sink = &s;
+        return okStatus();
+    }
+    void uninstall() noexcept override {
+        ++uninstalls;
+        sink = nullptr;
+    }
+    int installs = 0;
+    int uninstalls = 0;
+    vendor::ICtreObservationSink* sink = nullptr;
+};
+
+struct BridgeRig {
+    std::shared_ptr<FakeSimBackend> backend = std::make_shared<FakeSimBackend>();
+    FakeHost host;
+    std::unique_ptr<vendor::VendorSimDeviceBridge> bridge;
+
+    explicit BridgeRig(vendor::VendorSimBridgeOptions options = defaultOptions()) {
+        bridge = std::make_unique<vendor::VendorSimDeviceBridge>("ctre.phoenix6", ctre::phoenix6Rules(), backend,
+                                                                 std::move(options));
+    }
+    static vendor::VendorSimBridgeOptions defaultOptions() {
+        vendor::VendorSimBridgeOptions o;
+        o.guard = ctre::phoenix6GuardOptions();
+        return o;
+    }
+    void start() { REQUIRE(bridge->start(host).ok()); }
+};
+
+}  // namespace
+
+TEST_CASE("vendor registration: both CTRE bridges are registered and created from one registry") {
+    DeviceBridgeRegistry registry;
+    vendor::VendorBridgeOptions options;
+    auto backend = std::make_shared<FakeSimBackend>();
+    options.backend = backend;
+    vendor::registerVendorBridges(registry, options);
+    CHECK(registry.contains("ctre.phoenix6"));
+    CHECK(registry.contains("ctre.phoenix5"));
+    CHECK(registry.info("ctre.phoenix6")->family == "phoenix6");
+    CHECK(registry.info("ctre.phoenix5")->vendor == "ctre");
+
+    addTalonFx(*backend, 4);
+    backend->addDevice("CANMotor:Talon SRX[2]", {{"busVoltage", kIn}, {"percentOutput", kOut}, {"motorOutputLeadVoltage", kOut}});
+
+    auto bridges = registry.createAll();
+    REQUIRE(bridges.ok());
+    REQUIRE(bridges.value().size() == 2);
+    FakeHost host;
+    for (auto& b : bridges.value()) {
+        REQUIRE(b->start(host).ok());
+        b->poll();
+    }
+    CHECK(host.idOf("talonfx", 4).valid());
+    CHECK(host.idOf("talonsrx", 2).valid());
+    CHECK(bridges.value()[0]->owns(host.idOf("talonfx", 4)));
+    CHECK_FALSE(bridges.value()[1]->owns(host.idOf("talonfx", 4)));  // each device has exactly one owner
+    for (auto& b : bridges.value()) b->stop();
+}
+
+TEST_CASE("vendor registration: duplicates are reported by the checked variant and options can drop a family") {
+    DeviceBridgeRegistry registry;
+    vendor::VendorBridgeOptions options;
+    options.backend = std::make_shared<FakeSimBackend>();
+    CHECK(vendor::registerVendorBridgesChecked(registry, options).ok());
+    const Status again = vendor::registerVendorBridgesChecked(registry, options);
+    REQUIRE_FALSE(again.ok());
+    CHECK(again.error().code == ErrorCode::AlreadyExists);
+
+    DeviceBridgeRegistry only6;
+    options.enablePhoenix5 = false;
+    vendor::registerVendorBridges(only6, options);
+    CHECK(only6.size() == 1);
+    CHECK(only6.contains("ctre.phoenix6"));
+}
+
+TEST_CASE("vendor registration: without a HAL binding the bridge is inert and says so") {
+    DeviceBridgeRegistry registry;
+    vendor::registerVendorBridges(registry);  // defaults: real HAL binding when compiled in
+    auto bridges = registry.createAll();
+    REQUIRE(bridges.ok());
+    FakeHost host;
+    REQUIRE(bridges.value()[0]->start(host).ok());
+    bridges.value()[0]->poll();
+    CHECK(host.announced.empty());
+    // A unit-test process has no loaded wpiHal, so the missing-backend warning is logged once either way.
+    CHECK(host.log.count(LogLevel::Warn) == 1);
+    bridges.value()[0]->stop();
+}
+
+TEST_CASE("vendor bridge: yaw reaches the Pigeon once per tick and survives a vendor mirror via re-assert") {
+    BridgeRig rig;
+    const SimDeviceHandle pg = addPigeon2(*rig.backend, 13);
+    rig.start();
+    rig.bridge->poll();
+    const DeviceId id = rig.host.idOf("pigeon2", 13);
+    REQUIRE(id.valid());
+    const auto yaw = rig.host.signalIndex(id, sg::kYaw);
+
+    const auto tick = [&](double rad) {
+        std::vector<SignalSample> in{{id, yaw, rad}};
+        rig.bridge->applyInputs(in);
+    };
+    tick(0.5);
+    CHECK(rig.backend->get(pg, "rawYawInput") == doctest::Approx(0.5 * 180.0 / ctre::kPi));
+    CHECK(rig.backend->writesTo(pg, "rawYawInput") == 1);
+    tick(0.5);
+    CHECK(rig.backend->writesTo(pg, "rawYawInput") == 1);  // unchanged: no redundant write
+
+    rig.backend->poke(pg, "rawYawInput", 0.0);  // vendor mirror corrupts raw before the robot reads
+    CHECK(rig.bridge->reassertAfterVendorMirror() == 1);
+    CHECK(rig.backend->get(pg, "rawYawInput") == doctest::Approx(0.5 * 180.0 / ctre::kPi));
+    CHECK(rig.bridge->inputDisturbances().size() == 1);
+
+    rig.bridge->resetInputHistory();
+    CHECK(rig.bridge->inputDisturbances().empty());
+}
+
+TEST_CASE("vendor bridge: emulator owns the device can be switched off per device") {
+    BridgeRig rig;
+    const TalonFxTree t = addTalonFx(*rig.backend, 1);
+    const SimDeviceHandle cc = addCanCoder(*rig.backend, 2);
+    rig.start();
+    rig.bridge->poll();
+    const DeviceId talon = rig.host.idOf("talonfx", 1);
+    const DeviceId coder = rig.host.idOf("cancoder", 2);
+
+    rig.bridge->setInputWritesEnabled(talon, false);
+    CHECK_FALSE(rig.bridge->inputWritesEnabled(talon));
+    std::vector<SignalSample> in{{talon, rig.host.signalIndex(talon, sg::kRotorVelocity), 40.0},
+                                 {coder, rig.host.signalIndex(coder, sg::kPosition), 1.5}};
+    rig.bridge->applyInputs(in);
+    CHECK(rig.backend->get(t.rotor, "velocity") == doctest::Approx(0.0));  // robot-side sim keeps control
+    CHECK(rig.backend->get(cc, "rawPositionInput") == doctest::Approx(1.5));
+
+    rig.backend->poke(t.motor, "motorVoltage", 5.0);
+    rig.bridge->applyLoopback(talon);
+    CHECK(rig.backend->get(t.rotor, "velocity") == doctest::Approx(0.0));
+    std::vector<SignalSample> out;
+    rig.bridge->collectOutputs(out);  // outputs are still readable
+    bool sawVoltage = false;
+    for (const auto& s : out)
+        if (s.device == talon && s.signal == rig.host.signalIndex(talon, sg::kMotorVoltage)) sawVoltage = s.value == 5.0;
+    CHECK(sawVoltage);
+
+    rig.bridge->setInputWritesEnabled(talon, true);
+    rig.bridge->applyInputs(in);
+    CHECK(rig.backend->get(t.rotor, "velocity") == doctest::Approx(40.0));
+}
+
+TEST_CASE("vendor bridge: time-sync advice appears while Phoenix devices are live") {
+    BridgeRig rig;
+    rig.start();
+    CHECK_FALSE(rig.bridge->timeSyncAdvice().paceToWallClock);
+    addTalonFx(*rig.backend, 1);
+    rig.bridge->poll();
+    const auto advice = rig.bridge->timeSyncAdvice();
+    CHECK(advice.paceToWallClock);
+    CHECK(advice.maxRealtimeFactor == doctest::Approx(1.0));
+    CHECK(advice.pauseUnsafe);
+    CHECK_FALSE(advice.reason.empty());
+
+    auto ignore = BridgeRig::defaultOptions();
+    ignore.timeSync = vendor::TimeSyncPolicy::Ignore;
+    BridgeRig quiet(ignore);
+    addTalonFx(*quiet.backend, 1);
+    quiet.start();
+    quiet.bridge->poll();
+    CHECK_FALSE(quiet.bridge->timeSyncAdvice().paceToWallClock);
+}
+
+TEST_CASE("vendor bridge: L3 hooks are optional, session-gated, and only feed the bus label") {
+    auto hooks = std::make_shared<FakeHooks>();
+    auto options = BridgeRig::defaultOptions();
+    options.hooks = hooks;
+
+    {  // session did not enable optional hooks: never installed
+        BridgeRig rig(options);
+        rig.host.hooksEnabled = false;
+        rig.start();
+        CHECK(hooks->installs == 0);
+    }
+    BridgeRig rig(options);
+    rig.host.hooksEnabled = true;
+    rig.start();
+    REQUIRE(hooks->installs == 1);
+    REQUIRE(hooks->sink != nullptr);
+
+    // The constructor hook fires before the SimDevice exists: the observation is retried until announced.
+    hooks->sink->onDeviceObserved({vendor::CtreDeviceType::P6_TalonFX, 4, "canivore"});
+    rig.bridge->poll();
+    CHECK(rig.host.observed.empty());
+    addTalonFx(*rig.backend, 4);
+    rig.bridge->poll();
+    const DeviceId id = rig.host.idOf("talonfx", 4);
+    REQUIRE(id.valid());
+    REQUIRE(rig.host.observed.size() == 1);
+    CHECK(rig.host.observed[0].first == id);
+    CHECK(rig.host.observed[0].second == "canivore");
+    CHECK(rig.bridge->observedBus(id) == "canivore");
+    CHECK(rig.host.announced.at(id).descriptor.bus == wpiemu::sdk::kBusUnknown);  // static table never learns it
+
+    rig.bridge->stop();
+    CHECK(hooks->uninstalls == 1);
+    rig.bridge->stop();  // idempotent
+    CHECK(hooks->uninstalls == 1);
+}
+
+TEST_CASE("vendor bridge: read-only config read-back fills a typed snapshot after announce") {
+    auto native = std::make_shared<FakeNative>();
+    auto options = BridgeRig::defaultOptions();
+    options.nativeProvider = [native] { return native; };
+    std::vector<int> reported;
+    options.onConfig = [&](DeviceId, const DeviceDescriptor& d, const vendor::CtreConfigSnapshot& c) {
+        reported.push_back(d.id);
+        CHECK(c.sensorToMechanismRatio().value() == doctest::Approx(1.66667).epsilon(1e-5));
+    };
+    BridgeRig rig(options);
+    addTalonFx(*rig.backend, 4);
+    addCanCoder(*rig.backend, 9);  // CANcoder: P6 too, has a config as well
+    rig.start();
+    rig.bridge->poll();
+    CHECK(native->reads == 0);  // discovery (poll) never enters CTRE's native sim
+    std::vector<SignalSample> out;
+    rig.bridge->collectOutputs(out);  // quiescent entry point: one device per call keeps ticks short
+    rig.bridge->collectOutputs(out);
+    rig.bridge->collectOutputs(out);
+    CHECK(native->reads == 2);
+    CHECK(native->lastBus == "rio");
+    const DeviceId id = rig.host.idOf("talonfx", 4);
+    const vendor::CtreConfigSnapshot* cfg = rig.bridge->configOf(id);
+    REQUIRE(cfg != nullptr);
+    CHECK(cfg->clockwisePositive().value() == true);
+    CHECK(cfg->rotorToSensorRatio().value() == doctest::Approx(1.0));
+    CHECK(cfg->feedbackSensorSource().value() == 1);
+    CHECK(cfg->remoteSensorId().value() == 7);
+    CHECK(reported.size() == 2);
+    CHECK(rig.host.log.count(LogLevel::Info) >= 1);
+}
+
+TEST_CASE("vendor bridge: config read-back waits for the CTRE module and gives up politely") {
+    auto native = std::make_shared<FakeNative>();
+    bool moduleLoaded = false;
+    int providerCalls = 0;
+    auto options = BridgeRig::defaultOptions();
+    options.nativeProvider = [&]() -> std::shared_ptr<vendor::ICtreSimNative> {
+        ++providerCalls;
+        return moduleLoaded ? native : nullptr;
+    };
+    BridgeRig rig(options);
+    addTalonFx(*rig.backend, 4);
+    rig.start();
+    for (int i = 0; i < 10; ++i) rig.bridge->poll();
+    std::vector<SignalSample> out;
+    for (int i = 0; i < 10; ++i) rig.bridge->collectOutputs(out);
+    CHECK(providerCalls == 1);  // back-off: no hammering while the module is absent
+    CHECK(native->reads == 0);
+    CHECK(rig.bridge->configOf(rig.host.idOf("talonfx", 4)) == nullptr);
+
+    moduleLoaded = true;
+    for (int i = 0; i < 80; ++i) rig.bridge->collectOutputs(out);
+    CHECK(native->reads == 1);
+    CHECK(rig.bridge->configOf(rig.host.idOf("talonfx", 4)) != nullptr);
+}
+
+TEST_CASE("vendor bridge: failing or missing config API is tolerated") {
+    auto native = std::make_shared<FakeNative>();
+    native->failWith = ErrorCode::IoError;
+    auto options = BridgeRig::defaultOptions();
+    options.nativeProvider = [native] { return native; };
+    options.configReadAttempts = 3;
+    BridgeRig rig(options);
+    addTalonFx(*rig.backend, 4);
+    rig.start();
+    std::vector<SignalSample> out;
+    for (int i = 0; i < 10; ++i) {
+        rig.bridge->poll();
+        rig.bridge->collectOutputs(out);
+    }
+    CHECK(native->reads == 3);  // bounded retries
+    CHECK(rig.bridge->configOf(rig.host.idOf("talonfx", 4)) == nullptr);
+
+    auto missing = std::make_shared<FakeNative>();
+    missing->configApi = false;
+    auto options2 = BridgeRig::defaultOptions();
+    options2.nativeProvider = [missing] { return missing; };
+    BridgeRig rig2(options2);
+    addTalonFx(*rig2.backend, 4);
+    rig2.start();
+    for (int i = 0; i < 5; ++i) {
+        rig2.bridge->poll();
+        rig2.bridge->collectOutputs(out);
+    }
+    CHECK(missing->reads == 0);
+    CHECK(rig2.host.announced.size() == 1);  // discovery itself is unaffected
+}
+
+TEST_CASE("vendor bridge: no native provider means no L2 activity at all") {
+    BridgeRig rig;  // default options: provider empty
+    addTalonFx(*rig.backend, 4);
+    rig.start();
+    rig.bridge->poll();
+    CHECK(rig.bridge->configOf(rig.host.idOf("talonfx", 4)) == nullptr);
+}
+
+TEST_CASE("vendor bridge: stop is idempotent and clears the session") {
+    BridgeRig rig;
+    addTalonFx(*rig.backend, 4);
+    rig.start();
+    rig.bridge->poll();
+    CHECK(rig.bridge->liveDeviceCount() == 1);
+    rig.bridge->stop();
+    rig.bridge->stop();
+    CHECK(rig.bridge->liveDeviceCount() == 0);
+    rig.bridge->poll();  // after stop: harmless
+    CHECK(rig.host.announced.size() == 1);
+}

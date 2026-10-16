@@ -1,0 +1,329 @@
+#include <doctest/doctest.h>
+
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "wpiemu/sdk/devices/channel_family_bridge.h"
+#include "wpiemu/sdk/devices/signals.h"
+#include "wpiemu/sdk/devices/sim_device_bridge.h"
+#include "wpiemu/sdk/testing/fake_clock_logger.h"
+#include "wpiemu/sdk/testing/fake_device_hub.h"
+
+using namespace wpiemu::sdk;
+
+namespace {
+
+class FakeHost final : public IBridgeHost {
+public:
+    DeviceId announce(const DeviceDescriptor& d, std::vector<SignalSpec> signalSpecs) override {
+        for (auto& [id, a] : announced) {
+            if (a.descriptor.key() == d.key()) {
+                a.signalSpecs = std::move(signalSpecs);
+                ++reannounce;
+                return id;
+            }
+        }
+        const DeviceId id{next++};
+        announced[id] = {d, std::move(signalSpecs)};
+        return id;
+    }
+    void retire(DeviceId id) override { retired.push_back(id); }
+    ILogger& logger() override { return log; }
+    bool enableOptionalHooks() const override { return false; }
+    void observeBus(DeviceId id, std::string_view bus) override { observed.emplace_back(id, std::string(bus)); }
+
+    struct Announced {
+        DeviceDescriptor descriptor;
+        std::vector<SignalSpec> signalSpecs;
+    };
+    std::map<DeviceId, Announced> announced;
+    std::vector<DeviceId> retired;
+    std::vector<std::pair<DeviceId, std::string>> observed;
+    int reannounce = 0;
+    std::uint32_t next = 1;
+    testing::CapturingLogger log;
+};
+
+// Mimics HAL SimDevices for a Phoenix-6-style TalonFX with a rotor-sensor child.
+class FakeBackend final : public ISimDeviceBackend {
+public:
+    std::uint64_t generation() const override { return generation_; }
+    void listDevices(std::vector<SimDeviceInfo>& out) const override { out = devices_; }
+    void listValues(SimDeviceHandle device, std::vector<SimValueInfo>& out) const override {
+        const auto it = values_.find(device);
+        if (it != values_.end()) out = it->second;
+    }
+    double getValue(SimValueHandle v) const override { return data_.at(v); }
+    void setValue(SimValueHandle v, double d) override { data_[v] = d; }
+
+    SimDeviceHandle addDevice(const std::string& name, std::vector<std::pair<std::string, SignalDirection>> values) {
+        const SimDeviceHandle h{nextHandle_++};
+        devices_.push_back({h, name});
+        auto& list = values_[h];
+        for (auto& [n, dir] : values) {
+            const SimValueHandle vh{nextHandle_++};
+            list.push_back({vh, n, dir, SignalType::Double});
+            data_[vh] = 0.0;
+            names_[{h, n}] = vh;
+        }
+        ++generation_;
+        return h;
+    }
+    SimValueHandle value(SimDeviceHandle h, const std::string& n) const { return names_.at({h, n}); }
+    double& raw(SimDeviceHandle h, const std::string& n) { return data_[names_.at({h, n})]; }
+
+private:
+    std::uint64_t generation_ = 0;
+    std::uint64_t nextHandle_ = 1;
+    std::vector<SimDeviceInfo> devices_;
+    std::map<SimDeviceHandle, std::vector<SimValueInfo>> values_;
+    std::map<std::pair<SimDeviceHandle, std::string>, SimValueHandle> names_;
+    std::map<SimValueHandle, double> data_;
+};
+
+std::vector<SimDeviceRule> talonRules() {
+    SimDeviceRule r;
+    r.name = "talonfx";
+    r.family = "phoenix6";
+    r.type = "talonfx";
+    r.vendor = "ctre";
+    r.nameRegex = R"(CAN\w*:Talon FX \(v6\)\[(\d+)\](?:/(.+))?)";
+    r.idGroup = 1;
+    r.childGroup = 2;
+    r.capabilities = Capability::MotorOutput | Capability::RotorFeedback;
+    r.bindings = {
+        {"", "motorVoltage", signal::kMotorVoltage, 1.0, 0.0, std::nullopt, "V", ""},
+        {"", "supplyVoltage", signal::kSupplyVoltage, 1.0, 0.0, std::nullopt, "V", ""},
+        {"Rotor Sensor", "rawPositionInput", signal::kRotorPosition, 1.0, 0.0, std::nullopt, "rot", ""},
+        {"Rotor Sensor", "velocity", signal::kRotorVelocity, 2.0, 0.0, std::nullopt, "rps", ""},
+    };
+    return {r};
+}
+
+}  // namespace
+
+TEST_CASE("SimDeviceBridge discovers, groups children, and bridges values by canonical name") {
+    FakeBackend backend;
+    FakeHost host;
+    SimDeviceBridge bridge("ctre.simdevice", talonRules(), backend);
+    REQUIRE(bridge.start(host).ok());
+
+    const auto root = backend.addDevice("CANMotor:Talon FX (v6)[4]",
+                                        {{"motorVoltage", SignalDirection::Output},
+                                         {"supplyVoltage", SignalDirection::Input},
+                                         {"ignoredValue", SignalDirection::Output}});
+    const auto child = backend.addDevice("CANEncoder:Talon FX (v6)[4]/Rotor Sensor",
+                                         {{"rawPositionInput", SignalDirection::Input},
+                                          {"velocity", SignalDirection::Input}});
+    bridge.poll();
+
+    REQUIRE(host.announced.size() == 1);
+    const auto& [id, ann] = *host.announced.begin();
+    CHECK(ann.descriptor.type == "talonfx");
+    CHECK(ann.descriptor.id == 4);
+    CHECK(ann.descriptor.capabilities.has(Capability::MotorOutput));
+    REQUIRE(ann.signalSpecs.size() == 4);  // unbound value skipped; both SimDevices folded into one device
+    CHECK(bridge.owns(id));
+
+    // robot -> sim
+    backend.raw(root, "motorVoltage") = 7.5;
+    std::vector<SignalSample> out;
+    bridge.collectOutputs(out);
+    REQUIRE(out.size() == 1);  // only Output signals
+    CHECK(out[0].value == 7.5);
+    CHECK(ann.signalSpecs[out[0].signal].name == signal::kMotorVoltage);
+
+    // sim -> robot, with scale (canonical 10 rps -> raw 5)
+    std::uint16_t velIdx = 0;
+    REQUIRE(findSignal(ann.signalSpecs, signal::kRotorVelocity, &velIdx) != nullptr);
+    const SignalSample in[] = {{id, velIdx, 10.0}};
+    bridge.applyInputs(in);
+    CHECK(backend.raw(child, "velocity") == doctest::Approx(5.0));
+
+    // idle poll does not re-announce
+    bridge.poll();
+    CHECK(host.reannounce == 0);
+    bridge.stop();
+    CHECK_FALSE(bridge.owns(id));
+}
+
+TEST_CASE("SimDeviceBridge rejects an invalid rule regex") {
+    FakeBackend backend;
+    FakeHost host;
+    SimDeviceRule bad;
+    bad.name = "bad";
+    bad.nameRegex = "([";
+    SimDeviceBridge bridge("bad", {bad}, backend);
+    CHECK(bridge.start(host).error().code == ErrorCode::InvalidArgument);
+}
+
+namespace {
+
+class FakeDioBridge final : public ChannelFamilyBridge {
+public:
+    FakeDioBridge() : ChannelFamilyBridge("hal.dio") {}
+    bool init[4] = {false, false, false, false};
+    double value[4] = {0, 0, 0, 0};
+    int loopbacks = 0;
+
+protected:
+    int channelCount() const override { return 4; }
+    bool isInitialized(int c) const override { return init[c]; }
+    DeviceDescriptor describe(int c) const override {
+        DeviceDescriptor d;
+        d.family = "hal";
+        d.type = "dio";
+        d.vendor = "wpilib";
+        d.id = c;
+        d.capabilities = Capability::DigitalInput | Capability::DigitalOutput;
+        return d;
+    }
+    std::vector<SignalSpec> signalsOf(int) const override {
+        return {{signal::kDigitalIn, SignalDirection::Bidirectional, SignalType::Bool, ""}};
+    }
+    double readSignal(int c, std::size_t) const override { return value[c]; }
+    void writeSignal(int c, std::size_t, double v) override { value[c] = v; }
+    void loopback(int) override { ++loopbacks; }
+};
+
+}  // namespace
+
+TEST_CASE("ChannelFamilyBridge announces on init and retires on free") {
+    FakeHost host;
+    FakeDioBridge bridge;
+    REQUIRE(bridge.start(host).ok());
+    bridge.poll();
+    CHECK(host.announced.empty());
+
+    bridge.init[2] = true;
+    bridge.poll();
+    REQUIRE(host.announced.size() == 1);
+    const DeviceId id = host.announced.begin()->first;
+    CHECK(host.announced.begin()->second.descriptor.id == 2);
+
+    bridge.value[2] = 1.0;
+    std::vector<SignalSample> out;
+    bridge.collectOutputs(out);
+    REQUIRE(out.size() == 1);
+    CHECK(out[0].value == 1.0);
+
+    const SignalSample in[] = {{id, 0, 0.0}};
+    bridge.applyInputs(in);
+    CHECK(bridge.value[2] == 0.0);
+
+    bridge.applyLoopback(id);
+    CHECK(bridge.loopbacks == 1);
+
+    bridge.init[2] = false;
+    bridge.poll();
+    REQUIRE(host.retired.size() == 1);
+    CHECK_FALSE(bridge.owns(id));
+}
+
+TEST_CASE("ChannelFamilyBridge is safe to poll and collect after stop") {
+    FakeHost host;
+    FakeDioBridge bridge;
+    REQUIRE(bridge.start(host).ok());
+    bridge.init[1] = true;
+    bridge.poll();
+    const DeviceId id = host.announced.begin()->first;
+
+    bridge.stop();
+    std::vector<SignalSample> out;
+    bridge.collectOutputs(out);
+    CHECK(out.empty());
+    bridge.poll();
+    const SignalSample in[] = {{id, 0, 1.0}};
+    bridge.applyInputs(in);
+    bridge.applyLoopback(id);
+    CHECK_FALSE(bridge.owns(id));
+    CHECK(bridge.loopbacks == 0);
+
+    bridge.collectOutputs(out);
+    FakeDioBridge fresh;  // never started
+    fresh.collectOutputs(out);
+    CHECK(out.empty());
+}
+
+TEST_CASE("DeviceBridgeRegistry creates every registered bridge in order") {
+    DeviceBridgeRegistry registry;
+    CHECK(registry.registerBridge("hal.dio", {"hal", "DIO", "wpilib"}, [] { return std::make_unique<FakeDioBridge>(); }).ok());
+    CHECK(registry.registerBridge("hal.dio", {}, [] { return std::make_unique<FakeDioBridge>(); }).error().code ==
+          ErrorCode::AlreadyExists);
+    auto all = registry.createAll();
+    REQUIRE(all.ok());
+    CHECK(all.value().size() == 1);
+    CHECK(all.value()[0]->name() == "hal.dio");
+}
+
+TEST_CASE("slot compatibility follows device capabilities") {
+    SlotSpec motorSlot{"motor", "Motor", SlotType::Motor, true, ""};
+    DeviceDescriptor talon;
+    talon.capabilities = Capability::MotorOutput | Capability::RotorFeedback;
+    DeviceDescriptor dio;
+    dio.capabilities = Capability::DigitalInput;
+    CHECK(isCompatible(motorSlot, talon));
+    CHECK_FALSE(isCompatible(motorSlot, dio));
+    CHECK(isCompatible(SlotSpec{"lim", "Limit", SlotType::LimitSwitch, true, ""}, dio));
+    CHECK(defaultDirection(SlotType::Motor) == SlotDirection::ActuatorInput);
+    CHECK(defaultDirection(SlotType::BeamBreak) == SlotDirection::SensorOutput);
+}
+
+TEST_CASE("FakeDeviceHub behaves like the real hub: unbound slots are neutral") {
+    testing::FakeDeviceHub hub;
+    const SlotAddress slot{"intake", "motor"};
+    hub.setMotorOutput(slot, MotorOutput{true, 0.5, 6.0, 0.0, false});
+    CHECK_FALSE(hub.motorOutput(slot).valid);  // unbound => neutral
+
+    const DeviceId id = hub.autoBind(slot, SlotType::Motor, 7);
+    CHECK(hub.motorOutput(slot).voltageV == 6.0);
+    CHECK(hub.isMapped(id));
+    CHECK(hub.resolve(slot) == id);
+
+    hub.writeMotorFeedback(slot, MotorFeedback{1.0, 2.0, 0.0, std::nullopt, std::nullopt});
+    CHECK(hub.lastMotorFeedback(slot)->rotorVelocityRps == 2.0);
+
+    // one device : one slot
+    CHECK(hub.bind({"other", "motor"}, hub.boundDevice(slot).value()).error().code == ErrorCode::AlreadyExists);
+    hub.unbind(slot);
+    CHECK_FALSE(hub.isMapped(id));
+}
+
+TEST_CASE("SimDeviceBridge never fabricates a bus for rules that cannot know it (SDK 1.1)") {
+    FakeBackend backend;
+    FakeHost host;
+    auto rules = talonRules();
+    rules[0].busIsStatic = false;  // Phoenix 6 SimDevice names carry no bus
+    SimDeviceBridge bridge("ctre.simdevice", rules, backend);
+    REQUIRE(bridge.start(host).ok());
+    backend.addDevice("CANMotor:Talon FX (v6)[4]", {{"motorVoltage", SignalDirection::Output}});
+    bridge.poll();
+
+    REQUIRE(host.announced.size() == 1);
+    const auto& [id, ann] = *host.announced.begin();
+    CHECK(ann.descriptor.bus == kBusUnknown);
+    CHECK(ann.descriptor.physicalId() == PhysicalDeviceId{"phoenix6", "talonfx", 4, -1});
+
+    // bus arrives only through an explicit observation (L3), and does not change the identity
+    CHECK(bridge.observedBus(id).empty());
+    CHECK(bridge.observeBus(id, "canivore"));
+    CHECK(bridge.observedBus(id) == "canivore");
+    REQUIRE(host.observed.size() == 1);
+    CHECK(host.observed[0].second == "canivore");
+    CHECK_FALSE(bridge.observeBus(DeviceId{99}, "rio"));
+    bridge.poll();
+    CHECK(host.reannounce == 0);
+}
+
+TEST_CASE("SimDeviceBridge keeps the rule bus when it is a fact of the family (default, 1.0 behaviour)") {
+    FakeBackend backend;
+    FakeHost host;
+    SimDeviceBridge bridge("ctre.simdevice", talonRules(), backend);
+    REQUIRE(bridge.start(host).ok());
+    backend.addDevice("CANMotor:Talon FX (v6)[4]", {{"motorVoltage", SignalDirection::Output}});
+    bridge.poll();
+    REQUIRE(host.announced.size() == 1);
+    CHECK(host.announced.begin()->second.descriptor.bus == "rio");
+}

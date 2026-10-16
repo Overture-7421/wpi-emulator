@@ -1,0 +1,20 @@
+build/
+out/
+.vs/
+.idea/
+.vscode/
+CMakeUserPresets.json
+CMakeLists.txt.user
+*.user
+compile_commands.json
+__pycache__/
+*.pyc
+aqtinstall.log
+*.log
+Testing/
+
+# Disposable research spikes are never committed
+spikes/
+
+# Per-project robot config produced by the app during manual testing
+.wpiemu/

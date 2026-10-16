@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=WPI Emulator
+GenericName=FRC robot simulator
+Comment=Run unmodified WPILib robot projects in a simulator
+Exec=wpiemu_app
+Icon=wpiemu
+Terminal=false
+Categories=Development;Education;
+Keywords=FRC;WPILib;robot;simulation;
+StartupWMClass=wpiemu_app

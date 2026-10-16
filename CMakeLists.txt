@@ -1,0 +1,52 @@
+cmake_minimum_required(VERSION 3.24)
+
+# Qt otherwise forces the deprecated OLD behavior of CMP0156 and warns about it.
+if(POLICY CMP0156)
+    cmake_policy(SET CMP0156 NEW)
+    set(QT_FORCE_CMP0156_TO_NEW ON)
+endif()
+
+project(wpi-emulator
+    VERSION 0.1.0
+    DESCRIPTION "Cross-platform emulator for unmodified WPILib robot projects"
+    LANGUAGES C CXX)
+
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+# Keep shared libraries / executables together so DLLs resolve when running from the build tree.
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+
+option(WPIEMU_BUILD_APP "Build the Qt application (requires Qt 6)" ON)
+option(WPIEMU_BUILD_TESTS "Build unit tests and register CTest checks" ON)
+option(WPIEMU_BUILD_PLUGIN_TEMPLATE "Build plugins/_template to keep the template compiling" ON)
+option(WPIEMU_WARNINGS_AS_ERRORS "Treat warnings in first-party code as errors" OFF)
+
+include(WpiEmuDefaults)
+include(WpiEmuDependencies)
+
+add_subdirectory(sdk)
+add_subdirectory(core)
+add_subdirectory(ipc)
+add_subdirectory(halsim_ext)
+add_subdirectory(bridges)
+add_subdirectory(plugins)
+
+if(WPIEMU_BUILD_APP)
+    add_subdirectory(app)
+endif()
+
+if(WPIEMU_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
+include(WpiEmuInstall)   # install() + CPack rules (docs/packaging.md)

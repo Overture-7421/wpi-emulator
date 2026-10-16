@@ -1,0 +1,232 @@
+# Runtime, config and launcher (`core/runtime`)
+
+Everything between the UI and the physics that is not physics or a mechanism: the persisted robot model, the device hub,
+the lock-step sim loop and the code that starts the robot project. No Qt, no season knowledge; it depends only on the SDK
+(plus, for the optional wiring header, the sibling `core/physics`). Rationale and rejected options: [ADR 0010](decisions/0010-runtime.md).
+
+```
+core/runtime/
+  include/wpiemu/core/config/     json_codec, robot_config_codec, config_validator, config_pipeline, config_store
+  include/wpiemu/core/runtime/    device_hub, sim_clock (+BatteryModel), simulation_session, session_runner,
+                                  robot_link, physics_wiring (header-only glue to core/physics)
+  include/wpiemu/core/launcher/   process, init_script, robot_launcher, project_inspector
+  src/{config,runtime,launcher}/  implementations (process_win.cpp / process_posix.cpp per OS)
+tests/runtime/                    doctest suite (fixtures in runtime_fixtures.h, built only on sdk/testing fakes)
+```
+
+## 1. Configuration (`robot.json`)
+
+`RobotConfig <-IRobotConfigCodec-> Value <-IValueTextCodec-> JSON text`.
+
+| Piece | What it does |
+|---|---|
+| `JsonValueCodec` | In-house RFC 8259 parser/writer for `sdk::Value` (no third-party dependency, see ADR). Keeps key order, int vs double, shortest round-trip doubles (`0.7` stays `0.7`), `\uXXXX` + surrogates, BOM, nesting limit 128, `line N, column M` in errors. |
+| `RobotConfigCodec` | Core migration chain (one `IConfigMigrator` per version step, newer file => `VersionMismatch`), lenient decode (absent => default, wrong type => `ParseError` naming the path), **writes both the legacy `parent` and the structured `attachment`**, reads the structured one first, preserves unknown fields (below). |
+| `ConfigValidator` | `IConfigValidator`: everything of SDK 1.1 (`validateDeviceAliases`, `validateMechanismAttachments`) plus the rules below. Never mutates, never throws. |
+| `ConfigPipeline` | Coordinator, ARCHITECTURE 4.4: **core migration -> selected plugin migration -> defaults -> validation**. |
+| `PluginRegistrar` | Registers a plugin's mechanism templates once per factory (idempotent). Route every `registerMechanisms` call through it. |
+| `FileConfigStore` / `ProjectConfigRepository` | Disk persistence (below). |
+
+### JSON layout
+
+```jsonc
+{
+  "schemaVersion": 1,
+  "name": "Robot", "gamePluginId": "",
+  "project": { "path": "...", "language": "java", "wpilibYear": 2026, "gradleRioVersion": "2026.2.1" },
+  "chassis": { "sizeM": {x,y,z}, "massKg": 50, "comHeightM": 0.2, "comOffsetM": {..}, "groundClearanceM": 0.03,
+               "inertiaDiagKgM2": {..}, "material": {friction, restitution, rollingResistance}, "primitives": [ ... ] },
+  "drivetrain": { "kind": "swerve", "tireModel": "brush", "loadTransferTauS": 0.02,
+                  "wheels": [ { "name": "fl", "kind": "swerve", "positionM": {..}, "radiusM": .., "tire": {..},
+                                "driveMotor": {..}, "driveGearRatio": .., "steerMotor": {..}, ... } ],
+                  "mappings": [ { "owner": "drivetrain", "slot": "fl.drive", "device": {family,type,id,bus,channel} } ] },
+  "mechanisms": [ { "id": "intake", "type": "roller", "label": "", "parent": "chassis",
+                    "attachment": { "parentMechanismId": "chassis", "parentLink": "root" },
+                    "mount": { "position": {..}, "rotation": {x,y,z,w} }, "geometry": [ ... ],
+                    "properties": { ... }, "mappings": [ ... ] } ],
+  "robotMappings": [ { "owner": "robot", "slot": "imu", "device": {..} } ],
+  "battery": { "nominalVoltageV": 12.6, "internalResistanceOhm": 0.015, "brownoutVoltageV": 6.8 },
+  "sim": { "stepUs": 5000, "seed": 1, "physics": { "workerCount": 1, "subSteps": 4, "sleeping": true, "gravity": {..} } },
+  "plugins": { "game_2026": { "schemaVersion": 2, "data": { ... } } }
+}
+```
+Units are SI, key names carry the unit suffix of the C++ field. Enums are strings (`"swerve"`, `"box"`, ...).
+
+**Unknown fields** (root, `project`, `chassis`, `drivetrain`, `battery`, `sim`, every mechanism, every wheel, every plugin
+section) are kept in the additive SDK 1.1 field `RobotConfig::unknownFields` (keyed by owner path such as
+`"mechanisms/intake"`) and written back, so a file edited by a newer build survives a load/save cycle.
+
+### Validation codes (`Issue::code`)
+
+SDK codes (`device_alias_conflict`, `attachment_*`, `mechanism_id_reserved`) plus, in `config/config_validator.h`
+(`issue_code::`): `schema_version_unsupported`, `chassis_invalid`, `drivetrain_kind_unknown`, `tire_model_unknown`
+(needs a `TireModelRegistry`), `drivetrain_no_wheels` (W), `wheel_invalid`, `wheel_duplicate`, `mechanism_id_invalid`,
+`mechanism_id_duplicate`, `mechanism_type_unknown`, `property_invalid`, `slot_owner_unknown`, `slot_owner_mismatch`,
+`slot_unknown` (W for the `robot` owner), `slot_required_unmapped` (Error for mechanisms, Warning for drivetrain slots),
+`slot_duplicate_mapping`, `device_duplicate_mapping`, `slot_device_incompatible` (needs a capability lookup, unknown
+devices are skipped), `battery_invalid`, `sim_invalid` (step must divide 20 ms), `plugin_not_found` (W),
+`plugin_section_unknown` (W), `plugin_section_newer`, `plugin_section_outdated`, `plugin_property_invalid`.
+Drivetrain slot names follow the convention `"<wheel>.drive"` / `"<wheel>.steer"` (steer for swerve/steered wheels), robot slot `"imu"`.
+
+### Load pipeline
+
+```cpp
+RobotConfigCodec codec; ConfigValidator validator; PluginRegistrar registrar(mechanismFactory);
+ConfigPipeline pipeline(codec, validator, registrar, drivetrains, plugins);
+Result<LoadedConfig> r = pipeline.load(value);     // or pipeline.process(config, decodeInfo) for store-loaded configs
+// r->config (migrated + defaulted), r->issues (check r->valid()), r->pluginId, r->migrated()
+```
+Fatal errors (parse error, config or plugin section **newer** than supported, a failing migration, a plugin hook that changed
+data it does not own - detected by diffing everything except `plugins[id]` and mechanisms with `ownsMechanismType`) are
+`Error`s; everything else is an issue. A missing section of the selected plugin is created with schema defaults.
+
+### Storage (`config_store.h`)
+
+* App data root: Windows `%APPDATA%\WpiEmulator`, macOS `~/Library/Application Support/WpiEmulator`, Linux
+  `$XDG_DATA_HOME/wpi-emulator` (fallback `~/.local/share`). Per project: `projects/<folder>-<fnv1a64(canonical path)>/robot.json`
+  (case-folded on Windows). Export/import: `<project>/.wpiemu/robot.json`.
+* Writes are atomic: temp file in the same directory, flushed (`fsync`/`_commit`), renamed over the target.
+* Loading an older core schema first copies the original to `robot.json.v<N>.bak` (never overwrites an existing backup, `-2`, `-3`...),
+  then writes the upgraded file; if the backup fails the file is left alone.
+* `ProjectConfigRepository::open` = app-data copy, else the project export (cached into app data); `save(..., alsoExport)`;
+  `exportToProject`, `importFromProject` (backs the working copy up first).
+
+## 2. Device hub (`DeviceHub`)
+
+`IDeviceHub` + `IDeviceHubIngress`, **sim thread only**. The IPC thread never touches it: it posts into a `MessageInbox`.
+* Resolution ignores the bus (`PhysicalDeviceId`); aliases/conflicts/bus-mismatch follow ADR 0006 exactly like `FakeDeviceHub`.
+* Warnings are **derived** from the current state after every change (so they are de-duplicated and disappear by themselves):
+  `unmapped_loopback`, `slot_incompatible` (needs `declareSlots`), `slot_missing_device` (after `markDiscoveryComplete`),
+  `device_alias_conflict`, `device_aliased`, `device_bus_mismatch`.
+* Signals are addressed by announced name: outputs `dutyCycle|pwmSpeed`, `motorVoltage` (else `duty x battery`), `torqueCurrent`,
+  `digitalOut|solenoid`; inputs `rotorPosition|position`, `rotorVelocity|velocity`, `rotorAcceleration`, `forward/reverseLimit`,
+  `digitalIn|detected`, `analogVoltage`, IMU signals. Frames are delta-compressed (`buildSensorFrame(out, full)`).
+* Bindings are keyed by `DeviceKey` and survive `clearDevices()`; `loadMappings(config.allMappings())` / `exportMappings()` persist them;
+  `mappingRevision()` changes whenever the loopback set may have changed.
+
+## 3. Simulation (`SimulationSession`, `SessionRunner`)
+
+`SessionBuilder::build(SessionParts)` takes **already constructed collaborators** (world, registries, plugin registry, optional
+`ChassisBuilder`, optional `ICouplingDriver`) and builds, in this order: game field -> chassis -> (coupling bind) -> tire + drivetrain -> slots +
+persisted mappings -> mechanisms (config order) -> game state; destruction is the reverse. It owns `SimClock`, `Rng(seed)`, `DeviceHub`,
+`BatteryModel` and the `SimContext`.
+
+`SimulationSession::tick(SensorFrame&, full)` is one pass of ARCHITECTURE 4 (steps 2-6): mechanisms -> drivetrain commands from `drivetrain.<wheel>.drive|steer`
+slots (rotor feedback written back with the gear ratio) -> `coupling.beforeStep` -> `world.step` -> `coupling.afterStep` -> game state -> game `onTick` -> chassis IMU
+(`robot.imu`: yaw/pitch/roll, body rates, proper acceleration = +g at rest) -> battery. The battery uses the total current of the tick
+(mechanisms + wheel motors + `baselineCurrentA`) with a one-tick lag: `V = nominal - I R`, brownout with a 0.5 V hysteresis (warning `brownout`).
+Tick numbers restart at 0 per epoch; `reset()` restores pose, drivetrain, mechanisms, game state, clock, RNG and battery but keeps devices and bindings.
+
+`SessionRunner` (implements `ISimController`) drives a session over a link; one `poll()` = one bounded iteration, `start()` runs it on a thread.
+* **Handshake**: `Hello` -> `HelloAck{sessionId, runEpoch, stepUs, negotiated watchdog, policy}` (version below `kMinCompatibleProtocolVersion` is refused),
+  then `LoopbackSet` and `DsState`. Reconnect = new session id, new epoch, reset sim, devices cleared.
+* **Lock-step**: `LockstepWindow` (one outstanding tick), stale/foreign frames dropped and counted, ack verdicts handled (`Stalled`, `Stopped`, `ProtocolError`).
+* **Commands**: Pause/Resume/Step/SetTimeScale are local; Reset bumps the epoch, sends `SimControl{Reset}` and blocks ticking until it is acknowledged;
+  Stop is acknowledged (or abandoned after the watchdog) and ends the run. DS state and live `bindSlot/unbindSlot` are queued and applied on the sim thread.
+* **Watchdog**: tick outstanding longer than the negotiated timeout => `RobotStalled`, no more frames until Reset/reconnect; late answers are ignored.
+* **Pacing**: `timeScale` 1 = real time (no catch-up burst after a stall), 0 = as fast as the robot answers.
+* **Brownout**: the DS state sent to the robot is forced to disabled while browned out and restored afterwards.
+* **DS state semantics**: `DsState::matchTimeS` is seconds *remaining* in the current period (WPILib convention), `-1` = no timed match
+  (consumers integrate sim time themselves); the runner stamps `sessionId`/`runEpoch`. `gameSpecificMessage` is the UI's manual text unless the loaded
+  game plugin's `IGameState::gameSpecificMessage()` returns a value (FMS game data, e.g. the 2026 hub order `R`/`B`), which then overrides it; the runner
+  re-sends the `DsState` after the tick in which the value changes and after Reset.
+* **Snapshots**: published to the `ISnapshotSink` every `snapshotEveryTicks` and on every state change (robot connected, paused, device list...).
+* Link layer: `IRobotLink`, `MessageInbox`, `ChannelRobotLink` (any `ITransport` + `IMessageCodec`), `RobotLinkAcceptor` (any `ITransportServer`). Only sdk types are used,
+  the app plugs in the ipc module's server/codec.
+
+### Composition root recipe
+
+```cpp
+physics::registerPhysicsComponents(drivetrains, tireModels);
+PluginRegistrar registrar(mechanismFactory);  registrar.ensureRegistered(*selectedPlugin);
+SessionParts p;  p.config = loaded.config;  p.world = physics::createBox3dWorld(p.config.sim.physics);
+p.mechanisms = &mechanismFactory; p.drivetrains = &drivetrains; p.tireModels = &tireModels; p.plugins = &plugins; p.logger = &logger;
+p.chassisBuilder = runtime::physicsChassisBuilder();                 // runtime/physics_wiring.h
+p.coupling = std::make_unique<runtime::PhysicsCouplingDriver>();     // runtime/physics_wiring.h
+auto session = SessionBuilder::build(std::move(p));
+MessageInbox inbox;  LatestSnapshotSlot slot;
+RobotLinkAcceptor acceptor(ipc::makeServer(...), ipc::makeCodec(), inbox, &logger);  acceptor.start();
+SessionRunner runner(**session, inbox, slot, logger, options);  runner.start();   // UI: runner.control(...), slot.latest()
+```
+
+## 4. Launching the robot (`core/launcher`)
+
+`RobotLauncher` starts the project **without editing it** and supervises it (no orphans: the destructor kills the tree).
+
+| Mode | Command | Notes |
+|---|---|---|
+| `GradleInitScript` | `gradlew[.bat] --no-daemon --console=plain [--offline] -I <scratch>/wpiemu-init.gradle simulateJava|simulateNative` | The init script (ADR 0001) is generated by `generateInitScript()`, identical every run, no paths inside. `--no-daemon` keeps the process tree ours. |
+| `ExternalDirect` | `gradlew simulateExternal{Java,Native}{Release,Debug}` (build + describe), then `java -Djava.library.path=<libraryDir> -jar build/libs/<fat jar>` or `<launchfile>` | Parses `build/sim/<release|debug>_<java|native>.json`; our `HALSIM_EXTENSIONS` replaces the stock Sim GUI one; library dirs are prepended to `PATH` / `LD_LIBRARY_PATH` / `DYLD_LIBRARY_PATH`; macOS adds `-XstartOnFirstThread`. |
+
+Environment contract (`launcher::env_var`): `WPIEMU_EXT`, `WPIEMU_EXTRA_EXT` (read by the init script), `WPIEMU_IPC_ENDPOINT` (+ alias `WPIEMU_ENDPOINT`),
+`WPIEMU_CLOCK=master|realtime`, `WPIEMU_PROGRAM_NAME`, `JAVA_HOME` (WPILib JDK), `HALSIM_EXTENSIONS` (external mode). The robot PID for emergency kills comes from `Hello`
+(`launcher::killProcessTree(pid)`: Windows process walk, POSIX group + pid; refuses to kill the emulator or its ancestors).
+
+`IRobotProcess` / `createSystemProcess()`:
+* **Windows**: `CreateProcessW` suspended into a kill-on-close **job object**, then resumed; exactly three inheritable handles (`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`);
+  `.bat/.cmd` run through `cmd /d /s /c "..."` and arguments with cmd metacharacters (`" % ^ & | < > !`) are refused; `CTRL_BREAK` is only a best-effort polite stop
+  (the clean path is the protocol `Stop`).
+* **POSIX**: `fork` into a new process group (SIGTERM / SIGKILL via `killpg`), exec failure reported through a CLOEXEC pipe, everything prepared before `fork`.
+* Output: stdout/stderr line-split into an `ILogSink` (CRLF aware, 64 KiB line cap); after the main process exits the readers get 1.5 s, then pipes held open by grandchildren are cancelled.
+
+### `ProjectInspector` and `inspectToolchain` (wizard steps 1-2)
+
+Read-only: `build.gradle[.kts]` (GradleRIO version in Groovy, Kotlin and `classpath` forms -> year; variable version -> `.wpilib` `projectYear` / `settings.gradle` `frcYear`),
+language (`.wpilib` `currentLanguage` > build script signals > `src/main/{java,cpp}`), team number, Gradle wrapper files + Gradle version, `vendordeps/*.json`.
+`inspectToolchain` produces `ToolchainCheck`s (`project`, `gradlerio`, `game_plugin`, `gradle_wrapper`, `wpilib_install`, `jdk`, `cpp_toolchain`, `vendordeps`, `team`, `extension`) with
+`Ok/Info/Warning/Error` and a fix hint; `ready()` = no Error. WPILib is searched in `%PUBLIC%\wpilib\<year>` / `C:\Users\Public\wpilib\<year>` and `~/wpilib/<year>`; the JDK is
+the WPILib one, else `JAVA_HOME`, else `java` on `PATH` (Java >= 17 expected). It was verified against `FRC-Shelby-2026OS` (read-only; a test asserts nothing changed).
+
+## 6. Running it for real: `app/host` (`RobotSession`) and `RealRuntimeHost`
+
+The composition root of the product lives in the app, in a Qt-free library (`app/host`, target `wpiemu_app_host`) so the shell and the end-to-end
+test share one implementation. `RobotSession::start(registries, config, options)` does, in this order:
+
+1. cheap checks with actionable errors: project folder, **Gradle wrapper present** (`gradlew[.bat]`), HALSim extension file;
+2. `ConfigPipeline::process` (migration, defaults, validation): errors refuse a **Run**, a **Discovery** only warns (and falls back to an empty
+   model if the session cannot be built from a half-edited one);
+3. game plugin by `gamePluginId` / season (`selectPlugin`) + `PluginRegistrar`; **no plugin for the season = core-only mode** (a floor slab replaces the
+   plugin field, a log line says so); the robot starts inside the plugin's field (`startPlacementFor`), else at the origin;
+4. `SessionBuilder::build` over a Box3D world, `physicsChassisBuilder` and `PhysicsCouplingDriver`;
+5. IPC: `ConnectionEndpoint::generate()` -> `makeLocalServer` -> `RobotLinkAcceptor` (binary codec) feeding the `MessageInbox`;
+6. `SessionRunner` thread (`awaitProgramStart = true`: no tick and no watchdog until the extension's `program_started` lifecycle Log, because a robot
+   constructor may take longer than the watchdog; `discoveryOnly` for Detect devices);
+7. `RobotLauncher` (`GradleInitScript` default, `ExternalDirect` = `simulateExternal*` + direct JVM/exe launch; selected with `WPIEMU_LAUNCH_MODE=direct`
+   in the app). The JDK is the WPILib one of the project year. `WPIEMU_LIVE_DISCOVERY` is passed explicitly (`0` unless `Options::preStartPolling` /
+   `WPIEMU_PRESTART_POLLING=1`): devices are announced when the robot program starts.
+
+`status()` is a pure function of the launcher phase, the runner state and elapsed time; it is what the UI polls:
+
+| Situation | `process` / `link` | Detail |
+|---|---|---|
+| gradle building / JVM starting | `Starting` / `Connecting` | "Building and starting the robot project..." |
+| extension connected | `Running` / `Connected` (`programStarted` once the constructor finished) | |
+| robot stops answering (watchdog) | `Running` / `Stalled` | |
+| process ends before the extension connected (build failure...) | `FailedToStart` | exit code + last 40 console lines |
+| no handshake within `handshakeTimeout` (5 min) | `FailedToStart` / `HandshakeTimeout` | |
+| protocol too old (`SessionRunner::refusal()`) | `FailedToStart` / `ProtocolMismatch` | |
+| robot dies after connecting | `Crashed` / `Disconnected` | exit code + console tail |
+| user Stop | `Stopping` -> `Exited` | protocol `Stop`, `stopGrace`, then the process **tree** is killed |
+| app exit / session destroyed | - | the destructor always kills the tree (job object) |
+
+`RealRuntimeHost` (`app/common`, the default `IRuntimeHost` of `AppServices`; `--demo` keeps `DemoRuntimeHost`) owns one `RobotSession` and turns its
+thread-safe state into UI signals with a 30 ms poll (`statusChanged`, `snapshotPublished`, batched `logLine`). The extension is located by
+`core::launcher::locateHalsimExtension` (`docs/packaging.md`: `WPIEMU_EXTENSION`, `WPIEMU_EXTENSION_DIR`, install layouts, then the build-tree path
+CMake bakes in). Starting in the other mode, restarting, or switching project stops the current run synchronously (bounded by `stopGrace`).
+
+`SessionRunner` additions for this: `RunnerOptions::awaitProgramStart`, `programStarted()`, `refusal()`, `robotLoopCount()` (the extension's loop counter).
+`planExternalLaunch` accepts GradleRIO's real descriptor shape (a **list** of targets).
+
+## 7. Testing
+
+`tests/runtime/` (140+ cases): JSON edge cases, codec round trips/unknown fields/migrations, validator and pipeline (incl. plugin ownership violations), atomic writes and
+backups, hub behaviour (aliases, loopback, delta frames), session ordering/determinism/battery/IMU/coupling, runner with a scripted fake extension over the SDK in-memory
+transport (handshake, lock-step, pause/step/reset, watchdog, reconnect, stop, brownout, pacing, thread), launch planning, real process supervision
+(capture, env, kill tree, destructor, batch files), inspector/toolchain on synthetic projects and the real Shelby project, and (when `core/physics` is in the build) a
+Box3D swerve integration test. The same sources compile warning-free with MSVC `/W4 /WX` and g++ `-Wall -Wextra -Wpedantic -Werror` and pass on Windows and Linux (WSL).
+
+Above the runtime: `wpiemu_host_tests` (`app/host/tests`, CTest `host.*`) drives `RobotSession` against synthetic projects whose `gradlew` is a tiny script
+(no Gradle wrapper, bad model, build failure, handshake timeout, protocol mismatch through a fake extension client, crash after connect, user stop, core-only
+season, destructor kills the tree), `app.ui_tests` covers `RealRuntimeHost` and the window the same way, and the opt-in **end-to-end test** (CTest label `e2e`,
+`app/host/tests/e2e_test.cpp`) runs the unmodified FRC-Shelby-2026OS project: discovery (29 devices), a generated swerve + roller + pivot model, DS enabled in
+teleop, real-time then free-running sim, loop count vs sim time, wheel/chassis/pivot response, stop and process cleanup. See docs/BUILDING.md.
