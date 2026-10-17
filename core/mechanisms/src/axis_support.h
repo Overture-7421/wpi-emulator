@@ -52,6 +52,9 @@ struct AxisOptions {
     double comFraction = 0.5;        // Arm: centre of mass as a fraction of lengthM
     double drumRadiusM = 0.02;       // Linear
     bool gravity = false;
+    bool armGravityEnabled = true;
+    bool linearGravityEnabled = true;
+    double gravityAngleOffsetRad = 0.0;
     double viscousFrictionNmS = 0.0; // output-side damping default (N*m*s/rad or N*s/m)
     double minPosition = 0.0;
     double maxPosition = 0.0;

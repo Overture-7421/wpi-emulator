@@ -27,7 +27,8 @@ public:
     std::vector<sdk::Issue> validate(const sdk::RobotConfig& config) const override;
     bool detecting() const override { return detecting_; }
     void submitConfig(const sdk::RobotConfig& config) override;
-    void saveConfig() override;
+    sdk::Status saveConfig() override;
+    void setSaveError(QString error) { saveError_ = std::move(error); }
     void startDetection() override;
     void stopDetection() override;
 
@@ -65,6 +66,7 @@ private:
     int stepMs_ = 700;
     int submitCount_ = 0;
     int saveCount_ = 0;
+    QString saveError_;
 };
 
 }  // namespace wpiemu::app::editor

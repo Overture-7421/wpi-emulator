@@ -43,6 +43,7 @@ Hello sampleHello() {
     h.programName = "Robot \xC3\xA9 name";
     h.halPortCounts = {{"pwm", 20}, {"dio", 26}, {"can", -1}};
     h.proposedWatchdogMs = 750;
+    h.supportsArmed = true;
     return h;
 }
 
@@ -209,6 +210,18 @@ TEST_CASE("codec: Hello fields survive") {
     CHECK(h.programName == e.programName);
     CHECK(h.halPortCounts == e.halPortCounts);
     CHECK(h.proposedWatchdogMs == 750);
+    CHECK(h.supportsArmed);
+}
+
+TEST_CASE("codec: a v2 Hello without the Armed tail defaults to unsupported") {
+    Hello hello = sampleHello();
+    hello.protocolVersion = 2;
+    auto bytes = encodeOk(hello);
+    bytes.pop_back();  // v2 ended at proposedWatchdogMs
+    const auto decoded = std::get<Hello>(decodeOk(bytes));
+    CHECK(decoded.protocolVersion == 2);
+    CHECK(decoded.proposedWatchdogMs == 750);
+    CHECK_FALSE(decoded.supportsArmed);
 }
 
 TEST_CASE("codec: HelloAck, ActuatorFrame, SensorFrame, SimControl(Ack) fields survive") {
@@ -356,9 +369,10 @@ TEST_CASE("codec: encode appends and never disturbs earlier bytes, failures leav
 TEST_CASE("codec: protocol v1 peers (frames without the appended fields) decode with defaults") {
     // Hello v1: no proposedWatchdogMs.
     std::vector<std::byte> hello = encodeOk(sampleHello());
-    hello.resize(hello.size() - 4);
+    hello.resize(hello.size() - 5);
     const auto h = std::get<Hello>(decodeOk(hello));
     CHECK(h.proposedWatchdogMs == 0);
+    CHECK_FALSE(h.supportsArmed);
     CHECK(h.wpilibYear == 2026);
 
     // HelloAck v1: no runEpoch / watchdog fields.

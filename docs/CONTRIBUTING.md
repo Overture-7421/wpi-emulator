@@ -28,7 +28,7 @@ Do not commit build output, per-project `.wpiemu/` folders, screenshots or logs 
 | `ipc/` | sdk | `wpiemu_ipc` |
 | `halsim_ext/` | sdk, ipc, the bridges aggregator, WPILib HAL | `halsim_wpiemu` |
 | `bridges/hal`, `bridges/vendor` | sdk (not each other) | `wpiemu_bridges_hal`, `wpiemu_bridges_vendor` |
-| `bridges/` (aggregator) | every bridge module | `wpiemu_bridges_builtin` (only `halsim_ext` links it) |
+| `bridges/` (aggregator) | sdk + every bridge module | `wpiemu_bridges_builtin` (only `halsim_ext` links it) |
 | `plugins/<name>` | sdk only | `wpiemu_plugin_<name>` |
 | `plugins/` (aggregator) | sdk + every plugin | `wpiemu_plugins_builtin` (only `app` links it) |
 | `app/` | sdk, core, ipc, plugins aggregator, Qt | `wpiemu_app` and its static libs |
@@ -38,6 +38,10 @@ violation (plus headers that use `signals`, `slots`, `emit` or `foreach` as iden
 macros). `python tools/check_boundaries.py --self-test` tests the checker. Public headers live at
 `<module>/include/wpiemu/<module>/...` (`wpiemu/bridges/<hal|vendor>/...`, `wpiemu/plugins/<name>/...`); target
 names follow `wpiemu_<module>`. If you need a new dependency, you probably need a new SDK interface instead.
+Implementation subtargets and aliases must have entries in `TARGET_OWNERS`; unknown first-party
+dependencies and missing/incorrect declaration ownership fail the check. The plugin and bridge
+aggregators have separate owners: app can link only the plugin seam, extension only the bridge seam.
+The imported WPILib targets are robot-process backends available to the extension, not public SDK edges.
 
 ## Coding conventions
 
@@ -99,7 +103,9 @@ The checklist with method-by-method contract is [new-year-plugin.md](new-year-pl
 ### Add a device bridge (new device family)
 1. Create `bridges/<name>/` linking `wpiemu_sdk` only (plus vendor/HAL headers there), public headers at
    `include/wpiemu/bridges/<name>/`. Add `<name>` to `ALLOWED`/`MODULE_OWNERS`/`TARGET_OWNERS` in
-   `tools/check_boundaries.py` and to ADR 0004's table (rule changes require amending that ADR).
+   `tools/check_boundaries.py`, including the bridge aggregator's outgoing edge, and to
+   ADR 0004's table (rule changes require amending that ADR). Do not grant the extension
+   a direct dependency on the new module.
 2. Choose the base: a `SimDeviceBridge` with a `std::vector<SimDeviceRule>` table (name regex, bindings to canonical
    signals with `scale`/`offset`), a `ChannelFamilyBridge` for per-index HAL families, or a plain `IDeviceBridge`.
    Signal names and units are in `sdk/devices/signals.h`; capabilities decide which slot types accept the device.
@@ -132,8 +138,9 @@ Drivetrain (`IDrivetrain`, `DrivetrainRegistry`), tire model (`ITireModel`), pla
 transport/codec (`ITransport`, `IMessageCodec`): see the table in ARCHITECTURE section 5.
 
 ## Changing the SDK
-The SDK is versioned (1.2 today: `sdk/version.h` lists what each minor added; [ADR 0005](decisions/0005-sdk-freeze.md) and
-[ADR 0006](decisions/0006-sdk-1-1-amendments.md) define the process). Additive changes (new header, new trailing field with a default, new
+The SDK is versioned (1.4 today, IPC protocol v3: `sdk/version.h` lists what each minor added;
+[ADR 0005](decisions/0005-sdk-freeze.md), [ADR 0006](decisions/0006-sdk-1-1-amendments.md) and
+[ADR 0011](decisions/0011-single-robot-instance.md) record the process/amendments). Additive changes (new header, new trailing field with a default, new
 non-pure virtual, appended enum value, new canonical signal, new appended message type) go through a normal PR with a
 `kSdkVersionMinor` bump (and `kProtocolVersion` for wire changes). Anything else (remove, rename, change a signature,
 unit or default) needs a new ADR and a major bump. Add or update a test in `tests/sdk`.

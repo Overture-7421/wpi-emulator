@@ -82,8 +82,15 @@ external load (`PlantInput::externalLoad`, N or N·m), hard stops that clamp the
 
 Integration: linear systems (`efficiency == 1`, no angle-dependent gravity) use the **exact matrix-exponential
 discretization** (`discretizeAB` on the augmented `[A B_V B_d]`, cached per `dt`), so they are exact for any
-step; the others use **RK4 sub-stepped** so `|A| h <= 0.1`. WPILib integrates with `rkdp`; both agree with the
-analytic solutions to better than 1e-6 in the tests. Arm/elevator gravity uses WPILib's 9.8 m/s²
+step. Nonlinear systems use **RK4 sub-stepped** so `|A| h <= 0.1`, without a work cap that could violate
+that bound. For stiff nonlinear plants (`|A| dt > 10`, including worst-case efficiency), a semi-analytic
+exponential midpoint step integrates motor/viscous damping exactly and samples gravity at a predicted midpoint. Its substeps are
+at most 100 microseconds (also limited by angular speed), controlling gravity accuracy independently
+of electrical stiffness. Non-unity efficiency uses exact velocity events at the motoring/back-driving
+boundaries (zero velocity and motor no-load velocity). If the two quadrant accelerations point toward
+zero velocity, it remains at rest until the frozen load changes, instead of numerically chattering.
+WPILib integrates with `rkdp`; analytic and fine-reference regressions cover the existing accuracy
+and stiff arms across 1/2/4/5/10/20 ms ticks. Arm/elevator gravity uses WPILib's 9.8 m/s²
 (`kPlantGravityMps2`), not the physics world's gravity.
 
 `validatePlantSpec(spec)` reports the first bad field (the factory callback itself can only return null →
@@ -148,7 +155,11 @@ write sensors through slots. Position/limits are SI: radians (rotary/arm) or met
 | `indexer` | Indexer / conveyor / Indexer | 1 rotary belt | as roller + slots `entryBeamBreak`, `exitBeamBreak` | `belt` | as roller |
 
 Intake deploy rotation is about `deployAxis` by **+θ without sign flip** (about +Y positive lowers a forward
-intake; so positive = deploying). `rollerOffset` is in the deploy frame.
+intake; so positive = deploying). `rollerOffset` is in the deploy frame. With deploy gravity enabled,
+the arm COM is assumed along local +X: gravity increases +Y deploy angle near horizontal, while
+rotation about X or Z has no gravitational torque. Linear deploy gravity acts only on a Z axis
+(toward negative position); horizontal X/Y slides have no gravity load. This is a local-frame
+approximation, not mount/chassis-tilt-dependent gravity.
 
 ### Sensors and the game-state hook
 

@@ -94,6 +94,26 @@ TEST_CASE("atomic write: creates directories, replaces content, leaves no temp f
     CHECK(readTextFile(dir.path() / "missing").error().code == ErrorCode::NotFound);
 }
 
+TEST_CASE("atomic write: replacement failure retains its cause after successful cleanup") {
+    ScratchDir dir;
+    const fs::path target = dir.path() / "target";
+    fs::create_directory(target);
+    dir.write((fs::path("target") / "keep.txt").string(), "untouched");
+    const fs::path probe = dir.write("probe", "probe");
+    std::error_code replaceError;
+    fs::rename(probe, target, replaceError);
+    REQUIRE(replaceError);
+    REQUIRE(fs::remove(probe));
+
+    const Status result = atomicWriteFile(target, "new content");
+    REQUIRE_FALSE(result.ok());
+    CHECK(result.error().code == ErrorCode::IoError);
+    CHECK(result.error().message.find("cannot replace") != std::string::npos);
+    CHECK(result.error().message.find(replaceError.message()) != std::string::npos);
+    CHECK(ScratchDir::read(target / "keep.txt") == "untouched");
+    for (const auto& entry : fs::directory_iterator(dir.path())) CHECK(entry.path() == target);
+}
+
 TEST_CASE("file store: save/load round trip, NotFound, parse errors name the file") {
     ScratchDir dir;
     Codecs c;
@@ -212,4 +232,34 @@ TEST_CASE("repository: app-data copy, project export/import, per-project keys") 
 
     CHECK(repo.importFromProject(dir.path() / "nothing").error().code == ErrorCode::NotFound);
     CHECK(repo.exportToProject(dir.path() / "nothing").error().code == ErrorCode::NotFound);
+}
+
+TEST_CASE("repository: import preserves local bytes when every backup candidate is occupied") {
+    ScratchDir dir;
+    Codecs c;
+    const fs::path project = dir.path() / "robot";
+    ProjectConfigRepository repo(dir.path() / "appdata", c.json, c.codec);
+    RobotConfig cfg = sampleConfig();
+    cfg.name = "Shared";
+    REQUIRE(repo.save(project, cfg, true).ok());
+    cfg.name = "Local edits";
+    REQUIRE(repo.save(project, cfg).ok());
+    const fs::path local = repo.appDataStore(project).path();
+    const std::string original = ScratchDir::read(local);
+    for (int n = 1; n < 1000; ++n) {
+        fs::path occupied = local;
+        occupied += n == 1 ? ".pre-import.bak" : ".pre-import-" + std::to_string(n) + ".bak";
+        REQUIRE(fs::create_directory(occupied));
+    }
+
+    const auto result = repo.importFromProject(project);
+    REQUIRE_FALSE(result.ok());
+    CHECK(result.error().code == ErrorCode::IoError);
+    CHECK(result.error().message.find("cannot back up") != std::string::npos);
+    CHECK(ScratchDir::read(local) == original);
+    CHECK(repo.open(project).value().name == "Local edits");
+    // The destination itself is still replaceable: only the protective backup failed.
+    cfg.name = "Explicit save";
+    REQUIRE(repo.save(project, cfg).ok());
+    CHECK(repo.open(project).value().name == "Explicit save");
 }

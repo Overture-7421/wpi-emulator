@@ -377,6 +377,45 @@ TEST_CASE("session: RNG is reseeded from the config on reset") {
     CHECK(expected.nextU64() == probe.nextU64());
 }
 
+TEST_CASE("session: reset after nonzero actuation matches a fresh neutral first tick") {
+    Fixture used;
+    Fixture fresh;
+    SimulationSession& s = used.make();
+    SimulationSession& neutral = fresh.make();
+    const auto mappings = s.hub().exportMappings();
+    for (int epoch = 0; epoch < 2; ++epoch) {
+        s.hub().onActuatorFrame(outputs({{101, 12.0}, {102, 12.0}, {103, 12.0},
+                                       {104, 12.0}, {105, 12.0}}));
+        proto::SensorFrame driven;
+        s.tick(driven, false);
+        CHECK(s.world().linearVelocity(s.chassisBody()).x > 0.f);
+        CHECK(valueOf(driven, 106, 1) > 0.0);
+        s.reset();
+        neutral.reset();
+        CHECK(s.hub().exportMappings() == mappings);
+        CHECK(s.hub().discovered().size() == sampleDevices().size());
+        CHECK_FALSE(s.hub().motorOutput({"intake", "motor"}).valid);
+        CHECK(s.hub().resolve({"intake", "motor"}) == DeviceId{105});
+        proto::SensorFrame actual;
+        proto::SensorFrame expected;
+        s.tick(actual, false);
+        neutral.tick(expected, true);
+        CHECK(actual.full);
+        CHECK(actual.tick == expected.tick);
+        CHECK(actual.simTimeUs == expected.simTimeUs);
+        CHECK(actual.samples == expected.samples);
+        CHECK(actual.batteryCurrentA == expected.batteryCurrentA);
+        CHECK(actual.batteryVoltageV == expected.batteryVoltageV);
+        CHECK(s.world().pose(s.chassisBody()) == neutral.world().pose(neutral.chassisBody()));
+        CHECK(s.world().linearVelocity(s.chassisBody()) == Vec3{});
+        CHECK(valueOf(actual, 106, 0) == 0.0);
+        CHECK(valueOf(actual, 106, 1) == 0.0);
+        s.tick(actual, false);
+        CHECK_FALSE(actual.full);
+        CHECK(actual.samples.empty());
+    }
+}
+
 TEST_CASE("session: the chassis IMU reads yaw/rates and proper acceleration") {
     Fixture f;
     RobotConfig c = sampleConfig();

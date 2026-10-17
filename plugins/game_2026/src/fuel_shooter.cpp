@@ -153,9 +153,13 @@ void FuelShooterMechanism::tick(sdk::SimContext& ctx, double dt) {
     if (dir != nullptr)
         if (const auto p = dir->linkPoseInChassis(id_, sdk::kRootLink)) rootInChassis_ = *p;
 
+    bool referencesValid = true;
     auto read = [&](const std::string& mechanism, const std::string& value) {
         MechanismReading r = readMechanism(dir, mechanism, value);
-        if (!mechanism.empty() && !r.found) warnMissing(ctx, mechanism);
+        if (!mechanism.empty() && !r.found) {
+            referencesValid = false;
+            warnMissing(ctx, mechanism);
+        }
         return r;
     };
 
@@ -184,7 +188,8 @@ void FuelShooterMechanism::tick(sdk::SimContext& ctx, double dt) {
     bool fed = true;
     if (!params_.feedMechanism.empty())
         fed = exceeds(read(params_.feedMechanism, params_.feedValue), params_.feedThreshold);
-    feeding_ = fed && exitSpeedMps_ >= params_.minExitSpeedMps && exitSpeedMps_ > 0.0;
+    feeding_ =
+        referencesValid && fed && exitSpeedMps_ >= params_.minExitSpeedMps && exitSpeedMps_ > 0.0;
 
     // Token bucket: primed while idle so the first shot leaves as soon as feeding starts.
     if (!feeding_) budget_ = 1.0;

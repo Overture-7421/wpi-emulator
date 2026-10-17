@@ -59,7 +59,7 @@
 
 namespace wpiemu::sdk::proto {
 
-inline constexpr std::uint32_t kProtocolVersion = 2;  // v2 = SDK 1.1 lock-step amendments (ADR 0006)
+inline constexpr std::uint32_t kProtocolVersion = 3;  // v3: explicit optional Armed capability
 inline constexpr std::uint32_t kMinCompatibleProtocolVersion = 1;
 
 // sessionId / runEpoch / commandId value meaning "not specified" (v1 peers, in-process callers).
@@ -139,6 +139,8 @@ struct Hello {
     std::string programName;
     std::vector<std::pair<std::string, std::int32_t>> halPortCounts;  // "pwm" -> 20, ...
     std::uint32_t proposedWatchdogMs = 0;  // v2: extension's minimum acceptable watchdog; 0 = no preference
+    bool supportsArmed =
+        false;  // v3: Begin/EndLockstep supported; absent => unsupported, even for v2
 };
 
 struct HelloAck {
@@ -261,11 +263,17 @@ enum class SimCommand : std::uint8_t {
 };
 
 // Receiver rules (v2):
-//  * commandId != 0: the receiver answers with exactly one SimControlAck carrying the same commandId.
-//    Reset and Stop MUST carry a non-zero commandId. A repeated commandId is re-acked, not re-applied.
+//  * commandId != 0: the receiver answers with exactly one SimControlAck carrying the same
+//  commandId.
+//    Reset and Stop MUST carry a non-zero commandId. IDs increase within a connection, across
+//    epochs. The last 64 distinct command results (including rejections) are retained and replayed
+//    exactly. Older/evicted IDs are rejected, NEVER re-applied. Reconnect starts fresh command
+//    history. Stop terminates the connection: retries are only meaningful while that connection is
+//    still live.
 //  * runEpoch: for every command except Reset, the sender's epoch in force; a stale one is rejected
 //    (ControlResult::StaleEpoch). Reset is the FIRST message of the NEW epoch: its runEpoch is the
-//    already-bumped value and must be newer than the receiver's. Stop is honoured regardless of epoch.
+//    already-bumped value and must be newer than the receiver's. Stop is honoured regardless of
+//    epoch.
 struct SimControl {
     SimCommand command = SimCommand::Pause;
     std::uint32_t stepCount = 1;

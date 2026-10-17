@@ -51,6 +51,12 @@ tests/runtime/                    doctest suite (fixtures in runtime_fixtures.h,
 }
 ```
 Units are SI, key names carry the unit suffix of the C++ field. Enums are strings (`"swerve"`, `"box"`, ...).
+Typed numeric fields are checked before conversion: integers (including schema versions) must be finite,
+integral and within their destination's signed range; floats and geometry components must be finite and
+within the float range. Violations are pathed `ParseError`s, not truncated/wrapped values. `sim.seed` keeps
+its signed int64 on-disk representation: negative values encode uint64 seeds with the high bit set.
+The generic SDK `Value` conversions remain unchanged. JSON conversion and its stream fallbacks use the
+classic locale, independent of the process locale.
 
 **Unknown fields** (root, `project`, `chassis`, `drivetrain`, `battery`, `sim`, every mechanism, every wheel, every plugin
 section) are kept in the additive SDK 1.1 field `RobotConfig::unknownFields` (keyed by owner path such as
@@ -89,7 +95,8 @@ data it does not own - detected by diffing everything except `plugins[id]` and m
 * Loading an older core schema first copies the original to `robot.json.v<N>.bak` (never overwrites an existing backup, `-2`, `-3`...),
   then writes the upgraded file; if the backup fails the file is left alone.
 * `ProjectConfigRepository::open` = app-data copy, else the project export (cached into app data); `save(..., alsoExport)`;
-  `exportToProject`, `importFromProject` (backs the working copy up first).
+  `exportToProject`, `importFromProject` (backs the working copy up first; backup failure aborts import
+  without modifying it). Failed atomic replacement retains the rename error even after scratch-file cleanup.
 
 ## 2. Device hub (`DeviceHub`)
 
@@ -103,6 +110,10 @@ data it does not own - detected by diffing everything except `plugins[id]` and m
   `digitalIn|detected`, `analogVoltage`, IMU signals. Frames are delta-compressed (`buildSensorFrame(out, full)`).
 * Bindings are keyed by `DeviceKey` and survive `clearDevices()`; `loadMappings(config.allMappings())` / `exportMappings()` persist them;
   `mappingRevision()` changes whenever the loopback set may have changed.
+* `resetSignalHistory()` preserves descriptors, discovery and mappings while invalidating all cached
+  actuator output and zeroing sensor history. The next sensor frame is forced full: previously-written
+  inputs are sent neutral unless overwritten by fresh feedback, including optional inputs no longer
+  written after reset. Subsequent frames resume ordinary delta compression.
 
 ## 3. Simulation (`SimulationSession`, `SessionRunner`)
 
@@ -116,6 +127,8 @@ slots (rotor feedback written back with the gear ratio) -> `coupling.beforeStep`
 (`robot.imu`: yaw/pitch/roll, body rates, proper acceleration = +g at rest) -> battery. The battery uses the total current of the tick
 (mechanisms + wheel motors + `baselineCurrentA`) with a one-tick lag: `V = nominal - I R`, brownout with a 0.5 V hysteresis (warning `brownout`).
 Tick numbers restart at 0 per epoch; `reset()` restores pose, drivetrain, mechanisms, game state, clock, RNG and battery but keeps devices and bindings.
+It first resets hub signal history, so the first tick of every new epoch consumes neutral commands rather
+than outputs accepted in the prior run (including repeated Armed End/Begin transitions).
 
 `SessionRunner` (implements `ISimController`) drives a session over a link; one `poll()` = one bounded iteration, `start()` runs it on a thread.
 * **Handshake**: `Hello` -> `HelloAck{sessionId, runEpoch, stepUs, negotiated watchdog, policy}` (version below `kMinCompatibleProtocolVersion` is refused),
@@ -133,6 +146,11 @@ Tick numbers restart at 0 per epoch; `reset()` restores pose, drivetrain, mechan
 * **Snapshots**: published to the `ISnapshotSink` every `snapshotEveryTicks` and on every state change (robot connected, paused, device list...).
 * Link layer: `IRobotLink`, `MessageInbox`, `ChannelRobotLink` (any `ITransport` + `IMessageCodec`), `RobotLinkAcceptor` (any `ITransportServer`). Only sdk types are used,
   the app plugs in the ipc module's server/codec.
+  `RobotLinkAcceptor::stop()` closes the listener, joins the accept thread, then closes and joins its accepted readers.
+  `MessageInbox::close()` permanently rejects new events, wakes waiters, and moves pending connection owners out under
+  the mailbox lock before closing/destroying them unlocked. Readers retain private mailbox state, not a borrowed mailbox
+  reference, so late disconnect notifications are safely rejected even after the mailbox owner is destroyed. Stop
+  producers before disposing of the consumer; never join a reader while holding the mailbox lock.
 
 ### Composition root recipe
 
@@ -152,6 +170,11 @@ SessionRunner runner(**session, inbox, slot, logger, options);  runner.start(); 
 ## 4. Launching the robot (`core/launcher`)
 
 `RobotLauncher` starts the project **without editing it** and supervises it (no orphans: the destructor kills the tree).
+Its worker exclusively owns the process through startup, waiting and cleanup. `requestStop(grace)` latches cancellation
+without joining; repeated requests preserve the earliest whole-tree kill deadline. The worker observes cancellation
+after successful startup and around each bounded 100 ms process wait, first requesting a polite stop, then killing the
+tree when the grace deadline expires. `stop(grace)` requests cancellation and joins the worker, so cancellation during
+native startup cannot be lost before PID/job publication.
 
 | Mode | Command | Notes |
 |---|---|---|
@@ -167,6 +190,8 @@ Environment contract (`launcher::env_var`): `WPIEMU_EXT`, `WPIEMU_IPC_ENDPOINT` 
   `.bat/.cmd` run through `cmd /d /s /c "..."` and arguments with cmd metacharacters (`" % ^ & | < > !`) are refused; `CTRL_BREAK` is only a best-effort polite stop
   (the clean path is the protocol `Stop`).
 * **POSIX**: `fork` into a new process group (SIGTERM / SIGKILL via `killpg`), exec failure reported through a CLOEXEC pipe, everything prepared before `fork`.
+* Native startup, PID/handle publication and stop/kill requests are serialized. Calling `kill()` before startup cancels
+  a later `start()` instead of allowing an unsupervised child to appear.
 * Output: stdout/stderr line-split into an `ILogSink` (CRLF aware, 64 KiB line cap); after the main process exits the readers get 1.5 s, then pipes held open by grandchildren are cancelled.
 
 ### `ProjectInspector` and `inspectToolchain` (wizard steps 1-2)
@@ -208,6 +233,10 @@ test share one implementation. `RobotSession::start(registries, config, options)
 | robot dies after connecting | `Crashed` / `Disconnected` | exit code + console tail |
 | user Stop | `Stopping` -> `Exited` | protocol `Stop`, `stopGrace`, then the process **tree** is killed |
 | app exit / session destroyed | - | the destructor always kills the tree (job object) |
+
+After protocol-stop grace and launcher tree cleanup, `RobotSession` stops the acceptor and joins IPC readers before
+stopping the runner and closing the inbox. Pending, unconsumed connections are therefore released while mailbox
+shutdown state is still alive, without holding the queue lock during reader joins.
 
 `RealRuntimeHost` (`app/common`, the default `IRuntimeHost` of `AppServices`; `--demo` keeps `DemoRuntimeHost`) owns one `RobotSession` and turns its
 thread-safe state into UI signals with a 30 ms poll (`statusChanged`, `snapshotPublished`, batched `logLine`). The extension is located by

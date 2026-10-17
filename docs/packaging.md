@@ -44,8 +44,9 @@ Windows (C:\Program Files\WPI Emulator)        macOS (WPI Emulator.dmg)         
   THIRD-PARTY-NOTICES.txt                        wpiemu_app.app/Contents/{Frameworks,PlugIns,Resources/qml}  usr/share/{applications,icons,metainfo}
 ```
 
-The app finds the extension **relative to its own executable**, never through the registry or an absolute path baked in at
-build time. Let `appDir = QCoreApplication::applicationDirPath()` (the directory of the running executable) and `lib` =
+The app finds the extension **relative to its own executable**, never through the registry. A build-tree
+absolute fallback is tried last for development, not required by packaged installs.
+Let `appDir = QCoreApplication::applicationDirPath()` (the directory of the running executable) and `lib` =
 `halsim_wpiemu.dll` / `libhalsim_wpiemu.so` / `libhalsim_wpiemu.dylib`. The first existing file wins:
 
 1. `$WPIEMU_EXTENSION` (full file path; explicit override for developers/tests)
@@ -55,33 +56,29 @@ build time. Let `appDir = QCoreApplication::applicationDirPath()` (the directory
 5. `appDir/../lib/wpiemu/<lib>` (Linux install prefix and AppImage)
 6. `appDir/../PlugIns/wpiemu/<lib>` (macOS bundle: `Contents/MacOS/../PlugIns/wpiemu`)
 7. `appDir/../../../<lib>` (macOS build tree: `bin/<Config>/wpiemu_app.app/Contents/MacOS` -> `bin/<Config>`)
+8. Optional CMake-provided build-tree fallback (development only)
 
 The returned path must be absolute and canonical (it is exported as `WPIEMU_EXT` / `HALSIM_EXTENSIONS`, which the robot's
 JVM and gradle consume from another working directory). `cmake/WpiEmuInstall.cmake` exposes the install-relative
 directory as `WPIEMU_INSTALL_EXTENSION_DIR` if a build-time consumer needs it.
 
-> **Requirement for `core/runtime` (not implemented here; `core/runtime` is owned by another stream).** Nothing in `app/` or
-> `core/` currently fills `RobotLaunchRequest::extensionLibrary` / `ProjectInspectorContext::extensionLibrary` (grep:
-> they are only set in tests). Add a Qt-free pure function, e.g. in `core/runtime/include/wpiemu/core/launcher/`:
->
-> ```cpp
-> // First existing candidate of the list above; empty path when none exists.
-> std::filesystem::path locateHalsimExtension(const std::filesystem::path& appDir,
->                                             std::function<std::optional<std::string>(const char*)> getenv);
-> ```
->
-> and call it from the app composition root (`app/common`, `AppServices`) with `QCoreApplication::applicationDirPath()`.
-> Unit-test it with a temp tree for each layout (Windows/Linux/macOS/build tree). The inspector's existing
-> "extension not found -> Reinstall the emulator" message then works for packaged installs.
+This is implemented by the Qt-free `core::launcher::locateHalsimExtension` in
+`core/runtime/include/wpiemu/core/launcher/extension_locator.h`. `RealRuntimeHost` supplies
+`QCoreApplication::applicationDirPath()` and the environment, then passes the resolved path
+through `RobotSession` to inspection/launch requests. Missing files produce the existing reinstall/rebuild
+diagnostic; the resolver does not create or write files. Regression coverage is in
+`tests/runtime/test_extension_locator.cpp` (`extension locator:` cases), including priorities,
+packaged/build layouts and canonical paths.
 
 ### Environment of child processes (Linux AppImage; Windows/macOS need nothing)
 
 The AppImage runs with `WPIEMU_PACKAGED=appimage`, `APPDIR`, `APPIMAGE` and linuxdeploy-plugin-qt's `QT_PLUGIN_PATH`,
 `QML2_IMPORT_PATH`, `QT_QPA_PLATFORM_PLUGIN_PATH`, plus `$APPDIR/...` entries prepended to `LD_LIBRARY_PATH`, `PATH`,
 `XDG_DATA_DIRS`. The robot launcher (gradle, the WPILib JDK, native robots) must not inherit them: when
-`WPIEMU_PACKAGED` is set it should drop those variables and remove every `PATH`-style entry that starts with `$APPDIR`
+`WPIEMU_PACKAGED` is set `makeLaunchEnvironment` drops those variables and removes every `PATH`-style entry that starts with `$APPDIR`
 from the child environment. The Windows installer does **not** modify `PATH`, and the macOS bundle uses `@rpath`/`@executable_path`
 only.
+The `packaged env:` cases in `tests/runtime/test_launcher.cpp` cover this sanitization.
 
 ### Other requirements on the app
 
@@ -123,11 +120,12 @@ before CPack if SmartScreen reputation matters.
 ### macOS (not run here)
 
 ```sh
-cmake -S . -B build/release -G "Ninja Multi-Config" -DCMAKE_PREFIX_PATH=$HOME/Qt/6.8.3/macos \
+cmake --preset macos -B build/release -DCMAKE_PREFIX_PATH=$HOME/Qt/6.8.3/macos \
       -DWPIEMU_WPILIB_DOWNLOAD=ON -DWPIEMU_RUNVIEW_FETCH_SDL2=ON
 cmake --build build/release --config Release
 (cd build/release && cpack -C Release -G DragNDrop -B pkg)       # pkg/wpi-emulator-<ver>-macos-arm64.dmg
 packaging/macos/notarize.sh build/release/pkg/wpi-emulator-*.dmg  # optional: sign dmg, notarize, staple
+python tools/package_checksums.py build/release/pkg --verify
 ```
 * `install()` puts `wpiemu_app.app` at the root of the image; the Qt deploy script runs `macdeployqt` on the installed
   bundle (frameworks, plugins, `Contents/Resources/qml`, `-appstore-compliant`). `packaging/macos/Info.plist.in` and the
@@ -146,11 +144,17 @@ packaging/macos/notarize.sh build/release/pkg/wpi-emulator-*.dmg  # optional: si
 * **Notarization:** `packaging/macos/notarize.sh` signs the dmg, runs `xcrun notarytool submit --wait`, staples and
   assesses it. Credentials come from the environment only: either `APPLE_ID` + `APPLE_TEAM_ID` + `APPLE_APP_PASSWORD`, or an
   App Store Connect API key (`APPLE_API_KEY_PATH`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`). With no credentials it
-  prints a notice and exits 0.
+  prints a notice and exits 0. Both signing-only and stapled paths refresh and verify the DMG's
+  `.sha256` after their final mutation (CPack's earlier digest is no longer valid after signing).
 * **Architectures:** the default is the host architecture (`arm64` on `macos-14`). A universal binary needs
   `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` (the official Qt 6.8 macOS kit and WPILib's `osxuniversal` libraries are
   universal) but the FetchContent dependencies (Box3D, SDL2) have not been verified for it; the package name then contains
-  `arm64-x86_64`. Deployment target is 13.0 (preset `macos`; keep `Info.plist.in`'s `LSMinimumSystemVersion` in sync).
+  `arm64-x86_64`. The default deployment target is 13.0, set once before compiler initialization
+  in the root `CMakeLists.txt` for preset and manual/release builds. The plist's
+  `LSMinimumSystemVersion` is generated from `CMAKE_OSX_DEPLOYMENT_TARGET`, including an explicit
+  command-line override. Release verification inspects each app/extension Mach-O slice with
+  `packaging/macos/check_minimum_os.py` and rejects a recorded minimum above the plist value.
+  This inspection is not proof of runtime support on the minimum OS; that smoke run remains unverified.
 
 ### Linux AppImage (not run here)
 
@@ -195,6 +199,9 @@ libraries, `libx11-dev`-style headers for the static SDL2, `libudev-dev`, `libas
   extension") unless it was started manually with `allow_stub_extension`, so a stub is never shipped by accident.
 * Windows verification installs the NSIS package silently and runs it with only the system PATH; macOS mounts the dmg and
   checks that no dependency points outside the bundle; Linux runs the AppImage in an empty environment.
+* After all signing/stapling and package verification, `tools/package_checksums.py` refreshes and
+  verifies each distributable's SHA256 sidecar immediately before upload on every platform.
+  `--verify` checks without rewriting; use it again after any manual artifact operation.
 * Secrets (all optional; unsigned builds are produced without them): `MACOS_CERTIFICATE` (base64 Developer ID `.p12`),
   `MACOS_CERTIFICATE_PASSWORD`, `MACOS_SIGN_IDENTITY`, `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD`. The certificate
   is imported into a temporary keychain on the runner; nothing is stored in the repository.

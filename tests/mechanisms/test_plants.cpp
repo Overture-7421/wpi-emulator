@@ -205,6 +205,110 @@ TEST_CASE("arm holds a horizontal and an inclined pose at the cos-scaled feed-fo
     }
 }
 
+TEST_CASE(
+    "stiff gravity arms remain bounded and match a stable reference at supported tick sizes") {
+    sdk::PlantSpec spec;
+    spec.model = "arm";
+    spec.motor = *MotorCatalog::builtin().spec("kraken_x60");
+    spec.motorCount = 1;
+    spec.gearRatio = 300.0;
+    spec.momentOfInertiaKgM2 = 0.01;
+    spec.massKg = 2.0;
+    spec.armLengthM = 0.3 * 0.5;
+    spec.simulateGravity = true;
+    spec.minPosition = spec.maxPosition = 0.0;
+    for (const double efficiency : {1.0, 0.7}) {
+        spec.efficiency = efficiency;
+        const LinearSystem sys = singleJointedArmSystem(spec.motor, 1, 0.01, 300.0);
+        const double a = sys.A(1, 1), b = sys.B(1, 0);
+        for (const double dt : {0.001, 0.002, 0.004, 0.005, 0.01, 0.02}) {
+            INFO(efficiency, dt);
+            auto plant = makePlant(spec);
+            sdk::PlantState ref{};
+            for (const double volts : {6.0, -6.0, 0.0}) {
+                for (int tick = 0; tick < 3; ++tick) {
+                    const sdk::PlantState x = plant->step({volts, 0.0, dt});
+                    ref = integrate(ref, dt, 1e-7, [&](double q, double v) {
+                        double motor = a * v + b * volts;
+                        motor *= motor * v >= 0.0 ? efficiency : 1.0 / efficiency;
+                        return motor - 294.0 * std::cos(q);
+                    });
+                    REQUIRE(std::isfinite(x.position));
+                    REQUIRE(std::isfinite(x.velocity));
+                    CHECK(std::abs(x.velocity) < 1.1);
+                    CHECK(x.position == doctest::Approx(ref.position).epsilon(1e-6).scale(1.0));
+                    CHECK(x.velocity == doctest::Approx(ref.velocity).epsilon(1e-6).scale(1.0));
+                    CHECK_FALSE(plant->atLowerLimit());
+                    CHECK_FALSE(plant->atUpperLimit());
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("stiff inefficient flywheel follows analytic motoring and back-driving dynamics") {
+    sdk::PlantSpec spec;
+    spec.model = "flywheel";
+    spec.motor = *MotorCatalog::builtin().spec("kraken_x60");
+    spec.gearRatio = 300.0;
+    spec.momentOfInertiaKgM2 = 0.01;
+    spec.efficiency = 0.05;
+    const auto sys = dcMotorSystem(spec.motor, 1, 0.01, 300.0);
+    for (const double dt : {0.001, 0.005, 0.01, 0.02}) {
+        auto plant = makePlant(spec);
+        sdk::PlantState ref{};
+        for (const double volts : {6.0, 0.0}) {
+            const double factor = volts == 0.0 ? 1.0 / spec.efficiency : spec.efficiency;
+            const double a = factor * sys.A(1, 1);
+            const double equilibrium = -sys.B(1, 0) * volts / sys.A(1, 1);
+            ref = {ref.position + equilibrium * dt +
+                       (ref.velocity - equilibrium) * std::expm1(a * dt) / a,
+                   equilibrium + (ref.velocity - equilibrium) * std::exp(a * dt)};
+            const auto x = plant->step({volts, 0.0, dt});
+            CHECK(x.position == doctest::Approx(ref.position).epsilon(1e-10).scale(1.0));
+            CHECK(x.velocity == doctest::Approx(ref.velocity).epsilon(1e-10).scale(1.0));
+        }
+    }
+}
+
+TEST_CASE("stiff arm damping dissipates energy and preserves holding and hard stops") {
+    sdk::PlantSpec spec;
+    spec.model = "arm";
+    spec.motor = *MotorCatalog::builtin().spec("kraken_x60");
+    spec.gearRatio = 300.0;
+    spec.momentOfInertiaKgM2 = 0.01;
+    spec.massKg = 2.0;
+    spec.armLengthM = 0.15;
+    spec.simulateGravity = true;
+    const auto sys = singleJointedArmSystem(spec.motor, spec.motorCount, 0.01, 300.0);
+    for (const double dt : {0.001, 0.005, 0.01, 0.02}) {
+        auto plant = makePlant(spec);
+        const double angle = 0.5;
+        plant->reset({angle, 0.0});
+        const double hold = 294.0 * std::cos(angle) / sys.B(1, 0);
+        for (int i = 0; i < 10; ++i) plant->step({hold, 0.0, dt});
+        CHECK(plant->state().position == doctest::Approx(angle).epsilon(1e-10));
+        CHECK(std::abs(plant->state().velocity) < 1e-10);
+
+        plant->reset({angle, 1.0});
+        double energy = 0.5 * 0.01 + 2.0 * 9.8 * 0.15 * std::sin(angle);
+        for (int i = 0; i < 20; ++i) {
+            const auto x = plant->step({0.0, 0.0, dt});
+            const double next =
+                0.5 * 0.01 * x.velocity * x.velocity + 2.0 * 9.8 * 0.15 * std::sin(x.position);
+            CHECK(next <= energy + 1e-9);
+            energy = next;
+        }
+    }
+    spec.minPosition = 0.0;
+    spec.maxPosition = 0.001;
+    auto stopped = makePlant(spec);
+    stopped->step({6.0, 0.0, 0.005});
+    CHECK(stopped->atUpperLimit());
+    CHECK(stopped->state().position == spec.maxPosition);
+    CHECK(stopped->state().velocity == 0.0);
+}
+
 TEST_CASE("arm gravity respects the gravity angle offset") {
     sdk::PlantSpec spec = neoSpec("arm", 1);
     spec.momentOfInertiaKgM2 = 0.05;

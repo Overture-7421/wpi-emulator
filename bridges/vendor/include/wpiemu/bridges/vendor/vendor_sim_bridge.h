@@ -98,7 +98,7 @@ public:
     bool inputWritesEnabled(sdk::DeviceId id) const { return disabled_.count(id) == 0; }
 
     // Forget input write history / angle unwrapping (emulator Reset or new run epoch).
-    void resetInputHistory() { guarded_.resetHistory(); }
+    void resetInputHistory() override { guarded_.resetHistory(); }
 
     // CTRE config read-back (L2). It calls into CTRE's native sim, which is NOT safe to enter while robot code is
     // creating/configuring devices on other threads (a JVM access violation was observed). It therefore NEVER runs

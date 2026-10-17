@@ -11,6 +11,9 @@
   `$WPIEMU_WPILIB_ROOT`, and extracts them into `build/<tree>/_wpilib/<version>`. On a machine without WPILib add
   `-DWPIEMU_WPILIB_DOWNLOAD=ON` to fetch the zips from frcmaven (needs network; this is what CI does). Without WPILib
   configure still succeeds, but the extension is not built with HAL support and the real-HAL tests do not run.
+  An already-extracted root (`include/hal/HAL.h`, `include/wpi/string.h`, desktop shared libraries)
+  is also accepted through either the cache or environment. The resolved extracted root is passed
+  to sibling HAL/vendor bridges for both discovery routes; the original user cache input is preserved.
 - Optional: SDL2 for gamepads in the run view (found with `find_package(SDL2 CONFIG)`; `-DWPIEMU_RUNVIEW_FETCH_SDL2=ON`
   downloads and builds it). Without it the keyboard joystick still works.
 
@@ -46,6 +49,10 @@ ctest --preset linux-release
 ```
 The presets also read `$QT_ROOT_DIR` (set by `jurplel/install-qt-action` in CI) when
 `CMAKE_PREFIX_PATH` is not passed on the command line.
+macOS defaults to deployment minimum 13.0 before compiler initialization in the root
+`CMakeLists.txt`; the bundle plist derives its minimum from the same configured value.
+An explicit `-DCMAKE_OSX_DEPLOYMENT_TARGET=<version>` overrides it. Newer-runner smoke tests
+do not prove runtime compatibility with the minimum supported OS.
 
 ## Useful options
 | Option | Default | Meaning |
@@ -70,7 +77,9 @@ Do not mix generators in one build dir (each preset has its own). `build/` is gi
   Test case names must not contain `;` (CTest discovery splits on it).
 - `tests/sdk/`: SDK contract tests plus a generated self-contained-include check (one TU per
   public SDK header, linked into `wpiemu_tests` to surface ODR violations). New SDK headers are picked up automatically.
-- `boundaries.check` / `boundaries.self_test`: `tools/check_boundaries.py` (see ADR 0001).
+- `boundaries.check` / `boundaries.self_test`: `tools/check_boundaries.py` (see ADR 0004).
+- `infrastructure.release_tools`: dependency-free Python checksum and Mach-O metadata regressions
+  (`python -B -m unittest discover -s tools\tests -v`), without executing macOS tools.
 - `app.version`: `wpiemu_app --version` headless smoke test.
 - Separate executables with their own CTest names: `halsim_ext.*` (extension + fake emulator), `host.*`
   (`wpiemu_host_tests`, `RobotSession` against synthetic projects), `app.ui_tests` (shell/wizard, offscreen),
@@ -78,6 +87,16 @@ Do not mix generators in one build dir (each preset has its own). `build/` is gi
 - `ctest -N` lists everything; `ctest -R <regex>` runs a subset. The `e2e.shelby_2026` test is skipped unless opted in (below).
 
 Run the architecture check directly: `python tools/check_boundaries.py`.
+
+The offline configure-only WPILib regression fixture uses synthetic headers/libraries, without
+FetchContent, downloads or a build. It checks extracted/Maven layouts, cache/environment inputs,
+tests ON/OFF, both bridge bindings and cache preservation in a separate tree:
+```powershell
+python tools\check_wpilib_configure.py --generator "Visual Studio 17 2022" --architecture x64
+```
+On Linux/macOS use `--generator Ninja` (or an installed generator). The fixture needs CMake
+and a working compiler, not Qt or WPILib. CI runs it on each platform. Its eight cases are
+intentionally separate from normal CTest to avoid recursive configuration and shared build-tree changes.
 
 ## Notes
 - Distributable packages (NSIS installer, dmg, AppImage): see [packaging.md](packaging.md).

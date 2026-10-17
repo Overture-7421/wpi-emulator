@@ -32,7 +32,7 @@ public:
 
 private:
     void rebuild();
-    void refresh();
+    void refresh(bool authoritative = false);
     QString signature(const std::vector<PropertyGroup>& groups) const;
     void clearContent();
     void focusField(const QString& key);

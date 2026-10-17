@@ -249,6 +249,60 @@ TEST_CASE("hub: writes to an unbound or undiscovered slot are ignored") {
     CHECK(out.samples.empty());
 }
 
+TEST_CASE("hub: epoch reset invalidates outputs and sends neutral feedback in a full frame") {
+    DeviceHub hub;
+    hub.onAnnounce(talon(1, 1));
+    hub.onAnnounce(dio(2, 3));
+    REQUIRE(hub.bind(kSlotA, kTalon1).ok());
+    const SlotAddress digital{"claw", "out"};
+    REQUIRE(hub.bind(digital, DeviceKey{"hal", "dio", 3, "rio", -1}).ok());
+    hub.markDiscoveryComplete();
+    const auto mappings = hub.exportMappings();
+    const auto revision = hub.mappingRevision();
+    MotorFeedback feedback;
+    feedback.rotorPositionRot = 7.0;
+    feedback.rotorVelocityRps = 9.0;
+    feedback.forwardLimit = true;
+    hub.writeMotorFeedback(kSlotA, feedback);
+    hub.writeDigital(digital, true);
+    hub.onActuatorFrame(
+        frame({{DeviceId{1}, 1, 12.0}, {DeviceId{1}, 2, 5.0}, {DeviceId{2}, 1, 1.0}}));
+    proto::SensorFrame out;
+    hub.buildSensorFrame(out, false);
+    REQUIRE_FALSE(out.samples.empty());
+    REQUIRE(hub.motorOutput(kSlotA).valid);
+    REQUIRE(hub.digitalOutput(digital));
+
+    hub.resetSignalHistory();
+    CHECK_FALSE(hub.motorOutput(kSlotA).valid);
+    CHECK(hub.motorOutput(kSlotA).voltageV == 0.0);
+    CHECK_FALSE(hub.digitalOutput(digital));
+    CHECK(hub.exportMappings() == mappings);
+    CHECK(hub.mappingRevision() == revision);
+    CHECK(hub.discoveryComplete());
+    REQUIRE(hub.discovered().size() == 2);
+    CHECK(hub.find(DeviceId{1})->signalSpecs == talon(1, 1).signalSpecs);
+    hub.buildSensorFrame(out, false);
+    CHECK(out.full);
+    REQUIRE(out.samples.size() == 5);
+    for (const auto& sample : out.samples) CHECK(sample.value == 0.0);
+    hub.buildSensorFrame(out, false);
+    CHECK_FALSE(out.full);
+    CHECK(out.samples.empty());
+    // A partial fresh output must not resurrect an old voltage/torque/digital value.
+    hub.onActuatorFrame(frame({{DeviceId{1}, 0, 0.25}}));
+    CHECK(hub.motorOutput(kSlotA).valid);
+    CHECK(hub.motorOutput(kSlotA).dutyCycle == 0.25);
+    CHECK(hub.motorOutput(kSlotA).voltageV == 0.0);
+    CHECK_FALSE(hub.motorOutput(kSlotA).hasTorqueCurrent);
+    CHECK_FALSE(hub.digitalOutput(digital));
+
+    hub.writeMotorFeedback(kSlotA, MotorFeedback{});
+    hub.resetSignalHistory();
+    hub.buildSensorFrame(out, false);
+    CHECK(out.full);
+    for (const auto& sample : out.samples) CHECK(sample.value == 0.0);
+}
 TEST_CASE("hub: encoder / digital / analog / IMU writes land on the canonical signals") {
     DeviceHub hub;
     hub.onAnnounce(pigeon(1, 20));

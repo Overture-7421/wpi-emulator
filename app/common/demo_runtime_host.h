@@ -66,7 +66,7 @@ private:
 
     sdk::proto::DsState ds_;
     bool paused_ = false;
-    bool beginWhenReady_ = false;
+    SimulationStartIntent beginIntent_;
     double timeScale_ = 1.0;
     std::uint64_t tick_ = 0;
     double x_ = 0.0, y_ = 0.0, yaw_ = 0.0;

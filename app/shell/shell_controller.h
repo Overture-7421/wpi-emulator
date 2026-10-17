@@ -13,6 +13,7 @@ enum class OpenOutcome {
     Opened,       // project open with a robot model: go to the editor
     NeedsSetup,   // WPILib project without a (readable) model: run the wizard
     Invalid,      // not a WPILib project: the wizard's first step explains why
+    Blocked,      // pending changes could not be saved, leave the current project open
 };
 
 // Application-level behaviour behind the main window (MVVM view-model): which project is open,

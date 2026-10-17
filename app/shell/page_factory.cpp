@@ -2,11 +2,13 @@
 
 #include <QLabel>
 #include <QVBoxLayout>
+#include <QPointer>
 
 #include "common/ui_helpers.h"
 
 #ifdef WPIEMU_APP_HAS_EDITOR
 #include "editor/editor_page.h"
+#include "editor/viewmodel/editor_controller.h"
 #include "shell/editor_backend_adapter.h"
 #endif
 #ifdef WPIEMU_APP_HAS_RUNVIEW
@@ -40,9 +42,24 @@ ShellPages createShellPages([[maybe_unused]] AppServices& services, [[maybe_unus
 #ifdef WPIEMU_APP_HAS_EDITOR
     {
         auto* backend = new EditorBackendAdapter(services, backendParent);
-        pages.editor = new editor::EditorPage(*backend);
+        auto* page = new editor::EditorPage(*backend);
+        page->saveAction()->setShortcut(QKeySequence());   // the shell owns Ctrl+S in the composed window
+        pages.editor = page;
         pages.editorIsReal = true;
-        pages.saveEditor = [backend] { backend->saveConfig(); };
+        const QPointer<editor::EditorPage> editorPage(page);
+        pages.saveEditor = [editorPage] {
+            if (editorPage) (void)editorPage->controller().flushSave();
+        };
+        services.session().setPendingSaveHandler([editorPage] {
+            if (!editorPage || !editorPage->hasUnsavedChanges()) return sdk::okStatus();
+            auto result = editorPage->controller().flushSave();
+            if (!result)
+                return sdk::Status(sdk::makeError(result.error().code,
+                    QObject::tr("Could not save pending robot edits: %1. Check the app-data location and disk space, "
+                                "then retry Save before closing or replacing the project.")
+                        .arg(QString::fromStdString(result.error().message)).toStdString()));
+            return result;
+        });
     }
 #else
     pages.editor = placeholder(QObject::tr("Robot editor"), QObject::tr("The 3D robot editor is not part of this build."));

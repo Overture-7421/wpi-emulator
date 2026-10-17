@@ -15,7 +15,7 @@ EditorController::EditorController(IEditorBackend& backend, QObject* parent) : Q
     validateTimer_.setInterval(120);
     saveTimer_.setSingleShot(true);
     connect(&validateTimer_, &QTimer::timeout, this, [this] { runValidation(); });
-    connect(&saveTimer_, &QTimer::timeout, this, [this] { persist(); });
+    connect(&saveTimer_, &QTimer::timeout, this, [this] { (void)persist(); });
 
     connect(&document_, &EditorDocument::changed, this, [this] {
         ensureSelectionValid();
@@ -70,6 +70,8 @@ void EditorController::reloadFromBackend() {
     document_.load(backend_.config());
     applyingBackend_ = false;
     pendingSave_ = false;
+    saveError_.clear();
+    lastSaved_.clear();
     saveTimer_.stop();
     selection_.set(SelectionRef::robot());
     Q_EMIT saveStateChanged();
@@ -96,19 +98,29 @@ void EditorController::onDocumentModified() {
     Q_EMIT saveStateChanged();
 }
 
-void EditorController::persist() {
+sdk::Status EditorController::persist() {
     saveTimer_.stop();
-    backend_.saveConfig();
+    const sdk::Status result = backend_.saveConfig();
+    if (!result) {
+        saveError_ = QString::fromStdString(result.error().message);
+        Q_EMIT saveStateChanged();
+        Q_EMIT statusMessage(ETR("Save failed: %1. Check the app-data location and disk space, then retry Save. "
+                                "Your changes are still open.").arg(saveError_), 2);
+        return result;
+    }
     document_.markSaved();
     pendingSave_ = false;
+    saveError_.clear();
     lastSaved_ = QTime::currentTime().toString(QStringLiteral("HH:mm:ss"));
     Q_EMIT saveStateChanged();
     Q_EMIT autosaveRequested();
+    return sdk::okStatus();
 }
 
-void EditorController::flushSave() { persist(); }
+sdk::Status EditorController::flushSave() { return persist(); }
 
 QString EditorController::saveStatusText() const {
+    if (!saveError_.isEmpty()) return ETR("Save failed — retry Save: %1").arg(saveError_);
     if (pendingSave_) return ETR("Unsaved changes...");
     return lastSaved_.isEmpty() ? ETR("No changes") : ETR("Saved %1").arg(lastSaved_);
 }

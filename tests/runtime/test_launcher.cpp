@@ -697,6 +697,8 @@ struct FakeWorld {
     std::deque<FakeScript> scripts;
     std::atomic<int> killed{0};
     std::atomic<int> stopRequested{0};
+    std::atomic<bool> rescue{false};
+    std::function<void()> onWait;
 };
 
 class FakeProcess final : public IRobotProcess {
@@ -726,8 +728,11 @@ public:
         return exited_ ? std::optional<ExitInfo>(exit_) : std::nullopt;
     }
     bool waitForExit(std::chrono::milliseconds t) override {
+        if (world_.onWait) world_.onWait();
         std::unique_lock lock(m_);
-        return cv_.wait_for(lock, t, [this] { return exited_ || !started_; });
+        const bool done = cv_.wait_for(lock, t, [this] { return exited_ || !started_ || world_.rescue; });
+        if (world_.rescue && !exited_) finish(-1, false);
+        return done;
     }
     void requestStop() override { ++world_.stopRequested; }
     void kill() override {
@@ -776,7 +781,93 @@ bool waitFor(const std::function<bool()>& pred, std::chrono::milliseconds timeou
     return pred();
 }
 
+struct StartupGate {
+    void hold() {
+        std::unique_lock lock(mutex);
+        entered = true;
+        cv.notify_all();
+        if (!cv.wait_for(lock, 5s, [this] { return released; })) timedOut = true;
+    }
+    bool waitUntilEntered() {
+        std::unique_lock lock(mutex);
+        return cv.wait_for(lock, 2s, [this] { return entered; });
+    }
+    void release() {
+        std::lock_guard lock(mutex);
+        released = true;
+        cv.notify_all();
+    }
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool entered = false;
+    bool released = false;
+    bool timedOut = false;
+};
+
 }  // namespace
+
+TEST_CASE("launcher: cancellation during startup is handed to the published process") {
+    ScratchDir dir;
+    FakeWorld world;
+    StartupGate gate;
+    world.scripts.push_back({0, true, false, [&](const ProcessSpec&) { gate.hold(); }, {}});
+    JsonValueCodec json;
+    testing::CapturingLogger logger;
+    CollectingSink sink;
+    RobotLauncher launcher(fakeFactory(world), json, logger);
+    REQUIRE(launcher.launch(makeRequest(dir), sink).ok());
+    const bool entered = gate.waitUntilEntered();
+    launcher.requestStop(0ms);
+    launcher.requestStop(10s);  // cannot extend the first cancellation deadline
+    gate.release();
+    const bool completed = launcher.waitUntilFinished(2s);
+    // The fake never exits on its own. Rescue only after recording failure, so a regression cannot hang the suite.
+    if (!completed) world.rescue = true;
+    launcher.stop(0ms);
+    CHECK(entered);
+    CHECK_FALSE(gate.timedOut);
+    CHECK(completed);
+    CHECK(world.killed == 1);
+    CHECK(world.stopRequested == 1);
+    CHECK(launcher.status().phase == LaunchPhase::Stopped);
+}
+
+TEST_CASE("launcher: cancellation is observed again after a bounded process wait") {
+    ScratchDir dir;
+    FakeWorld world;
+    StartupGate gate;
+    world.scripts.push_back({0, true, false, nullptr, {}});
+    world.onWait = [&] { gate.hold(); };
+    JsonValueCodec json;
+    testing::CapturingLogger logger;
+    CollectingSink sink;
+    RobotLauncher launcher(fakeFactory(world), json, logger);
+    REQUIRE(launcher.launch(makeRequest(dir), sink).ok());
+    const bool entered = gate.waitUntilEntered();
+    launcher.requestStop(0ms);
+    gate.release();
+    const bool completed = launcher.waitUntilFinished(2s);
+    if (!completed) world.rescue = true;
+    launcher.stop(0ms);
+    CHECK(entered);
+    CHECK_FALSE(gate.timedOut);
+    CHECK(completed);
+    CHECK(world.killed == 1);
+    CHECK(world.stopRequested == 1);
+}
+
+TEST_CASE("process: cancellation before native startup prevents creating a child") {
+    CollectingSink sink;
+    auto process = createSystemProcess();
+    process->kill();
+    const Status started = process->start(shell("echo should not run"), sink);
+    CHECK_FALSE(started.ok());
+    if (!started) CHECK(started.error().code == ErrorCode::Cancelled);
+    CHECK(process->pid() == 0);
+    CHECK_FALSE(process->running());
+    CHECK(process->waitForExit(0ms));
+    CHECK(sink.texts(OutputStream::Stdout).empty());
+}
 
 TEST_CASE("launcher: gradle mode runs one process, phases Running -> Exited, output is forwarded") {
     ScratchDir dir;

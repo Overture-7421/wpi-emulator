@@ -163,8 +163,15 @@ void SessionRunner::checkWatchdog() {
     }
     if (awaitingResetAck_ && now >= ackDeadline_) {
         awaitingResetAck_ = false;
+        const bool wasBegin = awaitingBeginAck_;
+        if (wasBegin) {
+            awaitingBeginAck_ = false;
+            armed_ = true;
+        }
         window_.onWatchdogExpired();
-        logger_.error("runner", "robot did not acknowledge Reset within " + std::to_string(watchdogMs_) + " ms");
+        logger_.error("runner", std::string("robot did not acknowledge ") +
+                                    (wasBegin ? "BeginLockstep" : "Reset") + " within " +
+                                    std::to_string(watchdogMs_) + " ms");
         snapshotDirty_ = true;
     }
     if (stopping_ && now >= ackDeadline_) {
@@ -230,6 +237,11 @@ void SessionRunner::applyControl(const proto::SimControl& c) {
             break;
         }
         case proto::SimCommand::BeginLockstep: {
+            if (!peerSupportsArmed_) {
+                logger_.warn("runner",
+                             "BeginLockstep unsupported: peer did not advertise Armed capability");
+                break;
+            }
             if (!link_ || !helloDone_ || !armed_ || !programStarted_ || awaitingBeginAck_) {
                 logger_.warn("runner", "BeginLockstep ignored: not armed with a started robot program");
                 break;
@@ -250,6 +262,11 @@ void SessionRunner::applyControl(const proto::SimControl& c) {
             break;
         }
         case proto::SimCommand::EndLockstep: {
+            if (!peerSupportsArmed_) {
+                logger_.warn("runner",
+                             "EndLockstep unsupported: peer did not advertise Armed capability");
+                break;
+            }
             if (!link_ || !helloDone_ || armed_) {
                 logger_.warn("runner", "EndLockstep ignored: not in lock-step");
                 break;
@@ -311,6 +328,7 @@ void SessionRunner::handle(InboundEvent& ev) {
             link_ = std::move(ev.link);
             linkId_ = ev.linkId;
             helloDone_ = false;
+            peerSupportsArmed_ = false;
             snapshotDirty_ = true;
             break;
         case InboundEvent::Kind::Disconnected:
@@ -383,9 +401,13 @@ void SessionRunner::handleHello(const proto::Hello& hello) {
         return;
     }
     proto::HelloAck ack;
-    if (hello.protocolVersion < proto::kMinCompatibleProtocolVersion) {
+    if (hello.protocolVersion < proto::kMinCompatibleProtocolVersion ||
+        (options_.discoveryOnly && !hello.supportsArmed)) {
         ack.accepted = false;
-        ack.reason = "protocol version " + std::to_string(hello.protocolVersion) + " is too old";
+        ack.reason =
+            hello.protocolVersion < proto::kMinCompatibleProtocolVersion
+                ? "protocol version " + std::to_string(hello.protocolVersion) + " is too old"
+                : "Armed operation requires the extension's explicit supportsArmed capability";
         {
             std::lock_guard lock(helloMutex_);
             refusal_ = ack.reason;
@@ -401,6 +423,7 @@ void SessionRunner::handleHello(const proto::Hello& hello) {
         refusal_.clear();
     }
     programStarted_ = !options_.awaitProgramStart;
+    peerSupportsArmed_ = hello.supportsArmed;
     session_.hub().clearDevices();
     watchdogMs_ = proto::negotiateWatchdogTimeoutMs(hello.proposedWatchdogMs, options_.preferredWatchdogMs);
     window_.begin(++sessionCounter_, window_.runEpoch());

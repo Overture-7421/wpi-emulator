@@ -5,6 +5,7 @@
 #include <QToolBar>
 
 #include <QFileInfo>
+#include <QSignalSpy>
 
 #include "gui_support.h"
 #include "shell/about_dialog.h"
@@ -14,6 +15,13 @@
 #include "shell/shell_controller.h"
 #include "wizard/robot_page.h"
 #include "wizard/wizard_dialog.h"
+
+#ifdef WPIEMU_APP_HAS_EDITOR
+#include "editor/editor_page.h"
+#include "editor/viewmodel/editor_controller.h"
+#include "editor/viewmodel/detected_devices_model.h"
+#include "shell/editor_backend_adapter.h"
+#endif
 
 using namespace wpiemu::app;
 using namespace wpiemu::app::testing;
@@ -202,6 +210,238 @@ TEST_CASE("open project dialog uses the folder picker") {
     f.window.openAction()->trigger();
     CHECK(f.controller.hasProject());
 }
+
+#ifdef WPIEMU_APP_HAS_EDITOR
+namespace {
+
+editor::EditorPage& editorPage(ShellFixture& f) {
+    auto* page = f.window.findChild<editor::EditorPage*>();
+    REQUIRE(page != nullptr);
+    page->setAutosaveDelayMs(0);
+    return *page;
+}
+
+void renameRobot(editor::EditorPage& page, const std::string& name) {
+    REQUIRE(page.controller().document().edit(QStringLiteral("Rename robot"), [&](sdk::RobotConfig& config) {
+        config.name = name;
+        return true;
+    }));
+    REQUIRE(page.hasUnsavedChanges());
+}
+
+// A directory at the authoritative file path fails even when tests run as an administrator.
+struct BlockAppDataSave {
+    QString path;
+    explicit BlockAppDataSave(const QString& file) : path(file) {
+        REQUIRE(QFile::rename(path, path + ".held"));
+        REQUIRE(QDir().mkpath(path));
+    }
+    void restore() {
+        if (path.isEmpty()) return;
+        REQUIRE(QDir().rmdir(path));
+        REQUIRE(QFile::rename(path + ".held", path));
+        path.clear();
+    }
+    ~BlockAppDataSave() {
+        if (!path.isEmpty()) {
+            QDir().rmdir(path);
+            QFile::rename(path + ".held", path);
+        }
+    }
+};
+
+class InventoryRuntime final : public IRuntimeHost {
+public:
+    HostStatus status() const override { return status_; }
+    HostScene scene() const override { return scene_; }
+    std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const override { return snapshot_; }
+    void setProject(const QString&, std::shared_ptr<const sdk::RobotConfig> config, const sdk::IGameModule*) override {
+        scene_.config = std::move(config);
+    }
+    void launch() override { ++status_.runGeneration; emit statusChanged(); }
+    void startSimulation() override {}
+    void stopSimulation() override {}
+    void stop() override {}
+    void restart() override { launch(); }
+    void resetSimulation() override {}
+    void setPaused(bool) override {}
+    void stepTicks(int) override {}
+    void setTimeScale(double) override {}
+    void setDriverStation(const sdk::proto::DsState&) override {}
+    void publish(std::vector<sdk::DiscoveredDevice> devices) {
+        sdk::SimSnapshotData data;
+        data.devices = std::move(devices);
+        snapshot_ = std::make_shared<const sdk::SimSnapshot>(std::move(data));
+        emit snapshotPublished();
+    }
+
+private:
+    HostStatus status_;
+    HostScene scene_;
+    std::shared_ptr<const sdk::ISimSnapshot> snapshot_;
+};
+
+}  // namespace
+
+TEST_CASE("shell composition: immediate close open and setup flush the old editor document") {
+    ShellFixture f;
+    f.acceptWizard();
+    TestProject first;
+    TestProject second;
+    f.env.addProject(first);
+    f.env.addProject(second);
+    f.window.openProjectPath(first.path());
+    auto& page = editorPage(f);
+    renameRobot(page, "Pending old project");
+
+    SUBCASE("window close") { CHECK(f.window.close()); }
+    SUBCASE("project close") { f.controller.closeProject(); }
+    SUBCASE("project open") {
+        f.window.openProjectPath(second.path());
+        CHECK(f.env.services->session().path() == second.path());
+    }
+    SUBCASE("setup replacement") { f.window.setupAction()->trigger(); }
+
+    const auto stored = f.env.services->configs().load(first.path());
+    REQUIRE(stored.ok());
+    CHECK(stored.value().config.name == "Pending old project");
+    CHECK_FALSE(page.hasUnsavedChanges());
+    REQUIRE(f.env.services->session().open(first.path()).ok());
+    CHECK(f.env.services->session().config()->name == "Pending old project");
+}
+
+TEST_CASE("shell composition: authoritative save failure blocks every destructive transition and can retry") {
+    ShellFixture f;
+    f.acceptWizard();
+    TestProject first;
+    TestProject second;
+    f.env.addProject(first);
+    f.env.addProject(second);
+    f.window.openProjectPath(first.path());
+    auto& page = editorPage(f);
+    renameRobot(page, "Keep these edits");
+    const auto previous = f.env.services->session().config();
+    BlockAppDataSave blocked(f.env.services->configs().appDataPath(first.path()));
+    const int wizardRuns = f.wizardRuns;
+
+    SUBCASE("window close") { CHECK_FALSE(f.window.close()); }
+    SUBCASE("project close") { f.window.closeAction()->trigger(); }
+    SUBCASE("project open") { f.window.openProjectPath(second.path()); }
+    SUBCASE("setup replacement") { f.window.setupAction()->trigger(); }
+    SUBCASE("direct session open") { CHECK_FALSE(f.env.services->session().open(second.path()).ok()); }
+    SUBCASE("direct session close") { CHECK_FALSE(f.env.services->session().close().ok()); }
+    SUBCASE("wizard finish") {
+        WizardViewModel model(*f.env.services);
+        model.setProjectPath(second.path());
+        const auto result = model.finish();
+        CHECK_FALSE(result.ok);
+        CHECK(result.message.contains("retry Save"));
+    }
+
+    CHECK(f.env.services->session().path() == first.path());
+    CHECK(f.env.services->session().config() == previous);
+    CHECK(f.env.demo->status().active());
+    CHECK(f.wizardRuns == wizardRuns);
+    CHECK(page.hasUnsavedChanges());
+    CHECK(page.controller().document().isModified());
+    CHECK(page.controller().saveStatusText().contains("Save failed"));
+    blocked.restore();
+    f.window.saveAction()->trigger();
+    CHECK_FALSE(page.hasUnsavedChanges());
+    CHECK_FALSE(page.controller().document().isModified());
+    CHECK(f.env.services->session().config()->name == "Keep these edits");
+}
+
+TEST_CASE("shell composition: shell and editor Save share success state and export warnings stay nonfatal") {
+    ShellFixture f;
+    f.acceptWizard();
+    TestProject project;
+    f.env.addProject(project);
+    f.window.openProjectPath(project.path());
+    auto& page = editorPage(f);
+    QSignalSpy saved(&page.controller(), &editor::EditorController::autosaveRequested);
+    renameRobot(page, "Shell Save");
+    f.window.saveAction()->trigger();
+    CHECK_FALSE(page.hasUnsavedChanges());
+    CHECK(saved.count() == 1);
+    renameRobot(page, "Editor Save");
+    page.saveAction()->trigger();
+    CHECK_FALSE(page.hasUnsavedChanges());
+    CHECK(saved.count() == 2);
+
+    const QString exported = f.env.services->configs().exportPath(project.path());
+    REQUIRE(QFile::remove(exported));
+    REQUIRE(QDir().rmdir(QFileInfo(exported).absolutePath()));
+    writeFile(QFileInfo(exported).absolutePath(), "block export only");
+    bool warned = false;
+    QObject::connect(&page.controller(), &editor::EditorController::logLine, &page,
+                     [&](sdk::Severity severity, const QString&) { warned |= severity == sdk::Severity::Warning; });
+    renameRobot(page, "Authoritative success");
+    page.saveAction()->trigger();
+    CHECK(warned);
+    CHECK_FALSE(page.hasUnsavedChanges());
+    CHECK_FALSE(page.controller().document().isModified());
+    CHECK(page.controller().saveStatusText().contains("Saved "));
+    const auto stored = f.env.services->configs().load(project.path());
+    REQUIRE(stored.ok());
+    CHECK(stored.value().config.name == "Authoritative success");
+}
+
+TEST_CASE("editor adapter: complete inventories and new runs reconcile physical liveness without losing mappings") {
+    TestProject project;
+    AppServicesOptions options;
+    options.store = std::make_unique<MemoryKeyValueStore>();
+    options.appDataRoot = std::filesystem::path((project.path() + "/appdata").toStdU16String());
+    auto runtime = std::make_unique<InventoryRuntime>();
+    auto& host = *runtime;
+    options.runtime = std::move(runtime);
+    AppServices services(std::move(options));
+    REQUIRE(services.session().open(project.path()).ok());
+    auto config = buildRobotConfig(RobotBasics{}, services.buildContext(services.session().inspection()));
+    auto devices = DemoRuntimeHost::demoDevicesFor(config);
+    REQUIRE(devices.size() >= 3);
+    REQUIRE_FALSE(config.drivetrain.spec.wheels.empty());
+    config.drivetrain.mappings.push_back(
+        {{std::string(sdk::slot_owner::kDrivetrain), config.drivetrain.spec.wheels.front().name + ".drive"},
+         devices[0].descriptor.key()});
+    REQUIRE(services.session().commit(config, ProjectPrefs{}).ok());
+    EditorBackendAdapter backend(services);
+    editor::EditorController controller(backend);
+    controller.setAutosaveDelayMs(0);
+    editor::DetectedDevicesModel model(controller.devices(), controller.document());
+    QObject::connect(&controller, &editor::EditorController::devicesUpdated, &model, [&] { model.refresh(); });
+    auto x = devices[0];
+    auto y = devices[1];
+    auto z = devices[2];
+    z.id = x.id;   // numeric runtime ids are not physical identity
+    const auto mappings = controller.document().config().allMappings();
+    REQUIRE_FALSE(mappings.empty());
+    host.launch();
+    host.publish({x, y});
+    REQUIRE(controller.devices().find(x.descriptor.key()) != nullptr);
+    CHECK(controller.devices().find(x.descriptor.key())->live);
+    host.publish({y});   // omission in a complete same-run snapshot means gone
+    CHECK_FALSE(controller.devices().find(x.descriptor.key())->live);
+    CHECK(controller.devices().find(y.descriptor.key())->live);
+    host.restart();
+    CHECK_FALSE(controller.devices().find(y.descriptor.key())->live);
+    host.publish({y, z});
+    CHECK(backend.devices().size() == 3);
+    CHECK(controller.devices().all().size() == 3);
+    CHECK_FALSE(controller.devices().find(x.descriptor.key())->live);
+    CHECK(controller.devices().find(z.descriptor.key())->live);
+    bool gone = false;
+    for (int row = 0; row < model.rowCount(); ++row)
+        gone |= model.data(model.index(row, editor::DetectedDevicesModel::ColStatus)).toString() == "gone";
+    CHECK(gone);
+    const auto after = controller.document().config().allMappings();
+    REQUIRE(after.size() == mappings.size());
+    for (std::size_t i = 0; i < mappings.size(); ++i) {
+        CHECK(after[i].device == mappings[i].device);
+        CHECK(after[i].slot == mappings[i].slot);
+    }
+}
+#endif
 
 TEST_CASE("settings dialog edits a copy and applies on OK") {
     GuiEnvironment env;

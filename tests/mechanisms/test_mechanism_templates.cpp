@@ -5,6 +5,7 @@
 
 #include "wpiemu/core/mechanisms/linear_system.h"
 #include "wpiemu/core/mechanisms/mechanism_templates.h"
+#include "wpiemu/core/mechanisms/plants.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/testing/fake_mechanism_directory.h"
@@ -503,6 +504,86 @@ TEST_CASE("intake without a deploy axis is always deployed") {
     CHECK(value(m->state(), "deployed") == 1.0);
     CHECK(link(m->state(), "deploy") == nullptr);
     CHECK(link(m->state(), "roller") != nullptr);
+}
+
+TEST_CASE("pivot accepts the reviewed high-stiffness continuous arm configuration") {
+    for (const double dt : {0.001, 0.002, 0.004, 0.005, 0.01, 0.02}) {
+        Rig rig;
+        rig.bind("p", "motor", sdk::SlotType::Motor);
+        auto m = rig.make("pivot", "p",
+                          props({{"motorModel", "kraken_x60"},
+                                 {"motorCount", 1},
+                                 {"gearRatio", 300.0},
+                                 {"momentOfInertiaKgM2", 0.01},
+                                 {"massKg", 2.0},
+                                 {"lengthM", 0.3},
+                                 {"comFraction", 0.5},
+                                 {"efficiency", 1.0},
+                                 {"simulateGravity", true},
+                                 {"minPosition", 0.0},
+                                 {"maxPosition", 0.0},
+                                 {"startPosition", 0.0}}));
+        rig.drive("p", "motor", 6.0);
+        m->tick(rig.env.ctx, dt);
+        CHECK(std::isfinite(value(m->state(), "position")));
+        CHECK(value(m->state(), "position") > 0.0);
+        CHECK(value(m->state(), "velocity") > 0.0);
+        CHECK(value(m->state(), "velocity") < 1.1);
+        CHECK(value(m->state(), "atLowerLimit") == 0.0);
+        CHECK(value(m->state(), "atUpperLimit") == 0.0);
+    }
+}
+
+TEST_CASE("intake gravity lowers the forward COM in its positive Y deploy coordinate") {
+    Rig rig;
+    auto p = props({{"deployStartPosition", 0.5},
+                    {"deploySimulateGravity", true},
+                    {"deployNeutralMode", "coast"},
+                    {"deployMomentOfInertiaKgM2", 0.1}});
+    auto m = rig.make("intake", "i", p);
+    auto before = m->state();
+    const double initialZ = link(before, "deploy")->pose.transformPoint({0.175f, 0.f, 0.f}).z;
+    rig.run(*m, 20);
+    auto after = m->state();
+    CHECK(value(after, "deployPosition") > 0.5);
+    CHECK(link(after, "deploy")->pose.transformPoint({0.175f, 0.f, 0.f}).z < initialZ);
+    m->reset();
+    CHECK(value(m->state(), "deployPosition") == 0.5);
+    CHECK(value(m->state(), "deployVelocity") == 0.0);
+
+    rig.bind("held", "deployMotor", sdk::SlotType::Motor);
+    auto held = rig.make("intake", "held", p);
+    const auto motor = *MotorCatalog::builtin().spec("kraken_x60");
+    const auto sys = singleJointedArmSystem(motor, 1, 0.1, 30.0);
+    const double holdingVoltage =
+        -3.0 * kPlantGravityMps2 * 0.175 * std::cos(0.5) / 0.1 / sys.B(1, 0);
+    rig.drive("held", "deployMotor", holdingVoltage);
+    rig.run(*held, 100);
+    CHECK(value(held->state(), "deployPosition") == doctest::Approx(0.5).epsilon(1e-9));
+    CHECK(std::abs(value(held->state(), "deployVelocity")) < 1e-9);
+}
+
+TEST_CASE("intake gravity projects onto the selected arm or linear deploy axis") {
+    for (const char* motion : {"arm", "linear"}) {
+        for (const char* axis : {"x", "y", "z"}) {
+            INFO(motion, axis);
+            Rig rig;
+            auto m = rig.make("intake", "i",
+                              props({{"deployMotion", motion},
+                                     {"deployAxis", axis},
+                                     {"deployStartPosition", 0.5},
+                                     {"deploySimulateGravity", true},
+                                     {"deployNeutralMode", "coast"}}));
+            rig.run(*m, 10);
+            const double position = value(m->state(), "deployPosition");
+            if (std::string(motion) == "arm" && std::string(axis) == "y")
+                CHECK(position > 0.5);
+            else if (std::string(motion) == "linear" && std::string(axis) == "z")
+                CHECK(position < 0.5);
+            else
+                CHECK(position == doctest::Approx(0.5).epsilon(1e-12));
+        }
+    }
 }
 
 TEST_CASE("indexer never writes its beam breaks: the game logic owns them") {

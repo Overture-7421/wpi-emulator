@@ -46,7 +46,7 @@ public:
     bool clearSlot(const sdk::SlotAddress& slot);
     void toggleDetection();
     void focusIssue(const sdk::Issue& issue);
-    void flushSave();                    // persist now (Ctrl+S)
+    sdk::Status flushSave();             // persist now (Ctrl+S), retain dirty state on failure
 
     bool selectionExists(const SelectionRef& ref) const;
     QString saveStatusText() const;
@@ -69,7 +69,7 @@ private:
     void runValidation();
     void onDocumentModified();
     void ensureSelectionValid();
-    void persist();
+    sdk::Status persist();
 
     IEditorBackend& backend_;
     EditorDocument document_;
@@ -84,6 +84,7 @@ private:
     bool pendingSave_ = false;
     bool applyingBackend_ = false;
     QString lastSaved_;
+    QString saveError_;
 };
 
 }  // namespace wpiemu::app::editor

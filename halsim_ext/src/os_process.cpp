@@ -1,6 +1,5 @@
 #include "wpiemu/halsim_ext/os_process.h"
 
-#include <cstdio>
 #include <cstdlib>
 
 #if defined(_WIN32)
@@ -60,7 +59,7 @@ sdk::proto::RobotLanguage detectRobotLanguage() {
 }
 
 void OsProcessControl::terminate(int exitCode) {
-    std::fflush(nullptr);
+    // Emergency watchdog termination must not wait for stdio locks or a backed-up pipe.
 #if defined(_WIN32)
     ::TerminateProcess(::GetCurrentProcess(), static_cast<UINT>(exitCode));
 #endif

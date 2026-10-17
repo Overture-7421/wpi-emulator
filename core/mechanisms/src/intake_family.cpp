@@ -191,7 +191,13 @@ sdk::Status registerIntake(sdk::MechanismFactory& factory, const TemplateDeps& d
 
             std::unique_ptr<MechanismAxis> deploy;
             if (params.deployEnabled) {
-                auto built = buildAxis(config.id, deployOptions(), props, deps);
+                AxisOptions options = deployOptions();
+                // The arm COM is along +X. Positive Y rotation lowers it; X/Z rotations
+                // leave its height unchanged. Only Z translation works against gravity.
+                options.gravityAngleOffsetRad = sdk::kPi;
+                options.armGravityEnabled = params.deployAxis == AxisName::Y;
+                options.linearGravityEnabled = params.deployAxis == AxisName::Z;
+                auto built = buildAxis(config.id, options, props, deps);
                 if (!built.ok()) return built.error();
                 deploy = std::move(built).value();
             }

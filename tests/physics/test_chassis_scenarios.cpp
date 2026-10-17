@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "physics_test_support.h"
+#include "refusing_world.h"
 
 // ADR 0003 validation scenarios as automated tests. Setup: 50 kg, 0.5 m x 0.5 m wheel square, COM 0.2 m,
 // mu 1.1, 4 in wheels, Kraken X60 at 6.75:1, 200 Hz, 4 substeps. mu g = 10.79 m/s^2, sliding 0.85 mu g = 9.17.
@@ -58,8 +59,68 @@ TEST_CASE("chassis: rests on its wheel pads with the static load split") {
         CHECK(s.normalLoadN == doctest::Approx(122.6f).epsilon(0.03));
         sum += s.normalLoadN;
     }
+
     CHECK(sum == doctest::Approx(490.5f).epsilon(0.01));
     CHECK(rig.sim->imu().accelerationMps2.z == doctest::Approx(9.81f).epsilon(0.05));
+}
+
+TEST_CASE("chassis builder rolls back every late shape failure and permits retry") {
+    for (const int budget : {0, 1, 2, 3, 4, 5, 6}) {
+        INFO(budget);
+        RefusingWorld world;
+        const auto existingBody = world.createBody({});
+        sdk::ShapeDesc existingShape;
+        existingShape.geometry = sdk::SphereShape{0.1f};
+        REQUIRE(world.addShape(existingBody, existingShape).valid());
+        const auto bodies = world.stats().bodies;
+        const auto shapes = world.inner.shapeCount();
+        auto chassis = testChassis();
+        for (const char* name : {"first", "second"}) {
+            sdk::PrimitiveSpec primitive;
+            primitive.name = name;
+            primitive.kind = sdk::PrimitiveKind::Box;
+            primitive.sizeM = {0.1f, 0.1f, 0.1f};
+            primitive.collides = true;
+            chassis.primitives.push_back(primitive);
+        }
+        const auto drivetrain = swerveSpec();
+        world.shapeBudget = budget;
+        CHECK_FALSE(phys::buildChassisBody(world, chassis, drivetrain, {}).ok());
+        CHECK(world.stats().bodies == bodies);
+        CHECK(world.inner.shapeCount() == shapes);
+        CHECK(world.isValid(existingBody));
+        world.shapeBudget = 100;
+        auto retry = phys::buildChassisBody(world, chassis, drivetrain, {});
+        REQUIRE(retry.ok());
+        CHECK(world.stats().bodies == bodies + 1);
+        CHECK(world.inner.shapeCount() == shapes + 7);
+        world.destroyBody(retry.value().body);
+        CHECK(world.stats().bodies == bodies);
+        CHECK(world.inner.shapeCount() == shapes);
+    }
+}
+
+TEST_CASE("chassis builder rejects late invalid primitive dimensions without changing the world") {
+    RefusingWorld world;
+    auto chassis = testChassis();
+    sdk::PrimitiveSpec first;
+    first.kind = sdk::PrimitiveKind::Box;
+    first.sizeM = {0.1f, 0.1f, 0.1f};
+    first.collides = true;
+    chassis.primitives.push_back(first);
+    auto invalid = first;
+    invalid.name = "bad_later_primitive";
+    invalid.sizeM = {};
+    chassis.primitives.push_back(invalid);
+    CHECK_FALSE(phys::buildChassisBody(world, chassis, swerveSpec(), {}).ok());
+    CHECK(world.stats().bodies == 0);
+    CHECK(world.inner.shapeCount() == 0);
+    chassis.primitives.back().sizeM = {0.1f, 0.1f, 0.1f};
+    auto retry = phys::buildChassisBody(world, chassis, swerveSpec(), {});
+    REQUIRE(retry.ok());
+    world.destroyBody(retry.value().body);
+    CHECK(world.stats().bodies == 0);
+    CHECK(world.inner.shapeCount() == 0);
 }
 
 TEST_CASE("chassis: 1 V stays below the traction limit with no slip") {

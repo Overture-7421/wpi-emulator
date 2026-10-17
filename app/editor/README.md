@@ -20,6 +20,12 @@ back (`submitConfig()` on every edit, `saveConfig()` for autosave / Ctrl+S, `sta
 `stopDetection()`). The catalog carries the mechanism templates, drivetrain kinds and the *selected
 game plugin's* config schema and editor panels, so no season or template is known to the UI.
 
+`saveConfig()` returns `sdk::Status` for authoritative persistence. On failure the controller keeps
+the document dirty, displays persistent retry guidance and does not emit a successful-save
+notification. Project export failure after app-data success is only a warning. The shell's Save
+and project-transition flush use the same controller path; the adapter binds pending edits to the
+project in which they were submitted.
+
 ## Layers
 
 | Folder | Contents | May include |
@@ -32,6 +38,11 @@ game plugin's* config schema and editor panels, so no season or template is know
 Every edit is a snapshot command on the undo stack (`ConfigEditCommand`) built from the Qt-free
 operations in `model/config_ops.h`; consecutive edits of one property, and a whole gizmo drag, merge
 into one undo step.
+
+Document change notifications distinguish authoritative undo/redo/load from live edit echoes.
+Forms refresh all components on authoritative changes even when focused; ordinary echoes and
+validation refreshes preserve focused typing and its cursor. Discovery bulk refreshes replace the
+physical-ID directory, including non-live historical devices after a run restarts.
 
 ## Viewport conventions
 

@@ -45,6 +45,11 @@ void BridgeSet::poll() {
         if (slot.active) slot.bridge->poll();
 }
 
+void BridgeSet::resetInputHistory() {
+    for (Slot& slot : slots_)
+        if (slot.active) slot.bridge->resetInputHistory();
+}
+
 void BridgeSet::applyInputs(std::span<const sdk::SignalSample> samples) {
     if (samples.empty()) return;
     for (auto& v : routed_) v.clear();

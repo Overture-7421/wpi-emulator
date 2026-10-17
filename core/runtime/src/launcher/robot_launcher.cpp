@@ -325,9 +325,10 @@ Status RobotLauncher::launch(const LaunchRequest& request, ILogSink& output) {
     Result<ProcessSpec> first = request.mode == LaunchMode::GradleInitScript ? planGradleLaunch(request) : planExternalDescribe(request);
     if (!first) return first.error();
 
-    stopRequested_ = false;
     {
         std::lock_guard lock(mutex_);
+        stopRequested_ = false;
+        stopDeadline_ = {};
         active_ = true;
         status_ = LaunchStatus{};
     }
@@ -338,32 +339,34 @@ Status RobotLauncher::launch(const LaunchRequest& request, ILogSink& output) {
 Status RobotLauncher::runStep(const ProcessSpec& spec, ILogSink& output, LaunchPhase phase, ExitInfo& exit) {
     std::unique_ptr<IRobotProcess> process = factory_();
     if (!process) return makeError(ErrorCode::Internal, "process factory returned null");
-    IRobotProcess* raw = process.get();
-    {
-        std::lock_guard lock(mutex_);
-        current_ = std::move(process);
-    }
-    if (stopRequested_) {  // stop() raced with the start
-        std::lock_guard lock(mutex_);
-        current_.reset();
+    if (stopRequested_) {
         return makeError(ErrorCode::Cancelled, "stopped before the process started");
     }
     logger_.info("launcher", "starting " + spec.label);
-    if (Status s = raw->start(spec, output); !s) {
-        std::lock_guard lock(mutex_);
-        current_.reset();
-        return s;
+    if (Status s = process->start(spec, output); !s) return s;
+    publish(phase, spec.label, std::nullopt, process->pid());
+    // Only this worker touches the process. Cancellation remains latched across native startup,
+    // so stop() cannot consume its one kill attempt before a PID / job has been published.
+    bool stopSent = false;
+    bool killSent = false;
+    for (;;) {
+        if (stopRequested_ && !stopSent) {
+            process->requestStop();
+            stopSent = true;
+        }
+        bool killDue = false;
+        if (stopRequested_ && !killSent) {
+            std::lock_guard lock(mutex_);
+            killDue = std::chrono::steady_clock::now() >= stopDeadline_;
+        }
+        if (killDue) {
+            process->kill();
+            killSent = true;
+        }
+        if (process->waitForExit(std::chrono::milliseconds(100))) break;
     }
-    publish(phase, spec.label, std::nullopt, raw->pid());
-    while (!raw->waitForExit(std::chrono::milliseconds(100))) {
-    }
-    exit = raw->exitInfo().value_or(ExitInfo{});
-    std::unique_ptr<IRobotProcess> finished;
-    {
-        std::lock_guard lock(mutex_);
-        finished = std::move(current_);
-    }
-    finished.reset();  // joins the readers: the sink is not used after this point
+    exit = process->exitInfo().value_or(ExitInfo{});
+    process.reset();  // joins the readers: the sink is not used after this point
     return okStatus();
 }
 
@@ -407,16 +410,15 @@ void RobotLauncher::work(LaunchRequest request, ProcessSpec first, ILogSink* out
     outcome(run, exit, direct.value().label);
 }
 
-void RobotLauncher::stop(std::chrono::milliseconds grace) {
+void RobotLauncher::requestStop(std::chrono::milliseconds grace) {
+    const auto deadline = std::chrono::steady_clock::now() + grace;
+    std::lock_guard lock(mutex_);
+    if (!stopRequested_ || deadline < stopDeadline_) stopDeadline_ = deadline;
     stopRequested_ = true;
-    {
-        std::lock_guard lock(mutex_);
-        if (current_) current_->requestStop();
-    }
-    if (!waitUntilFinished(grace)) {
-        std::lock_guard lock(mutex_);
-        if (current_) current_->kill();
-    }
+}
+
+void RobotLauncher::stop(std::chrono::milliseconds grace) {
+    requestStop(grace);
     if (worker_.joinable()) worker_.join();
 }
 

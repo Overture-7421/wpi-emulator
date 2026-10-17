@@ -1,6 +1,7 @@
 #include "wpiemu/core/config/robot_config_codec.h"
 
 #include <cmath>
+#include <limits>
 #include <set>
 #include <string>
 #include <string_view>
@@ -22,6 +23,24 @@ struct Ctx {
 
 std::string join(const std::string& path, std::string_view key) {
     return path.empty() ? std::string(key) : path + "." + std::string(key);
+}
+
+template <typename T>
+bool readInteger(const Value& value, T& out) {
+    static_assert(std::numeric_limits<T>::is_integer && std::numeric_limits<T>::is_signed);
+    if (value.isInt()) {
+        const std::int64_t n = value.asInt();
+        if (n < std::numeric_limits<T>::min() || n > std::numeric_limits<T>::max()) return false;
+        out = static_cast<T>(n);
+        return true;
+    }
+    if (!value.isDouble()) return false;
+    const double d = value.asDouble();
+    // The signed upper bound is exclusive: INT64_MAX rounds up to 2^63 as a double.
+    const double limit = std::ldexp(1.0, std::numeric_limits<T>::digits);
+    if (!std::isfinite(d) || std::trunc(d) != d || d < -limit || d >= limit) return false;
+    out = static_cast<T>(d);
+    return true;
 }
 
 // Typed access to one JSON object; remembers which keys were consumed so the rest can be preserved.
@@ -57,39 +76,43 @@ public:
         const Value* v = get(key);
         if (v == nullptr) return false;
         if (!v->isNumber()) return typeErr(key, "a number");
+        if (!std::isfinite(v->asDouble())) return typeErr(key, "a finite number");
         out = v->asDouble();
         return true;
     }
     bool flt(std::string_view key, float& out) {
         double d = 0.0;
         if (!dbl(key, d)) return false;
+        if (d < -std::numeric_limits<float>::max() || d > std::numeric_limits<float>::max())
+            return typeErr(key, "a number in the float range");
         out = static_cast<float>(d);
         return true;
     }
     bool i64(std::string_view key, std::int64_t& out) {
         const Value* v = get(key);
         if (v == nullptr) return false;
-        if (!v->isNumber() || (v->isDouble() && v->asDouble() != std::floor(v->asDouble())))
-            return typeErr(key, "an integer");
-        out = v->asInt();
-        return true;
+        return readInteger(*v, out) || typeErr(key, "an integer in the int64 range");
     }
     bool i32(std::string_view key, int& out) {
-        std::int64_t v = 0;
-        if (!i64(key, v)) return false;
-        out = static_cast<int>(v);
-        return true;
+        const Value* v = get(key);
+        if (v == nullptr) return false;
+        return readInteger(*v, out) || typeErr(key, "an integer in the int range");
     }
     bool u64(std::string_view key, std::uint64_t& out) {
         std::int64_t v = 0;
         if (!i64(key, v)) return false;
+        // Seeds use the persisted signed int64 representation, including negative high-bit seeds.
         out = static_cast<std::uint64_t>(v);
         return true;
     }
     bool vec3(std::string_view key, Vec3& out) {
         const Value* v = get(key);
         if (v == nullptr) return false;
-        if (!sdk::fromValue(*v, out)) return typeErr(key, "an {x,y,z} object");
+        ObjReader r(*v, join(path_, key), ctx_);
+        Vec3 tmp;
+        if (!r.flt("x", tmp.x) || !r.flt("y", tmp.y) || !r.flt("z", tmp.z))
+            return typeErr(key, "an {x,y,z} object with finite float components");
+        out = tmp;
         return true;
     }
     bool pose(std::string_view key, Pose3& out) {
@@ -107,11 +130,15 @@ public:
     bool quat(std::string_view key, Quat& out) {
         const Value* v = get(key);
         if (v == nullptr) return false;
+        ObjReader r(*v, join(path_, key), ctx_);
         Quat q;
-        if (!sdk::fromValue(*v, q)) return typeErr(key, "an {x,y,z,w} object");
-        const float n = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
-        if (!(n > 1e-6f)) return typeErr(key, "a non-zero quaternion");
-        out = q.normalized();
+        if (!r.flt("x", q.x) || !r.flt("y", q.y) || !r.flt("z", q.z) || !r.flt("w", q.w))
+            return typeErr(key, "an {x,y,z,w} object with finite float components");
+        const double n = std::sqrt(static_cast<double>(q.x) * q.x + static_cast<double>(q.y) * q.y +
+                                   static_cast<double>(q.z) * q.z + static_cast<double>(q.w) * q.w);
+        if (!(n > 1e-6)) return typeErr(key, "a non-zero quaternion");
+        out = Quat{static_cast<float>(q.x / n), static_cast<float>(q.y / n),
+                   static_cast<float>(q.z / n), static_cast<float>(q.w / n)};
         return true;
     }
 
@@ -493,15 +520,20 @@ int RobotConfigCodec::storedVersion(const Value& value) {
     if (!value.isObject()) return 0;
     const Value* v = value.find("schemaVersion");
     if (v == nullptr) return 1;
-    return v->isNumber() ? static_cast<int>(v->asInt()) : 0;
+    int version = 0;
+    return readInteger(*v, version) ? version : 0;
 }
 
 Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value) const { return fromValue(value, nullptr); }
 
 Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value, DecodeInfo* info) const {
     if (!value.isObject()) return makeError(ErrorCode::ParseError, "robot config must be a JSON object");
-    if (const Value* sv = value.find("schemaVersion"); sv != nullptr && !sv->isNumber())
-        return makeError(ErrorCode::ParseError, "schemaVersion must be a number");
+    if (const Value* sv = value.find("schemaVersion"); sv != nullptr) {
+        int version = 0;
+        if (!readInteger(*sv, version))
+            return makeError(ErrorCode::ParseError,
+                             "schemaVersion: expected an integer in the int range");
+    }
 
     Value work = value;
     int version = storedVersion(work);

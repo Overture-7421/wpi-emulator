@@ -36,7 +36,7 @@ TEST_CASE("session opens a project, reports the missing setup and records it as 
     CHECK(projectSignals == 1);
 
     // a nested path resolves to the project root
-    session.close();
+    REQUIRE(session.close().ok());
     REQUIRE(session.open(project.path() + "/src/main/java").ok());
     CHECK(session.path() == project.path());
 }
@@ -68,7 +68,7 @@ TEST_CASE("commit writes the app-data copy and the project export, and reopening
     CHECK(!session.needsSetup());
 
     // a fresh session over the same stores sees the stored model
-    session.close();
+    REQUIRE(session.close().ok());
     REQUIRE(session.open(project.path()).ok());
     REQUIRE(session.hasConfig());
     CHECK(session.config()->name == "Saved robot");
@@ -83,7 +83,7 @@ TEST_CASE("the project export alone is enough to reopen (shared via version cont
     REQUIRE(session.open(project.path()).ok());
     const SaveOutcome outcome = session.commit(sampleConfig(*env.services, session.inspection()), ProjectPrefs{});
     REQUIRE(outcome.ok());
-    session.close();
+    REQUIRE(session.close().ok());
     REQUIRE(QFile::remove(outcome.appDataPath));
     REQUIRE(session.open(project.path()).ok());
     CHECK(session.hasConfig());
@@ -96,7 +96,7 @@ TEST_CASE("an unreadable stored model asks for setup instead of crashing") {
     REQUIRE(session.open(project.path()).ok());
     const SaveOutcome outcome = session.commit(sampleConfig(*env.services, session.inspection()), ProjectPrefs{});
     REQUIRE(outcome.ok());
-    session.close();
+    REQUIRE(session.close().ok());
     writeFile(outcome.appDataPath, "{ this is not json");
     writeFile(outcome.exportPath, "{ nor is this");
     REQUIRE(session.open(project.path()).ok());

@@ -49,8 +49,9 @@ TEST_CASE("v2 defaults keep v1 frames meaningful") {
     CHECK(ack.watchdogTimeoutMs == proto::kDefaultWatchdogTimeoutMs);
     CHECK(ack.watchdogPolicy == proto::WatchdogPolicy::ResumeRealtime);
     CHECK(proto::kLockstepWindow == 1);
-    CHECK(proto::kProtocolVersion == 2);
+    CHECK(proto::kProtocolVersion == 3);
     CHECK(proto::kMinCompatibleProtocolVersion == 1);
+    CHECK_FALSE(proto::Hello{}.supportsArmed);
 }
 
 TEST_CASE("watchdog negotiation takes the slower side and clamps") {
@@ -269,4 +270,75 @@ TEST_CASE("emulator and extension lock-step across an in-memory channel, with a 
     CHECK(window.onAck(std::get<proto::ActuatorFrame>(m)) == proto::AckVerdict::Dropped);
 
     CHECK(exchange(0) == proto::AckVerdict::Completed);  // epoch 2 restarts at tick 0
+}
+
+TEST_CASE("control retries preserve results across intervening commands and skip preconditions") {
+    proto::LockstepFollower follower;
+    follower.begin(7, 1);
+    proto::SimControl reset;
+    reset.command = proto::SimCommand::Reset;
+    reset.commandId = 1;
+    reset.sessionId = 7;
+    reset.runEpoch = 2;
+    const auto original = follower.onControl(reset);
+    REQUIRE(original.apply);
+    auto pause = reset;
+    pause.command = proto::SimCommand::Pause;
+    pause.commandId = 2;
+    REQUIRE(follower.onControl(pause).apply);
+
+    int checks = 0;
+    const auto precondition = [&] {
+        ++checks;
+        return std::pair{proto::ControlResult::Rejected, std::string("state changed")};
+    };
+    const auto retry = follower.onControl(reset, precondition);
+    CHECK_FALSE(retry.apply);
+    CHECK(retry.sendAck);
+    CHECK(retry.ack.commandId == original.ack.commandId);
+    CHECK(retry.ack.command == original.ack.command);
+    CHECK(retry.ack.result == original.ack.result);
+    CHECK(retry.ack.runEpoch == original.ack.runEpoch);
+    CHECK(retry.ack.tick == original.ack.tick);
+    CHECK(retry.ack.detail == original.ack.detail);
+    CHECK(checks == 0);
+
+    auto rejected = pause;
+    rejected.commandId = 3;
+    const auto firstRejection = follower.onControl(rejected, precondition);
+    CHECK(firstRejection.ack.result == proto::ControlResult::Rejected);
+    pause.commandId = 4;
+    REQUIRE(follower.onControl(pause).apply);
+    const auto retryRejection = follower.onControl(rejected);
+    CHECK_FALSE(retryRejection.apply);
+    CHECK(retryRejection.ack.detail == firstRejection.ack.detail);
+    CHECK(retryRejection.ack.result == firstRejection.ack.result);
+    rejected.sessionId = 99;
+    CHECK_FALSE(follower.onControl(rejected, precondition).sendAck);
+    CHECK(checks == 1);
+}
+
+TEST_CASE("control retry retention is bounded and evicted IDs never reapply") {
+    proto::LockstepFollower follower;
+    follower.begin(7, 1);
+    proto::SimControl pause;
+    pause.sessionId = 7;
+    pause.runEpoch = 1;
+    for (std::uint64_t id = 1; id <= 65; ++id) {
+        pause.commandId = id;
+        REQUIRE(follower.onControl(pause).apply);
+    }
+    pause.commandId = 2;  // still in the 64-result window
+    const auto retained = follower.onControl(pause);
+    CHECK_FALSE(retained.apply);
+    CHECK(retained.ack.result == proto::ControlResult::Applied);
+    pause.commandId = 1;
+    const auto evicted = follower.onControl(pause);
+    CHECK_FALSE(evicted.apply);
+    CHECK(evicted.ack.result == proto::ControlResult::Rejected);
+    CHECK(evicted.ack.detail.find("retry window") != std::string::npos);
+    follower.begin(8, 2);
+    pause.sessionId = 8;
+    pause.runEpoch = 2;
+    CHECK(follower.onControl(pause).apply);  // new connection, fresh ID namespace
 }

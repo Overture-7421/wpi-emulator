@@ -4,6 +4,7 @@
 #include <QString>
 
 #include <memory>
+#include <functional>
 #include <optional>
 
 #include "common/config_repository.h"
@@ -39,7 +40,10 @@ public:
 
     // Inspects the folder, loads its stored robot model when there is one and records it as recent.
     sdk::Status open(const QString& path);
-    void close();
+    sdk::Status close();
+    // Composition installs the optional editor's result-aware flush. It runs before identity/model replacement.
+    void setPendingSaveHandler(std::function<sdk::Status()> handler) { pendingSaveHandler_ = std::move(handler); }
+    sdk::Status flushPendingChanges();
 
     // Persists the model (app-data + <project>/.wpiemu/robot.json) and makes it the current one.
     SaveOutcome commit(const sdk::RobotConfig& config, const ProjectPrefs& prefs);
@@ -64,6 +68,7 @@ private:
     QString loadError_;
     std::vector<sdk::Issue> loadIssues_;
     ProjectPrefs prefs_;
+    std::function<sdk::Status()> pendingSaveHandler_;
 };
 
 }  // namespace wpiemu::app

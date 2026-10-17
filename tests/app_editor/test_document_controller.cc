@@ -148,7 +148,7 @@ TEST_CASE("controller: edits are pushed to the backend and autosaved after the d
     CHECK(c.document().isModified() == false);
 
     c.addMechanism("roller", {});
-    c.flushSave();   // Ctrl+S does not wait for the timer
+    CHECK(c.flushSave().ok());   // Ctrl+S does not wait for the timer
     CHECK(backend.saveCount() == 2);
 }
 
@@ -161,6 +161,29 @@ TEST_CASE("controller: undo and redo also reach the backend") {
     CHECK(backend.lastSubmitted().findMechanism("roller") == nullptr);
     c.document().undoStack()->redo();
     CHECK(backend.lastSubmitted().findMechanism("roller") != nullptr);
+}
+
+TEST_CASE("controller: failed autosave stays dirty until a successful explicit retry") {
+    FakeEditorBackend backend;
+    EditorController c(backend);
+    c.setAutosaveDelayMs(15);
+    backend.setSaveError(QStringLiteral("disk full"));
+    int saved = 0;
+    QObject::connect(&c, &EditorController::autosaveRequested, &c, [&] { ++saved; });
+    c.addMechanism("roller", {});
+    pumpEvents(120);
+    CHECK(c.hasPendingChanges());
+    CHECK(c.document().isModified());
+    CHECK(c.saveStatusText().contains("Save failed"));
+    CHECK_FALSE(c.saveStatusText().contains("Saved "));
+    CHECK(saved == 0);
+    CHECK_FALSE(c.flushSave().ok());
+    backend.setSaveError({});
+    CHECK(c.flushSave().ok());
+    CHECK_FALSE(c.hasPendingChanges());
+    CHECK_FALSE(c.document().isModified());
+    CHECK(c.saveStatusText().contains("Saved "));
+    CHECK(saved == 1);
 }
 
 TEST_CASE("controller: a replaced model reloads without echoing it back and resets the history") {

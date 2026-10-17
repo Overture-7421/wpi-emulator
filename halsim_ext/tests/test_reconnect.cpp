@@ -18,6 +18,7 @@ TEST_CASE("reconnect: after the emulator restarts the extension re-handshakes, r
     REQUIRE(rig.emulator->waitForLifecycle(2000ms));
     REQUIRE(rig.emulator->tick());
     CHECK(rig.clock.pauseCalls == 1);
+    CHECK(bridge.historyResets == 1);
 
     // The "new emulator": next pipe, a new session id and a later epoch.
     proto::HelloAck second = defaultAck();
@@ -45,6 +46,7 @@ TEST_CASE("reconnect: after the emulator restarts the extension re-handshakes, r
     CHECK(ack->runEpoch == 5);
     CHECK(ack->ackedTick() == 1);  // numbering restarts with the new session
     CHECK(ack->full);
+    CHECK(bridge.historyResets == 2);
 }
 
 TEST_CASE("reconnect gives up when the emulator never returns and stop() still works") {

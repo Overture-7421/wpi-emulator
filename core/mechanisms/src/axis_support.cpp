@@ -291,7 +291,9 @@ sdk::Result<AxisSettings> readAxisSettings(const AxisOptions& o, const sdk::Valu
             const double inertia = getDouble(props, k("momentOfInertiaKgM2"), o.inertiaKgM2);
             p.momentOfInertiaKgM2 = inertia > 0.0 ? inertia : massKg * length * length / 3.0;
             p.armLengthM = getDouble(props, k("comFraction"), o.comFraction) * length;
-            p.simulateGravity = getBool(props, k("simulateGravity"), o.gravity);
+            p.simulateGravity =
+                getBool(props, k("simulateGravity"), o.gravity) && o.armGravityEnabled;
+            p.gravityAngleOffsetRad = o.gravityAngleOffsetRad;
             break;
         }
         case Motion::Linear:
@@ -299,7 +301,8 @@ sdk::Result<AxisSettings> readAxisSettings(const AxisOptions& o, const sdk::Valu
             p.kind = sdk::PlantKind::Linear;
             p.massKg = massKg;
             p.drumRadiusM = getDouble(props, k("drumRadiusM"), o.drumRadiusM);
-            p.simulateGravity = getBool(props, k("simulateGravity"), o.gravity);
+            p.simulateGravity =
+                getBool(props, k("simulateGravity"), o.gravity) && o.linearGravityEnabled;
             break;
     }
 

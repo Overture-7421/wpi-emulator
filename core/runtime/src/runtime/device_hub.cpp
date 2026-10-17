@@ -279,6 +279,8 @@ void DeviceHub::onActuatorFrame(const proto::ActuatorFrame& frame) {
 }
 
 void DeviceHub::buildSensorFrame(proto::SensorFrame& out, bool full) {
+    full = full || fullFramePending_;
+    fullFramePending_ = false;
     out.samples.clear();
     out.full = full;
     out.batteryVoltageV = battery_;
@@ -291,6 +293,16 @@ void DeviceHub::buildSensorFrame(proto::SensorFrame& out, bool full) {
             e.dirty[s] = 0;
         }
     }
+}
+
+void DeviceHub::resetSignalHistory() {
+    for (Extra& e : extras_) {
+        std::fill(e.value.begin(), e.value.end(), 0.0);
+        std::fill(e.dirty.begin(), e.dirty.end(), std::uint8_t{0});
+        // Keep the input mask so even optional feedback not rewritten this epoch is neutralized.
+        e.hasOutput = false;
+    }
+    fullFramePending_ = true;
 }
 
 proto::LoopbackSet DeviceHub::loopbackSet() const {

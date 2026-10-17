@@ -14,9 +14,4 @@ Numbers are unique and sequential; never reuse or renumber an ADR (update refere
 | [0008](0008-physics-implementation.md) | Physics implementation (`core/physics`) |
 | [0009](0009-mechanisms-impl.md) | Generic mechanisms, plants and motor models (`core/mechanisms`) |
 | [0010](0010-runtime.md) | Runtime, configuration and launcher (`core/runtime`) |
-| [0011](0011-single-robot-instance.md) | Single long-lived robot instance (SDK 1.3, Armed phase) |
-
-| [0007](0007-ipc-transport.md) | IPC transport: named pipe / unix domain socket, binary codec |
-| [0008](0008-physics-implementation.md) | Physics implementation (`core/physics`) |
-| [0009](0009-mechanisms-impl.md) | Generic mechanisms, plants and motor models (`core/mechanisms`) |
-| [0010](0010-runtime.md) | Runtime, configuration and launcher (`core/runtime`) |
+| [0011](0011-single-robot-instance.md) | Single long-lived robot instance (SDK 1.3; SDK 1.4 / protocol v3 capability and reset-history amendment) |

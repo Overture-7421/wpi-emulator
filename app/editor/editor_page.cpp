@@ -129,7 +129,7 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
     addShortcutAction(QStringLiteral("3"), [this] { d->viewportController.setView(QStringLiteral("top")); });
     addShortcutAction(QStringLiteral("4"), [this] { d->viewportController.setView(QStringLiteral("iso")); });
     addShortcutAction(QStringLiteral("Esc"), [this] { d->controller.selection().set(SelectionRef::robot()); });
-    connect(s.save, &QAction::triggered, this, [this] { d->controller.flushSave(); });
+    connect(s.save, &QAction::triggered, this, [this] { (void)d->controller.flushSave(); });
     connect(s.detect, &QAction::triggered, this, [this] { d->controller.toggleDetection(); });
     connect(s.duplicate, &QAction::triggered, this, [this] { d->controller.duplicateSelection(); });
     connect(s.remove, &QAction::triggered, this, [this] { d->controller.deleteSelection(); });

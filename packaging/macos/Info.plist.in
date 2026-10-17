@@ -24,9 +24,9 @@
     <string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.developer-tools</string>
-    <!-- Keep in sync with CMAKE_OSX_DEPLOYMENT_TARGET of the macos preset. -->
+    <!-- Generated from the configured compiler deployment minimum. -->
     <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
+    <string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>

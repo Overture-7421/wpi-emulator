@@ -49,6 +49,8 @@ public:
     void markDiscoveryComplete();
     bool discoveryComplete() const { return discoveryComplete_; }
     std::uint64_t droppedSamples() const { return droppedSamples_; }
+    // Keep discovery/bindings, invalidate actuation, and neutralize old feedback for the next full frame.
+    void resetSignalHistory();
 
     // ---- sdk::IActuatorReader ----
     sdk::MotorOutput motorOutput(const sdk::SlotAddress& slot) const override;
@@ -118,6 +120,7 @@ private:
     std::uint64_t droppedSamples_ = 0;
     double battery_ = 12.0;
     bool discoveryComplete_ = false;
+    bool fullFramePending_ = false;
 };
 
 }  // namespace wpiemu::core::runtime

@@ -15,7 +15,7 @@ namespace {
 void configure(AppServices& s, const TestProject& project) {
     REQUIRE(s.session().open(project.path()).ok());
     REQUIRE(s.session().commit(buildRobotConfig(RobotBasics{}, s.buildContext(s.session().inspection())), ProjectPrefs{}).ok());
-    s.session().close();
+    REQUIRE(s.session().close().ok());
 }
 }  // namespace
 
@@ -182,4 +182,26 @@ TEST_CASE("setup completion switches to the editor and launches the robot") {
     CHECK(env.demo->status().active());
     CHECK_FALSE(env.demo->status().simulating);
     controller.stopRobot();
+}
+
+TEST_CASE("opening another project cancels an unready Run request but a same-project restart preserves it") {
+    TestEnvironment env;
+    ShellController controller(*env.services);
+    TestProject first;
+    TestProject second;
+    configure(*env.services, first);
+    configure(*env.services, second);
+    env.demo->setStepIntervals(100, 5);
+    REQUIRE(controller.openProject(first.path()) == OpenOutcome::Opened);
+    controller.startSimulation();
+    CHECK_FALSE(env.demo->status().programStarted);
+    REQUIRE(controller.openProject(second.path()) == OpenOutcome::Opened);
+    REQUIRE(waitFor([&] { return env.demo->status().programStarted; }));
+    CHECK(controller.mode() == AppMode::Editor);
+    CHECK_FALSE(env.demo->status().simulating);
+    env.demo->stop();
+    controller.startSimulation();
+    CHECK_FALSE(env.demo->status().programStarted);
+    env.demo->restart();
+    REQUIRE(waitFor([&] { return env.demo->status().simulating; }));
 }

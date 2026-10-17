@@ -89,7 +89,7 @@ TextEditor::TextEditor(QWidget* parent) : FieldEditor(parent), edit_(new QLineEd
 
 void TextEditor::setValue(const sdk::Value& value) {
     const QSignalBlocker block(edit_);
-    if (!edit_->hasFocus()) edit_->setText(QString::fromStdString(value.asString()));
+    edit_->setText(QString::fromStdString(value.asString()));
 }
 
 // ---- enum ---------------------------------------------------------------------------------------

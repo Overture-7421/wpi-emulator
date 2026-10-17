@@ -35,7 +35,8 @@ struct FakeExtension {
         : ch(std::move(transport), std::move(codec)) {}
 
     void send(const proto::Message& m) { REQUIRE(ch.send(m).ok()); }
-    void hello(std::uint32_t proposedWatchdogMs = 0, std::uint32_t version = proto::kProtocolVersion) {
+    void hello(std::uint32_t proposedWatchdogMs = 0,
+               std::uint32_t version = proto::kProtocolVersion, bool supportsArmed = true) {
         proto::Hello h;
         h.protocolVersion = version;
         h.language = proto::RobotLanguage::Java;
@@ -44,6 +45,7 @@ struct FakeExtension {
         h.pid = 4242;
         h.programName = "TestRobot";
         h.proposedWatchdogMs = proposedWatchdogMs;
+        h.supportsArmed = supportsArmed;
         send(h);
     }
     void announceAll() {
@@ -69,7 +71,11 @@ struct FakeExtension {
                 else pending = *sf;
             } else if (const auto* sc = std::get_if<proto::SimControl>(&m)) {
                 controls.push_back(*sc);
-                const proto::ControlDecision d = follower.onControl(*sc);
+                const proto::ControlDecision d = follower.onControl(*sc, [&] {
+                    return std::pair{controlResult, controlResult == proto::ControlResult::Applied
+                                                        ? std::string{}
+                                                        : std::string("scripted control result")};
+                });
                 if (d.apply && sc->command == proto::SimCommand::Pause) remotePaused = true;
                 if (d.apply && sc->command == proto::SimCommand::Resume) remotePaused = false;
                 if (d.sendAck && ackControls) send(d.ack);
@@ -99,6 +105,7 @@ struct FakeExtension {
     bool remotePaused = false;
     bool autoAck = true;
     bool ackControls = true;
+    proto::ControlResult controlResult = proto::ControlResult::Applied;
     bool disconnected = false;
     proto::TickResult nextResult = proto::TickResult::Completed;
     std::optional<proto::HelloAck> helloAck;
@@ -871,6 +878,9 @@ TEST_CASE("runner: an armed run steps from tick one after BeginLockstep and retu
     REQUIRE(rig.run([&] { return rig.runner->ticksSent() >= 1; }));
     CHECK_FALSE(rig.runner->armed());
     CHECK(rig.ext->sensorFrames.front().runEpoch == rig.ext->controls.back().runEpoch);
+    rig.ext->outputs = {{DeviceId{105}, 1, 12.0}};
+    REQUIRE(rig.run([&] { return rig.session->hub().motorOutput({"intake", "motor"}).valid; }));
+    CHECK(rig.session->hub().motorOutput({"intake", "motor"}).voltageV == doctest::Approx(12));
 
     proto::SimControl end;
     end.command = proto::SimCommand::EndLockstep;
@@ -883,6 +893,88 @@ TEST_CASE("runner: an armed run steps from tick one after BeginLockstep and retu
         rig.ext->pump();
     }
     CHECK(rig.runner->ticksSent() == ticks);
+    CHECK_FALSE(rig.session->hub().motorOutput({"intake", "motor"}).valid);
+    rig.ext->outputs.clear();
+    rig.runner->control(begin);
+    REQUIRE(rig.run([&] { return !rig.runner->armed(); }));
+    CHECK_FALSE(rig.session->hub().motorOutput({"intake", "motor"}).valid);
+    REQUIRE(rig.run([&] { return rig.runner->ticksSent() > ticks; }));
+    CHECK(rig.session->hub().motorOutput({"intake", "motor"}).voltageV == doctest::Approx(0));
+}
+
+TEST_CASE("runner: peers without explicit Armed support never receive Begin or End") {
+    SUBCASE("discovery handshake is refused conservatively") {
+        auto options = Rig::fast();
+        options.discoveryOnly = true;
+        Rig rig(options);
+        rig.connect();
+        rig.ext->hello(0, 2, false);
+        REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value(); }));
+        CHECK_FALSE(rig.ext->helloAck->accepted);
+        CHECK(rig.ext->helloAck->reason.find("supportsArmed") != std::string::npos);
+        for (const auto command :
+             {proto::SimCommand::BeginLockstep, proto::SimCommand::EndLockstep}) {
+            proto::SimControl c;
+            c.command = command;
+            rig.runner->control(c);
+        }
+        rig.runner->poll(0ms);
+        rig.ext->pump();
+        CHECK(rig.ext->controls.empty());
+        CHECK(rig.runner->ticksSent() == 0);
+        CHECK(rig.runner->state() == RunnerState::WaitingForRobot);
+    }
+    SUBCASE("legacy normal lockstep remains usable but transitions are gated") {
+        Rig rig;
+        rig.connect();
+        rig.ext->hello(0, 2, false);
+        REQUIRE(rig.run([&] { return rig.runner->ticksSent() >= 1; }));
+        CHECK(rig.ext->helloAck->accepted);
+        const auto epoch = rig.runner->runEpoch();
+        for (const auto command :
+             {proto::SimCommand::BeginLockstep, proto::SimCommand::EndLockstep}) {
+            proto::SimControl c;
+            c.command = command;
+            rig.runner->control(c);
+        }
+        rig.runner->poll(0ms);
+        rig.ext->pump();
+        CHECK(rig.ext->controls.empty());
+        CHECK(rig.runner->runEpoch() == epoch);
+        CHECK_FALSE(rig.runner->armed());
+    }
+}
+
+TEST_CASE("runner: rejected or timed-out Begin leaves Armed without sending ticks") {
+    bool timeout = false;
+    SUBCASE("rejection") {}
+    SUBCASE("timeout") {
+        timeout = true;
+    }
+    auto options = Rig::fast();
+    options.discoveryOnly = true;
+    Rig rig(options);
+    rig.connect();
+    rig.ext->hello();
+    REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value(); }));
+    if (timeout)
+        rig.ext->ackControls = false;
+    else
+        rig.ext->controlResult = proto::ControlResult::Rejected;
+    proto::SimControl begin;
+    begin.command = proto::SimCommand::BeginLockstep;
+    rig.runner->control(begin);
+    REQUIRE(rig.run([&] { return !rig.ext->controls.empty(); }));
+    if (timeout) {
+        rig.clock.advance(61s);
+        rig.runner->poll(0ms);
+        CHECK(rig.runner->state() == RunnerState::RobotStalled);
+    } else {
+        REQUIRE(rig.run([&] { return rig.runner->armed(); }));
+    }
+    CHECK(rig.runner->armed());
+    CHECK(rig.runner->ticksSent() == 0);
+    CHECK(rig.ext->sensorFrames.empty());
 }
 
 TEST_CASE("runner: robot logs are forwarded, stray and malformed traffic is ignored safely") {

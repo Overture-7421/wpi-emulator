@@ -9,6 +9,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "wpiemu/sdk/core/interface.h"
 #include "wpiemu/sdk/core/logger.h"
@@ -39,18 +40,25 @@ struct InboundEvent {
 // Multi-producer (IPC threads) / single-consumer (sim thread) mailbox: the ONLY way IPC data reaches the hub.
 class MessageInbox {
 public:
+    MessageInbox();
+    ~MessageInbox();
+    MessageInbox(const MessageInbox&) = delete;
+    MessageInbox& operator=(const MessageInbox&) = delete;
+
     void push(InboundEvent event);
-    // Waits up to `timeout` (0 = just poll). False on timeout or after wake().
+    // Waits up to `timeout` (0 = just poll). False on timeout, after wake(), or once closed.
     bool waitPop(InboundEvent& out, std::chrono::milliseconds timeout);
     bool tryPop(InboundEvent& out) { return waitPop(out, std::chrono::milliseconds(0)); }
     void wake();  // makes a concurrent waitPop return false immediately
+    // Rejects future events and closes pending connections. Last link owners are released unlocked.
+    void close();
     std::size_t size() const;
 
 private:
-    mutable std::mutex mutex_;
-    std::condition_variable cv_;
-    std::deque<InboundEvent> queue_;
-    bool woken_ = false;
+    friend class ChannelRobotLink;
+    struct State;
+    static void push(const std::shared_ptr<State>& state, InboundEvent event);
+    std::shared_ptr<State> state_;
 };
 
 // IRobotLink over a sdk MessageChannel (any ITransport + IMessageCodec, e.g. the ipc module's, or the in-memory
@@ -66,6 +74,7 @@ public:
     void start();
     sdk::Status send(const sdk::proto::Message& message) override;
     void close() override;
+    void shutdown();  // close and join the reader, called only by the owner
     bool connected() const override;
     std::string describe() const override { return description_; }
     std::uint64_t id() const { return linkId_; }
@@ -75,7 +84,7 @@ private:
 
     std::uint64_t linkId_;
     std::string description_;
-    MessageInbox& inbox_;
+    std::shared_ptr<MessageInbox::State> inbox_;
     sdk::proto::MessageChannel channel_;
     std::mutex sendMutex_;
     std::atomic<bool> stop_{false};
@@ -105,6 +114,7 @@ private:
     std::atomic<bool> stop_{false};
     std::uint64_t nextLinkId_ = 1;
     std::thread thread_;
+    std::vector<std::weak_ptr<ChannelRobotLink>> links_;  // accept thread, then stop() after join
 };
 
 }  // namespace wpiemu::core::runtime

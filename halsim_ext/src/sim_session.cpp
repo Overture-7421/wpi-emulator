@@ -82,6 +82,7 @@ void SimSession::touch() { lastActivityNs_.store(nowNs(), std::memory_order_rela
 void SimSession::post(proto::Message message) { link_->post(std::move(message)); }
 
 SessionEnd SimSession::run() {
+    s_.bridges.resetInputHistory();  // BridgeSet survives connections/reconnects.
     const bool lockstepCapable = ack_.clockMode == proto::ClockMode::Lockstep && s_.config.clock == ClockPreference::FollowEmulator;
     if (lockstepCapable && s_.config.watchdogEnabled) watchdog_ = std::thread([this] { watchdogLoop(); });
 
@@ -98,7 +99,6 @@ SessionEnd SimSession::run() {
 
     switch (end) {
         case SessionEnd::Disconnected:
-            s_.logger.warn(kLog, "emulator connection lost: " + link_->closeReason());
             if (!unblocked_.exchange(true)) applyPolicy("transport lost");
             break;
         case SessionEnd::Stopped:
@@ -189,7 +189,6 @@ std::optional<SessionEnd> SimSession::dispatch(proto::Message&& message) {
     } else if (auto* control = std::get_if<proto::SimControl>(&message)) {
         return onControl(*control);
     } else if (std::holds_alternative<proto::Goodbye>(message)) {
-        s_.logger.info(kLog, "emulator said Goodbye: " + std::get<proto::Goodbye>(message).reason);
         return SessionEnd::Disconnected;
     } else {
         s_.logger.debug(kLog, "ignoring unexpected message type " +
@@ -225,6 +224,7 @@ void SimSession::onSensorFrame(proto::SensorFrame&& frame) {
             return;
         case proto::FollowerAction::Step: break;
     }
+    if (epoch_.load() != follower_.runEpoch()) s_.bridges.resetInputHistory();
     epoch_ = follower_.runEpoch();
     s_.logger.setSimTimeUs(frame.simTimeUs);
 
@@ -289,39 +289,24 @@ void SimSession::onDsState(proto::DsState&& state) {
 }
 
 std::optional<SessionEnd> SimSession::onControl(const proto::SimControl& control) {
-    auto rejectWith = [&](proto::ControlResult result, const char* detail) {
-        if (control.commandId == proto::kUnspecified) return;
-        proto::SimControlAck ack;
-        ack.commandId = control.commandId;
-        ack.command = control.command;
-        ack.result = result;
-        ack.sessionId = follower_.sessionId();
-        ack.runEpoch = follower_.runEpoch();
-        ack.tick = follower_.lastCompletedTick();
-        ack.detail = detail;
-        post(proto::Message(std::move(ack)));
-    };
-    if (control.command == proto::SimCommand::Step && !paused_) {
-        rejectWith(proto::ControlResult::Rejected, "Step while running");
-        return std::nullopt;
-    }
-    if (control.command == proto::SimCommand::SetTimeScale && !lockstep_) {
-        rejectWith(proto::ControlResult::Unsupported, "time scale is only meaningful in lock-step");
-        return std::nullopt;
-    }
-
-    if (control.command == proto::SimCommand::BeginLockstep) {
-        if (lockstep_) return rejectWith(proto::ControlResult::Rejected, "already in lock-step"), std::nullopt;
-        if (ack_.clockMode != proto::ClockMode::Lockstep || s_.config.clock != ClockPreference::FollowEmulator)
-            return rejectWith(proto::ControlResult::Rejected, "this session does not follow the emulator's clock"), std::nullopt;
-        if (!programStarted_) return rejectWith(proto::ControlResult::Rejected, "the robot program has not started"), std::nullopt;
-    }
-    if (control.command == proto::SimCommand::EndLockstep && !lockstep_) {
-        rejectWith(proto::ControlResult::Rejected, "not in lock-step");
-        return std::nullopt;
-    }
-
-    proto::ControlDecision decision = follower_.onControl(control);
+    proto::ControlDecision decision = follower_.onControl(control, [&] {
+        using R = proto::ControlResult;
+        using Check = std::pair<R, std::string>;
+        if (control.command == proto::SimCommand::Step && !paused_)
+            return Check{R::Rejected, "Step while running"};
+        if (control.command == proto::SimCommand::SetTimeScale && !lockstep_)
+            return Check{R::Unsupported, "time scale is only meaningful in lock-step"};
+        if (control.command == proto::SimCommand::BeginLockstep) {
+            if (lockstep_) return Check{R::Rejected, "already in lock-step"};
+            if (ack_.clockMode != proto::ClockMode::Lockstep ||
+                s_.config.clock != ClockPreference::FollowEmulator)
+                return Check{R::Rejected, "this session does not follow the emulator's clock"};
+            if (!programStarted_) return Check{R::Rejected, "the robot program has not started"};
+        }
+        if (control.command == proto::SimCommand::EndLockstep && !lockstep_)
+            return Check{R::Rejected, "not in lock-step"};
+        return Check{R::Applied, {}};
+    });
     epoch_ = follower_.runEpoch();
     if (decision.apply) {
         switch (control.command) {
@@ -330,6 +315,7 @@ std::optional<SessionEnd> SimSession::onControl(const proto::SimControl& control
             case proto::SimCommand::Step:
             case proto::SimCommand::SetTimeScale: break;  // pacing is the emulator's business
             case proto::SimCommand::Reset:
+                s_.bridges.resetInputHistory();
                 delta_.reset();  // the next ActuatorFrame is a full one in the new epoch
                 ticksSinceFull_ = 0;
                 if (lockstep_ && unblocked_.exchange(false)) {  // re-engage lock-step after a stall
@@ -339,6 +325,7 @@ std::optional<SessionEnd> SimSession::onControl(const proto::SimControl& control
                 }
                 break;
             case proto::SimCommand::BeginLockstep:
+                s_.bridges.resetInputHistory();
                 delta_.reset();
                 ticksSinceFull_ = 0;
                 paused_ = false;
@@ -444,17 +431,20 @@ void SimSession::unblockRobot(Degraded why, const char* reason) {
     if (unblocked_.exchange(true)) return;
     degraded_ = why;
     (why == Degraded::Stalled ? s_.stats.stalls : s_.stats.emulatorLost).fetch_add(1, std::memory_order_relaxed);
-    s_.logger.error(kLog, std::string("watchdog: ") + reason + " (" + std::to_string(watchdogMs_) + " ms)");
     applyPolicy(reason);
+    // No synchronous logger here: its console or mutex may be blocked by the robot thread.
+    proto::Log log;
+    log.level = sdk::LogLevel::Error;
+    log.source = kLog;
+    log.message = std::string("watchdog: ") + reason + " (" + std::to_string(watchdogMs_) + " ms)";
+    link_->postDroppable(proto::Message(std::move(log)));
 }
 
-void SimSession::applyPolicy(const char* reason) {
+void SimSession::applyPolicy(const char* /*reason*/) {
     if (ack_.watchdogPolicy == proto::WatchdogPolicy::Terminate) {
-        s_.logger.error(kLog, std::string("terminating the robot process: ") + reason);
         s_.ports.process.terminate(0);
         return;
     }
-    s_.logger.warn(kLog, std::string("resuming real-time HAL timing: ") + reason);
     s_.ports.clock.resumeTiming();
 }
 

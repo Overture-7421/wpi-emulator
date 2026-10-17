@@ -476,9 +476,12 @@ void FakeEditorBackend::submitConfig(const sdk::RobotConfig& config) {
     ++submitCount_;
 }
 
-void FakeEditorBackend::saveConfig() {
+sdk::Status FakeEditorBackend::saveConfig() {
     ++saveCount_;
+    if (!saveError_.isEmpty())
+        return sdk::makeError(sdk::ErrorCode::IoError, saveError_.toStdString());
     Q_EMIT logMessage(sdk::Severity::Info, QStringLiteral("Saved robot.json"));
+    return sdk::okStatus();
 }
 
 void FakeEditorBackend::startDetection() {

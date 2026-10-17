@@ -171,8 +171,10 @@ Status atomicWriteFile(const fs::path& target, std::string_view content) {
         if (attempt >= 4) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(20));  // virus scanners / indexers hold files briefly on Windows
     }
-    fs::remove(tmp, ec);
-    return makeError(ErrorCode::IoError, "cannot replace " + target.string() + ": " + ec.message());
+    const std::error_code replaceError = ec;
+    std::error_code cleanupError;
+    fs::remove(tmp, cleanupError);
+    return makeError(ErrorCode::IoError, "cannot replace " + target.string() + ": " + replaceError.message());
 }
 
 Result<std::string> readTextFile(const fs::path& file) {
@@ -287,7 +289,10 @@ Result<RobotConfig> ProjectConfigRepository::importFromProject(const fs::path& p
     Result<RobotConfig> cfg = shared.load();
     if (!cfg) return cfg;
     FileConfigStore local = appDataStore(projectDir);
-    if (local.exists()) (void)local.backup("pre-import");
+    if (local.exists()) {
+        const Result<fs::path> backup = local.backup("pre-import");
+        if (!backup) return backup.error();
+    }
     if (Status s = local.save(cfg.value()); !s) return s.error();
     return cfg;
 }

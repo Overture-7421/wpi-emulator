@@ -144,6 +144,7 @@ private:
     std::shared_ptr<IRobotLink> link_;
     std::uint64_t linkId_ = 0;
     bool helloDone_ = false;
+    bool peerSupportsArmed_ = false;
     bool paused_ = false;
     bool finished_ = false;
     bool awaitingResetAck_ = false;

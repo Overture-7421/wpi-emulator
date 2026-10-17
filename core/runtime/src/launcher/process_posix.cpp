@@ -71,7 +71,10 @@ public:
         std::lock_guard lock(mutex_);
         return started_ && !exited_;
     }
-    std::int64_t pid() const override { return pid_; }
+    std::int64_t pid() const override {
+        std::lock_guard lock(mutex_);
+        return pid_;
+    }
     std::optional<ExitInfo> exitInfo() const override {
         std::lock_guard lock(mutex_);
         return exited_ ? std::optional<ExitInfo>(exit_) : std::nullopt;
@@ -82,9 +85,11 @@ public:
         return cv_.wait_for(lock, timeout, [this] { return exited_; });
     }
     void requestStop() override {
-        if (pid_ > 0 && running()) ::killpg(static_cast<pid_t>(pid_), SIGTERM);
+        std::lock_guard lock(mutex_);
+        if (pid_ > 0 && started_ && !exited_) ::killpg(static_cast<pid_t>(pid_), SIGTERM);
     }
     void kill() override {
+        std::lock_guard lock(mutex_);
         killedByUs_ = true;
         if (pid_ > 0) ::killpg(static_cast<pid_t>(pid_), SIGKILL);  // group leader == child pid; also reaps descendants that stayed in the group
     }
@@ -159,7 +164,9 @@ private:
 };
 
 Status PosixProcess::start(const ProcessSpec& spec, ILogSink& sink) {
+    std::lock_guard lock(mutex_);
     if (started_) return makeError(ErrorCode::InvalidState, "process already started");
+    if (killedByUs_) return makeError(ErrorCode::Cancelled, "process cancelled before startup");
     sink_ = &sink;
 
     const std::vector<std::string> env = mergeEnvironment(currentEnvironment(), spec, false);
@@ -235,10 +242,7 @@ Status PosixProcess::start(const ProcessSpec& spec, ILogSink& sink) {
     pid_ = child;
     outFd_.reset(outR.release());
     errFd_.reset(errR.release());
-    {
-        std::lock_guard lock(mutex_);
-        started_ = true;
-    }
+    started_ = true;
     outReader_ = std::thread([this] { readLoop(outFd_.fd, OutputStream::Stdout); });
     errReader_ = std::thread([this] { readLoop(errFd_.fd, OutputStream::Stderr); });
     monitor_ = std::thread([this] { monitorLoop(); });

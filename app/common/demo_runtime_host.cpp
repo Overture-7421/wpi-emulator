@@ -62,7 +62,10 @@ std::vector<sdk::DiscoveredDevice> DemoRuntimeHost::demoDevicesFor(const sdk::Ro
 void DemoRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<const sdk::RobotConfig> config,
                                  const sdk::IGameModule* game) {
     // A different project invalidates the run; edits of the same project are applied live.
-    if (status_.active() && projectPath != projectPath_) stop();
+    if (projectPath != projectPath_) {
+        beginIntent_.projectReplaced();
+        if (status_.active()) stop();
+    }
     const bool sameProject = projectPath == projectPath_;
     projectPath_ = projectPath;
     scene_ = {};
@@ -111,20 +114,20 @@ void DemoRuntimeHost::launch() {
     status_.simulating = false;
     startupStage_ = 0;
     announced_.clear();
+    ++status_.runGeneration;
     setStatus(HostProcessState::Starting, HostLinkState::Disconnected);
     log(sdk::LogLevel::Info, QStringLiteral("demo"), tr("Demo: launching robot"));
     startupTimer_.start(startupMs_);
 }
 
 void DemoRuntimeHost::startSimulation() {
-    beginWhenReady_ = true;
+    beginIntent_.request();
     if (!status_.active()) launch();
     beginIfReady();
 }
 
 void DemoRuntimeHost::beginIfReady() {
-    if (!beginWhenReady_ || !status_.programStarted) return;
-    beginWhenReady_ = false;
+    if (!beginIntent_.takeWhenReady(status_.programStarted)) return;
     resetSimulation();
     status_.simulating = true;
     setStatus(status_.process, status_.link, status_.detail);
@@ -133,7 +136,7 @@ void DemoRuntimeHost::beginIfReady() {
 }
 
 void DemoRuntimeHost::stopSimulation() {
-    beginWhenReady_ = false;
+    beginIntent_.cancel();
     if (!status_.simulating) return;
     status_.simulating = false;
     emit statusChanged();
@@ -177,7 +180,7 @@ void DemoRuntimeHost::announceNextDevice() {
 }
 
 void DemoRuntimeHost::stop() {
-    beginWhenReady_ = false;
+    beginIntent_.cancel();
     if (!status_.active()) return;
     startupTimer_.stop();
     simTimer_.stop();
@@ -189,11 +192,11 @@ void DemoRuntimeHost::stop() {
 }
 
 void DemoRuntimeHost::restart() {
-    const bool resume = status_.simulating || beginWhenReady_;
+    const bool resume = status_.simulating || beginIntent_.pending();
     stop();
     resetSimulation();
     launch();
-    beginWhenReady_ = resume;
+    if (resume) beginIntent_.request();
 }
 
 void DemoRuntimeHost::resetSimulation() {

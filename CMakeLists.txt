@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.24)
 
+# Set before project()/compiler initialization; presets, releases and the bundle share this default.
+if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum supported macOS version")
+endif()
+
 # Qt otherwise forces the deprecated OLD behavior of CMP0156 and warns about it.
 if(POLICY CMP0156)
     cmake_policy(SET CMP0156 NEW)

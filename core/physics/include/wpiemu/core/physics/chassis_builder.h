@@ -51,7 +51,8 @@ sdk::Vec3 wheelHubLocal(const sdk::ChassisSpec& chassis, const sdk::WheelSpec& w
 // box of sizeM placed at its real offset from the COM (parallel-axis theorem).
 sdk::MassProperties chassisMassProperties(const sdk::ChassisSpec& chassis);
 
-// InvalidArgument for non-positive mass / size / COM height or a wheel without radius.
+// InvalidArgument for non-positive mass / size / COM height, wheel radius or primitive dimensions.
+// Failure leaves no newly created bodies/shapes in the world.
 sdk::Result<ChassisBody> buildChassisBody(sdk::IPhysicsWorld& world, const sdk::ChassisSpec& chassis,
                                           const sdk::DrivetrainSpec& drivetrain, const ChassisPlacement& placement,
                                           const ChassisBuildOptions& options = {});

@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <limits>
+#include <locale>
+#include <sstream>
 
 #include "wpiemu/core/config/json_codec.h"
 
@@ -145,4 +147,27 @@ TEST_CASE("json: non-finite doubles dump as null") {
     Value v = Value::makeObject();
     v["inf"] = std::numeric_limits<double>::infinity();
     CHECK(JsonValueCodec{}.dump(v, false) == "{\"inf\":null}");
+}
+
+TEST_CASE("json: numeric conversion stays classic under a comma-decimal global locale") {
+    struct CommaPunctuation final : std::numpunct<char> {
+        char do_decimal_point() const override { return ','; }
+        char do_thousands_sep() const override { return '.'; }
+        std::string do_grouping() const override { return "\3"; }
+    };
+    struct RestoreLocale {
+        std::locale previous;
+        ~RestoreLocale() { std::locale::global(previous); }
+    } restore{std::locale()};
+    std::locale::global(std::locale(std::locale::classic(), new CommaPunctuation));
+    std::ostringstream processFormatted;
+    processFormatted << 1234.5;
+    REQUIRE(processFormatted.str() == "1.234,5");
+
+    CHECK(parseOk("1234.5").asDouble() == 1234.5);
+    CHECK(parseOk("1.25e3").asDouble() == 1250.0);
+    CHECK_FALSE(JsonValueCodec{}.parse("1,25").ok());
+    CHECK(formatDouble(1234.5) == "1234.5");
+    CHECK(floatToDouble(0.7f) == 0.7);
+    CHECK(JsonValueCodec{}.dump(Value(1234.5), false) == "1234.5");
 }

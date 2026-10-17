@@ -105,7 +105,10 @@ public:
         std::lock_guard lock(mutex_);
         return started_ && !exited_;
     }
-    std::int64_t pid() const override { return pid_; }
+    std::int64_t pid() const override {
+        std::lock_guard lock(mutex_);
+        return pid_;
+    }
     std::optional<ExitInfo> exitInfo() const override {
         std::lock_guard lock(mutex_);
         return exited_ ? std::optional<ExitInfo>(exit_) : std::nullopt;
@@ -116,13 +119,14 @@ public:
         return cv_.wait_for(lock, timeout, [this] { return exited_; });
     }
     void requestStop() override {
-        if (running()) GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, static_cast<DWORD>(pid_));  // only reaches children sharing our console
+        std::lock_guard lock(mutex_);
+        if (started_ && !exited_) GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, static_cast<DWORD>(pid_));  // only reaches children sharing our console
     }
     void kill() override {
+        std::lock_guard lock(mutex_);
         killedByUs_ = true;
-        std::lock_guard lock(killMutex_);
         if (job_.valid()) TerminateJobObject(job_.h, 1);
-        else if (pid_ != 0 && running()) (void)killProcessTree(pid_);
+        else if (pid_ != 0 && started_ && !exited_) (void)killProcessTree(pid_);
     }
 
 private:
@@ -166,7 +170,6 @@ private:
     }
 
     mutable std::mutex mutex_;
-    std::mutex killMutex_;
     std::condition_variable cv_;
     bool started_ = false;
     bool exited_ = false;
@@ -180,7 +183,9 @@ private:
 };
 
 Status WinProcess::start(const ProcessSpec& spec, ILogSink& sink) {
+    std::lock_guard lock(mutex_);
     if (started_) return makeError(ErrorCode::InvalidState, "process already started");
+    if (killedByUs_) return makeError(ErrorCode::Cancelled, "process cancelled before startup");
     sink_ = &sink;
 
     // ---- environment and program resolution ----
@@ -284,10 +289,7 @@ Status WinProcess::start(const ProcessSpec& spec, ILogSink& sink) {
     nul.reset();
     outRead_.reset(outRd.release());
     errRead_.reset(errRd.release());
-    {
-        std::lock_guard lock(mutex_);
-        started_ = true;
-    }
+    started_ = true;
     outReader_ = std::thread([this] { readLoop(outRead_.h, OutputStream::Stdout); });
     errReader_ = std::thread([this] { readLoop(errRead_.h, OutputStream::Stderr); });
     monitor_ = std::thread([this] { monitorLoop(); });

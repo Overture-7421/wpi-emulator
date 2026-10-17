@@ -93,7 +93,8 @@ public:
     // Fills tick (0-based within the epoch), simTimeUs (after the step), stepUs, battery, samples; the runner stamps identity.
     void tick(sdk::proto::SensorFrame& out, bool fullFrame);
     // Back to t = 0: chassis pose/velocity, drivetrain, mechanisms, game state, clock, RNG, battery. Bindings and
-    // discovered devices stay. Starts a new epoch of tick numbering.
+    // discovered devices stay, but cached actuation/feedback is neutralized. Starts a new epoch of tick
+    // numbering; the next sensor frame is full even if the caller requests a delta.
     void reset();
 
     void setDriverStation(const sdk::proto::DsState& ds) { ds_ = ds; }

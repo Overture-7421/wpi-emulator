@@ -32,6 +32,7 @@ sdk::Result<proto::HelloAck> performHandshake(proto::MessageChannel& channel, co
     hello.programName = config.programName.empty() ? robot.programName : config.programName;
     hello.halPortCounts = robot.halPortCounts;
     hello.proposedWatchdogMs = config.proposedWatchdogMs;
+    hello.supportsArmed = true;
     if (const sdk::Status sent = channel.send(proto::Message(std::move(hello))); !sent) return sent.error();
 
     const auto deadline = std::chrono::steady_clock::now() + config.handshakeTimeout;
@@ -208,7 +209,7 @@ void ExtensionRuntime::stop() noexcept {
         s.bridges.stop();
     } else {
         lock.unlock();
-        s.logger.error(kLog, "clock thread did not stop within 3 s (robot stuck in a step?); detaching it");
+        // Recovery and bounded stop must not wait for a blocked console/logger.
         if (s.clockThread.joinable()) s.clockThread.detach();
     }
 }

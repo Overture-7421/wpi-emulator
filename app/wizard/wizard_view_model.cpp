@@ -235,6 +235,10 @@ WizardResult WizardViewModel::finish() {
     }
 
     ProjectSession& session = services_.session();
+    if (auto flushed = session.flushPendingChanges(); !flushed) {
+        result.message = QString::fromStdString(flushed.error().message);
+        return result;
+    }
     if (!session.hasProject() || session.path() != inspection_.path) {
         if (auto opened = session.open(inspection_.path); !opened) {
             result.message = QString::fromStdString(opened.error().message);

@@ -241,19 +241,82 @@ TEST_CASE("page: editing a value in the inspector updates the model and can be u
     REQUIRE(form != nullptr);
     auto* spin = qobject_cast<QDoubleSpinBox*>(form->editorFor("gearRatio")->focusTarget());
     REQUIRE(spin != nullptr);
+    spin->setFocus();
+    pumpEvents(10);
+    REQUIRE(spin->hasFocus());
     spin->setValue(55.0);
     CHECK(f.c().document().config().findMechanism("turret")->properties.find("gearRatio")->asDouble() == 55.0);
     CHECK(f.backend.lastSubmitted().findMechanism("turret")->properties.find("gearRatio")->asDouble() == 55.0);
 
     f.page.undoAction()->trigger();
+    CHECK(spin->value() == 40.0);
+    CHECK(spin->hasFocus());
     CHECK(f.c().document().config().findMechanism("turret")->properties.find("gearRatio")->asDouble() == 40.0);
     f.page.redoAction()->trigger();
+    CHECK(spin->value() == 55.0);
     CHECK(f.c().document().config().findMechanism("turret")->properties.find("gearRatio")->asDouble() == 55.0);
 
     // The form was refreshed in place, not rebuilt (the user keeps focus while typing).
     const int rebuilds = f.page.inspector()->rebuildCount();
     spin->setValue(60.0);
     CHECK(f.page.inspector()->rebuildCount() == rebuilds);
+}
+
+TEST_CASE("page: focused pose undo restores every component before the next edit") {
+    PageFixture f;
+    f.c().settings().setUnits(UnitSystem::Metric);
+    f.c().selection().set(SelectionRef::mechanism("turret"));
+    auto* form = f.page.inspector()->form("mech.placement");
+    REQUIRE(form != nullptr);
+    auto* poseEditor = form->editorFor("mount");
+    REQUIRE(poseEditor != nullptr);
+    const auto spins = poseEditor->findChildren<QDoubleSpinBox*>();
+    REQUIRE(spins.size() >= 6);
+    auto* x = spins[0];
+    auto* y = spins[1];
+    const double oldX = x->value();
+    const double oldY = y->value();
+    x->setFocus();
+    pumpEvents(10);
+    REQUIRE(x->hasFocus());
+    x->setValue(oldX + 10.0);
+    f.page.undoAction()->trigger();
+    CHECK(x->value() == oldX);
+    CHECK(x->hasFocus());
+    y->setValue(oldY + 5.0);
+    sdk::Pose3 pose;
+    REQUIRE(sdk::fromValue(poseEditor->value(), pose));
+    CHECK(approx(pose.position.x, static_cast<float>(oldX / 100.0)));
+    CHECK(approx(pose.position.y, static_cast<float>((oldY + 5.0) / 100.0)));
+    const auto groups = propertyGroupsFor(f.c().document().config(), f.c().document().catalog(), SelectionRef::mechanism("turret"));
+    const auto group = std::find_if(groups.begin(), groups.end(), [](const auto& g) { return g.id == "mech.placement"; });
+    REQUIRE(group != groups.end());
+    CHECK(group->values.get("mount") == poseEditor->value());
+}
+
+TEST_CASE("property form: typing echoes preserve cursor but authoritative load replaces focused text") {
+    PropertyGroup group;
+    group.id = "text";
+    sdk::PropertySpec text;
+    text.key = "name";
+    text.type = sdk::PropertyType::String;
+    group.schema.properties.push_back(text);
+    group.values["name"] = sdk::Value("robot");
+    PropertyFormWidget form(group, UnitSystem::Metric);
+    form.show();
+    auto* edit = qobject_cast<QLineEdit*>(form.editorFor("name")->focusTarget());
+    REQUIRE(edit != nullptr);
+    edit->setFocus();
+    pumpEvents(10);
+    REQUIRE(edit->hasFocus());
+    edit->setText(QStringLiteral("roXbot"));
+    edit->setCursorPosition(3);
+    form.setValues(group.values, false);   // validation or another field's edit is not a load
+    CHECK(edit->text() == QStringLiteral("roXbot"));
+    CHECK(edit->cursorPosition() == 3);
+    form.setValues(group.values, true);
+    CHECK(edit->text() == QStringLiteral("robot"));
+    CHECK(edit->hasFocus());
 }
 
 TEST_CASE("page: units follow the toolbar choice") {

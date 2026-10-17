@@ -117,6 +117,8 @@ public:
     sdk::Status launch(const LaunchRequest& request, ILogSink& output);
     LaunchStatus status() const;
     bool waitUntilFinished(std::chrono::milliseconds timeout) const;  // true when no worker is active
+    // Nonblocking cancellation, including during native startup. Repeated requests keep the earliest kill deadline.
+    void requestStop(std::chrono::milliseconds grace = std::chrono::milliseconds(3000));
     // Politely asks the process to stop, waits `grace`, then kills the whole tree; joins the worker.
     void stop(std::chrono::milliseconds grace = std::chrono::milliseconds(3000));
 
@@ -134,9 +136,9 @@ private:
     mutable std::condition_variable idle_;
     LaunchStatus status_;
     std::function<void(const LaunchStatus&)> onChange_;
-    std::unique_ptr<IRobotProcess> current_;
     bool active_ = false;
     std::atomic<bool> stopRequested_{false};
+    std::chrono::steady_clock::time_point stopDeadline_{};
     std::thread worker_;
 };
 

@@ -14,7 +14,6 @@ namespace {
 
 constexpr double kStopEps = 1e-9;
 constexpr double kMaxStepRate = 0.1;  // RK4 sub-step bound: |A| * h <= 0.1
-constexpr int kMaxSubsteps = 100;
 
 struct Params {
     sdk::PlantSpec spec;
@@ -70,7 +69,7 @@ public:
 
         sdk::PlantState x1 = efficiency_ == 1.0 && !gravityDependsOnPosition()
                                  ? stepExact(x0, volts, gravityAccel(x0.position) + extAccel, dt)
-                                 : stepRk4(x0, volts, extAccel, dt);
+                                 : stepNonlinear(x0, volts, extAccel, dt);
         applyCoulomb(x0, x1, volts, extAccel, dt);
         clampToStops(x1);
         state_ = x1;
@@ -114,16 +113,90 @@ private:
                     discrete_.Bd(1, 1) * u1};
     }
 
-    sdk::PlantState stepRk4(const sdk::PlantState& x0, double volts, double extAccel, double dt) const {
+    sdk::PlantState advanceFrozen(sdk::PlantState x, double volts, double disturbance,
+                                  double h) const {
+        const double drive = inputGain_ * volts;
+        const double freeVelocity = -drive / motorRate_;
+        double remaining = h;
+        while (remaining > 0.0) {
+            double factor = efficiency_;
+            if (efficiency_ != 1.0) {
+                if (x.velocity == 0.0) {
+                    const double motoring = efficiency_ * drive + disturbance;
+                    const double backdriving = drive / efficiency_ + disturbance;
+                    if (drive == 0.0)
+                        factor = 1.0 / efficiency_;
+                    else if (drive > 0.0 ? motoring >= 0.0 : motoring <= 0.0)
+                        factor = efficiency_;
+                    else if (drive > 0.0 ? backdriving <= 0.0 : backdriving >= 0.0)
+                        factor = 1.0 / efficiency_;
+                    else
+                        return x;  // The two quadrant accelerations point toward zero velocity.
+                } else {
+                    const double motor =
+                        x.velocity == freeVelocity
+                            ? motorRate_ * (disturbance - viscousRate_ * x.velocity)
+                            : motorRate_ * x.velocity + drive;
+                    factor = motor * x.velocity >= 0.0 ? efficiency_ : 1.0 / efficiency_;
+                }
+            }
+            const double a = factor * motorRate_ - viscousRate_;
+            const double equilibrium = -(factor * drive + disturbance) / a;
+            const double endVelocity =
+                equilibrium + (x.velocity - equilibrium) * std::exp(a * remaining);
+            double duration = remaining;
+            double boundaryVelocity = endVelocity;
+            // With frozen gravity the scalar velocity is monotone. It can cross each
+            // efficiency boundary at most once, so these exact events do not need a work cap.
+            for (const double boundary : {0.0, freeVelocity}) {
+                if (!((x.velocity < boundary && boundary < endVelocity) ||
+                      (endVelocity < boundary && boundary < x.velocity)))
+                    continue;
+                const double crossing =
+                    std::log1p((boundary - x.velocity) / (x.velocity - equilibrium)) / a;
+                if (crossing < duration) {
+                    duration = crossing;
+                    boundaryVelocity = boundary;
+                }
+            }
+            x.position +=
+                equilibrium * duration + (x.velocity - equilibrium) * std::expm1(a * duration) / a;
+            x.velocity = boundaryVelocity;
+            remaining = duration == remaining ? 0.0 : remaining - duration;
+        }
+        return x;
+    }
+
+    sdk::PlantState stepNonlinear(const sdk::PlantState& x0, double volts, double extAccel,
+                                  double dt) const {
         const double rate = std::abs(motorRate_) / std::min(efficiency_, 1.0) + viscousRate_;
-        const int n = std::clamp(static_cast<int>(std::ceil(rate * dt / kMaxStepRate)), 1, kMaxSubsteps);
+        if (rate * dt > 10.0) {
+            // Integrate electrical/viscous damping exactly. Only gravity is sampled: a half-step
+            // predictor supplies its midpoint value, without an explicit stiff velocity mode.
+            sdk::PlantState x = x0;
+            double remaining = dt;
+            while (remaining > 0.0) {
+                // The time/angle bounds control nonlinear accuracy, not electrical stability.
+                const double h =
+                    std::min({remaining, 0.0001, 0.001 / (1.0 + std::abs(x.velocity))});
+                const auto midpoint =
+                    advanceFrozen(x, volts, gravityAccel(x.position) + extAccel, 0.5 * h);
+                x = advanceFrozen(x, volts, gravityAccel(midpoint.position) + extAccel, h);
+                remaining = h == remaining ? 0.0 : remaining - h;
+            }
+            return x;
+        }
+        // The stiff path above bounds this conversion to [1, 100], without capping h.
+        const int n = static_cast<int>(std::max(1.0, std::ceil(rate * dt / kMaxStepRate)));
         const double h = dt / static_cast<double>(n);
         sdk::PlantState x = x0;
         const auto accel = [&](double q, double v) { return freeAccel(q, v, volts, extAccel); };
         for (int i = 0; i < n; ++i) {
             const double k1q = x.velocity, k1v = accel(x.position, x.velocity);
-            const double k2q = x.velocity + 0.5 * h * k1v, k2v = accel(x.position + 0.5 * h * k1q, k2q);
-            const double k3q = x.velocity + 0.5 * h * k2v, k3v = accel(x.position + 0.5 * h * k2q, k3q);
+            const double k2q = x.velocity + 0.5 * h * k1v,
+                         k2v = accel(x.position + 0.5 * h * k1q, k2q);
+            const double k3q = x.velocity + 0.5 * h * k2v,
+                         k3v = accel(x.position + 0.5 * h * k2q, k3q);
             const double k4q = x.velocity + h * k3v, k4v = accel(x.position + h * k3q, k4q);
             x.position += h / 6.0 * (k1q + 2.0 * k2q + 2.0 * k3q + k4q);
             x.velocity += h / 6.0 * (k1v + 2.0 * k2v + 2.0 * k3v + k4v);
@@ -131,8 +204,10 @@ private:
         return x;
     }
 
-    // Coulomb friction as an explicit post-step correction: sticks when the drive cannot overcome it.
-    void applyCoulomb(const sdk::PlantState& x0, sdk::PlantState& x1, double volts, double extAccel, double dt) const {
+    // Coulomb friction as an explicit post-step correction: sticks when the drive cannot overcome
+    // it.
+    void applyCoulomb(const sdk::PlantState& x0, sdk::PlantState& x1, double volts, double extAccel,
+                      double dt) const {
         if (coulombAccel_ <= 0.0) return;
         if (std::abs(x0.velocity) <= kStopEps &&
             std::abs(freeAccel(x0.position, 0.0, volts, extAccel)) <= coulombAccel_) {

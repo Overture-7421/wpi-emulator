@@ -8,6 +8,8 @@ Rules (see docs/decisions/0004-modular-boundaries.md and 0005-sdk-freeze.md):
   * The same applies to CMake: plugins link only wpiemu_sdk; nothing else links wpiemu_plugin_*.
   * Aggregation seam: files directly in plugins/ (target wpiemu_plugins_builtin) may see every
     plugin; app may link that target; nobody else may reference it.
+  * The distinct bridges/ seam may see bridge modules; only halsim_ext may link it.
+    Unknown first-party targets fail closed, including implementation subtargets.
   * Non-app headers must not use identifiers that Qt turns into macros (signals, slots, emit, foreach).
 
 Owners are directories; ALLOWED maps an owner to the owners it may depend on.
@@ -27,7 +29,7 @@ CMAKE_NAMES = {"CMakeLists.txt"}
 CMAKE_EXTS = {".cmake"}
 
 # Top-level directories that are not scanned.
-IGNORED_TOP = {"docs", "spikes", "packaging", "tools", "tests", "cmake", "build", "out", "node_modules"}
+IGNORED_TOP = {"docs", "spikes", "packaging", "tools", "cmake", "build", "out", "node_modules"}
 IGNORED_PARTS = {"_deps", ".fetchcontent-cache", ".git", ".github", ".vs", ".idea"}
 
 # owner -> owners it may reference (itself is always allowed).
@@ -35,7 +37,8 @@ ALLOWED: dict[str, set[str]] = {
     "sdk": set(),
     "core": {"sdk"},
     "ipc": {"sdk"},
-    "halsim_ext": {"sdk", "ipc"},
+    "halsim_ext": {"sdk", "ipc", "bridges"},
+    "bridges": {"sdk", "bridges/hal", "bridges/vendor"},
     "bridges/hal": {"sdk"},
     "bridges/vendor": {"sdk"},
     "app": {"sdk", "core", "ipc", "plugins"},
@@ -48,7 +51,7 @@ PLUGIN_ALLOWED = {"sdk"}
 AGGREGATOR = "plugins"
 AGGREGATOR_ALLOWED = {"sdk", AGGREGATOR, "plugins/*"}
 
-MODULE_OWNERS = ["sdk", "core", "ipc", "halsim_ext", "bridges/hal", "bridges/vendor", "app"]
+MODULE_OWNERS = ["sdk", "core", "ipc", "halsim_ext", "bridges", "bridges/hal", "bridges/vendor", "app"]
 
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]', re.MULTILINE)
 QT_KEYWORD_RE = re.compile(r"\b(signals|slots|emit|foreach|Q_SIGNALS|Q_SLOTS|Q_EMIT|Q_FOREACH)\b")
@@ -61,16 +64,46 @@ CMAKE_LINK_RE = re.compile(
 )
 CMAKE_INCLUDE_DIRS_RE = re.compile(r"target_include_directories\s*\(([^)]*)\)", re.IGNORECASE | re.DOTALL)
 WPIEMU_TARGET_RE = re.compile(r"\bwpiemu::([A-Za-z0-9_]+)|\b(wpiemu_[A-Za-z0-9_]+|halsim_wpiemu)\b")
+CMAKE_TARGET_RE = re.compile(
+    r"(?:qt_)?add_(?:library|executable)\s*\(\s*([^\s)]+)", re.IGNORECASE
+)
 
-# CMake target -> owner (ownership is by naming convention).
+# Explicit first-party target ownership; declarations are checked for completeness.
 TARGET_OWNERS = {
     "wpiemu_sdk": "sdk",
     "wpiemu_core": "core",
+    "wpiemu_core_physics": "core",
+    "wpiemu_physics_tests": "core",
     "wpiemu_ipc": "ipc",
     "halsim_wpiemu": "halsim_ext",
+    "wpiemu_halsim_core": "halsim_ext",
+    "wpiemu_halsim_hal": "halsim_ext",
+    "wpiemu_halsim_ext_tests": "halsim_ext",
+    "wpiemu_halsim_ext_hal_tests": "halsim_ext",
+    "wpiemu_halsim_fake_emulator": "halsim_ext",
+    # Imported third-party targets, not extension-owned interfaces.
+    "wpiemu_wpilib_hal": "wpilib",
+    "wpiemu_wpilib_wpiutil": "wpilib",
+    "wpiemu_bridges_builtin": "bridges",
     "wpiemu_bridges_hal": "bridges/hal",
+    "wpiemu_bridges_hal_halsim": "bridges/hal",
     "wpiemu_bridges_vendor": "bridges/vendor",
     "wpiemu_app": "app",
+    "wpiemu_app_common": "app",
+    "wpiemu_app_host": "app",
+    "wpiemu_app_wizard": "app",
+    "wpiemu_app_shell": "app",
+    "wpiemu_app_editor": "app",
+    "wpiemu_app_runview": "app",
+    "wpiemu_app_tests": "app",
+    "wpiemu_host_tests": "app",
+    "wpiemu_e2e_tests": "app",
+    "wpiemu_app_editor_tests": "app",
+    "wpiemu_editor_demo": "app",
+    "wpiemu_runview_demo": "app",
+    "wpiemu_tests": "tests",
+    "wpiemu_sdk_header_check": "tests",
+    "wpiemu_runview_tests": "tests",
     "wpiemu_plugins_builtin": AGGREGATOR,
 }
 
@@ -84,6 +117,8 @@ def owner_of_path(rel: str) -> str | None:
         return AGGREGATOR
     if parts[0] == "bridges" and len(parts) >= 3:
         return f"bridges/{parts[1]}"
+    if parts[0] == "bridges" and len(parts) == 2:
+        return "bridges"
     if parts[0] in ("sdk", "core", "ipc", "halsim_ext", "app"):
         return parts[0]
     return None
@@ -171,7 +206,7 @@ def scan_source(rel: str, text: str, known: set[str]) -> list[str]:
         quoted = m.group(1) == '"'
         target = m.group(2)
         dep = classify_include(rel, target, quoted, known)
-        if dep is None or (permits(allowed, dep) and not (dep == AGGREGATOR and owner != AGGREGATOR)):
+        if dep is None or (permits(allowed, dep) and not (dep in (AGGREGATOR, "bridges") and owner != dep)):
             continue
         line = text.count("\n", 0, m.start()) + 1
         errors.append(
@@ -181,25 +216,51 @@ def scan_source(rel: str, text: str, known: set[str]) -> list[str]:
     return errors
 
 
+def target_mapping_errors(rel: str, text: str) -> list[str]:
+    """Every declared first-party target/alias must have an explicit, correct owner."""
+    owner = owner_of_path(rel) or ("tests" if rel.startswith("tests/") else None)
+    errors = []
+    for m in CMAKE_TARGET_RE.finditer(re.sub(r"#[^\n]*", "", text)):
+        name = m.group(1)
+        if not WPIEMU_TARGET_RE.fullmatch(name):
+            continue
+        normalized = name.replace("wpiemu::", "wpiemu_")
+        mapped = owner_of_target(normalized)
+        expected = ("wpilib" if owner == "halsim_ext" and normalized in
+                    ("wpiemu_wpilib_hal", "wpiemu_wpilib_wpiutil") else owner)
+        if mapped is None or mapped != expected:
+            errors.append(f"{rel}: target '{name}' has unmapped or incorrect owner "
+                          f"'{mapped}' (expected '{expected}')")
+    return errors
+
+
 def scan_cmake(rel: str, text: str) -> list[str]:
     owner = owner_of_path(rel)
-    if owner is None:
+    test_only = owner is None and rel.startswith("tests/")
+    if owner is None and not test_only:
         return []
-    allowed = allowed_deps(owner)
+    allowed = allowed_deps(owner) if owner else set()
     # Drop comments so documentation does not trigger the check.
     text = re.sub(r"#[^\n]*", "", text)
-    errors = []
+    errors = target_mapping_errors(rel, text)
     for m in CMAKE_LINK_RE.finditer(text):
         line = text.count("\n", 0, m.start()) + 1
         for alias, name in WPIEMU_TARGET_RE.findall(m.group(2)):
             name = f"wpiemu_{alias}" if alias else name
             dep = owner_of_target(name)
-            if dep is None or permits(allowed, dep):
+            if dep is None:
+                errors.append(f"{rel}:{line}: first-party dependency '{name}' has no mapped owner")
+                continue
+            # WPILib is a private robot-process backend, not a general module dependency.
+            if test_only or permits(allowed, dep) or (owner == "halsim_ext" and dep == "wpilib"):
                 continue
             errors.append(
                 f"{rel}:{line}: '{owner}' must not link '{name}' (belongs to '{dep}'); "
                 f"allowed: {sorted(allowed)}"
             )
+    # Shared tests intentionally span modules, but declarations and unknown targets still fail closed.
+    if test_only:
+        return errors
     for m in CMAKE_INCLUDE_DIRS_RE.finditer(text):
         line = text.count("\n", 0, m.start()) + 1
         for token in re.findall(r"[^\s()]+", m.group(1)):
@@ -249,6 +310,8 @@ def check_tree(root: Path) -> list[str]:
         ext = posixpath.splitext(rel)[1].lower()
         path = root / rel
         if owner_of_path(rel) is None:
+            if rel.startswith("tests/") and (name in CMAKE_NAMES or ext in CMAKE_EXTS):
+                errors += scan_cmake(rel, path.read_text(encoding="utf-8"))
             continue
         if ext in SOURCE_EXTS:
             text = path.read_text(encoding="utf-8", errors="replace")
@@ -268,6 +331,7 @@ def self_test() -> int:
         "plugins/game_2026/src/p.cpp",
         "plugins/game_2027/include/wpiemu/plugins/game_2027/q.h",
         "plugins/builtin_plugins.cpp",
+        "bridges/builtin_bridges.cpp",
     }
     cases = [
         # (rel, text, expected_error_count)
@@ -288,6 +352,12 @@ def self_test() -> int:
         ("plugins/builtin_plugins.cpp", '#include "wpiemu/core/c.h"\n', 1),
         ("app/src/main.cpp", '#include "wpiemu/plugins/builtin_plugins.h"\n', 1),
         ("plugins/game_2026/src/p.cpp", '#include "wpiemu/plugins/builtin_plugins.h"\n', 1),
+        ("bridges/builtin_bridges.cpp", '#include <wpiemu/bridges/hal/a.h>\n#include <wpiemu/bridges/vendor/a.h>\n#include <wpiemu/sdk/a.h>\n', 0),
+        ("bridges/builtin_bridges.cpp", '#include <wpiemu/core/c.h>\n#include <wpiemu/plugins/game_2026/p.h>\n', 2),
+        ("core/src/c.cpp", '#include "../../bridges/builtin_bridges.cpp"\n', 1),
+        ("halsim_ext/src/a.cpp", '#include "../../bridges/builtin_bridges.cpp"\n', 1),
+        ("halsim_ext/src/a.cpp", '#include <wpiemu/bridges/hal/a.h>\n', 1),
+        ("bridges/vendor/src/a.cpp", '#include <wpiemu/bridges/hal/a.h>\n', 1),
     ]
     failures = 0
     for rel, text, expected in cases:
@@ -336,12 +406,54 @@ def self_test() -> int:
          "target_link_libraries(wpiemu_plugin_game_2026 PUBLIC wpiemu::plugins_builtin)\n", 1),
         ("sdk/CMakeLists.txt",
          "target_link_libraries(wpiemu_sdk INTERFACE wpiemu_plugins_builtin)\n", 1),
+        ("bridges/CMakeLists.txt",
+         "target_link_libraries(wpiemu_bridges_builtin PUBLIC wpiemu_sdk PRIVATE wpiemu_bridges_hal wpiemu_bridges_vendor wpiemu_bridges_hal_halsim)\n", 0),
+        ("bridges/CMakeLists.txt",
+         "target_link_libraries(wpiemu_bridges_builtin PRIVATE wpiemu_core_physics wpiemu_plugins_builtin)\n", 2),
+        ("halsim_ext/CMakeLists.txt",
+         "target_link_libraries(halsim_wpiemu PRIVATE wpiemu_bridges_builtin wpiemu_halsim_core wpiemu_wpilib_hal)\n", 0),
+        ("halsim_ext/CMakeLists.txt",
+         "target_link_libraries(halsim_wpiemu PRIVATE wpiemu_bridges_hal)\n", 1),
+        ("core/CMakeLists.txt",
+         "target_link_libraries(wpiemu_core PRIVATE wpiemu_bridges_builtin)\n", 1),
+        ("app/CMakeLists.txt",
+         "target_link_libraries(wpiemu_app_common PRIVATE wpiemu_bridges_builtin wpiemu_wpilib_hal)\n", 2),
+        ("plugins/game_2026/CMakeLists.txt",
+         "target_link_libraries(wpiemu_plugin_game_2026 PRIVATE wpiemu_core_physics wpiemu_app_common wpiemu_halsim_core wpiemu_bridges_hal_halsim wpiemu_bridges_builtin)\n", 5),
+        ("bridges/vendor/CMakeLists.txt",
+         "target_link_libraries(wpiemu_bridges_vendor PRIVATE wpiemu_bridges_hal_halsim)\n", 1),
+        ("core/CMakeLists.txt",
+         "target_link_libraries(wpiemu_core PRIVATE wpiemu_unknown wpiemu::unknown)\n", 2),
+        ("core/CMakeLists.txt",
+         "add_library(wpiemu_unmapped STATIC source.cpp)\n", 1),
+        ("core/CMakeLists.txt",
+         "add_library(wpiemu_app_common STATIC source.cpp)\n", 1),
+        ("core/physics/CMakeLists.txt",
+         "add_library(wpiemu_core_physics STATIC source.cpp)\nadd_library(wpiemu::core_physics ALIAS wpiemu_core_physics)\n", 0),
+        ("plugins/game_2026/CMakeLists.txt",
+         "add_library(wpiemu_wpilib_hal STATIC source.cpp)\n", 1),
+        ("tests/CMakeLists.txt",
+         "add_executable(wpiemu_tests main.cpp)\ntarget_link_libraries(wpiemu_tests PRIVATE wpiemu_bridges_hal wpiemu_core)\n", 0),
+        ("tests/CMakeLists.txt",
+         "add_executable(wpiemu_unmapped_tests main.cpp)\ntarget_link_libraries(wpiemu_tests PRIVATE wpiemu_unknown)\n", 2),
     ]
     for rel, text, expected in cmake_cases:
         got = len(scan_cmake(rel, text))
         if got != expected:
             failures += 1
             print(f"SELF-TEST FAIL cmake {rel}: expected {expected} errors, got {got}\n{text}")
+
+    root = Path(__file__).resolve().parent.parent
+    for rel in collect_files(root):
+        if (owner_of_path(rel) or rel.startswith("tests/")) and (
+                posixpath.basename(rel) in CMAKE_NAMES or posixpath.splitext(rel)[1] in CMAKE_EXTS):
+            mapping_errors = target_mapping_errors(rel, (root / rel).read_text(encoding="utf-8"))
+            failures += len(mapping_errors)
+            for error in mapping_errors:
+                print(f"SELF-TEST FAIL target-map completeness: {error}")
+    if set(MODULE_OWNERS) != set(ALLOWED):
+        failures += 1
+        print("SELF-TEST FAIL module-map completeness: MODULE_OWNERS differs from ALLOWED")
 
     kw_cases = [
         ("sdk/include/wpiemu/sdk/a.h", "std::vector<int> signals;\n", 1),

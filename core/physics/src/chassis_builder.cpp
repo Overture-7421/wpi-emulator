@@ -67,6 +67,15 @@ Result<ChassisBody> buildChassisBody(IPhysicsWorld& world, const ChassisSpec& ch
     for (const WheelSpec& w : drivetrain.wheels)
         if (!(w.radiusM > 0.f) || !std::isfinite(w.radiusM))
             return makeError(ErrorCode::InvalidArgument, "wheel '" + w.name + "' needs a positive radius");
+    for (const PrimitiveSpec& prim : chassis.primitives) {
+        if (!prim.collides) continue;
+        if (prim.kind == PrimitiveKind::Box
+                ? !positive(prim.sizeM)
+                : !(prim.radiusM > 0.f && prim.heightM > 0.f && std::isfinite(prim.radiusM) &&
+                    std::isfinite(prim.heightM)))
+            return makeError(ErrorCode::InvalidArgument,
+                             "primitive '" + prim.name + "' has a non-positive size");
+    }
 
     ChassisBody out;
     out.baseMass = chassisMassProperties(chassis);
@@ -85,6 +94,13 @@ Result<ChassisBody> buildChassisBody(IPhysicsWorld& world, const ChassisSpec& ch
     bd.userTag = options.userTag;
     out.body = world.createBody(bd);
     if (!out.body.valid()) return makeError(ErrorCode::Internal, "physics world refused the chassis body");
+    struct BodyRollback {
+        IPhysicsWorld& world;
+        BodyId body;
+        ~BodyRollback() {
+            if (body.valid()) world.destroyBody(body);
+        }
+    } rollback{world, out.body};
 
     ShapeDesc hull = robotShape(chassis, options.userTag);
     hull.geometry = BoxShape{chassis.sizeM * 0.5f};
@@ -97,11 +113,8 @@ Result<ChassisBody> buildChassisBody(IPhysicsWorld& world, const ChassisSpec& ch
         ShapeDesc d = robotShape(chassis, options.userTag);
         d.local = prim.local;
         if (prim.kind == PrimitiveKind::Box) {
-            if (!positive(prim.sizeM)) return makeError(ErrorCode::InvalidArgument, "primitive '" + prim.name + "' has a non-positive size");
             d.geometry = BoxShape{prim.sizeM * 0.5f};
         } else {
-            if (!(prim.radiusM > 0.f && prim.heightM > 0.f))
-                return makeError(ErrorCode::InvalidArgument, "primitive '" + prim.name + "' has a non-positive size");
             d.geometry = CylinderShape{prim.radiusM, 0.5f * prim.heightM};
         }
         const ShapeId id = world.addShape(out.body, d);
@@ -124,6 +137,7 @@ Result<ChassisBody> buildChassisBody(IPhysicsWorld& world, const ChassisSpec& ch
     }
 
     world.setMassProperties(out.body, out.baseMass);
+    rollback.body = {};
     return out;
 }
 

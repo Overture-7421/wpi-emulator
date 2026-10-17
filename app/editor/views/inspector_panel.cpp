@@ -56,7 +56,7 @@ InspectorPanel::InspectorPanel(EditorController& controller, const IconFactory& 
 
     connect(&controller_.selection(), &SelectionState::changed, this, [this] { rebuild(); });
     connect(&controller_.selection(), &SelectionState::fieldFocusRequested, this, [this](const QString& key) { focusField(key); });
-    connect(&controller_.document(), &EditorDocument::changed, this, [this] { refresh(); });
+    connect(&controller_.document(), &EditorDocument::changed, this, [this](bool authoritative) { refresh(authoritative); });
     connect(&controller_, &EditorController::devicesUpdated, this, [this] { refresh(); });
     connect(&controller_, &EditorController::issuesUpdated, this, [this] { refresh(); });
     connect(&controller_.settings(), &EditorSettings::changed, this, [this] {
@@ -481,7 +481,7 @@ void InspectorPanel::rebuild() {
     }
 }
 
-void InspectorPanel::refresh() {
+void InspectorPanel::refresh(bool authoritative) {
     const SelectionRef sel = controller_.selection().current();
     if (!(sel == shown_)) return;   // the selection signal rebuilds
     const sdk::RobotConfig& c = controller_.document().config();
@@ -495,7 +495,7 @@ void InspectorPanel::refresh() {
     const auto issues = issuesFor(target);
     for (const PropertyGroup& g : groups)
         if (auto* f = form(qs(g.id))) {
-            f->setValues(g.values);
+            f->setValues(g.values, authoritative);
             f->setFieldIssues(issues);
         }
     std::map<std::string, std::vector<SlotInfo>> byOwner;

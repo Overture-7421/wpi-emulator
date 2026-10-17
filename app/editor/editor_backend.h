@@ -26,6 +26,7 @@
 #include "wpiemu/sdk/config/plugin_config.h"
 #include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/core/severity.h"
+#include "wpiemu/sdk/core/result.h"
 #include "wpiemu/sdk/devices/discovered_device.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
 #include "wpiemu/sdk/mechanisms/mechanism.h"
@@ -78,7 +79,8 @@ public:
     // have to persist.
     virtual void submitConfig(const sdk::RobotConfig& config) = 0;
     // Persists the last submitted model (app-data copy + <project>/.wpiemu/robot.json).
-    virtual void saveConfig() = 0;
+    // Success means the authoritative copy was saved. A failed project export is a warning only.
+    virtual sdk::Status saveConfig() = 0;
     // "Detect devices": run the robot in discovery mode; devices then arrive through the signals.
     virtual void startDetection() = 0;
     virtual void stopDetection() = 0;

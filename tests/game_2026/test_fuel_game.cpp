@@ -451,6 +451,61 @@ TEST_CASE("fire rate, empty meter and slow flywheels") {
     CHECK(s.game->fuelOnField() == 3);
 }
 
+TEST_CASE("missing named shooter aim references inhibit firing with either speed source") {
+    for (const char* reference : {"hoodMechanism", "turretMechanism"}) {
+        for (const bool fixedSpeed : {false, true}) {
+            INFO(reference, fixedSpeed);
+            Session s;
+            emptyField(s);
+            s.addScripted("flywheel").set("velocity", 400.0, "rad/s");
+            s.addScripted("indexer").set("velocity", 20.0, "rad/s");
+            auto p = shooterProps();
+            p[reference] = "missing_aim";
+            if (fixedSpeed) p["fixedExitSpeedMps"] = 10.0;
+            s.addMechanism("shooter", kShooterType, p);
+            s.start();
+            s.tick(50);
+            CHECK(s.game->shotsFired() == 0);
+            CHECK(s.game->fuelInRobot() == 8);
+            CHECK(s.game->fuelOnField() == 0);
+            CHECK_FALSE(s.mechanisms.front()->state().active);
+            CHECK(s.env.logger.count(sdk::LogLevel::Warn) == 1);
+
+            ScriptedMechanism& recovered = s.addScripted("missing_aim");
+            recovered.set("position", 0.0, "rad");
+            s.directory->add(&recovered);
+            s.tick();
+            CHECK(s.game->shotsFired() == 1);
+            CHECK(s.game->fuelInRobot() == 7);
+            CHECK(s.env.logger.count(sdk::LogLevel::Warn) == 1);
+        }
+    }
+}
+
+TEST_CASE("empty shooter aim references and bypassed fixed-speed flywheel remain valid") {
+    for (const bool fixedSpeed : {false, true}) {
+        Session s;
+        emptyField(s);
+        auto p = shooterProps();
+        p["feedMechanism"] = "";
+        p["hoodMechanism"] = "";
+        p["turretMechanism"] = "";
+        if (fixedSpeed) {
+            p["fixedExitSpeedMps"] = 10.0;
+            p["flywheelMechanism"] = "intentionally_bypassed_missing_flywheel";
+        } else {
+            s.addScripted("flywheel").set("velocity", 400.0, "rad/s");
+        }
+        s.addMechanism("shooter", kShooterType, p);
+        s.start();
+        s.tick();
+        CHECK(s.game->shotsFired() == 1);
+        CHECK(s.game->fuelInRobot() == 7);
+        CHECK(s.mechanisms.front()->state().active);
+        CHECK(s.env.logger.count(sdk::LogLevel::Warn) == 0);
+    }
+}
+
 TEST_CASE("shooter without a flywheel reference can use a fixed exit speed, otherwise it stays quiet") {
     Session s;
     emptyField(s);

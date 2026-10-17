@@ -1,5 +1,8 @@
 #include <doctest/doctest.h>
 
+#include <cmath>
+#include <limits>
+
 #include "runtime_fixtures.h"
 #include "wpiemu/core/config/json_codec.h"
 #include "wpiemu/core/config/robot_config_codec.h"
@@ -246,4 +249,128 @@ TEST_CASE("config codec: failing migrator aborts the load") {
     const auto r = RobotConfigCodec(std::move(chain)).fromValue(v0);
     REQUIRE_FALSE(r.ok());
     CHECK(r.error().message == "boom");
+}
+
+TEST_CASE("config codec: numeric integer boundaries are checked before conversion") {
+    const RobotConfigCodec codec;
+    const JsonValueCodec json;
+    auto rejected = [&](const std::string& fields, const std::string& path) {
+        const auto parsed = json.parse("{" + fields + "}");
+        REQUIRE(parsed.ok());
+        const auto result = codec.fromValue(parsed.value());
+        REQUIRE_FALSE(result.ok());
+        CHECK(result.error().code == ErrorCode::ParseError);
+        CHECK(result.error().message.find(path) != std::string::npos);
+    };
+    for (const char* version : {"1.9", "1e100", "2147483648", "-2147483649"}) {
+        rejected(std::string("\"schemaVersion\":") + version, "schemaVersion");
+        Value v = Value::makeObject();
+        v["schemaVersion"] = json.parse(version).value();
+        CHECK(RobotConfigCodec::storedVersion(v) == 0);
+    }
+    for (const char* step : {"1e100", "9223372036854775808", "-9223372036854777856", "1.5"})
+        rejected(std::string("\"sim\":{\"stepUs\":") + step + "}", "sim.stepUs");
+    const std::string mapping =
+        "\"robotMappings\":[{\"owner\":\"robot\",\"slot\":\"imu\",\"device\":{";
+    for (const char* id : {"2147483648", "-2147483649", "4294967297", "1e100", "1.5"}) {
+        rejected(mapping + "\"id\":" + id + "}}]", "robotMappings[0].device.id");
+        rejected(mapping + "\"channel\":" + id + "}}]", "robotMappings[0].device.channel");
+    }
+    rejected("\"plugins\":{\"fake\":{\"schemaVersion\":1.9}}", "plugins.fake.schemaVersion");
+    rejected("\"plugins\":{\"fake\":{\"schemaVersion\":1e100}}", "plugins.fake.schemaVersion");
+    rejected("\"sim\":{\"seed\":18446744073709551615}", "sim.seed");
+
+    Value v = codec.toValue(sampleConfig());
+    v["sim"]["stepUs"] = std::numeric_limits<std::int64_t>::max();
+    v["project"]["wpilibYear"] = std::numeric_limits<int>::max();
+    v["robotMappings"].array()[0]["device"]["id"] = std::numeric_limits<int>::min();
+    v["robotMappings"].array()[0]["device"]["channel"] = std::numeric_limits<int>::max();
+    auto result = codec.fromValue(v);
+    REQUIRE(result.ok());
+    CHECK(result.value().sim.stepUs == std::numeric_limits<std::int64_t>::max());
+    CHECK(result.value().project.wpilibYear == std::numeric_limits<int>::max());
+    CHECK(result.value().robotMappings[0].device.id == std::numeric_limits<int>::min());
+    CHECK(result.value().robotMappings[0].device.channel == std::numeric_limits<int>::max());
+    v["sim"]["stepUs"] = -std::ldexp(1.0, 63);
+    v["project"]["wpilibYear"] = static_cast<double>(std::numeric_limits<int>::min());
+    result = codec.fromValue(v);
+    REQUIRE(result.ok());
+    CHECK(result.value().sim.stepUs == std::numeric_limits<std::int64_t>::min());
+    CHECK(result.value().project.wpilibYear == std::numeric_limits<int>::min());
+    v["sim"]["stepUs"] = std::nextafter(std::ldexp(1.0, 63), 0.0);
+    result = codec.fromValue(v);
+    REQUIRE(result.ok());
+    CHECK(result.value().sim.stepUs == std::numeric_limits<std::int64_t>::max() - 1023);
+}
+
+TEST_CASE("config codec: seeds retain their signed int64 persisted representation") {
+    const RobotConfigCodec codec;
+    const JsonValueCodec json;
+    for (const std::uint64_t seed :
+         {std::uint64_t{0}, std::uint64_t{1}, std::uint64_t{1} << 63,
+          std::numeric_limits<std::uint64_t>::max()}) {
+        RobotConfig cfg = sampleConfig();
+        cfg.sim.seed = seed;
+        const Value stored = codec.toValue(cfg);
+        CHECK(stored.find("sim")->find("seed")->isInt());
+        const auto parsed = json.parse(json.dump(stored, false));
+        REQUIRE(parsed.ok());
+        const auto result = codec.fromValue(parsed.value());
+        REQUIRE(result.ok());
+        CHECK(result.value().sim.seed == seed);
+    }
+    const auto result = codec.fromValue(json.parse("{\"sim\":{\"seed\":-1.0}}").value());
+    REQUIRE(result.ok());
+    CHECK(result.value().sim.seed == std::numeric_limits<std::uint64_t>::max());
+}
+
+TEST_CASE("config codec: nonfinite and out-of-range float components are parse errors") {
+    const RobotConfigCodec codec;
+    for (const double number : {1e100, -1e100, std::numeric_limits<double>::infinity(),
+                                -std::numeric_limits<double>::infinity(),
+                                std::numeric_limits<double>::quiet_NaN()}) {
+        for (const char* field : {"massKg", "sizeM", "rotation"}) {
+            Value v = codec.toValue(sampleConfig());
+            std::string path;
+            if (std::string(field) == "massKg") {
+                v["chassis"]["massKg"] = number;
+                path = "chassis.massKg";
+            } else if (std::string(field) == "sizeM") {
+                v["chassis"]["sizeM"]["x"] = number;
+                path = "chassis.sizeM.x";
+            } else {
+                v["mechanisms"].array()[0]["mount"]["rotation"]["w"] = number;
+                path = "mechanisms[0].mount.rotation.w";
+            }
+            const auto result = codec.fromValue(v);
+            REQUIRE_FALSE(result.ok());
+            CHECK(result.error().code == ErrorCode::ParseError);
+            CHECK(result.error().message.find(path) != std::string::npos);
+        }
+    }
+    for (const double number : {std::numeric_limits<double>::infinity(),
+                                std::numeric_limits<double>::quiet_NaN()}) {
+        Value v = codec.toValue(sampleConfig());
+        v["schemaVersion"] = number;
+        CHECK(RobotConfigCodec::storedVersion(v) == 0);
+        CHECK(codec.fromValue(v).error().code == ErrorCode::ParseError);
+        v["schemaVersion"] = 1;
+        v["sim"]["stepUs"] = number;
+        CHECK(codec.fromValue(v).error().code == ErrorCode::ParseError);
+        v["sim"]["stepUs"] = 5000;
+        v["battery"]["nominalVoltageV"] = number;
+        const auto result = codec.fromValue(v);
+        REQUIRE_FALSE(result.ok());
+        CHECK(result.error().message.find("battery.nominalVoltageV") != std::string::npos);
+    }
+    Value valid = codec.toValue(sampleConfig());
+    valid["chassis"]["massKg"] = static_cast<double>(std::numeric_limits<float>::max());
+    valid["chassis"]["sizeM"]["x"] = -static_cast<double>(std::numeric_limits<float>::max());
+    valid["mechanisms"].array()[0]["mount"]["rotation"]["w"] =
+        static_cast<double>(std::numeric_limits<float>::max());
+    const auto result = codec.fromValue(valid);
+    REQUIRE(result.ok());
+    CHECK(result.value().chassis.massKg == std::numeric_limits<float>::max());
+    CHECK(result.value().chassis.sizeM.x == -std::numeric_limits<float>::max());
+    CHECK(result.value().mechanisms[0].mount.rotation.w == 1.f);
 }

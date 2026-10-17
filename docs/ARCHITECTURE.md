@@ -1,8 +1,10 @@
 # Architecture
 
-Status: SDK **1.2** = the 1.0 freeze ([ADR 0005](decisions/0005-sdk-freeze.md)) plus the additive
+Status: SDK **1.4**, IPC protocol **v3** = the 1.0 freeze ([ADR 0005](decisions/0005-sdk-freeze.md)) plus the additive
 amendments of [ADR 0006](decisions/0006-sdk-1-1-amendments.md) (1.1, IPC protocol v2) and the two defaulted 1.2 additions
-documented in `sdk/version.h` (`IGameState::gameSpecificMessage`, `PrimitiveSpec::link`). All modules below are implemented;
+documented in `sdk/version.h` (`IGameState::gameSpecificMessage`, `PrimitiveSpec::link`), the Armed lifecycle
+of [ADR 0011](decisions/0011-single-robot-instance.md) (1.3), and its explicit capability/reset-history
+amendment (1.4, protocol v3). All modules below are implemented;
 this document describes the code as built. Background and rationale: ADRs
 [0001](decisions/0001-halsim-extension-injection.md) (HALSim injection),
 [0002](decisions/0002-phoenix6-interception.md) (Phoenix 6 via SimDevices),
@@ -51,8 +53,8 @@ Full index: [decisions/README.md](decisions/README.md). How to build and contrib
    +--------------------------------+
 
    bridges/builtin_bridges.cpp (target wpiemu_bridges_builtin) is the same seam for device bridges:
-   it links bridges/hal + bridges/vendor, and only halsim_ext links it (by convention: tools/check_boundaries.py
-   does not model this target).
+   it links bridges/hal + bridges/vendor, and only halsim_ext links it (enforced as a distinct
+   aggregation owner by tools/check_boundaries.py).
 ```
 
 | Module | May depend on | Notes |
@@ -68,8 +70,11 @@ Full index: [decisions/README.md](decisions/README.md). How to build and contrib
 | `app` | sdk, core, ipc, aggregator target, Qt | never includes/links a plugin directly. Sub-folders: `common` (models, `AppServices`, `RealRuntimeHost`), `wizard`, `shell`, `editor`, `runview`, `host` (Qt-free `RobotSession`), `resources`, `tests` |
 
 Enforced mechanically by `tools/check_boundaries.py` (CTest `boundaries.check`): include and
-`target_link_libraries` rules, plus a guard that headers do not use identifiers Qt turns into
+`target_link_libraries` rules, explicit implementation-target ownership (unknown first-party targets
+are errors), declaration/map completeness, plus a guard that headers do not use identifiers Qt turns into
 macros (`signals`, `slots`, `emit`, `foreach`).
+Imported `wpiemu_wpilib_hal` / `wpiemu_wpilib_wpiutil` targets are third-party robot-process
+backends used by `halsim_ext`, not SDK dependencies or alternative bridge aggregation seams.
 
 ## 2. SDK file map (`sdk/include/wpiemu/sdk/`)
 
@@ -164,7 +169,7 @@ names/units are in `devices/signals.h` (bridges normalise vendor names; `SimDevi
 Phoenix 6 devices are read/written through HAL SimDevice values (`SimDeviceBridge`, ADR 0002); the
 emulator drives the **rotor** (Phoenix firmware sim applies gearing/offsets).
 
-### 4.1 Lock-step robustness (protocol v2, SDK 1.1)
+### 4.1 Lock-step robustness (protocol v3, SDK 1.4; introduced in v2 / SDK 1.1)
 Reference code: `ipc/messages.h` (types, `classifyFrame`, `negotiateWatchdogTimeoutMs`) and
 `ipc/lockstep.h` (`LockstepWindow` emulator side, `LockstepFollower` extension side).
 
@@ -181,15 +186,27 @@ Reference code: `ipc/messages.h` (types, `classifyFrame`, `negotiateWatchdogTime
   `Stopped` and `ProtocolError` end lock-step until a Reset/reconnect (`LockstepWindow::stalled()`).
 * **Commands.** `SimControl::commandId != 0` is answered by exactly one `SimControlAck{commandId, result, runEpoch, tick}`.
   `Reset` and `Stop` MUST carry a command id. Reset is the first message of the new epoch (its `runEpoch` is already
-  bumped; the ack reports the new epoch). A repeated command id is re-acked, never re-applied. `Stop` is honoured regardless
-  of epoch; a stale non-Reset command is rejected with `ControlResult::StaleEpoch`.
+  bumped; the ack reports the new epoch). Recent command ids are re-acked, never re-applied; older ids
+  outside the bounded acknowledgement history are rejected rather than replayed. Foreign-session
+  controls are rejected before consulting that history. `Stop` is honoured regardless of epoch
+  within its own session; a stale non-Reset command is rejected with `ControlResult::StaleEpoch`.
 * **Watchdog.** `Hello::proposedWatchdogMs` and `HelloAck::watchdogTimeoutMs` negotiate one timeout (the larger of the two
   preferences, clamped to 100 ms..60 s, default 2 s) used by both sides. On timeout **or disconnect the extension MUST itself
   unblock the robot**: `HALSIM_ResumeTiming` (`WatchdogPolicy::ResumeRealtime`, default) or terminate (`WatchdogPolicy::Terminate`).
   It never waits for the emulator to do so. The emulator reports `RobotStalled`, stops sending frames and never blocks the
   sim thread past the watchdog. The wall-clock itself is the transport/loop's business (no clock in the SDK state machines).
-* Compatibility: all new fields are appended with defaults; `kProtocolVersion` is 2, `kMinCompatibleProtocolVersion` stays 1,
+* Compatibility: all new fields are appended with defaults; `kProtocolVersion` is 3, `kMinCompatibleProtocolVersion` stays 1,
   new message `SimControlAck` (type 11) is appended to the `proto::Message` variant.
+* **Armed capability.** `Hello::supportsArmed` defaults to false, independently of the protocol number.
+  Only peers explicitly advertising it receive `BeginLockstep` / `EndLockstep`. An Armed
+  (`discoveryOnly`) handshake requires it; legacy peers can still use normal lock-step.
+  Armed keeps the one robot process alive with announcements/loopback and free-running HAL time;
+  Begin starts a new epoch at t = 0, End returns to Armed, and Stop ends the connection.
+* **Input history.** The optional default-no-op `IDeviceBridge::resetInputHistory()` clears bridge
+  transform integration/unwrap history on connection/reconnect, Reset, Begin, and adoption of a
+  newer sensor epoch. It runs on the clock thread between steps, preserving firmware/user offsets
+  and discovery. Core separately clears device signal history on session reset while retaining
+  descriptors/mappings, so prior actuator values cannot leak into the new epoch.
 
 ### 4.2 Mechanism <-> physics coupling (`mechanisms/physics_coupling.h`)
 `SimContext::coupling()` returns an `IMechanismPhysicsCoupling` (never null; a no-op `NullMechanismPhysicsCoupling` when the

@@ -73,6 +73,10 @@ void ShellController::syncRuntime() {    ProjectSession& session = services_.ses
 
 OpenOutcome ShellController::openProject(const QString& path) {
     ProjectSession& session = services_.session();
+    if (auto flushed = session.flushPendingChanges(); !flushed) {
+        emit errorOccurred(QString::fromStdString(flushed.error().message));
+        return OpenOutcome::Blocked;
+    }
     if (auto opened = session.open(path); !opened) {
         emit errorOccurred(QString::fromStdString(opened.error().message));
         return OpenOutcome::Invalid;
@@ -87,6 +91,7 @@ OpenOutcome ShellController::openProject(const QString& path) {
 }
 
 bool ShellController::restoreLastProject() {
+    if (auto flushed = services_.session().flushPendingChanges(); !flushed) return false;
     if (!services_.settings().data().reopenLastProject) return false;
     services_.recentProjects().pruneMissing();
     const QString last = services_.recentProjects().lastProject();
@@ -98,7 +103,7 @@ bool ShellController::restoreLastProject() {
     }
     if (session.needsSetup()) {
         // The user did not finish setting this project up last time: let them continue from the welcome page.
-        session.close();
+        (void)session.close();
         return false;
     }
     mode_ = AppMode::Editor;
@@ -108,8 +113,11 @@ bool ShellController::restoreLastProject() {
 }
 
 void ShellController::closeProject() {
+    if (auto closed = services_.session().close(); !closed) {
+        emit errorOccurred(QString::fromStdString(closed.error().message));
+        return;
+    }
     services_.runtime().stop();
-    services_.session().close();
     mode_ = AppMode::Editor;
     emit modeChanged(mode_);
 }

@@ -37,6 +37,7 @@ private:
     sdk::RobotConfig after_;
     QString mergeKey_;
     qint64 stampMs_ = 0;
+    bool firstRedo_ = true;
 };
 
 class EditorDocument : public QObject {
@@ -78,13 +79,13 @@ public:
     bool isModified() const { return !undo_.isClean(); }
 
 Q_SIGNALS:
-    void changed();    // config content changed (edit, undo, redo, load)
+    void changed(bool authoritative);   // undo/redo/load override even focused, uncommitted controls
     void modified();   // user-originated change (edit, undo, redo): autosave + submit to the backend
     void catalogChanged();
 
 private:
     friend class ConfigEditCommand;
-    void applySnapshot(const sdk::RobotConfig& config);
+    void applySnapshot(const sdk::RobotConfig& config, bool authoritative = true);
 
     sdk::RobotConfig config_;
     EditorCatalog catalog_;

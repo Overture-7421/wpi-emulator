@@ -96,8 +96,10 @@ HostStatus RealRuntimeHost::map(const host::SessionStatus& s) {
 }
 
 void RealRuntimeHost::setStatus(const HostStatus& status) {
-    if (status == status_) return;
-    status_ = status;
+    HostStatus next = status;
+    next.runGeneration = runGeneration_;
+    if (next == status_) return;
+    status_ = next;
     emit statusChanged();
 }
 
@@ -141,6 +143,7 @@ void RealRuntimeHost::releaseSession() {
 
 void RealRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<const sdk::RobotConfig> config, const sdk::IGameModule* game) {
     const bool sameProject = projectPath == projectPath_;
+    if (!sameProject) beginIntent_.projectReplaced();
     // A different project invalidates a run; edits of the same project apply to the next run.
     if (!sameProject && session_) releaseSession();
     projectPath_ = projectPath;
@@ -169,6 +172,7 @@ void RealRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<con
 void RealRuntimeHost::launch() {
     if (session_ && status_.active()) return;   // one robot instance serves detection and the run
     releaseSession();
+    ++runGeneration_;
     if (!config_ || projectPath_.isEmpty()) {
         failToStart(tr("No robot configuration loaded."));
         return;
@@ -207,7 +211,7 @@ void RealRuntimeHost::launch() {
 }
 
 void RealRuntimeHost::startSimulation() {
-    beginWhenReady_ = true;
+    beginIntent_.request();
     // The armed robot holds the model it was launched with: relaunch when the project was edited since.
     if (session_ && status_.active() && config_ != launchedConfig_) releaseSession();
     if (!session_ || !status_.active()) launch();
@@ -215,12 +219,7 @@ void RealRuntimeHost::startSimulation() {
 }
 
 void RealRuntimeHost::sendBeginIfReady() {
-    if (!beginWhenReady_ || !session_ || !status_.programStarted) return;
-    if (status_.simulating) {
-        beginWhenReady_ = false;
-        return;
-    }
-    beginWhenReady_ = false;
+    if (!beginIntent_.takeWhenReady(session_ != nullptr && status_.programStarted) || status_.simulating) return;
     sdk::proto::SimControl c;
     c.command = sdk::proto::SimCommand::BeginLockstep;
     session_->controller().control(c);
@@ -229,7 +228,7 @@ void RealRuntimeHost::sendBeginIfReady() {
 }
 
 void RealRuntimeHost::stopSimulation() {
-    beginWhenReady_ = false;
+    beginIntent_.cancel();
     if (!session_ || !status_.simulating) return;
     sdk::proto::SimControl c;
     c.command = sdk::proto::SimCommand::EndLockstep;
@@ -237,17 +236,17 @@ void RealRuntimeHost::stopSimulation() {
 }
 
 void RealRuntimeHost::stop() {
-    beginWhenReady_ = false;
+    beginIntent_.cancel();
     if (!session_) return;
     if (status_.active() || !session_->finished()) session_->requestStop();
     pump();
 }
 
 void RealRuntimeHost::restart() {
-    const bool resume = status_.simulating || beginWhenReady_;
+    const bool resume = status_.simulating || beginIntent_.pending();
     releaseSession();
     launch();
-    beginWhenReady_ = resume;
+    if (resume) beginIntent_.request();
 }
 
 void RealRuntimeHost::resetSimulation() {

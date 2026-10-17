@@ -9,6 +9,8 @@
 //   extension: LockstepFollower - validates SensorFrames/SimControl, builds acks stamped with identity
 
 #include <cstdint>
+#include <deque>
+#include <functional>
 #include <string>
 #include <utility>
 
@@ -109,7 +111,8 @@ public:
         epoch_ = runEpoch;
         haveTick_ = false;
         lastTick_ = 0;
-        lastCommandId_ = kUnspecified;
+        commandHighWater_ = kUnspecified;
+        commandHistory_.clear();
     }
 
     std::uint64_t sessionId() const { return session_; }
@@ -148,20 +151,47 @@ public:
     }
 
     ControlDecision onControl(const SimControl& c) {
+        return onControl(c, [] { return std::pair{ControlResult::Applied, std::string{}}; });
+    }
+
+    // State-dependent checks run only AFTER identity validation and duplicate lookup. Their
+    // rejections participate in the same replay history as applied commands.
+    ControlDecision onControl(
+        const SimControl& c,
+        const std::function<std::pair<ControlResult, std::string>()>& precondition) {
         ControlDecision d;
         const FrameDisposition disp = classifyFrame(c.sessionId, c.runEpoch, session_, epoch_);
         if (disp == FrameDisposition::DropForeignSession) return d;
         d.sendAck = c.commandId != kUnspecified;
-        if (d.sendAck && c.commandId == lastCommandId_) {  // retransmission: re-ack, never re-apply
-            d.ack = lastAck_;
-            return d;
+        if (d.sendAck) {
+            for (const SimControlAck& ack : commandHistory_) {
+                if (c.commandId == ack.commandId) {
+                    d.ack = ack;
+                    return d;
+                }
+            }
         }
 
         ControlResult result = ControlResult::Applied;
         std::string detail;
-        if (c.command == SimCommand::Stop) {
+        if (d.sendAck && c.commandId <= commandHighWater_) {
+            result = ControlResult::Rejected;
+            detail = "commandId is outside the retained retry window; command was not reapplied";
+        } else if (static_cast<std::uint8_t>(c.command) >
+                   static_cast<std::uint8_t>(SimCommand::EndLockstep)) {
+            result = ControlResult::Unsupported;
+            detail = "unknown simulation command";
+        } else {
+            auto check = precondition();
+            result = check.first;
+            detail = std::move(check.second);
+        }
+        if (result != ControlResult::Applied) {
+            // Do not change the epoch or tick bookkeeping for rejected commands.
+        } else if (c.command == SimCommand::Stop) {
             d.apply = true;  // honoured whatever the epoch
-        } else if (c.command == SimCommand::Reset || c.command == SimCommand::BeginLockstep || c.command == SimCommand::EndLockstep) {
+        } else if (c.command == SimCommand::Reset || c.command == SimCommand::BeginLockstep ||
+                   c.command == SimCommand::EndLockstep) {
             if (disp == FrameDisposition::NewerEpoch || c.runEpoch == kUnspecified || epoch_ == kUnspecified) {
                 if (c.runEpoch != kUnspecified) epoch_ = c.runEpoch;
                 haveTick_ = false;
@@ -188,9 +218,10 @@ public:
         d.ack.runEpoch = epoch_;
         d.ack.tick = lastTick_;
         d.ack.detail = std::move(detail);
-        if (d.sendAck) {
-            lastCommandId_ = c.commandId;
-            lastAck_ = d.ack;
+        if (d.sendAck && c.commandId > commandHighWater_) {
+            commandHighWater_ = c.commandId;
+            commandHistory_.push_back(d.ack);
+            if (commandHistory_.size() > 64) commandHistory_.pop_front();
         }
         return d;
     }
@@ -199,8 +230,8 @@ private:
     std::uint64_t session_ = kUnspecified;
     std::uint64_t epoch_ = kUnspecified;
     std::uint64_t lastTick_ = 0;
-    std::uint64_t lastCommandId_ = kUnspecified;
-    SimControlAck lastAck_;
+    std::uint64_t commandHighWater_ = kUnspecified;
+    std::deque<SimControlAck> commandHistory_;
     bool haveTick_ = false;
 };
 

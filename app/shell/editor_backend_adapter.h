@@ -1,7 +1,5 @@
 #pragma once
 
-#include <QHash>
-
 #include <optional>
 #include <vector>
 
@@ -25,7 +23,7 @@ public:
     bool detecting() const override;
 
     void submitConfig(const sdk::RobotConfig& config) override;
-    void saveConfig() override;
+    sdk::Status saveConfig() override;
     void startDetection() override;
     void stopDetection() override;
 
@@ -40,9 +38,10 @@ private:
     std::optional<sdk::RobotConfig> pending_;   // last config submitted by the editor (unsaved edits)
     bool committing_ = false;
     bool lastDetecting_ = false;
+    std::uint64_t lastRunGeneration_ = 0;
     QString lastProject_;
+    QString pendingProject_;
     std::vector<sdk::DiscoveredDevice> devices_;
-    QHash<quint32, int> deviceIndex_;
     std::vector<sdk::Issue> lastIssues_;
 };
 

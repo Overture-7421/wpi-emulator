@@ -186,6 +186,7 @@ public:
         return live_.count(id) != 0;
     }
     void stop() noexcept override { ++stops; }
+    void resetInputHistory() override { ++historyResets; }
 
     // ---- scripting (any thread) ----
     static sdk::DeviceDescriptor makeDescriptor(std::string type, int id) {
@@ -235,6 +236,7 @@ public:
     std::atomic<bool> started{false};
     std::atomic<int> stops{0};
     std::atomic<int> polls{0};
+    std::atomic<int> historyResets{0};
 
 private:
     struct Pending {
@@ -476,11 +478,17 @@ struct Rig {
     }
 
     sdk::Status start() {
-        RuntimeDeps deps{config, robot, HalPorts{clock, ds, power, process}, client, codec, std::move(bridges),
-                         [this](std::string_view line) {
-                             std::lock_guard lock(logMutex);
-                             logLines.emplace_back(line);
-                         }};
+        RuntimeDeps deps{
+            config,
+            robot,
+            HalPorts{clock, ds, power, process},
+            client,
+            codec,
+            std::move(bridges),
+            console ? console : ForwardingLogger::ConsoleSink([this](std::string_view line) {
+                std::lock_guard lock(logMutex);
+                logLines.emplace_back(line);
+            })};
         runtime = std::make_unique<ExtensionRuntime>(std::move(deps));
         return runtime->start();
     }
@@ -505,6 +513,7 @@ struct Rig {
     std::unique_ptr<ExtensionRuntime> runtime;
     std::mutex logMutex;
     std::vector<std::string> logLines;
+    ForwardingLogger::ConsoleSink console;
 };
 
 template <class Pred>

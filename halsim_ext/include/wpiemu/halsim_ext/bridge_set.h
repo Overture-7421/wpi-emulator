@@ -49,6 +49,7 @@ public:
     // Starts every bridge; a bridge whose start() fails is logged and dropped, never fatal.
     void start(const std::atomic<bool>& optionalHooks);
     void poll();
+    void resetInputHistory();
     // Routes each sample to the bridge that announced the device; unknown/retired devices are skipped.
     void applyInputs(std::span<const sdk::SignalSample> samples);
     void collectOutputs(std::vector<sdk::SignalSample>& out);

@@ -41,9 +41,6 @@
       "displayName": "macOS (Ninja Multi-Config)",
       "inherits": "base",
       "generator": "Ninja Multi-Config",
-      "cacheVariables": {
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "13.0"
-      },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
     }
   ],

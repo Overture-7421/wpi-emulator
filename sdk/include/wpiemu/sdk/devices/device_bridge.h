@@ -74,6 +74,11 @@ public:
 
     // Idempotent; restores any changed robot-visible state and unregisters callbacks.
     virtual void stop() noexcept = 0;
+
+    // SDK 1.4. New connection or simulation epoch: discard input integration/unwrap history.
+    // Clock thread, between steps, before the new epoch's inputs. Preserve discovered devices and
+    // robot-requested firmware offsets/configuration. Bridges without history need do nothing.
+    virtual void resetInputHistory() {}
 };
 
 struct BridgeInfo {

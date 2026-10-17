@@ -47,6 +47,7 @@ struct ExitInfo {
 //  * The WHOLE TREE is tied to the object: kill() ends every descendant (Windows job object / POSIX process group), and so
 //    does the destructor, so a crashed or closed emulator does not leave a robot behind (best effort on a hard crash).
 //  * stdout and stderr are captured line by line into the sink given to start(), which must outlive the process.
+//  * Native startup, PID publication, and stop/kill requests are serialized. kill() before startup cancels start().
 class IRobotProcess {
     WPIEMU_INTERFACE(IRobotProcess)
 public:

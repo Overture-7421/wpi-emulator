@@ -32,7 +32,8 @@ public:
     sdk::Result<sdk::RobotConfig> fromValue(const sdk::Value& value, DecodeInfo* info) const;
     sdk::Value toValue(const sdk::RobotConfig& config) const override;
 
-    // schemaVersion of a stored value; 1 when absent, 0 when `value` is not an object.
+    // schemaVersion of a stored value; 1 when absent, 0 when the object/version is invalid.
+    // fromValue distinguishes malformed versions (ParseError) from a legitimate stored version 0.
     static int storedVersion(const sdk::Value& value);
 
 private:

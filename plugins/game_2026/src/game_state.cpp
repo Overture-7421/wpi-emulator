@@ -244,10 +244,11 @@ void Game2026State::stepIntakes(sdk::SimContext& ctx) {
 void Game2026State::stepRecycling(sdk::SimContext& ctx, double dt) {
     if (pending_.empty()) return;
     std::size_t keep = 0;
+    bool spawnFailed = false;
     for (std::size_t i = 0; i < pending_.size(); ++i) {
         PendingRelease r = pending_[i];
         r.timeLeftS -= dt;
-        if (r.timeLeftS > 0.0) {
+        if (r.timeLeftS > 0.0 || spawnFailed) {
             pending_[keep++] = r;
             continue;
         }
@@ -255,7 +256,11 @@ void Game2026State::stepRecycling(sdk::SimContext& ctx, double dt) {
         const HubExit& exit = hub.exits[ctx.rng().nextU64() % hub.exits.size()];
         FuelPool::SpawnOptions options;
         options.velocity = exit.direction * exit.speedMps;
-        pool_.spawn(exit.position, options);
+        if (pool_.spawn(exit.position, options) == 0) {
+            r.timeLeftS = 0.0;
+            pending_[keep++] = r;
+            spawnFailed = true;  // At most one refused spawn per tick, even with a large backlog.
+        }
     }
     pending_.resize(keep);
 }

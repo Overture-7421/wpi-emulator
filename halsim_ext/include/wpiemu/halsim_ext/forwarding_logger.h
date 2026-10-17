@@ -13,8 +13,9 @@ namespace wpiemu::halsim {
 
 // ILogger for everything inside the robot process: writes a line to the console sink (stderr by
 // default; the launcher captures it) and, while a remote sink is attached, forwards a proto::Log to
-// the emulator. Thread-safe; never blocks on I/O beyond the console write (the remote sink only
-// enqueues), so it is usable from HAL callbacks too.
+// the emulator. Thread-safe, but the console write and logger mutex can block indefinitely.
+// Do not call from HAL callbacks or independent recovery/termination paths. Remote sinks only
+// enqueue.
 class ForwardingLogger final : public sdk::ILogger {
 public:
     using ConsoleSink = std::function<void(std::string_view line)>;

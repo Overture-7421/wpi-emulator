@@ -5,6 +5,8 @@
 #include <QString>
 
 #include <memory>
+#include <optional>
+#include <cstdint>
 #include <vector>
 
 #include "wpiemu/sdk/config/robot_config.h"
@@ -21,6 +23,24 @@ enum class HostProcessState { Idle, Starting, Running, Stopping, Exited, Crashed
 enum class HostLinkState { Disconnected, Connecting, Connected, HandshakeTimeout, ProtocolMismatch, Stalled };
 enum class HostLogStream { Stdout, Stderr, Emulator };
 
+// Run intent belongs to the project, not the robot-code instance: config relaunches retain it.
+class SimulationStartIntent {
+public:
+    void projectReplaced() { ++projectGeneration_; cancel(); }
+    void request() { requestedGeneration_ = projectGeneration_; }
+    void cancel() { requestedGeneration_.reset(); }
+    bool pending() const { return requestedGeneration_ == projectGeneration_; }
+    bool takeWhenReady(bool ready) {
+        if (!ready || !pending()) return false;
+        cancel();
+        return true;
+    }
+
+private:
+    std::uint64_t projectGeneration_ = 0;
+    std::optional<std::uint64_t> requestedGeneration_;
+};
+
 struct HostStatus {
     HostProcessState process = HostProcessState::Idle;
     HostLinkState link = HostLinkState::Disconnected;
@@ -30,6 +50,8 @@ struct HostStatus {
     bool programStarted = false;
     // The lock-step simulation is running (as opposed to the robot merely being alive and detecting devices).
     bool simulating = false;
+    // Changes for every robot-code launch, not for a physics reset or same-project config edit.
+    std::uint64_t runGeneration = 0;
 
     bool active() const {
         return process == HostProcessState::Starting || process == HostProcessState::Running ||

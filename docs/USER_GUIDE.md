@@ -124,6 +124,17 @@ editor, not the shell, has focus), `Esc` clears the selection. Everything is und
 a whole gizmo drag is one undo step. The toolbar can switch the display units between **in / lb** and **cm / kg**
 (the saved model is always SI).
 
+### Saving and switching projects
+Changes autosave after a short delay; **File > Save**, the editor's **Save** and `Ctrl+S` save
+immediately. Closing the window/project, opening another project or rerunning setup first saves
+pending edits to the **old** project. If the authoritative app-data save fails, the transition is
+cancelled and your document stays open and unsaved. Check disk space and access to the app-data
+location, then retry **Save** before continuing. A failed shareable project export is only a
+warning when the app-data copy succeeded.
+
+Undo/redo and reloading update focused inspector fields as well as the model, including every
+component of a pose. Ordinary typing keeps its cursor position.
+
 ### Chassis
 The project tree has a **Chassis** node (hull, centre of mass, drivetrain, wheels and collision shapes). Select it to
 get the **Robot overview** in the inspector:
@@ -170,6 +181,10 @@ know which mechanism slot each one drives:
    (*"Cannot map the device"*). Slot rows can also pick a device from a list, and **Unmap** clears a slot.
 4. Slot rows show their state: required and unmapped, optional, mapped, *not detected* (mapped to a device the last
    discovery did not see), *gone*, or a type mismatch.
+
+Restarting robot code invalidates the old live inventory. Devices absent from subsequent complete
+discovery snapshots remain listed as `gone`; their saved slot mappings are preserved. Numeric
+runtime device IDs being reused by a different device do not transfer physical identity or mappings.
 
 Devices that are detected but not mapped run in **loopback**: outputs are echoed back as inputs, so the code does not
 break, but nothing physical happens. Required slots that stay unmapped read neutral values.

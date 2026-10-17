@@ -52,7 +52,7 @@ Environment (all optional except the endpoint; the emulator's launcher sets them
 ## Session protocol (ARCHITECTURE section 4)
 
 1. **Handshake (synchronous, in `HALSIM_InitExtension`).** Connect, send `Hello` (pid, Java/C++, WPILib version, HAL port
-   counts, proposed watchdog), wait for `HelloAck` (`accepted`, `sessionId`, `runEpoch`, clock mode, `stepUs`,
+   counts, proposed watchdog, `supportsArmed=true`), wait for `HelloAck` (`accepted`, `sessionId`, `runEpoch`, clock mode, `stepUs`,
    watchdog timeout/policy). A refused/missing ack leaves the robot untouched.
 2. **Pause + bridges.** In lock-step (`ClockMode::Lockstep`, not `discoveryOnly`) HAL time is paused **before** any robot code
    exists, then every bridge from `registerBuiltinBridges` is started (their `initialNotify` callbacks run here).
@@ -73,7 +73,25 @@ Environment (all optional except the endpoint; the emulator's launcher sets them
 5. **Commands.** `Pause`/`Resume` are tracked (the watchdog is disarmed while paused), `Step` is only accepted while paused,
    `SetTimeScale` is accepted in lock-step (pacing is the emulator's), `Reset` adopts the new epoch and forces a full
    frame (and re-engages lock-step after a stall), `Stop` is acked, HAL time is resumed, `Goodbye` is sent and the
-   runtime ends (no reconnect). A repeated `commandId` is re-acked, never re-applied.
+   runtime ends (no reconnect). `BeginLockstep` starts an Armed (`discoveryOnly`) session in a new epoch;
+   `EndLockstep` returns it to free-running Armed mode without relaunching the robot.
+   Identity validation and command retry lookup precede state-dependent checks. Nonzero command IDs
+   increase across epochs within a connection; the last **64 distinct results**, including rejections,
+   are replayed exactly, without reapplying the command. Older/evicted IDs are rejected, never silently
+   reapplied. Retry does not refresh retention order. New connections start fresh history; `Stop` ends
+   the connection, so its retry guarantee ends when the transport closes.
+
+SDK **1.4** / wire **v3** appends the optional `Hello::supportsArmed` boolean. Absent means **false**
+(including older v2 peers); protocol version and free-form extension version do not imply support.
+Production advertises true. The runner refuses a discovery-only handshake without explicit support
+and never sends Begin/End to such peers. Legacy normal lock-step remains accepted (minimum wire v1);
+the additive trailing field is ignored by older decoders.
+
+`BridgeSet` calls the defaulted SDK `IDeviceBridge::resetInputHistory()` on the clock thread before
+the first feedback of a new connection/reconnect, on applied Reset/Begin, and when a SensorFrame
+adopts a newer epoch. Retries do not reset history. Bridges discard integration/angle-unwrapping
+history only: discovered device IDs and robot-requested firmware offsets/configuration survive.
+This generic seam does not depend on concrete vendor interfaces.
 
 **The emulator MUST forward `Pause` and `Resume` as `SimControl` messages.** Between frames there is no heartbeat: a
 silent emulator and a paused emulator are indistinguishable unless the extension was told about the pause.
@@ -87,7 +105,12 @@ silent emulator and a paused emulator are indistinguishable unless the extension
 | transport lost / emulator `Goodbye` | same unblock; then reconnects (re-handshake, re-announces all live devices with the same `DeviceId`s, new `sessionId`/epoch, lock-step re-engaged) unless the policy is `Terminate`. |
 | `stop()` (HAL shutdown hook) | resume timing, `Goodbye`, join (bounded wait; a thread stuck in a step is detached). |
 
-`Terminate` ends the process with `_Exit(0)` (static destructors are skipped on purpose: a JVM is running).
+Recovery acts **before diagnostics**, without acquiring the synchronous logger/console mutex or any
+bridge lock. Watchdog diagnostics are best-effort remote-only queue entries; they intentionally bypass
+stderr, whose pipe may be blocked. Disconnect/Goodbye also recover without synchronous logging.
+`Terminate` ends the process with `_Exit(0)` (or Windows `TerminateProcess`), without flushing stdio
+or running static destructors: either can block, and a JVM may be running. Bounded `stop()` also
+avoids logging before detaching an unresponsive clock thread; its shared state remains alive.
 
 ### Threading
 

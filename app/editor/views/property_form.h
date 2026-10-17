@@ -24,7 +24,7 @@ public:
 
     const std::string& groupId() const { return groupId_; }
     // Pushes new values into the existing editors (no rebuild, keeps focus and scroll).
-    void setValues(const sdk::Value& values);
+    void setValues(const sdk::Value& values, bool authoritative = true);
     // key -> (severity, message); keys without an entry are cleared.
     void setFieldIssues(const QMap<QString, QPair<int, QString>>& issues);
     // Focuses and briefly highlights a field; false when the key is not in this form.
@@ -50,6 +50,7 @@ private:
 
     std::string groupId_;
     sdk::Value values_;
+    QString editingKey_;
     QFormLayout* form_ = nullptr;
     std::vector<Row> rows_;
     QToolButton* advancedToggle_ = nullptr;

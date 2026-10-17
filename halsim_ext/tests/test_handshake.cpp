@@ -22,6 +22,7 @@ TEST_CASE("handshake: Hello carries the robot identity and the proposed watchdog
     CHECK(hello->wpilibVersion == "2026.2.1");
     CHECK(hello->programName == "frcUserProgram");
     CHECK(hello->proposedWatchdogMs == 750);
+    CHECK(hello->supportsArmed);
     REQUIRE(hello->halPortCounts.size() == 1);
     CHECK(hello->halPortCounts[0].first == "pwm");
     CHECK(rig.client.lastEndpoint == "memory:test");

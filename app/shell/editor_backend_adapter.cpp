@@ -59,25 +59,29 @@ bool EditorBackendAdapter::detecting() const {
 
 void EditorBackendAdapter::submitConfig(const sdk::RobotConfig& config) {
     pending_ = config;
+    pendingProject_ = services_.session().path();
     services_.runtime().setProject(services_.session().path(), std::make_shared<const sdk::RobotConfig>(config),
                                    services_.session().gameModule());
 }
 
-void EditorBackendAdapter::saveConfig() {
+sdk::Status EditorBackendAdapter::saveConfig() {
     ProjectSession& session = services_.session();
-    if (!session.hasProject() || !pending_) return;
+    if (!pending_) return sdk::okStatus();
+    if (!session.hasProject() || session.path() != pendingProject_)
+        return sdk::makeError(sdk::ErrorCode::InvalidArgument, "The edited project is no longer open.");
     committing_ = true;
     const SaveOutcome outcome = session.commit(*pending_, session.prefs());
     committing_ = false;
     if (!outcome.ok()) {
         emit logMessage(sdk::Severity::Error, tr("Could not save the robot configuration: %1").arg(outcome.appDataError));
-        return;
+        return sdk::makeError(sdk::ErrorCode::IoError, outcome.appDataError.toStdString());
     }
     pending_.reset();   // what is stored is now what the editor shows
     if (outcome.hasWarning())
         emit logMessage(sdk::Severity::Warning, tr("Saved, but the project copy %1 could not be written: %2").arg(outcome.exportPath, outcome.exportError));
     else
         emit logMessage(sdk::Severity::Info, tr("Saved robot configuration to %1").arg(outcome.exportPath));
+    return sdk::okStatus();
 }
 
 void EditorBackendAdapter::startDetection() { services_.runtime().restart(); }
@@ -90,7 +94,6 @@ void EditorBackendAdapter::onSessionChanged() {
     if (project != lastProject_) {
         lastProject_ = project;
         devices_.clear();
-        deviceIndex_.clear();
         lastIssues_.clear();
         emit devicesChanged();
         emit issuesChanged({});
@@ -101,7 +104,7 @@ void EditorBackendAdapter::onSessionChanged() {
 }
 
 bool EditorBackendAdapter::sameDevice(const sdk::DiscoveredDevice& a, const sdk::DiscoveredDevice& b) {
-    return a.live == b.live && a.mapped == b.mapped && a.aliasState == b.aliasState && a.observedBus == b.observedBus &&
+    return a.id == b.id && a.live == b.live && a.mapped == b.mapped && a.aliasState == b.aliasState && a.observedBus == b.observedBus &&
            a.aliases == b.aliases && a.descriptor == b.descriptor;
 }
 
@@ -109,16 +112,28 @@ void EditorBackendAdapter::onSnapshot() {
     const auto snapshot = services_.runtime().latestSnapshot();
     if (!snapshot) return;
 
+    auto reconciled = devices_;
+    for (auto& d : reconciled) {
+        d.live = false;
+        d.mapped = false;
+    }
+    std::vector<sdk::DiscoveredDevice> newDevices;
     for (const sdk::DiscoveredDevice& d : snapshot->devices()) {
-        const auto it = deviceIndex_.constFind(d.id.value);
-        if (it == deviceIndex_.constEnd()) {
-            deviceIndex_.insert(d.id.value, static_cast<int>(devices_.size()));
-            devices_.push_back(d);
-            emit deviceDiscovered(d);
-        } else if (!sameDevice(devices_[static_cast<std::size_t>(*it)], d)) {
-            devices_[static_cast<std::size_t>(*it)] = d;
-            emit deviceUpdated(d);
+        const auto it = std::find_if(reconciled.begin(), reconciled.end(), [&d](const auto& known) {
+            return known.descriptor.physicalId() == d.descriptor.physicalId();
+        });
+        if (it == reconciled.end()) {
+            reconciled.push_back(d);
+            newDevices.push_back(d);
+        } else {
+            *it = d;
         }
+    }
+    if (devices_.size() != reconciled.size() ||
+        !std::equal(devices_.begin(), devices_.end(), reconciled.begin(), sameDevice)) {
+        devices_ = std::move(reconciled);
+        for (const auto& d : newDevices) emit deviceDiscovered(d);
+        emit devicesChanged();
     }
 
     std::vector<sdk::Issue> issues;
@@ -139,6 +154,17 @@ void EditorBackendAdapter::onSnapshot() {
 }
 
 void EditorBackendAdapter::onStatus() {
+    const auto generation = services_.runtime().status().runGeneration;
+    if (generation != lastRunGeneration_) {
+        lastRunGeneration_ = generation;
+        for (auto& d : devices_) {
+            d.live = false;
+            d.mapped = false;
+        }
+        lastIssues_.clear();
+        emit devicesChanged();
+        emit issuesChanged({});
+    }
     const bool now = detecting();
     if (now == lastDetecting_) return;
     lastDetecting_ = now;

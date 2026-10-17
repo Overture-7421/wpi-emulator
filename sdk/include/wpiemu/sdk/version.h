@@ -10,8 +10,11 @@ namespace wpiemu::sdk {
 //  1.2: IGameState::gameSpecificMessage (FMS game data forwarded to the robot), PrimitiveSpec::link
 //       (explicit primitive -> mechanism link). Both defaulted: existing plugins/configs are unaffected.
 inline constexpr int kSdkVersionMajor = 1;
-//  1.3: SimCommand::BeginLockstep / EndLockstep: an armed (discoveryOnly) session switches to lock-step and
+//  1.3: SimCommand::BeginLockstep / EndLockstep: an armed (discoveryOnly) session switches to
+//  lock-step and
 //       back without relaunching the robot. Additive enum values; the wire layout is unchanged.
-inline constexpr int kSdkVersionMinor = 3;
+//  1.4: Hello::supportsArmed (protocol v3, absent=false) and the defaulted
+//       IDeviceBridge::resetInputHistory lifecycle hook.
+inline constexpr int kSdkVersionMinor = 4;
 
 }  // namespace wpiemu::sdk

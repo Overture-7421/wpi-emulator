@@ -68,11 +68,15 @@ public:
     bool refuseMeshes = false;
     int shapeBudget = 1 << 30;
     int filterCalls = 0;
+    int bodyAttempts = 0;
     std::uint64_t lastMask = 0;
     std::vector<sdk::ShapeDesc> shapeLog;
     sdk::testing::FakePhysicsWorld inner;
 
-    sdk::BodyId createBody(const sdk::BodyDesc& d) override { return refuseBodies ? sdk::BodyId{} : inner.createBody(d); }
+    sdk::BodyId createBody(const sdk::BodyDesc& d) override {
+        ++bodyAttempts;
+        return refuseBodies ? sdk::BodyId{} : inner.createBody(d);
+    }
     void destroyBody(sdk::BodyId b) override { inner.destroyBody(b); }
     sdk::ShapeId addShape(sdk::BodyId b, const sdk::ShapeDesc& d) override {
         if (refuseMeshes && std::holds_alternative<sdk::MeshShape>(d.geometry)) return {};

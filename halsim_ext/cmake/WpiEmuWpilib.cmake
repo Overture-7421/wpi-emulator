@@ -127,10 +127,12 @@ if(NOT _wpiemu_extracted_root)
             file(WRITE "${_stage}/.extracted" "${WPIEMU_WPILIB_VERSION}\n")
         endif()
         set(_wpiemu_extracted_root "${_stage}")
-        # Sibling modules (bridges/hal, bridges/vendor) read the same variable in the extracted layout.
-        # A normal variable in the parent scope shadows the user's (Maven) cache value for them.
-        set(WPIEMU_WPILIB_ROOT "${_stage}" PARENT_SCOPE)
     endif()
+endif()
+
+if(_wpiemu_extracted_root)
+    # Publish either discovery route to sibling bridges without replacing the user's cache input.
+    set(WPIEMU_WPILIB_ROOT "${_wpiemu_extracted_root}" PARENT_SCOPE)
 endif()
 
 # ---- 3. imported targets ----------------------------------------------------------------------------------

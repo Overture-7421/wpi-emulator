@@ -116,6 +116,8 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
             gen=(-G "Visual Studio 17 2022" -A x64)
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            gen=(--preset macos)
           else
             gen=(-G "Ninja Multi-Config")
           fi
@@ -204,6 +206,7 @@ jobs:
           mkdir -p "$mount"
           hdiutil attach "$dmg" -mountpoint "$mount" -nobrowse -readonly
           app="$mount/wpiemu_app.app"
+          python packaging/macos/check_minimum_os.py "$app"
           env -i PATH=/usr/bin:/bin "$app/Contents/MacOS/wpiemu_app" --version
           test -f "$app/Contents/PlugIns/wpiemu/libhalsim_wpiemu.dylib"
           find "$app/Contents/Resources/qml/QtQuick3D" -iname '*quick3dplugin*' -print -quit | grep -q .
@@ -220,6 +223,12 @@ jobs:
           OUT_DIR: ${{ github.workspace }}/build/release/pkg
           SKIP_BUILD: "1"
         run: bash packaging/linux/build-appimage.sh
+
+      # All signing and stapling must precede this final digest generation/verification.
+      - name: Final artifact checksums
+        run: |
+          python tools/package_checksums.py build/release/pkg
+          python tools/package_checksums.py build/release/pkg --verify
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

@@ -24,6 +24,7 @@ sdk::Status ProjectSession::open(const QString& rawPath) {
         return sdk::makeError(sdk::ErrorCode::InvalidArgument, why.toStdString());
     }
 
+    if (auto flushed = flushPendingChanges(); !flushed) return flushed;
     path_ = QDir::cleanPath(QFileInfo(root).absoluteFilePath());
     inspection_ = std::move(inspection);
     prefs_ = prefsStore_.load(path_);
@@ -45,8 +46,13 @@ sdk::Status ProjectSession::open(const QString& rawPath) {
     return sdk::okStatus();
 }
 
-void ProjectSession::close() {
-    if (!hasProject()) return;
+sdk::Status ProjectSession::flushPendingChanges() {
+    return pendingSaveHandler_ ? pendingSaveHandler_() : sdk::okStatus();
+}
+
+sdk::Status ProjectSession::close() {
+    if (!hasProject()) return sdk::okStatus();
+    if (auto flushed = flushPendingChanges(); !flushed) return flushed;
     path_.clear();
     inspection_ = {};
     config_.reset();
@@ -54,6 +60,7 @@ void ProjectSession::close() {
     loadIssues_.clear();
     emit projectChanged();
     emit configChanged();
+    return sdk::okStatus();
 }
 
 SaveOutcome ProjectSession::commit(const sdk::RobotConfig& config, const ProjectPrefs& prefs) {

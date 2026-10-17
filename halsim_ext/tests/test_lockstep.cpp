@@ -451,6 +451,68 @@ TEST_CASE("lockstep: BeginLockstep while already in lock-step is rejected") {
     CHECK(ack->result == proto::ControlResult::Rejected);
 }
 
+TEST_CASE(
+    "armed session: Begin and End retries replay original acks without repeating transitions") {
+    auto ack = defaultAck();
+    ack.discoveryOnly = true;
+    Rig rig(ack);
+    auto& bridge = rig.addBridge();
+    REQUIRE(rig.start());
+    rig.clock.started = true;
+    REQUIRE(rig.emulator->waitForLifecycle(2000ms));
+    const auto send = [&](proto::SimCommand command, std::uint64_t id, std::uint64_t epoch) {
+        proto::SimControl c;
+        c.command = command;
+        c.commandId = id;
+        c.sessionId = 7;
+        c.runEpoch = epoch;
+        REQUIRE(rig.emulator->send(proto::Message(c)));
+        const auto response = rig.emulator->take<proto::SimControlAck>(1000ms);
+        REQUIRE(response);
+        return *response;
+    };
+    const auto sameAck = [](const proto::SimControlAck& a, const proto::SimControlAck& b) {
+        CHECK(a.commandId == b.commandId);
+        CHECK(a.command == b.command);
+        CHECK(a.result == b.result);
+        CHECK(a.sessionId == b.sessionId);
+        CHECK(a.runEpoch == b.runEpoch);
+        CHECK(a.tick == b.tick);
+        CHECK(a.detail == b.detail);
+    };
+    const auto begin = send(proto::SimCommand::BeginLockstep, 1, 2);
+    REQUIRE(begin.result == proto::ControlResult::Applied);
+    sameAck(begin, send(proto::SimCommand::BeginLockstep, 1, 2));
+    REQUIRE(send(proto::SimCommand::Pause, 2, 2).result == proto::ControlResult::Applied);
+    sameAck(begin, send(proto::SimCommand::BeginLockstep, 1, 2));
+    CHECK(rig.clock.pauseCalls == 1);
+    CHECK(bridge.historyResets == 2);  // connection and Begin, not either retry
+
+    const auto end = send(proto::SimCommand::EndLockstep, 3, 3);
+    REQUIRE(end.result == proto::ControlResult::Applied);
+    sameAck(end, send(proto::SimCommand::EndLockstep, 3, 3));
+    REQUIRE(send(proto::SimCommand::Pause, 4, 3).result == proto::ControlResult::Applied);
+    sameAck(end, send(proto::SimCommand::EndLockstep, 3, 3));
+    CHECK(rig.clock.resumeCalls == 1);
+
+    const auto rejected = send(proto::SimCommand::EndLockstep, 5, 4);
+    REQUIRE(rejected.result == proto::ControlResult::Rejected);
+    REQUIRE(send(proto::SimCommand::BeginLockstep, 6, 4).result == proto::ControlResult::Applied);
+    sameAck(rejected, send(proto::SimCommand::EndLockstep, 5, 4));
+    CHECK(rig.clock.paused);
+    CHECK(rig.clock.resumeCalls == 1);
+    sameAck(begin, send(proto::SimCommand::BeginLockstep, 1, 2));  // retained across epochs
+
+    proto::SimControl foreign;
+    foreign.command =
+        proto::SimCommand::BeginLockstep;  // would fail the current state precondition
+    foreign.commandId = 7;
+    foreign.sessionId = 99;
+    foreign.runEpoch = 5;
+    REQUIRE(rig.emulator->send(proto::Message(foreign)));
+    CHECK_FALSE(rig.emulator->take<proto::SimControlAck>(50ms));
+}
+
 TEST_CASE("extension log lines are forwarded to the emulator as Log messages") {
     Started t;
     t.rig.runtime->logger().warn("bridge.test", "something odd");

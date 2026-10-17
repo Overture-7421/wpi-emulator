@@ -37,10 +37,18 @@ the SDK stays untouched):
 | `IVendorMirrorSync::reassertAfterVendorMirror()` | call from a HAL `SimPeriodicBefore` callback that runs *after* the CTRE wrappers' own mirror (see "Pigeon yaw") |
 | `ITimeSyncAdvisor::timeSyncAdvice()` | wall-clock pacing advice (see "Time base") |
 | `VendorSimDeviceBridge::setInputWritesEnabled(id, bool)` | "emulator owns the device" switch (see "Robots that simulate themselves") |
-| `VendorSimDeviceBridge::resetInputHistory()` | call on emulator Reset / new run epoch |
+| `IDeviceBridge::resetInputHistory()` (SDK 1.4, default no-op) | generic clock-thread lifecycle hook; vendor override discards input/unwrap history without changing firmware offsets |
 | `VendorSimDeviceBridge::configOf(id)` / `VendorBridgeOptions::onConfig` | CTRE config snapshot (gear ratio, invert, remote sensor); filled from `collectOutputs()` / `readPendingConfigs()` only |
 | `VendorSimDeviceBridge::readPendingConfigs(n)` | explicit config read-back for a host that knows the robot is quiescent |
 | `ICtreObservationSink` | the sink an opt-in hook provider feeds (bus label) |
+
+Unlike the vendor-specific optional interfaces, input history reset is reached through the SDK bridge
+interface (no cast or extension-to-vendor dependency). The extension's `BridgeSet` invokes it before
+feedback on each new connection/reconnect, applied Reset/BeginLockstep, or adoption of a newer frame
+epoch. Duplicate commands do not invoke it again. EndLockstep itself keeps history until the next
+Begin. The existing concrete helper remains callable for other hosts and overrides the SDK hook.
+For example, wrapped physical yaw `0 -> 170 -> -170` gives raw `190` degrees; after resetting history,
+new physical heading `0` writes raw `0`, not `360`. Robot `setYaw` offsets remain firmware-owned.
 
 Build option: `-DWPIEMU_WPILIB_ROOT=<dir>` where `<dir>` (or `<dir>/include`) contains `hal/simulation/SimDeviceData.h`
 compiles the real binding (`WPIEMU_VENDOR_HAS_WPILIB`). Without it the bridges register but see no devices and log one

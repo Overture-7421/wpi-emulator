@@ -16,6 +16,12 @@ DMG="${1:-}"
 [[ -f "$DMG" ]] || { echo "usage: $0 <path/to/file.dmg>" >&2; exit 2; }
 [[ "$(uname -s)" == "Darwin" ]] || { echo "error: notarization needs macOS" >&2; exit 1; }
 
+finalize_checksum() {
+    # CPack's digest predates outer-DMG signing/stapling, including signing-only runs.
+    (cd "$(dirname "$DMG")" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256" &&
+        shasum -a 256 -c "$(basename "$DMG").sha256")
+}
+
 if [[ -n "${WPIEMU_CODESIGN_IDENTITY:-}" ]]; then
     sign_args=(--force --timestamp --sign "$WPIEMU_CODESIGN_IDENTITY")
     [[ -z "${WPIEMU_CODESIGN_KEYCHAIN:-}" ]] || sign_args+=(--keychain "$WPIEMU_CODESIGN_KEYCHAIN")
@@ -28,6 +34,7 @@ elif [[ -n "${APPLE_ID:-}" && -n "${APPLE_TEAM_ID:-}" && -n "${APPLE_APP_PASSWOR
     auth=(--apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD")
 else
     echo "notarize: no Apple credentials in the environment; skipping notarization of $DMG"
+    finalize_checksum
     exit 0
 fi
 [[ -n "${WPIEMU_CODESIGN_IDENTITY:-}" ]] || { echo "error: notarization requires a Developer ID signed app (WPIEMU_CODESIGN_IDENTITY)" >&2; exit 1; }
@@ -37,4 +44,5 @@ xcrun notarytool submit "$DMG" "${auth[@]}" --wait
 xcrun stapler staple "$DMG"
 xcrun stapler validate "$DMG"
 spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
+finalize_checksum
 echo "notarize: done"

@@ -80,6 +80,40 @@ TEST_CASE("the default runtime is the real host, not the 'no runtime' placeholde
     CHECK(env.services->runtime().status().process == HostProcessState::Idle);
 }
 
+TEST_CASE("real host: pending Run intent belongs to the project across config edits and relaunches") {
+    // No configured model: launch fails synchronously, without starting a robot or an IPC worker.
+    RealRuntimeHost host({});
+    host.setProject(QStringLiteral("A"), {}, nullptr);
+    host.startSimulation();
+    REQUIRE(host.simulationStartPending());
+    host.restart();
+    CHECK(host.simulationStartPending());
+    host.setProject(QStringLiteral("A"), std::make_shared<const sdk::RobotConfig>(), nullptr);
+    CHECK(host.simulationStartPending());
+    host.setProject(QStringLiteral("B"), {}, nullptr);
+    CHECK_FALSE(host.simulationStartPending());
+    host.startSimulation();
+    CHECK(host.simulationStartPending());
+    host.stopSimulation();
+    CHECK_FALSE(host.simulationStartPending());
+}
+
+TEST_CASE("Run intent: readiness consumes only the current project's deliberate request") {
+    SimulationStartIntent intent;
+    intent.projectReplaced();   // A
+    intent.request();
+    CHECK_FALSE(intent.takeWhenReady(false));
+    CHECK(intent.pending());
+    intent.projectReplaced();   // B becomes ready after A's late start
+    CHECK_FALSE(intent.takeWhenReady(true));
+    intent.request();
+    CHECK(intent.takeWhenReady(true));
+    CHECK_FALSE(intent.takeWhenReady(true));
+    intent.request();           // same-project edited-config/restart does not replace the project
+    CHECK_FALSE(intent.takeWhenReady(false));
+    CHECK(intent.takeWhenReady(true));
+}
+
 TEST_CASE("real host: a project whose build fails is reported as FailedToStart with the console tail") {
     RealFixture f(kFailScript);
     REQUIRE(dynamic_cast<RealRuntimeHost*>(&f.host()) != nullptr);

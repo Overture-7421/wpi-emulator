@@ -220,12 +220,17 @@ void MainWindow::openProjectPath(const QString& path) {
     if (busyOpening_ || path.isEmpty()) return;
     busyOpening_ = true;
     const OpenOutcome outcome = controller_.openProject(path);
-    if (outcome != OpenOutcome::Opened) runSetupWizard(outcome == OpenOutcome::Invalid ? path : services_.session().path());
+    if (outcome != OpenOutcome::Opened && outcome != OpenOutcome::Blocked)
+        runSetupWizard(outcome == OpenOutcome::Invalid ? path : services_.session().path());
     busyOpening_ = false;
     refresh();
 }
 
 void MainWindow::runSetupWizard(const QString& projectPath) {
+    if (auto flushed = services_.session().flushPendingChanges(); !flushed) {
+        showMessage(QString::fromStdString(flushed.error().message));
+        return;
+    }
     WizardDialog dialog(services_, ui_, this);
     if (!projectPath.isEmpty()) dialog.setProjectPath(projectPath);
     const int code = wizardRunner_(dialog);
@@ -249,6 +254,11 @@ void MainWindow::showAbout() {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+    if (auto flushed = services_.session().flushPendingChanges(); !flushed) {
+        event->ignore();
+        showMessage(QString::fromStdString(flushed.error().message));
+        return;
+    }
     services_.store().setValue(QStringLiteral("window/geometry"), saveGeometry());
     services_.store().sync();
     services_.runtime().stop();

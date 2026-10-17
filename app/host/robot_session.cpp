@@ -434,8 +434,10 @@ void RobotSession::teardown() {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     // 2. The robot keeps running in real time after the extension left: end the whole process tree.
     if (launcher_) launcher_->stop(std::chrono::milliseconds(200));
-    if (runner_) runner_->stop();
+    // Stop accepting and join IPC producers before disposing of their consumer / pending owners.
     if (acceptor_) acceptor_->stop();
+    if (runner_) runner_->stop();
+    inbox_.close();
     teardownDone_ = true;
 }
 

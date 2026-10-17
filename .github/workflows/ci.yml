@@ -51,6 +51,15 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja
 
+      - name: Offline WPILib configure regression matrix
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            python tools/check_wpilib_configure.py --generator "Visual Studio 17 2022" --architecture x64
+          else
+            python tools/check_wpilib_configure.py --generator Ninja
+          fi
+
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:

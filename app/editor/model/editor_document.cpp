@@ -23,7 +23,11 @@ ConfigEditCommand::ConfigEditCommand(EditorDocument& doc, const QString& text, s
       stampMs_(QDateTime::currentMSecsSinceEpoch()) {}
 
 void ConfigEditCommand::undo() { doc_.applySnapshot(before_); }
-void ConfigEditCommand::redo() { doc_.applySnapshot(after_); }
+void ConfigEditCommand::redo() {
+    const bool authoritative = !firstRedo_;
+    firstRedo_ = false;
+    doc_.applySnapshot(after_, authoritative);
+}
 int ConfigEditCommand::id() const { return mergeKey_.isEmpty() ? -1 : kMergeCommandId; }
 
 bool ConfigEditCommand::mergeWith(const QUndoCommand* other) {
@@ -44,18 +48,18 @@ void EditorDocument::load(sdk::RobotConfig config) {
     undo_.blockSignals(false);
     config_ = std::move(config);
     ops::normalizeOrder(config_);
-    Q_EMIT changed();
+    Q_EMIT changed(true);
 }
 
 void EditorDocument::setCatalog(EditorCatalog catalog) {
     catalog_ = std::move(catalog);
     Q_EMIT catalogChanged();
-    Q_EMIT changed();
+    Q_EMIT changed(true);
 }
 
-void EditorDocument::applySnapshot(const sdk::RobotConfig& config) {
+void EditorDocument::applySnapshot(const sdk::RobotConfig& config, bool authoritative) {
     config_ = config;
-    Q_EMIT changed();
+    Q_EMIT changed(authoritative);
     Q_EMIT modified();
 }
 

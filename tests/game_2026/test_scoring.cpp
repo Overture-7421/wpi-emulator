@@ -82,6 +82,89 @@ TEST_CASE("scored fuel is removed when recycling is off") {
     CHECK(s.game->fuelOnField() == 0);
 }
 
+TEST_CASE("recycling retains due fuel across a full field cap and conserves it on retry") {
+    Session s;
+    emptyField(s);
+    s.section()["maxFuelOnField"] = 2;
+    s.section()["hubProcessingDelayS"] = 0.02;
+    s.start();
+    autoEnabled(s);
+    REQUIRE(s.game->pool().spawn(hubSensorCentre(Alliance::Blue), {}) != 0);
+    REQUIRE(s.game->pool().spawn(hubSensorCentre(Alliance::Red), {}) != 0);
+    s.tick();
+    REQUIRE(s.game->fuelOnField() == 0);
+    REQUIRE(s.game->score(Alliance::Blue).points() + s.game->score(Alliance::Red).points() == 2);
+    const auto filler1 = s.game->pool().spawn({8.f, 2.f, 0.075f}, {});
+    const auto filler2 = s.game->pool().spawn({9.f, 2.f, 0.075f}, {});
+    REQUIRE(filler1 != 0);
+    REQUIRE(filler2 != 0);
+    s.tick(50);
+    CHECK(s.game->fuelOnField() == 2);
+    CHECK(s.game->pool().spawn({10.f, 2.f, 0.075f}, {}) == 0);
+    s.game->pool().despawn(filler1);
+    s.tick();
+    CHECK(s.game->fuelOnField() == 2);
+    s.game->pool().despawn(filler2);
+    s.tick();
+    CHECK(s.game->fuelOnField() == 2);  // Both scored fuel survived the earlier refused releases.
+    CHECK(s.game->fuelInRobot() == 8);
+    CHECK(s.game->fuelLost() == 0);
+    s.tick();
+    CHECK(s.game->fuelOnField() == 2);  // No duplicate releases.
+}
+
+TEST_CASE("recycling retries temporary body or shape refusal with bounded spawn attempts") {
+    for (const bool refuseBody : {false, true}) {
+        INFO(refuseBody);
+        g26test::ForwardingWorld world;
+        sdk::testing::FakeSimEnvironment env;
+        sdk::SimContext ctx(
+            {world, env.clock, env.hub, env.logger, env.config, env.rng, env.driverStation, {}});
+        Session moduleSource;
+        auto fieldResult = moduleSource.module().createField(world);
+        REQUIRE(fieldResult.ok());
+        auto field = std::move(fieldResult).value();
+        GameConfig config;
+        config.neutralFuel = config.depotFuel = 0;
+        config.maxFuelOnField = 3;
+        config.hubProcessingDelayS = 0.02;
+        Game2026State game(ctx, config, buildFieldLayout());
+        game.reset(ctx);
+        for (int i = 0; i < 3; ++i)
+            REQUIRE(game.pool().spawn(hubSensorCentre(Alliance::Blue), {}) != 0);
+        world.step(0.005f);
+        game.step(ctx, 0.005);
+        REQUIRE(game.fuelOnField() == 0);
+        const auto bodies = world.stats().bodies;
+        const auto shapes = world.inner.shapeCount();
+        world.refuseBodies = refuseBody;
+        if (!refuseBody) world.shapeBudget = 0;
+        // Clear the scoring events before reusing the world in the next game step.
+        for (int i = 0; i < 20; ++i) {
+            world.step(0.005f);
+            const int attempts = world.bodyAttempts;
+            game.step(ctx, 0.005);
+            CHECK(world.bodyAttempts - attempts <= 1);
+            CHECK(game.fuelOnField() == 0);
+            CHECK(world.stats().bodies == bodies);
+            CHECK(world.inner.shapeCount() == shapes);
+        }
+        world.refuseBodies = false;
+        world.shapeBudget = 100;
+        world.step(0.005f);
+        game.step(ctx, 0.005);
+        CHECK(game.fuelOnField() == 3);
+        CHECK(game.fuelLost() == 0);
+        CHECK(world.stats().bodies == bodies + 3);
+        CHECK(world.inner.shapeCount() == shapes + 3);
+        world.step(0.005f);
+        game.step(ctx, 0.005);
+        CHECK(game.fuelOnField() == 3);
+        game.reset(ctx);
+        CHECK(game.fuelOnField() == 0);
+    }
+}
+
 TEST_CASE("fuel in a hub that is not active earns nothing, a disabled robot scores nothing") {
     Session s;
     emptyField(s);

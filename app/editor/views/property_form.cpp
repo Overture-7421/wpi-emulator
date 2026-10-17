@@ -4,6 +4,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QScrollArea>
+#include <QScopedValueRollback>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -30,7 +31,7 @@ QLabel* subheading(const QString& text, QWidget* parent) {
 }  // namespace
 
 PropertyFormWidget::PropertyFormWidget(const PropertyGroup& group, UnitSystem units, QWidget* parent)
-    : QWidget(parent), groupId_(group.id), values_(group.values) {
+    : QWidget(parent), groupId_(group.id) {
     auto* outer = new QVBoxLayout(this);
     outer->setContentsMargins(0, 0, 0, 0);
     form_ = new QFormLayout;
@@ -104,6 +105,7 @@ PropertyFormWidget::PropertyFormWidget(const PropertyGroup& group, UnitSystem un
 
         const QString key = qs(spec->key);
         connect(row.editor, &FieldEditor::edited, this, [this, key](const sdk::Value& v) {
+            const QScopedValueRollback<QString> editing(editingKey_, key);
             values_[key.toStdString()] = v;
             updateVisibility();
             Q_EMIT valueEdited(qs(groupId_), key, v);
@@ -111,7 +113,7 @@ PropertyFormWidget::PropertyFormWidget(const PropertyGroup& group, UnitSystem un
         rows_.push_back(std::move(row));
     }
     if (advancedToggle_ != nullptr) advancedToggle_->setText(ETR("Advanced (%1)").arg(advancedCount_));
-    setValues(values_);
+    setValues(group.values);
 }
 
 bool PropertyFormWidget::conditionMet(const sdk::PropertySpec& spec) const {
@@ -132,14 +134,19 @@ void PropertyFormWidget::updateVisibility() {
     }
 }
 
-void PropertyFormWidget::setValues(const sdk::Value& values) {
-    values_ = values;
+void PropertyFormWidget::setValues(const sdk::Value& values, bool authoritative) {
     for (Row& r : rows_) {
-        QWidget* focused = QApplication::focusWidget();
-        if (focused != nullptr && (focused == r.editor || r.editor->isAncestorOf(focused))) continue;   // never fight typing
+        const sdk::Value* previous = values_.find(r.spec.key);
         const sdk::Value* v = values.find(r.spec.key);
-        r.editor->setValue(v != nullptr ? *v : r.spec.defaultValue);
+        const sdk::Value& next = v != nullptr ? *v : r.spec.defaultValue;
+        QWidget* focused = QApplication::focusWidget();
+        // Only suppress an echo of this field's edit, not an authoritative undo/redo/load.
+        const bool editEcho = editingKey_ == qs(r.spec.key) || (previous != nullptr && *previous == next);
+        if (!authoritative && editEcho && focused != nullptr &&
+            (focused == r.editor || r.editor->isAncestorOf(focused))) continue;
+        r.editor->setValue(next);
     }
+    values_ = values;
     updateVisibility();
 }
 

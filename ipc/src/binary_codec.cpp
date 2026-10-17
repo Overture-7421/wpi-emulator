@@ -307,6 +307,7 @@ void write(Writer& w, const Hello& m) {
         w.i32(count);
     }
     w.u32(m.proposedWatchdogMs);
+    w.boolean(m.supportsArmed);
 }
 
 void read(Reader& r, Hello& m) {
@@ -326,6 +327,8 @@ void read(Reader& r, Hello& m) {
     }
     if (!r.more()) return;
     m.proposedWatchdogMs = r.u32();
+    if (!r.more()) return;
+    m.supportsArmed = r.boolean();
 }
 
 void write(Writer& w, const HelloAck& m) {

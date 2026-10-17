@@ -222,6 +222,7 @@ Status SimulationSession::build(SessionParts& parts) {
 }
 
 void SimulationSession::reset() {
+    hub_.resetSignalHistory();
     world_->setPose(chassis_.body, chassis_.spawnPose);
     world_->setLinearVelocity(chassis_.body, Vec3{});
     world_->setAngularVelocity(chassis_.body, Vec3{});

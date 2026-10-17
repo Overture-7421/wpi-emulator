@@ -194,6 +194,46 @@ TEST_CASE("vendor bridge: emulator owns the device can be switched off per devic
     CHECK(rig.backend->get(t.rotor, "velocity") == doctest::Approx(40.0));
 }
 
+TEST_CASE(
+    "vendor bridge: generic history reset rebases wrapped yaw without touching firmware offsets") {
+    BridgeRig rig;
+    const auto pigeon = addPigeon2(*rig.backend, 13);
+    rig.start();
+    rig.bridge->poll();
+    const DeviceId id = rig.host.idOf("pigeon2", 13);
+    const auto yaw = rig.host.signalIndex(id, sg::kYaw);
+    const auto raw = rig.backend->handle(pigeon, "rawYawInput");
+    double lastRaw = 0.0;
+    double reported = 0.0;
+    double firmwareOffset = 0.0;
+    rig.backend->onWrite = [&](SimValueHandle handle, double value) {
+        if (handle != raw) return;
+        reported += value - lastRaw;
+        lastRaw = value;
+    };
+    wpiemu::sdk::IDeviceBridge& generic = *rig.bridge;
+    const auto tick = [&](double degrees) {
+        const std::vector<SignalSample> samples{{id, yaw, degrees * ctre::kPi / 180.0}};
+        generic.applyInputs(samples);
+    };
+    for (int transition = 0; transition != 3; ++transition) {
+        tick(0);
+        tick(170);
+        tick(-170);
+        CHECK(rig.backend->get(pigeon, "rawYawInput") == doctest::Approx(190));
+        firmwareOffset += 35;  // robot setYaw changes firmware state, not physical raw input
+        reported -= 35;
+        generic.resetInputHistory();
+        tick(0);
+        CHECK(rig.backend->get(pigeon, "rawYawInput") == doctest::Approx(0));
+        CHECK(reported == doctest::Approx(-firmwareOffset));
+    }
+    tick(30);
+    generic.resetInputHistory();  // nonwrapped control, including unchanged first feedback
+    tick(30);
+    CHECK(reported == doctest::Approx(30 - firmwareOffset));
+}
+
 TEST_CASE("vendor bridge: time-sync advice appears while Phoenix devices are live") {
     BridgeRig rig;
     rig.start();

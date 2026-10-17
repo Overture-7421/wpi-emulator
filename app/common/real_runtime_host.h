@@ -40,6 +40,7 @@ public:
 
     // The extension that would be launched (empty when it cannot be found).
     std::filesystem::path extensionPath() const;
+    bool simulationStartPending() const { return beginIntent_.pending(); }
 
 public slots:
     void launch() override;
@@ -67,6 +68,7 @@ private:
     QTimer timer_;
 
     HostStatus status_;
+    std::uint64_t runGeneration_ = 0;
     HostScene scene_;
     QString projectPath_;
     std::shared_ptr<const sdk::RobotConfig> config_;
@@ -81,7 +83,7 @@ private:
 
     sdk::proto::DsState ds_;
     bool paused_ = false;
-    bool beginWhenReady_ = false;   // startSimulation() was requested before the robot program finished starting
+    SimulationStartIntent beginIntent_;
     double timeScale_ = 1.0;
 };
 
