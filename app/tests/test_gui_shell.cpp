@@ -6,6 +6,7 @@
 
 #include <QFileInfo>
 #include <QSignalSpy>
+#include <QTest>
 
 #include "gui_support.h"
 #include "shell/about_dialog.h"
@@ -21,6 +22,9 @@
 #include "editor/viewmodel/editor_controller.h"
 #include "editor/viewmodel/detected_devices_model.h"
 #include "shell/editor_backend_adapter.h"
+#endif
+#ifdef WPIEMU_APP_HAS_RUNVIEW
+#include "runview/run_page.h"
 #endif
 
 using namespace wpiemu::app;
@@ -121,6 +125,35 @@ TEST_CASE("an already configured project opens straight into the editor") {
     f.window.setupAction()->trigger();
     CHECK(f.wizardRuns == 1);
 }
+
+#ifdef WPIEMU_APP_HAS_RUNVIEW
+TEST_CASE("shell: Ctrl Shift R restarts from Run without opening setup") {
+    ShellFixture f;
+    f.acceptWizard();
+    TestProject project;
+    f.env.addProject(project);
+    f.window.show();
+    f.window.openProjectPath(project.path());
+    f.controller.setMode(AppMode::Run);
+    auto* run = f.window.findChild<wpiemu::app::runview::RunPage*>();
+    REQUIRE(run != nullptr);
+    f.window.activateWindow();
+    run->setFocus();
+    QApplication::processEvents();
+    const auto generation = f.env.demo->status().runGeneration;
+    const auto wizardRuns = f.wizardRuns;
+    CHECK(f.window.setupAction()->shortcut().isEmpty());
+    QTest::keyClick(run, Qt::Key_R, Qt::ControlModifier | Qt::ShiftModifier);
+    QApplication::processEvents();
+    CHECK(f.env.demo->status().runGeneration == generation + 1);
+    CHECK(f.wizardRuns == wizardRuns);
+    f.controller.setMode(AppMode::Editor);
+    QApplication::processEvents();
+    const auto afterRestart = f.env.demo->status().runGeneration;
+    QTest::keyClick(&f.window, Qt::Key_R, Qt::ControlModifier | Qt::ShiftModifier);
+    CHECK(f.env.demo->status().runGeneration == afterRestart);
+}
+#endif
 
 TEST_CASE("cancelling the wizard leaves no project half-open") {
     ShellFixture f;

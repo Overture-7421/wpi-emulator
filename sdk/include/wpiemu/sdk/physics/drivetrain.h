@@ -9,6 +9,7 @@
 #include "wpiemu/sdk/core/interface.h"
 #include "wpiemu/sdk/core/registry.h"
 #include "wpiemu/sdk/devices/slot.h"
+#include "wpiemu/sdk/mechanisms/motion_link.h"
 #include "wpiemu/sdk/physics/chassis_spec.h"
 #include "wpiemu/sdk/physics/physics_world.h"
 #include "wpiemu/sdk/physics/tire_model.h"
@@ -69,6 +70,9 @@ public:
     virtual std::span<const WheelState> wheelStates() const = 0;
     // Back to rest state (zero wheel spin); the chassis body pose is reset by the caller.
     virtual void reset() = 0;
+    virtual std::vector<MotionAxisBinding> motionAxes() { return {}; }
+    // Contact preparation only. Axis callbacks then advance each wheel once before world.step().
+    virtual void prepareMotionStep(float /*dtSeconds*/) {}
 };
 
 struct DrivetrainInfo {

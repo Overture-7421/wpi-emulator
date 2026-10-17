@@ -7,11 +7,13 @@
 #include <QDialog>
 #include <QKeySequence>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QFrame>
 #include <QToolButton>
+#include <QTest>
 
 #include "fake_joystick.h"
 #include "fake_run_backend.h"
@@ -265,25 +267,44 @@ TEST_CASE("run page: console receives logs and can be searched and copied") {
     CHECK(console->totalLineCount() == 0);
 }
 
+TEST_CASE("run page: restart shortcuts work with the dropdown closed") {
+    Fixture f;
+    f.connectRobot();
+    f.page.activateWindow();
+    const int starts = f.backend.startCount();
+    auto* search = f.page.console()->findChild<QLineEdit*>();
+    REQUIRE(search != nullptr);
+    int restarts = 0;
+    for (QWidget* focus : {static_cast<QWidget*>(f.page.viewport()),
+                           static_cast<QWidget*>(f.page.driverStationPanel()->enableButton()),
+                           static_cast<QWidget*>(search)}) {
+        focus->setFocus();
+        QApplication::processEvents();
+        QTest::keyClick(focus, Qt::Key_R, Qt::ControlModifier | Qt::ShiftModifier);
+        QApplication::processEvents();
+        CHECK(f.backend.startCount() == starts + ++restarts);
+        CHECK_FALSE(f.page.driverStation().enabled());
+    }
+    QTest::keyClick(f.page.viewport(), Qt::Key_R, Qt::ControlModifier);
+    CHECK(f.backend.startCount() == starts + restarts);
+    CHECK(f.backend.resetCount() == 1);
+}
+
 TEST_CASE("run page: home button in the 3D view resets the camera") {
     Fixture f;
     f.connectRobot();
     auto* home = f.page.findChild<QToolButton*>(QStringLiteral("runview.homeButton"));
     REQUIRE(home != nullptr);
-    const float homeDistance = f.page.scene().camera().distance();
+    const float homeDistance = f.page.scene().camera().distance;
     f.page.scene().camera().zoom(5.f);
-    CHECK(f.page.scene().camera().distance() != doctest::Approx(homeDistance));
+    CHECK(f.page.scene().camera().distance != doctest::Approx(homeDistance));
     home->click();
-    CHECK(f.page.scene().camera().distance() == doctest::Approx(homeDistance));
+    CHECK(f.page.scene().camera().distance == doctest::Approx(homeDistance));
 }
 
-TEST_CASE("run page: camera and overlay controls") {
+TEST_CASE("run page: console visibility control") {
     Fixture f;
     f.connectRobot();
-    f.page.setCameraMode(2);
-    CHECK(f.page.scene().cameraMode() == CameraMode::TopDown);
-    f.page.setCameraMode(1);
-    CHECK(f.page.scene().cameraMode() == CameraMode::Follow);
     f.page.setConsoleVisible(false);
     CHECK_FALSE(f.page.consoleVisible());
     f.page.setConsoleVisible(true);

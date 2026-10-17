@@ -50,7 +50,7 @@ wpiemu_app [--demo] [--project <folder>] [--version]
 
 Start the app and either drop a project folder on the welcome page or click **Open WPILib project...**
 (`Ctrl+O`). A project that has no saved robot setup opens the **Set up your robot** wizard. You can rerun it any time
-with **File > Set up robot...** (`Ctrl+Shift+R`); the sidebar says *"Nothing is changed until you open the editor."*
+with **File > Set up robot...**; the sidebar says *"Nothing is changed until you open the editor."*
 
 ### Step 1 - Project
 Drop the project folder on the page, paste or **Browse...** for its path, or pick a recent project. The app reads
@@ -89,7 +89,7 @@ Describe the drivetrain; everything can be refined in the editor later.
 |---|---|
 | Drivetrain | Robot name; **Type**: Swerve / Tank / Mecanum |
 | Size and weight | Frame length (front to back), frame width, robot mass, bumper thickness, wheel diameter, wheels per side (tank), total wheel count |
-| Motors and gearing | Drive motor, motors per wheel, drive gear ratio; steer motor and ratio (swerve) |
+| Motors and gearing | Drive motor, motors per wheel (per powered side for tank), drive gear ratio; steer motor and ratio (swerve) |
 | Alliance | Bumper colour Red / Blue; your driver station 1-3 |
 
 A schematic of the robot updates as you type. Invalid values are highlighted and block **Next**.
@@ -105,6 +105,31 @@ game settings.
 
 ## 3. The editor
 
+### Linking wheels and mechanisms
+
+The inspector's **Motion links** section connects a **Source** axis to a **Follower**.
+Set the signed **Ratio**, then **Add / update link**. Ratio 2 turns a rotary follower twice
+per source revolution; -1 reverses it. Mixed rotary/linear links show explicit **m / rev**
+or **rev / m** units. Select a link to update/remove it, or choose **New link** to add another.
+Changes support Undo/Redo.
+
+New tank setups link all wheels on a side to one powered wheel. **Link tank wheels by side**
+prefers the wheel already mapped to that side's controller. Map only the two source wheels:
+one controller can then move all three wheels on its side. Existing ordinary tank files upgrade
+automatically, preserving mappings; save the upgraded configuration. **Use independent wheels**
+opts out. Ambiguous layouts or several mapped wheels per side need correction before conversion.
+
+Links also work between supported mechanism axes: `axis` for ordinary mechanisms, and
+`deploy`/`roller` for intakes. Followers need no motor mapping; encoders and limit sensors
+can still be mapped. Remove a follower's independent motor mapping before linking it.
+One source can drive several followers, including chains, but cycles are not allowed.
+
+This is deliberately simple motion following. Followers retain their starting positions,
+stop at their own travel limits, and update visuals/sensors, but do not load or stop the source.
+It is not an accurate gearbox, torque-sharing, or energy-conservation simulation.
+
+### Editor layout
+
 The **Editor** and **Run** tabs centred in the menu bar row (`Ctrl+1` / `Ctrl+2`) switch between the editing page and the run page.
 
 ```
@@ -117,7 +142,7 @@ The **Editor** and **Run** tabs centred in the menu bar row (`Ctrl+1` / `Ctrl+2`
 ```
 
 ### Viewport
-Left-click selects (click a mechanism again to drill into one of its shapes). Right-drag orbits, middle-drag pans, the
+Left-click selects (click a mechanism again to drill into one of its shapes). Right-drag (or Alt+left-drag) orbits, left-drag on empty space or middle-drag pans, the
 wheel zooms. `W` / `E` / `R` pick move / rotate / scale for the gizmo, `F` frames the selection, `1`-`4` pick Front /
 Side / Top / 3D views, hold `Ctrl` to toggle snapping while dragging, `Del` deletes, `Ctrl+D` duplicates (when the
 editor, not the shell, has focus), `Esc` clears the selection. Everything is undoable (`Ctrl+Z` / `Ctrl+Y`);
@@ -236,16 +261,13 @@ and phase widgets only apply in Practice; the other modes are free play.
 | Area | What it does |
 |---|---|
 | View controls | Icon buttons at the bottom-right of the 3D view: **Restart** (`Ctrl+R`, puts the robot and game pieces back to the start; the robot code keeps running). Its dropdown adds **Restart robot code** (`Ctrl+Shift+R`, reboots the code and resets everything). **Speed** (relative to real time) |
-| Camera | Orbit camera (drag to rotate, right-drag to pan, wheel to zoom) and **Home view** (⌂ button, last in the bottom-right controls, `Ctrl+0`, or double-click the view) |
+| Camera | Same camera controls as the editor viewport (right-drag or Alt+left-drag to rotate; left-drag, middle-drag or Shift+drag to pan; wheel to zoom) and **Home view** (⌂ button, last in the bottom-right controls, `Ctrl+0`, or double-click the view) |
 | Overlays | **View** menu: game HUD, mechanism values, zones (intake / shooter), individually switchable (Run tab only) |
 | Telemetry (right side of the toolbar) | simulated time, ticks per second and speed, battery voltage, physics step time and entity count, gamepad status |
 | Console | **View > Console** (`Ctrl+J`); filter by level and source (robot stdout, robot stderr, emulator), search, copy, clear, follow |
 
 In the 2026 HUD you see the fuel meter, match timer and phase, hub active badges, scores, shots fired and fuel on the
 field.
-
-> `Ctrl+1/2/3` are the camera shortcuts of the run view but `Ctrl+1/2` are also the Editor/Run switch of the main
-> window. Use the toolbar buttons if a shortcut does not respond.
 
 ### Driver station panel
 Built into the run page; it replaces the real Driver Station. It sits at the bottom-left, next to the console. The **cog**

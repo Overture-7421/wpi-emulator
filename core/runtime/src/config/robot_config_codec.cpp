@@ -572,6 +572,35 @@ Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value, DecodeInfo* 
         }
     }
     cfg.robotMappings = readMappings(root.get("robotMappings"), "robotMappings", ctx);
+    root.boolean("motionLinksConfigured", cfg.motionLinksConfigured);
+    if (const Value* links = root.get("motionLinks")) {
+        if (!links->isArray()) {
+            ctx.err("motionLinks", "expected an array");
+        } else {
+            for (std::size_t i = 0; i < links->array().size(); ++i) {
+                const std::string path = "motionLinks[" + std::to_string(i) + "]";
+                ObjReader r(links->array()[i], path, ctx);
+                MotionLink link;
+                r.str("id", link.id);
+                r.dbl("ratio", link.ratio);
+                const auto endpoint = [&](const char* key, SlotAddress& address) {
+                    const auto* v = r.get(key);
+                    if (v == nullptr) {
+                        ctx.err(path + "." + key, "missing endpoint");
+                        return;
+                    }
+                    ObjReader e(*v, path + "." + key, ctx);
+                    e.str("owner", address.owner);
+                    e.str("axis", address.slot);
+                    keepUnknown(cfg, "motionLinks/" + link.id + "/" + key, e);
+                };
+                endpoint("source", link.source);
+                endpoint("target", link.target);
+                keepUnknown(cfg, "motionLinks/" + link.id, r);
+                cfg.motionLinks.push_back(std::move(link));
+            }
+        }
+    }
     if (const Value* b = root.get("battery")) {
         ObjReader r(*b, "battery", ctx);
         r.dbl("nominalVoltageV", cfg.battery.nominalVoltageV);
@@ -662,6 +691,25 @@ Value RobotConfigCodec::toValue(const RobotConfig& cfg) const {
     for (const MechanismConfig& m : cfg.mechanisms) mechs.push_back(mechanismValue(m, cfg));
     root["mechanisms"] = std::move(mechs);
     root["robotMappings"] = mappingsValue(cfg.robotMappings);
+    root["motionLinksConfigured"] = cfg.motionLinksConfigured;
+    Value links = Value::makeArray();
+    for (const auto& link : cfg.motionLinks) {
+        Value item = Value::makeObject();
+        item["id"] = link.id;
+        item["ratio"] = link.ratio;
+        const auto endpoint = [&](const SlotAddress& address, const char* key) {
+            Value v = Value::makeObject();
+            v["owner"] = address.owner;
+            v["axis"] = address.slot;
+            mergeUnknown(v, cfg, "motionLinks/" + link.id + "/" + key);
+            return v;
+        };
+        item["source"] = endpoint(link.source, "source");
+        item["target"] = endpoint(link.target, "target");
+        mergeUnknown(item, cfg, "motionLinks/" + link.id);
+        links.push_back(std::move(item));
+    }
+    root["motionLinks"] = std::move(links);
 
     Value battery = Value::makeObject();
     battery["nominalVoltageV"] = cfg.battery.nominalVoltageV;

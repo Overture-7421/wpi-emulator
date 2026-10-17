@@ -21,6 +21,7 @@
 #include "wpiemu/sdk/core/sim_context.h"
 #include "wpiemu/sdk/devices/device_hub.h"
 #include "wpiemu/sdk/devices/slot.h"
+#include "wpiemu/sdk/mechanisms/motion_link.h"
 
 namespace wpiemu::core::mechanisms::detail {
 
@@ -73,6 +74,7 @@ struct AxisSlotNames {
 };
 AxisSlotNames axisSlotNames(const AxisOptions& options);
 std::vector<sdk::SlotSpec> axisSlots(const AxisOptions& options);
+sdk::MotionAxisSpec axisMotionSpec(const AxisOptions& options);
 std::vector<sdk::PropertySpec> axisProperties(const AxisOptions& options, const MotorCatalog& motors);
 
 struct AxisSettings {
@@ -114,6 +116,7 @@ public:
 
     void tick(sdk::SimContext& ctx, double dtSeconds);
     void reset();
+    sdk::MotionAxisBinding motionBinding();
 
     double position() const { return plant_->state().position; }   // rad or m
     double velocity() const { return plant_->state().velocity; }

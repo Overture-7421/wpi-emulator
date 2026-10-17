@@ -93,7 +93,6 @@ void MainWindow::buildActions() {
     connect(openAction_, &QAction::triggered, this, &MainWindow::browseForProject);
 
     setupAction_ = new QAction(tr("Set up &robot…"), this);
-    setupAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+R")));
     setupAction_->setToolTip(tr("Run the setup wizard again for this project"));
     connect(setupAction_, &QAction::triggered, this, [this] { runSetupWizard(services_.session().path()); });
 

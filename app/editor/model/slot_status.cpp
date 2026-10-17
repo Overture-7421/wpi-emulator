@@ -1,4 +1,5 @@
 #include "model/slot_status.h"
+#include "wpiemu/sdk/mechanisms/motion_config.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -52,6 +53,10 @@ std::vector<SlotInfo> slotInfos(const sdk::RobotConfig& c, const EditorCatalog& 
             info.state = spec.required ? SlotState::Unmapped : SlotState::OptionalEmpty;
             info.detail = spec.required ? ETR("Required: drop a %1 here or pick one from the list.").arg(slotTypeLabel(spec.type).toLower())
                                         : ETR("Optional: unmapped slots read neutral values.");
+            const auto axes = sdk::motionAxisInfos(
+                c, [&](std::string_view type) { return catalog.findTemplate(type); });
+            if (sdk::motionFollowerMotor(c, axes, info.address))
+                info.detail = ETR("Driven by a motion link. No motor mapping is needed.");
             out.push_back(std::move(info));
             continue;
         }
@@ -80,8 +85,10 @@ std::vector<SlotInfo> slotInfos(const sdk::RobotConfig& c, const EditorCatalog& 
 std::optional<sdk::SlotAddress> bestSlotFor(const sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view owner,
                                             sdk::CapabilitySet caps, std::string_view slotPrefix) {
     std::optional<sdk::SlotAddress> optionalFree;
+    const auto axes = sdk::motionAxisInfos(c, [&](std::string_view type) { return catalog.findTemplate(type); });
     for (const sdk::SlotSpec& spec : ops::slotSpecsFor(c, catalog, owner)) {
         if (!slotPrefix.empty() && spec.name.rfind(slotPrefix, 0) != 0) continue;
+        if (sdk::motionFollowerMotor(c, axes, {std::string(owner), spec.name})) continue;
         if (!slotAccepts(spec, caps)) continue;
         const sdk::SlotAddress address{std::string(owner), spec.name};
         if (ops::findMapping(c, address) != nullptr) continue;
@@ -102,6 +109,9 @@ DeviceStatus deviceStatus(const sdk::RobotConfig& c, const sdk::DiscoveredDevice
 
 std::vector<sdk::Issue> localIssues(const sdk::RobotConfig& c, const EditorCatalog& catalog, const DeviceDirectory& devices) {
     std::vector<sdk::Issue> out;
+    const auto axes =
+        sdk::motionAxisInfos(c, [&](std::string_view type) { return catalog.findTemplate(type); });
+    for (auto& issue : sdk::motionLinkIssues(c, axes)) out.push_back(std::move(issue));
     for (const std::string& owner : ops::slotOwners(c)) {
         for (const SlotInfo& info : slotInfos(c, catalog, devices, owner)) {
             const std::string path = info.address.toString();
@@ -188,6 +198,12 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
     const std::string& path = issue.path;
     int index = 0;
     std::string rest;
+
+    if (path.rfind("motionLinks", 0) == 0) {
+        loc.selection = SelectionRef::robot();
+        loc.fieldKey = "motionLinks";
+        return loc;
+    }
 
     if (path.rfind("device:", 0) == 0) {
         loc.selection = SelectionRef::device(path.substr(7));

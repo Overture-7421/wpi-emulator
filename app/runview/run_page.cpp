@@ -140,6 +140,10 @@ void RunPage::buildActions() {    restartAction_ = new QAction(reloadIcon(), tr(
     connect(restartMenu->addAction(tr("Restart physics only")), &QAction::triggered, restartAction_, &QAction::trigger);
     restartRobotAction_ = restartMenu->addAction(tr("Restart robot code"));
     restartRobotAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R));
+    restartAction_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    restartRobotAction_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    addAction(restartAction_);
+    addAction(restartRobotAction_);
     restartRobotAction_->setToolTip(tr("Reboot the robot code and reset the physics and game state (Ctrl+Shift+R)"));
 
     speedCombo_ = new QComboBox(this);
@@ -193,7 +197,6 @@ void RunPage::buildActions() {    restartAction_ = new QAction(reloadIcon(), tr(
 
 QList<QAction*> RunPage::viewActions() const { return {hudAction_, mechAction_, zonesAction_, zoneMenu_->menuAction(), consoleAction_}; }
 
-void RunPage::setCameraMode(int mode) { scene_.setCameraMode(std::clamp(mode, 0, 2)); }
 void RunPage::setConsoleVisible(bool visible) {
     console_->setVisible(visible);
     if (consoleAction_ != nullptr && consoleAction_->isChecked() != visible) {
@@ -253,14 +256,12 @@ void RunPage::refreshControls(const sdk::ISimSnapshot* snapshot) {
 
 void RunPage::pollNow() {
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    const double dt = lastPollMs_ == 0 ? 0.0 : std::clamp(static_cast<double>(now - lastPollMs_) / 1000.0, 0.0, 0.25);
-    lastPollMs_ = now;
 
     const auto snapshot = backend_.latestSnapshot();
     const sdk::ISimSnapshot* s = snapshot.get();
     if (s != nullptr) ds_.onSimTime(s->simTimeUs());
 
-    scene_.update(s, dt);
+    scene_.update(s);
     hud_.update(s);
     mechanisms_.update(s);
     refreshControls(s);

@@ -28,6 +28,7 @@ struct TireInput {
     float chassisShareMassKg = 1.f; // M / nWheels, used for the implicit lateral damping
     float wheelRadiusM = 0.0508f;
     float dt = 0.005f;
+    bool prescribedMotion = false; // evaluate contact without integrating wheel spin
 };
 
 // The wheel-side drivetrain state handed to the tire solver (reflected to the wheel shaft).

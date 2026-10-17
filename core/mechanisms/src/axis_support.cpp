@@ -140,6 +140,14 @@ std::vector<sdk::SlotSpec> axisSlots(const AxisOptions& o) {
     return out;
 }
 
+sdk::MotionAxisSpec axisMotionSpec(const AxisOptions& o) {
+    return {o.prefix.empty() ? "axis" : o.prefix,
+            o.motion == Motion::Linear ? sdk::PlantKind::Linear : sdk::PlantKind::Angular,
+            axisSlotNames(o).motors,
+            o.selectableMotion ? propKey(o.prefix, "motion") : "",
+            {}};
+}
+
 std::vector<sdk::PropertySpec> axisProperties(const AxisOptions& o, const MotorCatalog& motors) {
     using sdk::PropertyUnit;
     std::vector<sdk::PropertySpec> out;
@@ -351,6 +359,24 @@ MechanismAxis::MechanismAxis(std::string owner, AxisOptions options, AxisSetting
 void MechanismAxis::reset() {
     plant_->reset({settings_.startPosition, 0.0});
     appliedVoltageV_ = motorCurrentA_ = batteryCurrentA_ = 0.0;
+}
+
+sdk::MotionAxisBinding MechanismAxis::motionBinding() {
+    sdk::MotionAxisInfo info{
+        address(options_.prefix.empty() ? "axis" : options_.prefix), plant_->kind(), {}};
+    for (const auto& motor : slots_.motors) info.motorSlots.push_back(address(motor));
+    return {std::move(info), [this] { return plant_->state(); },
+            [this](sdk::SimContext& ctx, double dt, std::optional<sdk::PlantState> motion) {
+                if (!motion) {
+                    tick(ctx, dt);
+                    return;
+                }
+                const double previousVelocity = velocity();
+                plant_->reset(sdk::clampLinkedMotion(*motion, settings_.plant.minPosition,
+                                                     settings_.plant.maxPosition));
+                appliedVoltageV_ = motorCurrentA_ = batteryCurrentA_ = 0.0;
+                writeFeedback(ctx.devices(), previousVelocity, dt);
+            }};
 }
 
 double MechanismAxis::outputRotations(double position) const {

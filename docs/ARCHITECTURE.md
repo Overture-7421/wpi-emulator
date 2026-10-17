@@ -1,6 +1,6 @@
 # Architecture
 
-Status: SDK **1.4**, IPC protocol **v3** = the 1.0 freeze ([ADR 0005](decisions/0005-sdk-freeze.md)) plus the additive
+Status: SDK **1.5**, IPC protocol **v3** = the 1.0 freeze ([ADR 0005](decisions/0005-sdk-freeze.md)) plus the additive
 amendments of [ADR 0006](decisions/0006-sdk-1-1-amendments.md) (1.1, IPC protocol v2) and the two defaulted 1.2 additions
 documented in `sdk/version.h` (`IGameState::gameSpecificMessage`, `PrimitiveSpec::link`), the Armed lifecycle
 of [ADR 0011](decisions/0011-single-robot-instance.md) (1.3), and its explicit capability/reset-history
@@ -109,6 +109,11 @@ field, then physics world). No singletons or globals: registries and `SimContext
 created by the composition root (app or test).
 
 ## 3. Processes, threads, and ownership
+
+SDK 1.5 adds optional one-way motion links ([ADR 0012](decisions/0012-motion-links.md)).
+Linked sessions evaluate advertised wheel/mechanism axes in dependency order before publishing
+mechanism state and stepping the world. Followers use prescribed motion without motors or
+back-propagated load; independent sessions keep the original tick pipeline.
 
 ```
  Emulator process (Qt app)                                 Robot process

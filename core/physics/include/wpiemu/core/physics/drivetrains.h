@@ -52,6 +52,8 @@ public:
     void step(std::span<const sdk::WheelCommand> commands, float dtSeconds) override;
     std::span<const sdk::WheelState> wheelStates() const override { return states_; }
     void reset() override;
+    std::vector<sdk::MotionAxisBinding> motionAxes() override;
+    void prepareMotionStep(float dtSeconds) override;
 
     // Composed chassis mass (chassis + payloads); defaults to ChassisSpec mass at the body origin.
     void setChassisMass(const sdk::MassProperties& composed) override;
@@ -87,6 +89,8 @@ private:
 
     sdk::WheelDrive driveFor(const Wheel& w, double voltageV, double& supplyCurrentA) const;
     void stepSteer(Wheel& w, sdk::WheelState& st, double voltageV, float dt) const;
+    void advanceWheel(std::size_t index, sdk::WheelCommand command, float dt,
+                      std::optional<sdk::PlantState> motion = std::nullopt);
 
     std::string kind_;
     const sdk::DrivetrainSpec* spec_;
@@ -102,6 +106,7 @@ private:
     std::vector<Ground> ground_;
     std::vector<WheelXY> groundedXY_;
     std::vector<float> groundedLoads_;
+    std::vector<float> wheelLoads_;
     std::vector<std::size_t> groundedIndex_;
 
     sdk::Vec3 lastVelocity_;

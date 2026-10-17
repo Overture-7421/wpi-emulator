@@ -54,6 +54,13 @@ Catalogs are plain values (no global); extend with `add({key, label, spec})`.
 
 ## 2. Plants (`IPlant`, `PlantFactory`)
 
+Generic templates also expose opt-in motion axes (`axis`, or intake `deploy`/`roller`).
+With a configured motion link, a follower uses ratio-scaled source motion instead of advancing
+its plant/motors. Starting positions, travel limits, encoders, published geometry, and
+game-facing values still apply; follower motor current is zero. A follower may not have an
+independent motor mapping. Links never feed load back to the source. See
+[ADR 0012](decisions/0012-motion-links.md); geometry attachment links are a separate feature.
+
 `registerBuiltinPlants(PlantFactory&)` registers `PlantSpec::model` keys:
 
 | key | kind | WPILib equivalent |

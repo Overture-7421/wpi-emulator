@@ -67,7 +67,7 @@ TireOutput solveImpl(const Curve& g, const TireParams& p, const TireInput& in, c
     const float Ie = std::max(d.inertiaKgM2 + in.dt * d.dampingNmS, kMinInertia);
 
     if (!(in.normalLoadN > 0.f)) {  // airborne: the wheel spins freely under motor torque
-        out.omegaNext = d.omegaRadPerSec + in.dt * d.torqueNm / Ie;
+        if (!in.prescribedMotion) out.omegaNext = d.omegaRadPerSec + in.dt * d.torqueNm / Ie;
         if (!std::isfinite(out.omegaNext)) out.omegaNext = d.omegaRadPerSec;
         return out;
     }
@@ -86,8 +86,9 @@ TireOutput solveImpl(const Curve& g, const TireParams& p, const TireInput& in, c
     const float invM = 1.f / std::max(in.chassisShareMassKg, 1e-3f);
 
     // Longitudinal: wheel and chassis share one slip velocity; solve u' = u + du with F' = F0 + kL du.
-    const float c = reff * reff / Ie + invM;
-    const float du = in.dt * (reff * d.torqueNm / Ie - c * f0.fLong) / (1.f + kL * in.dt * c);
+    const float c = (in.prescribedMotion ? 0.f : reff * reff / Ie) + invM;
+    const float acceleration = in.prescribedMotion ? 0.f : reff * d.torqueNm / Ie;
+    const float du = in.dt * (acceleration - c * f0.fLong) / (1.f + kL * in.dt * c);
     float fLong = f0.fLong + kL * du;
     // Lateral: chassis share only.
     float fLat = f0.fLat / (1.f + kT * in.dt * invM);
@@ -99,7 +100,8 @@ TireOutput solveImpl(const Curve& g, const TireParams& p, const TireInput& in, c
 
     out.fLongN = fLong;
     out.fLatN = fLat;
-    out.omegaNext = d.omegaRadPerSec + in.dt * (d.torqueNm - reff * fLong) / Ie;
+    if (!in.prescribedMotion)
+        out.omegaNext = d.omegaRadPerSec + in.dt * (d.torqueNm - reff * fLong) / Ie;
     out.slipRatio = uL / vRefLong;
     out.slipAngleTan = uT / vRefLat;
     out.saturated = f0.sliding || std::fabs(fLong) >= 0.999f * fMaxL;

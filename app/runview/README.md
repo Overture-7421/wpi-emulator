@@ -13,8 +13,8 @@ implementation used by the tests, the demo and screenshots.
 |---|---|---|
 | Backend seam | `run_backend.h/.cpp` | `IRunBackend` (QObject): start/stop/restart/reset/pause/step/time scale, `latestSnapshot()` (polled at ~60 Hz), DS state, `status()` (process + link state), `sceneInfo()` (config, field, HUD + overlay descriptors), `logEntry` signal |
 | Fake backend | `fake_run_backend.*` | synthetic swerve robot, 3 mechanisms with moving links, 200 instanced "fuel" balls, HUD values, failure injection (`simulateCrash`, `simulateHandshakeTimeout`, ...) |
-| Presentation logic (Qt-light, unit tested) | `run_control.*`, `hud_model.*`, `sim_stats.*`, `scene_parts.*`, `camera_controller.*`, `console_model.*` | enable states, status chips/overlay text, HUD descriptor evaluation, SDK -> render parts, camera rig |
-| Qt Quick bridge | `scene_model.*`, `mechanism_overlay_model.*`, `qml/*.qml` | models for the QML scene (instancing for fuel); SDK Z-up is converted to Qt's Y-up in exactly one place (`RunScene.qml`, node `world`) |
+| Presentation logic (Qt-light, unit tested) | `run_control.*`, `hud_model.*`, `sim_stats.*`, `scene_parts.*`, `console_model.*` | enable states, status chips/overlay text, HUD descriptor evaluation, SDK -> render parts |
+| Qt Quick bridge | `scene_model.*`, `mechanism_overlay_model.*`, `qml/*.qml` | models for the QML scene (instancing for fuel); the camera is the editor's `OrbitCamera` (`common/orbit_camera.h`) with a field-framed home view, same orbit/pan/zoom controls as the editor viewport; SDK Z-up is converted to Qt's Y-up in exactly one place (`RunScene.qml`, node `world`) |
 | Driver Station | `driver_station_model.*`, `driver_station_panel.*` | enable / disable / e-stop, mode, alliance, match sequencing from sim time, game message. `DsState::matchTimeS` = seconds **remaining** in the active segment while a timed match runs, `-1` otherwise (the game plugin then uses its integrated clock). The game message text is a manual fallback: when the loaded game plugin provides FMS data (`IGameState::gameSpecificMessage()`, e.g. 2026 hub order `R`/`B`) the runtime overlays it before the robot sees it |
 | Joysticks | `joystick_types.*`, `joystick_source.*`, `joystick_manager.*`, `joystick_editor.*`, `sdl_gamepad_provider.*`, `fake_joystick.*` | 6 DS ports; keyboard or gamepad per port; binding editor with live preview and "press the input" learning; profiles in `QSettings` |
 | Widgets | `run_page.*`, `run_viewport.*`, `console_panel.*`, `status_chip.*` | thin wiring only |
@@ -27,7 +27,11 @@ implementation used by the tests, the demo and screenshots.
 | `Space` | Latch the emergency stop (cleared from the panel or by a robot restart) |
 | `Ctrl+R` | Restart: reset the physics and game state; the robot code keeps running |
 | `Ctrl+Shift+R` | Restart robot code (Restart dropdown): reboot it and reset the simulation |
-| `Ctrl+0` | Return the orbit camera to its home position |
+
+Restart actions are registered on the Run page, scoped to that page and its children, so
+shortcuts work with the dropdown closed and do not activate from the editor. The shell's
+File > Set up robot action has no conflicting shortcut.
+| `Ctrl+0` | Return the camera to its home view (also the home button or a double-click on the view) |
 | `Ctrl+J` | Show / hide the console |
 
 The keyboard joystick (slot 0 by default) uses `W A S D` (left stick), arrow keys (right stick), `U`/`O`
@@ -59,7 +63,7 @@ Joysticks tab says so. Disable with `-DWPIEMU_RUNVIEW_SDL2=OFF`.
 ```powershell
 # configure with -DWPIEMU_BUILD_UI_DEMOS=ON (default)
 wpiemu_runview_demo.exe --scenario running            # idle | starting | running | crash | timeout | mismatch | failed
-wpiemu_runview_demo.exe --camera follow --light --gamepad --joysticks
+wpiemu_runview_demo.exe --light --gamepad --joysticks
 wpiemu_runview_demo.exe --scenario running --screenshot out.png --park   # grab and exit (window parked off-screen)
 ```
 

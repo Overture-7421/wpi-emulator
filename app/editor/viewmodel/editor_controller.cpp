@@ -1,4 +1,5 @@
 #include "viewmodel/editor_controller.h"
+#include "wpiemu/sdk/mechanisms/motion_config.h"
 
 #include <QTime>
 
@@ -224,6 +225,10 @@ QString EditorController::mapDevice(const SelectionRef& target, const sdk::Devic
     } else {
         return ETR("Drop a device on a mechanism, a wheel or one of their slots.");
     }
+    const auto axes = sdk::motionAxisInfos(
+        c, [&](std::string_view type) { return document_.catalog().findTemplate(type); });
+    if (sdk::motionFollowerMotor(c, axes, address))
+        return ETR("This axis is driven by a motion link. Remove its link before mapping a motor.");
     if (!document_.mapSlot(address, key)) return ETR("Could not map the device.");
     selection_.set(SelectionRef::slot(address.owner, address.slot));
     Q_EMIT statusMessage(ETR("Mapped %1 to %2.").arg(deviceLabel(device), QString::fromStdString(ops::slotDisplayName(c, document_.catalog(), address))), 0);

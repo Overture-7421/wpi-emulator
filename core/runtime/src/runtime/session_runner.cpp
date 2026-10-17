@@ -190,7 +190,7 @@ void SessionRunner::applyCommands(std::vector<Command>& batch) {
         } else if (auto* ctl = std::get_if<Control>(&c)) {
             applyControl(ctl->command);
         } else if (auto* bind = std::get_if<Bind>(&c)) {
-            if (Status s = session_.hub().bind(bind->slot, bind->device); !s)
+            if (Status s = session_.bindSlot(bind->slot, bind->device); !s)
                 logger_.warn("runner", "bind " + bind->slot.toString() + " failed: " + s.error().message);
             sendLoopbackIfChanged(false);
         } else if (auto* unbind = std::get_if<Unbind>(&c)) {

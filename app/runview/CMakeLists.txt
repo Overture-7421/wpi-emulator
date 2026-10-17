@@ -17,7 +17,6 @@ set(WPIEMU_RUNVIEW_SOURCES
     console_model.cpp
     hud_model.cpp
     scene_parts.cpp
-    camera_controller.cpp
     scene_model.cpp
     mechanism_overlay_model.cpp
     sim_stats.cpp

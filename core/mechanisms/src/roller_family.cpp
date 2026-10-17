@@ -97,6 +97,7 @@ sdk::MechanismTemplateInfo infoFor(const RollerFlavor& f, const MotorCatalog& mo
     info.category = f.category;
     info.description = f.description;
     info.slotSpecs = axisSlots(f.axis);
+    info.motionAxes = {axisMotionSpec(f.axis)};
     if (f.beamBreakSlots) {
         info.slotSpecs.push_back({"entryBeamBreak", "Entry beam break", sdk::SlotType::BeamBreak, false,
                                   "Written by the game logic (piece present at the entry); the template never writes it."});

@@ -47,6 +47,30 @@ TEST_CASE("document: every edit is undoable and redoable") {
     CHECK(f.doc.undoStack()->undoText().contains("roller"));
 }
 
+TEST_CASE(
+    "document: motion links follow rename and duplication and remain repairable after deletion") {
+    DocFixture f;
+    f.doc.edit("Link motion", [](sdk::RobotConfig& c) {
+        c.motionLinks = {{"follow", {"turret", "axis"}, {"intake", "roller"}, -2}};
+        c.motionLinksConfigured = true;
+        return true;
+    });
+    const auto copied = f.doc.duplicateMechanism("intake");
+    REQUIRE_FALSE(copied.isEmpty());
+    REQUIRE(f.doc.config().motionLinks.size() == 2);
+    CHECK(f.doc.config().motionLinks[1].target.owner == copied.toStdString());
+    CHECK(f.doc.config().motionLinks[1].source.owner == "turret");
+    f.doc.undoStack()->undo();
+    CHECK(f.doc.config().motionLinks.size() == 1);
+    f.doc.edit("Rename source",
+               [](sdk::RobotConfig& c) { return ops::renameMechanism(c, "turret", "drive"); });
+    CHECK(f.doc.config().motionLinks[0].source.owner == "drive");
+    REQUIRE(f.doc.removeMechanism("drive"));
+    CHECK(f.doc.config().motionLinks.size() == 1);
+    f.doc.undoStack()->undo();
+    CHECK(f.doc.config().findMechanism("drive") != nullptr);
+}
+
 TEST_CASE("document: load clears history and does not count as a user edit") {
     DocFixture f;
     f.doc.addMechanism("roller", {});

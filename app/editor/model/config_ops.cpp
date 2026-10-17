@@ -6,6 +6,7 @@
 
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/units.h"
+#include "wpiemu/sdk/mechanisms/motion_config.h"
 
 namespace wpiemu::app::editor::ops {
 
@@ -274,6 +275,18 @@ std::string duplicateMechanism(RobotConfig& c, std::string_view id) {
     }
     std::string rootId = copies.front().id;
     for (auto& copy : copies) c.mechanisms.push_back(std::move(copy));
+    const auto originalLinks = c.motionLinks;
+    for (const auto& link : originalLinks)
+        if (const auto* target = mapped(link.target.owner)) {
+            auto copy = link;
+            copy.target.owner = *target;
+            if (const auto* source = mapped(link.source.owner)) copy.source.owner = *source;
+            copy.id += "_copy";
+            while (std::any_of(c.motionLinks.begin(), c.motionLinks.end(),
+                               [&](const auto& existing) { return existing.id == copy.id; }))
+                copy.id += "_2";
+            c.motionLinks.push_back(std::move(copy));
+        }
     normalizeOrder(c);
     return rootId;
 }
@@ -284,6 +297,10 @@ bool renameMechanism(RobotConfig& c, std::string_view id, const std::string& new
     if (m == nullptr) return false;
     const std::string old(id);
     m->id = newId;
+    for (auto& link : c.motionLinks) {
+        if (link.source.owner == old) link.source.owner = newId;
+        if (link.target.owner == old) link.target.owner = newId;
+    }
     for (auto& mapping : m->mappings) mapping.slot.owner = newId;
     for (auto& other : c.mechanisms) {
         if (other.parent == old) other.parent = newId;
@@ -404,11 +421,21 @@ std::vector<sdk::SlotSpec> drivetrainSlotSpecs(const sdk::DrivetrainSpec& spec) 
 }
 
 std::vector<sdk::SlotSpec> slotSpecsFor(const RobotConfig& c, const EditorCatalog& catalog, std::string_view owner) {
-    if (owner == sdk::slot_owner::kRobot) return robotSlotSpecs();
-    if (owner == sdk::slot_owner::kDrivetrain) return drivetrainSlotSpecs(c.drivetrain.spec);
-    if (const MechanismConfig* m = c.findMechanism(owner))
-        if (const auto* info = catalog.findTemplate(m->type)) return info->slotSpecs;
-    return {};
+    std::vector<sdk::SlotSpec> out;
+    if (owner == sdk::slot_owner::kRobot)
+        out = robotSlotSpecs();
+    else if (owner == sdk::slot_owner::kDrivetrain)
+        out = drivetrainSlotSpecs(c.drivetrain.spec);
+    else if (const MechanismConfig* m = c.findMechanism(owner))
+        if (const auto* info = catalog.findTemplate(m->type)) out = info->slotSpecs;
+    const auto axes =
+        sdk::motionAxisInfos(c, [&](std::string_view type) { return catalog.findTemplate(type); });
+    for (auto& slot : out)
+        if (sdk::motionFollowerMotor(c, axes, {std::string(owner), slot.name})) {
+            slot.required = false;
+            slot.description = "Driven by a motion link; no motor mapping is needed.";
+        }
+    return out;
 }
 
 std::vector<std::string> slotOwners(const RobotConfig& c) {
@@ -524,6 +551,12 @@ bool renameWheel(RobotConfig& c, const std::string& oldName, const std::string& 
     sdk::WheelSpec* w = findWheel(c, oldName);
     if (w == nullptr) return false;
     w->name = newName;
+    for (auto& link : c.motionLinks) {
+        if (link.source == SlotAddress{sdk::slot_owner::kDrivetrain, oldName + ".drive"})
+            link.source.slot = newName + ".drive";
+        if (link.target == SlotAddress{sdk::slot_owner::kDrivetrain, oldName + ".drive"})
+            link.target.slot = newName + ".drive";
+    }
     for (auto& m : c.drivetrain.mappings) {
         if (m.slot.slot == oldName + ".drive") m.slot.slot = newName + ".drive";
         else if (m.slot.slot == oldName + ".steer") m.slot.slot = newName + ".steer";

@@ -15,6 +15,7 @@ inline constexpr int kSdkVersionMajor = 1;
 //       back without relaunching the robot. Additive enum values; the wire layout is unchanged.
 //  1.4: Hello::supportsArmed (protocol v3, absent=false) and the defaulted
 //       IDeviceBridge::resetInputHistory lifecycle hook.
-inline constexpr int kSdkVersionMinor = 4;
+//  1.5: optional one-way motion links and opt-in modeled-axis callbacks.
+inline constexpr int kSdkVersionMinor = 5;
 
 }  // namespace wpiemu::sdk

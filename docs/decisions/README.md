@@ -15,3 +15,4 @@ Numbers are unique and sequential; never reuse or renumber an ADR (update refere
 | [0009](0009-mechanisms-impl.md) | Generic mechanisms, plants and motor models (`core/mechanisms`) |
 | [0010](0010-runtime.md) | Runtime, configuration and launcher (`core/runtime`) |
 | [0011](0011-single-robot-instance.md) | Single long-lived robot instance (SDK 1.3; SDK 1.4 / protocol v3 capability and reset-history amendment) |
+| [0012](0012-motion-links.md) | One-way motion links between wheels and mechanism axes (SDK 1.5) |

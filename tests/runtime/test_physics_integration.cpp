@@ -8,6 +8,7 @@
 #include "wpiemu/core/physics/box3d_world.h"
 #include "wpiemu/core/physics/chassis_simulator.h"
 #include "wpiemu/core/runtime/physics_wiring.h"
+#include "wpiemu/sdk/mechanisms/motion_config.h"
 
 using namespace wpiemu::sdk;
 using namespace wpiemu::core::runtime;
@@ -103,6 +104,70 @@ TEST_CASE("integration: the session drives a real Box3D swerve robot from hub vo
     s.reset();
     CHECK(std::abs(s.world().pose(s.chassisBody()).position.x) < 0.01f);
     CHECK(s.clock().tickIndex() == 0);
+}
+
+TEST_CASE("integration: two motors move and turn a six-contact linked tank in Box3D") {
+    Registries reg;
+    DrivetrainRegistry drivetrains;
+    TireModelRegistry tires;
+    REQUIRE(physics::registerPhysicsComponents(drivetrains, tires).ok());
+    RobotConfig c;
+    c.drivetrain.spec.kind = drivetrain_kind::kTank;
+    for (int side : {1, -1})
+        for (int i = 0; i < 3; ++i) {
+            WheelSpec wheel;
+            wheel.name = std::string(side > 0 ? "left" : "right") + std::to_string(i);
+            wheel.positionM = {0.2f * static_cast<float>(i - 1), 0.3f * static_cast<float>(side),
+                               wheel.radiusM};
+            c.drivetrain.spec.wheels.push_back(wheel);
+        }
+    c.drivetrain.mappings = {
+        {{slot_owner::kDrivetrain, "left1.drive"}, {"phoenix6", "talonfx", 1, "", -1}},
+        {{slot_owner::kDrivetrain, "right1.drive"}, {"phoenix6", "talonfx", 2, "", -1}}};
+    c.motionLinks = tankMotionLinks(c).value();
+    c.motionLinksConfigured = true;
+    SessionParts parts;
+    parts.world = physics::createBox3dWorld(c.sim.physics);
+    parts.config = c;
+    parts.mechanisms = &reg.mechanisms;
+    parts.drivetrains = &drivetrains;
+    parts.tireModels = &tires;
+    parts.chassisBuilder = physicsChassisBuilder();
+    parts.coupling = std::make_unique<PhysicsCouplingDriver>();
+    auto built = SessionBuilder::build(std::move(parts));
+    REQUIRE_MESSAGE(built.ok(), (built.ok() ? "" : built.error().message));
+    auto& s = *built.value();
+    BodyDesc floor;
+    floor.type = BodyType::Static;
+    floor.pose.position.z = -0.5f;
+    ShapeDesc slab;
+    slab.geometry = BoxShape{Vec3{30.f, 30.f, 0.5f}};
+    slab.material = Material{0.8f, 0.f, 0.f};
+    slab.category = layer::Field;
+    REQUIRE(s.world().addShape(s.world().createBody(floor), slab).valid());
+    s.hub().onAnnounce(talonAnnounce(101, 1));
+    s.hub().onAnnounce(talonAnnounce(102, 2));
+    proto::ActuatorFrame outputs;
+    outputs.samples = {{DeviceId{101}, 1, 4.0}, {DeviceId{102}, 1, 4.0}};
+    s.hub().onActuatorFrame(outputs);
+    proto::SensorFrame frame;
+    for (int i = 0; i < 200; ++i) s.tick(frame, true);
+    CHECK(s.world().pose(s.chassisBody()).position.x > 0.05f);
+    const auto wheels = s.drivetrain()->wheelStates();
+    REQUIRE(wheels.size() == 6);
+    for (std::size_t i : {0u, 2u, 3u, 5u}) {
+        const std::size_t source = i < 3 ? 1 : 4;
+        CHECK(wheels[i].driveWheelAngleRad == doctest::Approx(wheels[source].driveWheelAngleRad));
+        CHECK(wheels[i].driveWheelOmegaRadPerSec ==
+              doctest::Approx(wheels[source].driveWheelOmegaRadPerSec));
+        CHECK(wheels[i].driveMotorCurrentA == 0);
+        CHECK(wheels[i].normalLoadN > 0);
+    }
+    outputs.samples[0].value = -3.0;
+    outputs.samples[1].value = 3.0;
+    s.hub().onActuatorFrame(outputs);
+    for (int i = 0; i < 200; ++i) s.tick(frame, true);
+    CHECK(std::abs(s.world().angularVelocity(s.chassisBody()).z) > 0.01f);
 }
 
 #endif

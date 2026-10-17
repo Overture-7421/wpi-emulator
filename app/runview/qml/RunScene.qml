@@ -101,13 +101,18 @@ Item {
             const dy = mouse.y - lastY
             lastX = mouse.x
             lastY = mouse.y
-            const panning = (mouse.buttons & (Qt.RightButton | Qt.MiddleButton)) || (mouse.modifiers & Qt.ShiftModifier)
-            if (panning) scene.pan(dx, dy)
-            else scene.orbit(dx, dy)
+            // Same mapping as the editor: right-drag or Alt+left-drag orbits, left-drag, middle-drag or Shift+drag pans.
+            const orbiting = !(mouse.buttons & Qt.MiddleButton) && !(mouse.modifiers & Qt.ShiftModifier)
+                && ((mouse.buttons & Qt.RightButton) || (mouse.modifiers & Qt.AltModifier))
+            if (orbiting) scene.orbit(dx, dy)
+            else scene.pan(dx, dy)
         }
         onWheel: (wheel) => scene.zoom(wheel.angleDelta.y / 120.0)
         onDoubleClicked: scene.resetCamera()
     }
+
+    onHeightChanged: scene.setViewHeight(height)
+    Component.onCompleted: scene.setViewHeight(height)
 
     // Game-plugin HUD: generic renderer of HudWidgetDescriptors.
     Item {

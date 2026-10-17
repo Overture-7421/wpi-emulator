@@ -41,6 +41,8 @@ public:
     void reset() override;
     sdk::MechanismState state() const override { return state_; }
     double batteryCurrentA() const override;
+    std::vector<sdk::MotionAxisBinding> motionAxes() override;
+    void finishMotionTick(sdk::SimContext& ctx, double dtSeconds) override;
 
 protected:
     AxisMechanismBase(const sdk::MechanismConfig& config);

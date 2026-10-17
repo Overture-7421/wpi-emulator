@@ -348,7 +348,7 @@ void ViewportController::press(qreal x, qreal y, int button, int modifiers, cons
             editor_.selection().set(picked);
             return;
         }
-        drag_.kind = shift ? DragKind::Pan : DragKind::Orbit;
+        drag_.kind = DragKind::Pan;
         drag_.clickToDeselect = true;
     } else if (button == Qt::RightButton || (button == Qt::LeftButton && alt)) {
         drag_.kind = shift ? DragKind::Pan : DragKind::Orbit;
@@ -507,7 +507,7 @@ QString ViewportController::hintText() const {
 
 QString ViewportController::infoText() const {
     const TransformFields f = transformFields();
-    if (!f.valid) return ETR("Click a part to select it \xC2\xB7 right-drag orbits \xC2\xB7 middle-drag pans \xC2\xB7 wheel zooms");
+    if (!f.valid) return ETR("Click a part to select it \xC2\xB7 left/middle-drag pans \xC2\xB7 right-drag orbits \xC2\xB7 wheel zooms");
     return f.targetName;
 }
 

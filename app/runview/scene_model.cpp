@@ -203,6 +203,18 @@ void ViewportTheme::setPalette(const QPalette& p) {
 
 // ---- SceneModel --------------------------------------------------------------------------------
 SceneModel::SceneModel(QObject* parent) : QObject(parent), field_(this), robot_(this), zones_(this), entities_(this) {
+    resetCamera();
+}
+
+void SceneModel::resetCamera() {
+    // Side-on home view framing the whole field, so both alliance walls are visible.
+    const float span = std::max(fieldLength_, fieldWidth_);
+    camera_ = OrbitCamera{};
+    camera_.target = {fieldCenter_.x(), fieldCenter_.y(), fieldCenter_.z()};
+    camera_.yawRad = -OrbitCamera::degToRad(90.f);
+    camera_.pitchRad = 0.4f;
+    camera_.distance = span * 1.05f;
+    camera_.maxDistance = std::max(camera_.maxDistance, span * 6.f);
     refreshCamera();
 }
 
@@ -216,14 +228,13 @@ void SceneModel::setSceneInfo(const RunSceneInfo& info) {
     fieldLength_ = fp.lengthM;
     fieldWidth_ = fp.widthM;
     fieldCenter_ = toQt(fp.center);
-    camera_.setField(fp.center, fp.lengthM, fp.widthM);
+    resetCamera();
     emit fieldChanged();
 
     zoneState_.clear();
     zones_.setParts({});
     zoneLabels_.clear();
     updateZones(nullptr);
-    refreshCamera();
 }
 
 void SceneModel::setZonesVisible(bool v) {
@@ -232,19 +243,13 @@ void SceneModel::setZonesVisible(bool v) {
     emit zonesVisibleChanged();
 }
 
-void SceneModel::setCameraMode(int mode) {
-    camera_.setMode(static_cast<CameraMode>(std::clamp(mode, 0, 2)));
-    refreshCamera();
-}
-
 void SceneModel::refreshCamera() {
-    const CameraPose p = camera_.pose();
-    const QVector3D pos = toQt(p.position);
-    const QQuaternion rot = toQt(p.rotation);
-    if (pos == cameraPosition_ && rot == cameraRotation_ && p.fieldOfViewDeg == cameraFov_) return;
+    const QVector3D pos = toQt(camera_.position());
+    const QQuaternion rot = toQt(camera_.rotation());
+    if (pos == cameraPosition_ && rot == cameraRotation_ && camera_.fovDeg == cameraFov_) return;
     cameraPosition_ = pos;
     cameraRotation_ = rot;
-    cameraFov_ = p.fieldOfViewDeg;
+    cameraFov_ = camera_.fovDeg;
     emit cameraChanged();
 }
 
@@ -295,7 +300,7 @@ void SceneModel::updateZones(const sdk::ISimSnapshot* snapshot) {
     zoneState_ = std::move(next);
 }
 
-void SceneModel::update(const sdk::ISimSnapshot* snapshot, double dtSeconds) {
+void SceneModel::update(const sdk::ISimSnapshot* snapshot) {
     if (snapshot != nullptr) {
         const sdk::Pose3& pose = snapshot->chassis().pose;
         const QVector3D pos = toQt(pose.position);
@@ -306,7 +311,6 @@ void SceneModel::update(const sdk::ISimSnapshot* snapshot, double dtSeconds) {
             robotVisible_ = true;
             emit poseChanged();
         }
-        camera_.setRobot(pose.position, pose.rotation.yaw());
         if (rig_.update(snapshot)) robot_.updatePoses(rig_.parts(), rig_.changed());
         entities_.update(snapshot->entityGroups());
         updateZones(snapshot);
@@ -315,8 +319,6 @@ void SceneModel::update(const sdk::ISimSnapshot* snapshot, double dtSeconds) {
         emit poseChanged();
         entities_.update({});
     }
-    camera_.advance(dtSeconds);
-    refreshCamera();
 }
 
 }  // namespace wpiemu::app::runview

@@ -155,6 +155,7 @@ sdk::MechanismTemplateInfo infoFor(const OneDofFlavor& f, const MotorCatalog& mo
     info.category = f.category;
     info.description = f.description;
     info.slotSpecs = axisSlots(f.axis);
+    info.motionAxes = {axisMotionSpec(f.axis)};
     info.properties.properties = axisProperties(f.axis, motors);
     if (f.axisSelectable)
         info.properties.properties.push_back(

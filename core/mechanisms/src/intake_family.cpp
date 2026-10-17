@@ -116,6 +116,8 @@ sdk::MechanismTemplateInfo makeInfo(const MotorCatalog& motors) {
         "A deploy axis (pivoting or sliding) plus a roller. Reports 'active' while the roller spins above the "
         "threshold and the intake is deployed; game logic uses that to absorb game pieces.";
     info.slotSpecs = axisSlots(deployOptions());
+    info.motionAxes = {axisMotionSpec(deployOptions()), axisMotionSpec(rollerOptions())};
+    info.motionAxes.front().enabledProperty = "deployEnabled";
     for (sdk::SlotSpec& s : axisSlots(rollerOptions())) info.slotSpecs.push_back(std::move(s));
 
     auto& p = info.properties.properties;

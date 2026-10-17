@@ -66,8 +66,6 @@ public:
     void pollNow();
     // Samples joysticks and publishes the DS state once (normally a 50 Hz timer).
     void publishDriverStation();
-    // Selects the camera (0 orbit, 1 follow, 2 top-down); the toolbar only offers the orbit camera and its home view.
-    void setCameraMode(int mode);
     void setConsoleVisible(bool visible);
     bool consoleVisible() const;
 
@@ -120,7 +118,6 @@ private:
     QTimer* pollTimer_ = nullptr;
     QTimer* dsTimer_ = nullptr;
 
-    qint64 lastPollMs_ = 0;
     qint64 lastLabelMs_ = 0;
     bool consoleAutoShown_ = false;
 };

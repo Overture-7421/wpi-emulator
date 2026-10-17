@@ -32,6 +32,7 @@ set(WPIEMU_EDITOR_SOURCES
     views/field_editors.cpp
     views/icon_factory.cpp
     views/inspector_panel.cpp
+    views/motion_links_panel.cpp
     views/palette_panel.cpp
     views/project_tree_view.cpp
     views/property_form.cpp
@@ -44,7 +45,7 @@ qt_add_library(wpiemu_app_editor STATIC ${WPIEMU_EDITOR_SOURCES})
 qt_add_resources(wpiemu_app_editor wpiemu_editor_qml
     PREFIX "/wpiemu/editor"
     FILES qml/Viewport3D.qml)
-target_include_directories(wpiemu_app_editor PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(wpiemu_app_editor PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(wpiemu_app_editor
     PUBLIC wpiemu_sdk Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::QuickWidgets Qt6::Quick3D)
 wpiemu_target_defaults(wpiemu_app_editor)

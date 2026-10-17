@@ -224,6 +224,8 @@ void RobotPage::applyUnits() {
 
 void RobotPage::updateVisibility() {
     const RobotBasics& b = model_.basics();
+    if (auto* label = qobject_cast<QLabel*>(motorForm_->labelForField(motorsPerWheel_)))
+        label->setText(b.isTank() ? tr("Motors per powered side") : tr("Motors per wheel"));
     dimensionForm_->setRowVisible(wheelsPerSide_, b.isTank());
     motorForm_->setRowVisible(steerMotor_, b.isSwerve());
     motorForm_->setRowVisible(steerRatio_, b.isSwerve());

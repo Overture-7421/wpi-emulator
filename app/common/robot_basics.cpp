@@ -7,6 +7,7 @@
 
 #include "wpiemu/sdk/config/property_schema.h"
 #include "wpiemu/sdk/core/units.h"
+#include "wpiemu/sdk/mechanisms/motion_config.h"
 
 namespace wpiemu::app {
 
@@ -216,6 +217,11 @@ sdk::RobotConfig buildRobotConfig(const RobotBasics& b, const RobotBuildContext&
     if (b.isSwerve()) addSwerveWheels(b, spec.wheels);
     else if (b.isMecanum()) addMecanumWheels(b, spec.wheels);
     else addTankWheels(b, spec.wheels);
+    config.motionLinksConfigured = true;
+    if (b.isTank()) {
+        auto links = sdk::tankMotionLinks(config);
+        if (links) config.motionLinks = std::move(links).value();
+    }
 
     if (ctx.gameModule != nullptr) {
         const sdk::GameMetadata meta = ctx.gameModule->metadata();
@@ -257,6 +263,19 @@ sdk::RobotConfig updateRobotConfig(const sdk::RobotConfig* existing, const Robot
         }
     }
     out.drivetrain.mappings = std::move(kept);
+    // Keep invalidated linked endpoints visible for correction instead of losing real mappings.
+    if (!existing->motionLinks.empty()) out.drivetrain.mappings = existing->drivetrain.mappings;
+    if (existing->drivetrain.spec.kind != basics.drivetrain && existing->motionLinks.empty()) {
+        out.motionLinks = fresh.motionLinks;
+        out.motionLinksConfigured = true;
+    }
+    if (!existing->motionLinksConfigured && existing->motionLinks.empty() && basics.isTank()) {
+        auto links = sdk::tankMotionLinks(out);
+        if (links) {
+            out.motionLinks = std::move(links).value();
+            out.motionLinksConfigured = true;
+        }
+    }
 
     for (auto& [id, section] : fresh.plugins)
         if (out.findPlugin(id) == nullptr) out.plugins[id] = section;
@@ -280,7 +299,12 @@ RobotBasics basicsFromConfig(const sdk::RobotConfig& config) {
     }
 
     if (!spec.wheels.empty()) {
-        const sdk::WheelSpec& w = spec.wheels.front();
+        const auto source =
+            std::find_if(spec.wheels.begin(), spec.wheels.end(), [&](const auto& wheel) {
+                return sdk::motionLinkTo(config, {sdk::slot_owner::kDrivetrain,
+                                                  wheel.name + ".drive"}) == nullptr;
+            });
+        const sdk::WheelSpec& w = source == spec.wheels.end() ? spec.wheels.front() : *source;
         b.wheelDiameterM = static_cast<double>(w.radiusM) * 2.0;
         b.driveGearRatio = w.driveGearRatio;
         b.motorsPerWheel = std::max(1, w.driveMotorCount);

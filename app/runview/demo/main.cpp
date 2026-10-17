@@ -1,5 +1,5 @@
 // Standalone demo of the run view against FakeRunBackend. Also used for headless screenshots:
-//   wpiemu_runview_demo --scenario running --screenshot out.png [--camera follow] [--size 1500x900]
+//   wpiemu_runview_demo --scenario running --screenshot out.png [--size 1500x900]
 // Scenarios: idle, starting, running, crash, timeout, mismatch, failed.
 
 #include <QApplication>
@@ -39,7 +39,6 @@ int main(int argc, char* argv[]) {
     if (args.contains(QStringLiteral("--dark"))) QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
     const QString scenario = argValue(args, QStringLiteral("--scenario"), QStringLiteral("running"));
     const QString shot = argValue(args, QStringLiteral("--screenshot"));
-    const QString camera = argValue(args, QStringLiteral("--camera"), QStringLiteral("orbit"));
     const QString size = argValue(args, QStringLiteral("--size"), QStringLiteral("1500x900"));
     const int settle = argValue(args, QStringLiteral("--settle"), QStringLiteral("2500")).toInt();
 
@@ -65,8 +64,6 @@ int main(int argc, char* argv[]) {
     if (args.contains(QStringLiteral("--park"))) window.move(-6000, 100);   // real platform, window out of sight (screenshots)
     window.show();
 
-    const int cam = camera == QLatin1String("follow") ? 1 : (camera == QLatin1String("top") ? 2 : 0);
-    page.setCameraMode(cam);
     if (args.contains(QStringLiteral("--joysticks"))) page.driverStationPanel()->showSettings(1);
 
     if (scenario != QLatin1String("idle")) backend.startSimulation();

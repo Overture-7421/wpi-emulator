@@ -16,6 +16,7 @@
 #include "wpiemu/sdk/core/geometry.h"
 #include "wpiemu/sdk/core/value.h"
 #include "wpiemu/sdk/devices/slot.h"
+#include "wpiemu/sdk/mechanisms/motion_link.h"
 #include "wpiemu/sdk/physics/chassis_spec.h"
 #include "wpiemu/sdk/physics/physics_types.h"
 
@@ -123,6 +124,10 @@ struct RobotConfig {
     // "drivetrain", "drivetrain/wheels/<name>", ...), each value an object of unknown key -> Value.
     // Written by IRobotConfigCodec only; editors leave it alone.
     Value unknownFields = Value::makeObject();
+
+    std::vector<MotionLink> motionLinks;
+    // Explicit independent configurations opt out of the legacy tank upgrade, too.
+    bool motionLinksConfigured = false;
 
     const MechanismConfig* findMechanism(std::string_view id) const {
         for (const auto& m : mechanisms)

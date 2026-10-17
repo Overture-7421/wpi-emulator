@@ -7,6 +7,7 @@
 
 #include "wpiemu/sdk/devices/device_identity.h"
 #include "wpiemu/sdk/mechanisms/attachment.h"
+#include "wpiemu/sdk/mechanisms/motion_config.h"
 
 namespace wpiemu::core::config {
 
@@ -157,6 +158,9 @@ std::vector<Issue> ConfigValidator::validate(const RobotConfig& config, const Me
     validateChassis(config, out);
     validateDrivetrain(config, drivetrains, tireModels_, out);
     validateSimSettings(config, out);
+    const auto motionAxes = motionAxisInfos(
+        config, [&](std::string_view type) { return mechanisms.templateInfo(type); });
+    for (auto& issue : motionLinkIssues(config, motionAxes)) out.push_back(std::move(issue));
 
     // ---- mechanisms: ids, templates, properties ----
     std::map<std::string, std::vector<SlotSpec>> slotSpecsByOwner;
@@ -250,6 +254,7 @@ std::vector<Issue> ConfigValidator::validate(const RobotConfig& config, const Me
         const auto specs = slotSpecsByOwner.find(owner);
         if (specs == slotSpecsByOwner.end()) return;
         for (const SlotSpec& spec : specs->second) {
+            if (motionFollowerMotor(config, motionAxes, {owner, spec.name})) continue;
             if (honourRequiredFlag && !spec.required) continue;
             bool mapped = false;
             for (const SlotMapping& m : group)

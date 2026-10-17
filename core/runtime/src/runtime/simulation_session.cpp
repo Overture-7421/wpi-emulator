@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "wpiemu/core/config/config_validator.h"
+#include "wpiemu/sdk/mechanisms/motion_config.h"
 #include "wpiemu/sdk/mechanisms/attachment.h"
 
 namespace wpiemu::core::runtime {
@@ -134,6 +135,17 @@ SimulationSession::~SimulationSession() = default;
 
 IMechanismDirectory& SimulationSession::mechanisms() { return *directory_; }
 
+Status SimulationSession::bindSlot(const SlotAddress& slot, const DeviceKey& device) {
+    for (std::size_t i = 0; i < motionAxes_.size(); ++i) {
+        const auto& motors = motionAxes_[i].info.motorSlots;
+        if (motionSources_[i] && std::find(motors.begin(), motors.end(), slot) != motors.end())
+            return makeError(
+                ErrorCode::InvalidArgument,
+                "This axis follows another axis. Remove its motion link before mapping a motor.");
+    }
+    return hub_.bind(slot, device);
+}
+
 Result<std::unique_ptr<SimulationSession>> SessionBuilder::build(SessionParts parts) {
     if (!parts.world) return makeError(ErrorCode::InvalidArgument, "session needs a physics world");
     if (parts.mechanisms == nullptr) return makeError(ErrorCode::InvalidArgument, "session needs a mechanism factory");
@@ -208,6 +220,46 @@ Status SimulationSession::build(SessionParts& parts) {
             sessionWarnings_.push_back({Severity::Warning, DeviceId{}, "attachment_unresolved",
                                         "mechanism '" + m.id + "' has a broken attachment chain; it is mounted on the chassis root"});
 
+    if (!config_.motionLinks.empty()) {
+        if (drivetrain_) {
+            motionAxes_ = drivetrain_->motionAxes();
+            motionDrivetrain_ = !motionAxes_.empty();
+        }
+        for (const auto& mechanism : mechanismInstances_) {
+            auto axes = mechanism->motionAxes();
+            motionMechanisms_.push_back(!axes.empty());
+            for (auto& axis : axes) motionAxes_.push_back(std::move(axis));
+        }
+        std::vector<MotionAxisInfo> infos;
+        for (const auto& axis : motionAxes_) {
+            infos.push_back(axis.info);
+            motionStarts_.push_back(axis.state());
+        }
+        const auto issues = sdk::motionLinkIssues(config_, infos);
+        if (!issues.empty()) return makeError(ErrorCode::InvalidArgument, issues.front().message);
+        motionSources_.resize(motionAxes_.size());
+        motionRatios_.assign(motionAxes_.size(), 1.0);
+        for (std::size_t i = 0; i < motionAxes_.size(); ++i) {
+            if (const auto* link = sdk::motionLinkTo(config_, motionAxes_[i].info.address)) {
+                for (std::size_t j = 0; j < motionAxes_.size(); ++j)
+                    if (motionAxes_[j].info.address == link->source) motionSources_[i] = j;
+                motionRatios_[i] = link->ratio;
+            }
+        }
+        std::vector<bool> ordered(motionAxes_.size(), false);
+        while (motionOrder_.size() < motionAxes_.size()) {
+            const auto previousSize = motionOrder_.size();
+            for (std::size_t i = 0; i < motionAxes_.size(); ++i)
+                if (!ordered[i] && (!motionSources_[i] || ordered[*motionSources_[i]])) {
+                    motionOrder_.push_back(i);
+                    ordered[i] = true;
+                }
+            if (motionOrder_.size() == previousSize)
+                return makeError(ErrorCode::InvalidArgument,
+                                 "Motion links contain a dependency cycle.");
+        }
+    }
+
     // 5. game state
     if (module_ != nullptr) {
         Result<std::unique_ptr<IGameState>> state = module_->createGameState(*ctx_);
@@ -230,6 +282,7 @@ void SimulationSession::reset() {
     if (coupling_) coupling_->reset();
     if (drivetrain_) drivetrain_->reset();
     for (const auto& m : mechanismInstances_) m->reset();
+    for (std::size_t i = 0; i < motionAxes_.size(); ++i) motionStarts_[i] = motionAxes_[i].state();
     clock_.reset();
     rng_.seed(config_.sim.seed);
     battery_.reset();
@@ -250,7 +303,7 @@ void SimulationSession::stepDrivetrain(double dt, double& currentA) {
         wheelCommands_[i].driveVoltageV = drive.valid ? drive.voltageV : 0.0;
         wheelCommands_[i].steerVoltageV = steer.valid ? steer.voltageV : 0.0;
     }
-    drivetrain_->step(wheelCommands_, static_cast<float>(dt));
+    if (!motionDrivetrain_) drivetrain_->step(wheelCommands_, static_cast<float>(dt));
 
     const auto states = drivetrain_->wheelStates();
     for (std::size_t i = 0; i < wheels.size() && i < states.size(); ++i) {
@@ -304,8 +357,28 @@ void SimulationSession::tick(proto::SensorFrame& out, bool fullFrame) {
     const double dt = clock_.fixedStepSeconds();
 
     double mechanismCurrentA = 0.0;
-    for (const auto& m : mechanismInstances_) {
-        m->tick(*ctx_, dt);
+    if (!motionOrder_.empty()) {
+        if (motionDrivetrain_) drivetrain_->prepareMotionStep(static_cast<float>(dt));
+        for (const auto i : motionOrder_) {
+            std::optional<PlantState> motion;
+            if (const auto source = motionSources_[i]) {
+                motion = linkedMotion(motionAxes_[*source].state(), motionStarts_[*source],
+                                      motionStarts_[i], motionRatios_[i]);
+                if (!std::isfinite(motion->position) || !std::isfinite(motion->velocity)) {
+                    logger_->error("motion_links", "Non-finite linked motion at " +
+                                                       motionAxes_[i].info.address.toString());
+                    motion = PlantState{motionAxes_[i].state().position, 0.0};
+                }
+            }
+            motionAxes_[i].advance(*ctx_, dt, motion);
+        }
+    }
+    for (std::size_t i = 0; i < mechanismInstances_.size(); ++i) {
+        const auto& m = mechanismInstances_[i];
+        if (!motionMechanisms_.empty() && motionMechanisms_[i])
+            m->finishMotionTick(*ctx_, dt);
+        else
+            m->tick(*ctx_, dt);
         mechanismCurrentA += std::max(0.0, m->batteryCurrentA());
     }
     double drivetrainCurrentA = 0.0;

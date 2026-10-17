@@ -127,6 +127,16 @@ sdk::MechanismTemplateInfo templ(const char* type, const char* name, const char*
     t.properties.properties = std::move(props);
     t.defaultGeometry = std::move(geometry);
     t.links = std::move(links);
+    for (const auto& s : t.slotSpecs)
+        if (s.type == sdk::SlotType::Motor) {
+            const bool deploy = s.name == "deploy";
+            t.motionAxes.push_back(
+                {deploy ? "deploy" : std::string(type) == "intake" ? "roller" : "axis",
+                 std::string(type) == "elevator" ? sdk::PlantKind::Linear : sdk::PlantKind::Angular,
+                 {s.name},
+                 std::string(type) == "generic_1dof" ? "motion" : "",
+                 deploy ? "hasDeploy" : ""});
+        }
     return t;
 }
 

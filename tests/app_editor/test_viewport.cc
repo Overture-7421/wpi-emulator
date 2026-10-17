@@ -331,10 +331,14 @@ TEST_CASE("viewport: pointer events select, deselect and drive the camera") {
     CHECK(f.view.camera().yawRad != yaw);
 
     f.editor.selection().set(SelectionRef::mechanism("intake"));
-    f.view.press(300, 300, Qt::LeftButton, 0, {});                  // drag on empty space orbits and keeps the selection
+    const float yawBeforePan = f.view.camera().yawRad;
+    const auto targetBefore = f.view.camera().target;
+    f.view.press(300, 300, Qt::LeftButton, 0, {});                  // drag on empty space pans and keeps the selection
     f.view.move(360, 320, Qt::LeftButton, 0);
     f.view.release(360, 320, Qt::LeftButton);
     CHECK(f.editor.selection().current() == SelectionRef::mechanism("intake"));
+    CHECK(f.view.camera().yawRad == yawBeforePan);
+    CHECK(sdk::length(f.view.camera().target - targetBefore) > 0.f);
 
     const float dist = f.view.camera().distance;
     f.view.wheel(120);

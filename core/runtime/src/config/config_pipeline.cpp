@@ -1,6 +1,7 @@
 #include "wpiemu/core/config/config_pipeline.h"
 
 #include <optional>
+#include "wpiemu/sdk/mechanisms/motion_config.h"
 
 namespace wpiemu::core::config {
 
@@ -54,6 +55,24 @@ Result<LoadedConfig> ConfigPipeline::load(const Value& stored) const {
 Result<LoadedConfig> ConfigPipeline::process(RobotConfig config, const DecodeInfo& core) const {
     LoadedConfig out;
     out.core = core;
+    if (!config.motionLinksConfigured && config.motionLinks.empty() &&
+        config.drivetrain.spec.kind == drivetrain_kind::kTank &&
+        !config.drivetrain.spec.wheels.empty()) {
+        auto links = tankMotionLinks(config);
+        if (!links) {
+            out.issues.push_back(
+                {Severity::Error, "motionLinks", links.error().message, "motion_link_conversion"});
+        } else {
+            config.motionLinks = std::move(links).value();
+            config.motionLinksConfigured = true;
+            out.core.migrated = true;
+            out.issues.push_back(
+                {Severity::Warning, "motionLinks",
+                 "Tank wheels now follow the mapped source wheel on each side. Map any unbound "
+                 "source motor, then save the upgraded configuration.",
+                 "motion_link_conversion"});
+        }
+    }
 
     IGameModule* plugin = selectPlugin(config, plugins_);
     PluginConfigSchema schema;
@@ -93,7 +112,8 @@ Result<LoadedConfig> ConfigPipeline::process(RobotConfig config, const DecodeInf
     for (MechanismConfig& m : config.mechanisms)
         if (const MechanismTemplateInfo* info = registrar_.factory().templateInfo(m.type)) applyDefaults(info->properties, m.properties);
 
-    out.issues = validator_.validate(config, registrar_.factory(), drivetrains_, plugins_);
+    auto issues = validator_.validate(config, registrar_.factory(), drivetrains_, plugins_);
+    out.issues.insert(out.issues.end(), issues.begin(), issues.end());
     out.config = std::move(config);
     return out;
 }

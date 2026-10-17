@@ -4,7 +4,7 @@
 
 #include <cmath>
 
-#include "camera_controller.h"
+#include "common/orbit_camera.h"
 #include "fake_run_backend.h"
 #include "mechanism_overlay_model.h"
 #include "scene_model.h"
@@ -192,59 +192,35 @@ TEST_CASE("field parts centre the floor on the visuals") {
     CHECK(none.lengthM > 0.f);
 }
 
-TEST_CASE("camera look rotation points -Z at the target with +Z up") {
-    const sdk::Vec3 forward = sdk::normalized({1.f, 1.f, -0.5f});
-    const sdk::Quat q = CameraController::lookRotation(forward, {0.f, 0.f, 1.f});
-    CHECK(near(q.rotate({0.f, 0.f, -1.f}), forward));
-    const sdk::Vec3 up = q.rotate({0.f, 1.f, 0.f});
-    CHECK(up.z > 0.f);
-    CHECK(sdk::dot(up, forward) == doctest::Approx(0.f).epsilon(0.01));
+TEST_CASE("run view camera uses the editor's orbit camera around a field-framed home view") {
+    SceneModel scene;
+    wpiemu::app::OrbitCamera editorLike;   // the editor viewport drives this same type
+    const float home = scene.camera().distance;
+    CHECK(home > 0.f);
+    // Side-on home view: the camera sits on the -Y side, centred on the field length, above the floor.
+    CHECK(scene.cameraPosition().x() == doctest::Approx(scene.fieldCenter().x()).epsilon(1e-3));
+    CHECK(scene.cameraPosition().y() < scene.fieldCenter().y());
+    CHECK(scene.cameraPosition().z() > 0.f);
+
+    scene.zoom(2.f);
+    CHECK(scene.camera().distance < home);
+    editorLike.zoom(2.f);
+    CHECK(scene.camera().distance / home == doctest::Approx(editorLike.distance / 2.8f));   // same zoom step
+
+    scene.orbit(0.f, 100000.f);   // pitch is clamped like the editor's, never flipped over the pole
+    CHECK(scene.camera().pitchRad <= wpiemu::app::OrbitCamera::degToRad(89.f) + 1e-4f);
+    scene.orbit(0.f, -100000.f);
+    CHECK(scene.camera().pitchRad >= wpiemu::app::OrbitCamera::degToRad(-89.f) - 1e-4f);
+
+    const sdk::Vec3 target = scene.camera().target;
+    scene.setViewHeight(600.f);
+    scene.pan(50.f, 0.f);
+    CHECK(!near(scene.camera().target, target));
+
+    scene.resetCamera();
+    CHECK(scene.camera().distance == doctest::Approx(home));
+    CHECK(near(scene.camera().target, target));
 }
-
-TEST_CASE("camera modes: orbit, follow and top-down") {
-    CameraController cam;
-    cam.setField({8.f, 4.f, 0.f}, 16.f, 8.f);
-    cam.setRobot({3.f, 2.f, 0.f}, 0.f);
-
-    cam.setMode(CameraMode::Orbit);
-    const CameraPose orbit = cam.pose();
-    CHECK(sdk::length(orbit.position - cam.target()) == doctest::Approx(cam.distance()));
-    const float d0 = cam.distance();
-    cam.zoom(2.f);
-    CHECK(cam.distance() < d0);
-    cam.orbit(0.f, 10000.f);
-    CHECK(std::abs(cam.pitch()) <= 3.1416f);   // pitch wraps instead of being clamped
-    cam.reset();
-    cam.orbit(0.f, -300.f);                    // 300 px down: well below the floor
-    CHECK(cam.pitch() < 0.f);
-    CHECK(cam.pose().position.z < 0.f);
-    CHECK(cam.pitch() < -1.57f);               // went past the pole: no stop
-    cam.reset();
-    CHECK(cam.distance() == doctest::Approx(d0));
-    // Home view is side-on: the camera sits along the field's width axis, centred on the field length.
-    const CameraPose home = cam.pose();
-    CHECK(home.position.x == doctest::Approx(8.f).epsilon(1e-3));
-    CHECK(home.position.y < 4.f);
-    CHECK(home.position.z > 0.f);
-
-    cam.setMode(CameraMode::Follow);
-    for (int i = 0; i < 200; ++i) cam.advance(0.016);
-    const CameraPose follow = cam.pose();
-    CHECK(follow.position.x < 3.f);   // behind a robot facing +X
-    CHECK(follow.position.z > 0.f);
-    cam.setRobot({3.f, 2.f, 0.f}, 3.14159265f);   // robot turns around
-    for (int i = 0; i < 300; ++i) cam.advance(0.016);
-    CHECK(cam.pose().position.x > 3.f);
-
-    cam.setMode(CameraMode::TopDown);
-    const CameraPose top = cam.pose();
-    CHECK(near(top.rotation.rotate({0.f, 0.f, -1.f}), {0.f, 0.f, -1.f}));
-    CHECK(near(top.rotation.rotate({1.f, 0.f, 0.f}), {1.f, 0.f, 0.f}));   // +X to the right
-    const sdk::Vec3 before = top.position;
-    cam.pan(100.f, 0.f);
-    CHECK(cam.pose().position.x < before.x);   // dragging right moves the view left
-}
-
 TEST_CASE("part list model converts SDK primitives to Qt Quick 3D transforms") {
     PartListModel model;
     ScenePart box;
@@ -311,7 +287,7 @@ TEST_CASE("scene model follows the snapshot and exposes zone toggles") {
     backend.tick(10);
     const auto snap = backend.latestSnapshot();
     REQUIRE(snap != nullptr);
-    scene.update(snap.get(), 0.016);
+    scene.update(snap.get());
     CHECK(scene.robotVisible());
     CHECK(scene.entityModel().totalInstances() > 100);
     CHECK(scene.chassisPosition().x() == doctest::Approx(snap->chassis().pose.position.x));
@@ -323,8 +299,6 @@ TEST_CASE("scene model follows the snapshot and exposes zone toggles") {
     QSignalSpy spy(&scene, &SceneModel::cameraChanged);
     scene.zoom(3.f);
     CHECK(spy.count() == 1);
-    scene.setCameraMode(2);
-    CHECK(scene.cameraMode() == CameraMode::TopDown);
 }
 
 TEST_CASE("mechanism overlay model shows labels and human units") {

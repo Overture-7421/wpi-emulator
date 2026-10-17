@@ -54,12 +54,30 @@ TEST_CASE("tank basics produce wheels per side and skip steering") {
         CHECK(!w.steered);
         (w.positionM.y > 0 ? left : right)++;
     }
+
     CHECK(left == 3);
     CHECK(right == 3);
     CHECK(findWheel(c, "left0") != nullptr);
     CHECK(findWheel(c, "right2") != nullptr);
     // wheels are spread front to back
     CHECK(findWheel(c, "left0")->positionM.x < findWheel(c, "left2")->positionM.x);
+    CHECK(c.motionLinksConfigured);
+    CHECK(c.motionLinks.size() == 4);
+}
+
+TEST_CASE("tank setup updates retain custom links and mappings needing reference repair") {
+    auto basics = defaultBasicsFor(sdk::drivetrain_kind::kTank);
+    basics.wheelsPerSide = 3;
+    auto existing = buildRobotConfig(basics, {});
+    existing.motionLinks[0].ratio = -2;
+    existing.drivetrain.mappings.push_back(
+        {{"drivetrain", "left2.drive"}, {"phoenix6", "talonfx", 1, "", -1}});
+    basics.wheelsPerSide = 2;
+    const auto updated = updateRobotConfig(&existing, basics, {});
+    CHECK(updated.motionLinks.size() == existing.motionLinks.size());
+    CHECK(updated.motionLinks[0].ratio == -2);
+    CHECK(updated.drivetrain.mappings == existing.drivetrain.mappings);
+    CHECK(updated.drivetrain.spec.wheels.size() == 4);
 }
 
 TEST_CASE("mecanum basics use opposing roller angles on diagonals") {

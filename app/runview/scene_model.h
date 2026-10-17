@@ -1,6 +1,6 @@
 #pragma once
 
-// QObject / model layer between the Qt-free scene logic (scene_parts.h, camera_controller.h) and the
+// QObject / model layer between the Qt-free scene logic (scene_parts.h, common/orbit_camera.h) and the
 // Qt Quick 3D scene (qml/RunScene.qml). Everything is driven by ISimSnapshot; no business logic here.
 
 #include <QAbstractListModel>
@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-#include "camera_controller.h"
+#include "common/orbit_camera.h"
 #include "run_backend.h"
 #include "scene_parts.h"
 
@@ -175,8 +175,7 @@ public:
     explicit SceneModel(QObject* parent = nullptr);
 
     void setSceneInfo(const RunSceneInfo& info);
-    // dtSeconds: wall time since the previous call (camera smoothing).
-    void update(const sdk::ISimSnapshot* snapshot, double dtSeconds);
+    void update(const sdk::ISimSnapshot* snapshot);
 
     QObject* fieldParts() { return &field_; }
     QObject* robotParts() { return &robot_; }
@@ -186,7 +185,7 @@ public:
     PartListModel& zoneModel() { return zones_; }
     EntityGroupModel& entityModel() { return entities_; }
     RobotRig& rig() { return rig_; }
-    CameraController& camera() { return camera_; }
+    OrbitCamera& camera() { return camera_; }
 
     QVector3D chassisPosition() const { return chassisPosition_; }
     QQuaternion chassisRotation() const { return chassisRotation_; }
@@ -204,13 +203,12 @@ public:
     void setZoneLabelShown(const QString& label, bool shown) { zones_.setLabelShown(label, shown); }
     bool zoneLabelShown(const QString& label) const { return zones_.labelShown(label); }
 
-    CameraMode cameraMode() const { return camera_.mode(); }
-    Q_INVOKABLE void setCameraMode(int mode);
+    // Same orbit camera and input scale as the editor viewport. The home view frames the whole field.
     Q_INVOKABLE void orbit(float dx, float dy) { camera_.orbit(dx, dy); refreshCamera(); }
-    Q_INVOKABLE void pan(float dx, float dy) { camera_.pan(dx, dy); refreshCamera(); }
+    Q_INVOKABLE void pan(float dx, float dy) { camera_.pan(dx, dy, viewHeightPx_); refreshCamera(); }
     Q_INVOKABLE void zoom(float steps) { camera_.zoom(steps); refreshCamera(); }
-    Q_INVOKABLE void resetCamera() { camera_.reset(); refreshCamera(); }
-    Q_INVOKABLE void centerOnRobot() { camera_.centerOnRobot(); refreshCamera(); }
+    Q_INVOKABLE void resetCamera();
+    Q_INVOKABLE void setViewHeight(float heightPx) { viewHeightPx_ = heightPx > 1.f ? heightPx : 1.f; }
 
 signals:
     void poseChanged();
@@ -228,7 +226,8 @@ private:
     PartListModel zones_;
     EntityGroupModel entities_;
     RobotRig rig_;
-    CameraController camera_;
+    OrbitCamera camera_;
+    float viewHeightPx_ = 720.f;
     RunSceneInfo info_;
     std::vector<ZoneOverlay> zoneState_;
     QStringList zoneLabels_;
@@ -241,7 +240,7 @@ private:
     float cameraFov_ = 45.f;
     float fieldLength_ = 16.46f;
     float fieldWidth_ = 8.23f;
-    QVector3D fieldCenter_;
+    QVector3D fieldCenter_{8.2f, 4.1f, 0.f};
     bool zonesVisible_ = true;
 };
 

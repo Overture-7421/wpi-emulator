@@ -41,6 +41,7 @@ struct MechanismTemplateInfo {
     PropertySchema properties;
     std::vector<PrimitiveSpec> defaultGeometry;
     std::vector<LinkSpec> links;   // SDK 1.1: attachable links besides the implicit "root"
+    std::vector<MotionAxisSpec> motionAxes;
 };
 
 // True for kRootLink and for every link the template declares.
@@ -101,6 +102,9 @@ public:
     virtual MechanismState state() const = 0;       // cheap copy for the snapshot
     // Total electrical current drawn from the battery during the last tick (A), >= 0.
     virtual double batteryCurrentA() const { return 0.0; }
+    virtual std::vector<MotionAxisBinding> motionAxes() { return {}; }
+    // Called instead of tick after the runtime advanced the advertised axes exactly once.
+    virtual void finishMotionTick(SimContext& ctx, double dtSeconds) { tick(ctx, dtSeconds); }
     // SDK 1.1. Pose of `link` relative to this mechanism's ROOT frame (the mount), as of the last tick.
     // "root" is always the identity. Default: looks `link` up in state().links; mechanisms SHOULD publish
     // every link their template declares there (moving links update each tick). nullopt = unknown link.

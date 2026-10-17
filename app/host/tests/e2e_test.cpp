@@ -1,16 +1,21 @@
 // End-to-end test of the real product pipeline (opt-in, label `e2e`):
 //
-//   copy of a real WPILib project -> gradle simulateJava with the real halsim_wpiemu -> IPC -> real SessionRunner
-//   (Box3D world, 2026 plugin, swerve drivetrain, mechanisms) -> DS enabled in teleop -> robot drives.
+//   copy of a real WPILib project -> gradle simulateJava with the real halsim_wpiemu -> IPC -> real
+//   SessionRunner (Box3D world, 2026 plugin, swerve drivetrain, mechanisms) -> DS enabled in teleop
+//   -> robot drives.
 //
-// Needs WPILib (JDK + offline Maven), Gradle (the project's wrapper), a robot project and a built halsim_wpiemu.
-// Skipped (exit code 77, CTest SKIP_RETURN_CODE) with a clear message when WPIEMU_E2E is not set or a prerequisite is missing.
+// Needs WPILib (JDK + offline Maven), Gradle (the project's wrapper), a robot project and a built
+// halsim_wpiemu. Skipped (exit code 77, CTest SKIP_RETURN_CODE) with a clear message when
+// WPIEMU_E2E is not set or a prerequisite is missing.
 //
 //   $env:WPIEMU_E2E = "1"; ctest -C Release -L e2e --output-on-failure
-//   $env:WPIEMU_E2E_PROJECT = "C:\path\to\robot"   (default: ../FRC-Shelby-2026OS next to this repository)
-//   $env:WPIEMU_E2E_KEEP = "1"                      keep the temp copy for inspection
+//   $env:WPIEMU_E2E_PROJECT = "C:\path\to\robot"   (default: ../FRC-Shelby-2026OS next to this
+//   repository) $env:WPIEMU_E2E_KEEP = "1"                      keep the temp copy for inspection
 //   $env:WPIEMU_E2E_VERBOSE = "1"                   echo the robot console
-//   $env:WPIEMU_E2E_LAUNCH = "direct"               use the simulateExternal direct launch instead of the gradle init script
+//   $env:WPIEMU_E2E_LAUNCH = "direct"               use the simulateExternal direct launch instead
+//   of the gradle init script $env:WPIEMU_E2E_TANK = "1"                     opt in to the saved
+//   six-wheel/two-motor tank fixture case
+//     Run with --test-case="e2e: saved tank robot*" and WPIEMU_E2E_PROJECT pointing to that robot.
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -26,7 +31,9 @@
 
 #include "host/robot_session.h"
 #include "test_support.h"
+#include "wpiemu/core/config/config_store.h"
 #include "wpiemu/core/launcher/project_inspector.h"
+#include "wpiemu/sdk/mechanisms/motion_config.h"
 
 namespace fs = std::filesystem;
 using namespace wpiemu;
@@ -415,6 +422,96 @@ TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven t
         CHECK_FALSE(processAlive(pid));
     }
     std::printf("e2e: total %.1f s\n", seconds(t0, Clock::now()));
+}
+
+TEST_CASE("e2e: saved tank robot keeps its two mappings and drives six linked wheels" *
+          doctest::skip(env("WPIEMU_E2E_TANK").empty())) {
+    Scratch scratch;
+    scratch.root = fs::temp_directory_path() /
+                   ("wpiemu-tank-e2e-" + std::to_string(Clock::now().time_since_epoch().count()));
+    const fs::path project = scratch.root / "project";
+    copyProject(fs::path(env("WPIEMU_E2E_PROJECT")), project);
+    TestRegistries registries;
+    core::config::FileConfigStore store(project / ".wpiemu" / "robot.json", "tank fixture",
+                                        registries.json, registries.codec);
+    auto original = store.load();
+    REQUIRE_MESSAGE(original.ok(), (original.ok() ? "" : original.error().message));
+    REQUIRE(original.value().drivetrain.spec.kind == sdk::drivetrain_kind::kTank);
+    const auto mappings = original.value().drivetrain.mappings;
+    auto loaded = registries.pipeline.process(original.value(), store.lastDecode());
+    REQUIRE(loaded.ok());
+    for (const auto& issue : loaded.value().issues) INFO(issue.code << ": " << issue.message);
+    REQUIRE(loaded.value().valid());
+    auto config = loaded.value().config;
+    config.project.path = project.string();
+    REQUIRE(config.drivetrain.mappings == mappings);
+    REQUIRE(config.drivetrain.mappings.size() == 2);
+    REQUIRE(config.drivetrain.spec.wheels.size() == 6);
+    REQUIRE(config.motionLinks.size() == 4);
+    REQUIRE(store.save(config).ok());
+    auto persisted = store.load();
+    REQUIRE(persisted.ok());
+    auto again = registries.pipeline.process(persisted.value(), store.lastDecode());
+    REQUIRE(again.ok());
+    CHECK_FALSE(again.value().migrated());
+
+    app::host::Options options;
+    options.projectDir = project;
+    options.extensionLibrary = WPIEMU_E2E_EXTENSION;
+    options.scratchDir = scratch.root / "scratch";
+    options.handshakeTimeout = 8min;
+    options.driverStation.enabled = true;
+    options.driverStation.mode = sdk::proto::RobotMode::Teleop;
+    options.driverStation.joysticks[0].present = true;
+    options.driverStation.joysticks[0].axes = {0.f, 0.f, 0.f, 0.f, 0.f, -0.8f};
+    options.driverStation.joysticks[0].buttonCount = 10;
+    options.driverStation.joysticks[0].povs = {-1};
+    app::host::SessionStatus status;
+    std::vector<std::string> console;
+    std::int64_t firstPid = 0;
+    for (int run = 0; run < 2; ++run) {
+        if (run == 1) options.driverStation.enabled = false;
+        auto started = app::host::RobotSession::start(registries.view(), config, options);
+        REQUIRE_MESSAGE(started.ok(), (started.ok() ? "" : started.error().message));
+        auto& session = *started.value();
+        const bool ready = waitFor(
+            session, 480s,
+            [&](const app::host::SessionStatus& s) {
+                const auto snapshot = session.latestSnapshot();
+                return s.programStarted && snapshot &&
+                       snapshot->simTimeUs() >= (run == 0 ? 2000000 : 20000);
+            },
+            status, console);
+        if (!ready) dumpConsole(console);
+        REQUIRE_MESSAGE(ready, status.detail);
+        const auto snapshot = session.latestSnapshot();
+        REQUIRE(snapshot != nullptr);
+        REQUIRE(session.runner().robotHello().has_value());
+        const auto pid = session.runner().robotHello()->pid;
+        if (run == 0) {
+            firstPid = pid;
+            for (const auto& link : config.motionLinks) {
+                const auto wheel = [&](const std::string& axis) {
+                    return std::find_if(snapshot->wheels().begin(), snapshot->wheels().end(),
+                                        [&](const auto& w) { return w.name + ".drive" == axis; });
+                };
+                const auto source = wheel(link.source.slot);
+                const auto target = wheel(link.target.slot);
+                REQUIRE(source != snapshot->wheels().end());
+                REQUIRE(target != snapshot->wheels().end());
+                CHECK(std::abs(source->spinAngleRad) > 0.01);
+                CHECK(target->spinAngleRad == doctest::Approx(source->spinAngleRad));
+            }
+        } else {
+            CHECK(pid != firstPid);
+            CHECK(snapshot->simTimeUs() < 1000000);
+            CHECK_FALSE(snapshot->driverStation().enabled);
+            for (const auto& wheel : snapshot->wheels()) CHECK(std::abs(wheel.spinAngleRad) < 0.01);
+        }
+        session.requestStop();
+        session.waitUntilFinished();
+        CHECK_FALSE(processAlive(pid));
+    }
 }
 
 int main(int argc, char** argv) {

@@ -64,6 +64,15 @@ section) are kept in the additive SDK 1.1 field `RobotConfig::unknownFields` (ke
 
 ### Validation codes (`Issue::code`)
 
+SDK 1.5 adds optional root `motionLinks` records and `motionLinksConfigured`. For example:
+`{"id":"left_front","source":{"owner":"drivetrain","axis":"left1.drive"},
+"target":{"owner":"drivetrain","axis":"left0.drive"},"ratio":1}`.
+Ratios are target SI units per source SI unit (rad or m).
+`motion_link_invalid` reports invalid endpoints/ratios, cycles, duplicate followers, and
+conflicting motor mappings. `motion_link_conversion` reports legacy tank conversion or a
+layout needing manual correction. Follower motor slots are not required.
+See [ADR 0012](decisions/0012-motion-links.md) for the upgrade and opt-in runtime contracts.
+
 SDK codes (`device_alias_conflict`, `attachment_*`, `mechanism_id_reserved`) plus, in `config/config_validator.h`
 (`issue_code::`): `schema_version_unsupported`, `chassis_invalid`, `drivetrain_kind_unknown`, `tire_model_unknown`
 (needs a `TireModelRegistry`), `drivetrain_no_wheels` (W), `wheel_invalid`, `wheel_duplicate`, `mechanism_id_invalid`,

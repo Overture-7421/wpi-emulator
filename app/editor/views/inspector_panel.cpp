@@ -6,7 +6,6 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
-
 #include <algorithm>
 #include <functional>
 #include <map>
@@ -14,6 +13,8 @@
 #include "model/config_ops.h"
 #include "model/property_groups.h"
 #include "model/tr.h"
+#include "views/motion_links_panel.h"
+#include "wpiemu/sdk/mechanisms/motion_config.h"
 
 namespace wpiemu::app::editor {
 
@@ -397,6 +398,14 @@ QString InspectorPanel::signature(const std::vector<PropertyGroup>& groups) cons
     const SelectionRef sel = controller_.selection().current();
     const SelectionRef target = formTargetOf(c, sel);
     QStringList parts{qs(sel.key()), QString::number(static_cast<int>(controller_.settings().units()))};
+    for (const auto& link : c.motionLinks)
+        parts << qs(link.id) << qs(link.source.toString()) << qs(link.target.toString())
+              << QString::number(link.ratio, 'g', 17);
+    for (const auto& m : c.mechanisms) parts << qs(m.id) << qs(m.type);
+    for (const auto& axis : sdk::motionAxisInfos(c, [&](std::string_view type) {
+             return controller_.document().catalog().findTemplate(type);
+         }))
+        parts << qs(axis.address.toString()) << QString::number(static_cast<int>(axis.kind));
     for (const auto& g : groups) {
         parts << qs(g.id) << g.title;
         for (const auto& p : g.schema.properties) {
@@ -466,6 +475,10 @@ void InspectorPanel::rebuild() {
         else addSection(g.title, f, g.collapsed);
     }
     if (target.kind == SelKind::Chassis) addShapes(ops::kChassisOwner);
+    if (target.kind == SelKind::Robot || target.kind == SelKind::None ||
+        target.kind == SelKind::Drivetrain || target.kind == SelKind::Wheel ||
+        target.kind == SelKind::Mechanism)
+        addSection(ETR("Motion links"), new MotionLinksPanel(controller_, content_));
     if (target.kind == SelKind::Mechanism) {
         addShapes(target.owner);
         addChildren(target.owner);
@@ -509,6 +522,13 @@ void InspectorPanel::refresh(bool authoritative) {
 }
 
 void InspectorPanel::focusField(const QString& key) {
+    if (key == QStringLiteral("motionLinks")) {
+        if (auto* field = content_->findChild<QWidget*>(QStringLiteral("motionLinks.source"))) {
+            scroll_->ensureWidgetVisible(field);
+            field->setFocus();
+        }
+        return;
+    }
     for (auto* f : forms_)
         if (f->focusField(key)) return;
     pendingFocus_.clear();

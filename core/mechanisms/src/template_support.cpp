@@ -75,6 +75,16 @@ MechanismAxis& AxisMechanismBase::addAxis(std::unique_ptr<MechanismAxis> axis) {
 
 void AxisMechanismBase::tick(sdk::SimContext& ctx, double dtSeconds) {
     for (auto& a : axes_) a->tick(ctx, dtSeconds);
+    finishMotionTick(ctx, dtSeconds);
+}
+
+std::vector<sdk::MotionAxisBinding> AxisMechanismBase::motionAxes() {
+    std::vector<sdk::MotionAxisBinding> out;
+    for (auto& a : axes_) out.push_back(a->motionBinding());
+    return out;
+}
+
+void AxisMechanismBase::finishMotionTick(sdk::SimContext& ctx, double dtSeconds) {
     onTick(ctx, dtSeconds);
     refresh();
 }

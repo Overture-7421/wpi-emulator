@@ -108,6 +108,7 @@ public:
     const sdk::ISimClock& clock() const { return clock_; }
     const BatteryModel& battery() const { return battery_; }
     const sdk::RobotConfig& config() const { return config_; }
+    sdk::Status bindSlot(const sdk::SlotAddress& slot, const sdk::DeviceKey& device);
     sdk::IPhysicsWorld& world() { return *world_; }
     sdk::BodyId chassisBody() const { return chassis_.body; }
     sdk::IDrivetrain* drivetrain() { return drivetrain_.get(); }
@@ -158,6 +159,13 @@ private:
     sdk::Vec3 lastVelocity_;
     bool brownoutWarned_ = false;
     const sdk::MechanismFactory* factory_ = nullptr;
+    std::vector<sdk::MotionAxisBinding> motionAxes_;
+    std::vector<sdk::PlantState> motionStarts_;
+    std::vector<std::optional<std::size_t>> motionSources_;
+    std::vector<double> motionRatios_;
+    std::vector<std::size_t> motionOrder_;
+    std::vector<bool> motionMechanisms_;
+    bool motionDrivetrain_ = false;
 };
 
 class SessionBuilder {

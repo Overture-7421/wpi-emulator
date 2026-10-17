@@ -1,18 +1,21 @@
 #include <QAbstractButton>
-#include <QApplication>
 #include <QAction>
+#include <QApplication>
 #include <QComboBox>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QLabel>
+#include <QListWidget>
 #include <QMimeData>
+#include <QPushButton>
 #include <QQuickItem>
 #include <QTableView>
 #include <QToolButton>
 
-#include "test_support.h"
 #include "editor_page.h"
 #include "model/property_groups.h"
 #include "model/spec_values.h"
+#include "test_support.h"
 #include "viewmodel/detected_devices_model.h"
 #include "viewmodel/editor_controller.h"
 #include "viewmodel/project_tree_model.h"
@@ -20,6 +23,7 @@
 #include "views/device_panel.h"
 #include "views/field_editors.h"
 #include "views/inspector_panel.h"
+#include "views/motion_links_panel.h"
 #include "views/palette_panel.h"
 #include "views/project_tree_view.h"
 #include "views/property_form.h"
@@ -47,6 +51,102 @@ struct PageFixture {
 };
 
 }  // namespace
+
+TEST_CASE("motion links UI: mixed units, signed ratios, validation and undo") {
+    FakeEditorBackend backend;
+    EditorController controller(backend);
+    auto config = robot();
+    config.mechanisms.clear();
+    sdk::MechanismConfig source;
+    source.id = "source";
+    source.type = "roller";
+    sdk::MechanismConfig follower;
+    follower.id = "follower";
+    follower.type = "elevator";
+    config.mechanisms = {source, follower};
+    controller.document().load(config);
+
+    {
+        MotionLinksPanel panel(controller);
+        auto* src = panel.findChild<QComboBox*>("motionLinks.source");
+        auto* dst = panel.findChild<QComboBox*>("motionLinks.target");
+        auto* ratio = panel.findChild<QDoubleSpinBox*>("motionLinks.ratio");
+        auto* apply = panel.findChild<QPushButton*>("motionLinks.apply");
+        REQUIRE(src != nullptr);
+        REQUIRE(dst != nullptr);
+        REQUIRE(ratio != nullptr);
+        REQUIRE(apply != nullptr);
+        src->setCurrentIndex(src->findText("source.axis"));
+        dst->setCurrentIndex(dst->findText("follower.axis"));
+        REQUIRE(src->currentIndex() >= 0);
+        REQUIRE(dst->currentIndex() >= 0);
+        ratio->setValue(-0.1);
+        apply->click();
+        REQUIRE(controller.document().config().motionLinks.size() == 1);
+        CHECK(controller.document().config().motionLinks[0].ratio ==
+              doctest::Approx(-0.1 / sdk::kTwoPi));
+    }
+
+    controller.document().undoStack()->undo();
+    CHECK(controller.document().config().motionLinks.empty());
+    controller.document().undoStack()->redo();
+    REQUIRE(controller.document().config().motionLinks.size() == 1);
+    {
+        MotionLinksPanel panel(controller);
+        auto* list = panel.findChild<QListWidget*>("motionLinks.list");
+        REQUIRE(list != nullptr);
+        list->setCurrentRow(0);
+        auto* ratio = panel.findChild<QDoubleSpinBox*>("motionLinks.ratio");
+        CHECK(ratio->value() == doctest::Approx(-0.1));
+        ratio->setValue(0.2);
+        panel.findChild<QPushButton*>("motionLinks.apply")->click();
+        CHECK(controller.document().config().motionLinks[0].ratio ==
+              doctest::Approx(0.2 / sdk::kTwoPi));
+    }
+    {
+        MotionLinksPanel panel(controller);
+        panel.findChild<QListWidget*>("motionLinks.list")->setCurrentRow(0);
+        panel.findChild<QPushButton*>("motionLinks.remove")->click();
+        CHECK(controller.document().config().motionLinks.empty());
+    }
+    controller.document().undoStack()->undo();
+    REQUIRE(controller.document().config().motionLinks.size() == 1);
+    const sdk::DeviceKey motor{"phoenix6", "talonfx", 1, "", -1};
+    CHECK_FALSE(controller
+                    .mapDevice(SelectionRef::slot("follower", "motor"), motor,
+                               sdk::CapabilitySet{sdk::Capability::MotorOutput})
+                    .isEmpty());
+}
+
+TEST_CASE("motion links UI: tank preset respects mapped sources and is undoable") {
+    FakeEditorBackend backend;
+    EditorController controller(backend);
+    auto config = robot();
+    config.drivetrain.spec.kind = sdk::drivetrain_kind::kTank;
+    config.drivetrain.mappings.clear();
+    config.motionLinks.clear();
+    config.drivetrain.mappings.push_back(
+        {{"drivetrain", "bl.drive"}, {"phoenix6", "talonfx", 1, "", -1}});
+    controller.document().load(config);
+    {
+        MotionLinksPanel panel(controller);
+        auto* preset = panel.findChild<QPushButton*>("motionLinks.tankPreset");
+        REQUIRE(preset != nullptr);
+        preset->click();
+    }
+    REQUIRE(controller.document().config().motionLinks.size() == 2);
+    bool leftSource = false;
+    for (const auto& link : controller.document().config().motionLinks)
+        if (link.target.slot == "fl.drive") {
+            CHECK(link.source.slot == "bl.drive");
+            leftSource = true;
+        }
+    CHECK(leftSource);
+    controller.document().undoStack()->undo();
+    CHECK(controller.document().config().motionLinks.empty());
+    controller.document().undoStack()->redo();
+    CHECK(controller.document().config().motionLinks.size() == 2);
+}
 
 // ---- editors and forms -------------------------------------------------------------------------------
 

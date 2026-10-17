@@ -28,6 +28,13 @@ project in which they were submitted.
 
 ## Layers
 
+The inspector's Motion links panel edits one-way source/target/ratio relationships using
+document snapshot commands. It obtains typed axes from SDK template metadata, converts
+rev/m display ratios to SI, validates before applying, and provides linked/independent tank
+presets. Linked motor slots are optional and cannot be mapped independently; sensor slots
+remain usable. Rename preserves endpoint references; delete leaves actionable broken-link
+issues; duplicate copies incoming links to the copied axis.
+
 | Folder | Contents | May include |
 |---|---|---|
 | `model/` | `EditorDocument` (config + `QUndoStack`), pure edit operations (`config_ops`), property groups / schemas, slot status + local validation, scene builder, transform access | SDK, Qt Core/Gui |
@@ -49,7 +56,7 @@ physical-ID directory, including non-live historical devices after a run restart
 World = the SDK's Z-up NWU frame with the floor at z = 0 below the hull centre; the chassis frame (origin
 = COM) sits at `(comOffset.xy, comHeight)`; wheel `positionM.z` is a height above the floor. The Qt Quick
 3D scene is Y-up, so everything lives under one node rotated -90 degrees about X (conversion only in QML).
-Right-drag orbits, middle-drag pans, wheel zooms, left-click selects (a second click on a mechanism's shape
+Right-drag (or Alt+left-drag) orbits, left-drag on empty space or middle-drag pans, wheel zooms, left-click selects (a second click on a mechanism's shape
 drills into the shape); W/E/R choose move / rotate / scale, F frames, 1-4 pick Front / Side / Top / 3D,
 Ctrl toggles snapping while dragging, Del deletes, Ctrl+D duplicates, Esc clears the selection.
 
