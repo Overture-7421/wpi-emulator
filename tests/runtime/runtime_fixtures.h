@@ -193,6 +193,28 @@ inline RobotConfig sampleConfig() {
     return c;
 }
 
+// Vision fixtures: two AprilTags on a wall 4 m ahead of the origin, facing it (WPILib AprilTagFieldLayout JSON)...
+inline const char* wallLayoutJson() {
+    return R"({"tags":[
+  {"ID":1,"pose":{"translation":{"x":4.0,"y":0.5,"z":0.5},
+    "rotation":{"quaternion":{"W":0.0,"X":0.0,"Y":0.0,"Z":1.0}}}},
+  {"ID":2,"pose":{"translation":{"x":4.0,"y":-0.5,"z":0.5},
+    "rotation":{"quaternion":{"W":0.0,"X":0.0,"Y":0.0,"Z":1.0}}}}],
+  "field":{"length":16.541,"width":8.069}})";
+}
+
+// ... and a camera that sees both: 0.3 m above the chassis COM, which rests 0.2 m above the floor, so level with the
+// tags. 200 Hz is a capture on every 5 ms tick, 25 ms of latency is five ticks, no line-of-sight check.
+inline CameraConfig wallCamera(const std::string& id = "front") {
+    CameraConfig c;
+    c.id = id;
+    c.local = Pose3{Vec3{0.f, 0.f, 0.3f}, Quat{}};
+    c.frameRateHz = 200.0;
+    c.latencyUs = 25000;
+    c.occlusion = false;
+    return c;
+}
+
 // A scratch directory under the current working directory (never the system temp dir), removed on destruction.
 class ScratchDir {
 public:
