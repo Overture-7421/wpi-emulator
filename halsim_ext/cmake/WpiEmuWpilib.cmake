@@ -1,4 +1,4 @@
-# Locates the WPILib simulation HAL (hal-cpp) and wpiutil (headers + desktop shared libraries).
+# Locates the WPILib simulation HAL (hal-cpp), wpiutil and ntcore (headers + desktop shared libraries).
 #
 # The sim HAL is NOT built by us: ADR 0001 links the extension against the `wpiHal` module that
 # the robot process already loaded. We therefore only need headers and an import library / shared
@@ -13,16 +13,28 @@
 #               platform zips. It is extracted into <build>/_wpilib/<version> (extracted layout) and
 #               WPIEMU_WPILIB_ROOT is then pointed there for the sibling modules.
 #
+# ntcore is staged the same way but is OPTIONAL (ADR 0017: the vision bridge binds the robot's ntcore at run time and
+# only needs its C headers to pin the ABI, plus the shared libraries for the real-ntcore tests):
+#   maven       edu/wpi/first/ntcore/ntcore-cpp/<version>/ntcore-cpp-<version>-{headers,<platform>}.zip and
+#               edu/wpi/first/wpinet/wpinet-cpp/<version>/wpinet-cpp-<version>-<platform>.zip (ntcore.dll needs wpinet.dll)
+#               land in the same tree: ntcore_c.h next to hal/ and wpi/ in include/, ntcore and wpinet next to wpiHal and
+#               wpiutil in <platform>/shared.
+#   extracted   <root>/include/ntcore_c.h and <root>/<platform>/shared/{ntcore,wpinet}.* when the root has them.
+# A cache or root without ntcore, or a failed download of it, only leaves ntcore out: nothing else changes.
+#
 # Inputs:
 #   WPIEMU_WPILIB_ROOT      either layout (or the year dir containing maven/). Also read from the
 #                           environment variable of the same name. Default search for a maven cache:
 #                           <PUBLIC|HOME|USERPROFILE>/wpilib/2026/maven.
-#   WPIEMU_WPILIB_VERSION   WPILib version of hal-cpp / wpiutil-cpp (default 2026.2.1, ADR 0001).
+#   WPIEMU_WPILIB_VERSION   WPILib version of hal-cpp / wpiutil-cpp / ntcore-cpp (default 2026.2.1, ADR 0001).
 #   WPIEMU_WPILIB_DOWNLOAD  OFF by default. ON: fetch missing zips from frcmaven (CI on a clean machine).
 #
 # Outputs:
 #   WPIEMU_WPILIB_FOUND            TRUE when headers and the desktop libs were found
 #   WPIEMU_WPILIB_RUNTIME_DIRS     directory holding the wpiHal/wpiutil shared libs (put on PATH for tests)
+#   WPIEMU_WPILIB_NTCORE_FOUND     TRUE when the ntcore C headers (ntcore_c.h) are in the resolved root
+#   WPIEMU_WPILIB_NTCORE_RUNTIME_DIRS   directory holding the ntcore, wpinet and wpiutil shared libs, empty unless all
+#                                       are staged (set in the PARENT scope too: the unit tests read it)
 #   targets wpiemu_wpilib_hal / wpiemu_wpilib_wpiutil   IMPORTED shared libraries (+ include dirs)
 # Nothing is defined (and configure still succeeds) when WPILib is not available.
 
@@ -34,6 +46,8 @@ option(WPIEMU_WPILIB_DOWNLOAD "Download missing WPILib HAL/wpiutil zips from frc
 
 set(WPIEMU_WPILIB_FOUND FALSE)
 set(WPIEMU_WPILIB_RUNTIME_DIRS "")
+set(WPIEMU_WPILIB_NTCORE_FOUND FALSE)
+set(WPIEMU_WPILIB_NTCORE_RUNTIME_DIRS "")
 
 # Desktop platform classifier used in the Maven file names and the layout inside the zip.
 if(WIN32)
@@ -76,6 +90,8 @@ if(NOT _wpiemu_extracted_root)
 
     set(_hal_rel "edu/wpi/first/hal/hal-cpp/${WPIEMU_WPILIB_VERSION}/hal-cpp-${WPIEMU_WPILIB_VERSION}")
     set(_util_rel "edu/wpi/first/wpiutil/wpiutil-cpp/${WPIEMU_WPILIB_VERSION}/wpiutil-cpp-${WPIEMU_WPILIB_VERSION}")
+    set(_ntcore_rel "edu/wpi/first/ntcore/ntcore-cpp/${WPIEMU_WPILIB_VERSION}/ntcore-cpp-${WPIEMU_WPILIB_VERSION}")
+    set(_net_rel "edu/wpi/first/wpinet/wpinet-cpp/${WPIEMU_WPILIB_VERSION}/wpinet-cpp-${WPIEMU_WPILIB_VERSION}")
     set(_wpiemu_maven "")
     foreach(_c IN LISTS _wpiemu_wpilib_candidates)
         if(EXISTS "${_c}/${_hal_rel}-headers.zip" AND EXISTS "${_c}/${_util_rel}-headers.zip")
@@ -125,6 +141,21 @@ if(NOT _wpiemu_extracted_root)
             file(ARCHIVE_EXTRACT INPUT "${_hal_libs_zip}" DESTINATION "${_stage}")
             file(ARCHIVE_EXTRACT INPUT "${_util_libs_zip}" DESTINATION "${_stage}")
             file(WRITE "${_stage}/.extracted" "${WPIEMU_WPILIB_VERSION}\n")
+        endif()
+
+        # ntcore is optional and has its own markers, so a stage that predates it (or lacked the artifacts at the time)
+        # picks it up on the next configure.
+        _wpiemu_wpilib_fetch("${_ntcore_rel}" "headers" _ntcore_headers_zip)
+        _wpiemu_wpilib_fetch("${_ntcore_rel}" "${_wpiemu_wpilib_classifier}" _ntcore_libs_zip)
+        _wpiemu_wpilib_fetch("${_net_rel}" "${_wpiemu_wpilib_classifier}" _net_libs_zip)
+        if(_ntcore_headers_zip AND NOT EXISTS "${_stage}/.ntcore-headers")
+            file(ARCHIVE_EXTRACT INPUT "${_ntcore_headers_zip}" DESTINATION "${_stage}/include")
+            file(WRITE "${_stage}/.ntcore-headers" "${WPIEMU_WPILIB_VERSION}\n")
+        endif()
+        if(_ntcore_libs_zip AND _net_libs_zip AND NOT EXISTS "${_stage}/.ntcore-runtime")
+            file(ARCHIVE_EXTRACT INPUT "${_ntcore_libs_zip}" DESTINATION "${_stage}")
+            file(ARCHIVE_EXTRACT INPUT "${_net_libs_zip}" DESTINATION "${_stage}")
+            file(WRITE "${_stage}/.ntcore-runtime" "${WPIEMU_WPILIB_VERSION}\n")
         endif()
         set(_wpiemu_extracted_root "${_stage}")
     endif()
@@ -177,3 +208,39 @@ else()
     message(STATUS "WPILib ${WPIEMU_WPILIB_VERSION}: NOT found (set -DWPIEMU_WPILIB_ROOT=<.../wpilib/2026/maven> or "
                    "-DWPIEMU_WPILIB_DOWNLOAD=ON); halsim_wpiemu is built as a stub that refuses to load")
 endif()
+
+# ---- 4. ntcore (optional) -------------------------------------------------------------------------------------
+# The C headers pin the ABI the vision bridge's NetworkTables binding is compiled against (bridges/vision); the shared
+# libraries are only needed by the unit tests that play the robot process (ntcore.dll imports wpinet.dll and wpiutil.dll,
+# all three sit in the same directory).
+if(_wpiemu_extracted_root AND EXISTS "${_wpiemu_extracted_root}/include/ntcore_c.h"
+        AND EXISTS "${_wpiemu_extracted_root}/include/ntcore_c_types.h")
+    set(WPIEMU_WPILIB_NTCORE_FOUND TRUE)
+endif()
+if(WPIEMU_WPILIB_FOUND)
+    if(WIN32)
+        set(_ntcore_loc "${_dir}/ntcore.dll")
+        set(_net_loc "${_dir}/wpinet.dll")
+    elseif(APPLE)
+        set(_ntcore_loc "${_dir}/libntcore.dylib")
+        set(_net_loc "${_dir}/libwpinet.dylib")
+    else()
+        set(_ntcore_loc "${_dir}/libntcore.so")
+        set(_net_loc "${_dir}/libwpinet.so")
+    endif()
+    if(EXISTS "${_ntcore_loc}" AND EXISTS "${_net_loc}")
+        set(WPIEMU_WPILIB_NTCORE_RUNTIME_DIRS "${_dir}")
+    endif()
+    if(WPIEMU_WPILIB_NTCORE_FOUND AND WPIEMU_WPILIB_NTCORE_RUNTIME_DIRS)
+        message(STATUS "WPILib ${WPIEMU_WPILIB_VERSION}: ntcore headers and shared libraries staged (${WPIEMU_WPILIB_NTCORE_RUNTIME_DIRS})")
+    elseif(WPIEMU_WPILIB_NTCORE_FOUND)
+        message(STATUS "WPILib ${WPIEMU_WPILIB_VERSION}: ntcore headers found, shared libraries (ntcore, wpinet) missing; "
+                       "the real-ntcore tests are skipped")
+    else()
+        message(STATUS "WPILib ${WPIEMU_WPILIB_VERSION}: ntcore NOT found (ntcore-cpp / wpinet-cpp artifacts or "
+                       "-DWPIEMU_WPILIB_DOWNLOAD=ON); the vision bridge's NetworkTables binding is built inert")
+    endif()
+endif()
+# The unit tests live in a sibling directory: hand the result up like WPIEMU_WPILIB_ROOT.
+set(WPIEMU_WPILIB_NTCORE_FOUND "${WPIEMU_WPILIB_NTCORE_FOUND}" PARENT_SCOPE)
+set(WPIEMU_WPILIB_NTCORE_RUNTIME_DIRS "${WPIEMU_WPILIB_NTCORE_RUNTIME_DIRS}" PARENT_SCOPE)
