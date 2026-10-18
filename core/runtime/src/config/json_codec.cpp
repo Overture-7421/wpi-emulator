@@ -16,8 +16,10 @@ using sdk::Value;
 
 namespace {
 
+// Apple's libc++ marks floating-point from_chars/to_chars as unavailable below macOS 13.3/26.0, and the
+// deployment target (13.0) is below that, so Apple builds use the locale-independent stream fallback.
 constexpr bool kHasFloatCharconv =
-#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L
+#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L && !defined(__APPLE__)
     true;
 #else
     false;
