@@ -8,6 +8,8 @@
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/mechanisms/attachment.h"
 
+#include "common/camera_frustum.h"
+
 namespace wpiemu::app::runview {
 namespace {
 
@@ -375,39 +377,29 @@ bool ZoneRig::update(const sdk::ISimSnapshot* snapshot) {
 
 namespace {
 
-constexpr float kFrustumDisplayLengthM = 1.5f;
-constexpr float kFrustumEdgeThicknessM = 0.012f;
+constexpr float kFrustumEdgeThicknessM = 0.02f;
 constexpr const char* kLimelightColor = "#ff8a00";
 constexpr const char* kPhotonVisionColor = "#3b82f6";
 constexpr const char* kSeesTagsColor = "#22e06b";
 constexpr float kFrustumActiveOpacity = 0.75f;
-constexpr float kFrustumInactiveOpacity = 0.22f;
+constexpr float kFrustumInactiveOpacity = 0.3f;
 
-// Local frustum geometry, kept behind this one function so it can be replaced by the shared editor helper:
-// the 8 edges of the view pyramid (apex at the origin, +X forward) as box poses whose local +X runs along the edge.
-std::vector<sdk::Pose3> frustumEdgePoses(float hFovDeg, float vFovDeg, float lengthM, std::vector<float>& edgeLengths) {
-    const auto halfTan = [](float fovDeg) {
-        const float clamped = std::clamp(fovDeg, 1.f, 170.f);
-        return std::tan(static_cast<float>(sdk::degToRad(clamped)) * 0.5f);
-    };
-    const float y = lengthM * halfTan(hFovDeg);
-    const float z = lengthM * halfTan(vFovDeg);
-    const sdk::Vec3 corners[4] = {{lengthM, y, z}, {lengthM, -y, z}, {lengthM, -y, -z}, {lengthM, y, -z}};
+// The 8 edges of the shared frustum geometry (common/camera_frustum.h) as box poses whose local +X runs along the edge.
+std::vector<sdk::Pose3> frustumEdgePoses(const sdk::CameraConfig& camera, float lengthM, std::vector<float>& edgeLengths) {
+    const FrustumGeometry g = cameraFrustum(camera, lengthM);
     std::vector<sdk::Pose3> poses;
     edgeLengths.clear();
-    const auto addEdge = [&](const sdk::Vec3& a, const sdk::Vec3& b) {
+    for (const auto& [from, to] : kFrustumEdges) {
+        const sdk::Vec3 a = g.pts[from], b = g.pts[to];
         const sdk::Vec3 d = b - a;
-        const float len = sdk::length(d);
         const sdk::Vec3 dir = sdk::normalized(d);
         // Shortest rotation taking +X onto dir.
         const sdk::Vec3 axis = sdk::cross({1.f, 0.f, 0.f}, dir);
         const sdk::Quat rot = dir.x < -0.9999f ? sdk::Quat::fromYaw(static_cast<float>(sdk::kPi))
                                                : sdk::Quat{axis.x, axis.y, axis.z, 1.f + dir.x}.normalized();
         poses.emplace_back((a + b) * 0.5f, rot);
-        edgeLengths.push_back(len);
-    };
-    for (const auto& c : corners) addEdge({}, c);
-    for (int i = 0; i < 4; ++i) addEdge(corners[i], corners[(i + 1) % 4]);
+        edgeLengths.push_back(sdk::length(d));
+    }
     return poses;
 }
 
@@ -436,7 +428,7 @@ CameraOverlay makeCameraOverlay(const sdk::CameraConfig& c) {
     o.kind = c.kind;
     o.hFovDeg = static_cast<float>(c.hFovDeg);
     o.vFovDeg = static_cast<float>(c.vFovDeg);
-    o.frustumLengthM = std::max(0.05f, std::min(static_cast<float>(c.maxRangeM), kFrustumDisplayLengthM));
+    o.frustumLengthM = frustumDisplayLengthM(c);
     return o;
 }
 
@@ -473,7 +465,7 @@ void CameraRig::setScene(std::shared_ptr<const sdk::RobotConfig> config) {
         }
         b.local = c.local;
         std::vector<float> lengths;
-        b.edges = frustumEdgePoses(o.hFovDeg, o.vFovDeg, o.frustumLengthM, lengths);
+        b.edges = frustumEdgePoses(c, o.frustumLengthM, lengths);
 
         ScenePart body;
         body.name = o.label;
