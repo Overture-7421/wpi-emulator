@@ -275,8 +275,9 @@ PhotonVision / Limelight cameras. They are **name-keyed** (`CameraConfig::id`), 
 hub; like zones they hang on the chassis or a mechanism link (`MechanismAttachment`). Camera setup rides `HelloAck::vision`,
 processed camera frames ride `SensorFrame::vision` (due on that tick, `VisionFrame`: vendor-neutral observations in the camera
 frame X forward / Y left / Z up) and what the robot did with each camera returns in `ActuatorFrame::vision` (`CameraRobotState`,
-informational only). All three are trailing optional fields: absent decodes as none, the protocol stays 1. Bridges receive them
-through the defaulted `IDeviceBridge::applyVision` / `collectVision` and `IBridgeHost::visionSetup`; game plugins supply AprilTag
+informational only). All three are trailing optional fields: absent decodes as none, the protocol stays 1. Where no `ActuatorFrame`
+flows (Armed sessions, program start, free-running phases) the same camera states ride the `VisionReport` message. Bridges exchange
+all of it through the defaulted `IDeviceBridge::applyVision` / `collectVision` and `IBridgeHost::visionSetup`; game plugins supply AprilTag
 layouts through `IGameModule::contributeFiducialLayouts()`. The extension side (call order around the step, which frames are
 applied, setup revision on reconnect, shutdown) is in [halsim-extension.md](halsim-extension.md#vision). The engine and the
 vendor publishers are described with their modules.

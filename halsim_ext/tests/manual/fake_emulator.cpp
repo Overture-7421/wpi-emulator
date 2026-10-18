@@ -128,11 +128,10 @@ const char* vendorName(sdk::CameraVendor vendor) {
 // One line per camera state the robot process reported (informational): in an ActuatorFrame
 // (`prefix` "CAMERA tick=N") or in a VisionReport outside the tick path ("CAMERA_REPORT").
 void printCameraState(const std::string& prefix, const sdk::CameraRobotState& s) {
-    std::printf(
-        "%s name='%s' vendor=%s id='%s' present=%d publishing=%d status='%s' frames=%llu",
-        prefix.c_str(), s.ntName.c_str(), vendorName(s.vendor), s.cameraId.c_str(),
-        s.present ? 1 : 0, s.publishing ? 1 : 0, s.status.c_str(),
-        static_cast<unsigned long long>(s.framesPublished));
+    std::printf("%s name='%s' vendor=%s id='%s' present=%d publishing=%d status='%s' frames=%llu",
+                prefix.c_str(), s.ntName.c_str(), vendorName(s.vendor), s.cameraId.c_str(),
+                s.present ? 1 : 0, s.publishing ? 1 : 0, s.status.c_str(),
+                static_cast<unsigned long long>(s.framesPublished));
     if (s.pipelineIndex) std::printf(" pipeline=%d", *s.pipelineIndex);
     if (s.ledMode) std::printf(" led=%d", *s.ledMode);
     if (s.imuMode) std::printf(" imu=%d", *s.imuMode);
