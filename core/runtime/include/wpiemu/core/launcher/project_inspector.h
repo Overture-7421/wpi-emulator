@@ -41,6 +41,8 @@ struct ProjectReport {
     std::vector<sdk::Issue> notes;         // non-fatal oddities found while reading
 
     bool hasVendorDep(std::string_view nameFragment) const;  // case-insensitive substring of the dep name or file name
+    // Version of the project's photonlib vendordep ("v2026.3.4"); empty when the project has none (or it declares no version).
+    std::string photonLibVersion() const;
 };
 
 class ProjectInspector {

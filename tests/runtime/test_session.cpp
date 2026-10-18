@@ -250,34 +250,12 @@ TEST_CASE("session: SensorFrame bookkeeping - tick numbers, sim time, step") {
     CHECK(s.clock().simTimeUs() == 15000);
 }
 
-namespace {
-class TagModule final : public testing::FakeGameModule {
-public:
-    TagModule() : FakeGameModule("tag_game", 2998) {}
-    AprilTagLayout aprilTagLayout() const override {
-        AprilTagLayout l;
-        l.name = "tag-layout";
-        AprilTag t;
-        t.id = 3;
-        t.pose = Pose3{Vec3{3.f, 0.f, 1.f}, Quat::fromYaw(3.14159265f)};
-        l.tags.push_back(t);
-        return l;
-    }
-};
-}  // namespace
-
 TEST_CASE("session: cameras capture after the physics step, deliver after their latency and restart on reset") {
     Fixture f;
-    REQUIRE(f.reg.plugins.add(std::make_unique<TagModule>()).ok());
+    REQUIRE(f.reg.plugins.add(std::make_unique<wpiemu::test_runtime::TagGameModule>()).ok());
     RobotConfig cfg = sampleConfig();
     cfg.gamePluginId = "tag_game";
-    CameraConfig cam;
-    cam.id = "front";
-    cam.name = "front";
-    cam.local = Pose3{Vec3{0.f, 0.f, 0.8f}, Quat{}};
-    cam.fps = 200.0;
-    cam.latencyMs = 20.0;
-    cfg.cameras.push_back(cam);
+    cfg.cameras.push_back(wpiemu::test_runtime::frontCamera());
     SimulationSession& s = f.make(std::move(cfg));
 
     const VisionSetup setup = s.vision().setup();

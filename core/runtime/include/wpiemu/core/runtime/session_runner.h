@@ -44,6 +44,9 @@ struct RunnerOptions {
     std::uint32_t snapshotEveryTicks = 4;       // 50 Hz at 200 Hz
     std::chrono::milliseconds snapshotMinInterval{20};
     std::uint64_t maxStepCredits = 100000;
+    // The robot project's photonlib version ("v2026.3.4"), forwarded to the extension in VisionSetup so the simulated
+    // PhotonVision cameras publish matching protobuf/version data. Empty = unknown.
+    std::string photonVersion;
 };
 
 enum class RunnerState {
@@ -119,6 +122,7 @@ private:
     void doTick(std::chrono::steady_clock::time_point now);
     void beginEpoch();
     void sendDriverStation();
+    void sendVisionSetup();
     void sendLoopbackIfChanged(bool force);
     void sendPauseState();
     void sendToRobot(const sdk::proto::Message& message);
