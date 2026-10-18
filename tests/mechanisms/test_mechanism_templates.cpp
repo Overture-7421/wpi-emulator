@@ -146,7 +146,7 @@ TEST_CASE("the core registers exactly one template, with complete and consistent
     const sdk::Value defaults = sdk::defaultsOf(info->properties);
     CHECK(defaults.find("gearRatio")->asDouble() == 10.0);
     CHECK(defaults.find("neutralMode")->asString() == "brake");
-    // its shape is named after the link it must follow (shapes bind to links by name) and sits off the axis
+    // its shape sits off the axis, so a rotation is visible
     REQUIRE(info->defaultGeometry.size() == 1);
     CHECK(info->defaultGeometry[0].name == "mover");
     CHECK(info->defaultGeometry[0].local.position.x > 0.f);

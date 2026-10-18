@@ -31,7 +31,7 @@ TEST_CASE("config codec: a full config survives config -> Value -> JSON text -> 
     c.drivetrain.spec.wheels[1].steered = true;
     c.mechanisms[0].properties["gearRatio"] = 2.5;
     c.mechanisms[0].mappings.push_back({{"intake", "motor2"}, DeviceKey{"phoenix6", "talonfx", 11, "rio", -1}, true});
-    c.mechanisms[0].geometry.push_back({"roller", PrimitiveKind::Cylinder, Pose3{}, Vec3{}, 0.04f, 0.3f, "#00ff00", false, 0.f, "arm"});
+    c.mechanisms[0].geometry.push_back({"roller", PrimitiveKind::Cylinder, Pose3{}, Vec3{}, 0.04f, 0.3f, "#00ff00", false, 0.f});
     c.sim.seed = 12345;
     c.sim.physics.gravity = Vec3{0.f, 0.f, -9.81f};
     c.plugins["fake_game"] = PluginSection{1, Value::makeObject()};
@@ -66,8 +66,6 @@ TEST_CASE("config codec: a full config survives config -> Value -> JSON text -> 
     CHECK_FALSE(r.mechanisms[0].mappings.front().reversed);
     CHECK(r.mechanisms[0].mount.position == c.mechanisms[0].mount.position);
     CHECK(r.mechanisms[0].geometry[0].kind == PrimitiveKind::Cylinder);
-    CHECK(r.mechanisms[0].geometry[0].link == "arm");
-    CHECK(r.chassis.primitives[0].link.empty());  // default: derived from the name prefix by the run view
     CHECK(r.robotMappings == c.robotMappings);
     CHECK(r.sim.seed == 12345);
     CHECK(r.sim.physics.gravity.z == -9.81f);

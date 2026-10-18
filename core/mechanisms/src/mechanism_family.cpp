@@ -65,7 +65,7 @@ AxisOptions mechanismAxis() {
 
 sdk::PrimitiveSpec bodyPrimitive() {
     sdk::PrimitiveSpec p;
-    p.name = "mover";   // shapes bind to the link of the same name, so this bar turns / slides with the mechanism
+    p.name = "mover";   // every shape of a mechanism turns / slides with its moving link
     p.kind = sdk::PrimitiveKind::Box;
     p.local.position = {0.10f, 0.f, 0.f};   // off the axis, so a rotation is visible
     p.sizeM = {0.20f, 0.05f, 0.05f};

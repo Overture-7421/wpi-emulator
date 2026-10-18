@@ -46,23 +46,7 @@ ScenePart partFromPrimitive(const sdk::PrimitiveSpec& p) {
     return part;
 }
 
-bool isSeparator(char c) { return c == '.' || c == '/' || c == ':' || c == '_' || c == '-'; }
-
 }  // namespace
-
-std::string linkForPrimitive(const std::string& name, const std::vector<std::string>& linkNames) {
-    std::string best = sdk::kRootLink;
-    std::size_t bestLen = 0;
-    for (const auto& link : linkNames) {
-        if (link.empty() || link == sdk::kRootLink || link.size() <= bestLen || name.size() < link.size()) continue;
-        if (name.compare(0, link.size(), link) != 0) continue;
-        if (name.size() == link.size() || isSeparator(name[link.size()])) {
-            best = link;
-            bestLen = link.size();
-        }
-    }
-    return best;
-}
 
 void RobotRig::setConfig(std::shared_ptr<const sdk::RobotConfig> config) {
     config_ = std::move(config);
@@ -129,8 +113,6 @@ void RobotRig::setConfig(std::shared_ptr<const sdk::RobotConfig> config) {
             Binding b;
             b.kind = Binding::Kind::Mechanism;
             b.owner = m.id;
-            b.link = p.link.empty() ? sdk::kRootLink : p.link;
-            b.linkResolved = !p.link.empty();  // explicit link: skip the name-prefix derivation
             b.local = p.local;
             parts_.push_back(partFromPrimitive(p));
             bindings_.push_back(std::move(b));
@@ -172,12 +154,9 @@ bool RobotRig::update(const sdk::ISimSnapshot* snapshot) {
                 break;
             }
             case Binding::Kind::Mechanism: {
-                if (const sdk::MechanismState* st = findState(snapshot, b.owner); st != nullptr && !b.linkResolved) {
-                    std::vector<std::string> names;
-                    for (const auto& l : st->links) names.push_back(l.name);
-                    b.link = linkForPrimitive(parts_[i].name, names);
-                    b.linkResolved = true;
-                }
+                // All of a mechanism's shapes move together with its first (moving) link; without one they stay on the root.
+                if (const sdk::MechanismState* st = findState(snapshot, b.owner); st != nullptr && !st->links.empty())
+                    b.link = st->links.front().name;
                 const auto linkInChassis = sdk::resolveLinkPoseInChassis(*config_, b.owner, b.link, source);
                 next = (linkInChassis ? *linkInChassis : sdk::Pose3{}) * b.local;
                 break;

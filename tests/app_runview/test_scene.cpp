@@ -38,17 +38,6 @@ const ScenePart* findPart(const RobotRig& rig, const std::string& name) {
 
 }  // namespace
 
-TEST_CASE("primitive to link assignment uses the longest matching link name") {
-    const std::vector<std::string> links{"arm", "arm.tip", "carriage"};
-    CHECK(linkForPrimitive("arm.bar", links) == "arm");
-    CHECK(linkForPrimitive("arm.tip.pad", links) == "arm.tip");
-    CHECK(linkForPrimitive("arm", links) == "arm");
-    CHECK(linkForPrimitive("armor", links) == "root");   // not a separator boundary
-    CHECK(linkForPrimitive("base", links) == "root");
-    CHECK(linkForPrimitive("carriage_plate", links) == "carriage");
-    CHECK(linkForPrimitive("mover", {"mover"}) == "mover");   // the core mechanism's default shape
-}
-
 TEST_CASE("robot rig builds chassis, wheel and mechanism parts") {
     RobotRig rig;
     rig.setConfig(demoConfig());
@@ -119,22 +108,21 @@ TEST_CASE("mechanism primitives follow their link pose") {
     const ScenePart* bar = findPart(rig, "arm.bar");
     REQUIRE(bar != nullptr);
     CHECK(near(bar->pose.position, {0.38f, 0.f, -0.06f + 0.17f}));
-    // turret base is on the root link: not rotated
+    // turret base sits on the yaw axis, so turning about Z leaves it where it is
     CHECK(near(findPart(rig, "base")->pose.position, {-0.1f, 0.f, 0.03f}));
     // turret barrel at local (0.2,0,0.12) rotated 90 deg about Z => (0,0.2,0.12) from the mount (-0.1,0,0)
     CHECK(near(findPart(rig, "yaw.barrel")->pose.position, {-0.1f, 0.2f, 0.12f}));
 }
 
-TEST_CASE("an explicit PrimitiveSpec::link overrides the name-prefix convention") {
+TEST_CASE("every shape of a mechanism follows its first link, whatever the shape is called") {
     auto cfg = std::make_shared<sdk::RobotConfig>(FakeRunBackend::makeDemoConfig());
     sdk::MechanismConfig* intakeCfg = nullptr;
     for (auto& m : cfg->mechanisms)
         if (m.id == "intake") intakeCfg = &m;
     REQUIRE(intakeCfg != nullptr);
     sdk::PrimitiveSpec plate;
-    plate.name = "plate";  // no link-name prefix: would stay on the root link without the explicit field
+    plate.name = "plate";   // unrelated to the link name
     plate.local.position = {0.17f, 0.f, 0.f};
-    plate.link = "arm";
     intakeCfg->geometry.push_back(plate);
 
     RobotRig rig;

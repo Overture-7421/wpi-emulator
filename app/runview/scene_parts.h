@@ -28,11 +28,8 @@ struct ScenePart {
     bool translucent = false;
 };
 
-// Which link of `mechanism` carries `primitiveName`. Convention for primitive names: "<link>" or
-// "<link><sep><anything>" with sep one of . / : _ - ; the longest matching link wins; otherwise "root".
-std::string linkForPrimitive(const std::string& primitiveName, const std::vector<std::string>& linkNames);
-
-// The robot rig: chassis frame/primitives, wheels (with a rotation marker) and mechanism primitives.
+// The robot rig: chassis frame/primitives, wheels (with a rotation marker) and mechanism primitives. All primitives
+// of a mechanism follow its first link (the moving part), or stay on the mechanism root when it has none.
 class RobotRig {
 public:
     void setConfig(std::shared_ptr<const sdk::RobotConfig> config);
@@ -49,10 +46,9 @@ private:
     struct Binding {
         enum class Kind { Static, Wheel, WheelMarker, Mechanism } kind = Kind::Static;
         std::string owner;        // mechanism id / wheel name
-        std::string link;         // mechanism link
+        std::string link = sdk::kRootLink;   // mechanism link
         sdk::Pose3 local;         // primitive pose in the owner frame
         float wheelRadius = 0.05f;
-        bool linkResolved = false;
     };
     std::shared_ptr<const sdk::RobotConfig> config_;
     std::vector<ScenePart> parts_;

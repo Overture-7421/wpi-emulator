@@ -168,7 +168,9 @@ get the chassis page in the inspector (dimensions, mass, centre of mass). **Driv
 filter. Wheels are listed under Drivetrain in the tree: select one to edit it (see *Linking wheels and mechanisms* for
 followers), right-click Drivetrain or a wheel for **Add wheel**, a wheel for **Delete wheel**. The **Robot** node has the
 robot-level settings.
-* **Shapes (n)**: boxes and cylinders (**+ Box**, **+ Cylinder**) that model the visible, colliding parts.
+* **Shapes (n)**: boxes and cylinders (**+ Box**, **+ Cylinder**) that model the visible, colliding parts. All the shapes of a
+  mechanism move together with it (they rotate, swing or slide with the motor) about the mechanism's mount point, so place a
+  shape on the axis to spin it in place.
 
 ### Mechanisms
 **Right-click** the robot, the chassis or a mechanism in the tree and choose **Add mechanism** and then **Rotary**, **Arm** or **Linear** (on a mechanism:

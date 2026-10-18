@@ -217,7 +217,6 @@ PrimitiveSpec readPrimitive(const Value& v, const std::string& path, Ctx& ctx) {
     r.str("color", p.color);
     r.boolean("collides", p.collides);
     r.flt("massKg", p.massKg);
-    r.str("link", p.link);
     return p;
 }
 
@@ -407,7 +406,6 @@ Value primitiveValue(const PrimitiveSpec& p) {
     o["color"] = p.color;
     o["collides"] = p.collides;
     o["massKg"] = fv(p.massKg);
-    if (!p.link.empty()) o["link"] = p.link;
     return o;
 }
 

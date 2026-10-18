@@ -42,9 +42,8 @@ The keyboard joystick (slot 0 by default) uses `W A S D` (left stick), arrow key
 
 * The snapshot's chassis pose is the COM; chassis primitives and mechanism mounts are in that frame.
 * Wheels are drawn from `WheelSample::contactPoint` (hub = contact + radius up), steered/spun from the sample.
-* A mechanism primitive follows `PrimitiveSpec::link` when set; otherwise the link whose name is a prefix of the
-  primitive name (`arm` for `arm.bar`, `arm_roller`, `arm/pad`; longest match wins, otherwise `root`; the UI-side
-  convention `linkForPrimitive`).
+* All primitives of a mechanism follow the mechanism's first link (the moving part published in `MechanismState::links`), and
+  stay on its root when it publishes none.
 * Zone overlays come from `EditorPanelDescriptor::overlays`: `PanelScope::PluginConfig` boxes are read from
   `config.plugins[<panel id prefix before the first '.'>].data[propertyKey]` in the chassis frame,
   `PanelScope::Mechanism` boxes from the mechanism's `properties[propertyKey]` in the mechanism root frame.

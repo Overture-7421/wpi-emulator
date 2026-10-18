@@ -20,9 +20,6 @@ struct PrimitiveSpec {
     std::string color = "#808080";     // "#rrggbb"
     bool collides = false;             // true: contributes a collision shape on the owning body
     float massKg = 0.f;                // informational (editor mass budget); physics uses the owner's mass
-    // Mechanism primitives only: the mechanism link this primitive follows. Empty (default) = derive it from the
-    // primitive name prefix (see app/runview linkForPrimitive); "root" = fixed to the mechanism root frame.
-    std::string link;
 
     bool operator==(const PrimitiveSpec&) const = default;
 };
