@@ -56,7 +56,8 @@ PartListModel::Item PartListModel::makeItem(const ScenePart& part) {
         it.scale = {part.size.x / kUnit, part.size.y / kUnit, part.size.z / kUnit};
     }
     it.color = parseColor(part.color);
-    if (part.translucent) it.color.setAlphaF(0.28f);
+    if (part.highlighted) it.color = it.color.lighter(140);
+    if (part.translucent) it.color.setAlphaF(part.opacity);
     return it;
 }
 
@@ -100,10 +101,12 @@ void PartListModel::updatePoses(const std::vector<ScenePart>& parts, const std::
     for (std::size_t i = 0; i < n; ++i) {
         if (!changed[i]) continue;
         const QString label = items_[i].label;
+        const QColor previousColor = items_[i].color;
         items_[i] = makeItem(parts[i]);
         items_[i].label = label;
         const QModelIndex idx = index(static_cast<int>(i));
-        emit dataChanged(idx, idx, {PositionRole, RotationRole, ScaleRole});
+        if (items_[i].color != previousColor) emit dataChanged(idx, idx, {PositionRole, RotationRole, ScaleRole, ColorRole});
+        else emit dataChanged(idx, idx, {PositionRole, RotationRole, ScaleRole});
     }
 }
 
@@ -231,10 +234,17 @@ void SceneModel::setSceneInfo(const RunSceneInfo& info) {
     resetCamera();
     emit fieldChanged();
 
-    zoneState_.clear();
-    zones_.setParts({});
-    zoneLabels_.clear();
-    updateZones(nullptr);
+    zoneRig_.setScene(info_.config, info_.panels, info_.zoneKinds);
+    zones_.setParts(zoneRig_.parts(), zoneRig_.labels());
+    QStringList labels;
+    for (const auto& l : zoneRig_.labels()) {
+        const QString q = QString::fromStdString(l);
+        if (!labels.contains(q)) labels << q;
+    }
+    if (labels != zoneLabels_) {
+        zoneLabels_ = labels;
+        emit zoneLabelsChanged();
+    }
 }
 
 void SceneModel::setZonesVisible(bool v) {
@@ -254,50 +264,7 @@ void SceneModel::refreshCamera() {
 }
 
 void SceneModel::updateZones(const sdk::ISimSnapshot* snapshot) {
-    std::vector<ZoneOverlay> next;
-    if (info_.config) next = resolveZoneOverlays(*info_.config, info_.panels, snapshot);
-
-    auto sameShape = [&] {
-        if (next.size() != zoneState_.size()) return false;
-        for (std::size_t i = 0; i < next.size(); ++i)
-            if (next[i].label != zoneState_[i].label || next[i].color != zoneState_[i].color) return false;
-        return true;
-    };
-    auto toParts = [&] {
-        std::vector<ScenePart> parts;
-        for (const auto& z : next) {
-            ScenePart p;
-            p.name = z.label;
-            p.pose = z.pose;
-            p.size = z.size;
-            p.color = z.color;
-            p.translucent = true;
-            parts.push_back(std::move(p));
-        }
-        return parts;
-    };
-
-    if (!sameShape()) {
-        std::vector<std::string> labels;
-        QStringList uniq;
-        for (const auto& z : next) {
-            labels.push_back(z.label);
-            const QString l = QString::fromStdString(z.label);
-            if (!uniq.contains(l)) uniq << l;
-        }
-        zones_.setParts(toParts(), labels);
-        if (uniq != zoneLabels_) {
-            zoneLabels_ = uniq;
-            emit zoneLabelsChanged();
-        }
-    } else {
-        std::vector<char> changed(next.size(), 0);
-        bool any = false;
-        for (std::size_t i = 0; i < next.size(); ++i)
-            if (!(next[i].pose == zoneState_[i].pose) || !(next[i].size == zoneState_[i].size)) { changed[i] = 1; any = true; }
-        if (any) zones_.updatePoses(toParts(), changed);
-    }
-    zoneState_ = std::move(next);
+    if (zoneRig_.update(snapshot)) zones_.updatePoses(zoneRig_.parts(), zoneRig_.changed());
 }
 
 void SceneModel::update(const sdk::ISimSnapshot* snapshot) {

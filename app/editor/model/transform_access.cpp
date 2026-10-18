@@ -76,6 +76,19 @@ std::optional<TransformTarget> readTransform(const sdk::RobotConfig& c, const Ed
             t.local = m->mount;
             return out;
         }
+        case SelKind::Zone: {
+            const sdk::ZoneConfig* z = c.findZone(sel.owner);
+            if (z == nullptr) return std::nullopt;
+            const sdk::ZoneKindInfo* info = catalog.findZoneKind(z->kind);
+            out.parentWorld = ops::zoneParentWorld(c, catalog, *z);
+            t.local = z->local;
+            if (info == nullptr || info->shape == sdk::ZoneShape::Volume) {
+                t.size = z->sizeM;
+                t.sizeKind = SizeKind::Box;
+                t.canScale = true;
+            }
+            return out;
+        }
         case SelKind::Overlay: {
             const auto volumes = ops::volumesFor(c, catalog, sel.owner);
             const ops::VolumeRef* vol = findVolume(volumes, sel.sub);
@@ -139,6 +152,13 @@ bool writeTransform(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sel
                     return true;
                 }
             return false;
+        }
+        case SelKind::Zone: {
+            sdk::ZoneConfig* z = ops::findZone(c, sel.owner);
+            if (z == nullptr) return false;
+            z->local = Pose3{t.local.position, t.local.rotation.normalized()};
+            if (old.canScale) z->sizeM = size;
+            return true;
         }
         case SelKind::Overlay: {
             if (!old.canMove) return false;

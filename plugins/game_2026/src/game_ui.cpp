@@ -5,8 +5,6 @@
 #include <utility>
 
 #include "wpiemu/plugins/game_2026/config.h"
-#include "wpiemu/plugins/game_2026/fuel_intake.h"
-#include "wpiemu/plugins/game_2026/fuel_shooter.h"
 #include "wpiemu/plugins/game_2026/game_state.h"
 
 namespace wpiemu::plugins::game_2026 {
@@ -92,26 +90,6 @@ std::vector<sdk::EditorPanelDescriptor> editorPanels() {
     rules.properties = subset(config, {"enforceHubShifts", "firstInactiveHub", "hubProcessingDelayS", "recycleScoredFuel"});
     rules.order = 2;
     panels.push_back(std::move(rules));
-
-    sdk::EditorPanelDescriptor zone;
-    zone.id = "game_2026.intake_zone";
-    zone.title = "Pickup zone";
-    zone.scope = sdk::PanelScope::Mechanism;
-    zone.mechanismTypes = {kIntakeType};
-    zone.properties = subset(fuelIntakeTemplate().properties, {"pickupZone"});
-    zone.overlays.push_back({"pickupZone", "Fuel pickup zone", "#44cc66", true});
-    zone.order = 10;
-    panels.push_back(std::move(zone));
-
-    sdk::EditorPanelDescriptor muzzle;
-    muzzle.id = "game_2026.shooter_muzzle";
-    muzzle.title = "Muzzle";
-    muzzle.scope = sdk::PanelScope::Mechanism;
-    muzzle.mechanismTypes = {kShooterType};
-    muzzle.properties = subset(fuelShooterTemplate().properties, {"muzzleOffset"});
-    muzzle.overlays.push_back({"muzzleOffset", "Fuel exit point", "#ff7043", true});
-    muzzle.order = 11;
-    panels.push_back(std::move(muzzle));
 
     return panels;
 }

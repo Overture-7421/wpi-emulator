@@ -13,6 +13,8 @@
 #include <utility>
 #include <vector>
 
+#include "wpiemu/sdk/config/mechanism_attachment.h"
+#include "wpiemu/sdk/config/zone.h"
 #include "wpiemu/sdk/core/geometry.h"
 #include "wpiemu/sdk/core/value.h"
 #include "wpiemu/sdk/devices/slot.h"
@@ -48,21 +50,6 @@ struct SimSettings {
 struct DrivetrainConfig {
     DrivetrainSpec spec;
     std::vector<SlotMapping> mappings;   // owner == slot_owner::kDrivetrain
-};
-
-// Reserved attachment names. "chassis" is the parent id meaning the robot chassis; "root" is
-// the link every mechanism and the chassis expose (its own origin/mount frame). Neither may be used as
-// a mechanism instance id / non-root link name.
-inline constexpr const char* kChassisParent = "chassis";
-inline constexpr const char* kRootLink = "root";
-
-// Where a mechanism's mount frame hangs: a named link of another mechanism (or the chassis).
-struct MechanismAttachment {
-    std::string parentMechanismId = kChassisParent;  // "chassis" or "" = the chassis
-    std::string parentLink = kRootLink;              // must exist on the parent; the chassis only has "root"
-
-    bool onChassis() const { return parentMechanismId.empty() || parentMechanismId == kChassisParent; }
-    bool operator==(const MechanismAttachment&) const = default;
 };
 
 // A mechanism instance placed on the robot.
@@ -107,9 +94,17 @@ struct RobotConfig {
 
     std::vector<MotionLink> motionLinks;
 
+    // Game-owned zones (pickup volumes, muzzles, ...) attached to the chassis or a mechanism link (config/zone.h).
+    std::vector<ZoneConfig> zones;
+
     const MechanismConfig* findMechanism(std::string_view id) const {
         for (const auto& m : mechanisms)
             if (m.id == id) return &m;
+        return nullptr;
+    }
+    const ZoneConfig* findZone(std::string_view id) const {
+        for (const auto& z : zones)
+            if (z.id == id) return &z;
         return nullptr;
     }
     const PluginSection* findPlugin(std::string_view id) const {

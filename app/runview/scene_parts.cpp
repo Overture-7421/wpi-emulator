@@ -171,38 +171,206 @@ bool RobotRig::update(const sdk::ISimSnapshot* snapshot) {
     return any;
 }
 
-std::vector<ZoneOverlay> resolveZoneOverlays(const sdk::RobotConfig& config,
-                                             const std::vector<sdk::EditorPanelDescriptor>& panels,
-                                             const sdk::ISimSnapshot* snapshot) {
-    std::vector<ZoneOverlay> out;
-    const sdk::LinkPoseSource source = linkSource(config, snapshot);
+namespace {
+
+// An overlay whose pose is `frame(mechanism, link) * local`; an empty mechanism means the chassis frame.
+struct ZoneBinding {
+    ZoneOverlay overlay;
+    std::string mechanism;
+    std::string link = sdk::kRootLink;
+    sdk::Pose3 local;
+};
+
+void collectPanelBindings(const sdk::RobotConfig& config, const std::vector<sdk::EditorPanelDescriptor>& panels,
+                          std::vector<ZoneBinding>& out) {
     for (const auto& panel : panels) {
         for (const auto& overlay : panel.overlays) {
-            auto addOverlay = [&](const sdk::Value* v, const sdk::Pose3& frame) {
+            auto add = [&](const sdk::Value* v, const std::string& mechanism) {
                 sdk::Box3 box;
                 if (v == nullptr || !sdk::fromValue(*v, box)) return;
-                ZoneOverlay z;
-                z.label = overlay.label.empty() ? overlay.propertyKey : overlay.label;
-                z.color = overlay.color;
-                z.pose = frame * box.pose;
-                z.size = box.sizeM;
-                out.push_back(std::move(z));
+                ZoneBinding b;
+                b.overlay.label = overlay.label.empty() ? overlay.propertyKey : overlay.label;
+                b.overlay.color = overlay.color;
+                b.overlay.size = box.sizeM;
+                b.mechanism = mechanism;
+                b.local = box.pose;
+                out.push_back(std::move(b));
             };
             if (panel.scope == sdk::PanelScope::PluginConfig) {
                 const std::string pluginId = panel.id.substr(0, panel.id.find('.'));
                 if (const sdk::PluginSection* section = config.findPlugin(pluginId))
-                    addOverlay(section->data.findPath(overlay.propertyKey), sdk::Pose3{});
+                    add(section->data.findPath(overlay.propertyKey), {});
             } else {
                 for (const auto& m : config.mechanisms) {
                     if (std::find(panel.mechanismTypes.begin(), panel.mechanismTypes.end(), m.type) == panel.mechanismTypes.end())
                         continue;
-                    const auto frame = sdk::resolveLinkPoseInChassis(config, m.id, sdk::kRootLink, source);
-                    addOverlay(m.properties.findPath(overlay.propertyKey), frame ? *frame : sdk::Pose3{});
+                    add(m.properties.findPath(overlay.propertyKey), m.id);
                 }
             }
         }
     }
+}
+
+void collectZoneBindings(const sdk::RobotConfig& config, const std::vector<sdk::ZoneKindInfo>& kinds,
+                         std::vector<ZoneBinding>& out) {
+    for (const auto& zone : config.zones) {
+        const auto kind = std::find_if(kinds.begin(), kinds.end(), [&](const sdk::ZoneKindInfo& k) { return k.kind == zone.kind; });
+        if (kind == kinds.end()) continue;
+        ZoneBinding b;
+        b.overlay.id = zone.id;
+        b.overlay.label = zone.label.empty() ? zone.id : zone.label;
+        b.overlay.color = kind->color;
+        b.overlay.size = zone.sizeM;
+        b.overlay.muzzle = kind->shape == sdk::ZoneShape::Muzzle;
+        b.overlay.tracksState = true;
+        if (!zone.attachment.onChassis()) {
+            b.mechanism = zone.attachment.parentMechanismId;
+            b.link = zone.attachment.parentLink;
+        }
+        b.local = zone.local;
+        out.push_back(std::move(b));
+    }
+}
+
+// Pose of the frame a binding hangs on (identity on the chassis, or when the chain cannot be resolved).
+sdk::Pose3 frameOf(const sdk::RobotConfig& config, const sdk::LinkPoseSource& source, const ZoneBinding& b) {
+    if (b.mechanism.empty()) return {};
+    const auto frame = sdk::resolveLinkPoseInChassis(config, b.mechanism, b.link, source);
+    return frame ? *frame : sdk::Pose3{};
+}
+
+bool zoneActive(const sdk::ISimSnapshot* snapshot, const std::string& id) {
+    if (snapshot == nullptr) return false;
+    for (const auto& z : snapshot->zones())
+        if (z.id == id) return z.active;
+    return false;
+}
+
+constexpr float kMuzzleMarkerM = 0.08f;
+constexpr float kMuzzleArrowLengthM = 0.3f;
+constexpr float kMuzzleArrowThicknessM = 0.025f;
+constexpr float kActiveOpacity = 0.55f;
+constexpr float kInactiveOpacity = 0.12f;
+constexpr float kActiveMuzzleOpacity = 0.95f;
+constexpr float kInactiveMuzzleOpacity = 0.4f;
+
+std::size_t partCount(const ZoneOverlay& z) { return z.muzzle ? 2 : 1; }
+
+}  // namespace
+
+std::vector<ZoneOverlay> resolveZoneOverlays(const sdk::RobotConfig& config,
+                                             const std::vector<sdk::EditorPanelDescriptor>& panels,
+                                             const sdk::ISimSnapshot* snapshot) {
+    std::vector<ZoneBinding> bindings;
+    collectPanelBindings(config, panels, bindings);
+    const sdk::LinkPoseSource source = linkSource(config, snapshot);
+    std::vector<ZoneOverlay> out;
+    out.reserve(bindings.size());
+    for (auto& b : bindings) {
+        b.overlay.pose = frameOf(config, source, b) * b.local;
+        out.push_back(std::move(b.overlay));
+    }
     return out;
+}
+
+std::vector<ZoneOverlay> resolveRobotZones(const sdk::RobotConfig& config, const std::vector<sdk::ZoneKindInfo>& kinds,
+                                           const sdk::ISimSnapshot* snapshot) {
+    std::vector<ZoneBinding> bindings;
+    collectZoneBindings(config, kinds, bindings);
+    const sdk::LinkPoseSource source = linkSource(config, snapshot);
+    std::vector<ZoneOverlay> out;
+    out.reserve(bindings.size());
+    for (auto& b : bindings) {
+        b.overlay.pose = frameOf(config, source, b) * b.local;
+        b.overlay.active = zoneActive(snapshot, b.overlay.id);
+        out.push_back(std::move(b.overlay));
+    }
+    return out;
+}
+
+void ZoneRig::setScene(std::shared_ptr<const sdk::RobotConfig> config, std::vector<sdk::EditorPanelDescriptor> panels,
+                       std::vector<sdk::ZoneKindInfo> kinds) {
+    config_ = std::move(config);
+    overlays_.clear();
+    bindings_.clear();
+    parts_.clear();
+    labels_.clear();
+    changed_.clear();
+    if (!config_) return;
+
+    std::vector<ZoneBinding> bound;
+    collectPanelBindings(*config_, panels, bound);
+    collectZoneBindings(*config_, kinds, bound);
+    for (auto& zb : bound) {
+        Binding b;
+        b.mechanism = zb.mechanism;
+        b.link = zb.link;
+        b.local = zb.local;
+        b.firstPart = parts_.size();
+        auto addPart = [&](sdk::Vec3 size) {
+            ScenePart p;
+            p.name = zb.overlay.label;
+            p.size = size;
+            p.color = zb.overlay.color;
+            p.translucent = true;
+            parts_.push_back(std::move(p));
+            labels_.push_back(zb.overlay.label);
+        };
+        if (zb.overlay.muzzle) {
+            addPart({kMuzzleMarkerM, kMuzzleMarkerM, kMuzzleMarkerM});
+            addPart({kMuzzleArrowLengthM, kMuzzleArrowThicknessM, kMuzzleArrowThicknessM});
+        } else {
+            addPart(zb.overlay.size);
+        }
+        bindings_.push_back(std::move(b));
+        // Chassis-frame panel overlays never move: place them once.
+        if (!zb.overlay.tracksState && zb.mechanism.empty()) {
+            zb.overlay.pose = zb.local;
+            parts_[bindings_.back().firstPart].pose = zb.local;
+        }
+        overlays_.push_back(std::move(zb.overlay));
+    }
+    changed_.assign(parts_.size(), 1);
+    update(nullptr);
+    changed_.assign(parts_.size(), 1);
+}
+
+bool ZoneRig::update(const sdk::ISimSnapshot* snapshot) {
+    changed_.assign(parts_.size(), 0);
+    if (!config_) return false;
+    const sdk::LinkPoseSource source = linkSource(*config_, snapshot);
+    bool any = false;
+
+    for (std::size_t i = 0; i < overlays_.size(); ++i) {
+        ZoneOverlay& z = overlays_[i];
+        const Binding& b = bindings_[i];
+        if (!z.tracksState && b.mechanism.empty()) continue;
+
+        sdk::Pose3 frame;
+        if (!b.mechanism.empty()) {
+            const auto resolved = sdk::resolveLinkPoseInChassis(*config_, b.mechanism, b.link, source);
+            if (resolved) frame = *resolved;
+        }
+        z.pose = frame * b.local;
+        z.active = z.tracksState && zoneActive(snapshot, z.id);
+
+        const float opacity = !z.tracksState ? 0.28f
+                              : z.muzzle     ? (z.active ? kActiveMuzzleOpacity : kInactiveMuzzleOpacity)
+                                             : (z.active ? kActiveOpacity : kInactiveOpacity);
+        for (std::size_t k = 0; k < partCount(z); ++k) {
+            const std::size_t idx = b.firstPart + k;
+            ScenePart& part = parts_[idx];
+            sdk::Pose3 pose = z.pose;
+            if (z.muzzle && k == 1) pose = z.pose * sdk::Pose3({kMuzzleArrowLengthM * 0.5f + kMuzzleMarkerM * 0.5f, 0.f, 0.f}, sdk::Quat{});
+            if (pose == part.pose && opacity == part.opacity && z.active == part.highlighted) continue;
+            part.pose = pose;
+            part.opacity = opacity;
+            part.highlighted = z.active;
+            changed_[idx] = 1;
+            any = true;
+        }
+    }
+    return any;
 }
 
 FieldParts buildFieldParts(const sdk::FieldDescription* field) {

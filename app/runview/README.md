@@ -12,7 +12,7 @@ implementation used by the tests, the demo and screenshots.
 | Area | Files | Notes |
 |---|---|---|
 | Backend seam | `run_backend.h/.cpp` | `IRunBackend` (QObject): start/stop/restart/reset/pause/step/time scale, `latestSnapshot()` (polled at ~60 Hz), DS state, `status()` (process + link state), `sceneInfo()` (config, field, HUD + overlay descriptors), `logEntry` signal |
-| Fake backend | `fake_run_backend.*` | synthetic swerve robot, 3 mechanisms with moving links, 200 instanced "fuel" balls, HUD values, failure injection (`simulateCrash`, `simulateHandshakeTimeout`, ...) |
+| Fake backend | `fake_run_backend.*` | synthetic swerve robot, 3 mechanisms with moving links, a pickup and a muzzle zone that light up while the intake is deployed / the flywheel runs, 200 instanced "fuel" balls, HUD values, failure injection (`simulateCrash`, `simulateHandshakeTimeout`, ...) |
 | Presentation logic (Qt-light, unit tested) | `run_control.*`, `hud_model.*`, `sim_stats.*`, `scene_parts.*`, `console_model.*` | enable states, status chips/overlay text, HUD descriptor evaluation, SDK -> render parts |
 | Qt Quick bridge | `scene_model.*`, `mechanism_overlay_model.*`, `qml/*.qml` | models for the QML scene (instancing for fuel); the camera is the editor's `OrbitCamera` (`common/orbit_camera.h`) with a field-framed home view, same orbit/pan/zoom controls as the editor viewport; SDK Z-up is converted to Qt's Y-up in exactly one place (`RunScene.qml`, node `world`) |
 | Driver Station | `driver_station_model.*`, `driver_station_panel.*` | enable / disable / e-stop, mode, alliance, match sequencing from sim time, game message. `DsState::matchTimeS` = seconds **remaining** in the active segment while a timed match runs, `-1` otherwise (the game plugin then uses its integrated clock). The game message text is a manual fallback: when the loaded game plugin provides FMS data (`IGameState::gameSpecificMessage()`, e.g. 2026 hub order `R`/`B`) the runtime overlays it before the robot sees it |
@@ -44,9 +44,22 @@ The keyboard joystick (slot 0 by default) uses `W A S D` (left stick), arrow key
 * Wheels are drawn from `WheelSample::contactPoint` (hub = contact + radius up), steered/spun from the sample.
 * All primitives of a mechanism follow the mechanism's first link (the moving part published in `MechanismState::links`), and
   stay on its root when it publishes none.
-* Zone overlays come from `EditorPanelDescriptor::overlays`: `PanelScope::PluginConfig` boxes are read from
-  `config.plugins[<panel id prefix before the first '.'>].data[propertyKey]` in the chassis frame,
-  `PanelScope::Mechanism` boxes from the mechanism's `properties[propertyKey]` in the mechanism root frame.
+* Zone overlays come from two sources, drawn by `ZoneRig` (`scene_parts.*`) into one list that the View menu's
+  "Zones" toggle (and the per-zone submenu, keyed by label) controls:
+  * `EditorPanelDescriptor::overlays` (other plugins' panels): `PanelScope::PluginConfig` boxes are read from
+    `config.plugins[<panel id prefix before the first '.'>].data[propertyKey]` in the chassis frame,
+    `PanelScope::Mechanism` boxes from the mechanism's `properties[propertyKey]` in the mechanism root frame.
+    They are static translucent boxes.
+  * **Robot zones** (`RobotConfig::zones`, ADR 0016): every zone whose `kind` is in `RunSceneInfo::zoneKinds`
+    (the game module's `contributeZoneKinds()`; zones of an unknown kind are ignored). The pose in the chassis
+    frame is the pose of the attachment link (chassis/root = identity, a mechanism link = the same link-pose logic
+    as mechanism shapes, taken from `MechanismState::links`) times `ZoneConfig::local`. A `Volume` kind is a box of
+    `sizeM`; a `Muzzle` kind is a small marker plus a thin arrow along local +X. Colour comes from
+    `ZoneKindInfo::color`. `ISimSnapshot::zones()` (matched by zone id; missing = inactive) drives the look: an
+    **active** zone is brighter and more opaque, an inactive one is dim.
+  `ZoneRig::update()` recomputes poses and active flags per snapshot without allocating and reports changed
+  parts, so `SceneModel` only emits `dataChanged` for zones that moved or switched state.
+  `resolveRobotZones()` / `resolveZoneOverlays()` are the plain, testable equivalents.
 * Game HUD: `HudWidgetDescriptor` + `ISimSnapshot::hud()`; nothing game specific lives in this directory.
 
 ## Gamepads

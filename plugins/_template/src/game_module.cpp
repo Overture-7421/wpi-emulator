@@ -73,7 +73,7 @@ public:
 
     // 1. season-specific mechanism templates. Keys MUST be prefixed with the plugin id ("<id>.<name>") so the
     //    ownership rule (sdk::ownsMechanismType) holds. Prefer wrapping the generic core mechanisms through the
-    //    values they publish (see plugins/game_2026/include/.../fuel_intake.h) over re-implementing them.
+    //    values they publish (see zones in plugins/game_2026/include/.../fuel_zones.h) over re-implementing them.
     sdk::Status registerMechanisms(sdk::MechanismFactory& /*factory*/) override { return sdk::okStatus(); }
 
     // 2. the static field.

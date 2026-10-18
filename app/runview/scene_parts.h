@@ -13,6 +13,7 @@
 #include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/game/field.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
+#include "wpiemu/sdk/game/zone_kind.h"
 #include "wpiemu/sdk/telemetry/snapshot.h"
 
 namespace wpiemu::app::runview {
@@ -26,6 +27,8 @@ struct ScenePart {
     sdk::Vec3 size{1.f, 1.f, 1.f};  // Box: full extents; Cylinder: (diameter, diameter, height), axis = local Z
     std::string color = "#808080";
     bool translucent = false;
+    float opacity = 0.28f;      // alpha when translucent
+    bool highlighted = false;   // drawn brighter (an active zone)
 };
 
 // The robot rig: chassis frame/primitives, wheels (with a rotation marker) and mechanism primitives. All primitives
@@ -57,12 +60,17 @@ private:
     std::size_t staticCount_ = 0;
 };
 
-// A translucent volume (intake/shooter zone ...) contributed through EditorPanelDescriptor overlays.
+// A translucent volume or muzzle in the chassis frame: either an EditorPanelDescriptor overlay (tracksState
+// false, always drawn the same) or a robot zone (RobotConfig::zones) whose `active` flag comes from the snapshot.
 struct ZoneOverlay {
+    std::string id;          // ZoneConfig::id; empty for panel overlays
     std::string label;
     std::string color = "#4488ff";
-    sdk::Pose3 pose;     // chassis frame
-    sdk::Vec3 size;
+    sdk::Pose3 pose;         // chassis frame
+    sdk::Vec3 size;          // Volume only
+    bool muzzle = false;     // point + direction along the pose's local +X, drawn as a marker and an arrow
+    bool tracksState = false;
+    bool active = false;     // ISimSnapshot::zones(); inactive when the snapshot does not list the zone
 };
 
 // Resolves the overlays of every panel descriptor against the config (plugin sections and mechanism
@@ -71,6 +79,42 @@ struct ZoneOverlay {
 std::vector<ZoneOverlay> resolveZoneOverlays(const sdk::RobotConfig& config,
                                              const std::vector<sdk::EditorPanelDescriptor>& panels,
                                              const sdk::ISimSnapshot* snapshot);
+
+// Resolves RobotConfig::zones whose kind is in `kinds` (others are ignored) in the chassis frame:
+// pose = pose of the attachment link * zone.local, shape and colour from the kind, `active` from the snapshot.
+std::vector<ZoneOverlay> resolveRobotZones(const sdk::RobotConfig& config, const std::vector<sdk::ZoneKindInfo>& kinds,
+                                           const sdk::ISimSnapshot* snapshot);
+
+// Drawable parts of every panel overlay and robot zone. Mirrors RobotRig: build once per scene, then update()
+// per snapshot without allocating and report which parts changed (pose or active state).
+class ZoneRig {
+public:
+    void setScene(std::shared_ptr<const sdk::RobotConfig> config, std::vector<sdk::EditorPanelDescriptor> panels,
+                  std::vector<sdk::ZoneKindInfo> kinds);
+    // Returns true if any part changed. nullptr = rest pose, every zone inactive.
+    bool update(const sdk::ISimSnapshot* snapshot);
+
+    const std::vector<ScenePart>& parts() const { return parts_; }
+    // Grouping label of each part (the zone / overlay label), for the per-zone visibility toggles.
+    const std::vector<std::string>& labels() const { return labels_; }
+    const std::vector<char>& changed() const { return changed_; }
+    // One entry per panel overlay / robot zone (muzzles own two parts), as of the last update().
+    const std::vector<ZoneOverlay>& overlays() const { return overlays_; }
+
+private:
+    struct Binding {
+        std::string mechanism;                 // empty = chassis frame
+        std::string link = sdk::kRootLink;
+        sdk::Pose3 local;
+        std::size_t firstPart = 0;
+    };
+    std::shared_ptr<const sdk::RobotConfig> config_;
+    std::vector<ZoneOverlay> overlays_;
+    std::vector<Binding> bindings_;
+    std::vector<ScenePart> parts_;
+    std::vector<std::string> labels_;
+    std::vector<char> changed_;
+};
 
 // Static field parts (floor + visuals) and the XY centre of the playing area.
 struct FieldParts {

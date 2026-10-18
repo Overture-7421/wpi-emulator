@@ -12,6 +12,7 @@
 #include <QUndoStack>
 #include <QVBoxLayout>
 
+#include <optional>
 #include "model/config_ops.h"
 #include "model/tr.h"
 #include "viewmodel/detected_devices_model.h"
@@ -209,6 +210,8 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
     // ---- wiring: model -> views ----
     auto refreshTree = [this] { d->treeModel.refresh(); };
     connect(&c.document(), &EditorDocument::changed, this, refreshTree);
+    connect(&c, &EditorController::issuesUpdated, this, [this] { d->treeModel.setIssues(d->controller.issues()); });
+    d->treeModel.setIssues(c.issues());
     connect(&c, &EditorController::devicesUpdated, this, refreshTree);
     connect(&s.backend, &IEditorBackend::deviceDiscovered, this, [this](const sdk::DiscoveredDevice& dev) { d->deviceModel.markRecent(dev); });
     connect(&c.selection(), &SelectionState::changed, this, [this](const SelectionRef& ref) {
@@ -241,7 +244,37 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                 }
             }
         };
+        auto addZoneKinds = [&](QMenu* into, const sdk::MechanismAttachment& att) {
+            for (const auto& k : cat.zoneKinds) {
+                QAction* a = into->addAction(d->icons.node(NodeKind::Zone), ETR("Add %1").arg(QString::fromStdString(k.displayName)));
+                connect(a, &QAction::triggered, this, [this, kind = QString::fromStdString(k.kind), att] { d->controller.addZone(kind, att); });
+            }
+        };
         switch (ref.kind) {
+            case SelKind::Zone: {
+                d->controller.selection().set(ref);
+                menu.addAction(ETR("Duplicate"), this, [this] { d->controller.duplicateSelection(); });
+                menu.addAction(ETR("Delete"), this, [this] { d->controller.deleteSelection(); });
+                menu.addSeparator();
+                const QString zoneId = QString::fromStdString(ref.owner);
+                auto* attach = menu.addMenu(ETR("Attach to"));
+                attach->addAction(ETR("Chassis"), this, [this, zoneId] { d->controller.document().reattachZone(zoneId, QStringLiteral("chassis")); });
+                for (const auto& m : cfg.mechanisms) {
+                    const auto* info = cat.findTemplate(m.type);
+                    const QString name = QString::fromStdString(ops::displayNameFor(m, cat));
+                    const QString mechId = QString::fromStdString(m.id);
+                    if (info == nullptr || info->links.empty()) {
+                        attach->addAction(name, this, [this, zoneId, mechId] { d->controller.document().reattachZone(zoneId, mechId); });
+                        continue;
+                    }
+                    auto* sub = attach->addMenu(name);
+                    sub->addAction(ETR("Origin"), this, [this, zoneId, mechId] { d->controller.document().reattachZone(zoneId, mechId); });
+                    for (const auto& l : info->links)
+                        sub->addAction(QString::fromStdString(l.label.empty() ? l.name : l.label), this,
+                                       [this, zoneId, mechId, link = QString::fromStdString(l.name)] { d->controller.document().reattachZone(zoneId, mechId, link); });
+                }
+                break;
+            }
             case SelKind::Mechanism: {
                 d->controller.selection().set(ref);
                 menu.addAction(ETR("Duplicate"), this, [this] { d->controller.duplicateSelection(); });
@@ -265,6 +298,12 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                         });
                 }
                 addTemplates(menu.addMenu(ETR("Add attached mechanism")), [this](const QString& type, const ops::MechanismVariant& v) { d->controller.addMechanismToSelection(type, v); });
+                if (!cat.zoneKinds.empty()) {
+                    menu.addSeparator();
+                    sdk::MechanismAttachment onMechanism;
+                    onMechanism.parentMechanismId = ref.owner;
+                    addZoneKinds(&menu, onMechanism);
+                }
                 break;
             }
             case SelKind::Slot:
@@ -301,9 +340,14 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                         const int i = d->controller.document().addPrimitive(QString::fromLatin1(ops::kChassisOwner), kind);
                         if (i >= 0) d->controller.selection().set(SelectionRef::primitive(ops::kChassisOwner, i));
                     });
+                if (!cat.zoneKinds.empty()) {
+                    menu.addSeparator();
+                    addZoneKinds(&menu, sdk::MechanismAttachment{});
+                }
                 break;
             case SelKind::Plugin:
                 addTemplates(&menu, [this](const QString& type, const ops::MechanismVariant& v) { d->controller.addMechanism(type, sdk::MechanismAttachment{}, v); }, true);
+                addZoneKinds(&menu, sdk::MechanismAttachment{});
                 break;
             default:
                 addTemplates(menu.addMenu(ETR("Add mechanism")), [this](const QString& type, const ops::MechanismVariant& v) {
@@ -317,21 +361,25 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
         const QString err = d->controller.mapDevice(target, key, sdk::CapabilitySet{caps});
         if (!err.isEmpty()) d->toasts->showToast(ETR("Cannot map the device"), err, 1);
     });
-    connect(&s.treeModel, &ProjectTreeModel::mechanismDropped, this, [this](const QString& id, const sdk::MechanismAttachment& att) {
+    auto chooseLink = [this](const sdk::MechanismAttachment& att) -> std::optional<QString> {
         const sdk::RobotConfig& cfg = d->controller.document().config();
         const EditorCatalog& cat = d->controller.document().catalog();
-        QString link = QStringLiteral("root");
         const sdk::MechanismConfig* parent = att.onChassis() ? nullptr : cfg.findMechanism(att.parentMechanismId);
-        if (const auto* info = parent != nullptr ? cat.findTemplate(parent->type) : nullptr; info != nullptr && !info->links.empty()) {
-            QMenu menu(this);
-            menu.addAction(ETR("Attach to origin"))->setData(QStringLiteral("root"));
-            for (const auto& l : info->links)
-                menu.addAction(ETR("Attach to %1").arg(QString::fromStdString(l.label.empty() ? l.name : l.label)))->setData(QString::fromStdString(l.name));
-            const QAction* chosen = menu.exec(QCursor::pos());
-            if (chosen == nullptr) return;
-            link = chosen->data().toString();
-        }
-        d->controller.document().reparentMechanism(id, QString::fromStdString(att.parentMechanismId), link);
+        const auto* info = parent != nullptr ? cat.findTemplate(parent->type) : nullptr;
+        if (info == nullptr || info->links.empty()) return QStringLiteral("root");
+        QMenu menu(this);
+        menu.addAction(ETR("Attach to origin"))->setData(QStringLiteral("root"));
+        for (const auto& l : info->links)
+            menu.addAction(ETR("Attach to %1").arg(QString::fromStdString(l.label.empty() ? l.name : l.label)))->setData(QString::fromStdString(l.name));
+        const QAction* chosen = menu.exec(QCursor::pos());
+        if (chosen == nullptr) return std::nullopt;
+        return chosen->data().toString();
+    };
+    connect(&s.treeModel, &ProjectTreeModel::mechanismDropped, this, [this, chooseLink](const QString& id, const sdk::MechanismAttachment& att) {
+        if (const auto link = chooseLink(att)) d->controller.document().reparentMechanism(id, QString::fromStdString(att.parentMechanismId), *link);
+    });
+    connect(&s.treeModel, &ProjectTreeModel::zoneDropped, this, [this, chooseLink](const QString& id, const sdk::MechanismAttachment& att) {
+        if (const auto link = chooseLink(att)) d->controller.document().reattachZone(id, QString::fromStdString(att.parentMechanismId), *link);
     });
 
     connect(&c, &EditorController::deviceToast, this, [this](const QString& title, const QString& detail) { d->toasts->showToast(title, detail, 0); });

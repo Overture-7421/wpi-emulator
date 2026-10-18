@@ -6,15 +6,16 @@
 
 #include "test_support.h"
 #include "wpiemu/plugins/game_2026/field_dimensions.h"
-#include "wpiemu/plugins/game_2026/fuel_intake.h"
 #include "wpiemu/plugins/game_2026/fuel_pool.h"
-#include "wpiemu/plugins/game_2026/fuel_shooter.h"
+#include "wpiemu/plugins/game_2026/fuel_zones.h"
 
 using namespace wpiemu;
 using namespace wpiemu::plugins::game_2026;
-using g26test::boxValue;
+using g26test::above;
+using g26test::makeZone;
 using g26test::ScriptedMechanism;
 using g26test::Session;
+using g26test::within;
 
 namespace {
 
@@ -26,25 +27,28 @@ void emptyField(Session& s, int capacity = 30, int preload = 8) {
     s.section()["preloadFuel"] = preload;
 }
 
-sdk::Value intakeProps(const char* roller = "roller") {
+// Pickup zone (0.30 x 0.60 x 0.40 m, centre 0.45 m ahead of the chassis) active while `roller` spins.
+sdk::ZoneConfig pickupZone(const std::string& id = "intake", const char* roller = "roller") {
     sdk::Value p = sdk::Value::makeObject();
-    p["pickupZone"] = boxValue({0.45f, 0.f, 0.2f}, {0.30f, 0.60f, 0.40f});
-    p["rollerMechanism"] = roller;
-    p["rollerThreshold"] = 20.0;
     p["intakeRateHz"] = 0.0;  // unlimited unless a test limits it
-    return p;
+    std::vector<sdk::ZoneCondition> when;
+    if (*roller != '\0') when.push_back(above(roller, 20.0));
+    return makeZone(id, kPickupKind, p, when);
 }
 
 sdk::Value shooterProps() {
     sdk::Value p = sdk::Value::makeObject();
     p["flywheelMechanism"] = "flywheel";
-    p["feedMechanism"] = "indexer";
-    p["feedThreshold"] = 5.0;
     p["fireRateHz"] = 10.0;
     p["hoodAngleRad"] = 1.0471975512;  // 60 degrees
     p["flywheelRadiusM"] = 0.05;
     p["efficiency"] = 0.5;
     return p;
+}
+
+// Shooter zone that fires while the indexer spins faster than 5 rad/s.
+sdk::ZoneConfig shooterZone(const std::string& id = "shooter", sdk::Value props = shooterProps()) {
+    return makeZone(id, kShooterKind, std::move(props), {above("indexer", 5.0)});
 }
 
 constexpr float kYawQuarterTurn = 1.5707963f;
@@ -134,11 +138,11 @@ TEST_CASE("staging honours the config, capacity limits the preload and the body 
     }
 }
 
-TEST_CASE("intake absorbs fuel in its zone only while the roller spins") {
+TEST_CASE("pickup zone absorbs fuel in its volume only while the roller spins") {
     Session s;
     emptyField(s);
     ScriptedMechanism& roller = s.addScripted("roller");
-    s.addMechanism("intake", kIntakeType, intakeProps());
+    s.addZone(pickupZone());
     s.start();
     s.setChassis({2.f, 2.f, 0.f});
 
@@ -167,17 +171,17 @@ TEST_CASE("intake absorbs fuel in its zone only while the roller spins") {
     s.tick(2);
     CHECK(s.game->fuelInRobot() == 10);
 
-    auto* intake = dynamic_cast<FuelIntakeMechanism*>(s.mechanisms.front().get());
+    auto* intake = dynamic_cast<PickupZoneRuntime*>(s.game->zones().front().get());
     REQUIRE(intake != nullptr);
-    CHECK(intake->state().active);
-    CHECK(intake->state().values.front().name == "active");
+    CHECK(intake->active());
+    CHECK(intake->id() == "intake");
 }
 
 TEST_CASE("roller speed units are converted from the published unit") {
     Session s;
     emptyField(s);
     ScriptedMechanism& roller = s.addScripted("roller");
-    s.addMechanism("intake", kIntakeType, intakeProps());
+    s.addZone(pickupZone());
     s.start();
     s.setChassis({2.f, 2.f, 0.f});
     s.game->pool().spawn({2.45f, 2.f, 0.075f}, {});
@@ -190,11 +194,11 @@ TEST_CASE("roller speed units are converted from the published unit") {
     CHECK(s.game->fuelOnField() == 0);
 }
 
-TEST_CASE("intake stops at capacity and a full robot leaves fuel on the field") {
+TEST_CASE("a pickup stops at capacity and a full robot leaves fuel on the field") {
     Session s;
     emptyField(s, /*capacity=*/10, /*preload=*/8);
     ScriptedMechanism& roller = s.addScripted("roller");
-    s.addMechanism("intake", kIntakeType, intakeProps());
+    s.addZone(pickupZone());
     s.start();
     s.setChassis({2.f, 2.f, 0.f});
     roller.set("velocity", 100.0, "rad/s");
@@ -208,13 +212,13 @@ TEST_CASE("intake stops at capacity and a full robot leaves fuel on the field") 
     CHECK(s.game->fuelOnField() == 3);
 }
 
-TEST_CASE("intake rate limit and nearest-first order") {
+TEST_CASE("pickup rate limit and nearest-first order") {
     Session s;
     emptyField(s, 100, 0);
     ScriptedMechanism& roller = s.addScripted("roller");
-    sdk::Value p = intakeProps();
-    p["intakeRateHz"] = 10.0;
-    s.addMechanism("intake", kIntakeType, p);
+    sdk::ZoneConfig zone = pickupZone();
+    zone.properties["intakeRateHz"] = 10.0;
+    s.addZone(zone);
     s.start();
     s.setChassis({2.f, 2.f, 0.f});
     roller.set("velocity", 100.0, "rad/s");
@@ -227,11 +231,11 @@ TEST_CASE("intake rate limit and nearest-first order") {
     CHECK(s.fuelNear({2.32f, 2.f, 0.f}, 0.05f) + s.fuelNear({2.54f, 2.f, 0.f}, 0.05f) >= 1);
 }
 
-TEST_CASE("the pickup zone follows the robot pose and the mechanism mount") {
+TEST_CASE("the pickup zone follows the robot pose") {
     Session s;
     emptyField(s);
     ScriptedMechanism& roller = s.addScripted("roller");
-    s.addMechanism("intake", kIntakeType, intakeProps());
+    s.addZone(pickupZone());
     s.start();
     roller.set("velocity", 100.0, "rad/s");
 
@@ -245,27 +249,74 @@ TEST_CASE("the pickup zone follows the robot pose and the mechanism mount") {
     CHECK(s.game->fuelInRobot() == 9);
 }
 
-TEST_CASE("intake activation modes: deployed, roller AND deployed, OR, always") {
+TEST_CASE("a zone attached to a mechanism link follows that link") {
+    Session s;
+    emptyField(s);
+    ScriptedMechanism& roller = s.addScripted("roller");
+    ScriptedMechanism& arm = s.addScripted("arm");
+    arm.links.push_back({"tip", sdk::Pose3{{0.f, 1.f, 0.f}, sdk::Quat{}}});
+    roller.set("velocity", 100.0, "rad/s");
+    sdk::MechanismConfig armConfig;  // the directory resolves attachment chains from the config
+    armConfig.id = "arm";
+    armConfig.type = "test.scripted";
+    s.env.config.mechanisms.push_back(armConfig);
+    sdk::ZoneConfig zone = pickupZone();
+    zone.attachment.parentMechanismId = "arm";
+    zone.attachment.parentLink = "tip";
+    s.addZone(zone);
+    s.start();
+    s.setChassis({2.f, 2.f, 0.f});
+
+    s.game->pool().spawn({2.45f, 2.f, 0.075f}, {});  // chassis-mounted position: not where the zone is
+    s.tick(5);
+    CHECK(s.game->fuelOnField() == 1);
+    s.game->pool().spawn({2.45f, 3.f, 0.075f}, {});  // 1 m to the left, ahead of the tip
+    s.tick(2);
+    CHECK(s.game->fuelOnField() == 1);
+    CHECK(s.game->fuelInRobot() == 9);
+
+    arm.links.front().pose.position = {0.f, -1.f, 0.f};  // the link moves, the zone with it
+    s.game->pool().spawn({2.45f, 1.f, 0.075f}, {});
+    s.tick(2);
+    CHECK(s.game->fuelInRobot() == 10);
+}
+
+TEST_CASE("a zone attached to an unresolvable mechanism falls back to the chassis frame") {
+    Session s;
+    emptyField(s);
+    s.addScripted("roller").set("velocity", 100.0, "rad/s");
+    sdk::ZoneConfig zone = pickupZone();
+    zone.attachment.parentMechanismId = "ghost_arm";
+    s.addZone(zone);
+    s.start();
+    s.setChassis({2.f, 2.f, 0.f});
+    s.game->pool().spawn({2.45f, 2.f, 0.075f}, {});
+    s.tick(2);
+    CHECK(s.game->fuelInRobot() == 9);
+}
+
+TEST_CASE("pickup activation: single condition, AND, OR and always") {
     Session s;
     emptyField(s, 100, 0);
     ScriptedMechanism& roller = s.addScripted("roller");
     ScriptedMechanism& arm = s.addScripted("arm");
-    auto props = [&](const char* mode) {
-        sdk::Value p = intakeProps();
-        p["activation"] = mode;
-        p["deployMechanism"] = "arm";
-        p["deployedPosition"] = 1.5;
-        p["deployedTolerance"] = 0.1;
-        return p;
-    };
-    s.addMechanism("deployedOnly", kIntakeType, props("deployed"), sdk::Pose3{{0.f, 0.f, 0.f}, sdk::Quat{}});
-    s.addMechanism("both", kIntakeType, props("roller_and_deployed"), sdk::Pose3{{0.f, 10.f, 0.f}, sdk::Quat{}});
-    s.addMechanism("either", kIntakeType, props("roller_or_deployed"), sdk::Pose3{{0.f, 20.f, 0.f}, sdk::Quat{}});
-    s.addMechanism("always", kIntakeType, props("always"), sdk::Pose3{{0.f, 30.f, 0.f}, sdk::Quat{}});
+    const sdk::ZoneCondition deployed = within("arm", 1.5, 0.1);
+    sdk::ZoneConfig deployedOnly = pickupZone("deployedOnly", "");
+    deployedOnly.activation.conditions = {deployed};
+    sdk::ZoneConfig both = pickupZone("both");
+    both.activation.conditions.push_back(deployed);
+    both.activation.mode = sdk::ActivationMode::All;
+    sdk::ZoneConfig either = pickupZone("either");
+    either.activation.conditions.push_back(deployed);
+    either.activation.mode = sdk::ActivationMode::Any;
+    s.addZone(deployedOnly);
+    s.addZone(both);
+    s.addZone(either);
+    s.addZone(pickupZone("always", ""));
     s.start();
     s.setChassis({2.f, 2.f, 0.f});
 
-    auto active = [&](std::size_t i) { return s.mechanisms[i]->state().active; };
+    auto active = [&](std::size_t i) { return s.game->zones()[i]->active(); };
     arm.set("position", 0.0, "rad");
     roller.set("velocity", 0.0, "rad/s");
     s.tick(1);
@@ -291,24 +342,23 @@ TEST_CASE("intake activation modes: deployed, roller AND deployed, OR, always") 
     CHECK(active(2));
 }
 
-TEST_CASE("a roller reference that does not exist never activates and warns once") {
+TEST_CASE("a condition on a mechanism that does not exist never holds and warns once") {
     Session s;
     emptyField(s);
-    s.addMechanism("intake", kIntakeType, intakeProps("ghost_roller"));
+    s.addZone(pickupZone("intake", "ghost_roller"));
     s.start();
     s.setChassis({2.f, 2.f, 0.f});
     s.game->pool().spawn({2.45f, 2.f, 0.075f}, {});
     s.tick(50);
     CHECK(s.game->fuelOnField() == 1);
-    CHECK_FALSE(s.mechanisms.front()->state().active);
+    CHECK_FALSE(s.game->zones().front()->active());
     CHECK(s.env.logger.count(sdk::LogLevel::Warn) == 1);
 }
 
-TEST_CASE("an intake with no roller reference is always on") {
+TEST_CASE("a pickup with no activation conditions is always on") {
     Session s;
     emptyField(s);
-    sdk::Value p = intakeProps("");
-    s.addMechanism("passive", kIntakeType, p);
+    s.addZone(pickupZone("passive", ""));
     s.start();
     s.setChassis({2.f, 2.f, 0.f});
     s.game->pool().spawn({2.45f, 2.f, 0.075f}, {});
@@ -317,21 +367,60 @@ TEST_CASE("an intake with no roller reference is always on") {
     CHECK(s.game->fuelInRobot() == 9);
 }
 
+TEST_CASE("zones of other plugins and unknown game_2026 kinds are ignored, owned zones are published in the snapshot") {
+    Session s;
+    emptyField(s);
+    ScriptedMechanism& roller = s.addScripted("roller");
+    ScriptedMechanism& indexer = s.addScripted("indexer");
+    s.addScripted("flywheel");
+    s.addZone(pickupZone("intake"));
+    s.addZone(makeZone("foreign", "game_9999.pickup"));
+    s.addZone(makeZone("mystery", "game_2026.mystery"));
+    s.addZone(shooterZone("shooter"));
+    s.start();
+    REQUIRE(s.game->zones().size() == 2);
+
+    auto publish = [&] {
+        sdk::SnapshotBuilder out;
+        s.game->publish(out);
+        return out.data().zones;
+    };
+    s.tick(1);
+    auto zones = publish();
+    REQUIRE(zones.size() == 2);
+    CHECK(zones[0].id == "intake");
+    CHECK_FALSE(zones[0].active);
+    CHECK(zones[1].id == "shooter");
+    CHECK_FALSE(zones[1].active);
+
+    roller.set("velocity", 100.0, "rad/s");
+    s.tick(1);
+    zones = publish();
+    CHECK(zones[0].active);
+    CHECK_FALSE(zones[1].active);
+
+    indexer.set("velocity", 20.0, "rad/s");  // the shooter's activation holds (it need not be able to fire to be active)
+    s.tick(1);
+    zones = publish();
+    CHECK(zones[1].active);
+}
+
 TEST_CASE("shooter launches real fuel bodies with flywheel speed x efficiency along the hood angle") {
     Session s;
     emptyField(s);
     ScriptedMechanism& flywheel = s.addScripted("flywheel");
     ScriptedMechanism& indexer = s.addScripted("indexer");
-    s.addMechanism("shooter", kShooterType, shooterProps());
+    s.addZone(shooterZone());
     s.start();
     s.setChassis({4.f, 3.f, 0.f});
     flywheel.set("velocity", 400.0, "rad/s");  // 20 m/s surface, 10 m/s exit
     indexer.set("velocity", 0.0, "rad/s");
 
     s.tick(5);
-    CHECK(s.game->shotsFired() == 0);        // indexer not feeding
+    CHECK(s.game->shotsFired() == 0);        // activation (indexer) does not hold
     CHECK(s.game->fuelOnField() == 0);
     CHECK(s.game->fuelInRobot() == 8);
+    CHECK_FALSE(s.game->zones().front()->active());
 
     indexer.set("velocity", 20.0, "rad/s");
     s.tick(1);
@@ -343,7 +432,7 @@ TEST_CASE("shooter launches real fuel bodies with flywheel speed x efficiency al
     s.game->pool().forEach([&](std::uint32_t i, const sdk::Vec3&) { id = i; });
     const sdk::BodyId body = s.game->pool().bodyOf(id);
     const sdk::Vec3 p = s.env.physics.pose(body).position;
-    CHECK(p.x == doctest::Approx(4.25f).epsilon(0.01));   // muzzle offset (0.25, 0, 0.55)
+    CHECK(p.x == doctest::Approx(4.25f).epsilon(0.01));   // zone pose (0.25, 0, 0.55)
     CHECK(p.y == doctest::Approx(3.f).epsilon(0.01));
     CHECK(p.z == doctest::Approx(0.55f).epsilon(0.02));
     const sdk::Vec3 v = s.env.physics.linearVelocity(body);
@@ -351,11 +440,12 @@ TEST_CASE("shooter launches real fuel bodies with flywheel speed x efficiency al
     CHECK(v.y == doctest::Approx(0.f).epsilon(0.01));
     CHECK(v.z == doctest::Approx(10.f * std::sin(1.0471975f)).epsilon(0.01));
 
-    const sdk::MechanismState st = s.mechanisms.front()->state();
-    CHECK(st.active);
-    CHECK(st.values[0].name == "feeding");
-    CHECK(st.values[1].name == "exitSpeed");
-    CHECK(st.values[1].value == doctest::Approx(10.0));
+    auto* shooter = dynamic_cast<ShooterZoneRuntime*>(s.game->zones().front().get());
+    REQUIRE(shooter != nullptr);
+    CHECK(shooter->active());
+    CHECK(shooter->feeding());
+    CHECK(shooter->exitSpeedMps() == doctest::Approx(10.0));
+    CHECK(shooter->elevationRad() == doctest::Approx(1.0471975));
 }
 
 TEST_CASE("shots follow the robot heading and inherit its velocity") {
@@ -365,7 +455,7 @@ TEST_CASE("shots follow the robot heading and inherit its velocity") {
     ScriptedMechanism& indexer = s.addScripted("indexer");
     flywheel.set("velocity", 400.0, "rad/s");
     indexer.set("velocity", 20.0, "rad/s");
-    s.addMechanism("shooter", kShooterType, shooterProps());
+    s.addZone(shooterZone());
     s.start();
     s.setChassis({4.f, 3.f, 0.f}, kYawQuarterTurn);  // facing +Y
     s.env.physics.setLinearVelocity(s.chassis, {0.f, 0.f, 0.f});
@@ -383,7 +473,7 @@ TEST_CASE("shots follow the robot heading and inherit its velocity") {
     emptyField(m);
     m.addScripted("flywheel").set("velocity", 400.0, "rad/s");
     m.addScripted("indexer").set("velocity", 20.0, "rad/s");
-    m.addMechanism("shooter", kShooterType, shooterProps());
+    m.addZone(shooterZone());
     m.start();
     m.setChassis({4.f, 3.f, 0.f});
     m.env.physics.setLinearVelocity(m.chassis, {2.f, 0.f, 0.f});
@@ -405,7 +495,7 @@ TEST_CASE("hood and turret mechanisms steer the shot") {
     p["hoodMechanism"] = "hood";
     p["hoodAngleRad"] = 0.0;
     p["turretMechanism"] = "turret";
-    s.addMechanism("shooter", kShooterType, p);
+    s.addZone(shooterZone("shooter", p));
     s.start();
     s.setChassis({4.f, 3.f, 0.f});
 
@@ -420,9 +510,43 @@ TEST_CASE("hood and turret mechanisms steer the shot") {
     CHECK(v.y == doctest::Approx(10.f * std::cos(0.5235988f)).epsilon(0.01));
     CHECK(v.z == doctest::Approx(10.f * std::sin(0.5235988f)).epsilon(0.01));
 
-    const sdk::MechanismState st = s.mechanisms.front()->state();
-    REQUIRE(st.links.size() == 1);
-    CHECK(st.links[0].name == "muzzle");
+    auto* shooter = dynamic_cast<ShooterZoneRuntime*>(s.game->zones().front().get());
+    REQUIRE(shooter != nullptr);
+    CHECK(shooter->yawRad() == doctest::Approx(1.5707963));
+}
+
+TEST_CASE("a shooter attached to a turret link and rotated by its own pose aims along the zone's +X") {
+    Session s;
+    emptyField(s);
+    s.addScripted("flywheel").set("velocity", 400.0, "rad/s");
+    s.addScripted("indexer").set("velocity", 20.0, "rad/s");
+    ScriptedMechanism& turret = s.addScripted("turret");
+    turret.links.push_back({"head", sdk::Pose3{{0.f, 0.f, 0.3f}, sdk::Quat::fromYaw(kYawQuarterTurn)}});  // turned to +Y
+    sdk::MechanismConfig turretConfig;
+    turretConfig.id = "turret";
+    turretConfig.type = "test.scripted";
+    s.env.config.mechanisms.push_back(turretConfig);
+    sdk::ZoneConfig zone = shooterZone();
+    zone.attachment.parentMechanismId = "turret";
+    zone.attachment.parentLink = "head";
+    zone.properties["hoodAngleRad"] = 0.0;
+    zone.local.position = {0.2f, 0.f, 0.1f};
+    s.addZone(zone);
+    s.start();
+    s.setChassis({4.f, 3.f, 0.f});
+    s.tick(1);
+    REQUIRE(s.game->fuelOnField() == 1);
+
+    std::uint32_t id = 0;
+    s.game->pool().forEach([&](std::uint32_t i, const sdk::Vec3&) { id = i; });
+    const sdk::BodyId body = s.game->pool().bodyOf(id);
+    const sdk::Vec3 pos = s.env.physics.pose(body).position;
+    CHECK(pos.x == doctest::Approx(4.f).epsilon(0.01));
+    CHECK(pos.y == doctest::Approx(3.2f).epsilon(0.01));
+    CHECK(pos.z == doctest::Approx(0.4f).epsilon(0.02));
+    const sdk::Vec3 v = s.env.physics.linearVelocity(body);
+    CHECK(v.x == doctest::Approx(0.f).epsilon(0.02));
+    CHECK(v.y == doctest::Approx(10.f).epsilon(0.01));
 }
 
 TEST_CASE("fire rate, empty meter and slow flywheels") {
@@ -430,7 +554,7 @@ TEST_CASE("fire rate, empty meter and slow flywheels") {
     emptyField(s, 30, 3);
     ScriptedMechanism& flywheel = s.addScripted("flywheel");
     s.addScripted("indexer").set("velocity", 20.0, "rad/s");
-    s.addMechanism("shooter", kShooterType, shooterProps());
+    s.addZone(shooterZone());
     s.start();
     s.setChassis({4.f, 3.f, 0.f});
 
@@ -451,8 +575,8 @@ TEST_CASE("fire rate, empty meter and slow flywheels") {
     CHECK(s.game->fuelOnField() == 3);
 }
 
-TEST_CASE("missing named shooter aim references inhibit firing with either speed source") {
-    for (const char* reference : {"hoodMechanism", "turretMechanism"}) {
+TEST_CASE("missing named shooter references inhibit firing with either speed source") {
+    for (const char* reference : {"hoodMechanism", "turretMechanism", "activation"}) {
         for (const bool fixedSpeed : {false, true}) {
             INFO(reference, fixedSpeed);
             Session s;
@@ -460,19 +584,21 @@ TEST_CASE("missing named shooter aim references inhibit firing with either speed
             s.addScripted("flywheel").set("velocity", 400.0, "rad/s");
             s.addScripted("indexer").set("velocity", 20.0, "rad/s");
             auto p = shooterProps();
-            p[reference] = "missing_aim";
             if (fixedSpeed) p["fixedExitSpeedMps"] = 10.0;
-            s.addMechanism("shooter", kShooterType, p);
+            sdk::ZoneConfig zone = shooterZone("shooter", p);
+            if (std::string(reference) == "activation") zone.activation.conditions.push_back(above("missing_aim", 1.0));
+            else zone.properties[reference] = "missing_aim";
+            s.addZone(zone);
             s.start();
             s.tick(50);
             CHECK(s.game->shotsFired() == 0);
             CHECK(s.game->fuelInRobot() == 8);
             CHECK(s.game->fuelOnField() == 0);
-            CHECK_FALSE(s.mechanisms.front()->state().active);
             CHECK(s.env.logger.count(sdk::LogLevel::Warn) == 1);
 
             ScriptedMechanism& recovered = s.addScripted("missing_aim");
             recovered.set("position", 0.0, "rad");
+            recovered.set("velocity", 5.0, "rad/s");
             s.directory->add(&recovered);
             s.tick();
             CHECK(s.game->shotsFired() == 1);
@@ -482,12 +608,11 @@ TEST_CASE("missing named shooter aim references inhibit firing with either speed
     }
 }
 
-TEST_CASE("empty shooter aim references and bypassed fixed-speed flywheel remain valid") {
+TEST_CASE("an empty activation, empty aim references and a bypassed fixed-speed flywheel remain valid") {
     for (const bool fixedSpeed : {false, true}) {
         Session s;
         emptyField(s);
         auto p = shooterProps();
-        p["feedMechanism"] = "";
         p["hoodMechanism"] = "";
         p["turretMechanism"] = "";
         if (fixedSpeed) {
@@ -496,12 +621,12 @@ TEST_CASE("empty shooter aim references and bypassed fixed-speed flywheel remain
         } else {
             s.addScripted("flywheel").set("velocity", 400.0, "rad/s");
         }
-        s.addMechanism("shooter", kShooterType, p);
+        s.addZone(makeZone("shooter", kShooterKind, p));  // no activation conditions: fires whenever the flywheel is up
         s.start();
         s.tick();
         CHECK(s.game->shotsFired() == 1);
         CHECK(s.game->fuelInRobot() == 7);
-        CHECK(s.mechanisms.front()->state().active);
+        CHECK(s.game->zones().front()->active());
         CHECK(s.env.logger.count(sdk::LogLevel::Warn) == 0);
     }
 }
@@ -512,13 +637,15 @@ TEST_CASE("shooter without a flywheel reference can use a fixed exit speed, othe
     sdk::Value p = sdk::Value::makeObject();
     p["fixedExitSpeedMps"] = 8.0;
     p["hoodAngleRad"] = 0.0;
-    s.addMechanism("fixed", kShooterType, p);
-    s.addMechanism("silent", kShooterType, sdk::Value::makeObject());
+    s.addZone(makeZone("fixed", kShooterKind, p));
+    s.addZone(makeZone("silent", kShooterKind));
     s.start();
     s.setChassis({4.f, 3.f, 0.f});
     s.tick(1);
-    CHECK(s.game->shotsFired() == 1);  // the fixed shooter (feed reference empty => fires when up to speed)
-    CHECK_FALSE(s.mechanisms[1]->state().active);
+    CHECK(s.game->shotsFired() == 1);  // the fixed shooter (empty activation => fires when up to speed)
+    auto* silent = dynamic_cast<ShooterZoneRuntime*>(s.game->zones()[1].get());
+    REQUIRE(silent != nullptr);
+    CHECK_FALSE(silent->feeding());
 }
 
 TEST_CASE("shot dispersion is seeded and reproducible") {
@@ -531,7 +658,7 @@ TEST_CASE("shot dispersion is seeded and reproducible") {
         sdk::Value p = shooterProps();
         p["aimJitterRad"] = 0.05;
         p["exitSpeedJitter"] = 0.1;
-        s.addMechanism("shooter", kShooterType, p);
+        s.addZone(shooterZone("shooter", p));
         s.start();
         s.setChassis({4.f, 3.f, 0.f});
         s.tick(200);
@@ -553,10 +680,11 @@ TEST_CASE("fuel the robot shot can be collected again") {
     shooter["fixedExitSpeedMps"] = 0.1;
     shooter["minExitSpeedMps"] = 0.0;
     shooter["hoodAngleRad"] = 1.5;  // nearly straight up
-    s.addMechanism("shooter", kShooterType, shooter);
-    sdk::Value intake = intakeProps();
-    intake["pickupZone"] = boxValue({0.25f, 0.f, 0.5f}, {0.6f, 0.6f, 1.2f});  // includes the muzzle volume
-    s.addMechanism("intake", kIntakeType, intake);
+    s.addZone(shooterZone("shooter", shooter));
+    sdk::ZoneConfig intake = pickupZone();
+    intake.local.position = {0.25f, 0.f, 0.5f};  // includes the muzzle
+    intake.sizeM = {0.6f, 0.6f, 1.2f};
+    s.addZone(intake);
     s.start();
     s.setChassis({4.f, 3.f, 0.f});
     s.tick(1);

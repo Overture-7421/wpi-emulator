@@ -26,6 +26,7 @@ set(WPIEMU_EDITOR_SOURCES
     viewmodel/scene_model.cpp
     viewmodel/selection_state.cpp
     viewmodel/viewport_controller.cpp
+    views/activation_card.cpp
     views/bottom_panel.cpp
     views/device_panel.cpp
     views/device_row.cpp

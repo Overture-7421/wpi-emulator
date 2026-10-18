@@ -11,6 +11,7 @@
 #include "wpiemu/sdk/game/field.h"
 #include "wpiemu/sdk/game/game_state.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
+#include "wpiemu/sdk/game/zone_kind.h"
 #include "wpiemu/sdk/mechanisms/mechanism.h"
 #include "wpiemu/sdk/physics/physics_world.h"
 
@@ -60,6 +61,11 @@ public:
 
     virtual std::vector<EditorPanelDescriptor> contributeEditorPanels() const { return {}; }
     virtual std::vector<HudWidgetDescriptor> contributeHud() const { return {}; }
+
+    // Zone kinds this plugin owns (ZoneConfig::kind). Every `kind` must start with metadata().id + '.';
+    // core rejects zones whose kind is not owned by the selected plugin and validates ZoneConfig::properties
+    // against the kind's schema. The plugin runtime builds the actual intake/shooter behaviour from the zones.
+    virtual std::vector<ZoneKindInfo> contributeZoneKinds() const { return {}; }
 
     // Cross-cutting game logic hook after IGameState::step each tick (e.g. match timer phases).
     virtual void onTick(SimContext& /*ctx*/, double /*dtSeconds*/) {}

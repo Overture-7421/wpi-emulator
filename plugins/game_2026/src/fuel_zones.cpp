@@ -1,30 +1,39 @@
-#include "wpiemu/plugins/game_2026/fuel_shooter.h"
+#include "wpiemu/plugins/game_2026/fuel_zones.h"
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
-#include "wpiemu/plugins/game_2026/mechanism_io.h"
 #include "wpiemu/plugins/game_2026/property_helpers.h"
-#include "wpiemu/sdk/core/sim_context.h"
+#include "wpiemu/sdk/game/zone_activation.h"
 
 namespace wpiemu::plugins::game_2026 {
 
 namespace {
 
-constexpr const char* kGroupMuzzle = "Muzzle";
+constexpr const char* kGroupLimits = "Limits";
 constexpr const char* kGroupFlywheel = "Flywheel";
 constexpr const char* kGroupAim = "Aim";
-constexpr const char* kGroupFeed = "Feed";
+constexpr const char* kGroupFire = "Fire";
 constexpr const char* kGroupDispersion = "Dispersion";
 constexpr double kMaxElevationRad = 1.5707;
+constexpr float kDefaultPickupLocalX = 0.45f;
+constexpr float kDefaultPickupLocalZ = 0.15f;
+
+sdk::PropertySchema pickupSchema() {
+    sdk::PropertySchema s;
+    const PickupParams d;
+    s.properties.push_back(props::real("intakeRateHz", "Intake rate", kGroupLimits, d.intakeRateHz, 0.0, 1000.0,
+                                       sdk::PropertyUnit::Hertz,
+                                       "Maximum fuel absorbed per second by this pickup (0 = unlimited)."));
+    return s;
+}
 
 sdk::PropertySchema shooterSchema() {
     using sdk::PropertyUnit;
     sdk::PropertySchema s;
     auto& p = s.properties;
     const ShooterParams d;
-    p.push_back(props::vec3("muzzleOffset", "Muzzle offset", kGroupMuzzle, d.muzzleOffset,
-                            "Where fuel leaves the shooter, in the mechanism frame (+X = shooting direction at 0 yaw)."));
 
     p.push_back(props::text("flywheelMechanism", "Flywheel mechanism", kGroupFlywheel, "",
                             "Id of the flywheel mechanism whose angular speed sets the exit speed."));
@@ -44,25 +53,18 @@ sdk::PropertySchema shooterSchema() {
                             "Launch elevation above horizontal; added to the hood mechanism's value when one is named."));
     p.push_back(props::text("hoodMechanism", "Hood mechanism", kGroupAim, "", "Optional hood/pivot mechanism."));
     p.push_back(props::text("hoodValue", "Hood value", kGroupAim, d.hoodValue, "Published angle value name."));
-    p.push_back(props::text("turretMechanism", "Turret mechanism", kGroupAim, "",
-                            "Optional turret mechanism (leave empty if this shooter is attached to the turret link)."));
-    p.push_back(props::text("turretValue", "Turret value", kGroupAim, d.turretValue, "Published angle value name."));
-    p.push_back(props::real("turretYawOffsetRad", "Yaw offset", kGroupAim, 0.0, -7.0, 7.0, PropertyUnit::Radians,
-                            "Fixed yaw added to the turret value."));
     p.push_back(props::real("hoodGain", "Hood gain", kGroupAim, d.hoodGain, -10.0, 10.0, PropertyUnit::Ratio,
                             "Radians of elevation per radian of the hood value (-1 inverts)."));
+    p.push_back(props::text("turretMechanism", "Turret mechanism", kGroupAim, "",
+                            "Optional turret mechanism (leave empty if the zone is attached to the turret link)."));
+    p.push_back(props::text("turretValue", "Turret value", kGroupAim, d.turretValue, "Published angle value name."));
     p.push_back(props::real("turretGain", "Turret gain", kGroupAim, d.turretGain, -10.0, 10.0, PropertyUnit::Ratio,
                             "Radians of yaw per radian of the turret value."));
+    p.push_back(props::real("turretYawOffsetRad", "Yaw offset", kGroupAim, 0.0, -7.0, 7.0, PropertyUnit::Radians,
+                            "Fixed yaw added to the turret value."));
 
-    p.push_back(props::text("feedMechanism", "Feed mechanism", kGroupFeed, "",
-                            "Indexer/kicker/roller that feeds the flywheel. Empty: fire whenever the flywheel is up "
-                            "to speed."));
-    p.push_back(props::text("feedValue", "Feed value", kGroupFeed, d.feedValue,
-                            "Published value name of the feed mechanism."));
-    p.push_back(props::real("feedThreshold", "Feed threshold", kGroupFeed, d.feedThreshold, 0.0, 1e6,
-                            PropertyUnit::RadiansPerSecond, "|value| (SI) above which fuel is being fed."));
-    p.push_back(props::real("fireRateHz", "Fire rate", kGroupFeed, d.fireRateHz, 0.1, 200.0, PropertyUnit::Hertz,
-                            "Fuel launched per second while feeding."));
+    p.push_back(props::real("fireRateHz", "Fire rate", kGroupFire, d.fireRateHz, 0.1, 200.0, PropertyUnit::Hertz,
+                            "Fuel launched per second while the shooter is active."));
 
     p.push_back(props::real("exitSpeedJitter", "Exit speed jitter", kGroupDispersion, 0.0, 0.0, 0.5, PropertyUnit::Ratio,
                             "Uniform +- fraction applied to each shot's exit speed (seeded RNG)."));
@@ -73,20 +75,27 @@ sdk::PropertySchema shooterSchema() {
     return s;
 }
 
+double finiteOr(const sdk::Value& v, const char* key, double fallback) {
+    const double x = v.get(key).asDouble(fallback);
+    return std::isfinite(x) ? x : fallback;
+}
+
 }  // namespace
 
-ShooterParams parseShooterParams(const sdk::Value& properties) {
-    const sdk::PropertySchema schema = shooterSchema();
+PickupParams parsePickupParams(const sdk::Value& properties) {
     sdk::Value v = properties;
-    sdk::applyDefaults(schema, v);
+    sdk::applyDefaults(pickupSchema(), v);
+    PickupParams p;
+    p.intakeRateHz = std::max(0.0, finiteOr(v, "intakeRateHz", p.intakeRateHz));
+    return p;
+}
+
+ShooterParams parseShooterParams(const sdk::Value& properties) {
+    sdk::Value v = properties;
+    sdk::applyDefaults(shooterSchema(), v);
     ShooterParams p;
-    if (!sdk::fromValue(v.get("muzzleOffset"), p.muzzleOffset))
-        sdk::fromValue(schema.find("muzzleOffset")->defaultValue, p.muzzleOffset);
     auto text = [&](const char* key, const std::string& fallback) { return v.get(key).asString(fallback); };
-    auto num = [&](const char* key, double fallback) {
-        const double x = v.get(key).asDouble(fallback);
-        return std::isfinite(x) ? x : fallback;
-    };
+    auto num = [&](const char* key, double fallback) { return finiteOr(v, key, fallback); };
     p.flywheelMechanism = text("flywheelMechanism", "");
     p.flywheelValue = text("flywheelValue", p.flywheelValue);
     p.flywheelRadiusM = std::max(1e-3, num("flywheelRadiusM", p.flywheelRadiusM));
@@ -101,9 +110,6 @@ ShooterParams parseShooterParams(const sdk::Value& properties) {
     p.turretValue = text("turretValue", p.turretValue);
     p.turretGain = num("turretGain", p.turretGain);
     p.turretYawOffsetRad = num("turretYawOffsetRad", 0.0);
-    p.feedMechanism = text("feedMechanism", "");
-    p.feedValue = text("feedValue", p.feedValue);
-    p.feedThreshold = std::max(0.0, num("feedThreshold", p.feedThreshold));
     p.fireRateHz = std::max(0.1, num("fireRateHz", p.fireRateHz));
     p.exitSpeedJitter = std::clamp(num("exitSpeedJitter", 0.0), 0.0, 0.5);
     p.aimJitterRad = std::clamp(num("aimJitterRad", 0.0), 0.0, 0.5);
@@ -111,51 +117,84 @@ ShooterParams parseShooterParams(const sdk::Value& properties) {
     return p;
 }
 
-sdk::MechanismTemplateInfo fuelShooterTemplate() {
-    sdk::MechanismTemplateInfo info;
-    info.type = kShooterType;
-    info.displayName = "Fuel Shooter";
-    info.category = "Shooter";
-    info.origin = "game_2026";
-    info.description =
-        "REBUILT fuel launcher. Reads the flywheel speed, feed mechanism and optional hood/turret of your own "
-        "mechanisms; launches real fuel bodies from the muzzle while feeding and the fuel meter is not empty.";
-    info.properties = shooterSchema();
-    sdk::LinkSpec muzzle;
-    muzzle.name = "muzzle";
-    muzzle.label = "Muzzle";
-    muzzle.description = "Exit point; its +X axis is the current launch direction.";
-    info.links.push_back(std::move(muzzle));
-    sdk::PrimitiveSpec barrel;
-    barrel.name = "shooter_barrel";
-    barrel.kind = sdk::PrimitiveKind::Cylinder;
-    barrel.local = sdk::Pose3{{0.25f, 0.f, 0.55f}, sdk::Quat::fromAxisAngle({0.f, 1.f, 0.f}, 1.5707963f)};
-    barrel.radiusM = 0.08f;
-    barrel.heightM = 0.30f;
-    barrel.color = "#d94f30";
-    info.defaultGeometry.push_back(std::move(barrel));
-    return info;
+sdk::ZoneKindInfo pickupZoneKind() {
+    sdk::ZoneKindInfo k;
+    k.kind = kPickupKind;
+    k.displayName = "Fuel pickup";
+    k.description =
+        "REBUILT fuel pickup volume. While its activation holds (e.g. the intake roller is spinning and/or the "
+        "intake arm is deployed) fuel whose centre is inside the volume is absorbed into the robot's fuel meter, "
+        "nearest the zone centre first, until the meter is full.";
+    k.shape = sdk::ZoneShape::Volume;
+    k.properties = pickupSchema();
+    k.defaultSizeM = {0.30f, 0.60f, 0.30f};
+    k.defaultLocal = sdk::Pose3{{kDefaultPickupLocalX, 0.f, kDefaultPickupLocalZ}, sdk::Quat{}};
+    k.color = "#44cc66";
+    return k;
 }
 
-FuelShooterMechanism::FuelShooterMechanism(const sdk::MechanismBuildContext& ctx)
-    : id_(ctx.config.id), params_(parseShooterParams(ctx.config.properties)), mountFallback_(ctx.config.mount),
-      rootInChassis_(ctx.config.mount) {}
+sdk::ZoneKindInfo shooterZoneKind() {
+    sdk::ZoneKindInfo k;
+    k.kind = kShooterKind;
+    k.displayName = "Fuel shooter";
+    k.description =
+        "REBUILT fuel muzzle. Fuel leaves the zone origin along its +X axis (rotated by the hood and turret) at "
+        "flywheel surface speed x efficiency while its activation holds (e.g. the indexer is running), the flywheel "
+        "is up to speed and the fuel meter is not empty. Attach it to a turret link to aim with the turret.";
+    k.shape = sdk::ZoneShape::Muzzle;
+    k.properties = shooterSchema();
+    k.defaultLocal = sdk::Pose3{{0.25f, 0.f, 0.55f}, sdk::Quat{}};
+    k.color = "#ff7043";
+    return k;
+}
 
-void FuelShooterMechanism::warnMissing(sdk::SimContext& ctx, const std::string& mechanism) {
+std::vector<sdk::ZoneKindInfo> zoneKinds() { return {pickupZoneKind(), shooterZoneKind()}; }
+
+void FuelZoneRuntime::warnMissing(sdk::SimContext& ctx, const std::string& mechanism) {
     if (std::find(warned_.begin(), warned_.end(), mechanism) != warned_.end()) return;
     warned_.push_back(mechanism);
-    ctx.logger().warn("plugin.game_2026", "fuel shooter '" + id_ + "' references unknown mechanism '" + mechanism + "'");
+    ctx.logger().warn("plugin.game_2026", "zone '" + config_.id + "' references unknown mechanism '" + mechanism + "'");
 }
 
-void FuelShooterMechanism::tick(sdk::SimContext& ctx, double dt) {
-    rootInChassis_ = mountFallback_;
+PickupZoneRuntime::PickupZoneRuntime(sdk::ZoneConfig config)
+    : FuelZoneRuntime(std::move(config)), params_(parsePickupParams(config_.properties)) {}
+
+void PickupZoneRuntime::update(sdk::SimContext&, const sdk::Pose3& poseInChassis, bool activationHeld, double dt) {
+    poseInChassis_ = poseInChassis;
+    active_ = activationHeld;
+    // Token bucket: primed while idle so the first fuel is taken the moment the zone becomes active.
+    if (!active_) budget_ = 1.0;
+    else budget_ = std::min(2.0, budget_ + params_.intakeRateHz * dt);
+}
+
+int PickupZoneRuntime::pickupBudget() const {
+    if (!active_) return 0;
+    if (params_.intakeRateHz <= 0.0) return std::numeric_limits<int>::max();
+    return static_cast<int>(std::floor(budget_));
+}
+
+void PickupZoneRuntime::consumePickups(int count) {
+    if (params_.intakeRateHz > 0.0) budget_ = std::max(0.0, budget_ - static_cast<double>(count));
+}
+
+sdk::Box3 PickupZoneRuntime::zoneInChassis() const {
+    sdk::Box3 z;
+    z.pose = poseInChassis_;
+    z.sizeM = config_.sizeM;
+    return z;
+}
+
+ShooterZoneRuntime::ShooterZoneRuntime(sdk::ZoneConfig config)
+    : FuelZoneRuntime(std::move(config)), params_(parseShooterParams(config_.properties)) {}
+
+void ShooterZoneRuntime::update(sdk::SimContext& ctx, const sdk::Pose3& poseInChassis, bool activationHeld, double dt) {
+    poseInChassis_ = poseInChassis;
+    active_ = activationHeld;
     sdk::IMechanismDirectory* dir = ctx.mechanisms();
-    if (dir != nullptr)
-        if (const auto p = dir->linkPoseInChassis(id_, sdk::kRootLink)) rootInChassis_ = *p;
 
     bool referencesValid = true;
     auto read = [&](const std::string& mechanism, const std::string& value) {
-        MechanismReading r = readMechanism(dir, mechanism, value);
+        const sdk::MechanismReading r = sdk::readMechanismValue(dir, mechanism, value);
         if (!mechanism.empty() && !r.found) {
             referencesValid = false;
             warnMissing(ctx, mechanism);
@@ -166,7 +205,7 @@ void FuelShooterMechanism::tick(sdk::SimContext& ctx, double dt) {
     if (params_.fixedExitSpeedMps > 0.0) {
         exitSpeedMps_ = params_.fixedExitSpeedMps;
     } else if (!params_.flywheelMechanism.empty()) {
-        const MechanismReading fly = read(params_.flywheelMechanism, params_.flywheelValue);
+        const sdk::MechanismReading fly = read(params_.flywheelMechanism, params_.flywheelValue);
         exitSpeedMps_ = fly.hasValue ? std::fabs(fly.value) * params_.flywheelRadiusM * params_.efficiency : 0.0;
     } else {
         exitSpeedMps_ = 0.0;
@@ -174,73 +213,40 @@ void FuelShooterMechanism::tick(sdk::SimContext& ctx, double dt) {
 
     elevationRad_ = params_.hoodAngleRad;
     if (!params_.hoodMechanism.empty()) {
-        const MechanismReading hood = read(params_.hoodMechanism, params_.hoodValue);
+        const sdk::MechanismReading hood = read(params_.hoodMechanism, params_.hoodValue);
         if (hood.hasValue) elevationRad_ += params_.hoodGain * hood.value;
     }
     elevationRad_ = std::clamp(elevationRad_, -kMaxElevationRad, kMaxElevationRad);
 
     yawRad_ = params_.turretYawOffsetRad;
     if (!params_.turretMechanism.empty()) {
-        const MechanismReading turret = read(params_.turretMechanism, params_.turretValue);
+        const sdk::MechanismReading turret = read(params_.turretMechanism, params_.turretValue);
         if (turret.hasValue) yawRad_ += params_.turretGain * turret.value;
     }
 
-    bool fed = true;
-    if (!params_.feedMechanism.empty())
-        fed = exceeds(read(params_.feedMechanism, params_.feedValue), params_.feedThreshold);
-    feeding_ =
-        referencesValid && fed && exitSpeedMps_ >= params_.minExitSpeedMps && exitSpeedMps_ > 0.0;
+    feeding_ = referencesValid && activationHeld && exitSpeedMps_ >= params_.minExitSpeedMps && exitSpeedMps_ > 0.0;
 
-    // Token bucket: primed while idle so the first shot leaves as soon as feeding starts.
+    // Token bucket: primed while idle so the first shot leaves as soon as the shooter starts firing.
     if (!feeding_) budget_ = 1.0;
     else budget_ = std::min(2.0, budget_ + params_.fireRateHz * dt);
 }
 
-int FuelShooterMechanism::shotBudget() const { return feeding_ ? static_cast<int>(std::floor(budget_)) : 0; }
+int ShooterZoneRuntime::shotBudget() const { return feeding_ ? static_cast<int>(std::floor(budget_)) : 0; }
 
-void FuelShooterMechanism::consumeShots(int count) { budget_ = std::max(0.0, budget_ - static_cast<double>(count)); }
+void ShooterZoneRuntime::consumeShots(int count) { budget_ = std::max(0.0, budget_ - static_cast<double>(count)); }
 
-ShotSolution FuelShooterMechanism::solution() const {
+ShotSolution ShooterZoneRuntime::solution() const {
     ShotSolution s;
     const double ce = std::cos(elevationRad_);
     const sdk::Vec3 local{static_cast<float>(ce * std::cos(yawRad_)), static_cast<float>(ce * std::sin(yawRad_)),
                           static_cast<float>(std::sin(elevationRad_))};
-    s.directionInChassis = sdk::normalized(rootInChassis_.rotation.rotate(local));
-    s.muzzleInChassis = rootInChassis_.transformPoint(params_.muzzleOffset);
+    s.directionInChassis = sdk::normalized(poseInChassis_.rotation.rotate(local));
+    s.muzzleInChassis = poseInChassis_.position;
     s.exitSpeedMps = exitSpeedMps_;
     s.speedJitter = params_.exitSpeedJitter;
     s.aimJitterRad = params_.aimJitterRad;
     s.inheritRobotVelocity = params_.inheritRobotVelocity;
     return s;
-}
-
-void FuelShooterMechanism::reset() {
-    feeding_ = false;
-    budget_ = 1.0;
-    exitSpeedMps_ = 0.0;
-    rootInChassis_ = mountFallback_;
-    warned_.clear();
-}
-
-sdk::MechanismState FuelShooterMechanism::state() const {
-    sdk::MechanismState s;
-    s.id = id_;
-    s.type = std::string(kShooterType);
-    s.active = feeding_;
-    s.values.push_back({"feeding", feeding_ ? 1.0 : 0.0, ""});
-    s.values.push_back({"exitSpeed", exitSpeedMps_, "m/s"});
-    s.values.push_back({"elevation", elevationRad_, "rad"});
-    s.values.push_back({"yaw", yawRad_, "rad"});
-    sdk::LinkPose muzzle;
-    muzzle.name = "muzzle";
-    muzzle.pose = sdk::Pose3{params_.muzzleOffset, sdk::Quat::fromEuler(0.f, static_cast<float>(-elevationRad_),
-                                                                         static_cast<float>(yawRad_))};
-    s.links.push_back(std::move(muzzle));
-    return s;
-}
-
-std::unique_ptr<sdk::IMechanism> createFuelShooter(const sdk::MechanismBuildContext& ctx) {
-    return std::make_unique<FuelShooterMechanism>(ctx);
 }
 
 }  // namespace wpiemu::plugins::game_2026

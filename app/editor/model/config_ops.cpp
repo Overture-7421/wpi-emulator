@@ -63,7 +63,7 @@ std::string baseIdForType(std::string_view type) {
 
 std::string uniqueMechanismId(const RobotConfig& c, std::string base) {
     if (base.empty()) base = "mechanism";
-    auto taken = [&](const std::string& id) { return reservedOwner(id) || c.findMechanism(id) != nullptr; };
+    auto taken = [&](const std::string& id) { return reservedOwner(id) || c.findMechanism(id) != nullptr || c.findZone(id) != nullptr; };
     if (!taken(base)) return base;
     for (int n = 2;; ++n) {
         std::string candidate = base + "_" + std::to_string(n);
@@ -242,6 +242,13 @@ bool removeMechanism(RobotConfig& c, const EditorCatalog& catalog, std::string_v
             if (MechanismConfig* cm = findMech(c, child)) cm->attachTo(sdk::kChassisParent);
         }
     }
+    // Zones hang on the removed mechanism's parent now, in the same place.
+    for (auto& z : c.zones)
+        if (z.attachment.parentMechanismId == id && !z.attachment.onChassis()) {
+            const std::string zoneId = z.id;
+            if (!reattachZone(c, catalog, zoneId, att.parentMechanismId, att.parentLink))
+                if (sdk::ZoneConfig* zc = findZone(c, zoneId)) zc->attachment = sdk::MechanismAttachment{};
+        }
     const std::string removed(id);
     c.mechanisms.erase(std::remove_if(c.mechanisms.begin(), c.mechanisms.end(),
                                       [&](const MechanismConfig& x) { return x.id == removed; }),
@@ -257,7 +264,7 @@ std::string duplicateMechanism(RobotConfig& c, std::string_view id) {
     std::vector<std::pair<std::string, std::string>> renamed;   // old -> new
     std::vector<MechanismConfig> copies;
     auto taken = [&](const std::string& candidate) {
-        if (reservedOwner(candidate) || c.findMechanism(candidate) != nullptr) return true;
+        if (reservedOwner(candidate) || c.findMechanism(candidate) != nullptr || c.findZone(candidate) != nullptr) return true;
         return std::any_of(renamed.begin(), renamed.end(), [&](const auto& r) { return r.second == candidate; });
     };
     for (const auto& oldId : subtree) {
@@ -326,6 +333,141 @@ void normalizeOrder(RobotConfig& c) {
     }
     for (auto& m : pending) ordered.push_back(std::move(m));   // cycles / missing parents: validator reports them
     c.mechanisms = std::move(ordered);
+}
+
+// ---- zones ------------------------------------------------------------------------------------
+std::string uniqueZoneId(const RobotConfig& c, std::string base) {
+    if (base.empty()) base = "zone";
+    auto taken = [&](const std::string& id) { return reservedOwner(id) || c.findZone(id) != nullptr || c.findMechanism(id) != nullptr; };
+    if (!taken(base)) return base;
+    for (int n = 2;; ++n) {
+        std::string candidate = base + "_" + std::to_string(n);
+        if (!taken(candidate)) return candidate;
+    }
+}
+
+std::string zoneDisplayName(const sdk::ZoneConfig& z, const EditorCatalog& catalog) {
+    if (!z.label.empty()) return z.label;
+    if (const auto* k = catalog.findZoneKind(z.kind)) return k->displayName;
+    return z.id;
+}
+
+Pose3 zoneParentWorld(const RobotConfig& c, const EditorCatalog& catalog, const sdk::ZoneConfig& z) {
+    const Pose3 chassis = chassisFrameWorld(c.chassis);
+    if (z.attachment.onChassis()) return chassis;
+    if (const auto p = linkInChassis(c, catalog, z.attachment.parentMechanismId, z.attachment.parentLink)) return chassis * *p;
+    return chassis;
+}
+
+Pose3 zoneWorld(const RobotConfig& c, const EditorCatalog& catalog, const sdk::ZoneConfig& z) {
+    return zoneParentWorld(c, catalog, z) * z.local;
+}
+
+sdk::ZoneConfig makeZone(const RobotConfig& c, const sdk::ZoneKindInfo& info, const sdk::MechanismAttachment& attachment) {
+    sdk::ZoneConfig z;
+    z.id = uniqueZoneId(c, baseIdForType(info.kind));
+    z.kind = info.kind;
+    z.label = info.displayName;
+    for (const auto& other : c.zones)
+        if (other.kind == info.kind && other.label == z.label) { z.label = info.displayName + " " + std::to_string(c.zones.size() + 1); break; }
+    z.attachment.parentMechanismId = attachment.onChassis() ? std::string(sdk::kChassisParent) : attachment.parentMechanismId;
+    z.attachment.parentLink = attachment.parentLink.empty() ? std::string(sdk::kRootLink) : attachment.parentLink;
+    z.local = info.defaultLocal;
+    z.sizeM = info.defaultSizeM;
+    z.properties = sdk::defaultsOf(info.properties);
+    return z;
+}
+
+std::string addZone(RobotConfig& c, const EditorCatalog& catalog, const sdk::ZoneKindInfo& info, const sdk::MechanismAttachment& attachment) {
+    sdk::MechanismAttachment att = attachment;
+    if (!att.onChassis()) {
+        const MechanismConfig* parent = c.findMechanism(att.parentMechanismId);
+        const sdk::MechanismTemplateInfo* tpl = parent != nullptr ? catalog.findTemplate(parent->type) : nullptr;
+        const std::string link = att.parentLink.empty() ? std::string(sdk::kRootLink) : att.parentLink;
+        if (parent == nullptr || (tpl != nullptr && !sdk::hasLink(*tpl, link))) att = sdk::MechanismAttachment{};
+    } else {
+        att = sdk::MechanismAttachment{};
+    }
+    sdk::ZoneConfig z = makeZone(c, info, att);
+    std::string id = z.id;
+    c.zones.push_back(std::move(z));
+    return id;
+}
+
+bool removeZone(RobotConfig& c, std::string_view id) {
+    const auto it = std::find_if(c.zones.begin(), c.zones.end(), [&](const sdk::ZoneConfig& z) { return z.id == id; });
+    if (it == c.zones.end()) return false;
+    c.zones.erase(it);
+    return true;
+}
+
+std::string duplicateZone(RobotConfig& c, std::string_view id) {
+    const sdk::ZoneConfig* original = c.findZone(id);
+    if (original == nullptr) return {};
+    sdk::ZoneConfig copy = *original;
+    copy.id = uniqueZoneId(c, copy.id);
+    copy.label = (copy.label.empty() ? original->id : copy.label) + " (copy)";
+    copy.local.position.y += 0.1f;
+    std::string newId = copy.id;
+    c.zones.push_back(std::move(copy));
+    return newId;
+}
+
+sdk::ZoneConfig* findZone(RobotConfig& c, std::string_view id) {
+    for (auto& z : c.zones)
+        if (z.id == id) return &z;
+    return nullptr;
+}
+
+bool reattachZone(RobotConfig& c, const EditorCatalog& catalog, std::string_view id, const std::string& newParent,
+                  const std::string& newLink, bool keepWorldPose) {
+    sdk::ZoneConfig* z = findZone(c, id);
+    if (z == nullptr) return false;
+    const std::string link = newLink.empty() ? std::string(sdk::kRootLink) : newLink;
+    if (onChassis(newParent)) {
+        if (link != sdk::kRootLink) return false;
+    } else {
+        const MechanismConfig* parent = c.findMechanism(newParent);
+        if (parent == nullptr) return false;
+        if (const auto* info = catalog.findTemplate(parent->type); info != nullptr && !sdk::hasLink(*info, link)) return false;
+    }
+    const Pose3 before = zoneWorld(c, catalog, *z);
+    z->attachment.parentMechanismId = onChassis(newParent) ? std::string(sdk::kChassisParent) : newParent;
+    z->attachment.parentLink = link;
+    if (keepWorldPose) z->local = zoneParentWorld(c, catalog, *z).inverse() * before;
+    return true;
+}
+
+int addZoneCondition(RobotConfig& c, std::string_view zoneId) {
+    sdk::ZoneConfig* z = findZone(c, zoneId);
+    if (z == nullptr) return -1;
+    sdk::ZoneCondition cond;
+    if (!c.mechanisms.empty()) cond.mechanismId = c.mechanisms.front().id;
+    z->activation.conditions.push_back(std::move(cond));
+    return static_cast<int>(z->activation.conditions.size()) - 1;
+}
+
+bool removeZoneCondition(RobotConfig& c, std::string_view zoneId, int index) {
+    sdk::ZoneConfig* z = findZone(c, zoneId);
+    if (z == nullptr || index < 0 || index >= static_cast<int>(z->activation.conditions.size())) return false;
+    z->activation.conditions.erase(z->activation.conditions.begin() + index);
+    return true;
+}
+
+bool setZoneCondition(RobotConfig& c, std::string_view zoneId, int index, const sdk::ZoneCondition& condition) {
+    sdk::ZoneConfig* z = findZone(c, zoneId);
+    if (z == nullptr || index < 0 || index >= static_cast<int>(z->activation.conditions.size())) return false;
+    sdk::ZoneCondition& slot = z->activation.conditions[static_cast<std::size_t>(index)];
+    if (slot == condition) return false;
+    slot = condition;
+    return true;
+}
+
+bool setZoneActivationMode(RobotConfig& c, std::string_view zoneId, sdk::ActivationMode mode) {
+    sdk::ZoneConfig* z = findZone(c, zoneId);
+    if (z == nullptr || z->activation.mode == mode) return false;
+    z->activation.mode = mode;
+    return true;
 }
 
 // ---- device mappings --------------------------------------------------------------------------
@@ -586,6 +728,8 @@ void setCom(RobotConfig& c, float offsetX, float offsetY, float height, bool com
     for (auto& p : c.chassis.primitives) p.local.position -= Vec3{dx, dy, dz};
     for (auto& m : c.mechanisms)
         if (m.attachment.onChassis()) m.mount.position -= Vec3{dx, dy, dz};
+    for (auto& z : c.zones)
+        if (z.attachment.onChassis()) z.local.position -= Vec3{dx, dy, dz};
     if (catalog != nullptr) {
         if (sdk::Value* store = volumeStore(c, *catalog, "")) {
             for (const auto& vol : volumesFor(c, *catalog, "")) {

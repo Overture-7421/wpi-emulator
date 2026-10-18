@@ -10,7 +10,7 @@
 #include "wpiemu/core/physics/box3d_world.h"
 #include "wpiemu/plugins/game_2026/field_dimensions.h"
 #include "wpiemu/plugins/game_2026/field_layout.h"
-#include "wpiemu/plugins/game_2026/fuel_shooter.h"
+#include "wpiemu/plugins/game_2026/fuel_zones.h"
 #include "wpiemu/plugins/game_2026/game_state.h"
 
 using namespace wpiemu;
@@ -165,37 +165,26 @@ TEST_CASE("Box3D: a shot from the robot flies into the hub, scores, and is recyc
     Box3dRig rig;
     GameConfig cfg = emptyConfig();
     cfg.hubProcessingDelayS = 0.2;
-    rig.makeState(cfg);
+    // Fixed-speed shooter zone 2.0 m from the blue hub face; angle/speed solved for the opening (see docs).
+    sdk::ZoneConfig zone;
+    zone.id = "shooter";
+    zone.kind = kShooterKind;
+    zone.local.position = {0.25f, 0.f, 0.55f};
+    zone.properties["fixedExitSpeedMps"] = 6.15;
+    zone.properties["hoodAngleRad"] = 1.1345;  // 65 degrees
+    zone.properties["fireRateHz"] = 5.0;
+    rig.config.zones.push_back(zone);
+    rig.makeState(cfg);  // the state builds its zones from the config
     rig.ds.enabled = true;
     rig.ds.mode = sdk::proto::RobotMode::Autonomous;
-
-    // Fixed-speed shooter 2.0 m from the blue hub face; angle/speed solved for the opening (see docs).
-    sdk::MechanismConfig mc;
-    mc.id = "shooter";
-    mc.type = kShooterType;
-    mc.properties["fixedExitSpeedMps"] = 6.15;
-    mc.properties["hoodAngleRad"] = 1.1345;  // 65 degrees
-    mc.properties["fireRateHz"] = 5.0;
-    mc.properties["muzzleOffset"] = sdk::toValue(sdk::Vec3{0.25f, 0.f, 0.55f});
-    rig.config.mechanisms.push_back(mc);
-    FuelShooterMechanism shooter(sdk::MechanismBuildContext{rig.config.mechanisms.back(), *rig.ctx});
-    sdk::testing::FakeMechanismDirectory dir(rig.config);
-    dir.add(&shooter);
-    rig.ctx->bindMechanisms(&dir);
 
     const FieldLayout layout = buildFieldLayout();
     const HubSpec& blue = layout.hub(Alliance::Blue);
     rig.world->setPose(rig.chassis, sdk::Pose3{{2.0f, blue.center.y, 0.f}, sdk::Quat{}});
-    for (int i = 0; i < 400; ++i) {  // 2 s: about 8 shots at 5 Hz (the preload)
-        shooter.tick(*rig.ctx, 0.005);
-        rig.tick();
-    }
+    for (int i = 0; i < 400; ++i) rig.tick();  // 2 s: about 8 shots at 5 Hz (the preload)
     CHECK(rig.state->shotsFired() >= 7);
     CHECK(rig.state->score(Alliance::Blue).points() >= 5);  // most of a perfect-repeat volley goes in
-    for (int i = 0; i < 400; ++i) {
-        shooter.tick(*rig.ctx, 0.005);
-        rig.tick();
-    }
+    rig.tick(400);
     // scored fuel came back out of the hub exits into the neutral zone
     int nearBlueExits = 0;
     rig.state->pool().forEach([&](std::uint32_t, const sdk::Vec3& p) {

@@ -63,6 +63,15 @@ public:
     bool removeMechanism(const QString& id);
     QString duplicateMechanism(const QString& id);
     bool reparentMechanism(const QString& id, const QString& newParent, const QString& link = QStringLiteral("root"));
+    // ---- zones
+    QString addZone(const QString& kind, const sdk::MechanismAttachment& attachment = {});
+    bool removeZone(const QString& id);
+    QString duplicateZone(const QString& id);
+    bool reattachZone(const QString& id, const QString& newParent, const QString& link = QStringLiteral("root"));
+    int addZoneCondition(const QString& zoneId);
+    bool removeZoneCondition(const QString& zoneId, int index);
+    bool setZoneCondition(const QString& zoneId, int index, const sdk::ZoneCondition& condition);
+    bool setZoneActivationMode(const QString& zoneId, sdk::ActivationMode mode);
     // ---- slots
     bool mapSlot(const sdk::SlotAddress& slot, const sdk::DeviceKey& device);
     bool clearSlot(const sdk::SlotAddress& slot);

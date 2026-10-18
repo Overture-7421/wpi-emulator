@@ -2,16 +2,14 @@
 add_library(wpiemu_plugin_game_2026 STATIC
     src/config.cpp
     src/field_layout.cpp
-    src/fuel_intake.cpp
     src/fuel_layout.cpp
     src/fuel_pool.cpp
-    src/fuel_shooter.cpp
+    src/fuel_zones.cpp
     src/game_module.cpp
     src/game_state.cpp
     src/game_ui.cpp
     src/hub_rules.cpp
     src/match_clock.cpp
-    src/mechanism_io.cpp
     src/plugin_info.cpp)
 add_library(wpiemu::plugin_game_2026 ALIAS wpiemu_plugin_game_2026)
 target_include_directories(wpiemu_plugin_game_2026 PUBLIC include)

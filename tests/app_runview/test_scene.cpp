@@ -140,7 +140,11 @@ TEST_CASE("every shape of a mechanism follows its first link, whatever the shape
 }
 
 TEST_CASE("zone overlays resolve through plugin sections and mechanism properties") {
-    const auto cfg = demoConfig();
+    auto cfg = std::make_shared<sdk::RobotConfig>(FakeRunBackend::makeDemoConfig());
+    sdk::Box3 intakeBox;
+    intakeBox.pose.position = {0.78f, 0.f, -0.08f};
+    intakeBox.sizeM = {0.5f, 0.7f, 0.2f};
+    cfg->pluginSection("demo_game").data["intake_zone"] = sdk::toValue(intakeBox);
     sdk::EditorPanelDescriptor panel;
     panel.id = "demo_game.zones";
     panel.scope = sdk::PanelScope::PluginConfig;
@@ -166,6 +170,119 @@ TEST_CASE("zone overlays resolve through plugin sections and mechanism propertie
     const auto mz = resolveZoneOverlays(*custom, {mech}, nullptr);
     REQUIRE(mz.size() == 1);
     CHECK(near(mz[0].pose.position, {0.38f + 0.1f, 0.f, -0.06f}));
+}
+
+TEST_CASE("robot zones resolve to chassis-frame poses with the kind's shape and colour") {
+    const auto cfg = demoConfig();
+    const auto kinds = FakeRunBackend::makeZoneKinds();
+    const auto zones = resolveRobotZones(*cfg, kinds, nullptr);
+    REQUIRE(zones.size() == 2);
+
+    // Volume zone on the intake root: mount (0.38,0,-0.06) * local (0.4,0,-0.02)
+    CHECK(zones[0].id == "pickup");
+    CHECK(zones[0].label == "Intake zone");
+    CHECK_FALSE(zones[0].muzzle);
+    CHECK(zones[0].tracksState);
+    CHECK(zones[0].color == "#22c55e");
+    CHECK(near(zones[0].pose.position, {0.78f, 0.f, -0.08f}));
+    CHECK(near(zones[0].size, {0.5f, 0.7f, 0.2f}));
+
+    // Muzzle zone: on the turret's yaw link at rest, direction along local +X
+    CHECK(zones[1].muzzle);
+    CHECK(zones[1].color == "#f43f5e");
+    CHECK(near(zones[1].pose.position, {-0.1f + 0.38f, 0.f, 0.12f}));
+}
+
+TEST_CASE("robot zones follow the pose of the attached mechanism link") {
+    auto cfg = std::make_shared<sdk::RobotConfig>(FakeRunBackend::makeDemoConfig());
+    sdk::ZoneConfig onArm;
+    onArm.id = "arm.zone";
+    onArm.kind = "demo_game.pickup";
+    onArm.attachment = {"intake", "arm"};
+    onArm.local.position = {0.17f, 0.f, 0.f};
+    cfg->zones.push_back(onArm);
+    sdk::ZoneConfig onChassis;
+    onChassis.id = "chassis.zone";
+    onChassis.kind = "demo_game.pickup";
+    onChassis.local.position = {0.1f, 0.2f, 0.3f};
+    cfg->zones.push_back(onChassis);
+
+    sdk::SimSnapshotData d = baseSnapshot();
+    sdk::MechanismState intake;
+    intake.id = "intake";
+    intake.links.push_back({"arm", sdk::Pose3{{}, sdk::Quat::fromAxisAngle({0.f, 1.f, 0.f}, -1.5707963f)}});
+    d.mechanisms.push_back(intake);
+    sdk::MechanismState turret;
+    turret.id = "turret";
+    turret.links.push_back({"yaw", sdk::Pose3{{}, sdk::Quat::fromYaw(1.5707963f)}});
+    d.mechanisms.push_back(turret);
+    const sdk::SimSnapshot snap(d);
+
+    const auto zones = resolveRobotZones(*cfg, FakeRunBackend::makeZoneKinds(), &snap);
+    REQUIRE(zones.size() == 4);
+    CHECK(near(zones[2].pose.position, {0.38f, 0.f, -0.06f + 0.17f}));   // arm raised 90 deg, same as arm.bar
+    CHECK(near(zones[3].pose.position, {0.1f, 0.2f, 0.3f}));              // chassis frame, no link involved
+    // The muzzle turned with the turret: (0.38,0,0.12) rotated 90 deg about Z from the mount (-0.1,0,0)
+    CHECK(near(zones[1].pose.position, {-0.1f, 0.38f, 0.12f}));
+    CHECK(near(zones[1].pose.rotation.rotate({1.f, 0.f, 0.f}), {0.f, 1.f, 0.f}));
+}
+
+TEST_CASE("robot zones of an unknown kind are ignored") {
+    auto cfg = std::make_shared<sdk::RobotConfig>(FakeRunBackend::makeDemoConfig());
+    sdk::ZoneConfig other;
+    other.id = "other";
+    other.kind = "another_game.thing";
+    cfg->zones.push_back(other);
+    CHECK(resolveRobotZones(*cfg, FakeRunBackend::makeZoneKinds(), nullptr).size() == 2);
+    CHECK(resolveRobotZones(*cfg, {}, nullptr).empty());
+}
+
+TEST_CASE("robot zone active flag comes from the snapshot zones") {
+    const auto cfg = demoConfig();
+    const auto kinds = FakeRunBackend::makeZoneKinds();
+    for (const auto& z : resolveRobotZones(*cfg, kinds, nullptr)) CHECK_FALSE(z.active);
+
+    sdk::SimSnapshotData d = baseSnapshot();
+    d.zones.push_back({"shooter", true});
+    d.zones.push_back({"pickup", false});
+    const sdk::SimSnapshot snap(d);
+    const auto zones = resolveRobotZones(*cfg, kinds, &snap);
+    REQUIRE(zones.size() == 2);
+    CHECK_FALSE(zones[0].active);
+    CHECK(zones[1].active);
+
+    // A zone missing from the snapshot is inactive
+    sdk::SimSnapshotData partial = baseSnapshot();
+    partial.zones.push_back({"pickup", true});
+    const sdk::SimSnapshot partialSnap(partial);
+    const auto some = resolveRobotZones(*cfg, kinds, &partialSnap);
+    CHECK(some[0].active);
+    CHECK_FALSE(some[1].active);
+}
+
+TEST_CASE("zone rig builds a marker and an arrow for muzzles and highlights active zones") {
+    ZoneRig rig;
+    rig.setScene(demoConfig(), {}, FakeRunBackend::makeZoneKinds());
+    REQUIRE(rig.parts().size() == 3);   // pickup box, muzzle marker, muzzle arrow
+    CHECK(rig.labels()[0] == "Intake zone");
+    CHECK(rig.labels()[1] == "Shooter zone");
+    CHECK(rig.labels()[2] == "Shooter zone");
+    CHECK(near(rig.parts()[0].size, {0.5f, 0.7f, 0.2f}));
+    // The arrow starts at the muzzle point and extends along local +X
+    CHECK(rig.parts()[2].pose.position.x > rig.parts()[1].pose.position.x);
+    CHECK(rig.parts()[2].size.x > rig.parts()[2].size.y);
+    CHECK_FALSE(rig.parts()[0].highlighted);
+    const float dim = rig.parts()[0].opacity;
+
+    sdk::SimSnapshotData d = baseSnapshot();
+    d.zones.push_back({"pickup", true});
+    const sdk::SimSnapshot snap(d);
+    CHECK(rig.update(&snap));
+    CHECK(rig.changed()[0] == 1);
+    CHECK(rig.changed()[1] == 0);
+    CHECK(rig.parts()[0].highlighted);
+    CHECK(rig.parts()[0].opacity > dim);
+    CHECK_FALSE(rig.update(&snap));
 }
 
 TEST_CASE("field parts centre the floor on the visuals") {
@@ -288,6 +405,85 @@ TEST_CASE("scene model follows the snapshot and exposes zone toggles") {
     QSignalSpy spy(&scene, &SceneModel::cameraChanged);
     scene.zoom(3.f);
     CHECK(spy.count() == 1);
+}
+
+TEST_CASE("scene model draws zones and updates their parts only when something changed") {
+    SceneModel scene;
+    RunSceneInfo info;
+    info.config = demoConfig();
+    info.zoneKinds = FakeRunBackend::makeZoneKinds();
+    scene.setSceneInfo(info);
+    PartListModel& zones = *static_cast<PartListModel*>(scene.zones());
+    CHECK(zones.rowCount() == 3);   // pickup volume + muzzle marker + muzzle arrow
+    CHECK(scene.zoneLabels() == QStringList{QStringLiteral("Intake zone"), QStringLiteral("Shooter zone")});
+    const QColor dim = zones.index(0).data(PartListModel::ColorRole).value<QColor>();
+
+    sdk::SimSnapshotData d = baseSnapshot();
+    d.zones.push_back({"pickup", false});
+    d.zones.push_back({"shooter", false});
+    const sdk::SimSnapshot rest(d);
+    QSignalSpy changed(&zones, &QAbstractItemModel::dataChanged);
+    scene.update(&rest);
+    CHECK(changed.count() == 0);   // rest pose, everything inactive: nothing to update
+    scene.update(&rest);
+    CHECK(changed.count() == 0);
+
+    d.zones[0].active = true;
+    const sdk::SimSnapshot pickupOn(d);
+    scene.update(&pickupOn);
+    REQUIRE(changed.count() == 1);   // only the pickup volume
+    CHECK(changed.at(0).at(0).toModelIndex().row() == 0);
+    const QColor lit = zones.index(0).data(PartListModel::ColorRole).value<QColor>();
+    CHECK(lit.alphaF() > dim.alphaF());
+    CHECK(lit.lightnessF() > dim.lightnessF());
+    scene.update(&pickupOn);
+    CHECK(changed.count() == 1);
+
+    // The shooter follows its turret link: moving the link updates its marker and arrow only.
+    sdk::MechanismState turret;
+    turret.id = "turret";
+    turret.links.push_back({"yaw", sdk::Pose3{{}, sdk::Quat::fromYaw(0.5f)}});
+    d.mechanisms.push_back(turret);
+    const sdk::SimSnapshot turned(d);
+    scene.update(&turned);
+    CHECK(changed.count() == 3);
+    CHECK(changed.at(1).at(0).toModelIndex().row() == 1);
+    CHECK(changed.at(2).at(0).toModelIndex().row() == 2);
+}
+
+TEST_CASE("fake backend publishes zone states that follow the intake arm and the flywheel") {
+    FakeRunBackend::Options opts;
+    opts.autoRun = false;
+    opts.startupDelayMs = 0;
+    FakeRunBackend backend(opts);
+    const RunSceneInfo info = backend.sceneInfo();
+    CHECK(info.zoneKinds.size() == 2);
+    CHECK(info.config->zones.size() == 2);
+
+    backend.startSimulation();
+    backend.tick(1);
+    auto snap = backend.latestSnapshot();
+    REQUIRE(snap != nullptr);
+    REQUIRE(snap->zones().size() == 2);
+    CHECK(snap->zones()[0].id == "pickup");
+    CHECK_FALSE(snap->zones()[0].active);
+    CHECK_FALSE(snap->zones()[1].active);
+
+    sdk::proto::DsState ds;
+    ds.enabled = true;
+    ds.joysticks[0].buttons = 1u;   // A: deploy the intake
+    backend.setDriverStation(ds);
+    backend.tick(600);
+    snap = backend.latestSnapshot();
+    CHECK(snap->zones()[0].active);
+    CHECK_FALSE(snap->zones()[1].active);
+
+    ds.joysticks[0].buttons = 2u;   // B: spin up the flywheel
+    backend.setDriverStation(ds);
+    backend.tick(1000);
+    snap = backend.latestSnapshot();
+    CHECK_FALSE(snap->zones()[0].active);
+    CHECK(snap->zones()[1].active);
 }
 
 TEST_CASE("mechanism overlay model shows labels and human units") {

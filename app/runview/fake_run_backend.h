@@ -20,7 +20,7 @@ public:
         bool autoRun = true;          // drive the simulation from an internal QTimer
         int startupDelayMs = 350;     // Starting -> Running, and Running -> Connected; 0 = synchronous
         int ballCount = 200;
-        bool withGameContent = true;  // HUD descriptors + zone overlays + fuel
+        bool withGameContent = true;  // HUD descriptors + zone kinds/states + fuel
     };
 
     explicit FakeRunBackend(QObject* parent = nullptr) : FakeRunBackend(Options{}, parent) {}
@@ -48,6 +48,7 @@ public:
     void setLinkSettled();                        // jump straight to Running + Connected
 
     static sdk::RobotConfig makeDemoConfig();
+    static std::vector<sdk::ZoneKindInfo> makeZoneKinds();   // demo_game.pickup (Volume), demo_game.shooter (Muzzle)
     static sdk::FieldDescription makeDemoField();
 
 public slots:

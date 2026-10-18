@@ -252,6 +252,19 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
         }
         return loc;
     }
+    if (parseIndexed(path, "zones", index, rest)) {
+        if (index >= 0 && index < static_cast<int>(c.zones.size())) {
+            loc.selection = SelectionRef::zone(c.zones[static_cast<std::size_t>(index)].id);
+            if (rest.rfind("properties.", 0) == 0) loc.fieldKey = firstSegment(rest.substr(11));
+            else if (rest.rfind("attachment", 0) == 0) loc.fieldKey = "parent";
+            else if (rest.rfind("local", 0) == 0) loc.fieldKey = "local";
+            else if (rest.rfind("sizeM", 0) == 0) loc.fieldKey = "sizeM";
+            else if (rest.rfind("kind", 0) == 0) loc.fieldKey = "kind";
+            else if (rest.rfind("id", 0) == 0) loc.fieldKey = "id";
+            else if (rest.rfind("activation.conditions[", 0) == 0) loc.fieldKey = "activation:" + std::to_string(std::atoi(rest.c_str() + 22));
+        }
+        return loc;
+    }
     if (path == "chassis" || path.rfind("chassis.", 0) == 0) {
         loc.selection = SelectionRef::chassis();
         loc.fieldKey = path.size() > 8 ? firstSegment(path.substr(8)) : std::string();

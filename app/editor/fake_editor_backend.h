@@ -1,8 +1,8 @@
 #pragma once
 
 // A complete in-memory IEditorBackend for tests and the standalone demo: a realistic catalog (the
-// eight core mechanism templates, two plugin templates with a pickup-zone volume, a plugin config
-// schema and panels), a swerve sample robot, a device list and a scripted "Detect devices" run that
+// core "mechanism" template, two plain sample templates, the game plugin's zone kinds, a plugin config
+// schema and panels), a swerve sample robot with two zones, a device list and a scripted "Detect devices" run that
 // announces devices over time. Validation uses the real SDK helpers (property schemas, attachment
 // and alias contracts), so the editor behaves as it will against the real validator.
 
@@ -54,6 +54,7 @@ public:
 
 private:
     void detectionStep();
+    std::vector<sdk::Issue> validateZones(const sdk::RobotConfig& config) const;
 
     sdk::RobotConfig config_;
     EditorCatalog catalog_;

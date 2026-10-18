@@ -1,7 +1,7 @@
 #pragma once
 
 // The project tree: robot > chassis (COM, shapes), drivetrain > wheels, mechanisms (nested by
-// attachment) > slots / shapes / volumes, sensors, game plugin. A wheel or mechanism driven by a motion
+// attachment) > slots / shapes / volumes, sensors, game plugin (volumes and zones). A wheel or mechanism driven by a motion
 // link (ADR 0012) is nested under the owner that drives it, read-only, and takes no motor slot. Each row
 // carries a SelectionRef, a kind and (for slots) the mapping state; the delegate paints them. Accepts
 // device / template / mechanism drops and reports them as signals, never edits the document itself.
@@ -11,6 +11,7 @@
 
 #include <functional>
 #include <memory>
+#include <set>
 #include <vector>
 
 #include "model/device_directory.h"
@@ -21,7 +22,7 @@
 
 namespace wpiemu::app::editor {
 
-enum class NodeKind { Robot, Chassis, Com, Drivetrain, Wheel, Slot, Shape, Mechanism, Group, Volume, Plugin };
+enum class NodeKind { Robot, Chassis, Com, Drivetrain, Wheel, Slot, Shape, Mechanism, Group, Volume, Plugin, Zone };
 
 class ProjectTreeModel : public QAbstractItemModel {
     Q_OBJECT
@@ -39,6 +40,8 @@ public:
     ProjectTreeModel(EditorDocument& document, const DeviceDirectory& devices, QObject* parent = nullptr);
 
     void refresh();
+    // Validation issues (any path); zone nodes they point at show the warning state.
+    void setIssues(const std::vector<sdk::Issue>& issues);
     SelectionRef refAt(const QModelIndex& index) const;
     QModelIndex indexFor(const SelectionRef& ref) const;
     QString keyAt(const QModelIndex& index) const;
@@ -62,6 +65,7 @@ public:
 Q_SIGNALS:
     void deviceDropped(const wpiemu::app::editor::SelectionRef& target, const wpiemu::sdk::DeviceKey& device, quint32 capabilityBits);
     void mechanismDropped(const QString& id, const wpiemu::sdk::MechanismAttachment& attachment);
+    void zoneDropped(const QString& id, const wpiemu::sdk::MechanismAttachment& attachment);
 
 private:
     struct Node {
@@ -96,6 +100,7 @@ private:
     EditorDocument& document_;
     const DeviceDirectory& devices_;
     std::unique_ptr<Node> root_;   // invisible root; first child is the robot
+    std::set<std::string> zonesWithIssues_;
 };
 
 }  // namespace wpiemu::app::editor

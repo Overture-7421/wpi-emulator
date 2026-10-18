@@ -1,17 +1,17 @@
-// The 2026 wrappers driven by the REAL generic core mechanisms (the single "mechanism" template as roller / flywheel / indexer):
-// proves the named values the plugin reads (velocity, position) are the ones core actually publishes, end to end from a motor command to a fuel body leaving the muzzle.
+// The 2026 pickup and shooter zones driven by the REAL generic core mechanisms (the single "mechanism" template as roller / flywheel / indexer):
+// proves the named values the zone activations and the shooter read (velocity, position) are the ones core actually publishes, end to end from a motor command to a fuel body leaving the muzzle.
 #include <doctest/doctest.h>
 
 #include <cmath>
 
 #include "test_support.h"
 #include "wpiemu/core/mechanisms/mechanism_templates.h"
-#include "wpiemu/plugins/game_2026/fuel_intake.h"
-#include "wpiemu/plugins/game_2026/fuel_shooter.h"
+#include "wpiemu/plugins/game_2026/fuel_zones.h"
 
 using namespace wpiemu;
 using namespace wpiemu::plugins::game_2026;
-using g26test::boxValue;
+using g26test::above;
+using g26test::makeZone;
 using g26test::Session;
 
 namespace {
@@ -34,7 +34,7 @@ double value(const sdk::MechanismState& st, const char* name) {
 
 }  // namespace
 
-TEST_CASE("core roller + shooter + indexer drive the 2026 intake and shooter end to end") {
+TEST_CASE("core roller + flywheel + indexer drive the 2026 pickup and shooter zones end to end") {
     Session s;
     withCoreTemplates(s);
     s.section()["neutralFuel"] = 0;
@@ -47,14 +47,12 @@ TEST_CASE("core roller + shooter + indexer drive the 2026 intake and shooter end
     s.addMechanism("flywheel", "mechanism", flyProps);
     s.addMechanism("indexer", "mechanism");
     sdk::Value intake = sdk::Value::makeObject();
-    intake["rollerMechanism"] = "roller";
-    intake["pickupZone"] = boxValue({0.45f, 0.f, 0.2f}, {0.30f, 0.60f, 0.40f});
-    s.addMechanism("fuelIntake", kIntakeType, intake);
+    intake["intakeRateHz"] = 0.0;
+    s.addZone(makeZone("fuelIntake", kPickupKind, intake, {above("roller", 20.0)}));
     sdk::Value shooter = sdk::Value::makeObject();
     shooter["flywheelMechanism"] = "flywheel";
     shooter["flywheelRadiusM"] = 0.05;
-    shooter["feedMechanism"] = "indexer";
-    s.addMechanism("fuelShooter", kShooterType, shooter);
+    s.addZone(makeZone("fuelShooter", kShooterKind, shooter, {above("indexer", 5.0)}));
 
     s.start();
     s.setChassis({4.f, 3.f, 0.f});
@@ -84,10 +82,9 @@ TEST_CASE("core roller + shooter + indexer drive the 2026 intake and shooter end
     driveVolts(s, "indexer", 12.0);
     s.tick(10);
     CHECK(s.game->shotsFired() >= 1);
-    sdk::MechanismState shot;
-    for (auto& m : s.mechanisms)
-        if (m->id() == "fuelShooter") shot = m->state();
-    CHECK(shot.active);
-    CHECK(value(shot, "exitSpeed") == doctest::Approx(std::fabs(value(fly, "velocity")) * 0.05 * 0.6).epsilon(0.05));
-    CHECK(value(shot, "exitSpeed") > 4.0);
+    auto* shot = dynamic_cast<ShooterZoneRuntime*>(s.game->zones()[1].get());
+    REQUIRE(shot != nullptr);
+    CHECK(shot->active());
+    CHECK(shot->exitSpeedMps() == doctest::Approx(std::fabs(value(fly, "velocity")) * 0.05 * 0.6).epsilon(0.05));
+    CHECK(shot->exitSpeedMps() > 4.0);
 }

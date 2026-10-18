@@ -20,7 +20,8 @@ enum class SelKind {
     Slot,        // owner = slot owner (mechanism id, "drivetrain", "robot"), sub = slot name
     Overlay,     // plugin-declared volume: owner = mechanism id or "" (plugin level), sub = property key
     Plugin,      // the selected game plugin's config section
-    Device,      // a detected device: owner = serialized DeviceKey (see device_mime.h)
+    Zone,        // owner = zone id (RobotConfig::zones)
+    Device,       // a detected device: owner = serialized DeviceKey (see device_mime.h)
 };
 
 struct SelectionRef {
@@ -42,6 +43,7 @@ struct SelectionRef {
     static SelectionRef slot(std::string owner, std::string slot) { return {SelKind::Slot, std::move(owner), std::move(slot), -1}; }
     static SelectionRef overlay(std::string owner, std::string key) { return {SelKind::Overlay, std::move(owner), std::move(key), -1}; }
     static SelectionRef plugin() { return {SelKind::Plugin, {}, {}, -1}; }
+    static SelectionRef zone(std::string id) { return {SelKind::Zone, std::move(id), {}, -1}; }
     static SelectionRef device(std::string key) { return {SelKind::Device, std::move(key), {}, -1}; }
 
     // Stable textual key (tree expansion state, QML item ids, tests).

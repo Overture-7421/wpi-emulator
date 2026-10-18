@@ -123,6 +123,89 @@ const SlotSpec* findSpec(const std::vector<SlotSpec>& specs, const std::string& 
     return nullptr;
 }
 
+bool ownsKind(const IGameModule* plugin, const std::string& kind) {
+    if (plugin == nullptr) return false;
+    const std::string prefix = plugin->metadata().id + ".";
+    return kind.size() > prefix.size() && kind.compare(0, prefix.size(), prefix) == 0;
+}
+
+void validateZones(const RobotConfig& c, const MechanismFactory& mechanisms, const IGameModule* plugin, std::vector<Issue>& out) {
+    if (c.zones.empty()) return;
+    const std::vector<ZoneKindInfo> kinds = plugin != nullptr ? plugin->contributeZoneKinds() : std::vector<ZoneKindInfo>{};
+    std::set<std::string> ids;
+    for (std::size_t i = 0; i < c.zones.size(); ++i) {
+        const ZoneConfig& z = c.zones[i];
+        const std::string base = "zones[" + std::to_string(i) + "]";
+
+        if (z.id.empty())
+            add(out, Severity::Error, base + ".id", "zone id must not be empty", issue_code::kZoneIdInvalid);
+        else if (c.findMechanism(z.id) != nullptr)
+            add(out, Severity::Error, base + ".id", "zone id '" + z.id + "' is also a mechanism id", issue_code::kZoneIdDuplicate);
+        else if (!ids.insert(z.id).second)
+            add(out, Severity::Error, base + ".id", "duplicate zone id '" + z.id + "'", issue_code::kZoneIdDuplicate);
+
+        // ---- attachment ----
+        const std::string attPath = base + ".attachment";
+        const MechanismAttachment& att = z.attachment;
+        if (att.parentLink.empty()) {
+            add(out, Severity::Error, attPath, "parent link must not be empty (use 'root')", validation_code::kAttachmentLinkMissing);
+        } else if (att.onChassis()) {
+            if (att.parentLink != kRootLink)
+                add(out, Severity::Error, attPath, "the chassis only exposes the link 'root', not '" + att.parentLink + "'",
+                    validation_code::kAttachmentLinkMissing);
+        } else if (const MechanismConfig* parent = c.findMechanism(att.parentMechanismId); parent == nullptr) {
+            add(out, Severity::Error, attPath, "parent mechanism '" + att.parentMechanismId + "' does not exist",
+                validation_code::kAttachmentParentMissing);
+        } else if (const MechanismTemplateInfo* info = mechanisms.templateInfo(parent->type);
+                   info != nullptr && !hasLink(*info, att.parentLink)) {
+            add(out, Severity::Error, attPath, "mechanism '" + parent->id + "' (" + parent->type + ") has no link '" + att.parentLink + "'",
+                validation_code::kAttachmentLinkMissing);
+        }
+
+        // ---- kind and properties ----
+        const ZoneKindInfo* info = nullptr;
+        if (!ownsKind(plugin, z.kind)) {
+            add(out, Severity::Error, base + ".kind",
+                plugin == nullptr ? "zone kind '" + z.kind + "' needs a game plugin (none is selected)"
+                                  : "zone kind '" + z.kind + "' is not owned by plugin '" + plugin->metadata().id + "'",
+                issue_code::kZoneKindNotOwned);
+        } else {
+            for (const ZoneKindInfo& k : kinds)
+                if (k.kind == z.kind) info = &k;
+            if (info == nullptr)
+                add(out, Severity::Warning, base + ".kind", "plugin '" + plugin->metadata().id + "' does not declare zone kind '" + z.kind + "'",
+                    issue_code::kZoneKindUnknown);
+        }
+        if (info != nullptr)
+            for (Issue& issue : validateProperties(info->properties, z.properties, base + ".properties")) {
+                if (issue.code.empty()) issue.code = issue_code::kZonePropertyInvalid;
+                out.push_back(std::move(issue));
+            }
+
+        // ---- geometry ----
+        const Pose3& p = z.local;
+        if (!finite(p.position) || !std::isfinite(p.rotation.x) || !std::isfinite(p.rotation.y) || !std::isfinite(p.rotation.z) ||
+            !std::isfinite(p.rotation.w))
+            add(out, Severity::Error, base + ".local", "zone pose must be finite", issue_code::kZoneGeometryInvalid);
+        const bool volume = info == nullptr || info->shape == ZoneShape::Volume;
+        if (volume && (!finite(z.sizeM) || z.sizeM.x <= 0.f || z.sizeM.y <= 0.f || z.sizeM.z <= 0.f))
+            add(out, Severity::Error, base + ".sizeM", "zone size must be positive and finite", issue_code::kZoneGeometryInvalid);
+
+        // ---- activation ----
+        for (std::size_t j = 0; j < z.activation.conditions.size(); ++j) {
+            const ZoneCondition& cond = z.activation.conditions[j];
+            const std::string cp = base + ".activation.conditions[" + std::to_string(j) + "]";
+            if (cond.value.empty())
+                add(out, Severity::Error, cp + ".value", "condition value name must not be empty", issue_code::kZoneConditionInvalid);
+            if (!std::isfinite(cond.threshold) || !std::isfinite(cond.tolerance) || cond.tolerance < 0.0)
+                add(out, Severity::Error, cp, "condition threshold must be finite and tolerance >= 0", issue_code::kZoneConditionInvalid);
+            if (c.findMechanism(cond.mechanismId) == nullptr)
+                add(out, Severity::Warning, cp + ".mechanism", "condition mechanism '" + cond.mechanismId + "' does not exist",
+                    issue_code::kZoneConditionMechanismUnknown);
+        }
+    }
+}
+
 }  // namespace
 
 std::vector<SlotSpec> drivetrainSlotSpecs(const DrivetrainSpec& spec) {
@@ -314,6 +397,7 @@ std::vector<Issue> ConfigValidator::validate(const RobotConfig& config, const Me
             out.push_back(std::move(issue));
         }
     }
+    validateZones(config, mechanisms, selected, out);
     return out;
 }
 

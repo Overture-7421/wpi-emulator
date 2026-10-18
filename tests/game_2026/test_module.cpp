@@ -5,8 +5,7 @@
 
 #include "test_support.h"
 #include "wpiemu/plugins/game_2026/config.h"
-#include "wpiemu/plugins/game_2026/fuel_intake.h"
-#include "wpiemu/plugins/game_2026/fuel_shooter.h"
+#include "wpiemu/plugins/game_2026/fuel_zones.h"
 #include "wpiemu/sdk/game/builtin_plugins.h"
 
 using namespace wpiemu;
@@ -26,51 +25,59 @@ TEST_CASE("module metadata identifies REBUILT and registers through the aggregat
     CHECK(module->contributeConfigSchema().schemaVersion == kConfigSchemaVersion);
 }
 
-TEST_CASE("2026 mechanism templates are registered under the plugin id and describe themselves for the editor") {
+TEST_CASE("zone kinds are owned by the plugin, registered no mechanism templates and describe themselves for the editor") {
     g26test::Session s;
     REQUIRE(s.module().registerMechanisms(s.factory).ok());
-    for (const char* type : {kIntakeType, kShooterType}) {
-        const sdk::MechanismTemplateInfo* info = s.factory.templateInfo(type);
-        REQUIRE(info != nullptr);
-        CHECK(info->origin == "game_2026");
-        CHECK(sdk::ownsMechanismType("game_2026", info->type));
-        CHECK(info->slotSpecs.empty());  // they bind to OTHER mechanisms, never to devices directly
-        CHECK(sdk::templateLinkIssues(*info).empty());
-        CHECK_FALSE(info->description.empty());
-        CHECK_FALSE(info->defaultGeometry.empty());
+    CHECK(s.factory.empty());  // the pickup and the shooter are zones, not mechanisms
+    CHECK(s.module().registerMechanisms(s.factory).ok());
+
+    const std::vector<sdk::ZoneKindInfo> kinds = s.module().contributeZoneKinds();
+    REQUIRE(kinds.size() == 2);
+    const sdk::ZoneKindInfo* pickup = nullptr;
+    const sdk::ZoneKindInfo* shooter = nullptr;
+    for (const sdk::ZoneKindInfo& k : kinds) {
+        CHECK(sdk::ownsMechanismType("game_2026", k.kind));  // "<pluginId>." prefix
+        CHECK_FALSE(k.displayName.empty());
+        CHECK_FALSE(k.description.empty());
         // defaults validate and every property is documented for the generic inspector
-        CHECK(sdk::validateProperties(info->properties, sdk::defaultsOf(info->properties)).empty());
-        for (const sdk::PropertySpec& p : info->properties.properties) {
+        CHECK(sdk::validateProperties(k.properties, sdk::defaultsOf(k.properties)).empty());
+        for (const sdk::PropertySpec& p : k.properties.properties) {
             CHECK_MESSAGE(!p.label.empty(), p.key);
             CHECK_MESSAGE(!p.group.empty(), p.key);
             CHECK_MESSAGE(!p.description.empty(), p.key);
         }
+        if (k.kind == kPickupKind) pickup = &k;
+        if (k.kind == kShooterKind) shooter = &k;
     }
-    CHECK(s.factory.templateInfo(kShooterType)->category == "Shooter");
-    CHECK(sdk::hasLink(*s.factory.templateInfo(kShooterType), "muzzle"));
-    CHECK(s.factory.templateInfo(kIntakeType)->category == "Intake");
+    REQUIRE(pickup != nullptr);
+    REQUIRE(shooter != nullptr);
+    CHECK(std::string(kPickupKind) == "game_2026.pickup");
+    CHECK(std::string(kShooterKind) == "game_2026.shooter");
 
-    // registering twice is an error, never a silent override
-    CHECK(s.module().registerMechanisms(s.factory).error().code == sdk::ErrorCode::AlreadyExists);
+    CHECK(pickup->shape == sdk::ZoneShape::Volume);
+    CHECK(pickup->defaultSizeM == sdk::Vec3{0.30f, 0.60f, 0.30f});
+    CHECK(pickup->defaultLocal.position == sdk::Vec3{0.45f, 0.f, 0.15f});
+    CHECK(pickup->properties.properties.size() == 1);
+    CHECK(pickup->properties.find("intakeRateHz") != nullptr);
+
+    CHECK(shooter->shape == sdk::ZoneShape::Muzzle);
+    CHECK(shooter->defaultLocal.position == sdk::Vec3{0.25f, 0.f, 0.55f});
+    for (const char* key : {"flywheelMechanism", "flywheelValue", "flywheelRadiusM", "efficiency", "fixedExitSpeedMps",
+                            "minExitSpeedMps", "hoodAngleRad", "hoodMechanism", "hoodValue", "hoodGain", "turretMechanism",
+                            "turretValue", "turretGain", "turretYawOffsetRad", "fireRateHz", "exitSpeedJitter",
+                            "aimJitterRad", "inheritRobotVelocity"})
+        CHECK_MESSAGE(shooter->properties.find(key) != nullptr, key);
+    CHECK(shooter->properties.properties.size() == 18);  // no muzzleOffset (the zone pose) and no feed*
 }
 
-TEST_CASE("mechanism parameters have sane defaults and survive invalid persisted values") {
-    const IntakeParams intake = parseIntakeParams(sdk::Value::makeObject());
-    CHECK(intake.activation == IntakeActivation::Roller);
-    CHECK(intake.rollerValue == "velocity");
-    CHECK(intake.intakeRateHz == doctest::Approx(15.0));
-    CHECK(intake.pickupZone.sizeM.x > 0.f);
-
+TEST_CASE("zone parameters have sane defaults and survive invalid persisted values") {
+    const PickupParams pickup = parsePickupParams(sdk::Value::makeObject());
+    CHECK(pickup.intakeRateHz == doctest::Approx(15.0));
     sdk::Value bad = sdk::Value::makeObject();
-    bad["pickupZone"] = "not a box";
-    bad["activation"] = "sometimes";
-    bad["rollerThreshold"] = -4.0;
     bad["intakeRateHz"] = -1.0;
-    const IntakeParams fixed = parseIntakeParams(bad);
-    CHECK(fixed.pickupZone.sizeM.x == doctest::Approx(0.30f));  // default zone
-    CHECK(fixed.activation == IntakeActivation::Roller);
-    CHECK(fixed.rollerThreshold == 0.0);
-    CHECK(fixed.intakeRateHz == 0.0);
+    CHECK(parsePickupParams(bad).intakeRateHz == 0.0);
+    bad["intakeRateHz"] = "fast";
+    CHECK(parsePickupParams(bad).intakeRateHz == doctest::Approx(15.0));
 
     const ShooterParams shooter = parseShooterParams(sdk::Value::makeObject());
     CHECK(shooter.fireRateHz == doctest::Approx(10.0));
@@ -81,12 +88,10 @@ TEST_CASE("mechanism parameters have sane defaults and survive invalid persisted
     sdk::Value badShooter = sdk::Value::makeObject();
     badShooter["fireRateHz"] = 0.0;
     badShooter["flywheelRadiusM"] = -1.0;
-    badShooter["muzzleOffset"] = 7;
     badShooter["exitSpeedJitter"] = 9.0;
     const ShooterParams fixedShooter = parseShooterParams(badShooter);
     CHECK(fixedShooter.fireRateHz >= 0.1);
     CHECK(fixedShooter.flywheelRadiusM > 0.0);
-    CHECK(fixedShooter.muzzleOffset.z == doctest::Approx(0.55f));
     CHECK(fixedShooter.exitSpeedJitter == doctest::Approx(0.5));
 }
 
@@ -109,34 +114,23 @@ TEST_CASE("HUD widgets are namespaced, unique, and well-formed") {
     CHECK(hasBadge);
 }
 
-TEST_CASE("editor panels only reference properties that exist in their target schema") {
+TEST_CASE("editor panels only configure the plugin section and reference properties that exist") {
     g26test::Session s;
-    REQUIRE(s.module().registerMechanisms(s.factory).ok());
     const sdk::PluginConfigSchema config = s.module().contributeConfigSchema();
     const auto panels = s.module().contributeEditorPanels();
-    CHECK(panels.size() >= 4);
-    int mechanismPanels = 0;
+    CHECK(panels.size() >= 3);
     for (const sdk::EditorPanelDescriptor& panel : panels) {
         CHECK(panel.id.rfind("game_2026.", 0) == 0);
         CHECK_FALSE(panel.properties.properties.empty());
-        const sdk::PropertySchema* target = nullptr;
-        if (panel.scope == sdk::PanelScope::PluginConfig) {
-            target = &config.properties;
-        } else {
-            ++mechanismPanels;
-            REQUIRE(panel.mechanismTypes.size() == 1);
-            const sdk::MechanismTemplateInfo* info = s.factory.templateInfo(panel.mechanismTypes.front());
-            REQUIRE(info != nullptr);
-            target = &info->properties;
-        }
-        for (const sdk::PropertySpec& p : panel.properties.properties) CHECK_MESSAGE(target->find(p.key) != nullptr, p.key);
+        CHECK(panel.scope == sdk::PanelScope::PluginConfig);  // pickup / muzzle editing is the zones' job
+        for (const sdk::PropertySpec& p : panel.properties.properties)
+            CHECK_MESSAGE(config.properties.find(p.key) != nullptr, p.key);
         for (const sdk::ViewportOverlayDescriptor& o : panel.overlays) {
             const sdk::PropertySpec* spec = panel.properties.find(o.propertyKey);
             REQUIRE(spec != nullptr);
             CHECK((spec->type == sdk::PropertyType::Box3 || spec->type == sdk::PropertyType::Vec3));
         }
     }
-    CHECK(mechanismPanels == 2);
 }
 
 TEST_CASE("module hooks are safe with default contexts and an absent plugin section") {

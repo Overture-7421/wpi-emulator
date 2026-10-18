@@ -212,24 +212,23 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
          num("maxPosition", "Maximum position", kMech, PropertyUnit::None, 0.0, -10.0, 10.0, 0.01)},
         {prim("mover", sdk::PrimitiveKind::Box, {0.10f, 0.f, 0.f}, {0.20f, 0.05f, 0.05f}, "#9b59b6")},
         {link("mover", "Moving part", {0.f, 0.f, 0.05f})}));
-    // ---- plugin templates (prefix = plugin id) with the pickup-zone volume ----
+    // ---- sample mechanisms with a plugin-scope volume (a mechanism property of type Box3) ----
     sdk::Box3 zone;
     zone.pose.position = {0.3f, 0.f, 0.f};
     zone.sizeM = {0.4f, 0.6f, 0.25f};
     cat.mechanismTemplates.push_back(templ(
-        "game_2026.fuel_intake", "Fuel intake", "Intake", "Intake that absorbs field fuel inside its pickup zone while running.",
+        "sample.intake", "Roller intake", "Intake", "Roller with a deploy arm and a reach volume.",
         {slot("motor", "Roller motor", sdk::SlotType::Motor, true), slot("deploy", "Deploy motor", sdk::SlotType::Motor, false),
          slot("deployEncoder", "Deploy encoder", sdk::SlotType::PositionSensor, false)},
-        {volume("pickupZone", "Pickup zone", "Fuel", zone, "Fuel whose centre is inside this volume is absorbed while the intake runs."),
-         integer("capacity", "Capacity (fuel)", "Fuel", 30, 1, 100), num("gearRatio", "Gear ratio", kMotor, PropertyUnit::Ratio, 3.0, 0.5, 60.0, 0.1),
+        {volume("pickupZone", "Pickup zone", "Reach", zone, "Where the roller reaches (a Box3 property: gizmo-editable)."),
+         integer("capacity", "Capacity", "Reach", 30, 1, 100), num("gearRatio", "Gear ratio", kMotor, PropertyUnit::Ratio, 3.0, 0.5, 60.0, 0.1),
          choice("motorType", "Motor", kMotor, "NEO", motorChoices()),
-         num("activeThresholdRpm", "Active above", "Fuel", PropertyUnit::RadiansPerSecond, 20.0, 0.0, 600.0, 1.0)},
+         num("activeThresholdRpm", "Active above", "Reach", PropertyUnit::RadiansPerSecond, 20.0, 0.0, 600.0, 1.0)},
         {prim("roller", sdk::PrimitiveKind::Cylinder, {0.f, 0.f, 0.f}, {}, "#ffb347", 0.03f, 0.55f, true),
-         prim("frame", sdk::PrimitiveKind::Box, {-0.06f, 0.f, 0.02f}, {0.1f, 0.55f, 0.05f}, "#9aa5b1")},
-        {}, "game_2026"));
+         prim("frame", sdk::PrimitiveKind::Box, {-0.06f, 0.f, 0.02f}, {0.1f, 0.55f, 0.05f}, "#9aa5b1")}));
 
     cat.mechanismTemplates.push_back(templ(
-        "game_2026.fuel_shooter", "Fuel shooter", "Shooter", "Flywheel shooter that spawns fuel when its feeder runs.",
+        "sample.shooter", "Flywheel shooter", "Shooter", "Flywheel with a feeder and an exit link.",
         {slot("flywheel", "Flywheel motor", sdk::SlotType::Motor, true), slot("feeder", "Feeder motor", sdk::SlotType::Motor, true),
          slot("encoder", "Flywheel encoder", sdk::SlotType::VelocitySensor, false)},
         {num("wheelDiameterM", "Wheel diameter", "Flywheel", PropertyUnit::Meters, 0.1016, 0.03, 0.3, 0.005),
@@ -239,7 +238,7 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
          choice("motorType", "Motor", kMotor, "Kraken X60", motorChoices())},
         {prim("flywheel", sdk::PrimitiveKind::Cylinder, {0.f, 0.f, 0.f}, {}, "#d1495b", 0.05f, 0.12f, true),
          prim("housing", sdk::PrimitiveKind::Box, {-0.06f, 0.f, 0.f}, {0.14f, 0.2f, 0.12f}, "#9aa5b1")},
-        {link("exit", "Exit point", {0.1f, 0.f, 0.f})}, "game_2026"));
+        {link("exit", "Exit point", {0.1f, 0.f, 0.f})}));
 
     cat.drivetrains = {{"swerve", {"Swerve", "Independently steered and driven modules."}},
                        {"tank", {"Tank", "Left / right skid steer."}},
@@ -252,6 +251,32 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
     cat.pluginSchema.properties.properties = {
         integer("preloadFuel", "Preloaded fuel", "Robot", 8, 0, 100, "Fuel the robot starts a match with."),
         num("fuelDiameterM", "Fuel diameter", "Fuel", PropertyUnit::Meters, 0.15, 0.05, 0.4, 0.005)};
+
+    // ---- zone kinds the plugin owns ----
+    sdk::ZoneKindInfo pickup;
+    pickup.kind = "game_2026.pickup";
+    pickup.displayName = "Pickup";
+    pickup.description = "Absorbs field fuel inside its volume while it is active.";
+    pickup.shape = sdk::ZoneShape::Volume;
+    pickup.properties.properties = {integer("capacity", "Capacity (fuel)", "Pickup", 30, 1, 100),
+                                    num("absorbRateHz", "Absorb rate", "Pickup", PropertyUnit::Hertz, 10.0, 0.5, 60.0, 0.5)};
+    pickup.defaultSizeM = {0.4f, 0.6f, 0.25f};
+    pickup.defaultLocal.position = {0.3f, 0.f, 0.f};
+    pickup.color = "#ff9944";
+    cat.zoneKinds.push_back(pickup);
+
+    sdk::ZoneKindInfo shooter;
+    shooter.kind = "game_2026.shooter";
+    shooter.displayName = "Shooter";
+    shooter.description = "Launches fuel from its muzzle along +X while it is active.";
+    shooter.shape = sdk::ZoneShape::Muzzle;
+    shooter.properties.properties = {num("fireRateHz", "Fire rate", "Shooter", PropertyUnit::Hertz, 8.0, 0.5, 30.0, 0.5),
+                                     num("exitSpeedMps", "Exit speed", "Shooter", PropertyUnit::MetersPerSecond, 10.0, 1.0, 30.0, 0.5),
+                                     num("spreadRad", "Spread", "Shooter", PropertyUnit::Radians, 0.05, 0.0, 0.5, 0.01)};
+    shooter.defaultLocal.position = {0.1f, 0.f, 0.f};
+    shooter.color = "#d1495b";
+    cat.zoneKinds.push_back(shooter);
+
     sdk::Box3 hopper;
     hopper.pose.position = {-0.05f, 0.f, 0.f};
     hopper.sizeM = {0.4f, 0.5f, 0.3f};
@@ -266,12 +291,12 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
     hopperPanel.order = 1;
     cat.pluginPanels.push_back(hopperPanel);
 
-    // A mechanism-scope panel: only mechanisms of the listed (plugin) templates get it.
+    // A mechanism-scope panel: only mechanisms of the listed templates get it.
     sdk::EditorPanelDescriptor aiming;
     aiming.id = "game_2026.aiming";
     aiming.title = "Aiming";
     aiming.scope = sdk::PanelScope::Mechanism;
-    aiming.mechanismTypes = {"game_2026.fuel_shooter"};
+    aiming.mechanismTypes = {"sample.shooter"};
     aiming.properties.properties = {num("hoodAngleRad", "Hood angle", "Aiming", PropertyUnit::Radians, 0.7, 0.0, 1.5, 0.01)};
     aiming.order = 2;
     cat.pluginPanels.push_back(aiming);
@@ -324,7 +349,7 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
         c.mechanisms.push_back(std::move(m));
         return &c.mechanisms.back();
     };
-    auto* intake = add("game_2026.fuel_intake", "intake", "Intake", {0.50f, 0.f, -0.06f});
+    auto* intake = add("sample.intake", "intake", "Intake", {0.50f, 0.f, -0.06f});
     intake->mappings.push_back({{"intake", "motor"}, {"phoenix6", "talonfx", 10, "canivore", -1}});
     auto* indexer = add("mechanism", "indexer", "Indexer", {0.05f, 0.f, -0.04f});
     indexer->geometry = {prim("belt", sdk::PrimitiveKind::Box, {0.f, 0.f, 0.f}, {0.3f, 0.12f, 0.05f}, "#6aa6d8")};
@@ -333,13 +358,42 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
     turret->properties["maxPosition"] = 3.14;
     turret->properties["gearRatio"] = 40.0;
     turret->geometry = {prim("ring", sdk::PrimitiveKind::Cylinder, {0.f, 0.f, 0.02f}, {}, "#7e8fa3", 0.12f, 0.04f)};
-    auto* shooter = add("game_2026.fuel_shooter", "shooter", "Shooter", {0.02f, 0.f, 0.06f}, "turret", "mover");
+    auto* shooter = add("sample.shooter", "shooter", "Shooter", {0.02f, 0.f, 0.06f}, "turret", "mover");
     shooter->mappings.push_back({{"shooter", "flywheel"}, {"phoenix6", "talonfx", 11, "canivore", -1}});
     auto* climber = add("mechanism", "climber", "Climber", {-0.33f, 0.28f, -0.05f});
     climber->properties["motion"] = "linear";
     climber->properties["maxPosition"] = 0.6;
     climber->geometry = {prim("rail", sdk::PrimitiveKind::Box, {0.f, 0.f, 0.3f}, {0.05f, 0.1f, 0.6f}, "#9aa5b1"),
                          prim("carriage", sdk::PrimitiveKind::Box, {0.04f, 0.f, 0.05f}, {0.06f, 0.12f, 0.08f}, "#e9a23b")};
+
+    // Zones the game plugin owns: a pickup volume in front of the intake, and the muzzle riding on the turret.
+    const auto condition = [](const char* mechanism, double threshold) {
+        sdk::ZoneCondition cond;
+        cond.mechanismId = mechanism;
+        cond.threshold = threshold;
+        return cond;
+    };
+    sdk::ZoneConfig pickup;
+    pickup.id = "pickup";
+    pickup.kind = "game_2026.pickup";
+    pickup.label = "Pickup";
+    pickup.attachment.parentMechanismId = "intake";
+    pickup.local.position = {0.25f, 0.f, 0.f};
+    pickup.sizeM = {0.4f, 0.6f, 0.25f};
+    pickup.properties = sdk::defaultsOf(cat.findZoneKind(pickup.kind)->properties);
+    pickup.activation.conditions = {condition("intake", 20.0)};
+    c.zones.push_back(std::move(pickup));
+
+    sdk::ZoneConfig muzzle;
+    muzzle.id = "muzzle";
+    muzzle.kind = "game_2026.shooter";
+    muzzle.label = "Shooter muzzle";
+    muzzle.attachment.parentMechanismId = "turret";
+    muzzle.attachment.parentLink = "mover";
+    muzzle.local.position = {0.12f, 0.f, 0.06f};
+    muzzle.properties = sdk::defaultsOf(cat.findZoneKind(muzzle.kind)->properties);
+    muzzle.activation.conditions = {condition("shooter", 30.0), condition("indexer", 5.0)};
+    c.zones.push_back(std::move(muzzle));
     return c;
 }
 
@@ -430,8 +484,46 @@ std::vector<sdk::Issue> FakeEditorBackend::validate(const sdk::RobotConfig& c) c
             if (issue.severity == sdk::Severity::Error || issue.message != "unknown property") out.push_back(std::move(issue));
     }
     for (auto& issue : sdk::validateMechanismAttachments(c, factory_)) out.push_back(std::move(issue));
+    for (auto& issue : validateZones(c)) out.push_back(std::move(issue));
     for (auto& issue : sdk::validateDeviceAliases(c.allMappings())) out.push_back(std::move(issue));
     if (c.chassis.massKg < 10.f) out.push_back({sdk::Severity::Warning, "chassis.massKg", "chassis mass below 10 kg is unusual for an FRC robot", {}});
+    return out;
+}
+
+std::vector<sdk::Issue> FakeEditorBackend::validateZones(const sdk::RobotConfig& c) const {
+    std::vector<sdk::Issue> out;
+    for (std::size_t i = 0; i < c.zones.size(); ++i) {
+        const sdk::ZoneConfig& z = c.zones[i];
+        const std::string base = "zones[" + std::to_string(i) + "]";
+        if (z.id.empty() || c.findMechanism(z.id) != nullptr)
+            out.push_back({sdk::Severity::Error, base + ".id", "zone id must be unique and not a mechanism id", "zone_id_duplicate"});
+        const sdk::MechanismAttachment att = z.attachment;
+        if (!att.onChassis()) {
+            const sdk::MechanismConfig* parent = c.findMechanism(att.parentMechanismId);
+            const sdk::MechanismTemplateInfo* info = parent != nullptr ? catalog_.findTemplate(parent->type) : nullptr;
+            if (parent == nullptr)
+                out.push_back({sdk::Severity::Error, base + ".attachment", "parent mechanism '" + att.parentMechanismId + "' does not exist",
+                               sdk::validation_code::kAttachmentParentMissing});
+            else if (info != nullptr && !sdk::hasLink(*info, att.parentLink))
+                out.push_back({sdk::Severity::Error, base + ".attachment", "mechanism '" + parent->id + "' has no link '" + att.parentLink + "'",
+                               sdk::validation_code::kAttachmentLinkMissing});
+        } else if (att.parentLink != sdk::kRootLink) {
+            out.push_back({sdk::Severity::Error, base + ".attachment", "the chassis only exposes the link 'root'", sdk::validation_code::kAttachmentLinkMissing});
+        }
+        const sdk::ZoneKindInfo* kind = catalog_.findZoneKind(z.kind);
+        if (kind == nullptr)
+            out.push_back({sdk::Severity::Warning, base + ".kind", "unknown zone kind '" + z.kind + "'", "zone_kind_unknown"});
+        else
+            for (auto& issue : sdk::validateProperties(kind->properties, z.properties, base + ".properties"))
+                if (issue.severity == sdk::Severity::Error || issue.message != "unknown property") {
+                    if (issue.code.empty()) issue.code = "zone_property_invalid";
+                    out.push_back(std::move(issue));
+                }
+        for (std::size_t j = 0; j < z.activation.conditions.size(); ++j)
+            if (c.findMechanism(z.activation.conditions[j].mechanismId) == nullptr)
+                out.push_back({sdk::Severity::Warning, base + ".activation.conditions[" + std::to_string(j) + "].mechanism",
+                               "condition mechanism '" + z.activation.conditions[j].mechanismId + "' does not exist", "zone_condition_mechanism_unknown"});
+    }
     return out;
 }
 

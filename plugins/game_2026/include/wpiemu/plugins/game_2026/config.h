@@ -2,7 +2,7 @@
 
 // Plugin section "game_2026" of robot.json: parsing, defaults and the PropertySchema the generic
 // inspector renders. Per-intake / per-shooter parameters are NOT here: they are properties of the
-// mechanism instances (fuel_intake.h / fuel_shooter.h) so several of each can exist.
+// robot zones (fuel_zones.h) so several of each can exist.
 
 #include <string>
 

@@ -321,6 +321,10 @@ TEST_CASE("page: the Chassis node starts collapsed and is revealed when one of i
     CHECK_FALSE(tree->isExpanded(model->indexForKey(QStringLiteral("drivetrain"))));
     f.c().selection().set(SelectionRef::com());
     CHECK(tree->isExpanded(model->indexForKey(QStringLiteral("chassis"))));
+    CHECK_FALSE(tree->isExpanded(model->indexForKey(QStringLiteral("drivetrain"))));
+    f.c().selection().set(SelectionRef::wheel("fl"));
+    CHECK(tree->isExpanded(model->indexForKey(QStringLiteral("drivetrain"))));
+    CHECK(tree->currentIndex() == model->indexFor(SelectionRef::wheel("fl")));
 }
 
 TEST_CASE("page: selecting a mechanism shows its slots and generated property forms") {

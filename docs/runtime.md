@@ -46,6 +46,12 @@ tests/runtime/                    doctest suite (fixtures in runtime_fixtures.h,
                     "mount": { "position": {..}, "rotation": {x,y,z,w} }, "geometry": [ ... ],
                     "properties": { ... }, "mappings": [ ... ] } ],
   "robotMappings": [ { "owner": "robot", "slot": "imu", "device": {..} } ],
+  "zones": [ { "id": "pickup", "kind": "game_2026.pickup", "label": "",
+               "attachment": { "parentMechanismId": "chassis", "parentLink": "root" },
+               "pose": { "position": {..}, "rotation": {x,y,z,w} }, "sizeM": {x,y,z}, "properties": { ... },
+               "activation": { "mode": "all",
+                               "conditions": [ { "mechanism": "flywheel", "value": "velocity", "op": "above",
+                                                 "threshold": 100, "tolerance": 0.1, "absolute": true } ] } } ],
   "battery": { "nominalVoltageV": 12.6, "internalResistanceOhm": 0.015, "brownoutVoltageV": 6.8 },
   "sim": { "stepUs": 5000, "seed": 1, "physics": { "workerCount": 1, "subSteps": 4, "sleeping": true, "gravity": {..} } },
   "plugins": { "game_2026": { "schemaVersion": 1, "data": { ... } } }
@@ -78,9 +84,29 @@ SDK codes (`device_alias_conflict`, `attachment_*`, `mechanism_id_reserved`) plu
 `slot_unknown` (W for the `robot` owner), `slot_required_unmapped` (Error for mechanisms, Warning for drivetrain slots),
 `slot_duplicate_mapping`, `device_duplicate_mapping`, `slot_device_incompatible` (needs a capability lookup, unknown
 devices are skipped), `battery_invalid`, `sim_invalid` (step must divide 20 ms), `plugin_not_found` (W),
-`plugin_section_unknown` (W), `plugin_section_version_unsupported`, `plugin_property_invalid`.
+`plugin_section_unknown` (W), `plugin_section_version_unsupported`, `plugin_property_invalid`, and the zone codes of
+"Zones" below.
 Drivetrain slot names follow the convention `"<wheel>.drive"`, `"<wheel>.drive2"`.. (one per `driveMotorCount`, up to 8) / `"<wheel>.steer"` (steer for swerve/steered wheels), robot slot `"imu"`.
 A mapping may carry `"reversed": true` (Motor slots only, omitted when false): the controller spins against the mechanism's positive direction, and the hub negates its command and rotor feedback ([ADR 0014](decisions/0014-multi-motor-gearboxes.md)). New codes: `slot_motor_inactive` (W, a mapped motor above the motor count), `slot_reversed_invalid` (W, `reversed` on a non-motor slot).
+
+### Zones (`RobotConfig::zones`)
+
+A zone ([ADR 0016](decisions/0016-zones.md), `sdk/config/zone.h`) is a game-owned place on the robot (a pickup volume,
+a muzzle): `kind` and `properties` belong to the plugin that owns the kind (`<plugin id>.<name>`, declared through
+`IGameModule::contributeZoneKinds()` as `ZoneKindInfo`), core only handles structure. It hangs on the chassis or a
+mechanism link through `attachment` (same shape and link rules as a mechanism) at `pose`; `sizeM` is the box of a
+`Volume` kind. `activation` lists conditions on values mechanisms publish (`mechanism`, `value` = a `NamedValue` name,
+`op` = `above|below|within`, SI `threshold`, `tolerance` for `within`, `absolute` compares `|v|`) combined with
+`mode` `all` (AND) or `any` (OR); no conditions = always active. Evaluate with `evaluateActivation`
+(`sdk/game/zone_activation.h`, an unpublished value falls back to the mechanism's `active` flag). `zones` may be
+absent on load (= none) and is always written. The pipeline fills `properties` defaults from the kind's schema.
+
+Validator codes: `zone_id_invalid` (empty id), `zone_id_duplicate` (also an id equal to a mechanism id),
+`zone_kind_not_owned` (no plugin selected, or the kind lacks the selected plugin's `<id>.` prefix), `zone_kind_unknown`
+(W, owned prefix but not declared; properties are not checked), `zone_property_invalid`, `zone_geometry_invalid`
+(non-finite pose, or a Volume size <= 0), `zone_condition_invalid` (empty value name, non-finite threshold, negative
+tolerance), `zone_condition_mechanism_unknown` (W). Attachment problems reuse `attachment_parent_missing` /
+`attachment_link_missing` with the path `zones[i].attachment`.
 
 ### Load pipeline
 

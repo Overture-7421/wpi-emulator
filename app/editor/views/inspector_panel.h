@@ -21,6 +21,8 @@
 
 namespace wpiemu::app::editor {
 
+class ActivationCard;
+
 class InspectorPanel : public QWidget {
     Q_OBJECT
 public:
@@ -34,6 +36,7 @@ public:
     }
     QLineEdit* nameEdit() const { return nameEdit_; }
     int rebuildCount() const { return rebuilds_; }
+    ActivationCard* activationCard() const { return activationCard_; }
 
 private:
     void rebuild();
@@ -48,6 +51,7 @@ private:
     void commitName(const SelectionRef& target, const QString& text);
     QString editableName(const SelectionRef& target) const;
     void addPartCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
+    void addZoneCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
     void addHeader(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
     void addShapes(const std::string& owner);
     void addChildren(const std::string& mechanismId);
@@ -63,6 +67,7 @@ private:
     QLabel* title_ = nullptr;
     QLineEdit* nameEdit_ = nullptr;
     QMap<QString, QPair<int, QString>> issues_;
+    ActivationCard* activationCard_ = nullptr;
     std::vector<PropertyFormWidget*> forms_;
     std::vector<DeviceRowWidget*> slotRows_;
     QString signature_;

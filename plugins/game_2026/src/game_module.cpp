@@ -1,5 +1,5 @@
 // 2026 (REBUILT) game module: the thin IGameModule facade over the plugin's parts (field layout,
-// fuel game state, 2026 mechanisms, config schema, HUD/editor descriptors). The module
+// fuel game state, zone kinds, config schema, HUD/editor descriptors). The module
 // itself holds no session state.
 #include <memory>
 #include <string>
@@ -7,8 +7,7 @@
 
 #include "wpiemu/plugins/game_2026/config.h"
 #include "wpiemu/plugins/game_2026/field_layout.h"
-#include "wpiemu/plugins/game_2026/fuel_intake.h"
-#include "wpiemu/plugins/game_2026/fuel_shooter.h"
+#include "wpiemu/plugins/game_2026/fuel_zones.h"
 #include "wpiemu/plugins/game_2026/game_state.h"
 #include "wpiemu/plugins/game_2026/game_ui.h"
 #include "wpiemu/plugins/game_2026/plugin.h"
@@ -33,10 +32,8 @@ public:
         return m;
     }
 
-    sdk::Status registerMechanisms(sdk::MechanismFactory& factory) override {
-        if (sdk::Status s = factory.registerTemplate(fuelIntakeTemplate(), createFuelIntake); !s) return s;
-        return factory.registerTemplate(fuelShooterTemplate(), createFuelShooter);
-    }
+    // The plugin owns zone kinds, not mechanism templates: the pickup and the shooter are RobotConfig::zones.
+    sdk::Status registerMechanisms(sdk::MechanismFactory&) override { return sdk::okStatus(); }
 
     sdk::Result<std::unique_ptr<sdk::IField>> createField(sdk::IPhysicsWorld& world) override {
         auto field = Game2026Field::create(world, buildFieldLayout());
@@ -56,6 +53,7 @@ public:
 
     std::vector<sdk::EditorPanelDescriptor> contributeEditorPanels() const override { return editorPanels(); }
     std::vector<sdk::HudWidgetDescriptor> contributeHud() const override { return hudWidgets(); }
+    std::vector<sdk::ZoneKindInfo> contributeZoneKinds() const override { return zoneKinds(); }
 
     // All per-tick game logic lives in Game2026State::step (it needs per-session state).
     void onTick(sdk::SimContext&, double) override {}

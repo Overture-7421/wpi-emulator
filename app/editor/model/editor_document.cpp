@@ -112,6 +112,74 @@ bool EditorDocument::reparentMechanism(const QString& id, const QString& newPare
     });
 }
 
+QString EditorDocument::addZone(const QString& kind, const sdk::MechanismAttachment& attachment) {
+    const sdk::ZoneKindInfo* info = catalog_.findZoneKind(kind.toStdString());
+    if (info == nullptr) return {};
+    std::string id;
+    edit(ETR("Add %1").arg(QString::fromStdString(info->displayName)), [&](sdk::RobotConfig& c) {
+        id = ops::addZone(c, catalog_, *info, attachment);
+        return !id.empty();
+    });
+    return QString::fromStdString(id);
+}
+
+bool EditorDocument::removeZone(const QString& id) {
+    const std::string sid = id.toStdString();
+    const sdk::ZoneConfig* z = config_.findZone(sid);
+    if (z == nullptr) return false;
+    const QString name = QString::fromStdString(ops::zoneDisplayName(*z, catalog_));
+    return edit(ETR("Remove %1").arg(name), [&](sdk::RobotConfig& c) { return ops::removeZone(c, sid); });
+}
+
+QString EditorDocument::duplicateZone(const QString& id) {
+    const std::string sid = id.toStdString();
+    const sdk::ZoneConfig* z = config_.findZone(sid);
+    if (z == nullptr) return {};
+    const QString name = QString::fromStdString(ops::zoneDisplayName(*z, catalog_));
+    std::string created;
+    edit(ETR("Duplicate %1").arg(name), [&](sdk::RobotConfig& c) {
+        created = ops::duplicateZone(c, sid);
+        return !created.empty();
+    });
+    return QString::fromStdString(created);
+}
+
+bool EditorDocument::reattachZone(const QString& id, const QString& newParent, const QString& link) {
+    const std::string sid = id.toStdString();
+    const sdk::ZoneConfig* z = config_.findZone(sid);
+    if (z == nullptr) return false;
+    const QString name = QString::fromStdString(ops::zoneDisplayName(*z, catalog_));
+    return edit(ETR("Attach %1").arg(name), [&](sdk::RobotConfig& c) {
+        return ops::reattachZone(c, catalog_, sid, newParent.toStdString(), link.toStdString());
+    });
+}
+
+int EditorDocument::addZoneCondition(const QString& zoneId) {
+    const std::string sid = zoneId.toStdString();
+    int index = -1;
+    edit(ETR("Add condition"), [&](sdk::RobotConfig& c) {
+        index = ops::addZoneCondition(c, sid);
+        return index >= 0;
+    });
+    return index;
+}
+
+bool EditorDocument::removeZoneCondition(const QString& zoneId, int index) {
+    const std::string sid = zoneId.toStdString();
+    return edit(ETR("Remove condition"), [&](sdk::RobotConfig& c) { return ops::removeZoneCondition(c, sid, index); });
+}
+
+bool EditorDocument::setZoneCondition(const QString& zoneId, int index, const sdk::ZoneCondition& condition) {
+    const std::string sid = zoneId.toStdString();
+    return edit(ETR("Edit condition"), [&](sdk::RobotConfig& c) { return ops::setZoneCondition(c, sid, index, condition); },
+                QStringLiteral("zcond:%1:%2").arg(zoneId).arg(index));
+}
+
+bool EditorDocument::setZoneActivationMode(const QString& zoneId, sdk::ActivationMode mode) {
+    const std::string sid = zoneId.toStdString();
+    return edit(ETR("Edit activation"), [&](sdk::RobotConfig& c) { return ops::setZoneActivationMode(c, sid, mode); });
+}
+
 bool EditorDocument::mapSlot(const sdk::SlotAddress& slot, const sdk::DeviceKey& device) {
     return edit(ETR("Map %1").arg(QString::fromStdString(ops::slotDisplayName(config_, catalog_, slot))),
                 [&](sdk::RobotConfig& c) { return ops::setMapping(c, slot, device); });

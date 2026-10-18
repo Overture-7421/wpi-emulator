@@ -28,11 +28,12 @@ The app selects the plugin from the project's GradleRIO year (`RobotConfig::proj
 | Method | You provide | Notes |
 |---|---|---|
 | `metadata()` | `id` (`game_<year>`), `displayName`, `year`, `description`, `minSdkMinor` | `year` must be > 0 (only ids starting with `_` may use 0). Set `minSdkMinor` only if you need a newer SDK minor |
-| `registerMechanisms(factory)` | season-specific mechanism templates | keys **must** be `"<id>.<name>"`. Prefer thin wrappers that read the user's generic mechanisms (roller, flywheel, ...) through `IMechanismDirectory` and their published `MechanismState` values over re-implementing physics (see `fuel_intake.h`) |
+| `registerMechanisms(factory)` | season-specific mechanism templates | keys **must** be `"<id>.<name>"`. Prefer thin wrappers that read the user's generic mechanisms (roller, flywheel, ...) through `IMechanismDirectory` and their published `MechanismState` values over re-implementing physics (game_2026 has none: its pickup and shooter are zones, see `fuel_zones.h`) |
 | `createField(world)` | static colliders + sensor volumes in the `IPhysicsWorld`, `FieldDescription` visuals | return an `IField` that owns them (RAII); it is destroyed before the world. Use `layer::Field`, `layer::Sensor`, `layer::Fuel`/own bits >= `layer::kPluginBase`; remember sensors need `sensorEvents` on **both** shapes and matching masks (ADR 0003) |
 | `createGameState(ctx)` | the rules and entities for one session | `reset` restores the initial layout, `step` runs after the physics step, `publish` adds HUD values / entity groups to the snapshot |
 | `contributeConfigSchema()` | `PluginConfigSchema{schemaVersion, PropertySchema, groupOrder}` | persisted under `RobotConfig::plugins["game_<year>"]`; rendered by the generic inspector; core validates it |
 | `contributeEditorPanels()` / `contributeHud()` | Qt-free descriptors | `PanelScope::PluginConfig` or `Mechanism` (with viewport overlays); HUD widgets bind to `SnapshotBuilder::setHud` keys |
+| `contributeZoneKinds()` | `std::vector<ZoneKindInfo>` | optional; kinds are `"<id>.<name>"`, persisted as `RobotConfig::zones` (ADR 0016); core validates ownership, attachment and properties |
 | `onTick(ctx, dt)` | rarely needed | per-tick hook after `IGameState::step`; keep logic in the game state |
 
 Per-tick order (docs/ARCHITECTURE.md §4): hub ingest -> mechanisms -> drivetrain -> physics step -> `IGameState::step`
@@ -74,5 +75,5 @@ update the defaults, tests and docs together.
 ## 6. Distribution notes
 
 v1 supports **static built-in** plugins only (one toolchain/CRT): the SDK exposes C++ virtual interfaces that are not a
-stable ABI across separately built libraries (docs/ARCHITECTURE.md §4.6). A shared-library loader would need a versioned
+stable ABI across separately built libraries (docs/ARCHITECTURE.md §4.7). A shared-library loader would need a versioned
 `extern "C"` entry descriptor first; do not export C++ types across a DLL boundary.

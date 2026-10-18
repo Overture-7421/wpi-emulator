@@ -60,6 +60,12 @@ struct HudValue {
     Value value;
 };
 
+// Runtime state of one robot zone (RobotConfig::zones): whether its activation currently holds.
+struct ZoneState {
+    std::string id;       // ZoneConfig::id
+    bool active = false;
+};
+
 class ISimSnapshot {
     WPIEMU_INTERFACE(ISimSnapshot)
 public:
@@ -74,6 +80,8 @@ public:
     virtual std::span<const EntityGroupSample> entityGroups() const = 0;
     virtual std::span<const MechanismState> mechanisms() const = 0;
     virtual std::span<const HudValue> hud() const = 0;
+    // Activation state of the robot's zones (empty when the game defines none).
+    virtual std::span<const ZoneState> zones() const { return {}; }
     virtual std::span<const DiscoveredDevice> devices() const = 0;
     virtual std::span<const HubWarning> warnings() const = 0;
 
@@ -101,6 +109,7 @@ struct SimSnapshotData {
     std::vector<EntityGroupSample> entityGroups;
     std::vector<MechanismState> mechanisms;
     std::vector<HudValue> hud;
+    std::vector<ZoneState> zones;
     std::vector<DiscoveredDevice> devices;
     std::vector<HubWarning> warnings;
     double batteryVoltageV = 12.6;
@@ -122,6 +131,7 @@ public:
     std::span<const EntityGroupSample> entityGroups() const override { return d_.entityGroups; }
     std::span<const MechanismState> mechanisms() const override { return d_.mechanisms; }
     std::span<const HudValue> hud() const override { return d_.hud; }
+    std::span<const ZoneState> zones() const override { return d_.zones; }
     std::span<const DiscoveredDevice> devices() const override { return d_.devices; }
     std::span<const HubWarning> warnings() const override { return d_.warnings; }
     double batteryVoltageV() const override { return d_.batteryVoltageV; }
@@ -139,6 +149,7 @@ public:
 
     void addBody(BodySample b) { data_.bodies.push_back(std::move(b)); }
     void addMechanism(MechanismState m) { data_.mechanisms.push_back(std::move(m)); }
+    void addZone(ZoneState z) { data_.zones.push_back(std::move(z)); }
     EntityGroupSample& addEntityGroup(EntityGroupSample g) {
         data_.entityGroups.push_back(std::move(g));
         return data_.entityGroups.back();

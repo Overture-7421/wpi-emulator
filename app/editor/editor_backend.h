@@ -29,6 +29,7 @@
 #include "wpiemu/sdk/core/result.h"
 #include "wpiemu/sdk/devices/discovered_device.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
+#include "wpiemu/sdk/game/zone_kind.h"
 #include "wpiemu/sdk/mechanisms/mechanism.h"
 #include "wpiemu/sdk/physics/drivetrain.h"
 #include "wpiemu/sdk/telemetry/snapshot.h"
@@ -50,10 +51,16 @@ struct EditorCatalog {
     std::string pluginDisplayName;
     sdk::PluginConfigSchema pluginSchema;                          // edited under RobotConfig::plugins[pluginId]
     std::vector<sdk::EditorPanelDescriptor> pluginPanels;
+    std::vector<sdk::ZoneKindInfo> zoneKinds;                      // zone kinds the selected plugin owns (pickup, muzzle, ...)
 
     const sdk::MechanismTemplateInfo* findTemplate(std::string_view type) const {
         for (const auto& t : mechanismTemplates)
             if (t.type == type) return &t;
+        return nullptr;
+    }
+    const sdk::ZoneKindInfo* findZoneKind(std::string_view kind) const {
+        for (const auto& k : zoneKinds)
+            if (k.kind == kind) return &k;
         return nullptr;
     }
     bool hasPlugin() const { return !pluginId.empty(); }

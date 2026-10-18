@@ -78,6 +78,7 @@ inline QString busLabel(const std::string& bus) { return bus.empty() ? QStringLi
 // ---- drag-and-drop payloads -------------------------------------------------------------------
 inline constexpr const char* kDeviceMime = "application/x-wpiemu-device";
 inline constexpr const char* kMechanismMime = "application/x-wpiemu-mechanism";
+inline constexpr const char* kZoneMime = "application/x-wpiemu-zone";
 
 struct DevicePayload {
     sdk::DeviceKey key;

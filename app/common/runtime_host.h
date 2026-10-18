@@ -76,6 +76,7 @@ struct HostScene {
     std::shared_ptr<const sdk::FieldDescription> field;   // null = generic floor
     std::vector<sdk::HudWidgetDescriptor> hud;
     std::vector<sdk::EditorPanelDescriptor> panels;
+    std::vector<sdk::ZoneKindInfo> zoneKinds;             // the game module's contributeZoneKinds()
     QString gameName;
 };
 

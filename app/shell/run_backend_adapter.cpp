@@ -66,6 +66,7 @@ runview::RunSceneInfo RunBackendAdapter::sceneInfo() const {
     out.field = scene.field;
     out.hud = scene.hud;
     out.panels = scene.panels;
+    out.zoneKinds = scene.zoneKinds;
     out.gameName = scene.gameName;
     return out;
 }

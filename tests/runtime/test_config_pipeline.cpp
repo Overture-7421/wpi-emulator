@@ -276,6 +276,100 @@ TEST_CASE("validator: plugin sections - unknown, unsupported version, invalid da
     CHECK(hasIssue(validate(missing, reg), issue_code::kPluginNotFound, Severity::Warning));
 }
 
+namespace {
+ZoneConfig zone(const std::string& id) {
+    ZoneConfig z;
+    z.id = id;
+    z.kind = "fake_game.fake_zone";
+    return z;
+}
+}  // namespace
+
+TEST_CASE("validator: a well-formed zone is clean") {
+    Registries reg;
+    RobotConfig c = sampleConfig();
+    ZoneConfig z = zone("pickup");
+    z.attachment.parentMechanismId = "intake";
+    z.attachment.parentLink = "tip";
+    z.properties["capacity"] = 10;
+    z.activation.conditions.push_back({"intake", "position", ConditionOp::Above, 1.0, 0.1, true});
+    c.zones.push_back(z);
+    const auto issues = validate(c, reg);
+    for (const Issue& i : issues) MESSAGE(i.path << ": " << i.message << " [" << i.code << "]");
+    CHECK(issues.empty());
+}
+
+TEST_CASE("validator: zone ids, attachments, kinds and geometry") {
+    Registries reg;
+    RobotConfig c = sampleConfig();
+    c.zones.push_back(zone(""));
+    c.zones.push_back(zone("dup"));
+    c.zones.push_back(zone("dup"));
+    c.zones.push_back(zone("intake"));  // clashes with a mechanism id
+    ZoneConfig noParent = zone("noParent");
+    noParent.attachment.parentMechanismId = "ghost";
+    c.zones.push_back(noParent);
+    ZoneConfig noLink = zone("noLink");
+    noLink.attachment.parentMechanismId = "intake";
+    noLink.attachment.parentLink = "nolink";
+    c.zones.push_back(noLink);
+    ZoneConfig foreign = zone("foreign");
+    foreign.kind = "other_game.pickup";
+    c.zones.push_back(foreign);
+    ZoneConfig flat = zone("flat");
+    flat.sizeM.y = 0.f;
+    c.zones.push_back(flat);
+    ZoneConfig nan = zone("nan");
+    nan.local.position.x = std::numeric_limits<float>::quiet_NaN();
+    c.zones.push_back(nan);
+
+    const auto issues = validate(c, reg);
+    const auto count = [&](const char* code, const std::string& pathPart) {
+        return std::count_if(issues.begin(), issues.end(), [&](const Issue& i) {
+            return i.code == code && i.severity == Severity::Error && i.path.find(pathPart) != std::string::npos;
+        });
+    };
+    CHECK(count(issue_code::kZoneIdInvalid, "zones[0].id") == 1);
+    CHECK(count(issue_code::kZoneIdDuplicate, "zones[2].id") == 1);
+    CHECK(count(issue_code::kZoneIdDuplicate, "zones[3].id") == 1);
+    CHECK(count(validation_code::kAttachmentParentMissing, "zones[4].attachment") == 1);
+    CHECK(count(validation_code::kAttachmentLinkMissing, "zones[5].attachment") == 1);
+    CHECK(count(issue_code::kZoneKindNotOwned, "zones[6].kind") == 1);
+    CHECK(count(issue_code::kZoneGeometryInvalid, "zones[7].sizeM") == 1);
+    CHECK(count(issue_code::kZoneGeometryInvalid, "zones[8].local") == 1);
+}
+
+TEST_CASE("validator: zones need a game plugin and are checked against its kind schema") {
+    RobotConfig c = sampleConfig();
+    c.zones.push_back(zone("pickup"));
+    {
+        Registries none(false);
+        CHECK(hasIssue(validate(c, none), issue_code::kZoneKindNotOwned));
+    }
+    Registries reg;
+    c.zones[0].properties["capacity"] = 1000;  // schema max 100
+    CHECK(hasIssue(validate(c, reg), issue_code::kZonePropertyInvalid));
+    c.zones[0].properties["capacity"] = 5;
+    CHECK_FALSE(ConfigValidator::hasErrors(validate(c, reg)));
+    // owned prefix but not declared: warning only, properties cannot be checked
+    c.zones[0].kind = "fake_game.mystery";
+    CHECK(hasIssue(validate(c, reg), issue_code::kZoneKindUnknown, Severity::Warning));
+    CHECK_FALSE(ConfigValidator::hasErrors(validate(c, reg)));
+}
+
+TEST_CASE("validator: zone activation conditions") {
+    Registries reg;
+    RobotConfig c = sampleConfig();
+    ZoneConfig z = zone("shooter");
+    z.activation.conditions.push_back({"ghost", "velocity", ConditionOp::Above, 1.0, 0.1, true});
+    z.activation.conditions.push_back({"intake", "", ConditionOp::Above, 1.0, 0.1, true});
+    c.zones.push_back(z);
+    const auto issues = validate(c, reg);
+    CHECK(hasIssue(issues, issue_code::kZoneConditionMechanismUnknown, Severity::Warning));
+    CHECK(hasIssue(issues, issue_code::kZoneConditionInvalid));
+    CHECK(std::count_if(issues.begin(), issues.end(), [](const Issue& i) { return i.code == issue_code::kZoneConditionMechanismUnknown; }) == 1);
+}
+
 TEST_CASE("validator: schema version must match") {
     Registries reg;
     RobotConfig c = sampleConfig();
@@ -354,4 +448,13 @@ TEST_CASE("pipeline: validation problems come back as issues next to the config"
 TEST_CASE("pipeline: parse errors are fatal") {
     PipelineFixture f;
     CHECK_FALSE(f.pipeline.load(Value(1)).ok());
+}
+
+TEST_CASE("pipeline: zone property defaults are filled from the plugin's kind schema") {
+    PipelineFixture f;
+    RobotConfig c = sampleConfig();
+    c.zones.push_back(zone("pickup"));
+    const auto loaded = f.pipeline.load(f.stored(c));
+    REQUIRE_MESSAGE(loaded.ok(), (loaded.ok() ? "" : loaded.error().message));
+    CHECK(loaded.value().config.zones[0].properties.find("capacity")->asInt() == 3);
 }

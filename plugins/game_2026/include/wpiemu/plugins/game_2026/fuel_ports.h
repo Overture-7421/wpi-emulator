@@ -1,17 +1,13 @@
 #pragma once
 
-// Plugin-private contract between the 2026 mechanisms (fuel_intake / fuel_shooter) and the game
-// state: the mechanisms decide WHEN (active / feeding) and WHERE (zone / muzzle) from the robot's
-// other mechanisms; the game state owns the fuel and the meter and acts on it. The game state finds
-// the ports by mechanism type (never through core).
+// Plugin-private contract between the 2026 zone runtimes (fuel_zones.h: pickup / shooter) and the game
+// state: the zones decide WHEN (active / feeding) and WHERE (volume / muzzle) from the robot's
+// mechanisms; the game state owns the fuel and the meter and acts on it.
 
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/math.h"
 
 namespace wpiemu::plugins::game_2026 {
-
-inline constexpr const char* kIntakeType = "game_2026.fuel_intake";
-inline constexpr const char* kShooterType = "game_2026.fuel_shooter";
 
 class IFuelIntakePort {
 public:

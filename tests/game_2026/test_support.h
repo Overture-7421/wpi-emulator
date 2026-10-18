@@ -9,9 +9,11 @@
 #include <utility>
 #include <vector>
 
+#include "wpiemu/plugins/game_2026/fuel_zones.h"
 #include "wpiemu/plugins/game_2026/game_state.h"
 #include "wpiemu/plugins/game_2026/plugin.h"
 #include "wpiemu/sdk/game/plugin_registry.h"
+#include "wpiemu/sdk/game/zone_activation.h"
 #include "wpiemu/sdk/testing/fake_mechanism_directory.h"
 #include "wpiemu/sdk/testing/fake_physics_world.h"
 #include "wpiemu/sdk/testing/fake_sim_environment.h"
@@ -35,6 +37,7 @@ public:
         s.type = type_;
         s.active = active;
         s.values = values;
+        s.links = links;
         return s;
     }
     void set(const std::string& name, double value, const std::string& unit = "") {
@@ -48,16 +51,49 @@ public:
     }
     bool active = false;
     std::vector<sdk::NamedValue> values;
+    std::vector<sdk::LinkPose> links;
 
 private:
     std::string id_, type_;
 };
 
-inline sdk::Value boxValue(const sdk::Vec3& center, const sdk::Vec3& size) {
-    sdk::Box3 b;
-    b.pose.position = center;
-    b.sizeM = size;
-    return sdk::toValue(b);
+// Activation conditions on a mechanism's published value (SI): |value| > threshold / |value - position| <= tolerance.
+inline sdk::ZoneCondition above(const std::string& mechanism, double threshold, const std::string& value = "velocity") {
+    sdk::ZoneCondition c;
+    c.mechanismId = mechanism;
+    c.value = value;
+    c.op = sdk::ConditionOp::Above;
+    c.threshold = threshold;
+    return c;
+}
+
+inline sdk::ZoneCondition within(const std::string& mechanism, double position, double tolerance,
+                                 const std::string& value = "position") {
+    sdk::ZoneCondition c;
+    c.mechanismId = mechanism;
+    c.value = value;
+    c.op = sdk::ConditionOp::Within;
+    c.threshold = position;
+    c.tolerance = tolerance;
+    return c;
+}
+
+// A zone of one of the plugin's kinds on the chassis with the kind's usual pose; `local` / `sizeM` /
+// `activation` can be adjusted before Session::addZone.
+inline sdk::ZoneConfig makeZone(const std::string& id, const char* kind, sdk::Value properties = sdk::Value::makeObject(),
+                                std::vector<sdk::ZoneCondition> conditions = {}) {
+    sdk::ZoneConfig z;
+    z.id = id;
+    z.kind = kind;
+    z.properties = std::move(properties);
+    z.activation.conditions = std::move(conditions);
+    if (z.kind == plugins::game_2026::kPickupKind) {
+        z.local.position = {0.45f, 0.f, 0.2f};
+        z.sizeM = {0.30f, 0.60f, 0.40f};
+    } else {
+        z.local.position = {0.25f, 0.f, 0.55f};
+    }
+    return z;
 }
 
 // Forwards to a FakePhysicsWorld; can refuse bodies / meshes / shapes past a budget and records what
@@ -148,8 +184,9 @@ public:
         scripted_.push_back(std::make_unique<ScriptedMechanism>(id));
         return *scripted_.back();
     }
+    void addZone(sdk::ZoneConfig zone) { env.config.zones.push_back(std::move(zone)); }
 
-    // Registers templates, builds the field, the configured 2026 mechanisms and the game state.
+    // Registers templates, builds the field, the configured mechanisms and the game state (which builds its zones).
     void start() {
         if (extraTemplates) extraTemplates(factory);
         (void)module_->registerMechanisms(factory);

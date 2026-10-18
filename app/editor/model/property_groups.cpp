@@ -132,6 +132,72 @@ sdk::PropertySchema placementSchema(const sdk::RobotConfig& c, const EditorCatal
     return s;
 }
 
+sdk::PropertySchema zoneGeneralSchema() {
+    sdk::PropertySchema s;
+    PropertySpec label;
+    label.key = "label";
+    label.label = ETR("Label").toStdString();
+    label.description = ETR("Name shown in the project tree and the viewport.").toStdString();
+    label.type = PropertyType::String;
+    label.defaultValue = std::string();
+    s.properties.push_back(label);
+    return s;
+}
+
+sdk::PropertySchema zonePlacementSchema(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::ZoneConfig& z, bool volume) {
+    sdk::PropertySchema s;
+    PropertySpec parent;
+    parent.key = "parent";
+    parent.label = ETR("Attached to").toStdString();
+    parent.description = ETR("A zone moves with the part it is attached to. The placement is kept when you change it.").toStdString();
+    parent.type = PropertyType::Enum;
+    parent.group = ETR("Placement").toStdString();
+    parent.defaultValue = std::string(sdk::kChassisParent);
+    parent.options.push_back({sdk::kChassisParent, ETR("Chassis").toStdString()});
+    for (const auto& m : c.mechanisms) parent.options.push_back({m.id, ops::displayNameFor(m, catalog)});
+    const sdk::MechanismAttachment att = z.attachment;
+    if (!att.onChassis() && c.findMechanism(att.parentMechanismId) == nullptr)
+        parent.options.push_back({att.parentMechanismId, att.parentMechanismId + " " + ETR("(missing)").toStdString()});
+    s.properties.push_back(parent);
+
+    PropertySpec link;
+    link.key = "parentLink";
+    link.label = ETR("Attachment link").toStdString();
+    link.description = ETR("Named frame of the parent the zone hangs on (e.g. a turret's moving part).").toStdString();
+    link.type = PropertyType::Enum;
+    link.group = parent.group;
+    link.defaultValue = std::string(sdk::kRootLink);
+    link.options.push_back({sdk::kRootLink, ETR("Origin").toStdString()});
+    if (!att.onChassis())
+        if (const sdk::MechanismConfig* pm = c.findMechanism(att.parentMechanismId))
+            if (const auto* info = catalog.findTemplate(pm->type))
+                for (const auto& l : info->links) link.options.push_back({l.name, l.label.empty() ? l.name : l.label});
+    s.properties.push_back(link);
+
+    PropertySpec local;
+    local.key = "local";
+    local.label = ETR("Pose").toStdString();
+    local.description = ETR("Relative to the attachment link: x forward, y left, z up.").toStdString();
+    local.type = PropertyType::Pose3;
+    local.unit = PropertyUnit::Meters;
+    local.group = parent.group;
+    local.defaultValue = sdk::toValue(sdk::Pose3{});
+    s.properties.push_back(local);
+
+    if (volume) {
+        PropertySpec size;
+        size.key = "sizeM";
+        size.label = ETR("Size").toStdString();
+        size.description = ETR("Full extents of the volume along its own axes.").toStdString();
+        size.type = PropertyType::Vec3;
+        size.unit = PropertyUnit::Meters;
+        size.group = parent.group;
+        size.defaultValue = sdk::toValue(sdk::Vec3{0.3f, 0.3f, 0.3f});
+        s.properties.push_back(size);
+    }
+    return s;
+}
+
 }  // namespace
 
 SelectionRef formTargetOf(const sdk::RobotConfig& c, const SelectionRef& sel) {
@@ -222,6 +288,26 @@ std::vector<PropertyGroup> propertyGroupsFor(const sdk::RobotConfig& c, const Ed
                 out.push_back(groupOf("panel:" + panel->id, QString::fromStdString(panel->title), panel->properties, withDefaults(panel->properties, m->properties)));
             break;
         }
+        case SelKind::Zone: {
+            const sdk::ZoneConfig* z = c.findZone(sel.owner);
+            if (z == nullptr) break;
+            const sdk::ZoneKindInfo* info = catalog.findZoneKind(z->kind);
+            Value general = Value::makeObject();
+            general["label"] = z->label;
+            out.push_back(groupOf("zone.general", ETR("General"), zoneGeneralSchema(), std::move(general)));
+            const bool volume = info == nullptr || info->shape == sdk::ZoneShape::Volume;
+            Value placement = Value::makeObject();
+            const sdk::MechanismAttachment att = z->attachment;
+            placement["parent"] = att.onChassis() ? std::string(sdk::kChassisParent) : att.parentMechanismId;
+            placement["parentLink"] = att.parentLink;
+            placement["local"] = sdk::toValue(z->local);
+            placement["sizeM"] = sdk::toValue(z->sizeM);
+            out.push_back(groupOf("zone.placement", ETR("Placement"), zonePlacementSchema(c, catalog, *z, volume), std::move(placement)));
+            out.back().section = sdk::PropertySection::Placement;
+            if (info != nullptr && !info->properties.properties.empty())
+                out.push_back(groupOf("zone.props", QString::fromStdString(info->displayName), info->properties, withDefaults(info->properties, z->properties)));
+            break;
+        }
         case SelKind::Plugin: {
             if (!catalog.hasPlugin()) break;
             const sdk::PluginSection* section = c.findPlugin(catalog.pluginId);
@@ -249,6 +335,24 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
         if (list == nullptr || sel.index < 0 || sel.index >= static_cast<int>(list->size())) return false;
         spec::applyPrimitive((*list)[static_cast<std::size_t>(sel.index)], key, value);
         return true;
+    }
+    if (sel.kind == SelKind::Zone) {
+        sdk::ZoneConfig* z = ops::findZone(c, sel.owner);
+        if (z == nullptr) return false;
+        if (groupId == "zone.general") return key == "label" ? (z->label = value.asString(z->label), true) : false;
+        if (groupId == "zone.placement") {
+            if (key == "local") return sdk::fromValue(value, z->local);
+            if (key == "sizeM") return sdk::fromValue(value, z->sizeM);
+            if (key == "parent") return ops::reattachZone(c, catalog, z->id, value.asString(sdk::kChassisParent), sdk::kRootLink);
+            if (key == "parentLink") return ops::reattachZone(c, catalog, z->id, z->attachment.parentMechanismId, value.asString(sdk::kRootLink));
+            return false;
+        }
+        if (groupId == "zone.props") {
+            if (!z->properties.isObject()) z->properties = Value::makeObject();
+            z->properties[key] = value;
+            return true;
+        }
+        return false;
     }
     if (sel.kind == SelKind::Mechanism) {
         sdk::MechanismConfig* m = nullptr;
@@ -315,6 +419,9 @@ QString describeSelection(const sdk::RobotConfig& c, const EditorCatalog& catalo
         case SelKind::Slot: return QString::fromStdString(ops::slotDisplayName(c, catalog, {sel.owner, sel.sub}));
         case SelKind::Overlay: return QString::fromStdString(sel.sub);
         case SelKind::Plugin: return QString::fromStdString(catalog.pluginDisplayName);
+        case SelKind::Zone:
+            if (const auto* z = c.findZone(sel.owner)) return QString::fromStdString(ops::zoneDisplayName(*z, catalog));
+            return QString::fromStdString(sel.owner);
         case SelKind::Device: return QString::fromStdString(sel.owner);
         case SelKind::None: break;
     }

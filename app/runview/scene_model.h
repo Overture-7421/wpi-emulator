@@ -184,6 +184,7 @@ public:
     PartListModel& robotModel() { return robot_; }
     EntityGroupModel& entityModel() { return entities_; }
     RobotRig& rig() { return rig_; }
+    ZoneRig& zoneRig() { return zoneRig_; }
     OrbitCamera& camera() { return camera_; }
 
     QVector3D chassisPosition() const { return chassisPosition_; }
@@ -228,7 +229,7 @@ private:
     OrbitCamera camera_;
     float viewHeightPx_ = 720.f;
     RunSceneInfo info_;
-    std::vector<ZoneOverlay> zoneState_;
+    ZoneRig zoneRig_;
     QStringList zoneLabels_;
 
     QVector3D chassisPosition_;

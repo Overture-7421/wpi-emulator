@@ -416,6 +416,43 @@ TEST_CASE("project tree: structure, slot rows and selection lookup") {
     CHECK(tree.indexFor(SelectionRef::slot("robot", "imu")).isValid());
 }
 
+TEST_CASE("project tree: the drivetrain is a child of the chassis, next to its centre of mass and shapes") {
+    DocFixture f;
+    DeviceDirectory devices;
+    ProjectTreeModel tree(f.doc, devices);
+    const sdk::RobotConfig& c = f.doc.config();
+
+    const QModelIndex robot = tree.index(0, 0);
+    std::vector<QString> robotKids;
+    for (int r = 0; r < tree.rowCount(robot); ++r) robotKids.push_back(tree.keyAt(tree.index(r, 0, robot)));
+    REQUIRE(robotKids.size() >= 3);
+    CHECK(robotKids[0] == "chassis");
+    CHECK(robotKids[1] == "mechanisms");
+    CHECK(robotKids[2] == "sensors");
+    for (std::size_t i = 3; i < robotKids.size(); ++i) CHECK(robotKids[i] == "plugin");
+    CHECK(tree.indexForKey("drivetrain").parent() != robot);
+
+    const QModelIndex chassis = tree.indexFor(SelectionRef::chassis());
+    REQUIRE(chassis.isValid());
+    CHECK(tree.parent(chassis) == robot);
+    CHECK(tree.data(chassis).toString() == "Chassis");
+    REQUIRE(tree.rowCount(chassis) == 2 + static_cast<int>(c.chassis.primitives.size()));
+    CHECK(tree.keyAt(tree.index(0, 0, chassis)) == "com");
+    for (std::size_t i = 0; i < c.chassis.primitives.size(); ++i)
+        CHECK(tree.refAt(tree.index(1 + static_cast<int>(i), 0, chassis)) == SelectionRef::primitive("chassis", static_cast<int>(i)));
+    const QModelIndex drive = tree.index(tree.rowCount(chassis) - 1, 0, chassis);
+    CHECK(drive == tree.indexFor(SelectionRef::drivetrain()));
+    CHECK(tree.data(drive).toString() == "Drivetrain");
+    CHECK(tree.data(drive, ProjectTreeModel::DetailRole).toString() == QString::fromStdString(c.drivetrain.spec.kind));
+
+    REQUIRE_FALSE(c.drivetrain.spec.wheels.empty());
+    for (const auto& w : c.drivetrain.spec.wheels) {
+        QModelIndex p = tree.indexFor(SelectionRef::wheel(w.name)).parent();
+        while (p.isValid() && p != drive && tree.refAt(p).kind == SelKind::Wheel) p = p.parent();   // followers nest under wheels
+        CHECK(p == drive);
+    }
+}
+
 TEST_CASE("project tree: followers nest under the part that drives them and are read-only") {
     DocFixture f;
     auto config = robot();

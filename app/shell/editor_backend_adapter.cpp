@@ -44,6 +44,7 @@ editor::EditorCatalog EditorBackendAdapter::catalog() const {
         out.pluginDisplayName = module->metadata().displayName;
         out.pluginSchema = module->contributeConfigSchema();
         out.pluginPanels = module->contributeEditorPanels();
+        out.zoneKinds = module->contributeZoneKinds();
     }
     return out;
 }

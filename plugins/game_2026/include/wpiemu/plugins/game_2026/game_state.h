@@ -15,6 +15,7 @@
 #include "wpiemu/plugins/game_2026/field_layout.h"
 #include "wpiemu/plugins/game_2026/fuel_pool.h"
 #include "wpiemu/plugins/game_2026/fuel_ports.h"
+#include "wpiemu/plugins/game_2026/fuel_zones.h"
 #include "wpiemu/plugins/game_2026/hub_rules.h"
 #include "wpiemu/plugins/game_2026/match_clock.h"
 #include "wpiemu/sdk/core/sim_context.h"
@@ -66,6 +67,8 @@ public:
     bool hubActive(Alliance a) const { return hub_.active(a); }
     const MatchStatus& match() const { return status_; }
     const HubRules& hubRules() const { return hub_; }
+    // Owned zones in config order (pickups and shooters), for tests and tools.
+    const std::vector<std::unique_ptr<FuelZoneRuntime>>& zones() const { return zones_; }
     FuelPool& pool() { return pool_; }
     const FuelPool& pool() const { return pool_; }
 
@@ -86,7 +89,8 @@ private:
 
     void handleSensorEvents(sdk::SimContext& ctx);
     void despawnOutOfPlay(sdk::SimContext& ctx);
-    void collectPorts(sdk::SimContext& ctx);
+    void buildZones(sdk::SimContext& ctx);
+    void stepZones(sdk::SimContext& ctx, double dt);
     void stepShooters(sdk::SimContext& ctx);
     void stepIntakes(sdk::SimContext& ctx);
     void stepRecycling(sdk::SimContext& ctx, double dt);
@@ -108,6 +112,8 @@ private:
     std::vector<PendingRelease> pending_;
     std::array<OutpostState, 2> outposts_{};
 
+    // Runtimes of the zones this plugin owns (RobotConfig::zones); intakes_/shooters_ view into them.
+    std::vector<std::unique_ptr<FuelZoneRuntime>> zones_;
     std::vector<IFuelIntakePort*> intakes_;
     std::vector<IFuelShooterPort*> shooters_;
     std::vector<SensorHit> hits_;

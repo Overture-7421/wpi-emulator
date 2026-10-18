@@ -63,6 +63,32 @@ std::string duplicateMechanism(sdk::RobotConfig& c, std::string_view id);
 // Parents before children (stable). Broken chains keep their relative order at the end.
 void normalizeOrder(sdk::RobotConfig& c);
 
+// ---- zones ------------------------------------------------------------------------------------
+std::string uniqueZoneId(const sdk::RobotConfig& c, std::string base);   // distinct from zone AND mechanism ids
+std::string zoneDisplayName(const sdk::ZoneConfig& z, const EditorCatalog& catalog);
+// Pose of the frame a zone's `local` pose is expressed in: the parent link (chassis frame when on the chassis).
+sdk::Pose3 zoneParentWorld(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::ZoneConfig& z);
+sdk::Pose3 zoneWorld(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::ZoneConfig& z);
+// The kind's defaults: pose, size, label and schema default properties.
+sdk::ZoneConfig makeZone(const sdk::RobotConfig& c, const sdk::ZoneKindInfo& info, const sdk::MechanismAttachment& attachment);
+// Returns the new zone id. An attachment to an unknown mechanism / link falls back to the chassis.
+std::string addZone(sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::ZoneKindInfo& info,
+                    const sdk::MechanismAttachment& attachment);
+bool removeZone(sdk::RobotConfig& c, std::string_view id);
+// Copy next to the original (same attachment and activation); returns the new id, empty when unknown.
+std::string duplicateZone(sdk::RobotConfig& c, std::string_view id);
+// Re-attaches a zone to another parent / link; with `keepWorldPose` its local pose is recomputed so it does not move.
+bool reattachZone(sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view id, const std::string& newParent,
+                  const std::string& newLink, bool keepWorldPose = true);
+sdk::ZoneConfig* findZone(sdk::RobotConfig& c, std::string_view id);
+// Activation edits. Conditions keep their mechanism id even when the mechanism is later deleted (the validator warns).
+// addZoneCondition appends a condition on the first mechanism (empty id when there is none) and returns its index, -1 when
+// the zone is unknown.
+int addZoneCondition(sdk::RobotConfig& c, std::string_view zoneId);
+bool removeZoneCondition(sdk::RobotConfig& c, std::string_view zoneId, int index);
+bool setZoneCondition(sdk::RobotConfig& c, std::string_view zoneId, int index, const sdk::ZoneCondition& condition);
+bool setZoneActivationMode(sdk::RobotConfig& c, std::string_view zoneId, sdk::ActivationMode mode);
+
 // ---- device mappings --------------------------------------------------------------------------
 std::vector<sdk::SlotMapping>* mappingList(sdk::RobotConfig& c, std::string_view owner);
 const sdk::SlotMapping* findMapping(const sdk::RobotConfig& c, const sdk::SlotAddress& slot);

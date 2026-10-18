@@ -17,6 +17,7 @@
 #include "model/motion_links.h"
 #include "model/property_groups.h"
 #include "model/tr.h"
+#include "views/activation_card.h"
 #include "views/drive_card.h"
 
 namespace wpiemu::app::editor {
@@ -78,6 +79,7 @@ PropertyFormWidget* InspectorPanel::form(const QString& groupId) const {
 void InspectorPanel::clearContent() {
     forms_.clear();
     slotRows_.clear();
+    activationCard_ = nullptr;
     title_ = nullptr;
     nameEdit_ = nullptr;
     if (QWidget* old = scroll_->takeWidget()) old->deleteLater();
@@ -181,6 +183,14 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
             break;
         }
         case SelKind::Plugin: subtitle = ETR("Game rules and configuration"); icon = NodeKind::Plugin; break;
+        case SelKind::Zone:
+            if (const auto* z = c.findZone(target.owner)) {
+                const auto* kind = cat.findZoneKind(z->kind);
+                title = kind != nullptr ? qs(kind->displayName) : ETR("Zone");
+                subtitle = kind != nullptr ? qs(kind->description) : qs(z->kind) + QStringLiteral(" ") + ETR("(unknown zone kind)");
+            }
+            icon = NodeKind::Zone;
+            break;
         case SelKind::Device: title = ETR("Detected device"); icon = NodeKind::Robot; break;
         default: break;
     }
@@ -233,9 +243,9 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
         connect(b, &QToolButton::clicked, this, [fn] { fn(); });
         h->addWidget(b, 0, Qt::AlignTop);
     };
-    if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive)
+    if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Zone)
         addAction(ETR("Duplicate"), ETR("Duplicate (Ctrl+D)"), [this] { controller_.duplicateSelection(); });
-    if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Wheel)
+    if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Wheel || target.kind == SelKind::Zone)
         addAction(ETR("Delete"), ETR("Delete (Del)"), [this] { controller_.deleteSelection(); });
     layout_->addWidget(head);
 }
@@ -373,6 +383,8 @@ QString InspectorPanel::signature(const std::vector<PropertyGroup>& groups) cons
                 parts << QString::number(static_cast<int>(info.state));
     }
     if (target.kind == SelKind::Device) parts << QString::number(controller_.devices().all().size());
+    if (target.kind == SelKind::Zone)
+        if (const auto* z = c.findZone(target.owner)) parts << qs(z->kind);
     return parts.join('\x1f');
 }
 
@@ -434,6 +446,32 @@ void InspectorPanel::addPartCards(const SelectionRef& target, const std::vector<
     for (const PropertyGroup& g : groups)
         if (g.section == sdk::PropertySection::Placement) addSection(ETR("Placement"), makeForm(g, content_), false, SectionRole::Placement);
 }
+void InspectorPanel::addZoneCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups) {
+    auto* general = new QWidget(content_);
+    auto* gv = new QVBoxLayout(general);
+    gv->setContentsMargins(0, 0, 0, 0);
+    gv->setSpacing(6);
+    for (const PropertyGroup& g : groups)
+        if (g.id == "zone.general") gv->addWidget(makeForm(g, general));
+    auto* id = new QLabel(ETR("ID: %1").arg(QStringLiteral("<b>%1</b>").arg(qs(target.owner).toHtmlEscaped())), general);
+    id->setObjectName(QStringLiteral("zone.id"));
+    id->setTextFormat(Qt::RichText);
+    id->setToolTip(ETR("Used by the game plugin and in robot.json; it cannot be changed."));
+    id->setEnabled(false);
+    gv->addWidget(id);
+    addSection(ETR("General"), general, false, SectionRole::Info);
+
+    for (const PropertyGroup& g : groups)
+        if (g.section == sdk::PropertySection::Placement) addSection(ETR("Placement"), makeForm(g, content_), false, SectionRole::Placement);
+
+    activationCard_ = new ActivationCard(controller_, target.owner, content_);
+    activationCard_->setIssues(issues_);
+    addSection(ETR("Activation"), activationCard_, false, SectionRole::Activation);
+
+    for (const PropertyGroup& g : groups)
+        if (g.id == "zone.props") addSection(ETR("Configure"), makeForm(g, content_), false, SectionRole::Configure);
+}
+
 void InspectorPanel::rebuild() {
     clearContent();
     const sdk::RobotConfig& c = controller_.document().config();
@@ -457,6 +495,8 @@ void InspectorPanel::rebuild() {
     issues_ = issuesFor(target);
     if (target.kind == SelKind::Wheel || target.kind == SelKind::Mechanism) {
         addPartCards(target, groups);
+    } else if (target.kind == SelKind::Zone) {
+        addZoneCards(target, groups);
     } else {
         for (const PropertyGroup& g : groups) {
             auto* f = makeForm(g, content_);
@@ -499,6 +539,10 @@ void InspectorPanel::refresh(bool authoritative) {
             f->setValues(g.values, authoritative);
             f->setFieldIssues(issues);
         }
+    if (activationCard_ != nullptr) {
+        activationCard_->setIssues(issues);
+        activationCard_->refresh(authoritative);
+    }
     std::map<std::string, std::vector<SlotInfo>> byOwner;
     for (DeviceRowWidget* row : slotRows_) {
         const std::string owner = row->address().owner;
@@ -506,11 +550,18 @@ void InspectorPanel::refresh(bool authoritative) {
         for (const SlotInfo& info : byOwner[owner])
             if (info.address == row->address()) row->setInfo(info);
     }
-    if (title_ != nullptr && target.kind != SelKind::Device) title_->setText(describeSelection(c, cat, target));
+    if (title_ != nullptr && target.kind != SelKind::Device && target.kind != SelKind::Zone) title_->setText(describeSelection(c, cat, target));
     if (nameEdit_ != nullptr && !nameEdit_->hasFocus()) nameEdit_->setText(editableName(target));
 }
 
 void InspectorPanel::focusField(const QString& key) {
+    if (key.startsWith(QStringLiteral("activation"))) {
+        if (activationCard_ != nullptr) {
+            const int colon = key.indexOf(QLatin1Char(':'));
+            activationCard_->focusCondition(colon < 0 ? 0 : key.mid(colon + 1).toInt());
+        }
+        return;
+    }
     if (key == QStringLiteral("drivenBy") || key == QStringLiteral("motionLinks")) {
         for (auto* combo : content_->findChildren<QComboBox*>())
             if (combo->objectName().startsWith(QStringLiteral("drivenBy.source"))) {

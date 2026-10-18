@@ -2,11 +2,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
+#include <string>
 #include <utility>
 
 #include "wpiemu/plugins/game_2026/field_dimensions.h"
 #include "wpiemu/plugins/game_2026/fuel_layout.h"
 #include "wpiemu/plugins/game_2026/plugin_info.h"
+#include "wpiemu/sdk/game/zone_activation.h"
 #include "wpiemu/sdk/ipc/messages.h"
 #include "wpiemu/sdk/mechanisms/mechanism.h"
 
@@ -59,11 +62,47 @@ std::string hubStatusText(bool active, double remainingS) {
 Game2026State::Game2026State(sdk::SimContext& ctx, GameConfig config, FieldLayout layout)
     : config_(std::move(config)), layout_(std::move(layout)),
       pool_(ctx.physics(), config_.fuel, config_.maxFuelOnField),
-      hub_(config_.enforceHubShifts, config_.firstInactive) {}
+      hub_(config_.enforceHubShifts, config_.firstInactive) {
+    buildZones(ctx);
+}
 
 std::string_view Game2026State::pluginId() const { return game_2026::pluginId(); }
 
-void Game2026State::reset(sdk::SimContext&) {
+void Game2026State::buildZones(sdk::SimContext& ctx) {
+    zones_.clear();
+    intakes_.clear();
+    shooters_.clear();
+    for (const sdk::ZoneConfig& zone : ctx.config().zones) {
+        if (zone.kind == kPickupKind) {
+            auto pickup = std::make_unique<PickupZoneRuntime>(zone);
+            intakes_.push_back(pickup.get());
+            zones_.push_back(std::move(pickup));
+        } else if (zone.kind == kShooterKind) {
+            auto shooter = std::make_unique<ShooterZoneRuntime>(zone);
+            shooters_.push_back(shooter.get());
+            zones_.push_back(std::move(shooter));
+        }
+    }
+}
+
+void Game2026State::stepZones(sdk::SimContext& ctx, double dt) {
+    sdk::IMechanismDirectory* dir = ctx.mechanisms();
+    std::vector<std::string> missing;
+    for (const std::unique_ptr<FuelZoneRuntime>& zone : zones_) {
+        const sdk::ZoneConfig& cfg = zone->config();
+        sdk::Pose3 attachment;  // the chassis frame unless attached to a mechanism link that can be resolved
+        if (!cfg.attachment.onChassis() && dir != nullptr)
+            if (const auto p = dir->linkPoseInChassis(cfg.attachment.parentMechanismId, cfg.attachment.parentLink))
+                attachment = *p;
+        missing.clear();
+        const bool held = sdk::evaluateActivation(cfg.activation, dir, &missing);
+        for (const std::string& mechanism : missing) zone->warnMissing(ctx, mechanism);
+        zone->update(ctx, attachment * cfg.local, held, dt);
+    }
+}
+
+void Game2026State::reset(sdk::SimContext& ctx) {
+    buildZones(ctx);
     pool_.clear();
     pending_.clear();
     hits_.clear();
@@ -107,7 +146,7 @@ void Game2026State::step(sdk::SimContext& ctx, double dt) {
 
     handleSensorEvents(ctx);
     despawnOutOfPlay(ctx);
-    collectPorts(ctx);
+    stepZones(ctx, dt);
     stepShooters(ctx);
     stepIntakes(ctx);
     stepRecycling(ctx, dt);
@@ -147,17 +186,6 @@ void Game2026State::despawnOutOfPlay(sdk::SimContext&) {
     for (const std::uint32_t id : scratchIds_) {
         pool_.despawn(id);
         ++lost_;
-    }
-}
-
-void Game2026State::collectPorts(sdk::SimContext& ctx) {
-    intakes_.clear();
-    shooters_.clear();
-    sdk::IMechanismDirectory* dir = ctx.mechanisms();
-    if (dir == nullptr) return;
-    for (sdk::IMechanism* m : dir->all()) {
-        if (auto* intake = dynamic_cast<IFuelIntakePort*>(m)) intakes_.push_back(intake);
-        if (auto* shooter = dynamic_cast<IFuelShooterPort*>(m)) shooters_.push_back(shooter);
     }
 }
 
@@ -299,6 +327,7 @@ void Game2026State::publish(sdk::SnapshotBuilder& out) const {
     fuel.color = "#ffd000";
     fuel.positions = fuelPositions_;
     out.addEntityGroup(std::move(fuel));
+    for (const std::unique_ptr<FuelZoneRuntime>& zone : zones_) out.addZone({zone->id(), zone->active()});
 
     out.setHud(hud::kFuelCount, meter_);
     out.setHud(hud::kFuelCapacity, config_.capacity);

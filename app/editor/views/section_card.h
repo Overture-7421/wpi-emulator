@@ -11,7 +11,7 @@
 
 namespace wpiemu::app::editor {
 
-enum class SectionRole { Drive, Configure, Placement, Shapes, Info };
+enum class SectionRole { Drive, Configure, Placement, Shapes, Info, Activation };
 
 class SectionCard : public QFrame {
     Q_OBJECT

@@ -77,6 +77,55 @@ TEST_CASE("config codec: a full config survives config -> Value -> JSON text -> 
     CHECK(json.dump(codec.toValue(r), true) == json.dump(v, true));
 }
 
+TEST_CASE("config codec: zones survive a roundtrip with their attachment and activation") {
+    RobotConfig c = sampleConfig();
+    ZoneConfig z;
+    z.id = "pickup";
+    z.kind = "fake_game.fake_zone";
+    z.label = "Floor pickup";
+    z.attachment.parentMechanismId = "intake";
+    z.attachment.parentLink = "tip";
+    z.local = Pose3{Vec3{0.1f, -0.2f, 0.3f}, Quat::fromYaw(0.25f)};
+    z.sizeM = Vec3{0.5f, 0.4f, 0.2f};
+    z.properties["capacity"] = 12;
+    z.activation.mode = ActivationMode::Any;
+    z.activation.conditions.push_back({"intake", "velocity", ConditionOp::Within, 12.5, 0.25, false});
+    z.activation.conditions.push_back({"intake", "position", ConditionOp::Below, 1.5, 0.1, true});
+    c.zones.push_back(z);
+    ZoneConfig onChassis;
+    onChassis.id = "muzzle";
+    onChassis.kind = "fake_game.fake_zone";
+    c.zones.push_back(onChassis);
+
+    const RobotConfigCodec codec;
+    const JsonValueCodec json;
+    const Value v = codec.toValue(c);
+    const Value& z0 = v.find("zones")->array()[0];
+    CHECK(z0.find("attachment")->find("parentLink")->asString() == "tip");
+    CHECK(z0.find("activation")->find("mode")->asString() == "any");
+    CHECK(z0.find("activation")->find("conditions")->array()[0].find("op")->asString() == "within");
+    CHECK(v.find("zones")->array()[1].find("attachment")->find("parentMechanismId")->asString() == "chassis");
+
+    const auto parsed = json.parse(json.dump(v, true));
+    REQUIRE(parsed.ok());
+    const auto back = codec.fromValue(parsed.value());
+    REQUIRE_MESSAGE(back.ok(), (back.ok() ? "" : back.error().message));
+    REQUIRE(back.value().zones.size() == 2);
+    CHECK(back.value().zones[0] == z);
+    CHECK(back.value().zones[1] == onChassis);
+    CHECK(json.dump(codec.toValue(back.value()), true) == json.dump(v, true));
+
+    // a missing key reads as no zones; malformed zones are reported with their path
+    Value bare = v;
+    bare.object().erase("zones");
+    CHECK(codec.fromValue(bare).value().zones.empty());
+    Value bad = v;
+    bad["zones"].array()[0]["activation"]["conditions"].array()[0]["op"] = "sideways";
+    const auto err = codec.fromValue(bad);
+    REQUIRE_FALSE(err.ok());
+    CHECK(err.error().message.find("zones[0].activation.conditions[0].op") != std::string::npos);
+}
+
 TEST_CASE("config codec: floats are written as short decimals") {
     RobotConfig c = sampleConfig();
     c.chassis.sizeM = Vec3{0.7f, 0.7f, 0.12f};

@@ -72,7 +72,7 @@ std::unique_ptr<ProjectTreeModel::Node> ProjectTreeModel::build() const {
             qs(c.chassis.primitives[i].name),
             c.chassis.primitives[i].kind == sdk::PrimitiveKind::Box ? ETR("box") : ETR("cylinder"));
 
-    Node& drive = add(robot, NodeKind::Drivetrain, QStringLiteral("drivetrain"), SelectionRef::drivetrain(), ETR("Drivetrain"),
+    Node& drive = add(chassis, NodeKind::Drivetrain, QStringLiteral("drivetrain"), SelectionRef::drivetrain(), ETR("Drivetrain"),
                       qs(c.drivetrain.spec.kind));
     Node& mechs = add(robot, NodeKind::Group, QStringLiteral("mechanisms"), SelectionRef{}, ETR("Mechanisms"),
                       QString::number(c.mechanisms.size()));
@@ -83,6 +83,15 @@ std::unique_ptr<ProjectTreeModel::Node> ProjectTreeModel::build() const {
         Node& plugin = add(robot, NodeKind::Plugin, QStringLiteral("plugin"), SelectionRef::plugin(), qs(cat.pluginDisplayName), ETR("game rules"));
         for (const auto& vol : ops::volumesFor(c, cat, ""))
             add(plugin, NodeKind::Volume, QStringLiteral("volume::%1").arg(qs(vol.key)), SelectionRef::overlay({}, vol.key), qs(vol.label), ETR("volume"));
+        for (const auto& z : c.zones) {
+            const auto att = z.attachment;
+            const QString where = att.onChassis() ? QStringLiteral("chassis")
+                                                  : qs(att.parentMechanismId + (att.parentLink == sdk::kRootLink ? "" : "." + att.parentLink));
+            Node& zn = add(plugin, NodeKind::Zone, QStringLiteral("zone:%1").arg(qs(z.id)), SelectionRef::zone(z.id), qs(ops::zoneDisplayName(z, cat)),
+                           QStringLiteral("@ ") + where);
+            zn.warning = zonesWithIssues_.count(z.id) != 0;
+            if (const auto* kind = cat.findZoneKind(z.kind)) zn.tooltip = qs(kind->displayName) + QStringLiteral(" \xE2\x80\x94 ") + zn.detail;
+        }
     }
 
     // Wheels and mechanisms are created detached, then placed: a follower sits under the owner that drives it,
@@ -283,6 +292,18 @@ void ProjectTreeModel::copyContents(Node& dst, const Node& src) {
     for (std::size_t i = 0; i < dst.children.size(); ++i) copyContents(*dst.children[i], *src.children[i]);
 }
 
+void ProjectTreeModel::setIssues(const std::vector<sdk::Issue>& issues) {
+    std::set<std::string> zones;
+    for (const sdk::Issue& issue : issues) {
+        if (issue.severity == sdk::Severity::Info) continue;
+        const IssueLocation loc = locateIssue(document_.config(), document_.catalog(), issue);
+        if (loc.selection.kind == SelKind::Zone) zones.insert(loc.selection.owner);
+    }
+    if (zones == zonesWithIssues_) return;
+    zonesWithIssues_ = std::move(zones);
+    refresh();
+}
+
 void ProjectTreeModel::refresh() {
     std::unique_ptr<Node> fresh = build();
     if (root_ && sameShape(*root_, *fresh)) {
@@ -393,14 +414,23 @@ Qt::ItemFlags ProjectTreeModel::flags(const QModelIndex& index) const {
     if (!n->ref.isNone()) f |= Qt::ItemIsSelectable;
     // Followers sit under their source, not under their attachment, so they cannot be re-attached by dragging.
     if (n->kind == NodeKind::Mechanism && !n->nestedByLink) f |= Qt::ItemIsDragEnabled;
+    if (n->kind == NodeKind::Zone) f |= Qt::ItemIsDragEnabled;
     return f;
 }
 
 QStringList ProjectTreeModel::mimeTypes() const {
-    return {QString::fromLatin1(kDeviceMime), QString::fromLatin1(kMechanismMime)};
+    return {QString::fromLatin1(kDeviceMime), QString::fromLatin1(kMechanismMime), QString::fromLatin1(kZoneMime)};
 }
 
 QMimeData* ProjectTreeModel::mimeData(const QModelIndexList& indexes) const {
+    for (const QModelIndex& i : indexes) {
+        const Node* n = nodeAt(i);
+        if (n != nullptr && n->kind == NodeKind::Zone) {
+            auto* mime = new QMimeData;
+            mime->setData(QString::fromLatin1(kZoneMime), QByteArray::fromStdString(n->ref.owner));
+            return mime;
+        }
+    }
     for (const QModelIndex& i : indexes) {
         const Node* n = nodeAt(i);
         if (n != nullptr && n->kind == NodeKind::Mechanism) {
@@ -434,6 +464,15 @@ bool ProjectTreeModel::canDropMimeData(const QMimeData* data, Qt::DropAction, in
 
     const bool attachTarget = target == nullptr || target->kind == NodeKind::Mechanism || target->kind == NodeKind::Chassis ||
                               target->kind == NodeKind::Robot || (target->kind == NodeKind::Group && target->key == QStringLiteral("mechanisms"));
+    if (data != nullptr && data->hasFormat(QString::fromLatin1(kZoneMime))) {
+        if (!attachTarget) return false;
+        const std::string id = data->data(QString::fromLatin1(kZoneMime)).toStdString();
+        const sdk::ZoneConfig* zone = document_.config().findZone(id);
+        if (zone == nullptr) return false;
+        const std::string parent = target != nullptr && target->kind == NodeKind::Mechanism ? target->ref.owner : std::string(sdk::kChassisParent);
+        const sdk::MechanismAttachment current = zone->attachment;
+        return current.onChassis() ? parent != sdk::kChassisParent : current.parentMechanismId != parent || current.parentLink != sdk::kRootLink;
+    }
     if (data != nullptr && data->hasFormat(QString::fromLatin1(kMechanismMime))) {
         if (!attachTarget) return false;
         const std::string id = data->data(QString::fromLatin1(kMechanismMime)).toStdString();
@@ -452,6 +491,10 @@ bool ProjectTreeModel::dropMimeData(const QMimeData* data, Qt::DropAction action
     }
     sdk::MechanismAttachment att;
     if (target != nullptr && target->kind == NodeKind::Mechanism) att.parentMechanismId = target->ref.owner;
+    if (data->hasFormat(QString::fromLatin1(kZoneMime))) {
+        Q_EMIT zoneDropped(QString::fromUtf8(data->data(QString::fromLatin1(kZoneMime))), att);
+        return true;
+    }
     Q_EMIT mechanismDropped(QString::fromUtf8(data->data(QString::fromLatin1(kMechanismMime))), att);
     return true;
 }

@@ -155,6 +155,7 @@ void RealRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<con
         gamePluginId_ = game->metadata().id;
         scene_.hud = game->contributeHud();
         scene_.panels = game->contributeEditorPanels();
+        scene_.zoneKinds = game->contributeZoneKinds();
         scene_.gameName = QString::fromStdString(game->metadata().displayName);
         if (fieldPluginId_ != gamePluginId_ || !field_) {
             field_ = registries_.plugins != nullptr ? host::describeField(registries_.plugins->find(gamePluginId_)) : nullptr;

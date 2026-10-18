@@ -100,16 +100,37 @@ sdk::RobotConfig FakeRunBackend::makeDemoConfig() {
     climber.geometry.push_back(box("carriage.plate", {0.05f, 0.f, 0.06f}, {0.06f, 0.3f, 0.08f}, "#34d399"));
     c.mechanisms.push_back(std::move(climber));
 
-    auto& section = c.pluginSection("demo_game");
-    sdk::Box3 intakeZone;
-    intakeZone.pose.position = {0.78f, 0.f, -0.08f};
-    intakeZone.sizeM = {0.5f, 0.7f, 0.2f};
-    sdk::Box3 shooterZone;
-    shooterZone.pose.position = {-0.1f, 0.f, 0.35f};
-    shooterZone.sizeM = {0.5f, 0.5f, 0.5f};
-    section.data["intake_zone"] = sdk::toValue(intakeZone);
-    section.data["shooter_zone"] = sdk::toValue(shooterZone);
+    sdk::ZoneConfig pickup;
+    pickup.id = "pickup";
+    pickup.kind = "demo_game.pickup";
+    pickup.label = "Intake zone";
+    pickup.attachment = {"intake", sdk::kRootLink};
+    pickup.local.position = {0.4f, 0.f, -0.02f};
+    pickup.sizeM = {0.5f, 0.7f, 0.2f};
+    c.zones.push_back(std::move(pickup));
+
+    sdk::ZoneConfig shooter;
+    shooter.id = "shooter";
+    shooter.kind = "demo_game.shooter";
+    shooter.label = "Shooter zone";
+    shooter.attachment = {"turret", "yaw"};
+    shooter.local.position = {0.38f, 0.f, 0.12f};
+    c.zones.push_back(std::move(shooter));
     return c;
+}
+
+std::vector<sdk::ZoneKindInfo> FakeRunBackend::makeZoneKinds() {
+    sdk::ZoneKindInfo pickup;
+    pickup.kind = "demo_game.pickup";
+    pickup.displayName = "Pickup";
+    pickup.shape = sdk::ZoneShape::Volume;
+    pickup.color = "#22c55e";
+    sdk::ZoneKindInfo shooter;
+    shooter.kind = "demo_game.shooter";
+    shooter.displayName = "Shooter";
+    shooter.shape = sdk::ZoneShape::Muzzle;
+    shooter.color = "#f43f5e";
+    return {pickup, shooter};
 }
 
 sdk::FieldDescription FakeRunBackend::makeDemoField() {
@@ -168,14 +189,7 @@ FakeRunBackend::FakeRunBackend(Options options, QObject* parent) : IRunBackend(p
         score.unit = "pts";
         auto message = hud("demo_game.message", "Game data", HudWidgetKind::Text, "demo.message", HudAnchor::TopRight, 1);
         scene_.hud = {fuel, timer, hub, score, message};
-
-        sdk::EditorPanelDescriptor zones;
-        zones.id = "demo_game.zones";
-        zones.title = "Zones";
-        zones.scope = sdk::PanelScope::PluginConfig;
-        zones.overlays.push_back({"intake_zone", "Intake zone", "#22c55e", true});
-        zones.overlays.push_back({"shooter_zone", "Shooter zone", "#f43f5e", true});
-        scene_.panels.push_back(std::move(zones));
+        scene_.zoneKinds = makeZoneKinds();
     }
     ds_.dsAttached = true;
     resetWorld();
@@ -553,6 +567,8 @@ void FakeRunBackend::publish() {
     d.mechanisms.push_back(std::move(climber));
 
     if (options_.withGameContent) {
+        d.zones.push_back({"pickup", armAngle_ > 1.2f});
+        d.zones.push_back({"shooter", flywheel_ > 250.f});
         sdk::EntityGroupSample fuel;
         fuel.group = "fuel";
         fuel.radiusM = kBallR;

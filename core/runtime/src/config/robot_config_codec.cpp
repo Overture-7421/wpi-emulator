@@ -338,6 +338,72 @@ void readMechanism(const Value& v, const std::string& path, Ctx& ctx, RobotConfi
     cfg.mechanisms.push_back(std::move(m));
 }
 
+bool conditionOpFrom(const std::string& s, ConditionOp& out) {
+    if (s == "above") out = ConditionOp::Above;
+    else if (s == "below") out = ConditionOp::Below;
+    else if (s == "within") out = ConditionOp::Within;
+    else return false;
+    return true;
+}
+const char* conditionOpName(ConditionOp op) {
+    switch (op) {
+        case ConditionOp::Above: return "above";
+        case ConditionOp::Below: return "below";
+        case ConditionOp::Within: return "within";
+    }
+    return "above";
+}
+
+void readZone(const Value& v, const std::string& path, Ctx& ctx, RobotConfig& cfg) {
+    ZoneConfig z;
+    ObjReader r(v, path, ctx);
+    r.str("id", z.id);
+    r.str("kind", z.kind);
+    r.str("label", z.label);
+    if (const Value* a = r.get("attachment")) {
+        ObjReader ar(*a, join(path, "attachment"), ctx);
+        ar.str("parentMechanismId", z.attachment.parentMechanismId);
+        ar.str("parentLink", z.attachment.parentLink);
+    }
+    r.pose("pose", z.local);
+    r.vec3("sizeM", z.sizeM);
+    if (const Value* props = r.get("properties")) {
+        if (props->isObject()) z.properties = *props;
+        else ctx.err(join(path, "properties"), "expected an object");
+    }
+    if (const Value* act = r.get("activation")) {
+        const std::string actPath = join(path, "activation");
+        ObjReader ar(*act, actPath, ctx);
+        std::string mode;
+        if (ar.str("mode", mode)) {
+            if (mode == "all") z.activation.mode = ActivationMode::All;
+            else if (mode == "any") z.activation.mode = ActivationMode::Any;
+            else ctx.err(join(actPath, "mode"), "unknown activation mode '" + mode + "' (all|any)");
+        }
+        if (const Value* conds = ar.get("conditions")) {
+            if (!conds->isArray()) {
+                ctx.err(join(actPath, "conditions"), "expected an array");
+            } else {
+                for (std::size_t i = 0; i < conds->array().size(); ++i) {
+                    const std::string cp = join(actPath, "conditions") + "[" + std::to_string(i) + "]";
+                    ObjReader cr(conds->array()[i], cp, ctx);
+                    ZoneCondition c;
+                    cr.str("mechanism", c.mechanismId);
+                    cr.str("value", c.value);
+                    std::string op;
+                    if (cr.str("op", op) && !conditionOpFrom(op, c.op))
+                        ctx.err(join(cp, "op"), "unknown condition op '" + op + "' (above|below|within)");
+                    cr.dbl("threshold", c.threshold);
+                    cr.dbl("tolerance", c.tolerance);
+                    cr.boolean("absolute", c.absolute);
+                    z.activation.conditions.push_back(std::move(c));
+                }
+            }
+        }
+    }
+    cfg.zones.push_back(std::move(z));
+}
+
 // ---- encode helpers --------------------------------------------------------------------------------
 
 Value fv(float f) { return Value(floatToDouble(f)); }
@@ -471,6 +537,36 @@ Value mechanismValue(const MechanismConfig& m) {
     return o;
 }
 
+Value zoneValue(const ZoneConfig& z) {
+    Value o = Value::makeObject();
+    o["id"] = z.id;
+    o["kind"] = z.kind;
+    o["label"] = z.label;
+    Value a = Value::makeObject();
+    a["parentMechanismId"] = z.attachment.onChassis() ? std::string(kChassisParent) : z.attachment.parentMechanismId;
+    a["parentLink"] = z.attachment.parentLink;
+    o["attachment"] = std::move(a);
+    o["pose"] = poseValue(z.local);
+    o["sizeM"] = vec3Value(z.sizeM);
+    o["properties"] = z.properties.isObject() ? z.properties : Value::makeObject();
+    Value act = Value::makeObject();
+    act["mode"] = z.activation.mode == ActivationMode::All ? "all" : "any";
+    Value conds = Value::makeArray();
+    for (const ZoneCondition& c : z.activation.conditions) {
+        Value item = Value::makeObject();
+        item["mechanism"] = c.mechanismId;
+        item["value"] = c.value;
+        item["op"] = conditionOpName(c.op);
+        item["threshold"] = c.threshold;
+        item["tolerance"] = c.tolerance;
+        item["absolute"] = c.absolute;
+        conds.push_back(std::move(item));
+    }
+    act["conditions"] = std::move(conds);
+    o["activation"] = std::move(act);
+    return o;
+}
+
 }  // namespace
 
 Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value) const {
@@ -511,6 +607,14 @@ Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value) const {
         }
     }
     cfg.robotMappings = readMappings(root.get("robotMappings"), "robotMappings", ctx);
+    if (const Value* zs = root.get("zones")) {
+        if (!zs->isArray()) {
+            ctx.err("zones", "expected an array");
+        } else {
+            for (std::size_t i = 0; i < zs->array().size(); ++i)
+                readZone(zs->array()[i], "zones[" + std::to_string(i) + "]", ctx, cfg);
+        }
+    }
     if (const Value* links = root.get("motionLinks")) {
         if (!links->isArray()) {
             ctx.err("motionLinks", "expected an array");
@@ -620,6 +724,9 @@ Value RobotConfigCodec::toValue(const RobotConfig& cfg) const {
     for (const MechanismConfig& m : cfg.mechanisms) mechs.push_back(mechanismValue(m));
     root["mechanisms"] = std::move(mechs);
     root["robotMappings"] = mappingsValue(cfg.robotMappings);
+    Value zones = Value::makeArray();
+    for (const ZoneConfig& z : cfg.zones) zones.push_back(zoneValue(z));
+    root["zones"] = std::move(zones);
     Value links = Value::makeArray();
     for (const auto& link : cfg.motionLinks) {
         Value item = Value::makeObject();

@@ -43,6 +43,15 @@ inline constexpr const char* kPluginNotFound = "plugin_not_found";
 inline constexpr const char* kPluginUnknownSection = "plugin_section_unknown";
 inline constexpr const char* kPluginSectionVersion = "plugin_section_version_unsupported";
 inline constexpr const char* kPluginPropertyInvalid = "plugin_property_invalid";
+// zones (sdk/config/zone.h); attachment problems reuse sdk::validation_code::kAttachment*
+inline constexpr const char* kZoneIdInvalid = "zone_id_invalid";                // empty id
+inline constexpr const char* kZoneIdDuplicate = "zone_id_duplicate";            // duplicate, or equal to a mechanism id
+inline constexpr const char* kZoneKindNotOwned = "zone_kind_not_owned";         // no plugin, or kind lacks the plugin id prefix (Error)
+inline constexpr const char* kZoneKindUnknown = "zone_kind_unknown";           // owned prefix but not declared by the plugin (Warning)
+inline constexpr const char* kZonePropertyInvalid = "zone_property_invalid";
+inline constexpr const char* kZoneGeometryInvalid = "zone_geometry_invalid";    // non-finite pose, size <= 0 on a Volume
+inline constexpr const char* kZoneConditionInvalid = "zone_condition_invalid";  // empty value name, non-finite threshold
+inline constexpr const char* kZoneConditionMechanismUnknown = "zone_condition_mechanism_unknown";  // Warning
 }  // namespace issue_code
 
 // Slot names of the drivetrain owner (sdk::slot_owner::kDrivetrain): "<wheel>.drive" (+ "<wheel>.drive2"..

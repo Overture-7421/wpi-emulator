@@ -133,6 +133,16 @@ vendor firmware integrates, create the bridge in `SharedSetup` and add one `regi
 3. The editor builds its context-menu entry, inspector and slot panel from that metadata: no UI change.
 4. Test with `FakeSimEnvironment` + `FakeDeviceHub::autoBind` (`tests/mechanisms`).
 
+### Add a zone kind (game plugin)
+1. In the plugin's `IGameModule::contributeZoneKinds()` return a `ZoneKindInfo` per kind: `kind` prefixed with the
+   plugin id (`"game_<year>.<name>"`, other prefixes are rejected by the validator), display name, `shape`
+   (`Volume` / `Muzzle`), the kind's `PropertySchema`, default size/pose and gizmo color.
+2. Read the persisted `RobotConfig::zones` of your kinds in the game state, resolve their pose with
+   `IMechanismDirectory::linkPoseInChassis(zone.attachment...)` * `zone.local` and gate them with
+   `evaluateActivation(zone.activation, ctx.mechanisms())` (`sdk/game/zone_activation.h`). Never add season code to core or UI.
+3. The editor builds the add-zone menu, inspector and gizmo from the metadata. Test with `FakeGameModule` and
+   `FakeMechanismDirectory`; see [ADR 0016](decisions/0016-zones.md).
+
 ### Other extension points
 Drivetrain (`IDrivetrain`, `DrivetrainRegistry`), tire model (`ITireModel`), plant (`IPlant`, `PlantFactory`),
 transport/codec (`ITransport`, `IMessageCodec`): see the table in ARCHITECTURE section 5.

@@ -38,6 +38,8 @@ public:
     // Adds a mechanism; with a mechanism selected it is attached to that mechanism's `link`.
     QString addMechanism(const QString& type, const sdk::MechanismAttachment& attachment, const ops::MechanismVariant& variant = {});
     QString addMechanismToSelection(const QString& type, const ops::MechanismVariant& variant = {});
+    // Adds a zone of `kind` (a ZoneKindInfo::kind) on the chassis or a mechanism link and selects it.
+    QString addZone(const QString& kind, const sdk::MechanismAttachment& attachment = {});
     bool deleteSelection();
     bool duplicateSelection();
     // Maps a dropped / chosen device: onto a slot, or onto the best free compatible slot of a

@@ -163,10 +163,13 @@ Undo/redo and reloading update focused inspector fields as well as the model, in
 component of a pose. Ordinary typing keeps its cursor position.
 
 ### Chassis
-The project tree has a **Chassis** node (hull, centre of mass, drivetrain, wheels and collision shapes). Select it to
+The project tree has a **Chassis** node (hull) with its **Centre of mass**, collision shapes and a **Drivetrain** node nested inside it;
+the wheels are listed under Drivetrain. Chassis starts collapsed (and Drivetrain inside it); selecting a wheel, the centre of mass or a
+shape expands the path to it. Select Chassis to
 get the chassis page in the inspector (dimensions, mass, centre of mass). **Drivetrain** has its type, tire model and load-transfer
-filter. Wheels are listed under Drivetrain in the tree: select one to edit it (see *Linking wheels and mechanisms* for
-followers), right-click Drivetrain or a wheel for **Add wheel**, a wheel for **Delete wheel**. The **Robot** node has the
+filter. Select a wheel to edit it (see *Linking wheels and mechanisms* for
+followers), right-click Drivetrain or a wheel for **Add wheel**, a wheel for **Delete wheel**. The **Robot** node, which also
+holds Mechanisms, Robot sensors and the game node, has the
 robot-level settings.
 * **Shapes (n)**: boxes and cylinders (**+ Box**, **+ Cylinder**) that model the visible, colliding parts. All the shapes of a
   mechanism move together with it (they rotate, swing or slide with the motor) about the mechanism's mount point, so place a
@@ -183,8 +186,8 @@ template, **Mechanism**: a single motor-driven degree of freedom whose **Type** 
 | Arm | hood, pivot, wrist, deploying intake (gravity-loaded, stops) |
 | Linear | elevator, climber, slide (gravity along Z, stops) |
 
-An intake is a rotary mechanism (plus an Arm if it deploys); the 2026 plugin adds **Fuel Intake** / **Fuel Shooter**
-wrappers that bind mechanisms to the game (section 4); they are not in the mechanism menus: right-click the game node (for example *REBUILT (2026)*) in the tree to add them.
+An intake is a rotary mechanism (plus an Arm if it deploys). Game-specific places such as a pickup volume or a shooter muzzle are not
+mechanisms but **zones** (next section).
 
 The template exposes **device slots** (motors, encoder, limit switches) and properties (motor model and count,
 gearing, mass/inertia, stops, friction...) generated from its metadata.
@@ -201,6 +204,31 @@ Selecting a wheel or a mechanism shows its **Name** (editable) and then colour-c
 The chassis, drivetrain and shapes use the same card look with a single Configure card. **Add attached mechanism** hangs one on another mechanism's named link (for example a roller on an arm);
 use **Attach to** / **Attachment link** and **Mount pose** to place it. Mechanisms move with the part they are
 attached to. Plant models are documented in [mechanisms.md](mechanisms.md).
+
+### Zones
+A **zone** is a place on the robot that the game cares about and that is not a machine: a fuel **Pickup** volume in front of an intake,
+a **Shooter** muzzle on a turret. Zones have no motors or slots; they hang on the chassis or on a mechanism's link and move with it.
+The game plugin decides which kinds exist, so a season without zones simply has none.
+
+* **Add**: right-click the game node (for example *REBUILT (2026)*) and choose **Add Pickup** / **Add Shooter** (one entry per zone kind
+  the plugin offers). Right-click a mechanism for the same entries attached to that mechanism, or the Chassis for chassis-attached zones.
+  The new zone is selected with its default placement and settings. The game node lists every zone below its own settings, with
+  `@ chassis`, `@ intake` or `@ turret.mover` showing what it hangs on (a warning dot means the Validation tab has an issue for it).
+* **Move and attach**: a **Volume** zone (Pickup) is a translucent box in the viewport, a **Muzzle** zone (Shooter) a small marker with
+  an arrow along its +X direction (the firing direction). Pick it in the viewport or the tree, then drag the move / rotate gizmo
+  (and, for volumes, scale) or type the **Pose** and **Size** in the **Placement** card. **Attached to** and **Attachment link**
+  re-attach it to the chassis or another mechanism without moving it in the world; dragging a zone in the tree onto a
+  mechanism or the Chassis does the same (or right-click **Attach to**). **Duplicate** and **Delete** are in the zone's inspector and
+  context menu. Deleting a mechanism moves its zones to the mechanism's own parent, where they were.
+* **Activation**: the **Activation** card (red) says when the zone works. With no conditions it says *Always active*. Each
+  **+ Add condition** row tests one value a mechanism publishes: pick the **mechanism**, the **value** name (`velocity`, `position`...),
+  **Above**, **Below** or **Within** a **threshold** (and a tolerance for Within), in SI units (m, rad, m/s, rad/s). **absolute
+  value** compares the magnitude, so a roller spinning backwards still counts. **Active when** all or any of the
+  conditions hold. A condition that names a mechanism that no longer exists stays in the list marked *(missing)* and the Validation tab warns until you
+  pick another mechanism or remove it.
+* **Configure** holds the settings of the zone kind (for example a pickup's capacity or a shooter's fire rate).
+
+All of this is undoable like any other edit.
 
 ### Device mapping
 Your robot code creates devices (motor controllers, encoders, gyros, solenoids...) at run time. The simulator needs to
@@ -252,17 +280,17 @@ simplifications: [game_2026.md](game_2026.md).
 | Match rules | enforce hub shifts, which hub is inactive first (`auto`/`red`/`blue`), hub processing delay, recycle scored fuel |
 
 **Your own intake and shooter** are built from normal Mechanisms (rotary roller / flywheel / indexer, arm hood, rotary
-turret) with their devices mapped as above. Two plugin templates (right-click, Add mechanism) bind them to the game:
+turret) with their devices mapped as above. The game part is two **zones** (see *Zones* in the editor chapter), added from the
+game node's right-click menu:
 
-* **Fuel Intake** (category Intake): add it, set the **Pickup zone** (a box shown in green in the viewport; drag its
-  handles or edit the numbers), and say which roller mechanism (and optional deploy arm) must be active (`activation`: roller, deployed,
-  both, either, always). Fuel inside the zone is absorbed while active and the meter is not full.
-* **Fuel Shooter** (category Shooter, link `muzzle`): set the **Muzzle** offset (orange marker), the flywheel mechanism
-  (exit speed = angular speed x radius x efficiency), optional hood and turret mechanisms (or attach it to the turret
-  link), and the feed mechanism and fire rate. Shots are real physics bodies.
+* **Pickup** (a volume, shown in the viewport): place it where the intake reaches, attach it to the intake mechanism so it moves with a
+  deploy arm, and give it an **Activation** such as *roller velocity above 20 rad/s*. Fuel inside the volume is absorbed while the
+  zone is active and the meter is not full.
+* **Shooter** (a muzzle marker with an arrow along +X): place it at the exit, attach it to the turret link, and give it an
+  **Activation** such as *flywheel velocity above 30 rad/s* and *feeder running*. Shots are real physics bodies.
 
-A reference to a mechanism that does not exist logs one warning and leaves that intake/shooter inactive. The
-property tables are in [game_2026.md section 5](game_2026.md#5-robot-side-meter-intake-shooter).
+A condition that names a mechanism that does not exist leaves that zone inactive and the Validation tab warns. The settings
+tables are in [game_2026.md](game_2026.md).
 
 ## 5. The run view and the driver station
 

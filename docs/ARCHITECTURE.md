@@ -84,8 +84,8 @@ backends used by `halsim_ext`, not SDK dependencies or alternative bridge aggreg
 | `dynamics/` | `motor_model.h` `plant.h` | `MotorSpec`/`IMotorModel`, `IPlant`/`PlantFactory` |
 | `devices/` | `device_descriptor.h` `device_identity.h` `signal.h` `signals.h` `slot.h` `frames.h` `discovered_device.h` `device_hub.h` `device_bridge.h` `sim_device_bridge.h` `channel_family_bridge.h` `builtin_bridges.h` | Device model (declared address vs physical identity), hub, bridges, the `registerBuiltinBridges` aggregation seam |
 | `mechanisms/` | `mechanism.h` `mechanism_state.h` `physics_coupling.h` `attachment.h` | `IMechanism`, `MechanismFactory`, template metadata, chassis coupling, link attachment |
-| `game/` | `game_module.h` `game_state.h` `field.h` `ui_descriptors.h` `plugin_registry.h` `builtin_plugins.h` `null_objects.h` | Year-plugin contract |
-| `config/` | `robot_config.h` `property_schema.h` `plugin_config.h` `value_codec.h` `config_io.h` `validation_codes.h` | Persisted model, schemas, stable issue codes |
+| `game/` | `game_module.h` `game_state.h` `field.h` `ui_descriptors.h` `zone_kind.h` `zone_activation.h` `plugin_registry.h` `builtin_plugins.h` `null_objects.h` | Year-plugin contract, zone kinds and activation evaluation |
+| `config/` | `robot_config.h` `mechanism_attachment.h` `zone.h` `property_schema.h` `plugin_config.h` `value_codec.h` `config_io.h` `validation_codes.h` | Persisted model (incl. zones), schemas, stable issue codes |
 | `ipc/` | `messages.h` `transport.h` `lockstep.h` `lifecycle.h` | Protocol structs, `ITransport`, `IMessageCodec`, `MessageChannel`, lock-step state machines, lifecycle signals carried as `Log` messages (e.g. robot program started) |
 | `telemetry/` | `snapshot.h` `sim_controller.h` | `ISimSnapshot` view-model, `ISimController` |
 | `testing/` | `fake_physics_world.h` `fake_device_hub.h` `fake_game_module.h` `fake_sim_environment.h` `fake_clock_logger.h` `in_memory_transport.h` `fake_mechanism_physics_coupling.h` `fake_mechanism_directory.h` | Header-only fakes for isolated tests |
@@ -254,7 +254,14 @@ resolved transform (`resolveLinkPoseInChassis`). `mount` is relative to the pare
 (`validateMechanismAttachments`): `attachment_parent_missing`, `attachment_link_missing`, `attachment_cycle`,
 `mechanism_id_reserved`; list parents before children for a same-tick-consistent view.
 
-### 4.6 Plugin ABI caveat
+### 4.6 Zones
+`RobotConfig::zones` ([ADR 0016](decisions/0016-zones.md), `config/zone.h`): game-owned places (pickup volumes, muzzles)
+attached to the chassis or a mechanism link exactly like a mechanism mount, so they follow that link. Core validates
+structure only; `kind` (`<plugin id>.<name>`) and `properties` belong to the plugin, which declares its kinds through
+`IGameModule::contributeZoneKinds()` (`game/zone_kind.h`). A zone's `activation` (conditions on mechanism-published
+values combined with AND/OR) is evaluated with `evaluateActivation` (`game/zone_activation.h`) by whoever consumes the zone.
+
+### 4.7 Plugin ABI caveat
 v1 supports **static built-in plugins only** (one toolchain/CRT/flags). The SDK exposes C++ virtual interfaces and
 `std::` types, which are not a stable ABI across separately built libraries. Shared-library plugins would need a versioned,
 size-prefixed `extern "C"` POD entry descriptor (sdk major/minor, id/year/version, create/destroy pair) in addition to
@@ -272,6 +279,7 @@ size-prefixed `extern "C"` POD entry descriptor (sdk major/minor, id/year/versio
 | A plant model | `IPlant` | `PlantFactory::registerPlant` | `core/mechanisms` |
 | A transport / wire codec | `ITransport` / `IMessageCodec` | composition root | `ipc/` |
 | Config fields / HUD / panels | `PropertySchema`, `HudWidgetDescriptor`, `EditorPanelDescriptor` | returned by `IGameModule::contribute*` | the plugin only |
+| A game zone kind (intake volume, muzzle) | `ZoneKindInfo` | `IGameModule::contributeZoneKinds()` | the plugin only (kind prefix = plugin id) |
 
 ## 6. Checklists
 

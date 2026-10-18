@@ -1,6 +1,6 @@
 # Robot editor (`app/editor`)
 
-The 3D robot editor page: project tree (followers nested under their source), and detected devices on the left (mechanisms are added from the tree's right-click menu; there is no catalog panel), the
+The 3D robot editor page: project tree (Robot → Chassis [centre of mass, shapes, Drivetrain → wheels], Mechanisms, Robot sensors, game node [volumes, zones]; followers nested under their source), and detected devices on the left (mechanisms are added from the tree's right-click menu; there is no catalog panel), the
 Qt Quick 3D viewport with console / validation / telemetry tabs in the middle, and a property
 inspector generated from the SDK's `PropertySchema` metadata on the right.
 
@@ -54,6 +54,34 @@ role: **Drive** (`PropertySpec::section == Drive`, grouped per motion axis by `P
 emits `mech.drive:<axis>`, `mech.props`, `mech.placement` (wheels: `wheel.drive`, `wheel`, `wheel.placement`);
 `applyProperty` accepts all of them.
 
+## Zones (ADR 0016)
+
+Zones (`RobotConfig::zones`, `sdk/config/zone.h`) are game-owned places on the robot, not mechanisms: the catalog carries the
+selected plugin's `sdk::ZoneKindInfo` list (`EditorCatalog::zoneKinds`, `findZoneKind`), filled by the shell adapter from
+`IGameModule::contributeZoneKinds()`. The editor knows no concrete kind.
+
+* **Ops** (`model/config_ops.*`, `ops::` zone section, wrapped as undoable edits by `EditorDocument` and `EditorController::addZone`):
+  `addZone` (id from the kind's last segment, unique against zone *and* mechanism ids; label, pose, size and property defaults from the
+  kind), `removeZone`, `duplicateZone`, `reattachZone` (keeps the world pose like `reparentMechanism`), and the activation edits
+  `addZoneCondition` / `setZoneCondition` / `removeZoneCondition` / `setZoneActivationMode`. `removeMechanism` moves the zones hanging on
+  the removed mechanism to its parent in place; conditions keep a dangling mechanism id (the validator warns, the card shows *(missing)*).
+  `setCom` keeps chassis-attached zones where they are.
+* **Selection / tree**: `SelectionRef::zone(id)` (`SelKind::Zone`). The game node lists the zones after its volumes
+  (`NodeKind::Zone`, detail `@ chassis` / `@ intake` / `@ turret.mover`); `ProjectTreeModel::setIssues` gives a zone node the warning state
+  when an issue path (`zones[i]...`, resolved by `locateIssue`) targets it. Context menus (`editor_page.cpp`): the game node, the chassis
+  and every mechanism offer **Add <kind>** per catalog kind; a zone offers Duplicate, Delete and Attach to. Dragging a zone onto a mechanism
+  or the chassis emits `ProjectTreeModel::zoneDropped` (`kZoneMime`), which re-attaches it.
+* **Inspector**: `propertyGroupsFor` emits `zone.general` (label; the id is a read-only line), `zone.placement` (attachment parent and link,
+  pose, size for Volume kinds) and `zone.props` (the kind's `PropertySchema`); `applyProperty` accepts them. The **Activation** card
+  (`views/activation_card.*`, `SectionRole::Activation`) is a custom widget: *Active when* All/Any, one row per condition (mechanism, value
+  name, Above/Below/Within, threshold + tolerance, absolute, remove), *+ Add condition*, and *Always active* when empty. It edits through
+  `EditorDocument::setZoneCondition` & co. and refreshes in place (rows are rebuilt only when the count changes); issue paths
+  `...activation.conditions[j]...` map to the field key `activation:<j>` and show a badge on that row.
+* **Viewport**: `buildScene` draws a Volume zone as a translucent `ItemRole::Overlay` box in the kind's colour at
+  `zoneWorld` (attachment link pose × local) and a Muzzle zone as a marker plus an arrow along local +X; both are pickable
+  (`SelKind::Zone`). `readTransform` / `writeTransform` edit pose and size (not size for Muzzle) so the gizmos, the numeric bar and undo
+  merging work like for mechanisms. The editor shows no live "active" state; the run view does.
+
 | Folder | Contents | May include |
 |---|---|---|
 | `model/` | `EditorDocument` (config + `QUndoStack`), pure edit operations (`config_ops`), property groups / schemas, slot status + local validation, scene builder, transform access | SDK, Qt Core/Gui |
@@ -88,6 +116,6 @@ Ctrl toggles snapping while dragging, Del deletes, Ctrl+D duplicates, Esc clears
   -DCMAKE_PREFIX_PATH=<Qt>` (see `standalone/CMakeLists.txt`).
 * Test sources live in `tests/app_editor/*.cc` (not `.cpp`: `tests/CMakeLists.txt` globs `*.cpp` into the Qt-free
   `wpiemu_tests`).
-* Demo: `wpiemu_editor_demo [--select intake|chassis|wheel:fl|slot:shooter.feeder|plugin] [--detect] [--tank] [--light]
+* Demo: `wpiemu_editor_demo [--select intake|chassis|wheel:fl|slot:shooter.feeder|zone:pickup|plugin] [--detect] [--tank] [--light]
   [--grab out.png]`.
 * Strings: model code uses `ETR("...")` (context `Editor`); run `lupdate -tr-function-alias translate+=ETR`.

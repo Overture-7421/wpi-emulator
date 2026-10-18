@@ -136,6 +136,7 @@ bool EditorController::selectionExists(const SelectionRef& ref) const {
             return list != nullptr && ref.index >= 0 && ref.index < static_cast<int>(list->size());
         }
         case SelKind::Mechanism: return c.findMechanism(ref.owner) != nullptr;
+        case SelKind::Zone: return c.findZone(ref.owner) != nullptr;
         case SelKind::Slot:
             for (const auto& s : ops::slotSpecsFor(c, document_.catalog(), ref.owner))
                 if (s.name == ref.sub) return true;
@@ -178,10 +179,22 @@ QString EditorController::addMechanismToSelection(const QString& type, const ops
     return addMechanism(type, att, variant);
 }
 
+QString EditorController::addZone(const QString& kind, const sdk::MechanismAttachment& attachment) {
+    const QString id = document_.addZone(kind, attachment);
+    if (id.isEmpty()) {
+        Q_EMIT statusMessage(ETR("Unknown zone kind \"%1\".").arg(kind), 2);
+        return {};
+    }
+    selection_.set(SelectionRef::zone(id.toStdString()));
+    Q_EMIT statusMessage(ETR("Added zone %1. Drag it with the move gizmo and set when it is active.").arg(id), 0);
+    return id;
+}
+
 bool EditorController::deleteSelection() {
     const SelectionRef sel = selection_.current();
     switch (sel.kind) {
         case SelKind::Mechanism: return document_.removeMechanism(QString::fromStdString(sel.owner));
+        case SelKind::Zone: return document_.removeZone(QString::fromStdString(sel.owner));
         case SelKind::Primitive: return document_.removePrimitive(QString::fromStdString(sel.owner), sel.index);
         case SelKind::Wheel: return document_.removeWheel(QString::fromStdString(sel.sub));
         case SelKind::Slot: return clearSlot({sel.owner, sel.sub});
@@ -194,6 +207,11 @@ bool EditorController::duplicateSelection() {
     if (sel.kind == SelKind::Mechanism) {
         const QString id = document_.duplicateMechanism(QString::fromStdString(sel.owner));
         if (!id.isEmpty()) selection_.set(SelectionRef::mechanism(id.toStdString()));
+        return !id.isEmpty();
+    }
+    if (sel.kind == SelKind::Zone) {
+        const QString id = document_.duplicateZone(QString::fromStdString(sel.owner));
+        if (!id.isEmpty()) selection_.set(SelectionRef::zone(id.toStdString()));
         return !id.isEmpty();
     }
     if (sel.kind == SelKind::Primitive) {

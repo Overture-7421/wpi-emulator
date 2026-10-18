@@ -41,6 +41,13 @@ Result<LoadedConfig> ConfigPipeline::process(RobotConfig config) const {
     for (MechanismConfig& m : config.mechanisms)
         if (const MechanismTemplateInfo* info = registrar_.factory().templateInfo(m.type)) applyDefaults(info->properties, m.properties);
 
+    if (plugin != nullptr && !config.zones.empty()) {
+        const std::vector<ZoneKindInfo> kinds = plugin->contributeZoneKinds();
+        for (ZoneConfig& z : config.zones)
+            for (const ZoneKindInfo& k : kinds)
+                if (k.kind == z.kind) applyDefaults(k.properties, z.properties);
+    }
+
     auto issues = validator_.validate(config, registrar_.factory(), drivetrains_, plugins_);
     out.issues.insert(out.issues.end(), issues.begin(), issues.end());
     out.config = std::move(config);

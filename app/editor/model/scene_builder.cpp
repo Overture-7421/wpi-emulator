@@ -191,6 +191,50 @@ SceneContent buildScene(const sdk::RobotConfig& c, const EditorCatalog& catalog,
         ov.pickable = true;
         out.items.push_back(ov);
     }
+    // Zones: translucent volumes, or a marker with a direction arrow (+X) for muzzles.
+    for (const auto& z : c.zones) {
+        const sdk::ZoneKindInfo* info = catalog.findZoneKind(z.kind);
+        const SelectionRef ref = SelectionRef::zone(z.id);
+        const QColor color = info != nullptr ? parseColor(info->color, theme.accent) : theme.accent;
+        const Pose3 world = ops::zoneWorld(c, catalog, z);
+        if (info == nullptr || info->shape == sdk::ZoneShape::Volume) {
+            SceneItem item;
+            item.id = "zone:" + z.id;
+            item.ref = item.group = ref;
+            item.role = ItemRole::Overlay;
+            item.world = world;
+            item.size = z.sizeM;
+            item.color = color;
+            item.opacity = 0.28f;
+            item.pickable = true;
+            out.items.push_back(item);
+            continue;
+        }
+        SceneItem marker;
+        marker.id = "zone:" + z.id;
+        marker.ref = marker.group = ref;
+        marker.role = ItemRole::Marker;
+        marker.world = world;
+        marker.size = Vec3{0.06f, 0.06f, 0.06f};
+        marker.color = color;
+        marker.pickable = true;
+        out.items.push_back(marker);
+
+        const Vec3 tip = world.transformPoint(Vec3{0.25f, 0.f, 0.f});
+        SceneItem shaft = lineBetween("zone:" + z.id + ":dir", world.position, tip, color, 0.012f);
+        shaft.ref = shaft.group = ref;
+        shaft.pickable = true;
+        out.items.push_back(shaft);
+        SceneItem head;
+        head.id = "zone:" + z.id + ":head";
+        head.ref = head.group = ref;
+        head.role = ItemRole::Marker;
+        head.world = Pose3{tip, world.rotation};
+        head.size = Vec3{0.05f, 0.035f, 0.035f};
+        head.color = color;
+        head.pickable = true;
+        out.items.push_back(head);
+    }
     return out;
 }
 

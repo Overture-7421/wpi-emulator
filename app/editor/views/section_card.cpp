@@ -14,6 +14,7 @@ QColor SectionCard::colorFor(SectionRole role) {
         case SectionRole::Placement: return QColor("#3ecf8e");
         case SectionRole::Shapes: return QColor("#b58be0");
         case SectionRole::Info: return QColor("#8b949e");
+        case SectionRole::Activation: return QColor("#e0607e");
     }
     return QColor("#8b949e");
 }
@@ -25,6 +26,7 @@ QString SectionCard::glyphFor(SectionRole role) {
         case SectionRole::Placement: return QStringLiteral("P");
         case SectionRole::Shapes: return QStringLiteral("S");
         case SectionRole::Info: return QStringLiteral("i");
+        case SectionRole::Activation: return QStringLiteral("A");
     }
     return {};
 }
@@ -36,6 +38,7 @@ const char* SectionCard::nameFor(SectionRole role) {
         case SectionRole::Placement: return "placement";
         case SectionRole::Shapes: return "shapes";
         case SectionRole::Info: return "info";
+        case SectionRole::Activation: return "activation";
     }
     return "info";
 }

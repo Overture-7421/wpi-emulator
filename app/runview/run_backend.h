@@ -19,6 +19,7 @@
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/game/field.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
+#include "wpiemu/sdk/game/zone_kind.h"
 #include "wpiemu/sdk/ipc/messages.h"
 #include "wpiemu/sdk/telemetry/snapshot.h"
 
@@ -75,6 +76,7 @@ struct RunSceneInfo {
     std::shared_ptr<const sdk::FieldDescription> field;   // may be null (generic floor)
     std::vector<sdk::HudWidgetDescriptor> hud;
     std::vector<sdk::EditorPanelDescriptor> panels;       // viewport overlays (zones) are read from these
+    std::vector<sdk::ZoneKindInfo> zoneKinds;             // kinds of RobotConfig::zones the game module declares
     QString gameName;                                     // "REBUILT (2026)"
 };
 
