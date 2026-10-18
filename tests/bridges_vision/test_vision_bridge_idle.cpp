@@ -35,6 +35,21 @@ TEST_CASE("vision bridge: with nothing configured and ntcore unavailable a poll 
     CHECK(countLogs(rig.host.log, sdk::LogLevel::Warn) == 1);
 }
 
+TEST_CASE("vision bridge: ntcore is not probed before the robot program started, only then") {
+    VisionRig rig;
+    rig.host.adopt(setupOf({photonCamera("front")}));
+    rig.host.started = false;  // the robot constructor is still running (WPIEMU_LIVE_DISCOVERY=1 polls this early)
+    rig.start();
+    rig.polls(5);
+    CHECK(rig.nt->calls.available == 0);  // a Java robot maps ntcore a moment after the extension loaded
+    CHECK(rig.nt->calls.beyondAvailability() == 0);
+    CHECK(rig.collect(true).at(0).status.empty());  // unknown is not a problem
+
+    rig.host.started = true;
+    rig.polls(1);
+    CHECK(rig.nt->calls.available == 1);
+}
+
 TEST_CASE(
     "vision bridge: with nothing configured and nothing on the robot a poll reads the time and, every 100 ms, the "
     "topics") {

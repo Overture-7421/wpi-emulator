@@ -139,9 +139,13 @@ void VisionBridge::poll() {
 
 void VisionBridge::pollImpl() {
     syncSetup();
-    const bool bound = nt_->available();
-    if (bound != ntBound_) onNtBoundChanged(bound);
+    const bool wasStarted = programStarted_;
     if (!programStarted_ && host_->programStarted()) programStarted_ = true;
+    // ntcore is probed only once the robot constructor has finished (with WPIEMU_LIVE_DISCOVERY=1 polls start earlier): a
+    // Java robot maps ntcore a few milliseconds after the extension loaded, and the binding must not look at a module
+    // that is still being initialised.
+    const bool bound = programStarted_ && nt_->available();
+    if (bound != ntBound_ || programStarted_ != wasStarted) onNtBoundChanged(bound);
     if (!bound || !programStarted_) {
         if (programStarted_) warnNtUnavailable();
         return;
@@ -284,7 +288,8 @@ void VisionBridge::refreshPlaceholder(Camera& camera) const {
     std::string_view status = camera_status::kOk;
     switch (camera.phase) {
         case Phase::Waiting:
-            status = ntBound_ ? camera_status::kOk : camera_status::kNtcoreUnavailable;
+            // Before the program started nothing is known about ntcore: not a problem yet.
+            status = (ntBound_ || !programStarted_) ? camera_status::kOk : camera_status::kNtcoreUnavailable;
             break;
         case Phase::Running:
             break;
