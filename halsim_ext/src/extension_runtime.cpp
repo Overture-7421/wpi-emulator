@@ -69,7 +69,7 @@ struct ExtensionRuntime::Impl {
     explicit Impl(RuntimeDeps d)
         : deps(std::move(d)),
           logger(deps.config.logLevel, deps.console),
-          bridges(std::move(deps.bridges), devices, logger),
+          bridges(std::move(deps.bridges), devices, logger, deps.ports.clock),
           services{deps.config, deps.ports, bridges, devices, logger, stats} {}
 
     sdk::Result<std::unique_ptr<SimSession>> connect() {
@@ -83,6 +83,11 @@ struct ExtensionRuntime::Impl {
             return ack.error();
         }
         if (ack.value().enableL3Hooks) optionalHooks.store(true);
+        // The camera setup of THIS connection: in place before the bridges start (first connection)
+        // or, after a reconnect, before the new session applies its first frame. No bridge call is
+        // running here: bridges are only called by the clock thread, which is the thread
+        // (re)connecting.
+        bridges.adoptVisionSetup(ack.value().vision);
         stats.sessions.fetch_add(1, std::memory_order_relaxed);
         auto link = std::make_unique<IpcLink>(std::move(channel));
         return std::make_unique<SimSession>(services, std::move(link), ack.value());
@@ -197,6 +202,10 @@ void ExtensionRuntime::stop() noexcept {
     {
         std::lock_guard lock(s.mutex);
         if (!s.started || s.stopping.exchange(true)) return;
+        // Before anything can wake the clock thread: no bridge call starts from here on, so a
+        // thread that is stuck and gets detached below cannot reach the bridges after the HAL
+        // shutdown hook returned.
+        s.bridges.close();
         if (s.current) s.current->requestShutdown();
     }
     s.cv.notify_all();

@@ -277,7 +277,9 @@ processed camera frames ride `SensorFrame::vision` (due on that tick, `VisionFra
 frame X forward / Y left / Z up) and what the robot did with each camera returns in `ActuatorFrame::vision` (`CameraRobotState`,
 informational only). All three are trailing optional fields: absent decodes as none, the protocol stays 1. Bridges receive them
 through the defaulted `IDeviceBridge::applyVision` / `collectVision` and `IBridgeHost::visionSetup`; game plugins supply AprilTag
-layouts through `IGameModule::contributeFiducialLayouts()`. The engine and the vendor publishers are described with their modules.
+layouts through `IGameModule::contributeFiducialLayouts()`. The extension side (call order around the step, which frames are
+applied, setup revision on reconnect, shutdown) is in [halsim-extension.md](halsim-extension.md#vision). The engine and the
+vendor publishers are described with their modules.
 
 ## 5. Extension points
 

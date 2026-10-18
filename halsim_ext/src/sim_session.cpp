@@ -224,7 +224,10 @@ void SimSession::onSensorFrame(proto::SensorFrame&& frame) {
             return;
         case proto::FollowerAction::Step: break;
     }
-    if (epoch_.load() != follower_.runEpoch()) s_.bridges.resetInputHistory();
+    if (epoch_.load() != follower_.runEpoch()) {
+        s_.bridges.resetInputHistory();
+        visionFull_ = true;  // a new epoch starts with the full camera list, like after a Reset
+    }
     epoch_ = follower_.runEpoch();
     s_.logger.setSimTimeUs(frame.simTimeUs);
 
@@ -236,6 +239,7 @@ void SimSession::onSensorFrame(proto::SensorFrame&& frame) {
         s_.ports.power.setBattery(lastBatteryV_, lastBatteryA_);
     }
     s_.bridges.applyInputs(frame.samples);
+    applyVision(frame.vision);  // only frames the follower accepted get here
 
     if (lockstep_) {
         const std::uint64_t stepUs = frame.stepUs != 0 ? frame.stepUs : ack_.stepUs;
@@ -267,13 +271,38 @@ void SimSession::onSensorFrame(proto::SensorFrame&& frame) {
     const bool full = delta_.filter(outputs_, forceFull);
     if (full) ticksSinceFull_ = 0;
 
+    // Camera state: every camera whenever the signals are a full frame (and on the first frame of a
+    // connection or epoch), otherwise only what changed. Asked every completed tick, also while no
+    // camera is configured: the robot may use cameras nobody configured and the vision bridge
+    // reports them.
+    visionOut_.clear();
+    s_.bridges.collectVision(visionOut_, full || visionFull_);
+    visionFull_ = false;
+    if (visionOut_.size() > kMaxVisionStates) {
+        if (!visionClamped_) {
+            visionClamped_ = true;
+            s_.logger.warn(kLog, "vision: " + std::to_string(visionOut_.size()) +
+                                     " camera states in one frame; only the first " +
+                                     std::to_string(kMaxVisionStates) + " are sent");
+        }
+        visionOut_.resize(kMaxVisionStates);
+    }
+
     proto::ActuatorFrame ack = follower_.makeAck(frame, proto::TickResult::Completed);
     ack.full = full;
     ack.samples = outputs_;
+    ack.vision.swap(visionOut_);
     ack.robotLoopCount = s_.ports.clock.robotLoopCount();
     post(proto::Message(std::move(ack)));
     s_.stats.ticksCompleted.fetch_add(1, std::memory_order_relaxed);
     touch();
+}
+
+void SimSession::applyVision(const std::vector<sdk::VisionFrame>& frames) {
+    if (frames.empty()) return;  // nothing to time, nothing to count: costless without vision
+    const std::int64_t startNs = nowNs();
+    s_.bridges.applyVision(frames);
+    s_.stats.recordVisionApply(frames.size(), static_cast<std::uint64_t>(nowNs() - startNs) / 1000);
 }
 
 void SimSession::onDsState(proto::DsState&& state) {
@@ -318,6 +347,7 @@ std::optional<SessionEnd> SimSession::onControl(const proto::SimControl& control
                 s_.bridges.resetInputHistory();
                 delta_.reset();  // the next ActuatorFrame is a full one in the new epoch
                 ticksSinceFull_ = 0;
+                visionFull_ = true;
                 if (lockstep_ && unblocked_.exchange(false)) {  // re-engage lock-step after a stall
                     degraded_ = Degraded::None;
                     s_.ports.clock.pauseTiming();
@@ -328,6 +358,7 @@ std::optional<SessionEnd> SimSession::onControl(const proto::SimControl& control
                 s_.bridges.resetInputHistory();
                 delta_.reset();
                 ticksSinceFull_ = 0;
+                visionFull_ = true;
                 paused_ = false;
                 unblocked_ = false;
                 degraded_ = Degraded::None;
