@@ -13,7 +13,7 @@ add_executable(wpiemu_tests ${WPIEMU_TEST_SOURCES} $<TARGET_OBJECTS:wpiemu_sdk_h
 target_link_libraries(wpiemu_tests PRIVATE
     doctest::doctest
     wpiemu_sdk wpiemu_core wpiemu_ipc
-    wpiemu_bridges_hal wpiemu_bridges_vendor
+    wpiemu_bridges_hal wpiemu_bridges_vendor wpiemu_bridges_vision
     wpiemu_plugin_game_2026 wpiemu_plugins_builtin)
 if(WPIEMU_BUILD_PLUGIN_TEMPLATE)
     target_link_libraries(wpiemu_tests PRIVATE wpiemu_plugin_template)

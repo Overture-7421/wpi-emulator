@@ -20,6 +20,9 @@
 #if defined(WPIEMU_BUILTIN_VENDOR_REGISTER)
 #include "wpiemu/bridges/vendor/vendor_bridges.h"
 #endif
+#if defined(WPIEMU_BUILTIN_VISION)
+#include "wpiemu/bridges/vision/vision_bridges.h"
+#endif
 
 namespace wpiemu::sdk {
 
@@ -47,6 +50,9 @@ Status registerBuiltinBridges(DeviceBridgeRegistry& registry) {
 #endif
 #if defined(WPIEMU_BUILTIN_VENDOR_REGISTER)
     attempt(first, [&] { return bridges::vendor::WPIEMU_BUILTIN_VENDOR_REGISTER(registry); });
+#endif
+#if defined(WPIEMU_BUILTIN_VISION)
+    attempt(first, [&] { return bridges::vision::registerVisionBridges(registry); });
 #endif
 
     return first;
