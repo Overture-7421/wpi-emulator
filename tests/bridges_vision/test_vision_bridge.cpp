@@ -128,8 +128,7 @@ TEST_CASE("vision bridge: a new HelloAck keeps unchanged cameras, recreates chan
     CHECK(rig.photon->probeFor("d")->starts == 1);
     CHECK(rig.bridge->stats().publishersStarted == 5);
 
-    // Nothing is ever unpublished: the old topics stay, and the bridge itself made no NT call but the new cameras'
-    // starts.
+    // Nothing is ever unpublished: the old topics stay. The only NT calls since are the new cameras' own starts.
     CHECK(rig.fake->exists("/test/c/alive"));
     CHECK(rig.fake->exists("/test/b/alive"));
     CHECK(rig.nt->calls.publish == publishesBefore + 2);

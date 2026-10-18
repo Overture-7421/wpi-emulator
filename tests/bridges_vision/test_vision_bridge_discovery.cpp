@@ -162,6 +162,19 @@ TEST_CASE("vision bridge: cameras are matched by vendor and name, not by name al
     CHECK(first.size() == 2);
 }
 
+TEST_CASE("vision bridge: the discovery interval is an option and NT time that jumps back does not stall it") {
+    VisionRig rig;
+    rig.options.discoveryIntervalUs = 1'000'000;
+    rig.start();
+    for (int i = 0; i < 400; ++i) rig.tick();       // two seconds
+    CHECK(rig.bridge->stats().discoveryRuns == 2);  // at 5 ms and at 1.005 s
+
+    rig.fake->setNowUs(
+        0);  // time never goes back in simulation, but if it did the limiter must not wait for it to catch up
+    rig.polls(1);
+    CHECK(rig.bridge->stats().discoveryRuns == 3);
+}
+
 TEST_CASE("vision bridge: a robot with endless cameras does not make the reports endless") {
     VisionRig rig;
     for (int i = 0; i < 80; ++i)

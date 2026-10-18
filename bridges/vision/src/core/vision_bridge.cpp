@@ -17,9 +17,8 @@ namespace {
 constexpr const char* kCategory = "bridge.vision";
 // Distinct unknown camera ids that get their own warning: a stream of garbage ids must not grow memory.
 constexpr std::size_t kMaxUnknownCameraWarnings = 32;
-// Unconfigured cameras the bridge keeps track of and reports (a report is also bounded by the IPC message caps, which
-// this module does not know): a robot that publishes request topics under endless names must not grow every
-// ActuatorFrame.
+// Unconfigured cameras the bridge keeps track of and reports. A robot that publishes request topics under endless names
+// must not grow every ActuatorFrame (the IPC message caps are not visible to this module).
 constexpr std::size_t kMaxDetectedCameras = 64;
 constexpr std::size_t kNoCamera = static_cast<std::size_t>(-1);
 

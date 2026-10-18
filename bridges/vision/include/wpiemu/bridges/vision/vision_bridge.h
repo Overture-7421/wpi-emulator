@@ -11,28 +11,30 @@
 // Everything runs on the extension's clock thread while the robot is quiescent: nothing blocks, nothing throws (a
 // publisher that throws is disabled, alone, and logged once) and this bridge registers no HAL callbacks.
 //
-//   start(host)     keeps the host and logger and builds the vendors. No ntcore access.
-//   poll()          waits for ntcore to bind AND the robot program to start (re-checked every poll; ONE warning with
-//   the
-//                   reason when ntcore is still missing after the program started), then creates and starts a publisher
-//                   for every camera of host.visionSetup(), exactly once each. Afterwards it polls the publishers,
-//                   follows visionSetupRevision() (a reconnect with another HelloAck: publishers of unchanged cameras
-//                   are kept, changed ones recreated, removed ones go quiet, nothing is ever unpublished) and, rate
-//                   limited, scans the topics the robot created to find the cameras it uses (also with no camera
-//                   configured, so the editor can offer "add detected camera").
-//   applyVision     routes each frame, in order and without copying it, to the publisher of frame.cameraId. A frame
-//   that
-//                   cannot be published (unknown camera, no running publisher, before start, after stop) is dropped and
-//                   counted.
-//   collectVision   appends the state of every configured camera and of every unconfigured camera the robot uses: all
-//                   of them when `full`, otherwise only what changed since the last call. A change of framesPublished
-//                   alone is reported at most every VisionBridgeOptions::framesReportIntervalUs.
-//   stop()          from then on nothing reaches INtApi or a publisher (ntcore may be torn down right after the
-//                   extension's shutdown hook). NT handles are never released.
+// start(host)
+//     Keeps the host and logger and builds the vendors. No ntcore access.
+// poll()
+//     Waits for ntcore to bind AND the robot program to start (re-checked every poll; ONE warning with the reason
+//     when ntcore is still missing after the program started). Then it creates and starts a publisher for every
+//     camera of host.visionSetup(), exactly once each. Afterwards it polls the publishers, follows
+//     visionSetupRevision() (a reconnect with another HelloAck: publishers of unchanged cameras are kept, changed
+//     ones recreated, removed ones go quiet, nothing is ever unpublished) and, rate limited, scans the topics the
+//     robot created to find the cameras it uses (also with no camera configured, so the editor can offer
+//     "add detected camera").
+// applyVision(frames)
+//     Routes each frame, in order and without copying it, to the publisher of frame.cameraId. A frame that cannot
+//     be published (unknown camera, no running publisher, before start, after stop) is dropped and counted.
+// collectVision(out, full)
+//     Appends the state of every configured camera and of every unconfigured camera the robot uses: all of them when
+//     `full`, otherwise only what changed since the last call. A change of framesPublished alone is reported at most
+//     every VisionBridgeOptions::framesReportIntervalUs.
+// stop()
+//     From then on nothing reaches INtApi or a publisher (ntcore may be torn down right after the extension's
+//     shutdown hook). NT handles are never released.
 //
 // A configured camera without a running publisher is reported with status "ntcore_unavailable" (ntcore not bound),
-// "vendor_unavailable" (no vendor, or a vendor that made no publisher) or "disabled" (its publisher threw). Cameras are
-// name keyed: this bridge announces no devices (owns() is false).
+// "vendor_unavailable" (no vendor, or a vendor that made no publisher) or "disabled" (its publisher threw). Cameras
+// are name keyed: this bridge announces no devices (owns() is false).
 
 #include <cstdint>
 #include <memory>

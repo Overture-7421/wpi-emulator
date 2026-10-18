@@ -56,7 +56,7 @@ using namespace wpiemu::tests::vision_bridge;
 std::size_t allocationsOfQuietTicks(VisionRig& rig, int ticks) {
     std::vector<sdk::CameraRobotState> out;
     out.reserve(16);
-    const std::span<const sdk::VisionFrame> noFrames;
+    const std::span<const sdk::VisionFrame> noFrames{};
     g_allocations.store(0);
     g_countAllocations.store(true);
     for (int i = 0; i < ticks; ++i) {
