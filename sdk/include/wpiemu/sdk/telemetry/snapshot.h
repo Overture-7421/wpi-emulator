@@ -110,9 +110,11 @@ public:
     virtual std::span<const HudValue> hud() const = 0;
     // Activation state of the robot's zones (empty when the game defines none).
     virtual std::span<const ZoneState> zones() const { return {}; }
-    // Vision: the configured cameras, the active layout's tags and what the robot process reports
-    // about each camera (CameraRobotState, including cameras the config does not know). Empty when
-    // the project has no cameras.
+    // Vision: the configured cameras and the active layout's tags (empty when the project has no
+    // cameras, or none with a usable layout), and what the robot process reports about each camera
+    // it uses (CameraRobotState, including cameras the config does not know). detectedCameras() does
+    // not depend on any camera being configured: it is how the editor learns which cameras a robot
+    // uses.
     virtual std::span<const CameraSample> cameras() const { return {}; }
     virtual std::span<const FiducialSample> fiducials() const { return {}; }
     virtual std::span<const CameraRobotState> detectedCameras() const { return {}; }
