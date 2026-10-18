@@ -21,6 +21,8 @@ struct SceneTheme {
     QColor accent{"#4da3ff"};      // selection
     QColor com{"#ff9f1c"};
     QColor link{"#2ec4b6"};
+    QColor limelight{"#9be15d"};
+    QColor photonVision{"#c77dff"};
     QColor axisX{"#e5484d"};
     QColor axisY{"#46a758"};
     QColor axisZ{"#3e63dd"};
@@ -41,6 +43,8 @@ struct SceneTheme {
         t.mechanism = QColor("#e0a020");
         t.accent = QColor("#0a6cff");
         t.link = QColor("#12a595");
+        t.limelight = QColor("#4f9d1e");
+        t.photonVision = QColor("#8a3fd1");
         t.text = QColor("#2a2f38");
         return t;
     }

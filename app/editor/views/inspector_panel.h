@@ -35,6 +35,7 @@ public:
         return nameEdit_ != nullptr ? nameEdit_->text() : title_ != nullptr ? title_->text() : QString();
     }
     QLineEdit* nameEdit() const { return nameEdit_; }
+    QLabel* robotToCameraLabel() const { return robotToCameraLabel_; }
     int rebuildCount() const { return rebuilds_; }
     ActivationCard* activationCard() const { return activationCard_; }
 
@@ -52,6 +53,8 @@ private:
     QString editableName(const SelectionRef& target) const;
     void addPartCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
     void addZoneCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
+    void addCameraCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
+    void updateRobotToCamera(const sdk::CameraConfig& cam, const sdk::RobotConfig& c, const EditorCatalog& cat);
     void addHeader(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
     void addShapes(const std::string& owner);
     void addChildren(const std::string& mechanismId);
@@ -66,6 +69,7 @@ private:
     QVBoxLayout* layout_ = nullptr;
     QLabel* title_ = nullptr;
     QLineEdit* nameEdit_ = nullptr;
+    QLabel* robotToCameraLabel_ = nullptr;
     QMap<QString, QPair<int, QString>> issues_;
     ActivationCard* activationCard_ = nullptr;
     std::vector<PropertyFormWidget*> forms_;

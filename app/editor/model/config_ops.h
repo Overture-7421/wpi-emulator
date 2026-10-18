@@ -89,6 +89,31 @@ bool removeZoneCondition(sdk::RobotConfig& c, std::string_view zoneId, int index
 bool setZoneCondition(sdk::RobotConfig& c, std::string_view zoneId, int index, const sdk::ZoneCondition& condition);
 bool setZoneActivationMode(sdk::RobotConfig& c, std::string_view zoneId, sdk::ActivationMode mode);
 
+// ---- cameras ----------------------------------------------------------------------------------
+std::string uniqueCameraId(const sdk::RobotConfig& c, std::string base);   // distinct from camera, mechanism AND zone ids
+std::string cameraDisplayName(const sdk::CameraConfig& cam);
+// Pose of the frame a camera's `local` pose is expressed in: the parent link (chassis frame when on the chassis).
+sdk::Pose3 cameraParentWorld(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam);
+sdk::Pose3 cameraWorld(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam);   // display frame
+// Robot-to-camera transform in the WPILib robot frame (origin on the floor below the hull centre, +X forward, +Y left,
+// yaw CCW): the display frame IS that frame, so this is cameraWorld. For a camera on a moving mechanism it is the rest pose.
+sdk::Pose3 cameraRobotPose(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam);
+// A forward-facing camera of `kind`: near the front of the hull on the chassis, at the link origin on a mechanism.
+// Unique id, label and robot-code name per kind; optics are CameraConfig's defaults.
+sdk::CameraConfig makeCamera(const sdk::RobotConfig& c, sdk::CameraKind kind, const sdk::MechanismAttachment& attachment);
+// Returns the new camera id. An attachment to an unknown mechanism / link falls back to the chassis.
+std::string addCamera(sdk::RobotConfig& c, const EditorCatalog& catalog, sdk::CameraKind kind,
+                      const sdk::MechanismAttachment& attachment);
+bool removeCamera(sdk::RobotConfig& c, std::string_view id);
+// Copy next to the original (same attachment, optics and kind, a fresh name); returns the new id, empty when unknown.
+std::string duplicateCamera(sdk::RobotConfig& c, std::string_view id);
+// Re-attaches a camera to another parent / link; with `keepWorldPose` its local pose is recomputed so it does not move.
+bool reattachCamera(sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view id, const std::string& newParent,
+                    const std::string& newLink, bool keepWorldPose = true);
+sdk::CameraConfig* findCamera(sdk::RobotConfig& c, std::string_view id);
+// The robot-code name no other camera of the kind uses, derived from `base` ("" is the Limelight default name).
+std::string uniqueCameraName(const sdk::RobotConfig& c, sdk::CameraKind kind, std::string base, std::string_view exceptId = {});
+
 // ---- device mappings --------------------------------------------------------------------------
 std::vector<sdk::SlotMapping>* mappingList(sdk::RobotConfig& c, std::string_view owner);
 const sdk::SlotMapping* findMapping(const sdk::RobotConfig& c, const sdk::SlotAddress& slot);
