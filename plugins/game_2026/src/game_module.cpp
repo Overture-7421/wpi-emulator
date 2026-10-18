@@ -1,11 +1,12 @@
 // 2026 (REBUILT) game module: the thin IGameModule facade over the plugin's parts (field layout,
-// fuel game state, zone kinds, config schema, HUD/editor descriptors). The module
+// fuel game state, zone kinds, config schema, HUD/editor descriptors, AprilTag layouts). The module
 // itself holds no session state.
 #include <memory>
 #include <string>
 #include <utility>
 
 #include "wpiemu/plugins/game_2026/config.h"
+#include "wpiemu/plugins/game_2026/fiducial_layouts.h"
 #include "wpiemu/plugins/game_2026/field_layout.h"
 #include "wpiemu/plugins/game_2026/fuel_zones.h"
 #include "wpiemu/plugins/game_2026/game_state.h"
@@ -54,6 +55,10 @@ public:
     std::vector<sdk::EditorPanelDescriptor> contributeEditorPanels() const override { return editorPanels(); }
     std::vector<sdk::HudWidgetDescriptor> contributeHud() const override { return hudWidgets(); }
     std::vector<sdk::ZoneKindInfo> contributeZoneKinds() const override { return zoneKinds(); }
+    // Welded first: the plugin default, and the layout the field model is taken from.
+    std::vector<sdk::FiducialLayout> contributeFiducialLayouts() const override {
+        return buildFiducialLayouts();
+    }
 
     // All per-tick game logic lives in Game2026State::step (it needs per-session state).
     void onTick(sdk::SimContext&, double) override {}
