@@ -11,11 +11,11 @@
   `$WPIEMU_WPILIB_ROOT`, and extracts them into `build/<tree>/_wpilib/<version>`. On a machine without WPILib add
   `-DWPIEMU_WPILIB_DOWNLOAD=ON` to fetch the zips from frcmaven (needs network; this is what CI does). Without WPILib
   configure still succeeds, but the extension is not built with HAL support and the real-HAL tests do not run.
-  **ntcore** is located by the same logic (`halsim_ext/cmake/WpiEmuWpilib.cmake` creates the imported target
-  `wpiemu_wpilib_ntcore` and sets `WPIEMU_NTCORE_FOUND`). It is needed only by the vision bridges' real publisher
-  ([vision.md](vision.md)); without it the extension still builds and loads, simulated cameras are simply inert, and the
-  encoders and their fake-publisher tests build and run.
-  <!-- VERIFY: WPIEMU_NTCORE_FOUND semantics and the behaviour of the extension build without ntcore -->
+  **ntcore** (`ntcore-cpp` + `wpinet-cpp`) is located by the same logic (`halsim_ext/cmake/WpiEmuWpilib.cmake` creates the imported
+  target `wpiemu_wpilib_ntcore` and sets `WPIEMU_NTCORE_FOUND` when both are found; the staging step completes an older stage that
+  predates ntcore support). It is needed only to build the vision bridges' ntcore binding (headers; at run time the binding uses the
+  ntcore the robot already loaded, [vision.md](vision.md) section 7). Without it the extension still builds and loads, the vision
+  bridges are registered but never publish (simulated cameras are inert), and the bridges' fake-backend tests still build and run.
   An already-extracted root (`include/hal/HAL.h`, `include/wpi/string.h`, desktop shared libraries)
   is also accepted through either the cache or environment. The resolved extracted root is passed
   to sibling HAL/vendor bridges for both discovery routes; the original user cache input is preserved.
@@ -127,14 +127,16 @@ enabled by the same variable.
 ### Vision sample end-to-end (opt-in)
 `samples/vision_robot/{java,cpp}` are WPILib 2026.2.1 sample robots that read a Limelight (`LimelightHelpers`, vendored into the
 sample) and a PhotonVision camera (PhotonLib `v2026.3.4` vendordep) and feed pose estimators; the robot code is unmodified by the
-emulator, the cameras are configured in its `robot.json`. The vision end-to-end case drives the robot near tags and asserts that both cameras report
-tags, the estimated pose matches the ground truth and `now - resultTimestamp` matches the configured latency. It needs the same
-prerequisites as above (WPILib toolchain, offline Maven) and a build with ntcore found (`WPIEMU_NTCORE_FOUND`):
+emulator. `e2e.vision_sample` (target `wpiemu_e2e_vision_tests`, `app/host/tests/e2e_vision_test.cpp`, label `e2e`) copies the
+sample to `%TEMP%` (never modified), builds a `RobotConfig` with a Limelight and a PhotonVision camera matching the sample's mounts, runs it
+through Gradle with the real extension and compares the robot's own console output with the emulator's ground truth (details in
+[vision.md](vision.md) section 9). It needs the same prerequisites as above (WPILib toolchain, offline Maven; `JAVA_HOME` may have to
+point at WPILib's JDK, e.g. `C:\Users\Public\wpilib\2026\jdk`) and a build with ntcore found (`WPIEMU_NTCORE_FOUND`):
 ```powershell
-$env:WPIEMU_E2E = "1"
-$env:WPIEMU_E2E_PROJECT = "samples\vision_robot\java"     # or samples\vision_robot\cpp
-ctest --preset windows-vs2022-release -L e2e --output-on-failure
+$env:WPIEMU_E2E = "1"                                                   # required, otherwise the test is skipped
+$env:WPIEMU_E2E_VISION_PROJECT = "C:\path\to\wpi-emulator\samples\vision_robot\java"   # default: samples\vision_robot\java; use an absolute path
+$env:WPIEMU_E2E_VISION_LANG = "java"                                    # java (default) | cpp, must match the project
+ctest --preset windows-vs2022-release -R "^e2e[.]vision_sample$" --output-on-failure
 ```
-<!-- VERIFY: e2e case name, label and the exact assertions (e2e-verify step); whether relative project paths are accepted -->
-The project is copied to `%TEMP%` and never modified. `WPIEMU_E2E_VERBOSE=1` prints the robot console (the sample logs `tv`, `tid`, `botpose`,
-`PhotonPipelineResult` data and a PASS/FAIL line).
+For the C++ sample set `WPIEMU_E2E_VISION_PROJECT` to `samples\vision_robot\cpp` and `WPIEMU_E2E_VISION_LANG=cpp` (it needs the
+Visual Studio C++ toolchain for desktop simulation). `WPIEMU_E2E_KEEP=1` and `WPIEMU_E2E_VERBOSE=1` (robot console) behave as for the other e2e test.

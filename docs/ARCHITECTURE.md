@@ -149,8 +149,8 @@ back-propagated load; independent sessions keep the original tick pipeline.
 ## 4. Per-tick data flow (emulator <-> extension, ADR 0001 / 0002)
 
 Discovery (once, then incremental): `Hello` / `HelloAck`, then `DeviceAnnounce` per device (any
-time, idempotent by `DeviceKey`). When cameras are configured the emulator also sends one `VisionSetup` after `HelloAck`
-(and again for every new epoch) so the extension can create the NetworkTables topics before the first frame. The hub binds announced devices to slots from `RobotConfig`;
+time, idempotent by `DeviceKey`). Right after `HelloAck`, and again before the first frame of every epoch, the emulator sends a
+`VisionSetup` (the camera list, possibly empty) so the extension can create the NetworkTables topics before the first frame. The hub binds announced devices to slots from `RobotConfig`;
 live devices without a slot are put in `LoopbackSet` (extension echoes output to input, no IPC hop)
 and a `HubWarning{"unmapped_loopback"}` is raised.
 
@@ -166,17 +166,16 @@ One tick `N` (sim thread unless noted):
    The runtime then composes chassis + payload mass, hands the wrenches to the world and (re)creates constraints.
 4. **Physics** `IPhysicsWorld::step(dt)`; the runtime stores the step's constraint reactions.
 5. **Game** `IGameState::step` (sees this step's sensor/contact events), then `IGameModule::onTick`.
-6. **Cameras** (only when `RobotConfig::cameras` is not empty, [vision.md](vision.md)): `VisionSystem` resolves each camera's pose
-   from the chassis pose after the physics step and the live link pose of its attachment, computes the tags every camera due
-   this tick sees from the season's `AprilTagLayout` (FOV, range, facing; deterministic noise from `SimContext::rng()`), and
-   queues the `CameraFrame` until its simulated latency has elapsed.
-   <!-- VERIFY: camera step position in SimulationSession::tick (after game step) and the SensorFrame::vision handling in the runner -->
-7. **Egress**: chassis IMU written to the hub; battery model from `IMechanism::batteryCurrentA()` +
-   drivetrain currents; `buildSensorFrame` -> `SensorFrame{tick N, stepUs, batteryVoltageV, samples, vision, sessionId, runEpoch}`;
-   `vision` holds the camera frames whose publish time has come.
+6. **Egress**: chassis IMU written to the hub; battery model from `IMechanism::batteryCurrentA()` +
+   drivetrain currents; the clock advances; `buildSensorFrame` -> `SensorFrame{tick N, stepUs, batteryVoltageV, samples, sessionId, runEpoch}`.
+7. **Cameras** (only when `RobotConfig::cameras` is not empty, [vision.md](vision.md)): `VisionSystem` resolves each camera's pose
+   from the chassis pose after the physics step and the live link pose of its attachment, computes the tags every camera whose
+   capture is due sees from the season's `AprilTagLayout` (FOV, range, facing; deterministic noise from `SimContext::rng()`), and
+   queues the `CameraFrame` until its simulated latency has elapsed; the frames whose publish time has come go into
+   `SensorFrame::vision`.
 8. **Snapshot** built (`SnapshotBuilder`, mechanisms/game state `publish`, `CameraState`) and handed to `ISnapshotSink`.
-9. **Extension**, on receipt: bridges `applyInputs` (writes `HAL_SetSimValue`, `HALSIM_Set*`), vision bridges `apply(frames, simTime)`
-   (publishes the due camera results to NetworkTables through ntcore with sim-time timestamps),
+9. **Extension**, on receipt: bridges `applyInputs` (writes `HAL_SetSimValue`, `HALSIM_Set*`), vision bridges `pollVision` then
+   `applyVision(frames, simTime)` (publishes the due camera results to NetworkTables through ntcore with sim-time timestamps),
    `HALSIM_StepTiming(stepUs)` (robot loop runs), bridges `collectOutputs`,
    `ActuatorFrame{tick N, ackTick N, result, sessionId, runEpoch}` sent back. Exactly one tick is ever outstanding.
 
@@ -300,7 +299,7 @@ default NetworkTables instance. The full flow, camera model, frames and topic ta
 | Config fields / HUD / panels | `PropertySchema`, `HudWidgetDescriptor`, `EditorPanelDescriptor` | returned by `IGameModule::contribute*` | the plugin only |
 | A game zone kind (intake volume, muzzle) | `ZoneKindInfo` | `IGameModule::contributeZoneKinds()` | the plugin only (kind prefix = plugin id) |
 | A season's AprilTag field | `AprilTagLayout` | `IGameModule::aprilTagLayout()` | the plugin only |
-| A vision coprocessor vendor | `IVisionBridge` (encoder + `INtPublisher`) | `VisionBridgeRegistry::registerBridge` inside `registerVisionBridges(registry)` | `bridges/vision` (or a new bridge module) + one call in `bridges/builtin_bridges.cpp`; a new `CameraKind` touches the SDK, codec and editor menu ([vision.md](vision.md)) |
+| A vision coprocessor vendor | `IVisionBridge` (encoder + `INtBackend`) | `VisionBridgeRegistry::registerBridge` inside `registerVisionBridges(registry)` | `bridges/vision` (or a new bridge module) + one call in `bridges/builtin_bridges.cpp`; a new `CameraKind` touches the SDK, codec and editor menu ([vision.md](vision.md)) |
 
 ## 6. Checklists
 

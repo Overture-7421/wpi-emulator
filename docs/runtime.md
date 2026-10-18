@@ -123,25 +123,29 @@ simulated Limelight or PhotonVision coprocessor. Unlike a zone, core owns it com
 `hFovDeg`, `vFovDeg`, `maxRangeM`, `maxIncidenceDeg`, `fps`, `latencyMs`, `widthPx`, `heightPx` and the pose noise `positionNoiseM` /
 `yawNoiseDeg` (defaults in the table of vision.md section 2). `cameras` may be absent on load (= none, schema stays 1) and is always written.
 
-Validator codes (`issue_code::kCamera*`): `camera_id_invalid` (empty id), `camera_id_duplicate` (also an id equal to a mechanism or
-zone id), `camera_name_duplicate` (E: two cameras of one kind share the robot-code name), `camera_geometry_invalid` (non-finite mount
-pose), `camera_optics_invalid` (field of view outside (0, 180), range / fps <= 0, latency < 0, resolution <= 0, negative noise, ...).
-Attachment problems reuse `attachment_parent_missing` / `attachment_link_missing` with the path `cameras[i].attachment`.
-<!-- VERIFY: field names/structure in robot_config_codec.cpp (pose vs local, kind strings), the exact checks in validateCameras, severity of each code -->
+Validator codes (`issue_code::kCamera*`, all **errors**): `camera_id_invalid` (empty id), `camera_id_duplicate` (a duplicate camera id, or an id
+equal to a mechanism or zone id; a zone id equal to a camera id is reported as `zone_id_duplicate`), `camera_name_duplicate` (two
+cameras of one kind share the robot-code name), `camera_geometry_invalid` (non-finite `pose`), `camera_optics_invalid` (path = the field:
+`hFovDeg` / `vFovDeg` in (0, 180), `maxRangeM` > 0, `maxIncidenceDeg` in (0, 90], `fps` in (0, 240], `latencyMs` in [0, 2000],
+`widthPx` / `heightPx` > 0, noise >= 0). Attachment problems reuse `attachment_parent_missing` / `attachment_link_missing` with the
+path `cameras[i].attachment`.
 
 ### Vision (`VisionSystem`)
 
-Owned by `SimulationSession`, only built when `cameras` is not empty. It needs the season's `AprilTagLayout`
-(`IGameModule::aprilTagLayout()` of the selected game plugin; none = cameras never see a tag) and the `IMechanismDirectory`. Per tick, after
-the physics and game steps, for each camera whose capture is due (`1/fps` period, aligned to the next tick boundary): camera world pose =
-chassis pose * `linkPoseInChassis(attachment)` * `local` (the same resolution zones use, so a camera on a turret moves with the turret)
--> the tags inside the field of view, within `maxRangeM`, facing the camera (no occlusion) -> a `CameraFrame` (capture / publish
-times, robot-to-camera transform and robot pose in the WPILib robot frame, noise from `SimContext::rng()`, so deterministic per seed)
-queued until `simTime >= capture + latency`. `buildSensorFrame` / the runner moves the due frames into `SensorFrame::vision`; the snapshot
-carries `CameraState` (world pose, `tagsVisible`, `visibleTagIds`). `reset()` clears the queue and restarts sequence numbers. The runner
-also sends the `VisionSetup` message (cameras, PhotonLib version from `ProjectInspector`'s `photonlib` vendordep, layout name) after `HelloAck`
-and for each epoch. Rules, frames and the NetworkTables output: [vision.md](vision.md).
-<!-- VERIFY: class/file names (VisionSystem, where VisionSetup is sent), ordering inside SimulationSession::tick -->
+`core/runtime/vision_system.h`, owned by `SimulationSession` (always constructed; with no cameras it does nothing). It needs the
+season's `AprilTagLayout` (`IGameModule::aprilTagLayout()` of the selected game plugin; none = cameras never see a tag) and the
+`IMechanismDirectory`. At the end of `SimulationSession::tick`, after the physics and game steps, the IMU / battery egress and the
+clock advance, for each camera whose capture is due (first capture on the first tick, then every `round(1e6/fps)` us, at step
+boundaries): camera world pose = chassis pose * `linkPoseInChassis(attachment)` * `local` (the same resolution zones use, so a camera
+on a turret moves with the turret; the chassis frame when the link cannot be resolved) -> the tags whose centre is in front of the camera,
+inside the field of view, within `maxRangeM` and facing the camera within `maxIncidenceDeg` (no occlusion) -> a `CameraFrame`
+(capture / publish times, robot-to-camera transform and robot pose in the WPILib robot frame = the floor point below the hull centre with the
+chassis yaw only, Gaussian noise from `SimContext::rng()` on the reported robot pose, so deterministic per seed) queued until
+`simTime >= capture + latency`. `collectDue` moves the due frames into `SensorFrame::vision`; the snapshot carries `CameraState` (world
+pose, `tagsVisible`, `visibleTagIds` of the last capture). `reset()` clears the queue and restarts sequence numbers and capture times.
+`SessionRunner` sends the `VisionSetup` message (cameras, the PhotonLib version from `RunnerOptions::photonVersion`, which `RobotSession`
+fills from `ProjectInspector`'s `photonlib` vendordep, and the layout name) right after `HelloAck` and again before the first frame of every
+epoch, also when there are no cameras. Rules, frames and the NetworkTables output: [vision.md](vision.md).
 
 ### Load pipeline
 
@@ -190,7 +194,7 @@ persisted mappings -> mechanisms (config order) -> game state; destruction is th
 
 `SimulationSession::tick(SensorFrame&, full)` is one pass of ARCHITECTURE 4 (steps 2-6): mechanisms -> drivetrain commands from `drivetrain.<wheel>.drive[N]|steer` (`sdk::wheelCommandFromHub`: every drive motor with its own voltage)
 slots (rotor feedback written back with the gear ratio) -> `coupling.beforeStep` -> `world.step` -> `coupling.afterStep` -> game state -> game `onTick` -> chassis IMU
-(`robot.imu`: yaw/pitch/roll, body rates, proper acceleration = +g at rest) -> cameras (`VisionSystem`, see Vision above) -> battery. The battery uses the total current of the tick
+(`robot.imu`: yaw/pitch/roll, body rates, proper acceleration = +g at rest) -> battery -> cameras (`VisionSystem`, see Vision above). The battery uses the total current of the tick
 (mechanisms + wheel motors + `baselineCurrentA`) with a one-tick lag: `V = nominal - I R`, brownout with a 0.5 V hysteresis (warning `brownout`).
 Tick numbers restart at 0 per epoch; `reset()` restores pose, drivetrain, mechanisms, game state, clock, RNG and battery but keeps devices and bindings.
 It first resets hub signal history, so the first tick of every new epoch consumes neutral commands rather

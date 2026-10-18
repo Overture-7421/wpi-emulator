@@ -238,48 +238,47 @@ project is not modified. The model is simple on purpose: a tag is seen when it i
 range and facing it, results arrive after the configured latency, and nothing blocks the view (see [Limitations](#8-limitations)).
 Technical details: [vision.md](vision.md).
 
-* **Add**: right-click the **Chassis** or a mechanism in the tree and choose **Add camera** and then **Limelight** or **PhotonVision**.
-  The camera is created on that part (a camera on the turret link moves with the turret), selected, and listed under the Robot node
-  as **Cameras** with `@ chassis` or `@ turret.mover` showing what it hangs on (a warning dot means the Validation tab has an issue
-  for it). In the viewport it is a small body marker with a translucent view pyramid (the field of view out to its range).
-* **Move and attach**: pick it in the viewport or the tree and use the gizmo, or type the pose in the **Placement** card.
-  **Attached to** / **Attachment link** (or dragging the camera onto a mechanism or the Chassis in the tree, or right-click
-  **Attach to**) re-attach it without moving it in the world. **Duplicate** and **Delete** are in its inspector and context menu;
-  deleting a mechanism moves its cameras to the mechanism's own parent.
+* **Add**: right-click the **Chassis**, a mechanism, the Robot node or the **Cameras** group in the tree and choose **Add camera** and
+  then **Limelight** or **PhotonVision** (on a mechanism the camera hangs on that mechanism, on the others on the chassis). The new camera
+  is selected, faces forward just behind the front of the hull (or sits at the mechanism's link origin), and is listed under the
+  Robot node's **Cameras** group with `@ chassis` or `@ turret.mover` showing what it hangs on (a warning dot means the Validation
+  tab has an issue for it). In the viewport it is a small body marker with a translucent view pyramid (the field of view out to its
+  range); a Limelight is orange and a PhotonVision camera blue.
+* **Move and attach**: pick it in the viewport or the tree and use the move / rotate gizmo (no scaling), or type the pose in the
+  **Placement** card. **Attached to** / **Attachment link** (or dragging the camera onto a mechanism or the Chassis in the tree, or
+  right-click **Attach to**) re-attach it without moving it in the world. **Duplicate** and **Delete** are in its inspector and
+  context menu; deleting a mechanism moves its cameras to the mechanism's own parent.
 * **Inspector**:
 
 | Card | Fields |
 |---|---|
-| **General** | **Label**; **Type** (Limelight or PhotonVision); **Camera name**: for a Limelight the name from `LimelightHelpers` (empty = the default `limelight` table, otherwise `limelight-<name>`), for PhotonVision the `PhotonCamera` name. Names must be unique per type |
-| **Optics** | horizontal and vertical **field of view**, **maximum range**, **frame rate** (fps), **latency** (ms from capture to the result being published) and **pose noise** (position and yaw, 1 sigma; 0 = exact). The max-incidence angle and the pixel resolution are in the saved file |
-| **Placement** | **Attached to**, **Attachment link** and the **pose** relative to that link (camera +X forward, +Y left, +Z up) |
-
-<!-- VERIFY: inspector card/field labels and whether max incidence angle / resolution are editable in the UI (editor stream) -->
+| **General** | **Label**; **Type** (Limelight or PhotonVision); **Camera name**: for a Limelight the name from `LimelightHelpers` (empty = the default `limelight` table, otherwise `limelight-<name>`), for PhotonVision the `PhotonCamera` name. Names must be unique per type; changing the type picks a new default name |
+| **Optics** | horizontal and vertical **field of view**, **maximum range** and **maximum incidence angle** (tags seen more obliquely are not detected), **frame rate** (fps), **latency** (ms from capture to the result being published), **resolution** (pixels, used for tag corners and area) and **pose noise** (position and yaw, 1 sigma; 0 = exact) |
+| **Placement** | **Attached to**, **Attachment link** and the **pose** relative to that link (camera +X forward, +Y left, +Z up; for the chassis, relative to the centre of mass), then a read-only **Robot-to-camera (WPILib robot frame)** line: the transform to use in robot code |
 
 * **Match your robot code.** The emulator cannot read the transform your code uses, so set the camera to the same mount:
   - Name: the camera name must equal the one in your code (`LimelightHelpers.getBotPoseEstimate_wpiBlue("limelight-front")` ->
     **Camera name** `front`; `new PhotonCamera("front")` -> `front`).
   - Position and rotation: your code's `robotToCamera` (`Transform3d`, WPILib robot frame: origin on the floor below the centre of the
-    robot, +X forward, +Y left, +Z up, rotation as roll/pitch/yaw) is the pose of the camera in the robot frame. The editor stores a
-    chassis camera's pose relative to the chassis **centre of mass** (the origin of the chassis frame), so subtract the COM offset
-    (Chassis inspector, *Centre of mass*: x/y from the centre, height above the floor) from your `Transform3d` translation:
-    with the COM 0.05 m behind the centre and 0.2 m high, a camera at `(0.30, 0.0, 0.50)` in the code is entered as
-    `(0.35, 0.0, 0.30)`. Rotation is entered as is (a camera pitched up 20 degrees has pitch -20 degrees in WPILib's convention).
-  - Optics: copy the field of view, resolution/fps and latency from your Limelight or PhotonVision settings (a Limelight 3 is about
+    robot, +X forward, +Y left, +Z up, rotation as roll/pitch/yaw) is the pose of the camera in the robot frame. The **Robot-to-camera**
+    line under the Placement card shows exactly that transform for the camera as placed (its tooltip gives metres and radians), so
+    edit the pose until it shows your numbers. The pose fields themselves are relative to the chassis **centre of mass**, so for a
+    chassis camera they differ from your `Transform3d` by the COM offset: with the COM 0.05 m behind the hull centre and 0.2 m high,
+    a camera at `(0.30, 0.0, 0.50)` in the code is entered as `(0.35, 0.0, 0.30)`. Rotation is entered as is (a camera pitched up 20
+    degrees has pitch -20 degrees in WPILib's convention). For a camera on a mechanism the line shows the rest pose; in the
+    simulation the transform follows the mechanism's motion.
+  - Optics: copy the field of view, resolution, fps and latency from your Limelight or PhotonVision settings (a Limelight 3 is about
     63.3 x 49.7 degrees; PhotonVision uses the calibrated camera's lens).
-  <!-- VERIFY: nominal FOV example numbers; the COM example arithmetic matches the editor's pose convention -->
 * **Pose reporting**: Limelight `botpose*` and PhotonVision multi-tag results report the robot pose in the field frame computed from the
   simulation's true pose (plus the pose noise you configured). Use noise > 0 to test your filter's rejection thresholds.
 * **PhotonLib version.** PhotonVision's data format depends on the PhotonLib version. The emulator reads the `photonlib` version
-  from your project's `vendordeps` and supports a pinned list (currently **v2026.3.4**, see [vision.md](vision.md)); with another
-  version the Console shows a warning and the default layout is used, which may make `PhotonCamera` report *not connected* or
-  ignore results. Limelight needs no version setting (`LimelightHelpers` v1.14 layouts).
-  <!-- VERIFY: supported PhotonLib versions and warning text (bridge / launcher streams) -->
-* **In the run view** (the **Cameras** item of the **View** menu toggles them): each camera's view pyramid follows the robot (and the
-  turret for a turret camera) and is **brighter while the camera sees at least one tag**; the field shows the AprilTag
-  positions of the season's layout. The simulated result is also on NetworkTables, so AdvantageScope or Shuffleboard connected
-  to the robot see it like on the real robot.
-  <!-- VERIFY: View menu labels, tag markers and highlight wording (runview stream) -->
+  from your project's `vendordeps` and supports the versions whose result definition it verified (**v2025.3.2, v2026.1.1 to v2026.3.4
+  and v2026.7**, see [vision.md](vision.md)). With another version the Console shows one error and **no PhotonVision camera is
+  published** (`PhotonCamera` then reports *not connected*); Limelight cameras are unaffected and need no version setting.
+* **In the run view** (the **Cameras** and **AprilTags** items of the **View** menu toggle them): each camera's view pyramid follows the
+  robot (and the turret for a turret camera) and turns **brighter and green while the camera sees at least one tag**; the field shows
+  the season's AprilTags with their ids, and a tag seen by any camera gets a green border. The simulated result is also on
+  NetworkTables, so AdvantageScope or Shuffleboard connected to the robot see it like on the real robot.
 * **Cameras need a game module**: the tag layout belongs to the season's plugin (2026 in v1). Without one the cameras exist but
   never see a tag.
 
@@ -424,7 +423,7 @@ extension inert).
 | **Phoenix 6 notes** | Devices are seen through WPILib's SimDevice layer; the emulator drives the **rotor**, so Phoenix applies its own `SensorToMechanismRatio` and offsets (set your real gear ratios in the robot code, not in the emulator's slot). TalonFX/TalonFXS, CANcoder, Pigeon 2, CANdle, CANrange and CANdi are supported; temperature and faults are not simulated; Pigeon 2 has no acceleration input in CTRE's simulation. Phoenix 5 is included but derived from documentation, not tested against the real library. Do not drive a Phoenix device's sim state from your own robot code at the same time as the emulator (two writers); see [bridges-vendor.md](bridges-vendor.md) for the details. |
 | **CANivore bus labels** | Phoenix simulation keys devices by type and CAN ID only, so the **Bus** column in the detected-devices table is blank/unknown: the app cannot tell a CANivore from the roboRIO bus (and never invents a label). The same type + ID on two buses is the same simulated device; mapping it twice shows an *alias conflict*, and the conflicting device runs unmapped until fixed. |
 | **Mechanism does not move** | Check the Validation tab (required motor slot unmapped?) and that the mapped device is the one your code drives. A mechanism only moves when its motor slot is mapped. |
-| **Camera sees no tags / `tv` is 0 / PhotonCamera not connected** | Check that the camera **name** and **type** match your robot code, that the camera is at the pose your code assumes (a camera facing the floor or behind the robot sees nothing), the field of view and range, and that the season has a game module (tags come from it). The view pyramid in the run view lights up when a tag is seen. For PhotonVision also check the console for a PhotonLib version warning ([Cameras](#cameras-limelight--photonvision)). Remember there is a latency: results appear `latency` ms after the camera sees the tag. |
+| **Camera sees no tags / `tv` is 0 / PhotonCamera not connected** | Check that the camera **name** and **type** match your robot code, that the camera is at the pose your code assumes (a camera facing the floor or behind the robot sees nothing), the field of view and range, and that the season has a game module (tags come from it). The view pyramid in the run view lights up when a tag is seen. For PhotonVision also check the console for a PhotonLib version error ([Cameras](#cameras-limelight--photonvision)). Remember there is a latency: results appear `latency` ms after the camera sees the tag. |
 | **Config file could not be read** | *"The saved robot setup could not be read... set the robot up again"*: rerun the wizard. |
 | **Nothing shows in the 3D view** | Update the graphics driver; Qt Quick 3D needs a working OpenGL/Direct3D device. The app also runs headless for tests only. |
 
@@ -438,7 +437,8 @@ extension inert).
   (a tag behind the hub or another robot is still seen), lens distortion, exposure and lighting, colour / neural / object-detection
   pipelines, and image streams (no `HttpCamera` / `CameraServer` video). Robot poses reported by the camera come from the true pose plus
   the configured noise, not from a solve. The camera mount is configured in the editor, not read from your code. PhotonVision needs a
-  supported PhotonLib version (v2026.3.4 first); the tag layout exists only for seasons with a game plugin (2026).
+  PhotonLib version the emulator verified (v2025.3.2, v2026.1.1 to v2026.3.4, v2026.7); the tag layout exists only for seasons with a
+  game plugin (2026). The vision sample for C++ was verified with the robot stationary (Phoenix 6 driving from C++ is unverified).
 * **REV Robotics** (SPARK MAX / FLEX, PH) is not bridged in v1; only CTRE Phoenix 6 (and Phoenix 5, unverified) are
   mapped to mechanisms. Generic HAL devices (PWM, DIO, analog, encoders, relays, solenoids, PCM/PH state, power
   distribution) are bridged. The vendor recipe is in [CONTRIBUTING.md](CONTRIBUTING.md).

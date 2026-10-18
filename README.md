@@ -85,6 +85,7 @@ v0.1.0. What is verified, and what is not:
 |---|---|
 | Windows x64 (MSVC 2022, Qt 6.8.3, WPILib 2026.2.1) | Built warning-free with `WPIEMU_WARNINGS_AS_ERRORS=ON`; all 693 CTest entries pass (the real-robot end-to-end test is opt-in and skipped by default). NSIS installer and portable zip built and verified. |
 | End-to-end on a real 2026 robot project | Has been run on Windows through Gradle with the real extension and session (opt-in `e2e.shelby_2026`, `RealRuntimeHost` flavour in the app tests). |
+| Vision (Limelight / PhotonVision) | End-to-end on Windows with the Java and C++ sample robots in `samples/vision_robot` (opt-in `e2e.vision_sample`). The C++ sample was verified with the robot stationary (Phoenix 6 driving from C++ is unverified). The ntcore binding on Linux / macOS is untested. |
 | **Linux and macOS runs** | **Unverified.** The code is portable and CI is configured for both, but neither has been built or run locally. The extension's interaction with the robot's own `libwpiHal` on these platforms is the open item of [ADR 0001](docs/decisions/0001-halsim-extension-injection.md). |
 | **AppImage / dmg packaging scripts** | **Written, not run.** `packaging/linux/build-appimage.sh` is syntax-checked only; `packaging/macos/*` and notarization have never executed. Expect fixes on the first CI release run. |
 | Phoenix 5 | Rules derived from documentation, not tested against the real vendor library. |
@@ -94,7 +95,6 @@ v0.1.0. What is verified, and what is not:
 **Not in v1 (roadmap candidates)**: REV Robotics (SPARK / PH vendor bridge, recipe in
 [docs/bridges-vendor.md](docs/bridges-vendor.md)), suspension, multiple robots, seasons other
 than 2026 (copy `plugins/_template`), a real Driver Station connection, loadable (shared-library) plugins, code signing
-and MSI / deb / rpm packages, and other WPILib years for the extension (validated against 2026.2.1 only). Vision is limited to AprilTags without occlusion,
-distortion or object detection (see [docs/vision.md](docs/vision.md)); its end-to-end check on `samples/vision_robot` is opt-in.
-<!-- VERIFY: README status claims about the vision sample e2e once the e2e-verify step has run -->
+and MSI / deb / rpm packages, and other WPILib years for the extension (validated against 2026.2.1 only). Vision is limited to AprilTags
+without occlusion, distortion or object detection (see [docs/vision.md](docs/vision.md)).
 Contributions: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).

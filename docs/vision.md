@@ -5,10 +5,9 @@ camera sees; the HALSim extension, inside the robot process, publishes the same 
 the robot's default NT instance, with simulated latency. The robot project is not modified. Rationale and rejected options:
 [ADR 0017](decisions/0017-vision-cameras.md). User-level steps: [USER_GUIDE.md](USER_GUIDE.md) section 3 (*Cameras*).
 
-Everything vision-specific is optional: with no entry in `RobotConfig::cameras` (or a season with no tag layout) nothing is
-created, published or sent.
+Everything vision-specific is optional: with no entry in `RobotConfig::cameras` no topic is created or published (the emulator
+still sends an empty `VisionSetup`); in a season with no tag layout the cameras exist but always report "no target".
 
-<!-- VERIFY: file/target names below are the planned layout; compare with bridges/ and core/runtime after integration -->
 ```
 sdk/include/wpiemu/sdk/
   config/camera.h              CameraKind, CameraConfig (persisted in RobotConfig::cameras)
@@ -18,12 +17,14 @@ sdk/include/wpiemu/sdk/
   devices/builtin_bridges.h    registerBuiltinVisionBridges(VisionBridgeRegistry&)  (aggregation seam)
   ipc/messages.h               SensorFrame::vision, the VisionSetup message
   telemetry/snapshot.h         CameraState, ISimSnapshot::cameras()
-core/runtime/                  VisionSystem (owned by SimulationSession), cameras codec + validation
-plugins/game_2026/             AprilTag layout 2026-rebuilt-welded (IGameModule::aprilTagLayout)
-bridges/vision/                Limelight + PhotonVision encoders, INtPublisher seam, registerVisionBridges
-bridges/vision_nt/             the real ntcore binding of INtPublisher (needs ntcore; see Building)
+core/runtime/                  VisionSystem (runtime/vision_system.*, owned by SimulationSession), cameras codec + validation
+plugins/game_2026/             AprilTag layout 2026-rebuilt-welded (src/april_tags.cpp, IGameModule::aprilTagLayout)
+bridges/vision/                wpiemu_bridges_vision: Limelight + PhotonVision bridges and encoders, the INtBackend seam
+                               (nt_backend.h), a fake backend for tests, registerVisionBridges
+  .../nt_binding.h             wpiemu_bridges_vision_nt: the real ntcore INtBackend (only built when ntcore was found)
 bridges/builtin_bridges.cpp    registerBuiltinVisionBridges -> bridges/vision (extension-side aggregation seam)
-tests/runtime, tests/bridges_vision, tests/ipc, tests/app_editor, tests/app_runview   (see Tests)
+halsim_ext/                    BridgeSet vision fan-out (pollVision / applyVision / configureVision), SimSession wiring
+tests/runtime, tests/bridges_vision, halsim_ext/tests, tests/ipc, tests/app_editor, tests/app_runview   (see Tests)
 samples/vision_robot/{java,cpp}  sample robots using both vendors
 ```
 
@@ -41,7 +42,7 @@ samples/vision_robot/{java,cpp}  sample robots using both vendors
  |     tags in FOV / range / facing         |  ----------------->  |     poll(t)  <- *Request topics           |
  |     -> CameraFrame (latency queue)       |   .vision[]          |     apply(frames, t) -> rawBytes, state   |
  |   frames with publishTime <= now         |                      |                                           |
- |     go into SensorFrame::vision          |                      |  INtPublisher -> ntcore (default NT inst) |
+ |     go into SensorFrame::vision          |                      |  INtBackend -> ntcore (default NT inst)   |
  |  snapshot: CameraState (run view)        |                      |  then HALSIM_StepTiming(stepUs)           |
  +------------------------------------------+                      +----------------------+--------------------+
                                                                                           |
@@ -50,24 +51,23 @@ samples/vision_robot/{java,cpp}  sample robots using both vendors
 
 Ownership follows the rest of the project (ARCHITECTURE section 1): the SDK holds the data types and the `IVisionBridge`
 seam; core (Qt-free, season-free) computes visibility; the season's tag field comes from the game plugin; the bridges run in
-the robot process and depend only on the SDK (ntcore stays behind `INtPublisher`); the app only shows the result.
+the robot process and depend only on the SDK (ntcore stays behind `INtBackend`); the app only shows the result.
 
 ### Data flow per tick
 
-1. At connect, after `HelloAck`, the emulator sends a **`VisionSetup`** (`CameraSetup` per configured camera, the robot's
-   PhotonLib version, the layout name). The extension hands it to every `IVisionBridge::configure`, which creates the topics of the
-   cameras of its kind. It is sent again for every new `runEpoch` (Reset, reconnect).
+1. Right after `HelloAck`, and again before the first frame of every epoch (Reset, Begin, reconnect), the emulator sends a
+   **`VisionSetup`** (`CameraSetup` per configured camera, the robot project's PhotonLib version from its `photonlib` vendordep, the
+   layout name). It is sent even when there are no cameras (an empty list) and is idempotent. `BridgeSet::configureVision`
+   remembers it and calls `IVisionBridge::configure` on every started bridge; each bridge builds the cameras of its kind.
 2. Sim thread, tick N, after the **physics step and the game step** (ARCHITECTURE 4, steps 4-5): `VisionSystem` resolves each
    camera's world pose from the final chassis pose, the live link pose of its attachment and `local`. Cameras whose capture time
-   has come (period `1/fps`) compute a `CameraFrame` and queue it until `simTime >= capture + latencyMs`.
-3. `buildSensorFrame` moves every frame **due now** (`publishTimeUs <= simTime`) into `SensorFrame::vision`; the snapshot carries
-   `CameraState` (world pose, `tagsVisible`, `visibleTagIds` of the last captured frame) for the run view.
-4. Extension, on receipt: `BridgeSet` routes `SensorFrame::vision` to the vision bridges' `apply(frames, simTimeUs)`
-   **before `HALSIM_StepTiming`**, so the robot loop that runs next sees results published up to this sim time; then `poll`
-   mirrors what the robot wrote (pipeline, LED, driver mode) and heartbeats advance.
+   has come (period `round(1e6/fps)` us) compute a `CameraFrame` and queue it until `simTime >= capture + latencyMs`.
+3. `SimulationSession::tick` moves every frame **due now** (`publishTimeUs <= simTime`) into `SensorFrame::vision`; the snapshot
+   carries `CameraState` (world pose, `tagsVisible`, `visibleTagIds` of the last captured frame) for the run view.
+4. Extension, on receipt, on the clock thread: `applyInputs`, then `pollVision(simTime)` (mirrors robot-written pipeline / driver
+   mode / LED topics and advances heartbeats), then `applyVision(frames, simTime)` (publishes the due results), all **right
+   before `HALSIM_StepTiming`**, so the robot loop that runs next sees every result published up to this sim time.
 5. `HALSIM_StepTiming(stepUs)` runs the robot code, which reads the NT topics through `LimelightHelpers` / PhotonLib.
-
-<!-- VERIFY: ordering of apply vs poll vs StepTiming in BridgeSet (bridge stream) -->
 
 ## 2. The camera model
 
@@ -89,42 +89,46 @@ the robot process and depend only on the SDK (ntcore stays behind `INtPublisher`
 
 ### Visibility rules
 
-A tag is **seen** by a camera at capture time when all of these hold (angles and distances are evaluated in the camera frame):
+A tag is **seen** by a camera at capture time when all of these hold (evaluated in the camera frame, for the tag **centre**):
 
-1. its centre is inside the camera's rectangular field of view (|bearing| <= `hFovDeg`/2, |elevation| <= `vFovDeg`/2) and in front of the camera;
+1. the tag centre is in front of the camera (`x > 0`) and inside its rectangular field of view (|bearing| <= `hFovDeg`/2,
+   |elevation| <= `vFovDeg`/2); only the centre is tested, a tag half outside the image still counts, and there is no minimum range;
 2. the distance from the camera to the tag centre is <= `maxRangeM`;
-3. the tag faces the camera: the angle between the tag's outward normal (+X of the tag) and the vector from the tag to the
-   camera is <= `maxIncidenceDeg`, and the camera is on the front side of the tag.
-
-<!-- VERIFY: whether the field-of-view test uses the tag centre only or all four corners; whether a minimum range exists -->
+3. the tag faces the camera: the camera is on the front side of the tag (+X side) and the angle between the tag's outward
+   normal and the vector from the tag to the camera is <= `maxIncidenceDeg`.
 
 There is **no occlusion** (a tag behind the hub or another robot is still seen), no distortion, no exposure and no minimum pixel
 size. A frame with no visible tag is still produced and published (that is how a real pipeline reports "no target").
+Tag corners are projected with a pinhole model from the field of view and `widthPx` x `heightPx`; the area is the quadrilateral's
+share of the image in percent.
 
 ### Rate and latency
 
-* A camera captures once per `1/fps`. The emulator steps in fixed ticks (default 5 ms), so the capture happens on the first
-  tick boundary at or after the ideal capture time; `CameraFrame::captureTimeUs` records the real sim time. The sequence number
-  counts frames captured by that camera since the session started (it restarts at every epoch).
-* The result is published `latencyMs` after capture, quantised to the tick the same way: `publishTimeUs >= captureTimeUs + latency`.
-  Robot code sees it on the first loop after that tick, so a 20 ms periodic loop observes the result up to one period later.
+* The first capture is at the first tick of an epoch (sim time 0); the camera then captures on the grid `k * round(1e6/fps)` us
+  from there. The emulator steps in fixed ticks (default 5 ms), so each capture happens on the first tick boundary at or after its
+  grid point (without drift); `CameraFrame::captureTimeUs` is that tick's sim time. The sequence number counts frames captured by
+  that camera since the epoch started.
+* The result is published `latencyMs` after capture: `publishTimeUs == captureTimeUs + latency` exactly, and it is delivered to the
+  extension on the first tick at or after that time (so up to one step later). Robot code sees it in the first loop after that, so a
+  20 ms periodic loop can observe a result up to one period later again.
 * The data carries the **capture** time (Limelight: `now - (tl + cl)` is the capture time; PhotonVision: the result's capture
   timestamp), so `addVisionMeasurement` receives the timestamp of the moment the robot was where the camera saw it.
 
 ### Noise
 
-`positionNoiseM` / `yawNoiseDeg` perturb the robot pose a camera reports (`CameraFrame::robotPoseField`); detections of single
-tags (`cameraToTag`, bearings, corners) are noise-free. Noise comes from `SimContext::rng()` (seeded by `RobotConfig::sim.seed`),
-so a run is reproducible. <!-- VERIFY: noise is Gaussian, drawn once per frame; confirm with core VisionSystem -->
+`positionNoiseM` / `yawNoiseDeg` perturb the robot pose a camera reports (`CameraFrame::robotPoseField`) with zero-mean Gaussian
+noise (x and y independently, plus a yaw rotation), drawn once per frame that sees at least one tag; detections of single tags
+(`cameraToTag`, bearings, corners) are noise-free. Noise comes from `SimContext::rng()` (seeded by `RobotConfig::sim.seed`), so a
+run is reproducible.
 
 ### Robot pose (multi-tag)
 
 When at least one tag is seen, `CameraFrame::hasRobotPose` is true and `robotPoseField` is the **ground-truth robot pose in the
 field frame** (plus noise), i.e. what a perfect solver would return from the visible tags. `avgTagDistM`, `avgTagAreaPercent` and
 `tagSpanM` (largest distance between two seen tags, 0 for one) are filled for the Limelight `botpose` metadata. There is no solver:
-Photon's multi-tag/`estimatedPose` on the robot side runs on the emulated detections like on a real robot, while the *coprocessor-side*
-pose (Limelight `botpose*`, Photon multi-tag result) comes from ground truth. <!-- VERIFY: Photon multitag result is filled -->
-Pose ambiguity is always 0.
+the coprocessor-side poses (Limelight `botpose*`, the PhotonVision multi-tag result, which exists when two or more tags are seen)
+come from ground truth, while PhotonLib's own estimators on the robot (`PhotonPoseEstimator` single-tag strategies) run on the
+emulated detections like on a real robot. Pose ambiguity is always 0.
 
 ## 3. Frames and conventions
 
@@ -132,23 +136,26 @@ Pose ambiguity is always 0.
 |---|---|
 | Field | right-handed Z-up NWU, +X toward the opposing wall, origin at the field corner of the layout (WPILib blue-origin) |
 | Chassis (SDK) | +X forward, +Y left, +Z up, **origin at the centre of mass** ([ADR 0003](decisions/0003-box3d-chassis-physics.md)); the frame `CameraConfig::local` is relative to when attached to the chassis |
-| **WPILib robot** | +X forward, +Y left, +Z up, **origin on the floor below the hull (chassis box) centre**, yaw = chassis yaw. What robot code, `LimelightHelpers.setCameraPose_RobotSpace` and PhotonLib's `robotToCamera` use |
+| **WPILib robot** | +X forward, +Y left, +Z up, **origin on the floor (z = 0) below the hull (chassis box) centre, rotated by the chassis yaw only**. What robot code, `LimelightHelpers.setCameraPose_RobotSpace` and PhotonLib's `robotToCamera` use |
 | Camera | +X forward (optical axis), +Y left, +Z up |
 | Tag | centre of the tag; **+X points out of its face** (`AprilTagFieldLayout` convention) |
 
-`CameraFrame::robotToCamera` and `robotPoseField` are always in the WPILib robot frame, so robot code can compare them with its own
-`Transform3d`. The editor stores `local` relative to the attachment link, so the two differ by the centre of mass for a
-chassis-mounted camera: `robotToCamera = (comOffsetXY, comHeightM) + local` (translation; rotation is unchanged). For a camera on
-a mechanism the editor's link pose is composed first (`linkPoseInChassis(attachment) * local`) and the same COM shift applies
-(the pose of the camera at capture time, so a turret camera's `robotToCamera` changes as it turns).
+`CameraFrame::robotToCamera` and `robotPoseField` are in the WPILib robot frame, so robot code can compare them with its own
+`Transform3d`. The robot frame ignores the chassis' pitch and roll (a tilted chassis never shifts the reported robot position),
+while the camera pose is the real one, so `robotToCamera` follows the tilt like a camera on a tilting robot. `local` of a chassis
+camera is relative to the COM-origin chassis frame, so at rest on a flat floor
+`robotToCamera = local + (comOffsetM.x, comOffsetM.y, comHeightM)` (translation; rotation unchanged: the hull centre is `comOffsetM`
+away from the COM in x/y). For a camera on a mechanism the link pose is composed first (`linkPoseInChassis(attachment) * local`),
+so a turret camera's `robotToCamera` changes as the turret turns.
 
-**Getting the robot-to-camera transform from the editor.** Select the camera: the *Placement* card shows its pose relative to the
-attachment link (translation in metres or inches, rotation as yaw/pitch/roll). For a chassis camera add the chassis COM
-offset (Chassis inspector: *Centre of mass*, x/y from the hull centre, z = COM height above the floor) to the translation to get
-the WPILib `Transform3d` translation your robot code uses; rotation is the same. Conversely, when the code already says
-`new Transform3d(0.3, 0.0, 0.5, new Rotation3d(0, Math.toRadians(-20), 0))`, subtract the COM and enter the result as the camera pose
-(a camera pitched 20 degrees up has pitch = -20 degrees in WPILib's right-handed rotation convention).
-<!-- VERIFY: inspector placement card labels / whether the editor offers a "robot frame" readout; angle sign convention shown in the UI -->
+**Getting the robot-to-camera transform from the editor.** Select the camera: the inspector's *Placement* card shows its pose
+relative to the attachment link, followed by a read-only **Robot-to-camera (WPILib robot frame)** line (x, y, z and roll / pitch /
+yaw; its tooltip has metres and radians to paste into robot code). For a mechanism-mounted camera it is the rest pose. When your
+code already has a `Transform3d` (for example `new Transform3d(0.3, 0.0, 0.5, new Rotation3d(0, Math.toRadians(-20), 0))`),
+enter the camera pose so that this line shows the same numbers: for a chassis camera subtract the chassis centre of mass
+(Chassis inspector: *Centre of mass* offset x/y from the hull centre and height above the floor) from the translation; rotation is
+entered as is (the editor's roll / pitch / yaw are the same right-handed angles as WPILib's `Rotation3d`: a camera pitched 20 degrees up
+has pitch = -20 degrees).
 
 Tags and units: layouts are metres, Z-up, face-outward `+X`; pixel corners are `x,y` with the origin at the image top-left,
 x to the right, y down. `bearing`: `yawDeg` positive to the **right** of the optical axis and `pitchDeg` positive **up**
@@ -156,67 +163,77 @@ x to the right, y down. `bearing`: `yawDeg` positive to the **right** of the opt
 
 ## 4. NetworkTables output
 
-The extension creates the topics in the robot's default NT instance when it receives `VisionSetup` and updates them from
-`apply` on the clock thread with **explicit timestamps from sim time** (`HAL_GetFPGATime`). Direction `->` is what the simulation
-publishes, `<-` what robot code (or a dashboard) writes and the bridge mirrors.
+The extension creates the topics in the robot's default NT instance when ntcore becomes available (see section 7; until then the
+bridges skip quietly and retry every tick) and updates them from `poll` / `apply` on the clock thread. Every value is stamped with
+`INtBackend::nowUs()` = `HAL_GetFPGATime()`, i.e. the robot's `Timer.getFPGATimestamp()` (equal to `nt::Now()` in a simulated
+robot); the capture time is always `now - latency`. `<-` marks what robot code (or a dashboard) writes and the bridge mirrors.
 
 ### Limelight (`vision.limelight`, table `limelight` / `limelight-<name>`)
 
-Layouts follow `LimelightHelpers` v1.14 <!-- VERIFY: exact helper version and array layouts, see bridges/vision sources -->.
+Layouts follow the Limelight 2026 firmware and `LimelightHelpers` v1.14 (the version vendored into the sample). Topics are
+published on the first available tick as a "no target" state and then once per received frame.
 
 | Topic | Type | Content |
 |---|---|---|
 | `tv` | double | 1 if at least one tag was seen, else 0 |
-| `tid` | double | id of the primary (largest / nearest) tag; -1 when none |
-| `tx`, `ty` | double | bearing / elevation of the primary tag in degrees (`txnc`, `tync`: the same relative to the principal point) |
+| `tid` | double | id of the primary tag (the one with the largest area); -1 when none |
+| `tx`, `ty` | double | bearing (+ right) / elevation (+ up) of the primary tag in degrees; `txnc`, `tync` carry the same values (no principal-point offset) |
 | `ta` | double | area of the primary tag in % of the image |
-| `tl`, `cl` | double | pipeline and capture latency, ms (`tl + cl` = `latencyMs`) <!-- VERIFY: split between tl and cl --> |
-| `botpose`, `botpose_wpiblue`, `botpose_wpired` | double[] | robot pose in the respective field frame: x, y, z, roll, pitch, yaw (m / deg), total latency ms, tag count, tag span m, average distance m, average area %, then per-tag fiducial blocks |
-| `botpose_orb_wpiblue`, `botpose_orb_wpired` | double[] | same layout, MegaTag 2 (ground truth plus noise; robot orientation set by the robot is ignored) |
-| `rawfiducials` | double[] | 7 values per tag: id, txnc, tync, ta, distance to camera, distance to robot, ambiguity |
-| `stddevs` | double[] | MegaTag standard deviations (fixed values derived from the noise settings) <!-- VERIFY --> |
-| `json` | string | minimal results JSON: `Results.Fiducial[]` (`fID`, `tx`, `ty`, `ta`, `t6c_ts`, ...), `tl`, `cl`, `botpose*` <!-- VERIFY: exact fields --> |
-| `hb` | double | heartbeat, incremented every poll |
-| `pipeline` / `ledMode` <- | double | written by the robot; mirrored into `getpipe` / reported state, no other effect |
+| `tl`, `cl` | double | pipeline / capture latency, ms: each is half of `latencyMs`, so `tl + cl` = `latencyMs` |
+| `botpose`, `botpose_wpiblue`, `botpose_wpired` | double[] | robot pose (field centre / blue corner / red corner origin): x, y, z, roll, pitch, yaw (m / deg), latency ms, tag count, tag span m, average distance m, average area %, then 7 values per tag (`rawfiducials` layout); **empty** when no tag is seen |
+| `botpose_orb`, `botpose_orb_wpiblue`, `botpose_orb_wpired` | double[] | the same arrays for MegaTag 2 (the simulated pose is ground truth plus noise, so the robot-written orientation has no effect) |
+| `rawfiducials` | double[] | 7 values per tag, largest first: id, txnc, tync, ta, distance to camera, distance to robot, ambiguity |
+| `stddevs` | double[] | 12 values (MegaTag 1 then MegaTag 2: x y z roll pitch yaw) from the camera's `positionNoiseM` / `yawNoiseDeg`; zeros when no tag |
+| `t2d`, `tcornxy` | double[] | the 17-value target summary and the primary tag's corners (empty when none) |
+| `camerapose_robotspace`, `targetpose_cameraspace`, `targetpose_robotspace`, `camerapose_targetspace`, `botpose_targetspace` | double[6] | geometry of the camera / primary tag (zeros when no tag) |
+| `json` | string | a flat `LimelightResults` object as parsed by `LimelightHelpers.getLatestResults`: `pID`, `tl`, `cl`, timestamps, `v`, `tx`, `ty`, `ta`, the `botpose*` arrays, `t6c_rs`, and `Fiducial[]` (`fID`, `fam`, `t6c_ts`, `t6r_*`, `t6t_*`, `ta`, `tx`, `ty`, `txp`, `typ`); the other result arrays are empty |
+| `hb` | double | heartbeat, incremented every 100 ms of sim time |
+| `getpipe`, `getpipetype` | double, string | the current pipeline index (mirrors the robot-written `pipeline`) and `"pipe_fiducial"`; every pipeline is an AprilTag pipeline |
+| `pipeline` <- | double | written by the robot; mirrored into `getpipe` |
 
-Other Limelight topics (neural/detector results `rawdetections`, `tclass`, colour-target data, `crop`, `camMode`, `t6c_*`) are not
-published. <!-- VERIFY: list of unsupported topics -->
+Not published or not modelled: `ledMode` and `robot_orientation_set` are accepted but not modelled (LEDs do not influence tag
+detection, and the MegaTag 2 pose is ground truth anyway); `camMode`, `crop`, neural / detector / colour results (`rawdetections`,
+`tclass`, ...) and the other settings topics are not simulated.
 
-### PhotonVision (`vision.photonvision`, table `/photonvision/<name>`)
+### PhotonVision (`vision.photonvision`, tables `/photonvision` and `/photonvision/<name>`)
 
 | Topic | Type | Content |
 |---|---|---|
-| `rawBytes` | raw | the packed-struct `PhotonPipelineResult` PhotonLib deserialises (metadata: capture / publish timestamps, sequence id, `timeSinceLastPong = 0`; the targets with fiducial id, yaw, pitch, area, skew, corners, `bestCameraToTarget`, ambiguity; the multi-tag result when two or more are seen). Layout and struct type string follow the **PhotonLib version** reported by `VisionSetup` (pinned, below) |
-| `version` | string | the PhotonLib version string PhotonLib compares against its own |
-| `heartbeat` | int | incremented every poll (PhotonLib's `isConnected`) |
-| `pipelineIndexState`, `driverMode`, `ledModeState` | int / bool | the current state, mirroring the robot's `*Request` topics |
-| `pipelineIndexRequest`, `driverModeRequest`, `ledModeRequest` <- | int / bool | written by PhotonLib; mirrored into the state topics |
-| `cameraIntrinsics`, `cameraDistortion` | double[] | pinhole intrinsics derived from `hFovDeg`/`widthPx`/`heightPx`; zero distortion |
+| `<name>/rawBytes` | raw | the packed-struct `PhotonPipelineResult` PhotonLib deserialises: metadata (sequence id, capture and publish timestamps, `timeSinceLastPong = 0`), the targets (largest first: fiducial id, yaw, pitch, area, skew 0, corners, `bestCameraToTarget` (= alt), ambiguity) and, when two or more tags are seen, the multi-tag result (field-to-camera pose and the ids used). The topic type string is `photonstruct:PhotonPipelineResult:<hash>` and the topic carries the `message_uuid` property PhotonLib's version check reads |
+| `version` (root) | string | the project's PhotonLib version string |
+| `<name>/heartbeat` | int | incremented every 100 ms of sim time (PhotonLib's `isConnected`) |
+| `<name>/pipelineIndexState`, `driverMode`, `fpsLimit`, `fps` | int / bool / int / double | current state; `fps` is the configured frame rate |
+| `<name>/pipelineIndexRequest`, `driverModeRequest`, `fpsLimitRequest` <- ; root `ledModeRequest` <- | int / bool | written by PhotonLib; mirrored into the state topics (`ledModeState` at the root). Driver mode publishes empty results |
+| `<name>/cameraIntrinsics`, `cameraDistortion` | double[] | 3x3 row-major pinhole intrinsics from `hFovDeg` / `vFovDeg` / resolution; 8 zero distortion coefficients |
+| `<name>/hasTarget`, `latencyMillis`, `targetYaw`, `targetPitch`, `targetArea`, `targetSkew`, `targetPixelsX`, `targetPixelsY` | bool / double | the legacy scalar topics for the best target |
 
-<!-- VERIFY: exact topic list and the struct type strings in bridges/vision sources -->
-Not simulated: `inputSaveImgCmd` / `outputSaveImgCmd`, object-detection targets, the time-sync server (PhotonLib's `TimeSync` is
-never answered; `timeSinceLastPong` is faked as 0 and the latency is carried by capture / publish timestamps).
+Not published: PhotonLib's `.schema` topics, `inputSaveImgCmd` / `outputSaveImgCmd`, object-detection targets, the time-sync
+server (PhotonLib's `TimeSync` is never answered; `timeSinceLastPong` is 0 and the latency is carried by the capture / publish
+timestamps).
 
-**Supported PhotonLib versions.** The packed-struct layout is version specific, so the encoder supports a pinned list
-(`v2026.3.4` first, see `bridges/vision`). The launcher reads the project's `photonlib` vendordep version (`ProjectInspector`,
-[runtime.md](runtime.md)) and passes it as `VisionSetup::photonVersion`; an empty or unsupported version logs a warning and uses
-the default layout, in which case `PhotonCamera` may report the camera as disconnected or fail to decode results.
-<!-- VERIFY: supported version list, behaviour on unsupported version -->
+**Supported PhotonLib versions.** The result's type string embeds a hash of the message definition and PhotonLib throws when it
+differs from its own, so the bridge serves only versions whose definition hash matches the encoder: **v2025.3.2, v2026.1.1 to
+v2026.3.4 and v2026.7 were verified** (the default for an unknown project version is v2026.3.4). `VisionSetup::photonVersion` comes
+from the project's `photonlib` vendordep (`ProjectInspector`); for any other version the bridge logs **one error** to the console
+and publishes **no PhotonVision camera** (Limelight cameras are unaffected).
 
 ## 5. Reconnect, reset and epochs
 
-* The vision state is part of the simulation epoch. On a **new connection** (including the extension's automatic reconnect) the
-  emulator resends `VisionSetup`; on **Reset**, **Begin** and when a `SensorFrame` adopts a **newer epoch**, `BridgeSet` calls
-  `IVisionBridge::reset()` on the clock thread: queued frames are dropped and the published results are cleared so robot code
-  never sees a result from before the reset. Retries (same epoch) do not reset.
-* Core clears its latency queue and restarts camera sequence numbers and capture phases on `SimulationSession::reset()` (tick 0 of
-  the new epoch captures immediately for every camera). <!-- VERIFY: first capture at tick 0 -->
-* Topics are (re)created by `configure`, which is idempotent: cameras that were removed from the config stop being updated, and
-  their topics are unpublished. After the emulator goes away, the topics keep their last value until the next connection (a real
-  coprocessor does the same when its stream stalls); robot code observing `heartbeat` / timestamps sees staleness.
-  <!-- VERIFY: removed-camera topics are unpublished, and topics keep their last value after a disconnect -->
-* Editing `cameras` while a robot is running takes effect for the next robot run / `VisionSetup`; the editor's running instance is
-  restarted like any other robot-model change. <!-- VERIFY: whether camera edits are live-applied -->
+* The vision state is part of the simulation epoch. The emulator sends `VisionSetup` right after `HelloAck` and again before the
+  first frame of every epoch (idempotent: `configure` rebuilds the camera list). When a connection starts, on an applied
+  **Reset** / **Begin**, and when a `SensorFrame` adopts a **newer epoch**, `BridgeSet::resetInputHistory` also calls
+  `IVisionBridge::reset()` on the clock thread (retries of the same epoch do not): each camera republishes a "no target" state
+  (Limelight: `tv` 0, empty pose arrays; PhotonVision: an empty result, heartbeat 0), so robot code never sees a result from
+  before the reset.
+* Core clears its latency queue on `SimulationSession::reset()` and restarts the camera sequence numbers and capture phases; the
+  first tick of the new epoch captures immediately for every camera (frames still in the latency queue are dropped).
+* `configure` replaces the camera list but does not unpublish the topics of cameras that were removed; `stop()` (extension
+  shutdown) unpublishes every topic the bridge created. After the emulator goes away the topics keep their last value, but the
+  heartbeats stop advancing (they only advance with sim time), so `PhotonCamera.isConnected()` turns false and robot code can see
+  the staleness; a reconnect restarts everything as above.
+* The camera list is fixed when the simulation session is built. When the robot model (including the cameras) was edited since
+  the robot was launched, `RealRuntimeHost` relaunches the robot with the new configuration the next time the simulation starts
+  (entering the Run tab), like for any other model change.
 
 ## 6. Threading
 
@@ -231,17 +248,27 @@ the default layout, in which case `PhotonCamera` may report the camera as discon
 
 ## 7. ntcore
 
-The real publisher links **ntcore** (headers + `ntcore` desktop library from the same WPILib Maven cache as HAL and wpiutil),
-discovered by `halsim_ext/cmake/WpiEmuWpilib.cmake` as the imported target `wpiemu_wpilib_ntcore` (owner `wpilib` in
-`tools/check_boundaries.py`, like `wpiemu_wpilib_hal`); CMake sets `WPIEMU_NTCORE_FOUND`. When ntcore is not found, the vision
-bridges are still registered by `bridges/builtin_bridges.cpp` but `start` fails with a clear message (`Status`) and cameras are inert;
-the encoders and their tests (fake publisher) build and run without ntcore. <!-- VERIFY: behaviour when WPIEMU_NTCORE_FOUND is off -->
+The ntcore binding (`wpiemu_bridges_vision_nt`, `nt_binding.h`) has **no link-time dependency on ntcore**. It attaches at run time to
+the `ntcore` module the robot process has already loaded (`GetModuleHandle` on Windows, `dlopen(RTLD_NOLOAD)` on Linux/macOS)
+and resolves the C API (`ntcore_c.h`) from it, the same approach as the vendor bridges for CTRE. A Java robot loads ntcore through
+JNI from an extracted temp directory, possibly after the extension was loaded, so a load-time import would either fail or bind a
+private second copy. `INtBackend::available()` is **false until the module is loaded** (and the robot program started): the bridges
+publish nothing and retry on every tick, and a robot program that never loads ntcore is unaffected. Timestamps use
+`HAL_GetFPGATime()` (resolved from the already loaded wpiHal; `NT_Now()` when there is no HAL, as in unit tests), which is
+what `Timer.getFPGATimestamp()` reports and what ntcore itself uses as `nt::Now()` in a simulated robot, so they share one clock and
+follow pause and time scale.
 
-Only the robot's **default** NT instance is used (`nt::GetDefaultInstance`), so the robot's `NetworkTableInstance.getDefault()`
+CMake: `halsim_ext/cmake/WpiEmuWpilib.cmake` locates the `ntcore-cpp` and `wpinet-cpp` artifacts next to HAL / wpiutil (Maven cache,
+extracted root or `-DWPIEMU_WPILIB_DOWNLOAD=ON`) and, when found, creates the imported target `wpiemu_wpilib_ntcore` and sets
+`WPIEMU_NTCORE_FOUND`. Only its headers are used to build `wpiemu_bridges_vision_nt` (the DLL is for the smoke test, which loads
+it in-process; the robot supplies its own). `wpiemu_bridges_builtin` links the binding and defines `WPIEMU_BUILTIN_VISION_NT` only when it
+exists. **Without ntcore** at build time the vision bridges are still registered by `bridges/builtin_bridges.cpp` but with a backend
+that is never available, so cameras are inert and nothing else changes; the encoders and their fake-backend tests build and run.
+The imported target is owned by `wpilib` in `tools/check_boundaries.py`, like `wpiemu_wpilib_hal`.
+
+Only the robot's **default** NT instance is used (`NT_GetDefaultInstance`), so the robot's `NetworkTableInstance.getDefault()`
 sees the topics without any configuration; dashboards (Shuffleboard, AdvantageScope) see them through the robot's NT server as
-usual. Explicit timestamps are taken from sim time (`HAL_GetFPGATime`), not `nt::Now()`, so they follow pause and time scale.
-If linking ntcore by name were to load a second copy next to the one the robot already uses (JNI for Java robots), the binding
-resolves the symbols from the already-loaded module instead, like the vendor `symbol_resolver`. <!-- VERIFY: outcome of the Java loading-order check in the sample -->
+usual. Verified on Windows with ntcore 2026.2.1 and both a Java and a C++ robot; the Linux/macOS path (`dlopen` by soname) is untested.
 
 ## 8. Extension recipe: another vision vendor
 
@@ -249,7 +276,8 @@ Example: a Limelight-like or Photon-like coprocessor from another vendor (a Luxo
 
 1. Add the source files to `bridges/vision/` (or a new `bridges/<name>/` module linking `wpiemu_sdk` only, following the
    device-bridge recipe in [CONTRIBUTING.md](CONTRIBUTING.md)). Keep the encoder a **pure function** from `CameraFrame` (+ its
-   `CameraConfig`) to named values / bytes, written through the module's `INtPublisher`-style seam so it is testable without ntcore.
+   `CameraConfig`) to named values / bytes, written through the `INtBackend` seam (`bridges/vision/nt_backend.h`) so it is testable
+   with the fake backend, without ntcore.
 2. If the vendor needs its own `CameraKind` value, add it to `sdk/config/camera.h` (`CameraKind`, `cameraKindKey`), the codec
    (`"kind"`), the validator and the editor menu (**Add camera**). Pre-release rules apply: change the SDK freely, no migration.
 3. Implement `sdk::IVisionBridge`: `name()` unique (`"vision.<vendor>"`); `configure` creates topics only for cameras of your kind
@@ -258,28 +286,35 @@ Example: a Limelight-like or Photon-like coprocessor from another vendor (a Luxo
 4. Expose `registerVisionBridges(sdk::VisionBridgeRegistry&)` from the module and add one call in
    `bridges/builtin_bridges.cpp` (`registerBuiltinVisionBridges`). The extension and `BridgeSet` do not change.
 5. Tests (`tests/bridges_vision/`): golden vectors for every encoded layout from a real device capture or the vendor's documentation,
-   a configure / apply / reset / stop sequence on a fake publisher, a frame of another kind being ignored, and a unit test that
+   a configure / apply / reset / stop sequence on the fake backend, a frame of another kind being ignored, and a unit test that
    a result is not published before its `publishTimeUs`. Run `python tools\check_boundaries.py` (and `--self-test`).
 6. Document the topic table in this file.
 
 ## 9. Tests
 
-<!-- VERIFY: test file names below are the planned ones; check them against tests/ after integration -->
 | Where | What |
 |---|---|
 | `tests/sdk` | the vision headers are included stand-alone (generated self-contained-include check) |
-| `tests/runtime` (`test_vision*.cpp`, camera cases in the codec / validator tests) | visibility rules, FOV / range / facing, fps and latency queue, determinism with noise, mechanism-mounted camera, `cameras` JSON round-trip and validation codes |
-| `tests/plugins`, `tests/game_2026` | the 2026 tag layout: tag count, ids, face orientation, field size |
-| `tests/ipc` | codec round-trip of `SensorFrame::vision` and the `VisionSetup` message |
-| `tests/bridges_vision` | Limelight and PhotonVision encoders against golden vectors, `IVisionBridge` configure / apply / reset behaviour on a fake `INtPublisher` |
-| `halsim_ext/tests` | `BridgeSet` fan-out (setup, frames, reset on connect / Reset / epoch change) |
-| `tests/app_editor/test_cameras.cc` | camera config ops, undo, tree, inspector, viewport |
-| `tests/app_runview` | `CameraRig` (frustum, highlight from the snapshot) |
-| `app/host/tests/e2e_test.cpp` | opt-in end-to-end on the vision sample robots (below) |
+| `tests/runtime/test_vision_system.cpp` | `VisionSystem`: visibility (FOV / range / facing), fps and latency queue, determinism with noise, mechanism-mounted camera, reset |
+| `tests/runtime/test_config_codec.cpp`, `test_config_pipeline.cpp`, `test_session*.cpp` | `cameras` JSON round-trip and validation codes, `VisionSetup` / `SensorFrame::vision` in the session and runner |
+| `tests/game_2026/test_april_tags.cpp` | the 2026 layout: 32 tags, ids, poses against `2026-rebuilt-welded.json`, face orientation, quaternion order |
+| `tests/ipc/test_binary_codec.cpp` | codec round-trip of `SensorFrame::vision` and the `VisionSetup` message |
+| `tests/bridges_vision/` | Limelight and PhotonVision bridges and the PhotonPipelineResult encoding against golden vectors, registration, on a fake `INtBackend` |
+| `bridges/vision/tests/ntcore_smoke_tests.cpp` (`bridges_vision.ntcore_smoke`) | the ntcore binding against the real ntcore in-process (only when ntcore was found) |
+| `halsim_ext/tests/test_vision_fanout.cpp` | `BridgeSet` fan-out: configure on setup, poll / apply per frame, reset on epoch change |
+| `tests/app_editor/test_cameras.cc`, `test_camera_frustum.cc` | camera config ops, undo, tree, inspector, viewport |
+| `tests/app_runview/test_cameras.cpp` | `CameraRig` (frustum, highlight from the snapshot), AprilTag markers |
+| `app/host/tests/e2e_vision_test.cpp` (`e2e.vision_sample`) | opt-in end-to-end on the vision sample robots (below) |
 
-End-to-end (opt-in, `WPIEMU_E2E=1`, see [BUILDING.md](BUILDING.md)): it runs `samples\vision_robot\java` (and `...\cpp`) through
-Gradle with the real extension and asserts that both cameras report tags, the estimated pose matches the ground truth, and
-`now - resultTimestamp` matches the configured latency. <!-- VERIFY: e2e test case name and assertions -->
+**End-to-end** (opt-in, `WPIEMU_E2E=1`, target `wpiemu_e2e_vision_tests`, CTest `e2e.vision_sample`, label `e2e`; see
+[BUILDING.md](BUILDING.md)): it copies `samples\vision_robot\<java|cpp>`, runs it through Gradle with the real extension and a real
+session whose `RobotConfig` has a Limelight (`front`, forward) and a PhotonVision camera (`photon-rear`, backward) matching the sample's
+`robotToCamera` constants, drives the autonomous routine and compares the robot's own `VISION ...` console lines with the
+emulator's ground truth. It asserts that both cameras are connected, tags are seen by the robot code exactly when the emulator says a
+camera saw them, the Limelight's `tl + cl` equals the configured latency, the age of the newest PhotonVision result is within the
+latency plus one frame spacing and one robot loop, and that the poses at rest equal the ground truth (Limelight within 2 cm,
+PhotonVision within 4 cm, because PhotonLib solves from the true, slightly pitched camera pose). The Java robot must also drive
+forward. Both samples pass.
 
 ## 10. Limitations
 
@@ -287,6 +322,14 @@ Gradle with the real extension and asserts that both cameras report tags, the es
 * The coprocessor-side robot pose is ground truth plus the configured noise, not a perspective solve; pose ambiguity is 0.
 * The robot-to-camera transform is configured in the editor; it is not read from the robot program, so keep it equal to what
   your code uses.
-* The Photon encoder supports a pinned list of PhotonLib versions; Limelight arrays follow the pinned `LimelightHelpers` layout.
-* Camera settings the robot writes (pipeline, LED, driver mode, crop, ...) are mirrored but do not change what is detected.
+* PhotonVision works only for PhotonLib versions whose result definition hash is known (v2025.3.2, v2026.1.1 to v2026.3.4, v2026.7);
+  Limelight arrays follow the pinned `LimelightHelpers` v1.14 layout.
+* Camera settings the robot writes are mirrored (pipeline index, driver mode, fps limit) or accepted but not modelled
+  (Limelight `ledMode` and `robot_orientation_set`, Photon LED mode, crop...); none of them changes what is detected. PhotonLib's `.schema`
+  topics are not published.
 * One season layout per run (`IGameModule::aprilTagLayout()`); a project whose season has no game plugin has no tags and cameras see nothing.
+* PhotonLib for C++ reports results about one NetworkTables cycle older than PhotonLib for Java (the end-to-end test allows more slack
+  for C++).
+* The C++ sample's Phoenix 6 drive did not move the robot in the emulator (Phoenix 6 simulation from C++ is unverified, ADR 0002 R8),
+  so the C++ sample was verified **stationary**; vision itself works for C++ robots (both cameras, tags, latency and poses were checked).
+* Linux and macOS: the ntcore binding (`dlopen` by soname) and the rest of the vision path were not run there.

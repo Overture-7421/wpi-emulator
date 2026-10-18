@@ -75,8 +75,39 @@ drive, then in the editor:
    | rear | PhotonVision | `photon-rear` | chassis | x = -0.30, z = 0.50 | 180 deg |
 
    **Frames**: the robot code's robot frame has its origin on the floor below the hull centre. The emulator's chassis frame
-   (where a camera on the chassis is placed in `robot.json`) has its origin at the **centre of mass**. Enter the camera
-   position relative to the centre of mass: `local = robotToCamera - (COM position in the robot frame)`. For a COM at the
-   hull centre with `comHeightM = 0.2` that gives z = 0.30 for both cameras (x unchanged).
+   (where a camera on the chassis is placed in `robot.json`) has its origin at the **centre of mass**. The camera's inspector shows
+   a read-only **Robot-to-camera (WPILib robot frame)** line: edit the pose until it shows the constants above. By hand:
+   `local = robotToCamera - (COM position in the robot frame)`; for a COM at the hull centre with `comHeightM = 0.2` that gives
+   z = 0.30 for both cameras (x unchanged).
 3. Run autonomous and watch the console: the `VISION` lines show the tags appearing and disappearing as the robot
    drives, and the fused estimate (`Vision/estimatedPose`) should follow the simulated pose.
+
+## Known limits
+
+* **Java drives, C++ is stationary.** The Java sample drives forward in autonomous in the emulator. The C++ sample's Phoenix 6 drive
+  did not move the robot (Phoenix 6 simulation from C++ is unverified, [ADR 0002](../../docs/decisions/0002-phoenix6-interception.md)
+  R8), so the C++ sample was verified with the robot **stationary**: both cameras, tags, latency and poses work for C++ robots, and
+  the robot-side fusion simply has no motion to follow.
+* PhotonLib for C++ reports results about one NetworkTables cycle older than the Java PhotonLib (`resultAgeMs` is higher).
+* Needs a PhotonLib version the emulator verified; the sample's vendordep is `v2026.3.4` (see [docs/vision.md](../../docs/vision.md)).
+
+## Running the end-to-end test
+
+`e2e.vision_sample` (opt-in, label `e2e`, target `wpiemu_e2e_vision_tests`, `app/host/tests/e2e_vision_test.cpp`) runs a copy of
+the sample through Gradle with the real extension. It does not use a saved `robot.json`: the test builds the robot in code (a tank
+drive with Phoenix 6 mappings, the Limelight `front` and the PhotonVision `photon-rear` at the mounts above, 75 x 50 degree field of
+view, 30 fps, 40 ms latency), drives the autonomous routine and compares the robot's `VISION` lines with the emulator's ground truth:
+cameras connected, tags seen exactly when the emulator says so, Limelight `tl + cl` equal to the configured latency, the Photon result
+age within latency + frame spacing + one loop, poses at rest equal to the ground truth (Limelight < 2 cm, Photon < 4 cm), and the
+Java robot drives.
+
+```powershell
+$env:WPIEMU_E2E = "1"
+$env:JAVA_HOME = "C:\Users\Public\wpilib\2026\jdk"        # if no JDK is on the path
+$env:WPIEMU_E2E_VISION_PROJECT = "<repo>\samples\vision_robot\java"   # default: samples\vision_robot\java (absolute path)
+$env:WPIEMU_E2E_VISION_LANG = "java"                       # java (default) | cpp
+ctest --preset windows-vs2022-release -R "^e2e[.]vision_sample$" --output-on-failure
+```
+
+For C++ use `...\cpp` and `WPIEMU_E2E_VISION_LANG=cpp`. `WPIEMU_E2E_VERBOSE=1` prints the robot console, `WPIEMU_E2E_KEEP=1` keeps the
+project copy. Both samples pass.
