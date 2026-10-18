@@ -170,6 +170,18 @@ TEST_CASE("start pose marker: picking prefers solid parts but a volume does not 
     CHECK(f.view.chooseItem({"i:overlay:intake:pickupZone", "i:startpose"}) == SelectionRef::startPose());
 }
 
+TEST_CASE("start pose marker: framing the robot ignores a far start pose, framing the marker goes to it") {
+    ViewFixture f;
+    f.editor.document().setStartPose(sdk::StartPose{9.f, 4.f, 0.f});   // far from the robot-centred scene origin
+    f.editor.selection().set(SelectionRef::robot());
+    f.view.frameSelection();
+    CHECK(sdk::length(f.view.camera().target) < 1.f);
+
+    f.editor.selection().set(SelectionRef::startPose());
+    f.view.frameSelection();
+    CHECK(sdk::length(f.view.camera().target - sdk::Vec3{9.f, 4.f, 0.f}) < 1.f);
+}
+
 // ---- dragging the marker ----------------------------------------------------------------------------------
 
 TEST_CASE("start pose drag: pressing the footprint selects it, dragging moves it over the floor as one undo step") {

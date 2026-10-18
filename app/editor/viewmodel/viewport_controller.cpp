@@ -285,6 +285,7 @@ void ViewportController::frameSelection() {
         const bool selected = scene_.isHighlighted(item);
         if (!selected && !(editor_.selection().current().kind == SelKind::Robot || editor_.selection().current().isNone())) continue;
         if (item.role == ItemRole::Link || item.role == ItemRole::Overlay) continue;
+        if (item.ref.kind == SelKind::StartPose && !selected) continue;   // can be far from the robot: framed only when it is the selection
         const Vec3 h = item.size * 0.5f;
         for (int sx = -1; sx <= 1; sx += 2)
             for (int sy = -1; sy <= 1; sy += 2)
