@@ -6,6 +6,12 @@
 // publisher, a second publisher with another type string is inactive, a new subscriber gets the latest value.
 // Single threaded, like the real seam.
 //
+// It is held to the REAL ntcore: tests/bridges_vision/test_nt_binding_real.cpp runs every scenario against this class
+// and against NtCoreApi bound to WPILib's ntcore, and that is how it was corrected where it used to differ (valid JSON
+// that is not an object is accepted, the first publisher REPLACES properties set before it, an empty topic name is
+// refused). Add a scenario there before teaching the Fake a new rule. Not modelled: ntcore keeps reporting the old
+// properties text of a topic whose first publisher passes none after setTopicProperty() ran on the idle topic.
+//
 // Test side:  robotPublish / robotSet*  = what the robot (or a coprocessor) does;
 //             history / latest / ...    = what the code under test published.
 
@@ -38,7 +44,7 @@ public:
         options.typeString = typeString;
         options.propertiesJson = propertiesJson;
         Members members;
-        if (!propertiesJson.empty()) parseJsonObject(propertiesJson, members);
+        if (!propertiesJson.empty()) parseJsonProperties(propertiesJson, members);
         robotPubs_[std::string(topic)] = addPublisher(topic, type, options, members, false);
     }
     // The robot writes a value; the topic is published with the canonical type on the first write.
@@ -66,11 +72,14 @@ public:
         v.text = std::string(value);
         robotPut(topic, std::move(v), timeUs);
     }
-    void robotSetDoubleArray(std::string_view topic, std::initializer_list<double> value, std::int64_t timeUs) {
+    void robotSetDoubleArray(std::string_view topic, std::span<const double> value, std::int64_t timeUs) {
         NtValue v;
         v.type = NtType::DoubleArray;
         v.numbers.assign(value.begin(), value.end());
         robotPut(topic, std::move(v), timeUs);
+    }
+    void robotSetDoubleArray(std::string_view topic, std::initializer_list<double> value, std::int64_t timeUs) {
+        robotSetDoubleArray(topic, std::span<const double>(value.begin(), value.size()), timeUs);
     }
 
     // ---- inspection: what the code under test published -----------------------------------------
@@ -114,9 +123,9 @@ public:
     std::int64_t nowUs() const override { return available_ ? nowUs_ : 0; }
 
     NtPublisher publish(std::string_view topic, NtType type, const NtPublishOptions& options) override {
-        if (!available_) return {};
+        if (!available_ || topic.empty()) return {};
         Members members;
-        if (!options.propertiesJson.empty() && !parseJsonObject(options.propertiesJson, members)) return {};
+        if (!options.propertiesJson.empty() && !parseJsonProperties(options.propertiesJson, members)) return {};
         return addPublisher(topic, type, options, members, true);
     }
     bool setBoolean(NtPublisher pub, std::int64_t timeUs, bool value) override {
@@ -156,13 +165,13 @@ public:
         return put(pub, std::move(v), timeUs);
     }
     bool setTopicProperty(std::string_view topic, std::string_view name, std::string_view jsonValue) override {
-        if (!available_ || !isJsonValue(jsonValue)) return false;
+        if (!available_ || topic.empty() || !isJsonValue(jsonValue)) return false;
         topicFor(topic).props[std::string(name)] = std::string(jsonValue);
         return true;
     }
 
     NtSubscriber subscribe(std::string_view topic, std::size_t queueDepth) override {
-        if (!available_) return {};
+        if (!available_ || topic.empty()) return {};
         subs_.push_back(Sub{std::string(topic), queueDepth == 0 ? 1 : queueDepth, {}});
         const auto id = static_cast<std::uint32_t>(subs_.size());
         Topic& t = topicFor(topic);
@@ -233,9 +242,11 @@ private:
         pub.type = type;
         pub.keepDuplicates = options.keepDuplicates;
         if (t.publishers == 0) {
-            // Only the first publisher of a topic without publishers defines its type and properties.
+            // Only the first publisher of a topic without publishers defines its type and properties, and its
+            // properties REPLACE whatever setTopicProperty() stored on the idle topic.
             t.type = type;
             t.typeString = typeString;
+            t.props.clear();
             for (const auto& [key, value] : members) t.props[key] = value;
         } else {
             pub.active = t.typeString == typeString;
@@ -397,11 +408,13 @@ private:
         Json json{text};
         return json.value() && json.atEnd();
     }
-    static bool parseJsonObject(std::string_view text, Members& members) {
+    // Property text of a publisher: valid JSON, else ntcore refuses the publisher. An object contributes its members;
+    // any other valid JSON (string, number, array, null) is accepted and carries no properties, as in ntcore.
+    static bool parseJsonProperties(std::string_view text, Members& members) {
         Json json{text};
         json.skipSpace();
-        if (json.i >= text.size() || text[json.i] != '{') return false;
-        return json.object(&members) && json.atEnd();
+        if (json.i < text.size() && text[json.i] == '{') return json.object(&members) && json.atEnd();
+        return json.value() && json.atEnd();
     }
 
     bool available_ = true;
