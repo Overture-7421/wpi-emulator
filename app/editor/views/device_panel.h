@@ -1,7 +1,8 @@
 #pragma once
 
 // "Detected devices": the live list of what the robot code declared (type / id / bus / status), the
-// Detect devices button and the empty-state coaching. Rows are drag sources for slots.
+// Detect devices button and the empty-state coaching. Rows are drag sources for slots. Below the
+// table, the cameras the robot code uses that the project does not list (DetectedCamerasSection).
 
 #include <QLabel>
 #include <QPushButton>
@@ -12,6 +13,7 @@
 
 #include "viewmodel/detected_devices_model.h"
 #include "viewmodel/editor_controller.h"
+#include "views/detected_cameras_section.h"
 #include "views/icon_factory.h"
 
 namespace wpiemu::app::editor {
@@ -34,6 +36,7 @@ public:
 
     QPushButton* detectButton() const { return detect_; }
     QTableView* table() const { return table_; }
+    DetectedCamerasSection* cameras() const { return cameras_; }
     void selectDevice(const std::string& physicalKey);
 
 private:
@@ -47,6 +50,7 @@ private:
     QStackedWidget* stack_;
     QTableView* table_;
     QLabel* empty_;
+    DetectedCamerasSection* cameras_ = nullptr;
     QLabel* summary_;
     bool syncing_ = false;
 };

@@ -14,6 +14,7 @@
 #include <memory>
 
 #include "editor_page.h"
+#include "model/detected_cameras.h"
 #include "model/editor_document.h"
 #include "model/property_groups.h"
 #include "model/scene_builder.h"
@@ -25,6 +26,8 @@
 #include "viewmodel/project_tree_model.h"
 #include "viewmodel/scene_model.h"
 #include "viewmodel/viewport_controller.h"
+#include "views/detected_cameras_section.h"
+#include "views/device_panel.h"
 #include "views/inspector_panel.h"
 #include "views/project_tree_view.h"
 #include "views/property_form.h"
@@ -850,6 +853,33 @@ TEST_CASE("camera validation: issue paths are located to their camera and the fo
     CHECK(at("vision.photonMessageUuid").fieldKey == "photonMessageUuid");
 }
 
+TEST_CASE("camera validation: the runtime warnings of the vision subsystem have no path, their code and message place them") {
+    const auto cat = catalog();
+    auto c = robot();
+    const auto at = [&](const char* code, const char* message, const std::string& path = {}) {
+        return locateIssue(c, cat, {sdk::Severity::Warning, path, message, code});
+    };
+    CHECK(at("vision_layout_missing", "no layout could be resolved").selection == SelectionRef::vision());
+    CHECK(at("vision_layout_missing", "no layout could be resolved").fieldKey == "layoutId");
+    c.vision.layoutFile = "tags.json";
+    CHECK(at("vision_layout_missing", "cannot read tags.json").fieldKey == "layoutFile");
+
+    // A configured camera with a problem: the message starts with its id.
+    CHECK(at("vision_camera_status", "camera 'limelight_rear' (limelight-rear): NetworkTables is not available").selection ==
+          SelectionRef::camera("limelight_rear"));
+    CHECK(at("vision_camera_status", "camera 'ghost' (x): the camera is disabled").selection == SelectionRef::vision());
+    // A camera the robot uses that is not simulated: by its NetworkTables name when the project has one, else the Vision page with the list.
+    CHECK(at("vision_camera_unconfigured", "the robot uses the Limelight camera 'limelight-rear', which is disabled in the vision configuration").selection ==
+          SelectionRef::camera("limelight_rear"));
+    CHECK(at("vision_camera_unconfigured", "the robot uses the PhotonVision camera 'photon-arm', which is not in the vision configuration").selection ==
+          SelectionRef::vision());
+    CHECK(at("vision_camera_unconfigured", "nothing quoted here").selection == SelectionRef::vision());
+
+    // Other issues are left to the path, and an empty path with another code locates nothing.
+    CHECK(at("slot_unfilled", "camera 'photon_front'").selection.isNone());
+    CHECK(at("vision_camera_status", "camera 'photon_front' (photon-front): x", "devices[2]").selection.isNone());
+}
+
 TEST_CASE("camera validation: the editor checks the UUID format itself and the fake validator reports what the real one does") {
     const auto cat = catalog();
     auto c = robot();
@@ -1037,6 +1067,13 @@ TEST_CASE("camera tree: validator issues put a warning on the camera or the grou
     tree.setIssues({{sdk::Severity::Warning, "vision.layoutId", "no such layout", "camera_layout_unknown"}});
     CHECK(groupWarning());
     CHECK_FALSE(warning(SelectionRef::camera("limelight_rear")));
+
+    // The runtime warnings of the vision subsystem have no path: the code and the message place them.
+    tree.setIssues({{sdk::Severity::Warning, {}, "camera 'photon_front' (photon-front): the camera is disabled", "vision_camera_status"}});
+    CHECK(warning(SelectionRef::camera("photon_front")));
+    tree.setIssues({{sdk::Severity::Warning, {}, "the robot uses the PhotonVision camera 'photon-arm', which is not in the vision configuration", "vision_camera_unconfigured"}});
+    CHECK(groupWarning());
+    CHECK_FALSE(warning(SelectionRef::camera("photon_front")));
     tree.setIssues({});
     CHECK_FALSE(groupWarning());
 }
@@ -1182,11 +1219,31 @@ TEST_CASE("camera inspector: what the robot reported about the camera shows in t
     f.backend.setDetectedCameras({});
     CHECK(status->text().contains("Not seen"));
 
+    // A camera of the robot process the code has not used (yet) is not "used"; one the code uses under another name is named.
+    sdk::CameraRobotState waiting = detection("photon-front", kPhoton);
+    waiting.cameraId = "photon_front";
+    waiting.present = false;
+    f.backend.announceCamera(waiting);
+    CHECK(status->text().contains("Not seen"));
+    f.backend.announceCamera(detection("photon-arm", kPhoton));
+    CHECK(status->text() == "Not seen from the robot code under this name. It uses: photon-arm.");
+    f.backend.announceCamera(detection("limelight-left", kLimelight));   // another vendor: not an alternative
+    CHECK(status->text() == "Not seen from the robot code under this name. It uses: photon-arm.");
+    sdk::CameraRobotState used = detection("photon-front", kPhoton);
+    f.backend.announceCamera(used);
+    CHECK(status->text() == "The robot code uses this camera.");
+    f.c().document().setProperty(SelectionRef::camera("photon_front"), "camera.general", "enabled", sdk::Value(false));
+    pumpEvents(30);
+    CHECK(f.page.inspector()->cameraRobotStatus()->text().contains("disabled here"));
+    f.c().document().undoStack()->undo();
+    pumpEvents(30);
+
     // A name change makes the detection stop matching.
+    f.backend.setDetectedCameras({});
     f.backend.announceCamera(seen);
     f.c().document().setProperty(SelectionRef::camera("photon_front"), "camera.general", "ntName", sdk::Value("other"));
     pumpEvents(30);
-    CHECK(f.page.inspector()->cameraRobotStatus()->text().contains("Not seen"));
+    CHECK(f.page.inspector()->cameraRobotStatus()->text() == "Not seen from the robot code under this name. It uses: photon-front.");
 }
 
 TEST_CASE("camera inspector: a field issue shows a badge and opens the collapsed card that holds the field") {
@@ -1731,4 +1788,156 @@ TEST_CASE("camera page: the Tags button toggles the AprilTags and the viewport s
     CHECK(button->isChecked());
     f.c().settings().setShowTags(false);   // the button follows the setting
     CHECK_FALSE(button->isChecked());
+}
+
+// ---- detected cameras (the left panel) ---------------------------------------------------------------
+
+TEST_CASE("detected cameras: what the robot uses and the project lacks is matched by vendor and name, never by id") {
+    auto c = robot();
+    auto seen = FakeEditorBackend::sampleDetectedCameras();   // photon-front (configured), photon-arm and limelight-left (not)
+    REQUIRE(seen.size() == 3);
+
+    auto rows = unconfiguredCameras(c, seen);
+    REQUIRE(rows.size() == 2);
+    CHECK(rows[0].seen.ntName == "photon-arm");
+    CHECK(rows[0].renameCandidates.empty());   // the project's only PhotonVision camera is used under its name
+    CHECK(rows[1].seen.ntName == "limelight-left");
+    CHECK(rows[1].renameCandidates == std::vector<std::string>{"limelight_rear"});   // the robot code does not use that one's name
+
+    seen[0].cameraId = "from_an_older_run";   // ids mean something only to the run that reported them
+    CHECK(unconfiguredCameras(c, seen).size() == 2);
+    seen[1].present = false;                  // the code stopped using it
+    CHECK(unconfiguredCameras(c, seen).size() == 1);
+    seen[1].present = true;
+
+    seen.push_back(detection("photon-front", kLimelight));   // the same name on another vendor is another camera
+    rows = unconfiguredCameras(c, seen);
+    REQUIRE(rows.size() == 3);
+    CHECK(rows[2].seen.vendor == kLimelight);
+    CHECK(rows[2].renameCandidates == std::vector<std::string>{"limelight_rear"});
+
+    // The name of a camera without one is the vendor's default: "limelight" for a Limelight, the id for PhotonVision.
+    ops::findCamera(c, "limelight_rear")->ntName.clear();
+    ops::findCamera(c, "photon_front")->ntName.clear();
+    CHECK(unconfiguredCameras(c, {detection("limelight", kLimelight), detection("photon_front", kPhoton)}).empty());
+    CHECK(unconfiguredCameras(c, {}).empty());   // nothing reported: nothing to add
+
+    CHECK(detectedCameraStatusText(detection("x", kPhoton)) == "not in the project");
+    sdk::CameraRobotState foreign = detection("x", kPhoton);
+    foreign.status = "foreign_publisher";
+    CHECK(detectedCameraStatusText(foreign) == "published by the robot code itself");
+    foreign.status = "ntcore_unavailable";
+    CHECK(detectedCameraStatusText(foreign) == "NetworkTables is not available in the robot process");
+    foreign.status = "something_new";
+    CHECK(detectedCameraStatusText(foreign) == "status: something_new");
+}
+
+TEST_CASE("detected cameras: the panel lists the cameras the project lacks, adds one and follows the live reports") {
+    CameraPage f;
+    DetectedCamerasSection* section = f.page.devicePanel()->cameras();
+    REQUIRE(section != nullptr);
+    const auto button = [&](const QString& name) { return section->findChild<QPushButton*>(name); };
+    const auto label = [&](const QString& name) { return section->findChild<QLabel*>(name); };
+    CHECK_FALSE(section->isVisible());   // nothing reported: no section
+    CHECK(section->rowCount() == 0);
+
+    f.backend.setDetectedCameras(FakeEditorBackend::sampleDetectedCameras());
+    pumpEvents(30);
+    REQUIRE(section->isVisible());
+    CHECK(section->rowCount() == 2);   // photon-front is in the project
+    CHECK(label("cameras.title")->text() == "Cameras (2)");
+    REQUIRE(label("cameras.name:PhotonVision:photon-arm") != nullptr);
+    CHECK(label("cameras.status:PhotonVision:photon-arm")->text() == "PhotonVision \u00b7 not in the project");
+    CHECK(label("cameras.status:Limelight:limelight-left")->text().startsWith("Limelight"));
+    CHECK(label("cameras.name:PhotonVision:photon-front") == nullptr);
+    REQUIRE(button("cameras.add:PhotonVision:photon-arm") != nullptr);
+    REQUIRE(button("cameras.add:Limelight:limelight-left") != nullptr);
+    CHECK(button("cameras.add:Limelight:limelight-left")->text() == "Add camera");
+
+    // The Limelight of the project is not used under its name: the hint says so and offers the robot's name.
+    REQUIRE(label("cameras.hint:Limelight:limelight-left") != nullptr);
+    CHECK(label("cameras.hint:Limelight:limelight-left")->text() == "Not used by the robot code: Rear Limelight (limelight-rear). The same camera?");
+    CHECK(label("cameras.hint:PhotonVision:photon-arm") == nullptr);
+    CHECK(button("cameras.rename:PhotonVision:photon-arm") == nullptr);
+
+    // Adding one configures it under the robot's name and selects it; the row goes, the other stays.
+    button("cameras.add:PhotonVision:photon-arm")->click();
+    pumpEvents(30);
+    const sdk::CameraConfig* added = f.config().findCamera("photon_arm");
+    REQUIRE(added != nullptr);
+    CHECK(added->vendor == kPhoton);
+    CHECK(added->networkName() == "photon-arm");
+    CHECK(f.c().selection().current() == SelectionRef::camera("photon_arm"));
+    CHECK(section->rowCount() == 1);
+    CHECK(label("cameras.title")->text() == "Cameras (1)");
+    CHECK(button("cameras.add:PhotonVision:photon-arm") == nullptr);
+    f.c().document().undoStack()->undo();   // one undo step
+    pumpEvents(30);
+    CHECK(f.config().findCamera("photon_arm") == nullptr);
+    CHECK(section->rowCount() == 2);
+
+    // "Use this name" renames the project's camera instead (one undo step) and selects it.
+    REQUIRE(button("cameras.rename:Limelight:limelight-left") != nullptr);
+    button("cameras.rename:Limelight:limelight-left")->click();
+    pumpEvents(30);
+    CHECK(f.camera("limelight_rear").networkName() == "limelight-left");
+    CHECK(f.c().selection().current() == SelectionRef::camera("limelight_rear"));
+    CHECK(section->rowCount() == 1);
+    CHECK(button("cameras.add:Limelight:limelight-left") == nullptr);
+    f.c().document().undoStack()->undo();
+    pumpEvents(30);
+    CHECK(f.camera("limelight_rear").networkName() == "limelight-rear");
+    CHECK(section->rowCount() == 2);
+
+    // Live: a new camera appears, the code stops using another, the project's own camera shows up under its name.
+    f.backend.announceCamera(detection("photon-new", kPhoton));
+    pumpEvents(30);
+    CHECK(section->rowCount() == 3);
+    CHECK(button("cameras.add:PhotonVision:photon-new") != nullptr);
+    sdk::CameraRobotState gone = detection("photon-new", kPhoton);
+    gone.present = false;
+    f.backend.announceCamera(gone);
+    pumpEvents(30);
+    CHECK(section->rowCount() == 2);
+    f.backend.setDetectedCameras({});
+    pumpEvents(30);
+    CHECK_FALSE(section->isVisible());
+}
+
+TEST_CASE("detected cameras: with several unused cameras of the vendor the hint lists them and leaves the choice to the user") {
+    CameraPage f;
+    DetectedCamerasSection* section = f.page.devicePanel()->cameras();
+    const QString second = f.c().addCamera(kLimelight);   // another Limelight the robot code does not use
+    REQUIRE_FALSE(second.isEmpty());
+    f.backend.setDetectedCameras({detection("limelight-left", kLimelight)});
+    pumpEvents(30);
+    REQUIRE(section->rowCount() == 1);
+    auto* hint = section->findChild<QLabel*>("cameras.hint:Limelight:limelight-left");
+    REQUIRE(hint != nullptr);
+    CHECK(hint->text().startsWith("Not used by the robot code: Rear Limelight (limelight-rear), "));
+    CHECK(hint->text().endsWith("set its NetworkTables name to \"limelight-left\"."));
+    CHECK(section->findChild<QPushButton*>("cameras.rename:Limelight:limelight-left") == nullptr);   // ambiguous: no one-click rename
+    CHECK(section->findChild<QPushButton*>("cameras.add:Limelight:limelight-left") != nullptr);
+}
+
+TEST_CASE("detected cameras: the panel is rebuilt only when what it shows changes") {
+    CameraPage f;
+    DetectedCamerasSection* section = f.page.devicePanel()->cameras();
+    f.backend.setDetectedCameras(FakeEditorBackend::sampleDetectedCameras());
+    pumpEvents(30);
+    auto* add = section->findChild<QPushButton*>("cameras.add:PhotonVision:photon-arm");
+    REQUIRE(add != nullptr);
+    add->setProperty("kept", true);
+
+    REQUIRE(f.c().document().setProperty(SelectionRef::camera("photon_front"), "camera.optics", "frameRateHz", sdk::Value(25.0)));
+    pumpEvents(30);
+    auto* again = section->findChild<QPushButton*>("cameras.add:PhotonVision:photon-arm");
+    REQUIRE(again != nullptr);
+    CHECK(again->property("kept").toBool());   // an unrelated edit keeps the widgets
+
+    REQUIRE(f.c().document().setProperty(SelectionRef::camera("limelight_rear"), "camera.general", "label", sdk::Value("Back camera")));
+    pumpEvents(30);
+    auto* hint = section->findChild<QLabel*>("cameras.hint:Limelight:limelight-left");
+    REQUIRE(hint != nullptr);
+    CHECK(hint->text() == "Not used by the robot code: Back camera (limelight-rear). The same camera?");   // the hint follows the label
 }

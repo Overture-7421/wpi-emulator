@@ -224,6 +224,14 @@ std::string firstSegment(const std::string& s) {
     return dot == std::string::npos ? s : s.substr(0, dot);
 }
 
+// The text between the first pair of single quotes ("camera 'photon_front' (photon-front): ..." -> photon_front).
+std::string firstQuoted(const std::string& s) {
+    const auto open = s.find('\'');
+    if (open == std::string::npos) return {};
+    const auto close = s.find('\'', open + 1);
+    return close == std::string::npos ? std::string() : s.substr(open + 1, close - open - 1);
+}
+
 // The inspector field of a camera for the remainder of an issue path ("intrinsics.hfovRad", "realism.latencyJitterUs", ...). The
 // form shows latency and dropout in friendlier units, so those fields have other keys than the persisted ones.
 std::string cameraFieldKey(const std::string& rest) {
@@ -251,6 +259,23 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
     const std::string& path = issue.path;
     int index = 0;
     std::string rest;
+
+    // The vision subsystem's runtime warnings carry no path: the code says where the fix is, and the message names the camera.
+    if (path.empty()) {
+        if (issue.code == sdk::validation_code::kVisionLayoutMissing) {
+            loc.selection = SelectionRef::vision();
+            loc.fieldKey = c.vision.layoutFile.empty() ? "layoutId" : "layoutFile";
+            return loc;
+        }
+        if (issue.code == sdk::validation_code::kVisionCameraStatus || issue.code == sdk::validation_code::kVisionCameraUnconfigured) {
+            loc.selection = SelectionRef::vision();
+            const std::string name = firstQuoted(issue.message);   // the camera id (status) or its NetworkTables name (unconfigured)
+            for (const sdk::CameraConfig& cam : c.vision.cameras)
+                if (cam.id == name || (issue.code == sdk::validation_code::kVisionCameraUnconfigured && cam.networkName() == name))
+                    loc.selection = SelectionRef::camera(cam.id);
+            return loc;
+        }
+    }
 
     if (path.rfind("motionLinks", 0) == 0) {
         const std::string id = path.size() > 12 ? path.substr(12) : std::string();

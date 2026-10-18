@@ -45,16 +45,23 @@ const PropertyGroup* findGroup(const std::vector<PropertyGroup>& groups, const c
 QString cameraRobotLine(const sdk::CameraConfig& cam, const std::vector<sdk::CameraRobotState>& seen) {
     for (const sdk::CameraRobotState& s : seen) {
         if (s.vendor != cam.vendor || s.ntName != cam.networkName()) continue;
-        if (s.status == "ntcore_unavailable") return ETR("Seen from the robot code, but NetworkTables is not available in the robot process, so nothing is published.");
+        if (s.status == "ntcore_unavailable") return ETR("NetworkTables is not available in the robot process, so nothing is published for this camera.");
         if (s.status == "photon_uuid_unsupported")
-            return ETR("Seen from the robot code, but its PhotonLib message format is not supported: the camera is not published. Check the PhotonLib version of the project.");
+            return ETR("The PhotonLib message format of the robot project is not supported: the camera is not published. Check the PhotonLib version of the project.");
         if (s.status == "foreign_publisher")
             return ETR("The robot code publishes this camera itself (for example with PhotonCameraSim), so the emulator leaves it alone.");
-        if (s.status == "disabled") return ETR("Seen from the robot code. The camera is disabled here, so nothing is published.");
-        if (!s.status.empty()) return ETR("Seen from the robot code. Status: %1.").arg(qs(s.status));
+        if (s.status == "vendor_unavailable") return ETR("This build of the emulator cannot publish %1 cameras.").arg(qs(ops::vendorDisplayName(cam.vendor)));
+        if (s.status == "disabled") return ETR("The camera was switched off in the robot process after an error, so nothing is published. See the console.");
+        if (!s.status.empty()) return ETR("Status reported by the robot process: %1.").arg(qs(s.status));
+        if (!s.present) break;   // the robot process knows the camera, the robot code has not used it (yet)
+        if (!cam.enabled) return ETR("The robot code uses this camera, but it is disabled here: nothing is published.");
         return s.publishing ? ETR("The robot code uses this camera (%1 frames published).").arg(static_cast<qulonglong>(s.framesPublished))
                             : ETR("The robot code uses this camera.");
     }
+    QStringList used;   // the robot code uses cameras of this vendor, just not under this name
+    for (const sdk::CameraRobotState& s : seen)
+        if (s.present && s.vendor == cam.vendor && s.ntName != cam.networkName()) used << qs(s.ntName);
+    if (!used.isEmpty()) return ETR("Not seen from the robot code under this name. It uses: %1.").arg(used.join(QStringLiteral(", ")));
     return ETR("Not seen from the robot code yet. \"Detect devices\" lists the cameras it uses.");
 }
 
