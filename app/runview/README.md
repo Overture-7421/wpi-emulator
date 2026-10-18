@@ -90,7 +90,7 @@ without cameras shows none of it.
   slope of `framesCaptured` over the **snapshot clock** over the last ~3 s (`RateMeter`), so it follows pause and time scale.
 * **Problems**: `VisionNoticeModel` turns the `vision_layout_missing`, `vision_camera_unconfigured` and `vision_camera_status` HubWarnings into
   cards above the camera cards, with a readable title ("AprilTag layout not found", "Camera not configured", "Camera problem") and the
-  warning's own message as detail, and writes each new one once to the console (source `vision`, level from the severity). They show even when the
+  warning's own message as detail, and writes each new one to the console (source `vision`, level from the severity; a problem that flickers is announced at most every 10 s). They show even when the
   project lists no camera, which is how a robot that uses a camera the project lacks is noticed. The run view had no list of HubWarnings before
   (only the editor lists them all), so nothing else is mapped here.
 * **Fake backend**: a PhotonVision "front" camera on the chassis and a Limelight on the turret link (it sweeps with the turret), 18 tags on

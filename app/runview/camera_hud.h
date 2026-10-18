@@ -6,6 +6,8 @@
 // hud_model.h; the QML cards only show the strings and the tone colour.
 
 #include <QAbstractListModel>
+#include <QDateTime>
+#include <QHash>
 #include <QString>
 #include <array>
 #include <cstdint>
@@ -102,9 +104,14 @@ class VisionNoticeModel : public QAbstractListModel {
     Q_OBJECT
 public:
     enum Role { TitleRole = Qt::UserRole + 1, DetailRole, SeverityRole, ToneRole };
+    // The same notice is announced (noticeRaised) again after it went away at the earliest this
+    // long after it was last announced, so a problem that flickers does not flood the console.
+    static constexpr qint64 kRepeatAnnounceMs = 10000;
 
     explicit VisionNoticeModel(QObject* parent = nullptr);
-    void update(const sdk::ISimSnapshot* snapshot);
+    // `nowMs` (wall clock) only rate-limits noticeRaised.
+    void update(const sdk::ISimSnapshot* snapshot,
+                qint64 nowMs = QDateTime::currentMSecsSinceEpoch());
     const std::vector<VisionNotice>& notices() const { return notices_; }
 
     int rowCount(const QModelIndex& parent = {}) const override;
@@ -118,6 +125,7 @@ signals:
 
 private:
     std::vector<VisionNotice> notices_;
+    QHash<QString, qint64> announcedMs_;  // "code|detail" -> when it was last announced
 };
 
 class CameraHudModel : public QAbstractListModel {

@@ -235,7 +235,8 @@ std::vector<VisionNotice> visionNotices(const sdk::ISimSnapshot* snapshot) {
 
 VisionNoticeModel::VisionNoticeModel(QObject* parent) : QAbstractListModel(parent) {}
 
-void VisionNoticeModel::update(const sdk::ISimSnapshot* snapshot) {
+void VisionNoticeModel::update(const sdk::ISimSnapshot* snapshot, qint64 nowMs) {
+    if (snapshot == nullptr) announcedMs_.clear();  // a new run announces its problems again
     if (notices_.empty()) {  // the common case: nothing now and nothing before
         const bool any = snapshot != nullptr &&
                          std::any_of(snapshot->warnings().begin(), snapshot->warnings().end(),
@@ -245,9 +246,15 @@ void VisionNoticeModel::update(const sdk::ISimSnapshot* snapshot) {
     std::vector<VisionNotice> next = visionNotices(snapshot);
     if (next == notices_) return;
     std::vector<VisionNotice> raised;
-    for (const VisionNotice& notice : next)
-        if (std::find(notices_.begin(), notices_.end(), notice) == notices_.end())
-            raised.push_back(notice);
+    for (const VisionNotice& notice : next) {
+        if (std::find(notices_.begin(), notices_.end(), notice) != notices_.end()) continue;
+        const QString key = notice.code + QLatin1Char('|') + notice.detail;
+        const auto last = announcedMs_.constFind(key);
+        if (last != announcedMs_.constEnd() && nowMs - *last < kRepeatAnnounceMs) continue;
+        if (announcedMs_.size() > 256) announcedMs_.clear();  // messages that keep changing
+        announcedMs_.insert(key, nowMs);
+        raised.push_back(notice);
+    }
     beginResetModel();
     notices_ = std::move(next);
     endResetModel();

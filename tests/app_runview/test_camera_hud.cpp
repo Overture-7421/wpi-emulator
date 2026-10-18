@@ -280,13 +280,13 @@ TEST_CASE("vision hud: the notice model raises each new notice once and clears w
     };
 
     const auto none = snapshotWith({});
-    model.update(&none);
+    model.update(&none, 1000);
     CHECK(model.rowCount() == 0);
 
     const sdk::HubWarning unconfigured =
         warning(code::kVisionCameraUnconfigured, sdk::Severity::Warning, "uses 'photon-extra'");
     const auto one = snapshotWith({unconfigured});
-    model.update(&one);
+    model.update(&one, 1100);
     REQUIRE(model.rowCount() == 1);
     CHECK(model.index(0).data(VisionNoticeModel::TitleRole).toString() ==
           QStringLiteral("Camera not configured"));
@@ -295,19 +295,28 @@ TEST_CASE("vision hud: the notice model raises each new notice once and clears w
     REQUIRE(raised.count() == 1);
     CHECK(raised.at(0).at(1).toString() == QStringLiteral("uses 'photon-extra'"));
 
-    model.update(&one);
+    model.update(&one, 1200);
     CHECK(raised.count() == 1);  // still there: not raised again
 
     const auto two = snapshotWith(
         {unconfigured, warning(code::kVisionLayoutMissing, sdk::Severity::Error, "no layout")});
-    model.update(&two);
+    model.update(&two, 1300);
     CHECK(model.rowCount() == 2);
     CHECK(raised.count() == 2);  // only the new one
     CHECK(raised.at(1).at(0).toString() == QStringLiteral("AprilTag layout not found"));
     CHECK(raised.at(1).at(2).toInt() == static_cast<int>(sdk::Severity::Error));
 
-    model.update(&none);
+    // A problem that flickers is shown every time but announced at most every kRepeatAnnounceMs.
+    model.update(&none, 1400);
     CHECK(model.rowCount() == 0);
-    model.update(&one);
-    CHECK(raised.count() == 3);  // came back after it was gone: raised again
+    model.update(&one, 1500);
+    CHECK(model.rowCount() == 1);
+    CHECK(raised.count() == 2);
+    model.update(&none, 1600);
+    model.update(&one, 1500 + VisionNoticeModel::kRepeatAnnounceMs);
+    CHECK(raised.count() == 3);  // long enough since the last announcement
+
+    model.update(nullptr, 1600 + VisionNoticeModel::kRepeatAnnounceMs);  // a new run
+    model.update(&one, 1700 + VisionNoticeModel::kRepeatAnnounceMs);
+    CHECK(raised.count() == 4);
 }
