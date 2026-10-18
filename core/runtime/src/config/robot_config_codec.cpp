@@ -404,6 +404,112 @@ void readZone(const Value& v, const std::string& path, Ctx& ctx, RobotConfig& cf
     cfg.zones.push_back(std::move(z));
 }
 
+const char* cameraVendorName(CameraVendor v) {
+    switch (v) {
+        case CameraVendor::PhotonVision:
+            return "photonvision";
+        case CameraVendor::Limelight:
+            return "limelight";
+    }
+    return "photonvision";
+}
+bool cameraVendorFrom(const std::string& s, CameraVendor& out) {
+    if (s == "photonvision")
+        out = CameraVendor::PhotonVision;
+    else if (s == "limelight")
+        out = CameraVendor::Limelight;
+    else
+        return false;
+    return true;
+}
+
+void readIntrinsics(const Value& v, const std::string& path, Ctx& ctx, CameraIntrinsics& in) {
+    ObjReader r(v, path, ctx);
+    r.i32("widthPx", in.widthPx);
+    r.i32("heightPx", in.heightPx);
+    r.dbl("hfovRad", in.hfovRad);
+    r.dbl("fxPx", in.fxPx);
+    r.dbl("fyPx", in.fyPx);
+    r.dbl("cxPx", in.cxPx);
+    r.dbl("cyPx", in.cyPx);
+    if (const Value* d = r.get("distortion")) {
+        const std::string dp = join(path, "distortion");
+        if (!d->isArray() || d->array().size() != in.distortion.size()) {
+            ctx.err(dp,
+                    "expected an array of " + std::to_string(in.distortion.size()) + " numbers");
+        } else {
+            std::array<double, 5> k{};
+            bool ok = true;
+            for (std::size_t i = 0; i < k.size(); ++i) {
+                const Value& e = d->array()[i];
+                if (e.isNumber() && std::isfinite(e.asDouble())) {
+                    k[i] = e.asDouble();
+                } else {
+                    ctx.err(dp + "[" + std::to_string(i) + "]", "expected a finite number");
+                    ok = false;
+                }
+            }
+            if (ok) in.distortion = k;
+        }
+    }
+}
+
+void readCamera(const Value& v, const std::string& path, Ctx& ctx, VisionConfig& vision) {
+    CameraConfig c;
+    ObjReader r(v, path, ctx);
+    r.str("id", c.id);
+    r.str("label", c.label);
+    std::string vendor;
+    if (r.str("vendor", vendor) && !cameraVendorFrom(vendor, c.vendor))
+        ctx.err(join(path, "vendor"),
+                "unknown camera vendor '" + vendor + "' (photonvision|limelight)");
+    r.str("ntName", c.ntName);
+    r.boolean("enabled", c.enabled);
+    if (const Value* a = r.get("attachment")) {
+        ObjReader ar(*a, join(path, "attachment"), ctx);
+        ar.str("parentMechanismId", c.attachment.parentMechanismId);
+        ar.str("parentLink", c.attachment.parentLink);
+    }
+    r.pose("local", c.local);
+    if (const Value* in = r.get("intrinsics"))
+        readIntrinsics(*in, join(path, "intrinsics"), ctx, c.intrinsics);
+    r.dbl("frameRateHz", c.frameRateHz);
+    r.i64("latencyUs", c.latencyUs);
+    r.i64("captureLatencyUs", c.captureLatencyUs);
+    r.dbl("tagSizeM", c.tagSizeM);
+    r.dbl("minTagPixels", c.minTagPixels);
+    r.dbl("maxViewAngleRad", c.maxViewAngleRad);
+    r.boolean("occlusion", c.occlusion);
+    r.boolean("multiTag", c.multiTag);
+    if (const Value* re = r.get("realism")) {
+        ObjReader rr(*re, join(path, "realism"), ctx);
+        rr.dbl("cornerNoisePx", c.realism.cornerNoisePx);
+        rr.i64("latencyJitterUs", c.realism.latencyJitterUs);
+        rr.dbl("dropoutProbability", c.realism.dropoutProbability);
+    }
+    if (const Value* ap = r.get("assumedPose"); ap != nullptr && !ap->isNull()) {
+        Pose3 pose;
+        if (r.pose("assumedPose", pose)) c.assumedPose = pose;
+    }
+    vision.cameras.push_back(std::move(c));
+}
+
+void readVision(const Value& v, Ctx& ctx, RobotConfig& cfg) {
+    ObjReader r(v, "vision", ctx);
+    r.str("layoutId", cfg.vision.layoutId);
+    r.str("layoutFile", cfg.vision.layoutFile);
+    r.str("photonMessageUuid", cfg.vision.photonMessageUuid);
+    if (const Value* cams = r.get("cameras")) {
+        if (!cams->isArray()) {
+            ctx.err("vision.cameras", "expected an array");
+        } else {
+            for (std::size_t i = 0; i < cams->array().size(); ++i)
+                readCamera(cams->array()[i], "vision.cameras[" + std::to_string(i) + "]", ctx,
+                           cfg.vision);
+        }
+    }
+}
+
 // ---- encode helpers --------------------------------------------------------------------------------
 
 Value fv(float f) { return Value(floatToDouble(f)); }
@@ -567,6 +673,59 @@ Value zoneValue(const ZoneConfig& z) {
     return o;
 }
 
+Value cameraValue(const CameraConfig& c) {
+    Value o = Value::makeObject();
+    o["id"] = c.id;
+    o["label"] = c.label;
+    o["vendor"] = cameraVendorName(c.vendor);
+    o["ntName"] = c.ntName;
+    o["enabled"] = c.enabled;
+    Value a = Value::makeObject();
+    a["parentMechanismId"] =
+        c.attachment.onChassis() ? std::string(kChassisParent) : c.attachment.parentMechanismId;
+    a["parentLink"] = c.attachment.parentLink;
+    o["attachment"] = std::move(a);
+    o["local"] = poseValue(c.local);
+    Value in = Value::makeObject();
+    in["widthPx"] = c.intrinsics.widthPx;
+    in["heightPx"] = c.intrinsics.heightPx;
+    in["hfovRad"] = c.intrinsics.hfovRad;
+    in["fxPx"] = c.intrinsics.fxPx;
+    in["fyPx"] = c.intrinsics.fyPx;
+    in["cxPx"] = c.intrinsics.cxPx;
+    in["cyPx"] = c.intrinsics.cyPx;
+    Value distortion = Value::makeArray();
+    for (double k : c.intrinsics.distortion) distortion.push_back(k);
+    in["distortion"] = std::move(distortion);
+    o["intrinsics"] = std::move(in);
+    o["frameRateHz"] = c.frameRateHz;
+    o["latencyUs"] = c.latencyUs;
+    o["captureLatencyUs"] = c.captureLatencyUs;
+    o["tagSizeM"] = c.tagSizeM;
+    o["minTagPixels"] = c.minTagPixels;
+    o["maxViewAngleRad"] = c.maxViewAngleRad;
+    o["occlusion"] = c.occlusion;
+    o["multiTag"] = c.multiTag;
+    Value realism = Value::makeObject();
+    realism["cornerNoisePx"] = c.realism.cornerNoisePx;
+    realism["latencyJitterUs"] = c.realism.latencyJitterUs;
+    realism["dropoutProbability"] = c.realism.dropoutProbability;
+    o["realism"] = std::move(realism);
+    if (c.assumedPose) o["assumedPose"] = poseValue(*c.assumedPose);
+    return o;
+}
+
+Value visionValue(const VisionConfig& vision) {
+    Value o = Value::makeObject();
+    o["layoutId"] = vision.layoutId;
+    o["layoutFile"] = vision.layoutFile;
+    o["photonMessageUuid"] = vision.photonMessageUuid;
+    Value cameras = Value::makeArray();
+    for (const CameraConfig& c : vision.cameras) cameras.push_back(cameraValue(c));
+    o["cameras"] = std::move(cameras);
+    return o;
+}
+
 }  // namespace
 
 Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value) const {
@@ -615,6 +774,7 @@ Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value) const {
                 readZone(zs->array()[i], "zones[" + std::to_string(i) + "]", ctx, cfg);
         }
     }
+    if (const Value* vs = root.get("vision")) readVision(*vs, ctx, cfg);
     if (const Value* links = root.get("motionLinks")) {
         if (!links->isArray()) {
             ctx.err("motionLinks", "expected an array");
@@ -727,6 +887,7 @@ Value RobotConfigCodec::toValue(const RobotConfig& cfg) const {
     Value zones = Value::makeArray();
     for (const ZoneConfig& z : cfg.zones) zones.push_back(zoneValue(z));
     root["zones"] = std::move(zones);
+    root["vision"] = visionValue(cfg.vision);
     Value links = Value::makeArray();
     for (const auto& link : cfg.motionLinks) {
         Value item = Value::makeObject();
