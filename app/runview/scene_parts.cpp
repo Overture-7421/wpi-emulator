@@ -8,6 +8,8 @@
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/mechanisms/attachment.h"
 
+#include "common/camera_frustum.h"
+
 namespace wpiemu::app::runview {
 namespace {
 
@@ -369,6 +371,207 @@ bool ZoneRig::update(const sdk::ISimSnapshot* snapshot) {
             changed_[idx] = 1;
             any = true;
         }
+    }
+    return any;
+}
+
+namespace {
+
+constexpr float kFrustumEdgeThicknessM = 0.02f;
+constexpr const char* kLimelightColor = "#ff8a00";
+constexpr const char* kPhotonVisionColor = "#3b82f6";
+constexpr const char* kSeesTagsColor = "#22e06b";
+constexpr float kFrustumActiveOpacity = 0.75f;
+constexpr float kFrustumInactiveOpacity = 0.3f;
+
+// The 8 edges of the shared frustum geometry (common/camera_frustum.h) as box poses whose local +X runs along the edge.
+std::vector<sdk::Pose3> frustumEdgePoses(const sdk::CameraConfig& camera, float lengthM, std::vector<float>& edgeLengths) {
+    const FrustumGeometry g = cameraFrustum(camera, lengthM);
+    std::vector<sdk::Pose3> poses;
+    edgeLengths.clear();
+    for (const auto& [from, to] : kFrustumEdges) {
+        const sdk::Vec3 a = g.pts[from], b = g.pts[to];
+        const sdk::Vec3 d = b - a;
+        const sdk::Vec3 dir = sdk::normalized(d);
+        // Shortest rotation taking +X onto dir.
+        const sdk::Vec3 axis = sdk::cross({1.f, 0.f, 0.f}, dir);
+        const sdk::Quat rot = dir.x < -0.9999f ? sdk::Quat::fromYaw(static_cast<float>(sdk::kPi))
+                                               : sdk::Quat{axis.x, axis.y, axis.z, 1.f + dir.x}.normalized();
+        poses.emplace_back((a + b) * 0.5f, rot);
+        edgeLengths.push_back(sdk::length(d));
+    }
+    return poses;
+}
+
+const char* cameraKindColor(sdk::CameraKind kind) {
+    return kind == sdk::CameraKind::PhotonVision ? kPhotonVisionColor : kLimelightColor;
+}
+
+bool cameraActive(const sdk::ISimSnapshot* snapshot, const std::string& id) {
+    if (snapshot == nullptr) return false;
+    for (const auto& c : snapshot->cameras())
+        if (c.id == id) return c.tagsVisible;
+    return false;
+}
+
+sdk::Pose3 attachmentFrame(const sdk::RobotConfig& config, const sdk::LinkPoseSource& source,
+                           const sdk::MechanismAttachment& attachment) {
+    if (attachment.onChassis()) return {};
+    const auto frame = sdk::resolveLinkPoseInChassis(config, attachment.parentMechanismId, attachment.parentLink, source);
+    return frame ? *frame : sdk::Pose3{};
+}
+
+CameraOverlay makeCameraOverlay(const sdk::CameraConfig& c) {
+    CameraOverlay o;
+    o.id = c.id;
+    o.label = c.label.empty() ? c.id : c.label;
+    o.kind = c.kind;
+    o.hFovDeg = static_cast<float>(c.hFovDeg);
+    o.vFovDeg = static_cast<float>(c.vFovDeg);
+    o.frustumLengthM = frustumDisplayLengthM(c);
+    return o;
+}
+
+}  // namespace
+
+std::vector<CameraOverlay> resolveRobotCameras(const sdk::RobotConfig& config, const sdk::ISimSnapshot* snapshot) {
+    const sdk::LinkPoseSource source = linkSource(config, snapshot);
+    std::vector<CameraOverlay> out;
+    out.reserve(config.cameras.size());
+    for (const auto& c : config.cameras) {
+        CameraOverlay o = makeCameraOverlay(c);
+        o.pose = attachmentFrame(config, source, c.attachment) * c.local;
+        o.active = cameraActive(snapshot, c.id);
+        out.push_back(std::move(o));
+    }
+    return out;
+}
+
+void CameraRig::setScene(std::shared_ptr<const sdk::RobotConfig> config) {
+    config_ = std::move(config);
+    cameras_.clear();
+    bindings_.clear();
+    parts_.clear();
+    labels_.clear();
+    changed_.clear();
+    if (!config_) return;
+
+    for (const auto& c : config_->cameras) {
+        CameraOverlay o = makeCameraOverlay(c);
+        Binding b;
+        if (!c.attachment.onChassis()) {
+            b.mechanism = c.attachment.parentMechanismId;
+            b.link = c.attachment.parentLink;
+        }
+        b.local = c.local;
+        std::vector<float> lengths;
+        b.edges = frustumEdgePoses(c, o.frustumLengthM, lengths);
+
+        ScenePart body;
+        body.name = o.label;
+        body.size = {0.05f, 0.1f, 0.04f};
+        body.color = cameraKindColor(o.kind);
+        parts_.push_back(std::move(body));
+        for (const float len : lengths) {
+            ScenePart edge;
+            edge.name = o.label;
+            edge.size = {len, kFrustumEdgeThicknessM, kFrustumEdgeThicknessM};
+            edge.color = cameraKindColor(o.kind);
+            edge.translucent = true;
+            edge.opacity = kFrustumInactiveOpacity;
+            parts_.push_back(std::move(edge));
+        }
+        labels_.insert(labels_.end(), kPartsPerCamera, o.label);
+        bindings_.push_back(std::move(b));
+        cameras_.push_back(std::move(o));
+    }
+    changed_.assign(parts_.size(), 1);
+    update(nullptr);
+    changed_.assign(parts_.size(), 1);
+}
+
+bool CameraRig::update(const sdk::ISimSnapshot* snapshot) {
+    changed_.assign(parts_.size(), 0);
+    if (!config_) return false;
+    const sdk::LinkPoseSource source = linkSource(*config_, snapshot);
+    bool any = false;
+
+    for (std::size_t i = 0; i < cameras_.size(); ++i) {
+        CameraOverlay& cam = cameras_[i];
+        const Binding& b = bindings_[i];
+        const sdk::CameraConfig& cfg = config_->cameras[i];
+        cam.pose = attachmentFrame(*config_, source, cfg.attachment) * b.local;
+        cam.active = cameraActive(snapshot, cam.id);
+
+        const char* frustumColor = cam.active ? kSeesTagsColor : cameraKindColor(cam.kind);
+        const float opacity = cam.active ? kFrustumActiveOpacity : kFrustumInactiveOpacity;
+        for (std::size_t k = 0; k < kPartsPerCamera; ++k) {
+            const std::size_t idx = i * kPartsPerCamera + k;
+            ScenePart& part = parts_[idx];
+            const sdk::Pose3 pose = k == 0 ? cam.pose : cam.pose * b.edges[k - 1];
+            const bool edge = k != 0;
+            const float nextOpacity = edge ? opacity : part.opacity;
+            const char* nextColor = edge ? frustumColor : part.color.c_str();
+            if (pose == part.pose && nextOpacity == part.opacity && cam.active == part.highlighted && part.color == nextColor)
+                continue;
+            part.pose = pose;
+            part.opacity = nextOpacity;
+            part.highlighted = cam.active;
+            if (edge) part.color = nextColor;
+            changed_[idx] = 1;
+            any = true;
+        }
+    }
+    return any;
+}
+
+void TagRig::setLayout(const sdk::AprilTagLayout& layout) {
+    tags_.clear();
+    parts_.clear();
+    changed_.clear();
+    tagChanged_.clear();
+    for (const auto& t : layout.tags) {
+        TagOverlay o;
+        o.id = t.id;
+        o.pose = t.pose;
+        o.sizeM = static_cast<float>(t.sizeM);
+        tags_.push_back(o);
+        // +X is the face normal, so the plates are thin along X; thicker layers stand proud of the thinner ones.
+        const auto plate = [&](const char* suffix, float side, float thicknessM, const char* color) {
+            ScenePart p;
+            p.name = "tag " + std::to_string(t.id) + suffix;
+            p.pose = t.pose;
+            p.size = {thicknessM, side, side};
+            p.color = color;
+            parts_.push_back(std::move(p));
+        };
+        plate(".border", o.sizeM * 1.4f, 0.006f, "#6b7280");
+        plate(".plate", o.sizeM * 1.2f, 0.01f, "#f4f4f5");
+        plate(".black", o.sizeM, 0.014f, "#111114");
+    }
+    changed_.assign(parts_.size(), 1);
+    tagChanged_.assign(tags_.size(), 1);
+}
+
+bool TagRig::update(const sdk::ISimSnapshot* snapshot) {
+    changed_.assign(parts_.size(), 0);
+    tagChanged_.assign(tags_.size(), 0);
+    bool any = false;
+    for (std::size_t i = 0; i < tags_.size(); ++i) {
+        bool seen = false;
+        if (snapshot != nullptr) {
+            for (const auto& cam : snapshot->cameras()) {
+                seen = std::find(cam.visibleTagIds.begin(), cam.visibleTagIds.end(), tags_[i].id) != cam.visibleTagIds.end();
+                if (seen) break;
+            }
+        }
+        if (seen == tags_[i].seen) continue;
+        tags_[i].seen = seen;
+        tagChanged_[i] = 1;
+        ScenePart& border = parts_[i * kPartsPerTag];
+        border.color = seen ? kSeesTagsColor : "#6b7280";
+        changed_[i * kPartsPerTag] = 1;
+        any = true;
     }
     return any;
 }

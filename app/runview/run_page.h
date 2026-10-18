@@ -114,6 +114,8 @@ private:
     QAction* hudAction_ = nullptr;
     QAction* mechAction_ = nullptr;
     QAction* zonesAction_ = nullptr;
+    QAction* camerasAction_ = nullptr;
+    QAction* tagsAction_ = nullptr;
     QTimer* pollTimer_ = nullptr;
     QTimer* dsTimer_ = nullptr;
 
