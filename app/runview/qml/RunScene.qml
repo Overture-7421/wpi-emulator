@@ -72,6 +72,30 @@ Item {
                 }
             }
 
+            // Vision overlay (ADR 0017): cameras with their viewing pyramid, the field's AprilTags (the ones a camera sees highlighted) and
+            // a ray from each camera to every tag it sees. World-frame poses like everything else under `world`.
+            Node {
+                visible: scene.camerasVisible
+                Repeater3D {
+                    model: scene.cameras
+                    delegate: CameraVisual {}
+                }
+            }
+            Node {
+                visible: scene.tagsVisible
+                Repeater3D {
+                    model: scene.tags
+                    delegate: PartModel {}
+                }
+            }
+            Node {
+                visible: scene.camerasVisible && scene.tagsVisible
+                Repeater3D {
+                    model: scene.tagRays
+                    delegate: PartModel {}
+                }
+            }
+
             Repeater3D {
                 model: scene.entityGroups
                 delegate: Model {
@@ -148,6 +172,44 @@ Item {
     onHeightChanged: scene.setViewSize(width, height)
     Component.onCompleted: scene.setViewSize(width, height)
 
+    // Tag ids and camera names of the vision overlay. Qt Quick 3D has no 3D text, so the scene model projects each anchor with the orbit
+    // camera that drives the 3D view and hides the label behind the camera, off screen, or for a tag nobody sees while far away.
+    Item {
+        anchors.fill: parent
+        visible: scene.robotVisible
+        Repeater {
+            model: scene.labels
+            delegate: Rectangle {
+                id: tag
+
+                required property string labelText
+                required property real labelX
+                required property real labelY
+                required property bool labelShown
+                required property bool labelEmphasis
+                required property int labelKind
+
+                visible: labelShown
+                x: labelX - width / 2
+                y: labelY - height - 2
+                width: caption.implicitWidth + 10
+                height: caption.implicitHeight + 3
+                radius: 4
+                color: Qt.rgba(theme.panel.r, theme.panel.g, theme.panel.b, labelEmphasis || labelKind === 1 ? 0.88 : 0.55)
+                border.color: labelEmphasis ? theme.accent : theme.panelBorder
+                border.width: 1
+                Text {
+                    id: caption
+                    anchors.centerIn: parent
+                    text: tag.labelText
+                    color: tag.labelEmphasis || tag.labelKind === 1 ? theme.text : theme.mutedText
+                    font.pixelSize: tag.labelKind === 1 ? 12 : 11
+                    font.bold: tag.labelEmphasis
+                }
+            }
+        }
+    }
+
     // Game-plugin HUD: generic renderer of HudWidgetDescriptors.
     Item {
         anchors.fill: parent
@@ -156,7 +218,7 @@ Item {
 
         HudStack { anchorIndex: 0; hAlign: 0; anchors.left: parent.left; anchors.top: parent.top }
         HudStack { anchorIndex: 1; hAlign: 1; anchors.horizontalCenter: parent.horizontalCenter; anchors.top: parent.top }
-        HudStack { anchorIndex: 2; hAlign: 2; anchors.right: parent.right; anchors.top: parent.top }
+        HudStack { id: hudTopRight; anchorIndex: 2; hAlign: 2; anchors.right: parent.right; anchors.top: parent.top }
         HudStack { anchorIndex: 3; hAlign: 0; anchors.left: parent.left; anchors.bottom: parent.bottom }
         HudStack { anchorIndex: 4; hAlign: 1; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom }
         HudStack { anchorIndex: 5; hAlign: 2; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.bottomMargin: 54 }
@@ -168,5 +230,14 @@ Item {
         anchors.leftMargin: 12
         anchors.verticalCenter: parent.verticalCenter
         visible: options.showMechanisms && scene.robotVisible && count > 0
+    }
+
+    // Vision cards: right edge, centred (the mechanism cards use the left edge; the game HUD the corners and the top and bottom centre),
+    // but never over the game HUD of the top-right corner.
+    CameraPanel {
+        anchors.right: parent.right
+        anchors.rightMargin: 12
+        y: Math.max((parent.height - height) / 2, hudTopRight.visible ? hudTopRight.mapToItem(root, 0, hudTopRight.height).y + 8 : 12)
+        visible: scene.camerasVisible && scene.robotVisible && count > 0
     }
 }

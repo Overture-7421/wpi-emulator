@@ -1,7 +1,7 @@
 # Run view (`app/runview`)
 
 The run-time page of the emulator: a telemetry bar, with Restart (and its robot-code restart option), speed and the home-view button as icon buttons at the bottom-right of the 3D view (overlay and console toggles are exposed via `viewActions()` for the shell's View menu), live
-Qt Quick 3D scene, game HUD, mechanism overlays, toolbar telemetry, console and the built-in Driver Station (bottom-left, with Setup/Joysticks in a popup).
+Qt Quick 3D scene, game HUD, mechanism overlays, camera and AprilTag overlays, toolbar telemetry, console and the built-in Driver Station (bottom-left, with Setup/Joysticks in a popup).
 
 Static library `wpiemu_app_runview` (links only `wpiemu_sdk` + Qt). The shell constructs
 `RunPage(IRunBackend&)` and supplies the real backend adapter; `FakeRunBackend` is a complete in-process
@@ -12,8 +12,8 @@ implementation used by the tests, the demo and screenshots.
 | Area | Files | Notes |
 |---|---|---|
 | Backend seam | `run_backend.h/.cpp` | `IRunBackend` (QObject): start/stop/restart/reset/pause/step/time scale, `setRobotPose` (teleport), `latestSnapshot()` (polled at ~60 Hz), DS state, `status()` (process + link state), `sceneInfo()` (config, field, HUD + overlay descriptors), `logEntry` signal |
-| Fake backend | `fake_run_backend.*` | synthetic swerve robot, 3 mechanisms with moving links, a pickup and a muzzle zone that light up while the intake is deployed / the flywheel runs, 200 instanced "fuel" balls, HUD values, failure injection (`simulateCrash`, `simulateHandshakeTimeout`, ...) |
-| Presentation logic (Qt-light, unit tested) | `run_control.*`, `hud_model.*`, `sim_stats.*`, `scene_parts.*`, `console_model.*` | enable states, status chips/overlay text, HUD descriptor evaluation, SDK -> render parts |
+| Fake backend | `fake_run_backend.*` | synthetic swerve robot, 3 mechanisms with moving links, a pickup and a muzzle zone that light up while the intake is deployed / the flywheel runs, 200 instanced "fuel" balls, HUD values, two cameras and 18 AprilTags (see [Cameras and AprilTags](#cameras-and-apriltags-adr-0017)), failure injection (`simulateCrash`, `simulateHandshakeTimeout`, `simulateCameraFault`, ...) |
+| Presentation logic (Qt-light, unit tested) | `run_control.*`, `hud_model.*`, `sim_stats.*`, `scene_parts.*`, `camera_rig.*`, `camera_hud.*`, `console_model.*` | enable states, status chips/overlay text, HUD descriptor evaluation, SDK -> render parts, the camera / AprilTag overlay (`CameraRig`) and the camera cards |
 | Qt Quick bridge | `scene_model.*`, `mechanism_overlay_model.*`, `qml/*.qml` | models for the QML scene (instancing for fuel); the camera is the editor's `OrbitCamera` (`common/orbit_camera.h`) with a field-framed home view, same orbit/pan/zoom controls as the editor viewport; SDK Z-up is converted to Qt's Y-up in exactly one place (`RunScene.qml`, node `world`) |
 | Driver Station | `driver_station_model.*`, `driver_station_panel.*` | enable / disable / e-stop, mode, alliance, match sequencing from sim time, game message. `DsState::matchTimeS` = seconds **remaining** in the active segment while a timed match runs, `-1` otherwise (the game plugin then uses its integrated clock). The game message text is a manual fallback: when the loaded game plugin provides FMS data (`IGameState::gameSpecificMessage()`, e.g. 2026 hub order `R`/`B`) the runtime overlays it before the robot sees it |
 | Joysticks | `joystick_types.*`, `joystick_source.*`, `joystick_manager.*`, `joystick_editor.*`, `sdl_gamepad_provider.*`, `fake_joystick.*` | 6 DS ports; keyboard or gamepad per port; binding editor with live preview and "press the input" learning; profiles in `QSettings` |
@@ -56,6 +56,51 @@ otherwise the left button pans as before; the wheel turns the held robot, else i
   start pose.
 * `FakeRunBackend::setRobotPose` moves its stand-in robot and counts the calls (`poseCount()`, `lastRobotPose()`).
 
+## Cameras and AprilTags (ADR 0017)
+
+Cameras are configured in the robot project (`RobotConfig::vision`) and computed by the emulator; the run view draws what the snapshot
+carries and never talks to a camera: `ISimSnapshot::cameras()` (`CameraSample`: world pose with +X = the optical axis, field of view, the tags
+of the latest capture, frame counters, latency, whether the robot process publishes it, status), `fiducials()` (the active layout's tags in the
+world frame), `detectedCameras()` (`CameraRobotState`: what the robot code asked each camera for) and the `vision_*` HubWarnings. A project
+without cameras shows none of it.
+
+* **Scene** (`CameraRig` in `camera_rig.*`, next to `ZoneRig`, Qt-free): built from the snapshot alone. `update()` recomputes poses, states and
+  highlights per snapshot without allocating in steady state and reports what changed (`camerasChanged()`, `tagsChanged()`, `raysChanged()`,
+  `labelsChanged()`); a list that changes shape (other cameras, another layout, another field of view) is reported by `camerasRebuilt()` /
+  `tagsRebuilt()` so the models reset instead of updating row by row. `SceneModel` feeds `CameraListModel` (body + frustum), two
+  `PartListModel`s (tag plates, rays) and `LabelListModel`; everything is in SDK world coordinates and the Y-up conversion stays in the `world`
+  node of `RunScene.qml`.
+  * A camera is a small body marker and a translucent frustum: `FrustumGeometry` (four sides and the far face, `kFrustumDepthM` = 2 m, corners
+    from `common/camera_frustum.h`, shared with the editor) built once per camera in the camera frame, so only the node it hangs on moves.
+  * Colour by state (`cameraStateOf`, the tones of the status chips): **ok** green (enabled and published by the robot process), **waiting**
+    blue (enabled, not published yet), **disabled** grey (`enabled = false` or status `disabled`), **problem** red (any other status). A camera
+    that sees no tag is dim, one that sees any is brighter.
+  * The layout's tags are thin plates on the surface they hang on (`FiducialSample::pose`, +X = outward normal), dim by default; a tag in the
+    `visibleTagIds` of any camera is highlighted. A thin ray runs from each camera to the centre of every tag it sees (`rayParts()` is a
+    camera x tag pool, unused entries have `visible = false`).
+  * Tag ids and camera names are 2D items, since Qt Quick 3D has no 3D text. `SceneModel` projects each anchor with the `OrbitCamera` that drives
+    the 3D view (`placeLabel`), so a label never lags behind the scene and the rule is unit tested: hidden behind the camera or off screen; a tag a camera sees is always
+    labelled, the other tags only within `kTagLabelRangeM` (6 m) of the viewer and the camera names within `kCameraLabelRangeM` (12 m), so the home view is not a wall of text.
+* **View menu**: "Cameras" (bodies, frustums, names and the camera cards) and "AprilTags" (plates and ids); the rays need both. Like the other
+  overlay toggles (game HUD, mechanism values, zones) they are remembered in the page's `QSettings` (`runview/view/*`, on by default).
+* **Camera cards** (`camera_hud.*`, `qml/CameraPanel.qml`; right edge of the view, vertically centred but never over the game HUD of the top-right corner, as the mechanism cards use
+  the left edge): label, vendor, a state chip (Connected / Waiting for robot / Disabled / the status in words), the measured capture rate, the last
+  latency, the tags in view and what the robot code asked for ("Robot asked for: pipeline 2 · driver mode · LED on", taken from the matching
+  `CameraRobotState`: its `cameraId`, else the configured NetworkTables name and vendor; the LED values are named per vendor). The rate is the
+  slope of `framesCaptured` over the **snapshot clock** over the last ~3 s (`RateMeter`), so it follows pause and time scale.
+* **Problems**: `VisionNoticeModel` turns the `vision_layout_missing`, `vision_camera_unconfigured` and `vision_camera_status` HubWarnings into
+  cards above the camera cards, with a readable title ("AprilTag layout not found", "Camera not configured", "Camera problem") and the
+  warning's own message as detail, and writes each new one to the console (source `vision`, level from the severity; a problem that flickers is announced at most every 10 s). They show even when the
+  project lists no camera, which is how a robot that uses a camera the project lacks is noticed. The run view had no list of HubWarnings before
+  (only the editor lists them all), so nothing else is mapped here.
+* **Fake backend**: a PhotonVision "front" camera on the chassis and a Limelight on the turret link (it sweeps with the turret), 18 tags on
+  the walls and around the hubs, visibility by field of view, facing and apparent size with the hubs as occluders, counters that follow the sim
+  clock, and a `detectedCameras()` entry per camera that reacts to joystick button 3 (driver mode) and 4 (pipeline 1). Failure injection:
+  `simulateCameraFault(id, CameraFault::{Disabled, NotConnected, NotUsedByRobot, PhotonUuidUnsupported, ForeignPublisher})`,
+  `simulateUnconfiguredCamera(ntName)` and `simulateLayoutMissing()`; `Options::withVision = false` removes the cameras. The geometry is
+  `common/demo_vision.h`, shared with `DemoRuntimeHost` (`--demo`: the project's cameras, or one default front camera when it has none, and the
+  game's tag layout, without occlusion).
+
 ## Conventions the view layer relies on
 
 * The snapshot's chassis pose is the COM; chassis primitives and mechanism mounts are in that frame.
@@ -95,8 +140,14 @@ Joysticks tab says so. Disable with `-DWPIEMU_RUNVIEW_SDL2=OFF`.
 wpiemu_runview_demo.exe --scenario running            # idle | starting | running | crash | timeout | mismatch | failed
 wpiemu_runview_demo.exe --light --gamepad --joysticks
 wpiemu_runview_demo.exe --scenario running --screenshot out.png --park   # grab and exit (window parked off-screen)
+# cameras and AprilTags: frame the start area, keep the robot still, inject a failure, enlarge a detail of the screenshot
+wpiemu_runview_demo.exe --scenario running --still --view robot --fault photon --screenshot out.png --crop 480,90,520,340,2 --park
+#   --view robot|top   --fault photon|foreign|disabled|disconnected|unused|unconfigured|layout   --crop x,y,w,h[,scale]
 ```
 
 `tests/app_runview/` builds `wpiemu_runview_tests` (doctest + `Qt6::Test`; CTest name `runview.ui_tests`,
 `QT_QPA_PLATFORM=offscreen`). The offscreen platform cannot render Qt Quick 3D, so the GUI tests check that the
 QML scene loads and exercise the view models; real rendering is checked with the demo on a real platform.
+The vision tests (`test_camera_overlay.cpp`, `test_camera_hud.cpp`, `test_vision_backend.cpp`, `test_vision_page.cpp`) cover the rig and its change reporting, tag
+highlighting, label placement and visibility, the models' signals and colours, the card texts and the rate measurement, the warning titles
+and the one-time console line, the View menu toggles and their persistence, and the fake backend (cameras, visibility, counters, every fault).

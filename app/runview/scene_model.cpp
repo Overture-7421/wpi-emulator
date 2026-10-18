@@ -6,6 +6,10 @@
 #include <cmath>
 #include <cstring>
 
+#include "camera_hud.h"
+#include "common/camera_frustum.h"
+#include "status_chip.h"
+
 namespace wpiemu::app::runview {
 namespace {
 
@@ -14,6 +18,14 @@ const QQuaternion kCylinderToZ = QQuaternion::fromAxisAndAngle(1.f, 0.f, 0.f, 90
 
 QVector3D toQt(const sdk::Vec3& v) { return {v.x, v.y, v.z}; }
 QQuaternion toQt(const sdk::Quat& q) { return {q.w, q.x, q.y, q.z}; }
+
+// The camera body marker and the opacities of the camera colours: a camera that sees no tag is dimmer, a disabled one barely there.
+constexpr QVector3D kCameraBodyM{0.07f, 0.11f, 0.05f};
+constexpr float kBodyOpacitySeeing = 1.0f;
+constexpr float kBodyOpacityIdle = 0.55f;
+constexpr float kFrustumOpacitySeeing = 0.22f;
+constexpr float kFrustumOpacityIdle = 0.07f;
+constexpr float kFrustumOpacityDisabled = 0.04f;
 
 }  // namespace
 
@@ -58,6 +70,7 @@ PartListModel::Item PartListModel::makeItem(const ScenePart& part) {
     it.color = parseColor(part.color);
     if (part.highlighted) it.color = it.color.lighter(140);
     if (part.translucent) it.color.setAlphaF(part.opacity);
+    it.visible = part.visible;
     return it;
 }
 
@@ -73,7 +86,7 @@ QVariant PartListModel::data(const QModelIndex& index, int role) const {
         case RotationRole: return it.rotation;
         case ScaleRole: return it.scale;
         case ColorRole: return it.color;
-        case ShownRole: return it.label.isEmpty() || !hidden_.contains(it.label);
+        case ShownRole: return it.visible && (it.label.isEmpty() || !hidden_.contains(it.label));
         case LabelRole: return it.label;
         default: return {};
     }
@@ -102,11 +115,14 @@ void PartListModel::updatePoses(const std::vector<ScenePart>& parts, const std::
         if (!changed[i]) continue;
         const QString label = items_[i].label;
         const QColor previousColor = items_[i].color;
+        const bool previouslyVisible = items_[i].visible;
         items_[i] = makeItem(parts[i]);
         items_[i].label = label;
         const QModelIndex idx = index(static_cast<int>(i));
-        if (items_[i].color != previousColor) emit dataChanged(idx, idx, {PositionRole, RotationRole, ScaleRole, ColorRole});
-        else emit dataChanged(idx, idx, {PositionRole, RotationRole, ScaleRole});
+        QList<int> roles{PositionRole, RotationRole, ScaleRole};
+        if (items_[i].color != previousColor) roles.append(ColorRole);
+        if (items_[i].visible != previouslyVisible) roles.append(ShownRole);
+        emit dataChanged(idx, idx, roles);
     }
 }
 
@@ -188,6 +204,163 @@ void EntityGroupModel::update(std::span<const sdk::EntityGroupSample> groups) {
     }
 }
 
+// ---- FrustumGeometry ---------------------------------------------------------------------------
+FrustumGeometry::FrustumGeometry(QObject* parent) : QQuick3DGeometry(nullptr) { setParent(parent); }
+
+void FrustumGeometry::setShape(double hfovRad, double vfovRad, double depthM) {
+    constexpr double kMinFov = 0.05, kMaxFov = 3.0;   // a camera with unset optics still gets a sane pyramid
+    const camera::Frustum f = camera::frustum(sdk::Pose3{}, std::clamp(hfovRad, kMinFov, kMaxFov), std::clamp(vfovRad, kMinFov, kMaxFov), depthM);
+    const QVector3D apex = toQt(f.apex);
+    const QVector3D topLeft = toQt(f.farCorners[0]), topRight = toQt(f.farCorners[1]);
+    const QVector3D bottomRight = toQt(f.farCorners[2]), bottomLeft = toQt(f.farCorners[3]);
+
+    // Four sides and the far face, 18 vertices of position + normal.
+    QByteArray vertices;
+    vertices.reserve(18 * 6 * static_cast<qsizetype>(sizeof(float)));
+    const auto triangle = [&vertices](const QVector3D& a, const QVector3D& b, const QVector3D& c) {
+        const QVector3D n = QVector3D::normal(a, b, c);
+        for (const QVector3D& v : {a, b, c}) {
+            const float vertex[6] = {v.x(), v.y(), v.z(), n.x(), n.y(), n.z()};
+            vertices.append(reinterpret_cast<const char*>(vertex), static_cast<qsizetype>(sizeof(vertex)));
+        }
+    };
+    triangle(apex, topLeft, topRight);
+    triangle(apex, topRight, bottomRight);
+    triangle(apex, bottomRight, bottomLeft);
+    triangle(apex, bottomLeft, topLeft);
+    triangle(topLeft, bottomLeft, bottomRight);
+    triangle(topLeft, bottomRight, topRight);
+
+    clear();
+    setStride(6 * static_cast<int>(sizeof(float)));
+    setPrimitiveType(QQuick3DGeometry::PrimitiveType::Triangles);
+    addAttribute(QQuick3DGeometry::Attribute::PositionSemantic, 0, QQuick3DGeometry::Attribute::F32Type);
+    addAttribute(QQuick3DGeometry::Attribute::NormalSemantic, 3 * static_cast<int>(sizeof(float)), QQuick3DGeometry::Attribute::F32Type);
+    setVertexData(vertices);
+    setBounds(QVector3D(0.f, std::min(topLeft.y(), topRight.y()), std::min(bottomLeft.z(), topLeft.z())),
+              QVector3D(topLeft.x(), std::max(topLeft.y(), topRight.y()), std::max(bottomLeft.z(), topLeft.z())));
+    update();
+}
+
+// ---- CameraListModel -----------------------------------------------------------------------------
+CameraListModel::CameraListModel(QObject* parent) : QAbstractListModel(parent) {}
+
+int CameraListModel::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : static_cast<int>(items_.size()); }
+
+QVariant CameraListModel::data(const QModelIndex& index, int role) const {
+    if (!index.isValid() || index.row() < 0 || index.row() >= rowCount()) return {};
+    const Item& it = items_[static_cast<std::size_t>(index.row())];
+    switch (role) {
+        case IdRole: return it.id;
+        case PositionRole: return it.position;
+        case RotationRole: return it.rotation;
+        case BodyScaleRole: return kCameraBodyM / kUnit;
+        case BodyColorRole: return it.bodyColor;
+        case FrustumColorRole: return it.frustumColor;
+        case FrustumRole: return QVariant::fromValue<QObject*>(it.frustum);
+        default: return {};
+    }
+}
+
+QHash<int, QByteArray> CameraListModel::roleNames() const {
+    return {{IdRole, "cameraId"},          {PositionRole, "camPosition"},         {RotationRole, "camRotation"},
+            {BodyScaleRole, "bodyScale"}, {BodyColorRole, "bodyColor"}, {FrustumColorRole, "frustumColor"},
+            {FrustumRole, "frustumGeometry"}};
+}
+
+void CameraListModel::fill(Item& item, const CameraOverlay& camera) {
+    item.position = toQt(camera.pose.position);
+    item.rotation = toQt(camera.pose.rotation);
+    const QColor tone = toneColor(toneOf(camera.state));
+    item.bodyColor = tone;
+    item.bodyColor.setAlphaF(camera.seesTags ? kBodyOpacitySeeing : kBodyOpacityIdle);
+    item.frustumColor = tone;
+    item.frustumColor.setAlphaF(camera.state == CameraState::Disabled ? kFrustumOpacityDisabled
+                                : camera.seesTags                     ? kFrustumOpacitySeeing
+                                                                      : kFrustumOpacityIdle);
+}
+
+void CameraListModel::setCameras(const std::vector<CameraOverlay>& cameras) {
+    std::vector<FrustumGeometry*> stale;
+    beginResetModel();
+    for (const Item& item : items_) stale.push_back(item.frustum);
+    items_.clear();
+    items_.reserve(cameras.size());
+    for (const CameraOverlay& camera : cameras) {
+        Item item;
+        item.id = QString::fromStdString(camera.id);
+        fill(item, camera);
+        item.frustum = new FrustumGeometry(this);
+        item.frustum->setShape(camera.hfovRad, camera.vfovRad, kFrustumDepthM);
+        items_.push_back(std::move(item));
+    }
+    endResetModel();
+    for (FrustumGeometry* geometry : stale) geometry->deleteLater();   // the delegates that used them are gone
+}
+
+void CameraListModel::updateCameras(const std::vector<CameraOverlay>& cameras, const std::vector<char>& changed) {
+    const std::size_t n = std::min({cameras.size(), items_.size(), changed.size()});
+    for (std::size_t i = 0; i < n; ++i) {
+        if (!changed[i]) continue;
+        fill(items_[i], cameras[i]);
+        const QModelIndex idx = index(static_cast<int>(i));
+        emit dataChanged(idx, idx, {PositionRole, RotationRole, BodyColorRole, FrustumColorRole});
+    }
+}
+
+// ---- LabelListModel ------------------------------------------------------------------------------
+LabelListModel::LabelListModel(QObject* parent) : QAbstractListModel(parent) {}
+
+int LabelListModel::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : static_cast<int>(items_.size()); }
+
+QVariant LabelListModel::data(const QModelIndex& index, int role) const {
+    if (!index.isValid() || index.row() < 0 || index.row() >= rowCount()) return {};
+    const Item& it = items_[static_cast<std::size_t>(index.row())];
+    switch (role) {
+        case TextRole: return QString::fromStdString(it.text);
+        case XRole: return it.x;
+        case YRole: return it.y;
+        case ShownRole: return it.shown;
+        case EmphasisRole: return it.emphasized;
+        case KindRole: return static_cast<int>(it.kind);
+        default: return {};
+    }
+}
+
+QHash<int, QByteArray> LabelListModel::roleNames() const {
+    return {{TextRole, "labelText"}, {XRole, "labelX"},       {YRole, "labelY"},
+            {ShownRole, "labelShown"}, {EmphasisRole, "labelEmphasis"}, {KindRole, "labelKind"}};
+}
+
+void LabelListModel::place(const std::vector<OverlayLabel>& labels, const OrbitCamera& eye, float widthPx, float heightPx, bool tagsOn,
+                           bool camerasOn) {
+    bool structural = labels.size() != items_.size();
+    for (std::size_t i = 0; !structural && i < labels.size(); ++i) structural = labels[i].kind != items_[i].kind;
+    if (structural) {
+        beginResetModel();
+        items_.assign(labels.size(), Item{});
+        for (std::size_t i = 0; i < labels.size(); ++i) items_[i].kind = labels[i].kind;
+        endResetModel();
+    }
+    for (std::size_t i = 0; i < labels.size(); ++i) {
+        Item& item = items_[i];
+        const OverlayLabel& label = labels[i];
+        const LabelPlacement placement = placeLabel(label, eye, widthPx, heightPx);
+        const bool layerOn = label.kind == LabelKind::Tag ? tagsOn : camerasOn;
+        const bool shown = layerOn && placement.visible;
+        const float x = shown ? placement.xPx : item.x;   // a hidden label keeps its last place: nothing to repaint
+        const float y = shown ? placement.yPx : item.y;
+        if (item.shown == shown && item.x == x && item.y == y && item.emphasized == label.emphasized && item.text == label.text) continue;
+        item.shown = shown;
+        item.x = x;
+        item.y = y;
+        item.emphasized = label.emphasized;
+        item.text = label.text;
+        const QModelIndex idx = index(static_cast<int>(i));
+        emit dataChanged(idx, idx);
+    }
+}
+
 // ---- ViewportTheme -----------------------------------------------------------------------------
 ViewportTheme::ViewportTheme(QObject* parent) : QObject(parent) { setPalette(QPalette()); }
 
@@ -205,7 +378,8 @@ void ViewportTheme::setPalette(const QPalette& p) {
 }
 
 // ---- SceneModel --------------------------------------------------------------------------------
-SceneModel::SceneModel(QObject* parent) : QObject(parent), field_(this), robot_(this), zones_(this), entities_(this) {
+SceneModel::SceneModel(QObject* parent)
+    : QObject(parent), field_(this), robot_(this), zones_(this), cameras_(this), tags_(this), rays_(this), labels_(this), entities_(this) {
     resetCamera();
 }
 
@@ -245,12 +419,37 @@ void SceneModel::setSceneInfo(const RunSceneInfo& info) {
         zoneLabels_ = labels;
         emit zoneLabelsChanged();
     }
+    updateVision(nullptr);   // cameras and tags come with the next snapshot
 }
 
 void SceneModel::setZonesVisible(bool v) {
     if (v == zonesVisible_) return;
     zonesVisible_ = v;
     emit zonesVisibleChanged();
+}
+
+void SceneModel::setCamerasVisible(bool v) {
+    if (v == camerasVisible_) return;
+    camerasVisible_ = v;
+    refreshLabels();
+    emit camerasVisibleChanged();
+}
+
+void SceneModel::setTagsVisible(bool v) {
+    if (v == tagsVisible_) return;
+    tagsVisible_ = v;
+    refreshLabels();
+    emit tagsVisibleChanged();
+}
+
+void SceneModel::setViewHeight(float heightPx) {
+    viewHeightPx_ = heightPx > 1.f ? heightPx : 1.f;
+    refreshLabels();
+}
+
+void SceneModel::setViewSize(float widthPx, float heightPx) {
+    viewWidthPx_ = widthPx > 1.f ? widthPx : 1.f;
+    setViewHeight(heightPx);
 }
 
 void SceneModel::refreshCamera() {
@@ -261,10 +460,25 @@ void SceneModel::refreshCamera() {
     cameraRotation_ = rot;
     cameraFov_ = camera_.fovDeg;
     emit cameraChanged();
+    refreshLabels();
 }
+
+void SceneModel::refreshLabels() { labels_.place(cameraRig_.labels(), camera_, viewWidthPx_, viewHeightPx_, tagsVisible_, camerasVisible_); }
 
 void SceneModel::updateZones(const sdk::ISimSnapshot* snapshot) {
     if (zoneRig_.update(snapshot)) zones_.updatePoses(zoneRig_.parts(), zoneRig_.changed());
+}
+
+void SceneModel::updateVision(const sdk::ISimSnapshot* snapshot) {
+    if (!cameraRig_.update(snapshot)) return;
+    const bool rebuilt = cameraRig_.camerasRebuilt() || cameraRig_.tagsRebuilt();
+    if (cameraRig_.camerasRebuilt()) cameras_.setCameras(cameraRig_.cameras());
+    else cameras_.updateCameras(cameraRig_.cameras(), cameraRig_.camerasChanged());
+    if (cameraRig_.tagsRebuilt()) tags_.setParts(cameraRig_.tagParts());
+    else tags_.updatePoses(cameraRig_.tagParts(), cameraRig_.tagsChanged());
+    if (rebuilt) rays_.setParts(cameraRig_.rayParts());
+    else rays_.updatePoses(cameraRig_.rayParts(), cameraRig_.raysChanged());
+    refreshLabels();
 }
 
 void SceneModel::update(const sdk::ISimSnapshot* snapshot) {
@@ -282,11 +496,13 @@ void SceneModel::update(const sdk::ISimSnapshot* snapshot) {
         if (rig_.update(snapshot)) robot_.updatePoses(rig_.parts(), rig_.changed());
         entities_.update(snapshot->entityGroups());
         updateZones(snapshot);
+        updateVision(snapshot);
     } else if (robotVisible_) {
         robotVisible_ = false;
         endRobotDrag();
         emit poseChanged();
         entities_.update({});
+        updateVision(nullptr);
     }
 }
 

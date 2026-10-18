@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "common/demo_vision.h"
+#include "wpiemu/sdk/config/validation_codes.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/units.h"
 
@@ -12,12 +14,38 @@ namespace wpiemu::app::runview {
 namespace {
 
 constexpr double kDt = 0.005;
+constexpr std::int64_t kStepUs = 5000;
+constexpr std::int64_t kBridgeUpUs = 400000;   // sim time until the robot code has created its cameras
 constexpr float kFieldL = 16.46f;
 constexpr float kFieldW = 8.23f;
 constexpr int kCapacity = 30;
 constexpr float kBallR = 0.075f;
 constexpr float kHubX[2] = {4.6f, 11.86f};
 constexpr float kHubY = 4.115f;
+constexpr float kTagSizeM = 0.1651f;
+
+// A hub (a cylinder) hides the tags behind it from a camera on the other side; checked in the floor plane.
+bool hiddenByHub(const sdk::Vec3& from, const sdk::Vec3& to) {
+    constexpr float kBlockingRadiusM = 0.55f;   // a little inside the hub, so a tag on its surface is not hidden by its own hub
+    const float dx = to.x - from.x, dy = to.y - from.y;
+    const float lengthSquared = dx * dx + dy * dy;
+    for (const float hubX : kHubX) {
+        const float t = lengthSquared > 0.f ? std::clamp(((hubX - from.x) * dx + (kHubY - from.y) * dy) / lengthSquared, 0.f, 1.f) : 0.f;
+        const float px = from.x + t * dx - hubX, py = from.y + t * dy - kHubY;
+        if (px * px + py * py < kBlockingRadiusM * kBlockingRadiusM) return true;
+    }
+    return false;
+}
+
+std::string faultStatus(FakeRunBackend::CameraFault fault) {
+    switch (fault) {
+        case FakeRunBackend::CameraFault::Disabled: return "disabled";
+        case FakeRunBackend::CameraFault::PhotonUuidUnsupported: return "photon_uuid_unsupported";
+        case FakeRunBackend::CameraFault::ForeignPublisher: return "foreign_publisher";
+        default: break;
+    }
+    return {};
+}
 
 const sdk::Quat kCylToY = sdk::Quat::fromAxisAngle({1.f, 0.f, 0.f}, -1.5707963f);
 
@@ -116,7 +144,55 @@ sdk::RobotConfig FakeRunBackend::makeDemoConfig() {
     shooter.attachment = {"turret", "yaw"};
     shooter.local.position = {0.38f, 0.f, 0.12f};
     c.zones.push_back(std::move(shooter));
+
+    // Vision: a PhotonVision camera on the front of the chassis and a Limelight on the turret that sweeps with it.
+    sdk::CameraConfig front;
+    front.id = "front";
+    front.label = "Front camera";
+    front.vendor = sdk::CameraVendor::PhotonVision;
+    front.ntName = "photon-front";
+    front.local = sdk::Pose3({0.33f, 0.f, 0.16f}, sdk::Quat::fromAxisAngle({0.f, 1.f, 0.f}, -0.2f));
+    front.intrinsics.hfovRad = 1.4;
+    front.frameRateHz = 30.0;
+    front.latencyUs = 25000;
+    c.vision.cameras.push_back(std::move(front));
+
+    sdk::CameraConfig sweeper;
+    sweeper.id = "turret_cam";
+    sweeper.label = "Turret Limelight";
+    sweeper.vendor = sdk::CameraVendor::Limelight;
+    sweeper.ntName = "limelight-turret";
+    sweeper.attachment = {"turret", "yaw"};
+    sweeper.local = sdk::Pose3({0.25f, 0.f, 0.2f}, sdk::Quat::fromAxisAngle({0.f, 1.f, 0.f}, -0.15f));
+    sweeper.intrinsics.hfovRad = 1.3;
+    sweeper.frameRateHz = 90.0;
+    sweeper.latencyUs = 20000;
+    c.vision.cameras.push_back(std::move(sweeper));
     return c;
+}
+
+std::vector<sdk::FiducialSample> FakeRunBackend::makeDemoTags() {
+    const float halfPi = static_cast<float>(sdk::kPi * 0.5);
+    std::vector<sdk::FiducialSample> tags;
+    auto add = [&](float x, float y, float z, float normalYaw) {
+        sdk::FiducialSample t;
+        t.id = static_cast<int>(tags.size()) + 1;
+        t.pose = sdk::Pose3({x, y, z}, sdk::Quat::fromYaw(normalYaw));   // +X of the tag = its outward normal
+        t.sizeM = kTagSizeM;
+        tags.push_back(t);
+    };
+    for (const float y : {2.0f, kHubY, kFieldW - 2.0f}) add(0.f, y, 1.0f, 0.f);                      // blue wall
+    for (const float y : {2.0f, kHubY, kFieldW - 2.0f}) add(kFieldL, y, 1.0f, static_cast<float>(sdk::kPi));  // red wall
+    for (const float hx : kHubX)                                                                      // around each hub
+        for (int k = 0; k < 4; ++k) {
+            const float a = static_cast<float>(k) * halfPi;
+            add(hx + 0.62f * std::cos(a), kHubY + 0.62f * std::sin(a), 1.3f, a);
+        }
+    for (const float x : {4.0f, 12.4f}) {                                                             // side walls
+        add(x, 0.f, 1.0f, halfPi);
+        add(x, kFieldW, 1.0f, -halfPi);
+    }
+    return tags;
 }
 
 std::vector<sdk::ZoneKindInfo> FakeRunBackend::makeZoneKinds() {
@@ -164,7 +240,11 @@ sdk::FieldDescription FakeRunBackend::makeDemoField() {
 
 FakeRunBackend::FakeRunBackend(Options options, QObject* parent) : IRunBackend(parent), options_(options), timer_(this) {
     registerRunViewMetaTypes();
-    scene_.config = std::make_shared<const sdk::RobotConfig>(makeDemoConfig());
+    sdk::RobotConfig config = makeDemoConfig();
+    if (!options_.withVision) config.vision = {};
+    cameras_.resize(config.vision.cameras.size());
+    if (options_.withVision) tags_ = makeDemoTags();
+    scene_.config = std::make_shared<const sdk::RobotConfig>(std::move(config));
     scene_.field = std::make_shared<const sdk::FieldDescription>(makeDemoField());
     scene_.gameName = QStringLiteral("Demo game");
     if (options_.withGameContent) {
@@ -228,6 +308,11 @@ void FakeRunBackend::resetWorld() {
     tick_ = 0;
     simUs_ = 0;
     rng_.seed(1);
+    for (CameraRuntime& camera : cameras_) {
+        camera.accUs = 0;
+        camera.captured = 0;
+        camera.visible.clear();
+    }
     scatterBalls();
 }
 
@@ -384,6 +469,29 @@ void FakeRunBackend::simulateFailedToStart(const QString& detail) {
     setStatus(RobotProcessState::FailedToStart, LinkState::Disconnected, 1, detail);
 }
 
+FakeRunBackend::CameraRuntime* FakeRunBackend::findCamera(const QString& cameraId) {
+    const auto& configured = scene_.config->vision.cameras;
+    for (std::size_t i = 0; i < configured.size() && i < cameras_.size(); ++i)
+        if (QString::fromStdString(configured[i].id) == cameraId) return &cameras_[i];
+    return nullptr;
+}
+
+void FakeRunBackend::simulateCameraFault(const QString& cameraId, CameraFault fault) {
+    if (CameraRuntime* camera = findCamera(cameraId)) camera->fault = fault;
+    if (status_.process == RobotProcessState::Running) publish();
+}
+
+void FakeRunBackend::simulateUnconfiguredCamera(const QString& ntName) {
+    unconfiguredCamera_ = ntName.toStdString();
+    if (status_.process == RobotProcessState::Running) publish();
+}
+
+void FakeRunBackend::simulateLayoutMissing(bool missing) {
+    layoutMissing_ = missing;
+    for (CameraRuntime& camera : cameras_) camera.visible.clear();
+    if (status_.process == RobotProcessState::Running) publish();
+}
+
 void FakeRunBackend::setLinkSettled() {
     ++transitionGeneration_;
     resetWorld();
@@ -462,6 +570,7 @@ void FakeRunBackend::stepWorld() {
     carriage_ = approach(carriage_, enabled ? std::clamp(axis(3), 0.f, 1.f) * 0.5f : carriage_, 0.4f * dt);
     turretYaw_ = enabled ? 0.9f * std::sin(static_cast<float>(sdk::usToSeconds(simUs_)) * 0.8f) : turretYaw_;
     flywheel_ = approach(flywheel_, buttonB ? 320.f : 0.f, 240.f * dt);
+    stepCameras();
 
     if (options_.withGameContent) {
         // Intake: absorb balls inside the zone while deployed.
@@ -530,6 +639,107 @@ void FakeRunBackend::stepWorld() {
     }
 }
 
+sdk::LinkPoseSource FakeRunBackend::linkSource() const {
+    return [this](std::string_view mechanism, std::string_view link) -> std::optional<sdk::Pose3> {
+        if (link == sdk::kRootLink) return sdk::Pose3{};
+        if (mechanism == "intake" && link == "arm") return sdk::Pose3{{}, sdk::Quat::fromAxisAngle({0.f, 1.f, 0.f}, -armAngle_)};
+        if (mechanism == "turret" && link == "yaw") return sdk::Pose3{{}, sdk::Quat::fromYaw(turretYaw_)};
+        if (mechanism == "climber" && link == "carriage") return sdk::Pose3{{0.f, 0.f, carriage_}, {}};
+        return std::nullopt;
+    };
+}
+
+void FakeRunBackend::stepCameras() {
+    const sdk::RobotConfig& config = *scene_.config;
+    if (!options_.withVision) return;
+    const sdk::Pose3 chassis{pos_, sdk::Quat::fromYaw(yaw_)};
+    const sdk::LinkPoseSource links = linkSource();
+    for (std::size_t i = 0; i < config.vision.cameras.size() && i < cameras_.size(); ++i) {
+        const sdk::CameraConfig& configured = config.vision.cameras[i];
+        CameraRuntime& camera = cameras_[i];
+        if (!configured.enabled || camera.fault == CameraFault::Disabled) continue;
+        camera.accUs += kStepUs;
+        const auto periodUs = static_cast<std::int64_t>(std::llround(1e6 / configured.frameRateHz));
+        if (camera.accUs < periodUs) continue;
+        camera.accUs -= periodUs;
+        ++camera.captured;
+        camera.visible =
+            layoutMissing_ ? std::vector<int>{}
+                           : demo_vision::visibleTagIds(
+                                 configured,
+                                 chassis * demo_vision::cameraInChassis(config, configured, links),
+                                 tags_, hiddenByHub);
+    }
+}
+
+void FakeRunBackend::publishVision(sdk::SimSnapshotData& d) const {
+    namespace code = sdk::validation_code;
+    const sdk::RobotConfig& config = *scene_.config;
+    if (!options_.withVision || config.vision.empty()) return;
+    const bool robotUp = simUs_ >= kBridgeUpUs;
+    const sdk::LinkPoseSource links = linkSource();
+    const std::uint32_t buttons = ds_.joysticks[0].buttons;
+    if (!layoutMissing_) d.fiducials = tags_;
+    if (layoutMissing_)
+        d.warnings.push_back({sdk::Severity::Error, {}, code::kVisionLayoutMissing, "No AprilTag layout could be loaded, so no tags are drawn or detected."});
+
+    for (std::size_t i = 0; i < config.vision.cameras.size() && i < cameras_.size(); ++i) {
+        const sdk::CameraConfig& configured = config.vision.cameras[i];
+        const CameraRuntime& camera = cameras_[i];
+        const bool enabled = configured.enabled && camera.fault != CameraFault::Disabled;
+        const bool refused = camera.fault == CameraFault::PhotonUuidUnsupported || camera.fault == CameraFault::ForeignPublisher;
+        const bool publishing = enabled && robotUp && !refused && camera.fault != CameraFault::NotConnected;
+        const std::string status = enabled ? faultStatus(camera.fault) : std::string("disabled");
+
+        sdk::CameraSample sample = demo_vision::makeSample(configured, d.chassis.pose * demo_vision::cameraInChassis(config, configured, links));
+        sample.enabled = enabled;
+        sample.status = status;
+        sample.robotConnected = publishing;
+        const auto periodUs = static_cast<std::int64_t>(std::llround(1e6 / configured.frameRateHz));
+        const auto inFlight = static_cast<std::uint64_t>((configured.latencyUs + periodUs - 1) / periodUs);
+        const std::uint64_t published = publishing && camera.captured > inFlight ? camera.captured - inFlight : 0;
+        if (enabled) {
+            sample.visibleTagIds = camera.visible;
+            sample.framesCaptured = camera.captured;
+            sample.framesPublished = published;
+            sample.lastLatencyMs = std::ceil(static_cast<double>(configured.latencyUs) / static_cast<double>(kStepUs)) * static_cast<double>(kStepUs) / 1000.0;
+        }
+        d.cameras.push_back(std::move(sample));
+
+        if (enabled && robotUp) {
+            sdk::CameraRobotState robot;
+            robot.ntName = configured.networkName();
+            robot.vendor = configured.vendor;
+            robot.cameraId = configured.id;
+            robot.present = camera.fault != CameraFault::NotUsedByRobot;
+            robot.pipelineIndex = (buttons & 8u) != 0 ? 1 : 0;   // joystick button 4 selects pipeline 1, button 3 is driver mode
+            if (configured.vendor == sdk::CameraVendor::PhotonVision) {
+                robot.driverMode = (buttons & 4u) != 0;
+                robot.ledMode = -1;
+            } else {
+                robot.ledMode = 0;
+            }
+            robot.publishing = publishing;
+            robot.status = status;
+            robot.framesPublished = published;
+            d.detectedCameras.push_back(std::move(robot));
+        }
+        const std::string who = "Camera '" + (configured.label.empty() ? configured.id : configured.label) + "' (" + configured.networkName() + "): ";
+        if (enabled && camera.fault == CameraFault::PhotonUuidUnsupported)
+            d.warnings.push_back({sdk::Severity::Error, {}, code::kVisionCameraStatus, who + "this PhotonLib version is not supported, so the camera is not published."});
+        if (enabled && camera.fault == CameraFault::ForeignPublisher)
+            d.warnings.push_back({sdk::Severity::Warning, {}, code::kVisionCameraStatus, who + "the robot code already publishes this camera itself, so the emulator leaves it alone."});
+    }
+    if (!unconfiguredCamera_.empty()) {
+        sdk::CameraRobotState stray;
+        stray.ntName = unconfiguredCamera_;
+        stray.present = true;
+        d.detectedCameras.push_back(std::move(stray));
+        d.warnings.push_back({sdk::Severity::Warning, {}, code::kVisionCameraUnconfigured,
+                              "The robot code uses a camera named '" + unconfiguredCamera_ + "' that this project does not configure."});
+    }
+}
+
 void FakeRunBackend::publish() {
     sdk::SnapshotBuilder builder;
     sdk::SimSnapshotData& d = builder.data();
@@ -580,6 +790,7 @@ void FakeRunBackend::publish() {
     climber.links.push_back({"carriage", sdk::Pose3{{0.f, 0.f, carriage_}, {}}});
     climber.values = {{"height", static_cast<double>(carriage_), "m"}};
     d.mechanisms.push_back(std::move(climber));
+    publishVision(d);
 
     if (options_.withGameContent) {
         d.zones.push_back({"pickup", armAngle_ > 1.2f});

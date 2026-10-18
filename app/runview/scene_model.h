@@ -10,6 +10,7 @@
 #include <QStringList>
 #include <QVector3D>
 #include <QSet>
+#include <QtQuick3D/qquick3dgeometry.h>
 #include <QtQuick3D/qquick3dinstancing.h>
 
 #include <span>
@@ -17,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "camera_rig.h"
 #include "common/orbit_camera.h"
 #include "common/robot_placement.h"
 #include "run_backend.h"
@@ -25,6 +27,15 @@
 namespace wpiemu::app::runview {
 
 QColor parseColor(const std::string& css, const QColor& fallback = QColor(QStringLiteral("#808080")));
+
+// A translucent viewing pyramid in the camera frame (apex at the origin, +X = the optical axis, SDK axes): the far corners come from
+// the frustum geometry the editor shares (common/camera_frustum.h). Built once per camera; the node it hangs on carries the pose.
+class FrustumGeometry : public QQuick3DGeometry {
+    Q_OBJECT
+public:
+    explicit FrustumGeometry(QObject* parent = nullptr);
+    void setShape(double hfovRad, double vfovRad, double depthM);
+};
 
 // Draws N identical entities (fuel) from one position array using GPU instancing.
 class EntityInstancing : public QQuick3DInstancing {
@@ -69,10 +80,69 @@ private:
         QVector3D scale{1, 1, 1};
         QColor color;
         QString label;
+        bool visible = true;
     };
     static Item makeItem(const ScenePart& part);
     std::vector<Item> items_;
     QSet<QString> hidden_;
+};
+
+// One row per camera: its pose, the colour of its body and of its viewing frustum (by state, dimmer while it sees no tag) and the
+// frustum geometry. Poses are SDK-frame; the QML node above converts the frame.
+class CameraListModel : public QAbstractListModel {
+    Q_OBJECT
+public:
+    enum Role { IdRole = Qt::UserRole + 1, PositionRole, RotationRole, BodyScaleRole, BodyColorRole, FrustumColorRole, FrustumRole };
+
+    explicit CameraListModel(QObject* parent = nullptr);
+    int rowCount(const QModelIndex& parent = {}) const override;
+    QVariant data(const QModelIndex& index, int role) const override;
+    QHash<int, QByteArray> roleNames() const override;
+
+    // Rebuilds the rows and a frustum geometry per camera from its field of view.
+    void setCameras(const std::vector<CameraOverlay>& cameras);
+    // Refreshes the rows flagged in `changed` (pose and colours only).
+    void updateCameras(const std::vector<CameraOverlay>& cameras, const std::vector<char>& changed);
+
+private:
+    struct Item {
+        QString id;
+        QVector3D position;
+        QQuaternion rotation;
+        QColor bodyColor;
+        QColor frustumColor;
+        FrustumGeometry* frustum = nullptr;
+    };
+    static void fill(Item& item, const CameraOverlay& camera);
+    std::vector<Item> items_;
+};
+
+// The 2D labels of the vision overlay (Qt Quick 3D has no 3D text): the anchor of each label is projected with the same orbit camera
+// that drives the 3D view, so a label sits exactly on its tag or camera and is hidden behind the camera or off screen (placeLabel).
+class LabelListModel : public QAbstractListModel {
+    Q_OBJECT
+public:
+    enum Role { TextRole = Qt::UserRole + 1, XRole, YRole, ShownRole, EmphasisRole, KindRole };
+
+    explicit LabelListModel(QObject* parent = nullptr);
+    int rowCount(const QModelIndex& parent = {}) const override;
+    QVariant data(const QModelIndex& index, int role) const override;
+    QHash<int, QByteArray> roleNames() const override;
+
+    // Places every label in a `widthPx` x `heightPx` view seen by `eye`; a kind whose layer is off is hidden. Emits only for rows that
+    // changed, and resets the model when the labels changed shape.
+    void place(const std::vector<OverlayLabel>& labels, const OrbitCamera& eye, float widthPx, float heightPx, bool tagsOn, bool camerasOn);
+
+private:
+    struct Item {
+        std::string text;
+        LabelKind kind = LabelKind::Tag;
+        float x = 0.f;
+        float y = 0.f;
+        bool shown = false;
+        bool emphasized = false;
+    };
+    std::vector<Item> items_;
 };
 
 class EntityGroupModel : public QAbstractListModel {
@@ -162,6 +232,10 @@ class SceneModel : public QObject {
     Q_PROPERTY(QObject* fieldParts READ fieldParts CONSTANT)
     Q_PROPERTY(QObject* robotParts READ robotParts CONSTANT)
     Q_PROPERTY(QObject* zones READ zones CONSTANT)
+    Q_PROPERTY(QObject* cameras READ cameras CONSTANT)
+    Q_PROPERTY(QObject* tags READ tags CONSTANT)
+    Q_PROPERTY(QObject* tagRays READ tagRays CONSTANT)
+    Q_PROPERTY(QObject* labels READ labels CONSTANT)
     Q_PROPERTY(QObject* entityGroups READ entityGroups CONSTANT)
     Q_PROPERTY(QVector3D chassisPosition READ chassisPosition NOTIFY poseChanged)
     Q_PROPERTY(QQuaternion chassisRotation READ chassisRotation NOTIFY poseChanged)
@@ -173,6 +247,8 @@ class SceneModel : public QObject {
     Q_PROPERTY(float fieldWidth READ fieldWidth NOTIFY fieldChanged)
     Q_PROPERTY(QVector3D fieldCenter READ fieldCenter NOTIFY fieldChanged)
     Q_PROPERTY(bool zonesVisible READ zonesVisible WRITE setZonesVisible NOTIFY zonesVisibleChanged)
+    Q_PROPERTY(bool camerasVisible READ camerasVisible WRITE setCamerasVisible NOTIFY camerasVisibleChanged)
+    Q_PROPERTY(bool tagsVisible READ tagsVisible WRITE setTagsVisible NOTIFY tagsVisibleChanged)
     Q_PROPERTY(bool robotDragging READ robotDragging NOTIFY robotDragChanged)
 public:
     explicit SceneModel(QObject* parent = nullptr);
@@ -183,11 +259,20 @@ public:
     QObject* fieldParts() { return &field_; }
     QObject* robotParts() { return &robot_; }
     QObject* zones() { return &zones_; }
+    QObject* cameras() { return &cameras_; }
+    QObject* tags() { return &tags_; }
+    QObject* tagRays() { return &rays_; }
+    QObject* labels() { return &labels_; }
     QObject* entityGroups() { return &entities_; }
     PartListModel& robotModel() { return robot_; }
     EntityGroupModel& entityModel() { return entities_; }
+    CameraListModel& cameraModel() { return cameras_; }
+    PartListModel& tagModel() { return tags_; }
+    PartListModel& rayModel() { return rays_; }
+    LabelListModel& labelModel() { return labels_; }
     RobotRig& rig() { return rig_; }
     ZoneRig& zoneRig() { return zoneRig_; }
+    CameraRig& cameraRig() { return cameraRig_; }
     OrbitCamera& camera() { return camera_; }
 
     QVector3D chassisPosition() const { return chassisPosition_; }
@@ -206,16 +291,20 @@ public:
     void setZoneLabelShown(const QString& label, bool shown) { zones_.setLabelShown(label, shown); }
     bool zoneLabelShown(const QString& label) const { return zones_.labelShown(label); }
 
+    // The vision layers of the View menu: cameras (bodies, frustums, labels, camera cards) and AprilTags (plates, ids). The rays between
+    // them need both.
+    bool camerasVisible() const { return camerasVisible_; }
+    void setCamerasVisible(bool v);
+    bool tagsVisible() const { return tagsVisible_; }
+    void setTagsVisible(bool v);
+
     // Same orbit camera and input scale as the editor viewport. The home view frames the whole field.
     Q_INVOKABLE void orbit(float dx, float dy) { camera_.orbit(dx, dy); refreshCamera(); }
     Q_INVOKABLE void pan(float dx, float dy) { camera_.pan(dx, dy, viewHeightPx_); refreshCamera(); }
     Q_INVOKABLE void zoom(float steps) { camera_.zoom(steps); refreshCamera(); }
     Q_INVOKABLE void resetCamera();
-    Q_INVOKABLE void setViewHeight(float heightPx) { viewHeightPx_ = heightPx > 1.f ? heightPx : 1.f; }
-    Q_INVOKABLE void setViewSize(float widthPx, float heightPx) {
-        viewWidthPx_ = widthPx > 1.f ? widthPx : 1.f;
-        setViewHeight(heightPx);
-    }
+    Q_INVOKABLE void setViewHeight(float heightPx);
+    Q_INVOKABLE void setViewSize(float widthPx, float heightPx);
 
     // ---- placing the robot with the mouse (a live teleport; the drag math is common/robot_placement.h) ----
     // Offered only while a simulation runs: the page enables it. The pose handed out is upright at the height the chassis had
@@ -241,18 +330,26 @@ signals:
     void fieldChanged();
     void zonesVisibleChanged();
     void zoneLabelsChanged();
+    void camerasVisibleChanged();
+    void tagsVisibleChanged();
     // The pose the dragged robot should take: x, y, height (m) and yaw (rad). The page forwards it to the backend.
     void robotPoseRequested(double xM, double yM, double zM, double yawRad);
     void robotDragChanged();
 
 private:
     void refreshCamera();
+    void refreshLabels();
     void updateZones(const sdk::ISimSnapshot* snapshot);
+    void updateVision(const sdk::ISimSnapshot* snapshot);
     placement::LocalBox robotBounds() const;   // the rig's parts in the chassis frame, a little grown for forgiving picking
 
     PartListModel field_;
     PartListModel robot_;
     PartListModel zones_;
+    CameraListModel cameras_;
+    PartListModel tags_;
+    PartListModel rays_;
+    LabelListModel labels_;
     EntityGroupModel entities_;
     RobotRig rig_;
     OrbitCamera camera_;
@@ -260,6 +357,7 @@ private:
     float viewHeightPx_ = 720.f;
     RunSceneInfo info_;
     ZoneRig zoneRig_;
+    CameraRig cameraRig_;
     QStringList zoneLabels_;
 
     QVector3D chassisPosition_;
@@ -278,6 +376,8 @@ private:
     float fieldWidth_ = 8.23f;
     QVector3D fieldCenter_{8.2f, 4.1f, 0.f};
     bool zonesVisible_ = true;
+    bool camerasVisible_ = true;
+    bool tagsVisible_ = true;
 };
 
 }  // namespace wpiemu::app::runview

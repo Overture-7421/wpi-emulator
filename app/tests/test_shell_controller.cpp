@@ -2,6 +2,10 @@
 
 #include <QSignalSpy>
 
+#include <algorithm>
+#include <cmath>
+#include <vector>
+
 #include "common/robot_basics.h"
 #include "shell/run_backend_adapter.h"
 #include "shell/shell_controller.h"
@@ -187,6 +191,44 @@ TEST_CASE("the run view teleports the robot through the shell and Reset returns 
     CHECK(pose().position.x == doctest::Approx(3.f));
     CHECK(pose().position.y == doctest::Approx(-2.f));
     CHECK(pose().rotation.yaw() == doctest::Approx(0.5f));
+    controller.stopRobot();
+}
+
+TEST_CASE("the demo runtime simulates a front camera and the game's AprilTags") {
+    TestEnvironment env;
+    ShellController controller(*env.services);
+    TestProject p;
+    configure(*env.services, p);   // the model lists no camera
+    REQUIRE(controller.openProject(p.path()) == OpenOutcome::Opened);
+    REQUIRE(waitFor([&] { return env.demo->status().programStarted; }));
+    controller.startSimulation();
+    REQUIRE(waitFor([&] { return env.demo->status().simulating; }));
+
+    // One default camera on the chassis, the 2026 layout, and the robot process "using" the camera.
+    REQUIRE(waitFor([&] {
+        const auto snap = env.demo->latestSnapshot();
+        return snap && !snap->cameras().empty() && snap->cameras()[0].framesCaptured > 0;
+    }));
+    const auto snap = env.demo->latestSnapshot();
+    REQUIRE(snap->cameras().size() == 1);
+    const sdk::CameraSample& camera = snap->cameras()[0];
+    CHECK(camera.id == "demo_front");
+    CHECK(camera.robotConnected);
+    CHECK(camera.status.empty());
+    CHECK(camera.framesPublished <= camera.framesCaptured);
+    REQUIRE(snap->detectedCameras().size() == 1);
+    CHECK(snap->detectedCameras()[0].cameraId == "demo_front");
+    CHECK(snap->detectedCameras()[0].ntName == "photon-front");
+    REQUIRE_FALSE(snap->fiducials().empty());
+    CHECK(snap->warnings().empty());
+
+    // Put the robot a metre and a half in front of a tag and facing it: the camera sees it.
+    const sdk::FiducialSample tag = snap->fiducials()[1];
+    const sdk::Vec3 normal = tag.pose.rotation.rotate({1.f, 0.f, 0.f});
+    const sdk::Vec3 spot = tag.pose.position + normal * 1.5f;
+    env.demo->setRobotPose(sdk::Pose3({spot.x, spot.y, 0.2f}, sdk::Quat::fromYaw(std::atan2(-normal.y, -normal.x))));
+    const std::vector<int> seen = env.demo->latestSnapshot()->cameras()[0].visibleTagIds;
+    CHECK(std::find(seen.begin(), seen.end(), tag.id) != seen.end());
     controller.stopRobot();
 }
 

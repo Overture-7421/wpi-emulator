@@ -20,6 +20,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <functional>
 
 namespace wpiemu::app::runview {
 namespace {
@@ -67,7 +68,7 @@ void RunPage::build() {
 
     buildActions();
 
-    viewport_ = new RunViewport(scene_, hud_, mechanisms_, theme_, viewOptions_, this);
+    viewport_ = new RunViewport(scene_, hud_, mechanisms_, cameraHud_, theme_, viewOptions_, this);
 
     // Restart (with its robot-code option) and speed float at the bottom-right of the 3D view, beside Home view.
     viewport_->addRestartControl(restartAction_, restartMenu_);
@@ -113,6 +114,14 @@ void RunPage::build() {
     connect(viewport_, &RunViewport::homeRequested, this, [this] { scene_.resetCamera(); });
     connect(viewport_->overlay(), &StateOverlay::showConsoleRequested, this, [this] { setConsoleVisible(true); });
     connect(&scene_, &SceneModel::zoneLabelsChanged, this, &RunPage::rebuildZoneMenu);
+    // The vision problems the HUD shows also go to the console once, where the level filter finds them.
+    connect(&cameraHud_.noticeModel(), &VisionNoticeModel::noticeRaised, this, [this](const QString& title, const QString& detail, int severity) {
+        const sdk::LogLevel level = severity == static_cast<int>(sdk::Severity::Error)     ? sdk::LogLevel::Error
+                                    : severity == static_cast<int>(sdk::Severity::Warning) ? sdk::LogLevel::Warn
+                                                                                           : sdk::LogLevel::Info;
+        console_->append({QDateTime::currentMSecsSinceEpoch(), level, LogStream::Emulator, tr("vision"),
+                          detail.isEmpty() ? title : tr("%1: %2").arg(title, detail)});
+    });
     connect(&scene_, &SceneModel::robotPoseRequested, this, [this](double xM, double yM, double zM, double yawRad) {
         backend_.setRobotPose(sdk::toPose3(sdk::StartPose{static_cast<float>(xM), static_cast<float>(yM), static_cast<float>(yawRad)}, static_cast<float>(zM)));
     });
@@ -162,18 +171,31 @@ void RunPage::buildActions() {    restartAction_ = new QAction(reloadIcon(), tr(
     resetView->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     addAction(resetView);
 
-    // Overlay and console toggles are exposed through viewActions() so the shell can list them in its View menu.
-    hudAction_ = new QAction(tr("Game HUD"), this);
-    hudAction_->setCheckable(true);
-    hudAction_->setChecked(viewOptions_.showHud());
-    mechAction_ = new QAction(tr("Mechanism values"), this);
-    mechAction_->setCheckable(true);
-    mechAction_->setChecked(viewOptions_.showMechanisms());
-    zonesAction_ = new QAction(tr("Zones (intake, shooter, ...)"), this);
-    zonesAction_->setCheckable(true);
-    zonesAction_->setChecked(scene_.zonesVisible());
+    // Overlay and console toggles are exposed through viewActions() so the shell can list them in its View menu. The overlay toggles are
+    // remembered in the settings, like the Driver Station choices.
+    const auto overlayToggle = [this](const QString& text, const char* key, bool fallback, const QString& tip, std::function<void(bool)> apply) {
+        auto* action = new QAction(text, this);
+        action->setCheckable(true);
+        if (!tip.isEmpty()) action->setToolTip(tip);
+        const QString path = QStringLiteral("runview/view/") + QLatin1String(key);
+        const bool on = settings_->value(path, fallback).toBool();
+        action->setChecked(on);
+        apply(on);
+        connect(action, &QAction::toggled, this, [this, path, apply = std::move(apply)](bool checked) {
+            apply(checked);
+            settings_->setValue(path, checked);
+        });
+        return action;
+    };
+    hudAction_ = overlayToggle(tr("Game HUD"), "hud", true, {}, [this](bool on) { viewOptions_.setShowHud(on); });
+    mechAction_ = overlayToggle(tr("Mechanism values"), "mechanisms", true, {}, [this](bool on) { viewOptions_.setShowMechanisms(on); });
+    zonesAction_ = overlayToggle(tr("Zones (intake, shooter, ...)"), "zones", true, {}, [this](bool on) { scene_.setZonesVisible(on); });
     zoneMenu_ = new QMenu(tr("Individual zones"), this);
     zoneMenu_->setEnabled(false);
+    camerasAction_ = overlayToggle(tr("Cameras"), "cameras", true, tr("Camera bodies, their view frustums and the camera cards"),
+                                   [this](bool on) { scene_.setCamerasVisible(on); });
+    tagsAction_ = overlayToggle(tr("AprilTags"), "aprilTags", true, tr("The field's AprilTags, highlighted while a camera sees them"),
+                                [this](bool on) { scene_.setTagsVisible(on); });
 
     consoleAction_ = new QAction(tr("Console"), this);
     consoleAction_->setCheckable(true);
@@ -192,13 +214,12 @@ void RunPage::buildActions() {    restartAction_ = new QAction(reloadIcon(), tr(
     });
     connect(speedCombo_, &QComboBox::activated, this, [this](int i) { backend_.setTimeScale(speedCombo_->itemData(i).toDouble()); });
     connect(resetView, &QAction::triggered, this, [this] { scene_.resetCamera(); });
-    connect(hudAction_, &QAction::toggled, &viewOptions_, &ViewportOptions::setShowHud);
-    connect(mechAction_, &QAction::toggled, &viewOptions_, &ViewportOptions::setShowMechanisms);
-    connect(zonesAction_, &QAction::toggled, &scene_, &SceneModel::setZonesVisible);
     connect(consoleAction_, &QAction::toggled, this, [this](bool on) { setConsoleVisible(on); });
 }
 
-QList<QAction*> RunPage::viewActions() const { return {hudAction_, mechAction_, zonesAction_, zoneMenu_->menuAction(), consoleAction_}; }
+QList<QAction*> RunPage::viewActions() const {
+    return {hudAction_, mechAction_, zonesAction_, zoneMenu_->menuAction(), camerasAction_, tagsAction_, consoleAction_};
+}
 
 void RunPage::setConsoleVisible(bool visible) {
     console_->setVisible(visible);
@@ -227,6 +248,7 @@ void RunPage::onSceneInfoChanged() {
     scene_.setSceneInfo(info);
     hud_.setDescriptors(info.hud);
     mechanisms_.setConfig(info.config);
+    cameraHud_.setConfig(info.config);
     rebuildZoneMenu();
 }
 
@@ -268,6 +290,7 @@ void RunPage::pollNow() {
     scene_.update(s);
     hud_.update(s);
     mechanisms_.update(s);
+    cameraHud_.update(s);
     refreshControls(s);
 
     if (stats_.update(s, now) || now - lastLabelMs_ > 250) {

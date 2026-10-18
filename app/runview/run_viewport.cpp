@@ -166,7 +166,7 @@ void StateOverlay::paintEvent(QPaintEvent*) {
     painter.fillRect(rect(), bg);
 }
 
-RunViewport::RunViewport(SceneModel& scene, HudModel& hud, MechanismOverlayModel& mechanisms, ViewportTheme& theme,
+RunViewport::RunViewport(SceneModel& scene, HudModel& hud, MechanismOverlayModel& mechanisms, CameraHudModel& cameras, ViewportTheme& theme,
                          ViewportOptions& options, QWidget* parent)
     : QWidget(parent) {
     setObjectName(QStringLiteral("runview.viewport"));
@@ -176,6 +176,7 @@ RunViewport::RunViewport(SceneModel& scene, HudModel& hud, MechanismOverlayModel
     ctx->setContextProperty(QStringLiteral("scene"), &scene);
     ctx->setContextProperty(QStringLiteral("hud"), &hud);
     ctx->setContextProperty(QStringLiteral("mechanisms"), &mechanisms);
+    ctx->setContextProperty(QStringLiteral("cameraHud"), &cameras);
     ctx->setContextProperty(QStringLiteral("theme"), &theme);
     ctx->setContextProperty(QStringLiteral("options"), &options);
     quick_->setSource(QUrl(QStringLiteral("qrc:/wpiemu/runview/qml/RunScene.qml")));

@@ -127,6 +127,33 @@ TEST_CASE("an already configured project opens straight into the editor") {
 }
 
 #ifdef WPIEMU_APP_HAS_RUNVIEW
+TEST_CASE("shell: the run page shows the demo's camera and the View menu lists the camera toggles") {
+    ShellFixture f;
+    f.acceptWizard();
+    TestProject project;
+    f.env.addProject(project);
+    f.window.show();
+    f.window.openProjectPath(project.path());
+    f.controller.setMode(AppMode::Run);
+    auto* run = f.window.findChild<wpiemu::app::runview::RunPage*>();
+    REQUIRE(run != nullptr);
+    REQUIRE(waitFor([&] {
+        run->pollNow();
+        return run->cameraHud().rowCount() == 1 &&
+               run->cameraHud().card(0).state == wpiemu::app::runview::CameraState::Ok;
+    }));
+    CHECK(run->cameraHud().card(0).label == QStringLiteral("Front camera"));
+    CHECK(run->scene().cameraModel().rowCount() == 1);
+    CHECK(run->scene().tagModel().rowCount() > 0);   // the game's AprilTags
+
+    QStringList viewMenu;
+    for (QAction* top : f.window.menuBar()->actions())
+        if (top->menu() != nullptr && top->text().contains(QStringLiteral("View")))
+            for (QAction* a : top->menu()->actions()) viewMenu << a->text();
+    CHECK(viewMenu.contains(QStringLiteral("Cameras")));
+    CHECK(viewMenu.contains(QStringLiteral("AprilTags")));
+}
+
 TEST_CASE("shell: Ctrl Shift R restarts from Run without opening setup") {
     ShellFixture f;
     f.acceptWizard();
