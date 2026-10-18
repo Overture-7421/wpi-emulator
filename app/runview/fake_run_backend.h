@@ -49,6 +49,7 @@ public:
 
     static sdk::RobotConfig makeDemoConfig();
     static std::vector<sdk::ZoneKindInfo> makeZoneKinds();   // demo_game.pickup (Volume), demo_game.shooter (Muzzle)
+    static sdk::AprilTagLayout makeDemoTags();               // 8 tags on the demo field's walls
     static sdk::FieldDescription makeDemoField();
 
 public slots:
