@@ -93,7 +93,8 @@ cd ../cpp
 
 Under the emulator the launcher runs the same Gradle tasks with the HALSim extension injected;
 nothing in the projects changes. Until the emulator supplies a camera, PhotonLib reports that no
-PhotonVision coprocessor was found, the `ph.*` values stay at `-` and `ll.tv` is 0.
+PhotonVision coprocessor was found, `ph.connected` and `ll.tv` stay 0 and the other `ph.*` values
+stay at `-`.
 
 ```
 python lint_no_sim_code.py
