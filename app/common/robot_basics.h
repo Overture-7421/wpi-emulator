@@ -78,9 +78,10 @@ sdk::RobotConfig buildRobotConfig(const RobotBasics& basics, const RobotBuildCon
 RobotBasics basicsFromConfig(const sdk::RobotConfig& config);
 
 // Re-running the wizard on a project that already has a model must not throw the editor's work away:
-// the basics replace the chassis size/mass, bumpers and the drivetrain wheels; mechanisms, robot
-// mappings, battery, plugin sections and any hand-added chassis primitives are kept, and drivetrain
-// mappings survive for wheels that still exist. With no existing model this is buildRobotConfig().
+// the basics replace the chassis size/mass, bumpers and the drivetrain wheels; mechanisms, zones, the
+// vision settings (cameras, AprilTag layout, PhotonLib UUID override), the start pose, robot mappings,
+// battery, plugin sections and any hand-added chassis primitives are kept, and drivetrain mappings
+// survive for wheels that still exist. With no existing model this is buildRobotConfig().
 sdk::RobotConfig updateRobotConfig(const sdk::RobotConfig* existing, const RobotBasics& basics, const RobotBuildContext& context);
 
 }  // namespace wpiemu::app
