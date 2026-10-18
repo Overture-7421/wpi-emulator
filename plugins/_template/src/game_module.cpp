@@ -106,7 +106,12 @@ public:
         return {std::move(w)};
     }
 
-    // 6. cross-cutting per-tick hook after IGameState::step. Usually unnecessary: keep logic in the game state.
+    // 6. optional: the season's AprilTag layout for the simulated vision cameras (default: empty = no tags).
+    //    Poses are in the field frame; a tag's +X points out of its face (WPILib convention). See
+    //    plugins/game_2026/src/april_tags.cpp for a table copied from the official WPILib JSON.
+    // sdk::AprilTagLayout aprilTagLayout() const override;
+
+    // 7. cross-cutting per-tick hook after IGameState::step. Usually unnecessary: keep logic in the game state.
     void onTick(sdk::SimContext& /*ctx*/, double /*dtSeconds*/) override {}
 };
 
