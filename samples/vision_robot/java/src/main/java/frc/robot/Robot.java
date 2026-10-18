@@ -58,10 +58,17 @@ public class Robot extends TimedRobot {
           new Translation3d(0.30, 0.00, 0.50), new Rotation3d(0.0, Math.toRadians(-20.0), 0.0));
 
   private static final String kLimelightName = "limelight-rear";
+  // The angles stay in degrees so they reach the Limelight exactly, without a rotation round trip.
+  private static final double kLimelightRollDeg = 0.0;
+  private static final double kLimelightPitchDeg = -25.0;
+  private static final double kLimelightYawDeg = 180.0;
   private static final Transform3d kRobotToLimelight =
       new Transform3d(
           new Translation3d(-0.30, 0.00, 0.45),
-          new Rotation3d(0.0, Math.toRadians(-25.0), Math.toRadians(180.0)));
+          new Rotation3d(
+              Math.toRadians(kLimelightRollDeg),
+              Math.toRadians(kLimelightPitchDeg),
+              Math.toRadians(kLimelightYawDeg)));
 
   private static final int kPigeonCanId = 0;
   private static final int kJoystickPort = 0;
@@ -109,16 +116,14 @@ public class Robot extends TimedRobot {
     DriverStation.silenceJoystickConnectionWarning(true);
 
     // Limelight robot space is +X forward, +Y right, +Z up, so Y and the angles change sign.
-    Translation3d translation = kRobotToLimelight.getTranslation();
-    Rotation3d rotation = kRobotToLimelight.getRotation();
     LimelightHelpers.setCameraPose_RobotSpace(
         kLimelightName,
-        translation.getX(),
-        -translation.getY(),
-        translation.getZ(),
-        -Math.toDegrees(rotation.getX()),
-        -Math.toDegrees(rotation.getY()),
-        -Math.toDegrees(rotation.getZ()));
+        kRobotToLimelight.getX(),
+        -kRobotToLimelight.getY(),
+        kRobotToLimelight.getZ(),
+        -kLimelightRollDeg,
+        -kLimelightPitchDeg,
+        -kLimelightYawDeg);
     LimelightHelpers.SetIMUMode(kLimelightName, 1);
   }
 

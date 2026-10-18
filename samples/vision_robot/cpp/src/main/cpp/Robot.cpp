@@ -35,9 +35,14 @@ const frc::Transform3d kRobotToPhotonCamera{
     frc::Rotation3d{units::degree_t{0.0}, units::degree_t{-20.0}, units::degree_t{0.0}}};
 
 constexpr const char* kLimelightName = "limelight-rear";
+// The angles stay in degrees so they reach the Limelight exactly, without a rotation round trip.
+constexpr double kLimelightRollDeg = 0.0;
+constexpr double kLimelightPitchDeg = -25.0;
+constexpr double kLimelightYawDeg = 180.0;
 const frc::Transform3d kRobotToLimelight{
     frc::Translation3d{units::meter_t{-0.30}, units::meter_t{0.00}, units::meter_t{0.45}},
-    frc::Rotation3d{units::degree_t{0.0}, units::degree_t{-25.0}, units::degree_t{180.0}}};
+    frc::Rotation3d{units::degree_t{kLimelightRollDeg}, units::degree_t{kLimelightPitchDeg},
+                    units::degree_t{kLimelightYawDeg}}};
 
 constexpr int kPigeonCanId = 0;
 constexpr int kJoystickPort = 0;
@@ -147,12 +152,9 @@ Robot::Robot()
   frc::DriverStation::SilenceJoystickConnectionWarning(true);
 
   // Limelight robot space is +X forward, +Y right, +Z up, so Y and the angles change sign.
-  const frc::Translation3d translation = kRobotToLimelight.Translation();
-  const frc::Rotation3d rotation = kRobotToLimelight.Rotation();
   LimelightHelpers::setCameraPose_RobotSpace(
-      kLimelightName, translation.X().value(), -translation.Y().value(), translation.Z().value(),
-      -units::degree_t{rotation.X()}.value(), -units::degree_t{rotation.Y()}.value(),
-      -units::degree_t{rotation.Z()}.value());
+      kLimelightName, kRobotToLimelight.X().value(), -kRobotToLimelight.Y().value(),
+      kRobotToLimelight.Z().value(), -kLimelightRollDeg, -kLimelightPitchDeg, -kLimelightYawDeg);
   LimelightHelpers::SetIMUMode(kLimelightName, 1);
 }
 
