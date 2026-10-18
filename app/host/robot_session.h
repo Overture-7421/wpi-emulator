@@ -96,6 +96,15 @@ struct StartPlacement {
 };
 StartPlacement startPlacementFor(const sdk::FieldDescription* field);
 
+// What RobotSession tells the runner about the project's PhotonLib (core::runtime::RunnerOptions::photonMessageUuid): PhotonLib throws
+// when the PhotonVision message definition differs from the one compiled into it, so the bridge must know which one the robot has.
+//   ""                      no photonlib vendordep (or the project cannot be inspected): the bridge default profile
+//   <uuid>                  the vendordep's version is a verified release: that release's message definition
+//   kPhotonUuidUnverified   photonlib is there but its version is unreadable or not verified: a value no profile has, so the bridge
+//                           refuses PhotonVision cameras instead of guessing
+inline constexpr const char* kPhotonUuidUnverified = "unverified";
+std::string photonMessageUuidFor(const std::filesystem::path& projectDir, const sdk::IValueTextCodec& json);
+
 class RobotSession {
 public:
     // Validates the config (Run: errors refuse the start; Discovery: reported as warnings), builds the session and
@@ -116,6 +125,8 @@ public:
     core::runtime::SessionRunner& runner() { return *runner_; }
     const sdk::IGameModule* gameModule() const { return module_; }
     const std::string& endpoint() const { return endpoint_; }
+    // The PhotonVision message UUID this run's runner was given (see photonMessageUuidFor).
+    const std::string& photonMessageUuid() const { return photonMessageUuid_; }
     bool coreOnly() const { return module_ == nullptr; }
     const std::vector<sdk::Issue>& configIssues() const { return issues_; }
 
@@ -145,6 +156,7 @@ private:
     const sdk::IGameModule* module_ = nullptr;
     std::vector<sdk::Issue> issues_;
     std::string endpoint_;
+    std::string photonMessageUuid_;
 
     core::runtime::MessageInbox inbox_;
     std::unique_ptr<core::runtime::RobotLinkAcceptor> acceptor_;

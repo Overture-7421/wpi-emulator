@@ -5,6 +5,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <thread>
 
 #include "test_support.h"
@@ -60,6 +61,10 @@ struct SyntheticProject {
     }
     fs::path dir() const { return root / "project"; }
     void signalStop() const { std::ofstream(dir() / "stop.flag").put('x'); }
+    void addVendordep(const std::string& fileName, const std::string& json) const {
+        fs::create_directories(dir() / "vendordeps");
+        std::ofstream(dir() / "vendordeps" / fileName, std::ios::binary) << json;
+    }
 
     Options options(Mode mode = Mode::Run) const {
         Options o;
@@ -274,4 +279,97 @@ TEST_CASE("the destructor kills the robot process tree (app exit)") {
     std::error_code ec;
     std::this_thread::sleep_for(200ms);
     fs::remove(p.dir() / "gradlew.bat", ec);
+}
+
+// ---- the PhotonVision message definition the runner is told about (the project's photonlib vendordep) -------------------------
+
+namespace {
+
+constexpr const char* kPhotonUuid = "4b2ff16a964b5e2bf04be0c1454d91c4";
+
+std::string photonlibJson(const std::string& version) { return R"json({"name": "photonlib", "version": ")json" + version + "\"}"; }
+
+bool logged(RobotSession& s, sdk::LogLevel level, const std::string& source, const std::string& text) {
+    for (const LogEntry& e : s.takeLogs())
+        if (e.level == level && e.source == source && e.text.find(text) != std::string::npos) return true;
+    return false;
+}
+
+}  // namespace
+
+TEST_CASE("photon profile: a verified release maps to its message definition, anything else to unverified, no photonlib to the default") {
+    TestRegistries reg;
+    struct Case { const char* version; const char* expected; };
+    const Case cases[] = {
+        {"v2026.3.4", kPhotonUuid},
+        {"2026.1.1", kPhotonUuid},
+        {"2025.3.2", kPhotonUuid},
+        {"2026.9.0", kPhotonUuidUnverified},  // newer than any verified release
+        {"2024.3.1", kPhotonUuidUnverified},
+        {"garbage", kPhotonUuidUnverified},
+        {"", kPhotonUuidUnverified},  // present, but no version to trust
+    };
+    for (const Case& c : cases) {
+        INFO(c.version);
+        SyntheticProject p(kWaitScript);
+        p.addVendordep("photonlib.json", photonlibJson(c.version));
+        CHECK(photonMessageUuidFor(p.dir(), reg.json) == c.expected);
+    }
+
+    SyntheticProject unreadable(kWaitScript);
+    unreadable.addVendordep("photonlib.json", "[[[");
+    CHECK(photonMessageUuidFor(unreadable.dir(), reg.json) == kPhotonUuidUnverified);
+
+    SyntheticProject other(kWaitScript);
+    other.addVendordep("Phoenix6.json", R"json({"name": "CTRE-Phoenix (v6)", "version": "26.1.0"})json");
+    CHECK(photonMessageUuidFor(other.dir(), reg.json).empty());
+    SyntheticProject plain(kWaitScript);
+    CHECK(photonMessageUuidFor(plain.dir(), reg.json).empty());
+    CHECK(photonMessageUuidFor(plain.root / "nope", reg.json).empty());  // a failed inspection never fails the session
+}
+
+TEST_CASE("start gives the runner the profile of the project's PhotonLib") {
+    TestRegistries reg;
+    struct Case { const char* version; const char* expected; };
+    const Case cases[] = {{"v2026.3.4", kPhotonUuid}, {"2026.9.0", kPhotonUuidUnverified}, {nullptr, ""}};
+    for (const Case& c : cases) {
+        INFO((c.version != nullptr ? c.version : "no photonlib"));
+        SyntheticProject p(kWaitScript);
+        if (c.version != nullptr) p.addVendordep("photonlib.json", photonlibJson(c.version));
+        auto r = RobotSession::start(reg.view(), p.config(), p.options());
+        REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+        CHECK(r.value()->photonMessageUuid() == c.expected);
+        r.value()->requestStop();
+        r.value()->waitUntilFinished();
+    }
+}
+
+TEST_CASE("an unverified PhotonLib is called out only when a PhotonVision camera would be disabled by it") {
+    TestRegistries reg;
+    auto addCamera = [](sdk::RobotConfig& config, sdk::CameraVendor vendor) {
+        sdk::CameraConfig camera;
+        camera.id = "front";
+        camera.vendor = vendor;
+        config.vision.cameras.push_back(camera);
+    };
+    // Starts a session over a project with an unverified PhotonLib and reports whether the console explains the consequence.
+    auto warns = [&](const std::function<void(sdk::RobotConfig&)>& configure) {
+        SyntheticProject p(kWaitScript);
+        p.addVendordep("photonlib.json", photonlibJson("2026.9.0"));
+        sdk::RobotConfig config = p.config();
+        configure(config);
+        auto r = RobotSession::start(reg.view(), config, p.options());
+        REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+        const bool called = logged(*r.value(), sdk::LogLevel::Warn, "vision", "PhotonVision cameras are disabled");
+        r.value()->requestStop();
+        r.value()->waitUntilFinished();
+        return called;
+    };
+    CHECK(warns([&](sdk::RobotConfig& c) { addCamera(c, sdk::CameraVendor::PhotonVision); }));
+    CHECK_FALSE(warns([&](sdk::RobotConfig& c) { addCamera(c, sdk::CameraVendor::Limelight); }));  // needs no vendor library
+    CHECK_FALSE(warns([](sdk::RobotConfig&) {}));                                                  // no cameras
+    CHECK_FALSE(warns([&](sdk::RobotConfig& c) {
+        addCamera(c, sdk::CameraVendor::PhotonVision);
+        c.vision.photonMessageUuid = kPhotonUuid;  // the user's override wins: nothing to warn about
+    }));
 }

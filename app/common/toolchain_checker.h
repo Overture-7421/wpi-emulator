@@ -19,6 +19,7 @@ inline constexpr const char* kGradle = "gradle";
 inline constexpr const char* kWpilib = "wpilib";
 inline constexpr const char* kCppToolchain = "cpp";
 inline constexpr const char* kGameModule = "game";
+inline constexpr const char* kVision = "vision";
 }  // namespace check_id
 
 struct ToolchainCheck {
@@ -36,6 +37,9 @@ struct ToolchainInput {
     int wpilibYear = 0;
     QString wpilibHomeOverride;
     QString jdkHomeOverride;
+    // The project's photonlib vendordep (ProjectInspection): which PhotonVision message definition its PhotonLib speaks.
+    bool hasPhotonlib = false;
+    QString photonlibVersion;  // "" = unreadable
 };
 
 struct ToolchainReport {
@@ -72,6 +76,8 @@ public:
     ToolchainCheck checkWpilibInstall(const ToolchainInput& input) const;
     ToolchainCheck checkCppToolchain(const ToolchainInput& input) const;
     ToolchainCheck checkGameModule(const ToolchainInput& input, ToolchainReport& report) const;
+    // PhotonLib: PhotonVision cameras are only published for verified releases (never required to run: Info/Warning only).
+    ToolchainCheck checkVision(const ToolchainInput& input) const;
 
     // Existing WPILib install folder for the season (override, then the default location), else empty.
     QString findWpilibHome(const ToolchainInput& input) const;

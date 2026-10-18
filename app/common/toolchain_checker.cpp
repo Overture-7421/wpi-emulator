@@ -3,6 +3,8 @@
 #include <QDir>
 #include <QRegularExpression>
 
+#include "wpiemu/sdk/vision/photon_profiles.h"
+
 namespace wpiemu::app {
 
 namespace {
@@ -214,6 +216,34 @@ ToolchainCheck ToolchainChecker::checkGameModule(const ToolchainInput& input, To
     return check;
 }
 
+ToolchainCheck ToolchainChecker::checkVision(const ToolchainInput& input) const {
+    ToolchainCheck check;
+    check.id = QString::fromLatin1(check_id::kVision);
+    check.title = tr("Vision (PhotonLib)");
+    if (!input.hasPhotonlib) {
+        check.status = CheckStatus::NotApplicable;
+        check.detail = tr("No PhotonLib vendor library: PhotonVision cameras are not used (Limelight cameras need no vendor library).");
+        return check;
+    }
+    const QString uuid = QString::fromStdString(sdk::photonMessageUuidForVersion(input.photonlibVersion.toStdString()));
+    if (!uuid.isEmpty()) {
+        check.status = CheckStatus::Ok;
+        check.detail = tr("PhotonLib %1: supported (message definition %2...)").arg(input.photonlibVersion, uuid.left(8));
+        return check;
+    }
+    // PhotonLib throws when the message definition differs from its own, so the bridge refuses PhotonVision cameras instead of guessing.
+    check.status = CheckStatus::Warning;
+    check.detail = input.photonlibVersion.isEmpty()
+                       ? tr("The PhotonLib version could not be read from its vendordep file: PhotonVision cameras are disabled for this "
+                            "project to avoid crashing the robot.")
+                       : tr("PhotonLib %1 has not been verified with this emulator: PhotonVision cameras are disabled for this project to "
+                            "avoid crashing the robot.").arg(input.photonlibVersion);
+    check.fixHint = tr("Update the emulator, or, once you have verified that this PhotonLib release still uses the PhotonVision message "
+                       "definition %1, set vision.photonMessageUuid to that value in robot.json.")
+                        .arg(QString::fromLatin1(sdk::kPhotonMessageUuidV2025_3));
+    return check;
+}
+
 ToolchainReport ToolchainChecker::run(const ToolchainInput& input) const {
     ToolchainReport report;
     report.checks.push_back(checkJdk(input));
@@ -221,6 +251,7 @@ ToolchainReport ToolchainChecker::run(const ToolchainInput& input) const {
     report.checks.push_back(checkWpilibInstall(input));
     report.checks.push_back(checkCppToolchain(input));
     report.checks.push_back(checkGameModule(input, report));
+    report.checks.push_back(checkVision(input));
     return report;
 }
 

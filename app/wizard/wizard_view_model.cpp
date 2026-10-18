@@ -176,6 +176,8 @@ ToolchainInput WizardViewModel::toolchainInput() const {
     in.wpilibYear = inspection_.wpilibYear;
     in.wpilibHomeOverride = services_.settings().data().wpilibHome;
     in.jdkHomeOverride = services_.settings().data().jdkHome;
+    in.hasPhotonlib = inspection_.hasPhotonlib;
+    in.photonlibVersion = inspection_.photonlibVersion;
     return in;
 }
 
