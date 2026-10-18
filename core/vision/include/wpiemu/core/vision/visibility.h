@@ -8,8 +8,8 @@
 //   3. all four projected corners lie inside the image [0,w] x [0,h],
 //   4. its shortest projected edge is at least minTagPixels,
 //   5. (occlusion on) a ray from the camera origin toward the tag centre does not hit a
-//      layer::Field shape nearer than kOcclusionStandoffM short of the centre (the own robot is
-//      excluded: it is not on that layer).
+//      layer::Field shape nearer than kOcclusionStandoffM short of the centre, other than the
+//      collider the tag is mounted on (the own robot is excluded: it is not on that layer).
 
 #include <array>
 #include <cstdint>
@@ -22,9 +22,14 @@
 namespace wpiemu::core::vision {
 
 // Field colliders are modelled with tolerances and a tag may coincide with, or sit slightly inside,
-// the collider face it is mounted on (the 2026 trench tags sit inside the trench-arm box). Only an
-// obstruction at least this much nearer to the camera than the tag centre occludes the tag.
+// the collider face it is mounted on. Only an obstruction at least this much nearer to the camera
+// than the tag centre occludes the tag.
 inline constexpr double kOcclusionStandoffM = 0.08;
+
+// A tag can also sit deeper inside its mounting collider than any standoff allows: the 2026 trench
+// tags are at the mid-plane of the 1.19 m deep trench-arm box. The shapes within this distance of
+// the tag centre are the structure the tag is mounted on, part of the tag rather than obstructions.
+inline constexpr double kMountProbeRadiusM = 0.01;
 
 enum class TagRejection : std::uint8_t {
     None = 0,  // visible
@@ -58,8 +63,9 @@ TagVisibility evaluateTagVisibility(const CameraModel& camera, const VisibilityL
                                     const Pose3d& fieldToCamera, const Pose3d& fieldToTag,
                                     double tagSizeM, const sdk::IPhysicsWorld* world);
 
-// True when a layer::Field shape is hit by the ray from the camera origin toward the tag centre
-// before it comes within kOcclusionStandoffM of the centre.
+// True when the ray from the camera origin toward the tag centre hits a layer::Field shape before
+// it comes within kOcclusionStandoffM of the centre, unless that shape is one the tag is mounted
+// on (it lies within kMountProbeRadiusM of the centre).
 bool isLineOfSightBlocked(const sdk::IPhysicsWorld& world, const Vec3d& cameraPosition,
                           const Vec3d& tagCenter);
 

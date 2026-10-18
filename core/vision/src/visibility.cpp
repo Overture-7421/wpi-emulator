@@ -1,6 +1,8 @@
 #include "wpiemu/core/vision/visibility.h"
 
+#include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace wpiemu::core::vision {
 
@@ -9,10 +11,14 @@ bool isLineOfSightBlocked(const sdk::IPhysicsWorld& world, const Vec3d& cameraPo
     const Vec3d direction = tagCenter - cameraPosition;
     const double reachM = norm(direction) - kOcclusionStandoffM;
     if (!(reachM > 0.0)) return false;  // closer than the standoff: nothing can stand in between
-    return world
-        .rayCastClosest(toSdk(cameraPosition), toSdk(direction), static_cast<float>(reachM),
-                        sdk::layer::Field)
-        .hit;
+    const sdk::RayHit hit = world.rayCastClosest(toSdk(cameraPosition), toSdk(direction),
+                                                 static_cast<float>(reachM), sdk::layer::Field);
+    if (!hit.hit) return false;
+    // The structure the tag is mounted on, or sits inside of, is part of the tag.
+    std::vector<sdk::ShapeId> mount;
+    world.overlapSphere(toSdk(tagCenter), static_cast<float>(kMountProbeRadiusM), sdk::layer::Field,
+                        mount);
+    return std::find(mount.begin(), mount.end(), hit.shape) == mount.end();
 }
 
 TagVisibility evaluateTagVisibility(const CameraModel& camera, const VisibilityLimits& limits,

@@ -141,23 +141,42 @@ TEST_CASE("vision visibility: only layer::Field blocks, and only between the cam
     }
 }
 
-TEST_CASE("vision visibility: a collider the tag sits slightly inside does not occlude it, a nearer one does") {
-    // The ray runs from the camera toward the tag centre and only counts a hit nearer than the
-    // centre minus kOcclusionStandoffM (8 cm), because colliders are modelled with tolerances.
+TEST_CASE("vision visibility: the collider the tag is mounted on never occludes it, other colliders do") {
+    // The ray runs from the camera toward the tag centre. A hit counts only when it is nearer than
+    // the centre minus kOcclusionStandoffM (colliders are modelled with tolerances) and does not
+    // belong to the collider the tag centre sits in or on.
     CHECK(vis::kOcclusionStandoffM == Approx(0.08));
     const Pose3d tag = tagAtYaw(6.0, 0.0, 0.0, kPi);
-    auto blockedBy = [&](float frontFaceX) {
+    auto blockedByWall = [&](float frontFaceX, float depthM = 1.f) {
         BoxWorld w;  // a deep wall whose camera-side face is at x = frontFaceX
-        w.addBox({frontFaceX + 0.5f, 0.f, 0.f}, {0.5f, 3.f, 3.f});
+        w.addBox({frontFaceX + depthM / 2, 0.f, 0.f}, {depthM / 2, 3.f, 3.f});
         return vis::isLineOfSightBlocked(*w.world, {0.0, 0.0, 0.0}, tag.t);
     };
-    CHECK_FALSE(blockedBy(6.00f));  // flush with the tag centre
-    CHECK_FALSE(blockedBy(5.95f));  // the tag centre 5 cm inside the box (the 2026 trench tags)
-    CHECK_FALSE(blockedBy(5.93f));  // 7 cm in front: still within the standoff
-    CHECK(blockedBy(5.90f));        // 10 cm nearer than the tag: an obstruction
-    CHECK(blockedBy(3.00f));
+    CHECK_FALSE(blockedByWall(6.00f));  // flush with the tag centre
+    CHECK_FALSE(blockedByWall(5.95f));  // the tag centre 5 cm inside the box
+    CHECK_FALSE(blockedByWall(5.90f));  // 10 cm inside
+    CHECK_FALSE(blockedByWall(5.40f, 1.2f));  // 60 cm inside, like the 2026 trench tags in their arm box
+    CHECK_FALSE(blockedByWall(3.00f, 4.f));   // the tag deep inside a thick wall
 
-    // end to end: the tag embedded 5 cm in its wall is visible, a plate 10 cm in front hides it
+    // a thin plate that does not touch the tag: blocks once it is more than the standoff short of it
+    auto blockedByPlate = [&](float x) {
+        BoxWorld w;
+        w.addBox({x, 0.f, 0.f}, {0.005f, 1.f, 1.f});
+        return vis::isLineOfSightBlocked(*w.world, {0.0, 0.0, 0.0}, tag.t);
+    };
+    CHECK_FALSE(blockedByPlate(5.93f));  // 7 cm in front: within the standoff
+    CHECK(blockedByPlate(5.90f));        // 10 cm in front: an obstruction
+    CHECK(blockedByPlate(3.00f));
+
+    // a different collider in front of the tag still blocks while the tag sits inside its own
+    {
+        BoxWorld w;
+        w.addBox({6.5f, 0.f, 0.f}, {1.0f, 3.f, 3.f});  // the tag is inside this box (front face at 5.5)
+        w.addBox({3.f, 0.f, 0.f}, {0.05f, 2.f, 2.f});  // another wall across the view
+        CHECK(vis::isLineOfSightBlocked(*w.world, {0.0, 0.0, 0.0}, tag.t));
+    }
+
+    // end to end: embedded in its wall the tag is visible, behind a plate 10 cm in front it is hidden
     {
         BoxWorld w;
         w.addBox({6.45f, 0.f, 0.f}, {0.5f, 3.f, 3.f});  // front face at x = 5.95
