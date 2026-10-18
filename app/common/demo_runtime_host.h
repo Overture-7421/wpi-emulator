@@ -11,6 +11,8 @@ namespace wpiemu::app {
 // Scripted stand-in for the real runtime (`--demo`, tests, screenshots): "launches" instantly,
 // announces plausible devices one after another while armed and drives the chassis around
 // from the Driver Station state once the simulation starts. No process, no physics, no sockets.
+// Vision (ADR 0017) is simulated geometrically too: the project's cameras (or one default front camera when it
+// configures none) and the game's AprilTag layout appear in the snapshot, with the tags each camera sees (no occlusion).
 class DemoRuntimeHost final : public IRuntimeHost {
     Q_OBJECT
 public:
@@ -51,6 +53,7 @@ private:
     void tickSimulation();
     void integrate(double dt);
     void publish();
+    void publishVision(sdk::SimSnapshotData& data) const;
 
     HostStatus status_;
     HostScene scene_;
@@ -61,6 +64,10 @@ private:
 
     std::vector<sdk::DiscoveredDevice> plannedDevices_;
     std::vector<sdk::DiscoveredDevice> announced_;
+    // Vision stand-in: the project's cameras (one default camera when it has none) and the game's AprilTag layout.
+    std::vector<sdk::CameraConfig> visionCameras_;
+    std::vector<sdk::FiducialSample> layoutTags_;
+    bool layoutMissing_ = false;
     int startupStage_ = 0;
     int startupMs_ = 350;
     int announceMs_ = 450;
