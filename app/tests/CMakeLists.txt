@@ -10,6 +10,7 @@ add_executable(wpiemu_app_tests
     test_project_inspector.cpp
     test_real_host.cpp
     test_robot_basics.cpp
+    test_robot_placement.cpp
     test_settings_models.cpp
     test_shell_controller.cpp
     test_toolchain_checker.cpp

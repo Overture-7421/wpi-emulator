@@ -17,6 +17,7 @@
 #include "model/motion_links.h"
 #include "model/property_groups.h"
 #include "model/tr.h"
+#include "model/units.h"
 #include "views/activation_card.h"
 #include "views/drive_card.h"
 
@@ -80,6 +81,8 @@ void InspectorPanel::clearContent() {
     forms_.clear();
     slotRows_.clear();
     activationCard_ = nullptr;
+    startPoseHint_ = nullptr;
+    startPoseReset_ = nullptr;
     title_ = nullptr;
     nameEdit_ = nullptr;
     if (QWidget* old = scroll_->takeWidget()) old->deleteLater();
@@ -192,6 +195,7 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
             icon = NodeKind::Zone;
             break;
         case SelKind::Device: title = ETR("Detected device"); icon = NodeKind::Robot; break;
+        case SelKind::StartPose: subtitle = ETR("Where the robot starts and where Reset puts it back"); icon = NodeKind::Robot; break;
         default: break;
     }
 
@@ -248,6 +252,38 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
     if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Wheel || target.kind == SelKind::Zone)
         addAction(ETR("Delete"), ETR("Delete (Del)"), [this] { controller_.deleteSelection(); });
     layout_->addWidget(head);
+}
+
+void InspectorPanel::addStartPoseCard(const PropertyGroup& group) {
+    auto* body = new QWidget(content_);
+    auto* v = new QVBoxLayout(body);
+    v->setContentsMargins(0, 0, 0, 0);
+    v->setSpacing(6);
+    v->addWidget(makeForm(group, body));
+    startPoseHint_ = mutedLabel(QString(), body);
+    startPoseHint_->setObjectName(QStringLiteral("startPose.hint"));
+    v->addWidget(startPoseHint_);
+    startPoseReset_ = static_cast<QToolButton*>(linkButton(ETR("Use default placement"), [this] { controller_.document().clearStartPose(); }));
+    startPoseReset_->setObjectName(QStringLiteral("startPose.useDefault"));
+    startPoseReset_->setToolTip(ETR("Forget the start pose: the robot starts where the game field puts it."));
+    v->addWidget(startPoseReset_, 0, Qt::AlignLeft);
+    addSection(ETR("Start pose"), body, false, SectionRole::Placement);
+    refreshStartPoseCard();
+}
+
+void InspectorPanel::refreshStartPoseCard() {
+    if (startPoseHint_ == nullptr || startPoseReset_ == nullptr) return;
+    const bool set = controller_.document().config().sim.startPose.has_value();
+    const sdk::StartPose def = controller_.document().catalog().defaultStartPose;
+    const UnitSystem units = controller_.settings().units();
+    const auto length = [units](float m) {
+        const UnitDisplay d = unitDisplay(sdk::PropertyUnit::Meters, units);
+        return QString::number(toDisplay(static_cast<double>(m), sdk::PropertyUnit::Meters, units), 'f', d.decimals) + unitSuffix(sdk::PropertyUnit::Meters, units);
+    };
+    startPoseHint_->setText(set ? ETR("The robot starts here and returns here on Reset. Type values or drag the footprint in the viewport.")
+                                : ETR("Not set: the robot starts at the default placement (X %1, Y %2). Edit a value or drag the footprint to set it.")
+                                      .arg(length(def.xM), length(def.yM)));
+    startPoseReset_->setEnabled(set);
 }
 
 void InspectorPanel::addShapes(const std::string& owner) {
@@ -498,9 +534,14 @@ void InspectorPanel::rebuild() {
     } else if (target.kind == SelKind::Zone) {
         addZoneCards(target, groups);
     } else {
+        const auto formGroups = std::count_if(groups.begin(), groups.end(), [](const PropertyGroup& g) { return g.id != "robot.start"; });
         for (const PropertyGroup& g : groups) {
+            if (g.id == "robot.start") {
+                addStartPoseCard(g);
+                continue;
+            }
             auto* f = makeForm(g, content_);
-            addSection(groups.size() == 1 ? ETR("Configure") : g.title, f, g.collapsed, SectionRole::Configure);
+            addSection(formGroups == 1 ? ETR("Configure") : g.title, f, g.collapsed, SectionRole::Configure);
         }
     }
     if (target.kind == SelKind::Chassis) addShapes(ops::kChassisOwner);
@@ -543,6 +584,7 @@ void InspectorPanel::refresh(bool authoritative) {
         activationCard_->setIssues(issues);
         activationCard_->refresh(authoritative);
     }
+    refreshStartPoseCard();
     std::map<std::string, std::vector<SlotInfo>> byOwner;
     for (DeviceRowWidget* row : slotRows_) {
         const std::string owner = row->address().owner;

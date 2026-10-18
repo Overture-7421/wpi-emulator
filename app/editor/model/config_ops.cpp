@@ -820,6 +820,17 @@ bool renameWheel(RobotConfig& c, const std::string& oldName, const std::string& 
     return true;
 }
 
+// ---- start pose -------------------------------------------------------------------------------
+sdk::StartPose effectiveStartPose(const RobotConfig& c, const EditorCatalog& catalog) {
+    return c.sim.startPose.value_or(catalog.defaultStartPose);
+}
+
+bool setStartPose(RobotConfig& c, const std::optional<sdk::StartPose>& pose) {
+    if (c.sim.startPose == pose) return false;
+    c.sim.startPose = pose;
+    return true;
+}
+
 // ---- primitives -------------------------------------------------------------------------------
 std::vector<sdk::PrimitiveSpec>* primitivesOf(RobotConfig& c, std::string_view owner) {
     if (owner == kChassisOwner) return &c.chassis.primitives;

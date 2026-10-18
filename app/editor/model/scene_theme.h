@@ -21,6 +21,7 @@ struct SceneTheme {
     QColor accent{"#4da3ff"};      // selection
     QColor com{"#ff9f1c"};
     QColor link{"#2ec4b6"};
+    QColor startPose{"#a78bfa"};   // footprint + heading arrow of the start pose
     QColor axisX{"#e5484d"};
     QColor axisY{"#46a758"};
     QColor axisZ{"#3e63dd"};
@@ -41,6 +42,7 @@ struct SceneTheme {
         t.mechanism = QColor("#e0a020");
         t.accent = QColor("#0a6cff");
         t.link = QColor("#12a595");
+        t.startPose = QColor("#7c5cff");
         t.text = QColor("#2a2f38");
         return t;
     }

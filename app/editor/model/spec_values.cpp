@@ -2,7 +2,9 @@
 
 #include <algorithm>
 
+#include "common/robot_placement.h"
 #include "model/config_ops.h"
+#include "model/tr.h"
 #include "wpiemu/sdk/config/value_codec.h"
 
 namespace wpiemu::app::editor::spec {
@@ -113,6 +115,40 @@ void applyRobot(sdk::RobotConfig& c, const std::string& key, const Value& v) {
     else if (key == "batteryNominalV") c.battery.nominalVoltageV = num(v, c.battery.nominalVoltageV);
     else if (key == "batteryResistanceMilliOhm") c.battery.internalResistanceOhm = num(v, 15.0) / 1000.0;
     else if (key == "brownoutV") c.battery.brownoutVoltageV = num(v, c.battery.brownoutVoltageV);
+}
+
+// ---- start pose -------------------------------------------------------------------------------
+PropertySchema startPoseSchema() {
+    PropertySchema s;
+    const std::string group = ETR("Start pose").toStdString();
+    auto x = makeSpec("startX", ETR("X").toStdString(), PropertyType::Double, PropertyUnit::Meters, 0.0, group,
+                      ETR("Where the robot's centre of mass starts along the field (+X points to the opposing alliance wall).").toStdString());
+    s.properties.push_back(withRange(x, -100.0, 100.0, 0.0));
+    auto y = makeSpec("startY", ETR("Y").toStdString(), PropertyType::Double, PropertyUnit::Meters, 0.0, group,
+                      ETR("Where the robot's centre of mass starts across the field (+Y points left).").toStdString());
+    s.properties.push_back(withRange(y, -100.0, 100.0, 0.0));
+    auto yaw = makeSpec("startYaw", ETR("Yaw").toStdString(), PropertyType::Double, PropertyUnit::Radians, 0.0, group,
+                        ETR("0\xC2\xB0 faces +X, positive turns counter-clockwise seen from above.").toStdString());
+    s.properties.push_back(withRange(yaw, -6.2831853, 6.2831853, 0.0));
+    return s;
+}
+
+Value startPoseValues(const sdk::RobotConfig& c, const EditorCatalog& catalog) {
+    const sdk::StartPose p = ops::effectiveStartPose(c, catalog);
+    Value o = Value::makeObject();
+    o["startX"] = static_cast<double>(p.xM);
+    o["startY"] = static_cast<double>(p.yM);
+    o["startYaw"] = static_cast<double>(p.yawRad);
+    return o;
+}
+
+void applyStartPose(sdk::RobotConfig& c, const EditorCatalog& catalog, const std::string& key, const Value& v) {
+    sdk::StartPose p = ops::effectiveStartPose(c, catalog);   // editing one field writes the whole pose
+    if (key == "startX") p.xM = numF(v, p.xM);
+    else if (key == "startY") p.yM = numF(v, p.yM);
+    else if (key == "startYaw") p.yawRad = placement::wrapAngle(numF(v, p.yawRad));
+    else return;
+    ops::setStartPose(c, p);
 }
 
 // ---- chassis ----------------------------------------------------------------------------------

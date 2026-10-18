@@ -1,6 +1,8 @@
 #pragma once
 
+#include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "common/app_services.h"
@@ -33,9 +35,12 @@ private:
     void onStatus();
     void onLog(const HostLogLine& line);
     static bool sameDevice(const sdk::DiscoveredDevice& a, const sdk::DiscoveredDevice& b);
+    sdk::StartPose defaultStartPose(const sdk::IGameModule* module) const;
 
     AppServices& services_;
     std::optional<sdk::RobotConfig> pending_;   // last config submitted by the editor (unsaved edits)
+    mutable std::shared_ptr<const sdk::FieldDescription> field_;   // the plugin's field, for the default start placement
+    mutable std::string fieldPluginId_;
     bool committing_ = false;
     bool lastDetecting_ = false;
     std::uint64_t lastRunGeneration_ = 0;

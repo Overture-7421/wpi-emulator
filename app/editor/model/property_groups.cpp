@@ -224,6 +224,12 @@ std::vector<PropertyGroup> propertyGroupsFor(const sdk::RobotConfig& c, const Ed
     switch (sel.kind) {
         case SelKind::Robot:
             out.push_back(groupOf("robot", ETR("Robot"), spec::robotSchema(), spec::robotValues(c)));
+            out.push_back(groupOf("robot.start", ETR("Start pose"), spec::startPoseSchema(), spec::startPoseValues(c, catalog)));
+            out.back().section = sdk::PropertySection::Placement;
+            break;
+        case SelKind::StartPose:
+            out.push_back(groupOf("robot.start", ETR("Start pose"), spec::startPoseSchema(), spec::startPoseValues(c, catalog)));
+            out.back().section = sdk::PropertySection::Placement;
             break;
         case SelKind::Chassis:
             out.push_back(groupOf("chassis", ETR("Chassis"), spec::chassisSchema(), spec::chassisValues(c.chassis)));
@@ -327,6 +333,7 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
                    const std::string& key, const Value& value) {
     const SelectionRef sel = formTargetOf(c, selIn);
     if (groupId == "robot") { spec::applyRobot(c, key, value); return true; }
+    if (groupId == "robot.start") { spec::applyStartPose(c, catalog, key, value); return true; }
     if (groupId == "chassis") { spec::applyChassis(c, catalog, key, value); return true; }
     if (groupId == "drivetrain") { spec::applyDrivetrain(c, key, value); return true; }
     if (groupId == "wheel" || groupId == "wheel.drive" || groupId == "wheel.placement") { spec::applyWheel(c, sel.sub, key, value); return true; }
@@ -423,6 +430,7 @@ QString describeSelection(const sdk::RobotConfig& c, const EditorCatalog& catalo
             if (const auto* z = c.findZone(sel.owner)) return QString::fromStdString(ops::zoneDisplayName(*z, catalog));
             return QString::fromStdString(sel.owner);
         case SelKind::Device: return QString::fromStdString(sel.owner);
+        case SelKind::StartPose: return ETR("Start pose");
         case SelKind::None: break;
     }
     return {};

@@ -118,6 +118,43 @@ SceneContent buildScene(const sdk::RobotConfig& c, const EditorCatalog& catalog,
         out.items.push_back(com);
     }
 
+    // Start pose: the hull's footprint on the floor where the robot starts (fainter while that is only the default placement)
+    // and a heading arrow whose tip turns it. Both select, and dragging them edits SimSettings::startPose.
+    {
+        const sdk::StartPose start = ops::effectiveStartPose(c, catalog);
+        const Pose3 body = sdk::toPose3(start, 0.f);   // the chassis origin on the floor
+        const Vec3 hullCentre{-c.chassis.comOffsetM.x, -c.chassis.comOffsetM.y, 0.f};   // in the chassis frame
+        const SelectionRef ref = SelectionRef::startPose();
+
+        SceneItem foot;
+        foot.id = kStartPoseFootprintId;
+        foot.ref = foot.group = ref;
+        foot.role = ItemRole::Marker;
+        foot.world = Pose3{body.transformPoint(hullCentre + Vec3{0.f, 0.f, 0.008f}), body.rotation};
+        foot.size = Vec3{c.chassis.sizeM.x, c.chassis.sizeM.y, 0.012f};
+        foot.color = theme.startPose;
+        foot.opacity = c.sim.startPose ? 0.4f : 0.22f;
+        foot.pickable = true;
+        out.items.push_back(foot);
+
+        const float front = hullCentre.x + c.chassis.sizeM.x * 0.5f;
+        const Vec3 tail = body.transformPoint(Vec3{0.f, 0.f, 0.02f});
+        const Vec3 tip = body.transformPoint(Vec3{front + 0.2f, 0.f, 0.02f});
+        SceneItem shaft = lineBetween(std::string(kStartPoseNoseId) + ":shaft", tail, tip, theme.startPose, 0.02f);
+        shaft.ref = shaft.group = ref;
+        shaft.pickable = true;
+        out.items.push_back(shaft);
+        SceneItem head;
+        head.id = kStartPoseNoseId;
+        head.ref = head.group = ref;
+        head.role = ItemRole::Marker;
+        head.world = Pose3{tip, body.rotation};
+        head.size = Vec3{0.1f, 0.1f, 0.03f};
+        head.color = theme.startPose;
+        head.pickable = true;
+        out.items.push_back(head);
+    }
+
     // Mechanisms
     for (const auto& m : c.mechanisms) {
         const Pose3 root = ops::mechanismRootWorld(c, catalog, m.id);

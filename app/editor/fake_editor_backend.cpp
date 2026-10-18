@@ -243,6 +243,7 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
     cat.drivetrains = {{"swerve", {"Swerve", "Independently steered and driven modules."}},
                        {"tank", {"Tank", "Left / right skid steer."}},
                        {"mecanum", {"Mecanum", "Four mecanum wheels."}}};
+    cat.defaultStartPose = {1.4f, 1.0f, 0.f};   // near the origin so that the demo's first view shows the start pose marker
 
     // ---- plugin config ----
     cat.pluginId = "game_2026";

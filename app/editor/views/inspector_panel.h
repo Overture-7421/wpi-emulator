@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QScrollArea>
+#include <QToolButton>
 #include <QWidget>
 
 #include <memory>
@@ -37,6 +38,8 @@ public:
     QLineEdit* nameEdit() const { return nameEdit_; }
     int rebuildCount() const { return rebuilds_; }
     ActivationCard* activationCard() const { return activationCard_; }
+    QLabel* startPoseHint() const { return startPoseHint_; }
+    QToolButton* startPoseResetButton() const { return startPoseReset_; }
 
 private:
     void rebuild();
@@ -56,6 +59,8 @@ private:
     void addShapes(const std::string& owner);
     void addChildren(const std::string& mechanismId);
     void addDeviceCard(const SelectionRef& sel);
+    void addStartPoseCard(const PropertyGroup& group);
+    void refreshStartPoseCard();
     QWidget* linkButton(const QString& text, const std::function<void()>& action);
     QMap<QString, QPair<int, QString>> issuesFor(const SelectionRef& target) const;
 
@@ -66,6 +71,8 @@ private:
     QVBoxLayout* layout_ = nullptr;
     QLabel* title_ = nullptr;
     QLineEdit* nameEdit_ = nullptr;
+    QLabel* startPoseHint_ = nullptr;
+    QToolButton* startPoseReset_ = nullptr;
     QMap<QString, QPair<int, QString>> issues_;
     ActivationCard* activationCard_ = nullptr;
     std::vector<PropertyFormWidget*> forms_;

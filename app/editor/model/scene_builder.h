@@ -18,6 +18,10 @@ namespace wpiemu::app::editor {
 enum class ItemShape { Box, Cylinder };
 enum class ItemRole { Hull, Wheel, Shape, Overlay, Link, Marker, Com };
 
+// Ids of the start pose marker's items: the footprint moves the pose, the nose (tip and shaft ids start with this) turns it.
+inline constexpr const char* kStartPoseFootprintId = "startpose";
+inline constexpr const char* kStartPoseNoseId = "startpose:nose";
+
 struct SceneItem {
     std::string id;                 // unique and stable across rebuilds (diffing, QML delegates)
     SelectionRef ref;               // what a click selects (None = not pickable)

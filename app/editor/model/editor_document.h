@@ -84,6 +84,9 @@ public:
     int addPrimitive(const QString& owner, sdk::PrimitiveKind kind);
     bool removePrimitive(const QString& owner, int index);
     int duplicatePrimitive(const QString& owner, int index);
+    // ---- start pose: nullopt = back to the default placement. Edits of one drag session ("drag:<session>") merge into one undo step.
+    bool setStartPose(const std::optional<sdk::StartPose>& pose, const QString& dragSession = {});
+    bool clearStartPose() { return setStartPose(std::nullopt); }
 
     void markSaved() { undo_.setClean(); }
 

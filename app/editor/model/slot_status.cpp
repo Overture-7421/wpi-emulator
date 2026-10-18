@@ -270,6 +270,11 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
         loc.fieldKey = path.size() > 8 ? firstSegment(path.substr(8)) : std::string();
         return loc;
     }
+    if (path == "sim.startPose") {   // the Robot page carries the Start pose card
+        loc.selection = SelectionRef::robot();
+        loc.fieldKey = "startX";
+        return loc;
+    }
     if (path == "drivetrain" || path.rfind("drivetrain", 0) == 0) {
         // "drivetrain.fl.drive" == slot address; "drivetrain" / "drivetrain.spec..." == the drivetrain.
         const auto dot = path.find('.');

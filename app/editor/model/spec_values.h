@@ -22,6 +22,13 @@ sdk::PropertySchema robotSchema();
 sdk::Value robotValues(const sdk::RobotConfig& c);
 void applyRobot(sdk::RobotConfig& c, const std::string& key, const sdk::Value& v);
 
+// ---- start pose (x, y in the field frame, heading; SimSettings::startPose) ----
+sdk::PropertySchema startPoseSchema();
+// The EFFECTIVE pose: the configured one, else the catalog's default placement, so the fields show where the robot starts.
+sdk::Value startPoseValues(const sdk::RobotConfig& c, const EditorCatalog& catalog);
+// Sets one component; the other two keep their effective values, so editing any field writes the whole pose.
+void applyStartPose(sdk::RobotConfig& c, const EditorCatalog& catalog, const std::string& key, const sdk::Value& v);
+
 // ---- chassis (hull, mass, COM, material) ----
 sdk::PropertySchema chassisSchema();
 sdk::Value chassisValues(const sdk::ChassisSpec& s);

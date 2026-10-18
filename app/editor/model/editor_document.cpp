@@ -203,6 +203,12 @@ bool EditorDocument::setTransform(const SelectionRef& sel, const EditableTransfo
                 [&](sdk::RobotConfig& c) { return writeTransform(c, catalog_, sel, t); }, merge);
 }
 
+bool EditorDocument::setStartPose(const std::optional<sdk::StartPose>& pose, const QString& dragSession) {
+    const QString merge = dragSession.isEmpty() ? QStringLiteral("startpose") : QStringLiteral("drag:%1").arg(dragSession);
+    return edit(pose ? ETR("Set start pose") : ETR("Use the default start pose"),
+                [&](sdk::RobotConfig& c) { return ops::setStartPose(c, pose); }, pose ? merge : QString());
+}
+
 QString EditorDocument::addWheel() {
     std::string name;
     edit(ETR("Add wheel"), [&](sdk::RobotConfig& c) {
