@@ -12,6 +12,7 @@
 #include "wpiemu/ipc/binary_codec.h"
 #include "wpiemu/ipc/handshake.h"
 #include "wpiemu/ipc/local_ipc.h"
+#include "wpiemu/sdk/config/validation_codes.h"
 #include "wpiemu/sdk/ipc/lifecycle.h"
 
 namespace fs = std::filesystem;
@@ -372,4 +373,32 @@ TEST_CASE("an unverified PhotonLib is called out only when a PhotonVision camera
         addCamera(c, sdk::CameraVendor::PhotonVision);
         c.vision.photonMessageUuid = kPhotonUuid;  // the user's override wins: nothing to warn about
     }));
+}
+
+TEST_CASE("a relative vision layout file resolves against the opened project, not the path stored in the configuration") {
+    TestRegistries reg;
+    SyntheticProject p(kWaitScript);
+    fs::create_directories(p.dir() / "tags");
+    std::ofstream(p.dir() / "tags" / "field.json", std::ios::binary)
+        << R"({"tags":[{"ID":3,"pose":{"translation":{"x":5.0,"y":2.0,"z":0.5},
+                "rotation":{"quaternion":{"W":1.0,"X":0.0,"Y":0.0,"Z":0.0}}}}],"field":{"length":16.5,"width":8.0}})";
+
+    sdk::RobotConfig config = p.config();
+    config.project.path = (p.root / "an-old-checkout").string();  // what a committed robot.json carries once the project moved
+    sdk::CameraConfig camera;
+    camera.id = "front";
+    camera.vendor = sdk::CameraVendor::Limelight;
+    camera.ntName = "limelight";
+    config.vision.cameras.push_back(camera);
+    config.vision.layoutFile = "tags/field.json";
+
+    auto r = RobotSession::start(reg.view(), config, p.options());
+    REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+    RobotSession& s = *r.value();
+    const auto snap = s.latestSnapshot();
+    REQUIRE(snap != nullptr);
+    CHECK(snap->fiducials().size() == 1);  // the layout was found, so the engine exists
+    for (const sdk::HubWarning& w : snap->warnings()) CHECK(w.code != sdk::validation_code::kVisionLayoutMissing);
+    s.requestStop();
+    s.waitUntilFinished();
 }

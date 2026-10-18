@@ -244,6 +244,9 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     if (!loaded) return makeError(loaded.error().code, "The robot configuration cannot be used: " + loaded.error().message);
     self->issues_ = loaded.value().issues;
     RobotConfig cfg = std::move(loaded.value().config);
+    // The folder the app actually opened wins over the path stored in robot.json (a committed or moved project keeps its author's path
+    // there): relative paths of the configuration, such as vision.layoutFile, resolve against it.
+    cfg.project.path = options.projectDir.string();
     if (!loaded.value().valid()) {
         if (options.mode == Mode::Run)
             return makeError(ErrorCode::InvalidState, "The robot configuration has errors that must be fixed before the robot can run:" +
