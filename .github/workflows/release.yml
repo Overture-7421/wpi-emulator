@@ -223,7 +223,8 @@ jobs:
           test -f "$app/Contents/PlugIns/wpiemu/libhalsim_wpiemu.dylib"
           find "$app/Contents/Resources/qml/QtQuick3D" -iname '*quick3dplugin*' -print -quit | grep -q .
           exe="$app/Contents/MacOS/wpiemu_app"
-          bad="$(otool -L "$exe" | tail -n +2 | awk '{print $1}' | grep -v -E '^(@rpath|@executable_path|@loader_path|/usr/lib/|/System/)' || true)"
+          # Fat binaries print "<exe> (architecture ...):" headers; only the tab-indented lines are dependencies.
+          bad="$(otool -arch all -L "$exe" | grep -E '^[[:space:]]' | awk '{print $1}' | grep -v -E '^(@rpath|@executable_path|@loader_path|/usr/lib/|/System/)' || true)"
           if [ -n "$bad" ]; then echo "::error::unbundled dependencies:"; echo "$bad"; exit 1; fi
           hdiutil detach "$mount"
 
