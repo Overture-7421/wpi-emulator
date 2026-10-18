@@ -17,6 +17,9 @@ using namespace std::chrono_literals;
 using wpiemu::test_runtime::Registries;
 using wpiemu::test_runtime::sampleConfig;
 using wpiemu::test_runtime::sampleDevices;
+using wpiemu::test_runtime::ScratchDir;
+using wpiemu::test_runtime::wallCamera;
+using wpiemu::test_runtime::wallLayoutJson;
 
 namespace {
 
@@ -90,6 +93,8 @@ struct FakeExtension {
         if (follower.onSensorFrame(sf) != proto::FollowerAction::Step) return;
         proto::ActuatorFrame a = follower.makeAck(sf, result);
         a.samples = outputs;
+        a.vision = std::move(visionStates);  // like the extension: reported once, then only changes
+        visionStates.clear();
         send(a);
     }
 
@@ -115,6 +120,7 @@ struct FakeExtension {
     std::vector<proto::DsState> dsStates;
     std::vector<proto::LoopbackSet> loopbacks;
     std::vector<SignalSample> outputs;
+    std::vector<CameraRobotState> visionStates;  // what the robot process reports about its cameras, sent with the next ack
 };
 
 struct Rig {
@@ -194,6 +200,23 @@ struct Rig {
         return n;
     }
 };
+
+// One enabled PhotonVision camera that sees the two tags of the wall layout (a file in `dir`).
+RobotConfig visionConfig(const ScratchDir& dir) {
+    RobotConfig c = sampleConfig();
+    c.vision.cameras = {wallCamera()};
+    c.vision.layoutFile = dir.write("layout.json", wallLayoutJson()).string();
+    return c;
+}
+
+// The camera frames of the SensorFrames `ext` received in `epoch`, with the tick that carried each.
+std::vector<std::pair<std::uint64_t, VisionFrame>> cameraFrames(const FakeExtension& ext, std::uint64_t epoch) {
+    std::vector<std::pair<std::uint64_t, VisionFrame>> out;
+    for (const proto::SensorFrame& sf : ext.sensorFrames)
+        if (sf.runEpoch == epoch)
+            for (const VisionFrame& f : sf.vision) out.emplace_back(sf.tick, f);
+    return out;
+}
 
 }  // namespace
 
@@ -634,6 +657,156 @@ TEST_CASE("runner: a new connection replaces the old one") {
         std::this_thread::sleep_for(5ms);
     }
     CHECK(first->disconnected);
+}
+
+TEST_CASE("runner: the handshake announces the enabled cameras and the PhotonVision message UUID in order of precedence") {
+    ScratchDir dir;
+    CameraConfig front = wallCamera("front");
+    front.ntName = "photon-front";
+    CameraConfig spare = wallCamera("spare");
+    spare.enabled = false;
+    CameraConfig limelight = wallCamera("left");
+    limelight.vendor = CameraVendor::Limelight;
+    limelight.ntName = "limelight-left";
+
+    struct Case {
+        const char* derived;  // RunnerOptions::photonMessageUuid: what the project's photonlib implies
+        const char* forced;   // RobotConfig::vision.photonMessageUuid: the user's override
+        const char* expected;
+    };
+    const Case cases[] = {{"", "", ""}, {"derived", "", "derived"}, {"derived", "forced", "forced"}, {"", "forced", "forced"}};
+    for (const Case& test : cases) {
+        INFO("derived '" << test.derived << "', forced '" << test.forced << "'");
+        RobotConfig config = visionConfig(dir);
+        config.vision.cameras = {front, spare, limelight};
+        config.vision.photonMessageUuid = test.forced;
+        RunnerOptions options = Rig::fast();
+        options.photonMessageUuid = test.derived;
+        Rig rig(options, config);
+        rig.connect();
+        rig.ext->hello();
+        REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value(); }));
+        const VisionSetup& setup = rig.ext->helloAck->vision;
+        REQUIRE(setup.cameras.size() == 2);  // the disabled camera is not announced
+        CHECK(setup.cameras[0].cameraId == "front");
+        CHECK(setup.cameras[0].ntName == "photon-front");
+        CHECK(setup.cameras[1].cameraId == "left");
+        CHECK(setup.cameras[1].vendor == CameraVendor::Limelight);
+        CHECK(setup.cameras[1].ntName == "limelight-left");
+        for (const CameraSetup& c : setup.cameras) CHECK(c.photonMessageUuid == test.expected);
+    }
+
+    // nothing to announce without cameras, and none either when their layout is missing (the robot then sees no
+    // camera at all instead of one that sees nothing)
+    Rig plain;
+    plain.connect();
+    plain.ext->hello();
+    REQUIRE(plain.run([&] { return plain.ext->helloAck.has_value(); }));
+    CHECK(plain.ext->helloAck->vision.empty());
+
+    RobotConfig noLayout = sampleConfig();
+    noLayout.vision.cameras = {front};
+    Rig lost(Rig::fast(), noLayout);
+    lost.connect();
+    lost.ext->hello();
+    REQUIRE(lost.run([&] { return lost.ext->helloAck.has_value(); }));
+    CHECK(lost.ext->helloAck->vision.empty());
+    CHECK(lost.warnings("vision_layout_missing") == 1);
+}
+
+TEST_CASE("runner: camera frames ride the SensorFrames at their tick, a Reset or a reconnect starts a new schedule") {
+    ScratchDir dir;
+    Rig rig(Rig::fast(), visionConfig(dir));
+    rig.handshake();
+    REQUIRE(rig.run([&] { return rig.runner->ticksSent() >= 15; }));
+
+    // 200 Hz, 25 ms: the capture of tick N0 (T = (N0 + 1) * 5 ms) rides tick N0 + 6 and says it is 25 ms old
+    const auto first = cameraFrames(*rig.ext, 1);
+    REQUIRE(first.size() >= 9);
+    for (std::size_t i = 0; i < first.size(); ++i) {
+        CHECK(first[i].first == i + 6);
+        CHECK(first[i].second.sequence == i + 1);
+        CHECK(first[i].second.captureTimeUs == static_cast<SimTimeUs>((i + 1) * 5000));
+        CHECK(first[i].second.latencyUs == 25000);
+        CHECK(first[i].second.observations.size() == 2);
+    }
+
+    // Reset: what was in flight is dropped, the schedule restarts with the clock, sequence numbers continue
+    const std::uint64_t captured = rig.session->buildSnapshot(false, true)->cameras()[0].framesCaptured;
+    proto::SimControl reset;
+    reset.command = proto::SimCommand::Reset;
+    rig.runner->control(reset);
+    REQUIRE(rig.run([&] { return cameraFrames(*rig.ext, 2).size() >= 3; }));
+    const auto second = cameraFrames(*rig.ext, 2);
+    CHECK(second[0].first == 6);
+    CHECK(second[0].second.sequence == captured + 1);
+    CHECK(second[0].second.captureTimeUs == 5000);
+    CHECK(second[0].second.latencyUs == 25000);
+
+    // a reconnect is a new session and epoch: the HelloAck announces the camera again and the engine starts over
+    const std::uint64_t capturedBefore = rig.session->buildSnapshot(false, true)->cameras()[0].framesCaptured;
+    rig.ext->ch.close();
+    REQUIRE(rig.run([&] { return rig.runner->state() == RunnerState::WaitingForRobot; }));
+    rig.link.reset();
+    rig.connect();
+    rig.ext->hello();
+    rig.ext->announceAll();
+    REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value() && cameraFrames(*rig.ext, 3).size() >= 2; }));
+    CHECK(rig.ext->helloAck->vision.cameras.size() == 1);
+    const auto third = cameraFrames(*rig.ext, 3);
+    CHECK(third[0].first == 6);
+    CHECK(third[0].second.sequence > capturedBefore);
+    CHECK(third[0].second.captureTimeUs == 5000);
+}
+
+TEST_CASE("runner: the robot's camera report reaches snapshots as detected cameras and warnings, a lost connection forgets it") {
+    ScratchDir dir;
+    Rig rig(Rig::fast(), visionConfig(dir));
+    rig.connect();
+    rig.ext->hello();
+    rig.ext->announceAll();
+    CameraRobotState healthy;  // the full list rides the first answer of a connection
+    healthy.ntName = "front";
+    healthy.cameraId = "front";
+    healthy.publishing = true;
+    healthy.framesPublished = 3;
+    CameraRobotState stray;
+    stray.ntName = "limelight-extra";
+    stray.vendor = CameraVendor::Limelight;
+    rig.ext->visionStates = {healthy, stray};
+    REQUIRE(rig.run([&] { return rig.slot.latest()->detectedCameras().size() == 2; }));
+    CHECK(rig.slot.latest()->detectedCameras()[0] == healthy);
+    REQUIRE(rig.slot.latest()->cameras().size() == 1);
+    CHECK(rig.slot.latest()->cameras()[0].robotConnected);
+    CHECK(rig.warnings("vision_camera_unconfigured") == 1);
+    CHECK(rig.warnings("vision_camera_status") == 0);
+
+    // later answers carry only what changed
+    CameraRobotState refused = healthy;
+    refused.publishing = false;
+    refused.status = "photon_uuid_unsupported";
+    rig.ext->visionStates = {refused};
+    REQUIRE(rig.run([&] { return rig.warnings("vision_camera_status") == 1; }));
+    CHECK(rig.slot.latest()->detectedCameras().size() == 2);  // the unchanged entry is still known
+    CHECK_FALSE(rig.slot.latest()->cameras()[0].robotConnected);
+    CHECK(rig.warnings("vision_camera_unconfigured") == 1);
+
+    // the robot process outlives a Reset, so its report does too
+    proto::SimControl reset;
+    reset.command = proto::SimCommand::Reset;
+    rig.runner->control(reset);
+    REQUIRE(rig.run([&] { return rig.runner->runEpoch() == 2 && rig.session->clock().tickIndex() >= 3; }));
+    CHECK(rig.slot.latest()->detectedCameras().size() == 2);
+    CHECK(rig.warnings("vision_camera_status") == 1);
+
+    // the connection goes away: nothing of it is shown any more
+    rig.ext->ch.close();
+    REQUIRE(rig.run([&] { return rig.runner->state() == RunnerState::WaitingForRobot; }));
+    CHECK(rig.slot.latest()->detectedCameras().empty());
+    CHECK(rig.warnings("vision_camera_status") == 0);
+    CHECK(rig.warnings("vision_camera_unconfigured") == 0);
+    REQUIRE(rig.slot.latest()->cameras().size() == 1);
+    CHECK_FALSE(rig.slot.latest()->cameras()[0].robotConnected);
 }
 
 TEST_CASE("runner: Stop is acknowledged by the extension and finishes the session") {
