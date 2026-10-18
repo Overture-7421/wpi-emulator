@@ -1,6 +1,7 @@
 # 2026 (REBUILT) game plugin. May link ONLY wpiemu_sdk (enforced by tools/check_boundaries.py).
 add_library(wpiemu_plugin_game_2026 STATIC
     src/config.cpp
+    src/fiducial_layouts.cpp
     src/field_layout.cpp
     src/fuel_layout.cpp
     src/fuel_pool.cpp
