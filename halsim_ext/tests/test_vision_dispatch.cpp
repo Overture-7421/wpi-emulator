@@ -556,6 +556,95 @@ TEST_CASE("bridge set: a closed set calls no hook any more, stop() still reaches
     CHECK(p->stops == 1);
 }
 
+namespace {
+
+// Closes its set from inside a hook once armed, like the HAL shutdown hook does while the clock thread is inside this call.
+class ClosingBridge final : public sdk::IDeviceBridge {
+public:
+    explicit ClosingBridge(BridgeSet*& set) : set_(set) {}
+
+    std::string_view name() const override { return "test.closing"; }
+    sdk::Status start(sdk::IBridgeHost& h) override {
+        host_ = &h;
+        return sdk::okStatus();
+    }
+    void poll() override {
+        if (!device_.valid()) device_ = host_->announce(FakeBridge::makeDescriptor("closing", 1), FakeBridge::makeSpecs());
+        closeIfArmed();
+    }
+    void collectOutputs(std::vector<sdk::SignalSample>&) override { closeIfArmed(); }
+    void applyInputs(std::span<const sdk::SignalSample>) override { closeIfArmed(); }
+    void applyLoopback(sdk::DeviceId) override { closeIfArmed(); }
+    bool owns(sdk::DeviceId id) const override { return id == device_; }
+    void stop() noexcept override {}
+    void resetInputHistory() override { closeIfArmed(); }
+    void applyVision(std::span<const sdk::VisionFrame>) override { closeIfArmed(); }
+    void collectVision(std::vector<sdk::CameraRobotState>&, bool) override { closeIfArmed(); }
+
+    sdk::DeviceId device() const { return device_; }
+    void arm() { armed_ = true; }
+
+private:
+    void closeIfArmed() {
+        if (armed_ && set_ != nullptr) set_->close();
+    }
+
+    BridgeSet*& set_;
+    sdk::IBridgeHost* host_ = nullptr;
+    sdk::DeviceId device_;
+    bool armed_ = false;
+};
+
+// One set per hook (closing is permanent): [ClosingBridge, VisionProbe]; the probe must see nothing of the hook that closes the set.
+template <class Hook>
+void checkLaterBridgeStaysUncalled(const char* what, Hook&& hook) {
+    Fixture fx;
+    BridgeSet* setPtr = nullptr;
+    std::vector<std::unique_ptr<sdk::IDeviceBridge>> bridges;
+    auto closing = std::make_unique<ClosingBridge>(setPtr);
+    auto later = std::make_unique<VisionProbe>("test.later");
+    ClosingBridge* c = closing.get();
+    VisionProbe* p = later.get();
+    bridges.push_back(std::move(closing));
+    bridges.push_back(std::move(later));
+    BridgeSet set(std::move(bridges), fx.table, fx.logger, fx.clock);
+    setPtr = &set;
+    set.start(fx.hooks);
+    set.poll();  // announces both devices
+    REQUIRE(c->device().valid());
+    REQUIRE(p->device().valid());
+    const std::size_t before = p->events().size();
+
+    c->arm();
+    hook(set, c->device(), p->device());
+    CHECK_MESSAGE(set.closed(), what);
+    CHECK_MESSAGE(p->events().size() == before, what);
+}
+
+}  // namespace
+
+TEST_CASE("bridge set: closing the set inside one bridge's hook keeps the bridges after it from being called") {
+    const std::vector<sdk::VisionFrame> frames{makeFrame("photon-front", 1)};
+    checkLaterBridgeStaysUncalled("poll", [](BridgeSet& s, sdk::DeviceId, sdk::DeviceId) { s.poll(); });
+    checkLaterBridgeStaysUncalled("resetInputHistory", [](BridgeSet& s, sdk::DeviceId, sdk::DeviceId) { s.resetInputHistory(); });
+    checkLaterBridgeStaysUncalled("applyInputs", [](BridgeSet& s, sdk::DeviceId a, sdk::DeviceId b) {
+        const std::vector<sdk::SignalSample> samples{{a, 1, 1.0}, {b, 1, 1.0}};
+        s.applyInputs(samples);
+    });
+    checkLaterBridgeStaysUncalled("collectOutputs", [](BridgeSet& s, sdk::DeviceId, sdk::DeviceId) {
+        std::vector<sdk::SignalSample> out;
+        s.collectOutputs(out);
+    });
+    checkLaterBridgeStaysUncalled("applyVision", [&frames](BridgeSet& s, sdk::DeviceId, sdk::DeviceId) { s.applyVision(frames); });
+    checkLaterBridgeStaysUncalled("collectVision", [](BridgeSet& s, sdk::DeviceId, sdk::DeviceId) {
+        std::vector<sdk::CameraRobotState> out;
+        s.collectVision(out, true);
+    });
+    checkLaterBridgeStaysUncalled("applyLoopback", [](BridgeSet& s, sdk::DeviceId a, sdk::DeviceId b) {
+        s.applyLoopback(std::vector<sdk::DeviceId>{a, b});
+    });
+}
+
 TEST_CASE("session wire limit of camera states matches the binary codec") {
     CHECK(SimSession::kMaxVisionStates == ipc::kMaxVisionCameras);
 }

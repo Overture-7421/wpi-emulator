@@ -42,15 +42,17 @@ void BridgeSet::start(const std::atomic<bool>& optionalHooks) {
 }
 
 void BridgeSet::poll() {
-    if (closed()) return;
-    for (Slot& slot : slots_)
+    for (Slot& slot : slots_) {
+        if (closed()) return;  // per slot: a call in progress is not interrupted, but the next bridge is never started
         if (slot.active) slot.bridge->poll();
+    }
 }
 
 void BridgeSet::resetInputHistory() {
-    if (closed()) return;
-    for (Slot& slot : slots_)
+    for (Slot& slot : slots_) {
+        if (closed()) return;
         if (slot.active) slot.bridge->resetInputHistory();
+    }
 }
 
 void BridgeSet::applyInputs(std::span<const sdk::SignalSample> samples) {
@@ -60,31 +62,37 @@ void BridgeSet::applyInputs(std::span<const sdk::SignalSample> samples) {
         const std::optional<std::size_t> owner = table_->ownerOf(s.device);
         if (owner && *owner < routed_.size() && slots_[*owner].active) routed_[*owner].push_back(s);
     }
-    for (std::size_t i = 0; i < slots_.size(); ++i)
+    for (std::size_t i = 0; i < slots_.size(); ++i) {
+        if (closed()) return;
         if (!routed_[i].empty()) slots_[i].bridge->applyInputs(routed_[i]);
+    }
 }
 
 void BridgeSet::collectOutputs(std::vector<sdk::SignalSample>& out) {
-    if (closed()) return;
-    for (Slot& slot : slots_)
+    for (Slot& slot : slots_) {
+        if (closed()) return;
         if (slot.active) slot.bridge->collectOutputs(out);
+    }
 }
 
 void BridgeSet::applyVision(std::span<const sdk::VisionFrame> frames) {
-    if (frames.empty() || closed()) return;
-    for (Slot& slot : slots_)
+    if (frames.empty()) return;
+    for (Slot& slot : slots_) {
+        if (closed()) return;
         if (slot.active) slot.bridge->applyVision(frames);
+    }
 }
 
 void BridgeSet::collectVision(std::vector<sdk::CameraRobotState>& out, bool full) {
-    if (closed()) return;
-    for (Slot& slot : slots_)
+    for (Slot& slot : slots_) {
+        if (closed()) return;
         if (slot.active) slot.bridge->collectVision(out, full);
+    }
 }
 
 void BridgeSet::applyLoopback(std::span<const sdk::DeviceId> ids) {
-    if (closed()) return;
     for (const sdk::DeviceId id : ids) {
+        if (closed()) return;
         const std::optional<std::size_t> owner = table_->ownerOf(id);
         if (owner && *owner < slots_.size() && slots_[*owner].active) slots_[*owner].bridge->applyLoopback(id);
     }

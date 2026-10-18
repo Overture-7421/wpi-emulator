@@ -100,10 +100,11 @@ public:
     void collectVision(std::vector<sdk::CameraRobotState>& out, bool full);
     void applyLoopback(std::span<const sdk::DeviceId> ids);
     // Any thread. From now on every fan-out above is a no-op: a call that is already running cannot
-    // be interrupted, but no new one starts. The runtime closes the set first thing when the HAL
-    // shutdown hook stops the extension, so that a clock thread which is stuck and gets detached
-    // cannot drive the bridges (and through them ntcore, which may be torn down right after) once
-    // the hook returned.
+    // be interrupted, but no new one starts, not even for the next bridge of the fan-out that is in
+    // progress (the flag is re-checked per bridge). The runtime closes the set first thing when the
+    // HAL shutdown hook stops the extension, so that a clock thread which is stuck and gets
+    // detached cannot drive the bridges (and through them ntcore, which may be torn down right
+    // after) once the hook returned.
     void close() noexcept { closed_.store(true, std::memory_order_release); }
     bool closed() const { return closed_.load(std::memory_order_acquire); }
     // Idempotent; closes the set, then stops bridges in reverse start order.
