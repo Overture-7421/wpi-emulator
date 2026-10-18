@@ -107,6 +107,28 @@ Right-drag (or Alt+left-drag) orbits, left-drag on empty space or middle-drag pa
 drills into the shape); W/E/R choose move / rotate / scale, F frames, 1-4 pick Front / Side / Top / 3D,
 Ctrl toggles snapping while dragging, Del deletes, Ctrl+D duplicates, Esc clears the selection.
 
+## Start pose (`SimSettings::startPose`)
+
+Where the robot starts on the field. The model holds an optional `sdk::StartPose {xM, yM, yawRad}` (field frame, the pose of the chassis
+origin, i.e. the COM frame of the snapshot); `nullopt` means "the game field's default placement", which the shell adapter reports as
+`EditorCatalog::defaultStartPose` (`host::startPlacementFor`), so the editor shows where an unset robot will start and knows no field.
+
+* **Ops / document**: `ops::effectiveStartPose(config, catalog)` (configured, else the default) and `ops::setStartPose(config, optional)`
+  (false when nothing changes); `EditorDocument::setStartPose(optional, dragSession)` / `clearStartPose()` make them undoable edits. Typing
+  merges under one key, a viewport drag under its `drag:<session>` key (one drag = one undo step), clearing is a step of its own.
+* **Inspector**: the Robot page has a second property group `robot.start` (X, Y in the display units, Yaw in degrees, stored in radians:
+  `spec::startPoseSchema` / `startPoseValues` / `applyStartPose`; editing one field stores the whole effective pose) drawn as the **Start
+  pose** card (`InspectorPanel::addStartPoseCard`): the fields, a hint saying whether the pose is set (and the default placement if
+  not) and **Use default placement**. Selecting the marker (`SelKind::StartPose`) shows only that card. An invalid `sim.startPose` issue
+  is located on its X field (`locateIssue`).
+* **Viewport**: `buildScene` adds a translucent footprint of the hull at the effective pose (`kStartPoseFootprintId`, fainter while the
+  pose is unset), a heading shaft and an arrow head (`kStartPoseNoseId`), all pickable with `SelectionRef::startPose()`. Pressing the
+  footprint selects it (a click alone never creates a start pose) and dragging moves it over the floor plane through the grabbed
+  point; dragging the arrow turns it to face the cursor. The ray/plane maths and the snapping rules are `app/common/robot_placement.h`
+  (Qt-free, shared with the run view, tested in `app/tests/test_robot_placement.cpp`); `ViewportController::beginStartPoseDrag` /
+  `updateStartPoseDrag` / `endStartPoseDrag` only connect them to the document, the editor's grid steps apply and Ctrl toggles them, and
+  QML stays a pointer forwarder. `F` on the marker frames it; framing the robot ignores it.
+
 ## Building and testing
 
 * In the full tree: `app/CMakeLists.txt` adds this folder; target `wpiemu_app_editor` (static),

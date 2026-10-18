@@ -230,6 +230,22 @@ The game plugin decides which kinds exist, so a season without zones simply has 
 
 All of this is undoable like any other edit.
 
+### Placing the robot
+Until you say otherwise, the robot starts where the game field puts it (for the 2026 field about 2 m from the end wall, centred
+across the field, facing +X) and returns there on every **Restart**. To start somewhere else, set a **start pose**; the robot starts there
+on every run and **Restart** (`Ctrl+R`) puts it back there.
+
+* **Numbers**: select the **Robot** node and use its **Start pose** card: **X** and **Y** (field coordinates, in the display units) and
+  **Yaw** (degrees, counter-clockwise from +X). While nothing is set the card shows the default placement; typing a value saves
+  the start pose in the model (`sim.startPose` in `robot.json`) and **Use default placement** forgets it again.
+* **Mouse**: a translucent footprint of the hull on the floor marks the start pose (fainter while it is only the default
+  placement). Drag the footprint to move it, drag its arrow to turn it, `Ctrl` toggles snapping, a click only selects it. A whole drag
+  is one undo step. Press `F` with the footprint selected to bring it into view.
+* **In the Run tab**, while the simulation runs, press the left mouse button on the robot and drag it over the field. The wheel turns it
+  while you hold it (5 degrees a notch), `Ctrl` snaps to 10 cm and 15 degrees. This is a live teleport for trying things out: the robot
+  stops where you drop it, mechanisms and game pieces are left as they are and nothing is saved. **Restart** puts the robot back at the
+  start pose.
+
 ### Device mapping
 Your robot code creates devices (motor controllers, encoders, gyros, solenoids...) at run time. The simulator needs to
 know which mechanism slot each one drives:
@@ -310,6 +326,7 @@ and phase widgets only apply in Practice; the other modes are free play.
 |---|---|
 | View controls | Icon buttons at the bottom-right of the 3D view: **Restart** (`Ctrl+R`, puts the robot and game pieces back to the start; the robot code keeps running). Its dropdown adds **Restart robot code** (`Ctrl+Shift+R`, reboots the code and resets everything). **Speed** (relative to real time) |
 | Camera | Same camera controls as the editor viewport (right-drag or Alt+left-drag to rotate; left-drag, middle-drag or Shift+drag to pan; wheel to zoom) and **Home view** (⌂ button, last in the bottom-right controls, `Ctrl+0`, or double-click the view) |
+| Moving the robot | While the simulation runs, left-drag the robot itself to carry it over the field (the cursor turns into a hand over it); the wheel turns it while held, `Ctrl` snaps. See *Placing the robot* |
 | Overlays | **View** menu: game HUD, mechanism values, zones (intake / shooter), individually switchable (Run tab only) |
 | Telemetry (right side of the toolbar) | simulated time, ticks per second and speed, battery voltage, physics step time and entity count, gamepad status |
 | Console | **View > Console** (`Ctrl+J`); filter by level and source (robot stdout, robot stderr, emulator), search, copy, clear, follow |

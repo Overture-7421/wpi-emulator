@@ -11,7 +11,7 @@ implementation used by the tests, the demo and screenshots.
 
 | Area | Files | Notes |
 |---|---|---|
-| Backend seam | `run_backend.h/.cpp` | `IRunBackend` (QObject): start/stop/restart/reset/pause/step/time scale, `latestSnapshot()` (polled at ~60 Hz), DS state, `status()` (process + link state), `sceneInfo()` (config, field, HUD + overlay descriptors), `logEntry` signal |
+| Backend seam | `run_backend.h/.cpp` | `IRunBackend` (QObject): start/stop/restart/reset/pause/step/time scale, `setRobotPose` (teleport), `latestSnapshot()` (polled at ~60 Hz), DS state, `status()` (process + link state), `sceneInfo()` (config, field, HUD + overlay descriptors), `logEntry` signal |
 | Fake backend | `fake_run_backend.*` | synthetic swerve robot, 3 mechanisms with moving links, a pickup and a muzzle zone that light up while the intake is deployed / the flywheel runs, 200 instanced "fuel" balls, HUD values, failure injection (`simulateCrash`, `simulateHandshakeTimeout`, ...) |
 | Presentation logic (Qt-light, unit tested) | `run_control.*`, `hud_model.*`, `sim_stats.*`, `scene_parts.*`, `console_model.*` | enable states, status chips/overlay text, HUD descriptor evaluation, SDK -> render parts |
 | Qt Quick bridge | `scene_model.*`, `mechanism_overlay_model.*`, `qml/*.qml` | models for the QML scene (instancing for fuel); the camera is the editor's `OrbitCamera` (`common/orbit_camera.h`) with a field-framed home view, same orbit/pan/zoom controls as the editor viewport; SDK Z-up is converted to Qt's Y-up in exactly one place (`RunScene.qml`, node `world`) |
@@ -37,6 +37,24 @@ File > Set up robot action has no conflicting shortcut.
 The keyboard joystick (slot 0 by default) uses `W A S D` (left stick), arrow keys (right stick), `U`/`O`
 (triggers), `Z X C V Q E R F G H N M` (buttons 1-12) and `I J K L` (POV). Everything is rebindable in the
 **Joysticks** tab.
+
+## Moving the robot
+
+While a simulation runs (`RunControlState::simulating`; `RunPage::refreshControls` calls `SceneModel::setPlacementEnabled`) the robot can
+be carried over the field with the mouse. `RunScene.qml` only forwards a plain left press / move / release and the wheel to
+`SceneModel::beginRobotDrag` / `dragRobot` / `endRobotDrag` / `turnRobotDrag` (the model decides whether the pointer is on the robot,
+otherwise the left button pans as before; the wheel turns the held robot, else it zooms) and shows a hand cursor from
+`robotAt()`. The model emits `robotPoseRequested(x, y, z, yaw)` and `RunPage` hands it to `IRunBackend::setRobotPose`
+(shell: `IRuntimeHost::setRobotPose` -> `ISimController::setRobotPose`, applied by the sim thread at the next tick boundary).
+
+* Picking is a ray against the bounds of the rig parts in the chassis frame, grown by 8 cm. The drag maths is `placement::FloorDrag`
+  (`common/robot_placement.h`, shared with the editor's start pose marker): the ray meets the plane through the grabbed point,
+  the chassis keeps its pick-up height and stays upright, the wheel turns it 5 degrees a notch about the grabbed spot, `Ctrl` snaps to
+  10 cm and 15 degrees.
+* It is a live teleport, not a setting: nothing is written to the model. The robot stops where it is dropped (its velocities, the
+  drivetrain state and the IMU's acceleration baseline are reset; mechanisms and game state are not); **Restart** returns it to the
+  start pose.
+* `FakeRunBackend::setRobotPose` moves its stand-in robot and counts the calls (`poseCount()`, `lastRobotPose()`).
 
 ## Conventions the view layer relies on
 
