@@ -368,6 +368,7 @@ TEST_CASE("toolchain: JDK sources - JAVA_HOME, PATH, old versions") {
 
     // only java on PATH
     d.write("pathbin/" + std::string(java), "x");
+    fs::permissions(d.path() / "pathbin" / java, fs::perms::owner_exec, fs::perm_options::add);   // PATH lookup needs the exec bit on POSIX
     ctx.env = envOf({{"PATH", (d.path() / "pathbin").string()}});
     r = inspectToolchain(project, ctx);
     CHECK(r.find("jdk")->status == CheckStatus::Warning);

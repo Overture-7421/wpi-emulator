@@ -94,6 +94,10 @@ PropertyFormWidget::PropertyFormWidget(const PropertyGroup& group, UnitSystem un
     setValues(group.values);
 }
 
+PropertyFormWidget::~PropertyFormWidget() {
+    for (const Row& r : rows_) r.editor->disconnect(this);
+}
+
 bool PropertyFormWidget::conditionMet(const sdk::PropertySpec& spec) const {
     if (spec.visibleWhenKey.empty()) return true;
     const sdk::Value* v = values_.find(spec.visibleWhenKey);

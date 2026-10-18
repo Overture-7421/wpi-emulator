@@ -20,6 +20,9 @@ class PropertyFormWidget : public QWidget {
     Q_OBJECT
 public:
     PropertyFormWidget(const PropertyGroup& group, UnitSystem units, QWidget* parent = nullptr);
+    // Closing the window inside ~QWidget moves focus and fires editingFinished; stop listening first, since the
+    // members this class owns are already gone by then.
+    ~PropertyFormWidget() override;
 
     const std::string& groupId() const { return groupId_; }
     // Pushes new values into the existing editors (no rebuild, keeps focus and scroll).
