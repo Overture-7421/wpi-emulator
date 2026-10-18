@@ -8,6 +8,7 @@
 #include "model/config_ops.h"
 #include "model/motion_links.h"
 #include "model/tr.h"
+#include "model/vision_specs.h"
 
 namespace wpiemu::app::editor {
 
@@ -160,6 +161,12 @@ std::vector<sdk::Issue> localIssues(const sdk::RobotConfig& c, const EditorCatal
     }
     for (auto& issue : sdk::validateDeviceAliases(c.allMappings())) out.push_back(std::move(issue));
 
+    if (!spec::isPhotonMessageUuid(c.vision.photonMessageUuid))
+        out.push_back({sdk::Severity::Warning, "vision.photonMessageUuid",
+                       ETR("The PhotonLib message UUID must be 32 hexadecimal digits. Until it is fixed or cleared, the PhotonVision cameras "
+                           "are not published.").toStdString(),
+                       "photon_uuid_malformed"});
+
     for (const sdk::DiscoveredDevice& d : devices.all()) {
         if (!d.live || !sdk::isMappable(d.descriptor)) continue;
         const DeviceStatus st = deviceStatus(c, d);
@@ -217,6 +224,34 @@ std::string firstSegment(const std::string& s) {
     return dot == std::string::npos ? s : s.substr(0, dot);
 }
 
+// The text between the first pair of single quotes ("camera 'photon_front' (photon-front): ..." -> photon_front).
+std::string firstQuoted(const std::string& s) {
+    const auto open = s.find('\'');
+    if (open == std::string::npos) return {};
+    const auto close = s.find('\'', open + 1);
+    return close == std::string::npos ? std::string() : s.substr(open + 1, close - open - 1);
+}
+
+// The inspector field of a camera for the remainder of an issue path ("intrinsics.hfovRad", "realism.latencyJitterUs", ...). The
+// form shows latency and dropout in friendlier units, so those fields have other keys than the persisted ones.
+std::string cameraFieldKey(const std::string& rest) {
+    const auto after = [&](const char* prefix) { return rest.rfind(prefix, 0) == 0 ? rest.substr(std::string(prefix).size()) : std::string(); };
+    std::string key;
+    if (rest.rfind("attachment", 0) == 0) return "parent";
+    if (rest.rfind("local", 0) == 0) return "local";
+    if (rest.rfind("assumedPose", 0) == 0) return "assumedPose";
+    if (!(key = firstSegment(after("intrinsics."))).empty()) return key;
+    if (!(key = firstSegment(after("realism."))).empty()) {
+        if (key == "latencyJitterUs") return "latencyJitterMs";
+        if (key == "dropoutProbability") return "dropoutPercent";
+        return key;
+    }
+    key = firstSegment(rest);
+    if (key == "latencyUs") return "latencyMs";
+    if (key == "captureLatencyUs") return "captureLatencyMs";
+    return key;
+}
+
 }  // namespace
 
 IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::Issue& issue) {
@@ -224,6 +259,23 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
     const std::string& path = issue.path;
     int index = 0;
     std::string rest;
+
+    // The vision subsystem's runtime warnings carry no path: the code says where the fix is, and the message names the camera.
+    if (path.empty()) {
+        if (issue.code == sdk::validation_code::kVisionLayoutMissing) {
+            loc.selection = SelectionRef::vision();
+            loc.fieldKey = c.vision.layoutFile.empty() ? "layoutId" : "layoutFile";
+            return loc;
+        }
+        if (issue.code == sdk::validation_code::kVisionCameraStatus || issue.code == sdk::validation_code::kVisionCameraUnconfigured) {
+            loc.selection = SelectionRef::vision();
+            const std::string name = firstQuoted(issue.message);   // the camera id (status) or its NetworkTables name (unconfigured)
+            for (const sdk::CameraConfig& cam : c.vision.cameras)
+                if (cam.id == name || (issue.code == sdk::validation_code::kVisionCameraUnconfigured && cam.networkName() == name))
+                    loc.selection = SelectionRef::camera(cam.id);
+            return loc;
+        }
+    }
 
     if (path.rfind("motionLinks", 0) == 0) {
         const std::string id = path.size() > 12 ? path.substr(12) : std::string();
@@ -263,6 +315,18 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
             else if (rest.rfind("id", 0) == 0) loc.fieldKey = "id";
             else if (rest.rfind("activation.conditions[", 0) == 0) loc.fieldKey = "activation:" + std::to_string(std::atoi(rest.c_str() + 22));
         }
+        return loc;
+    }
+    if (path.rfind("vision.", 0) == 0) {   // vision.cameras[i].<field>, vision.layoutId, ...
+        if (parseIndexed(path.substr(7), "cameras", index, rest)) {
+            if (index >= 0 && index < static_cast<int>(c.vision.cameras.size())) {
+                loc.selection = SelectionRef::camera(c.vision.cameras[static_cast<std::size_t>(index)].id);
+                loc.fieldKey = cameraFieldKey(rest);
+            }
+            return loc;
+        }
+        loc.selection = SelectionRef::vision();
+        loc.fieldKey = firstSegment(path.substr(7));
         return loc;
     }
     if (path == "chassis" || path.rfind("chassis.", 0) == 0) {

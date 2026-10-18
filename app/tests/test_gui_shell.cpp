@@ -335,6 +335,12 @@ public:
         snapshot_ = std::make_shared<const sdk::SimSnapshot>(std::move(data));
         emit snapshotPublished();
     }
+    void publishCameras(std::vector<sdk::CameraRobotState> cameras) {
+        sdk::SimSnapshotData data;
+        data.detectedCameras = std::move(cameras);
+        snapshot_ = std::make_shared<const sdk::SimSnapshot>(std::move(data));
+        emit snapshotPublished();
+    }
 
 private:
     HostStatus status_;
@@ -498,6 +504,61 @@ TEST_CASE("editor adapter: complete inventories and new runs reconcile physical 
         CHECK(after[i].device == mappings[i].device);
         CHECK(after[i].slot == mappings[i].slot);
     }
+}
+
+TEST_CASE("editor adapter: the catalog carries the plugin's AprilTag layouts and the cameras the robot reports are merged within a run") {
+    TestProject project;
+    AppServicesOptions options;
+    options.store = std::make_unique<MemoryKeyValueStore>();
+    options.appDataRoot = std::filesystem::path((project.path() + "/appdata").toStdU16String());
+    auto runtime = std::make_unique<InventoryRuntime>();
+    auto& host = *runtime;
+    options.runtime = std::move(runtime);
+    AppServices services(std::move(options));
+    REQUIRE(services.session().open(project.path()).ok());
+    const auto config = buildRobotConfig(RobotBasics{}, services.buildContext(services.session().inspection()));
+    REQUIRE(services.session().commit(config, ProjectPrefs{}).ok());
+    EditorBackendAdapter backend(services);
+
+    const editor::EditorCatalog catalog = backend.catalog();
+    REQUIRE(catalog.fiducialLayouts.size() == 2);   // the game plugin's fields: welded and AndyMark
+    CHECK(catalog.fiducialLayouts[0].id == "game_2026.welded");
+    CHECK_FALSE(catalog.fiducialLayouts[0].tags.empty());
+    CHECK(catalog.activeFiducialLayout(sdk::VisionConfig{}) == &catalog.fiducialLayouts[0]);
+
+    int changes = 0;
+    QObject::connect(&backend, &editor::IEditorBackend::detectedCamerasChanged, &backend, [&] { ++changes; });
+    CHECK(backend.detectedCameras().empty());
+    host.launch();
+    sdk::CameraRobotState front;
+    front.ntName = "photon-front";
+    front.cameraId = "photon_front";
+    sdk::CameraRobotState left;
+    left.ntName = "limelight-left";
+    left.vendor = sdk::CameraVendor::Limelight;
+    host.publishCameras({front, left});
+    REQUIRE(backend.detectedCameras().size() == 2);
+    CHECK(changes == 1);
+
+    front.framesPublished = 120;   // only the frame counter moved: no news, but the stored entry follows
+    host.publishCameras({front});
+    CHECK(changes == 1);
+    REQUIRE(backend.detectedCameras().size() == 2);   // the camera the later report does not mention stays
+    CHECK(backend.detectedCameras()[0].framesPublished == 120);
+
+    front.status = "foreign_publisher";
+    host.publishCameras({front});
+    CHECK(changes == 2);
+    sdk::CameraRobotState sameName = front;   // the same name on another vendor is another camera
+    sameName.vendor = sdk::CameraVendor::Limelight;
+    sameName.status.clear();
+    host.publishCameras({sameName});
+    CHECK(backend.detectedCameras().size() == 3);
+    CHECK(changes == 3);
+
+    host.restart();   // a new run starts from nothing
+    CHECK(backend.detectedCameras().empty());
+    CHECK(changes == 4);
 }
 #endif
 

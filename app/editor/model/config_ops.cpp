@@ -63,7 +63,9 @@ std::string baseIdForType(std::string_view type) {
 
 std::string uniqueMechanismId(const RobotConfig& c, std::string base) {
     if (base.empty()) base = "mechanism";
-    auto taken = [&](const std::string& id) { return reservedOwner(id) || c.findMechanism(id) != nullptr || c.findZone(id) != nullptr; };
+    auto taken = [&](const std::string& id) {
+        return reservedOwner(id) || c.findMechanism(id) != nullptr || c.findZone(id) != nullptr || c.findCamera(id) != nullptr;
+    };
     if (!taken(base)) return base;
     for (int n = 2;; ++n) {
         std::string candidate = base + "_" + std::to_string(n);
@@ -242,12 +244,18 @@ bool removeMechanism(RobotConfig& c, const EditorCatalog& catalog, std::string_v
             if (MechanismConfig* cm = findMech(c, child)) cm->attachTo(sdk::kChassisParent);
         }
     }
-    // Zones hang on the removed mechanism's parent now, in the same place.
+    // Zones and cameras hang on the removed mechanism's parent now, in the same place.
     for (auto& z : c.zones)
         if (z.attachment.parentMechanismId == id && !z.attachment.onChassis()) {
             const std::string zoneId = z.id;
             if (!reattachZone(c, catalog, zoneId, att.parentMechanismId, att.parentLink))
                 if (sdk::ZoneConfig* zc = findZone(c, zoneId)) zc->attachment = sdk::MechanismAttachment{};
+        }
+    for (auto& cam : c.vision.cameras)
+        if (cam.attachment.parentMechanismId == id && !cam.attachment.onChassis()) {
+            const std::string cameraId = cam.id;
+            if (!reattachCamera(c, catalog, cameraId, att.parentMechanismId, att.parentLink))
+                if (sdk::CameraConfig* cc = findCamera(c, cameraId)) cc->attachment = sdk::MechanismAttachment{};
         }
     const std::string removed(id);
     c.mechanisms.erase(std::remove_if(c.mechanisms.begin(), c.mechanisms.end(),
@@ -264,7 +272,9 @@ std::string duplicateMechanism(RobotConfig& c, std::string_view id) {
     std::vector<std::pair<std::string, std::string>> renamed;   // old -> new
     std::vector<MechanismConfig> copies;
     auto taken = [&](const std::string& candidate) {
-        if (reservedOwner(candidate) || c.findMechanism(candidate) != nullptr || c.findZone(candidate) != nullptr) return true;
+        if (reservedOwner(candidate) || c.findMechanism(candidate) != nullptr || c.findZone(candidate) != nullptr ||
+            c.findCamera(candidate) != nullptr)
+            return true;
         return std::any_of(renamed.begin(), renamed.end(), [&](const auto& r) { return r.second == candidate; });
     };
     for (const auto& oldId : subtree) {
@@ -338,7 +348,9 @@ void normalizeOrder(RobotConfig& c) {
 // ---- zones ------------------------------------------------------------------------------------
 std::string uniqueZoneId(const RobotConfig& c, std::string base) {
     if (base.empty()) base = "zone";
-    auto taken = [&](const std::string& id) { return reservedOwner(id) || c.findZone(id) != nullptr || c.findMechanism(id) != nullptr; };
+    auto taken = [&](const std::string& id) {
+        return reservedOwner(id) || c.findZone(id) != nullptr || c.findMechanism(id) != nullptr || c.findCamera(id) != nullptr;
+    };
     if (!taken(base)) return base;
     for (int n = 2;; ++n) {
         std::string candidate = base + "_" + std::to_string(n);
@@ -468,6 +480,360 @@ bool setZoneActivationMode(RobotConfig& c, std::string_view zoneId, sdk::Activat
     if (z == nullptr || z->activation.mode == mode) return false;
     z->activation.mode = mode;
     return true;
+}
+
+// ---- cameras (ADR 0017) -----------------------------------------------------------------------
+namespace {
+
+constexpr float kCameraMountHeightAboveFrameM = 0.20f;   // default mount: above the top of the frame
+constexpr float kCameraMountInsetM = 0.05f;              // ... and this far in from the front edge
+constexpr float kCameraDefaultPitchRad = -0.34906585f;   // -20 degrees: WPILib pitch is positive down, so this looks 20 degrees up
+constexpr float kCameraSiblingStepM = 0.12f;
+
+// An id made of letters, digits and '_' from a network name ("limelight-rear" -> "limelight_rear").
+std::string idFromName(std::string_view name, const char* fallback) {
+    std::string out;
+    for (const char ch : name) out += std::isalnum(static_cast<unsigned char>(ch)) ? ch : '_';
+    const auto first = out.find_first_not_of('_');
+    if (first == std::string::npos) return fallback;
+    const auto last = out.find_last_not_of('_');
+    return out.substr(first, last - first + 1);
+}
+
+bool finiteNumber(const sdk::Value& v, double& out) {
+    if (!v.isNumber()) return false;
+    out = v.asDouble();
+    return std::isfinite(out);
+}
+
+bool setDouble(double& field, const sdk::Value& v) {
+    double d = 0.0;
+    if (!finiteNumber(v, d) || d == field) return false;
+    field = d;
+    return true;
+}
+
+bool setCount(std::int64_t& field, const sdk::Value& v) {
+    double d = 0.0;
+    if (!finiteNumber(v, d) || std::fabs(d) > 9.0e15) return false;
+    const std::int64_t n = static_cast<std::int64_t>(std::llround(d));
+    if (n == field) return false;
+    field = n;
+    return true;
+}
+
+bool setPixels(int& field, const sdk::Value& v) {
+    double d = 0.0;
+    if (!finiteNumber(v, d) || std::fabs(d) > 1.0e6) return false;
+    const int n = static_cast<int>(std::llround(d));
+    if (n == field) return false;
+    field = n;
+    return true;
+}
+
+bool setFlag(bool& field, const sdk::Value& v) {
+    if (!v.isBool() || v.asBool() == field) return false;
+    field = v.asBool();
+    return true;
+}
+
+bool setText(std::string& field, const sdk::Value& v, bool trim = false, bool lower = false) {
+    if (!v.isString()) return false;
+    std::string s = v.asString();
+    if (trim) {
+        const auto first = s.find_first_not_of(" \t\r\n");
+        s = first == std::string::npos ? std::string() : s.substr(first, s.find_last_not_of(" \t\r\n") - first + 1);
+    }
+    if (lower)
+        for (char& ch : s) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    if (s == field) return false;
+    field = std::move(s);
+    return true;
+}
+
+bool setPose(Pose3& field, const sdk::Value& v) {
+    Pose3 p;
+    if (!sdk::fromValue(v, p)) return false;
+    p.rotation = p.rotation.normalized();
+    if (!std::isfinite(p.position.x) || !std::isfinite(p.position.y) || !std::isfinite(p.position.z) || p == field) return false;
+    field = p;
+    return true;
+}
+
+}  // namespace
+
+std::string uniqueCameraId(const RobotConfig& c, std::string base) {
+    if (base.empty()) base = "camera";
+    auto taken = [&](const std::string& id) {
+        return reservedOwner(id) || id == sdk::kRootLink || c.findMechanism(id) != nullptr || c.findZone(id) != nullptr ||
+               c.findCamera(id) != nullptr;
+    };
+    if (!taken(base)) return base;
+    for (int n = 2;; ++n) {
+        std::string candidate = base + "_" + std::to_string(n);
+        if (!taken(candidate)) return candidate;
+    }
+}
+
+std::string uniqueNetworkName(const RobotConfig& c, sdk::CameraVendor vendor, std::string base, std::string_view exceptCameraId) {
+    auto taken = [&](const std::string& name) {
+        return std::any_of(c.vision.cameras.begin(), c.vision.cameras.end(), [&](const sdk::CameraConfig& other) {
+            return other.id != exceptCameraId && other.vendor == vendor && other.networkName() == name;
+        });
+    };
+    if (!taken(base)) return base;
+    for (int n = 2;; ++n) {
+        std::string candidate = base + "-" + std::to_string(n);
+        if (!taken(candidate)) return candidate;
+    }
+}
+
+std::string vendorDisplayName(sdk::CameraVendor vendor) { return vendor == sdk::CameraVendor::Limelight ? "Limelight" : "PhotonVision"; }
+
+std::string cameraDisplayName(const sdk::CameraConfig& cam) { return cam.label.empty() ? cam.id : cam.label; }
+
+sdk::CameraConfig* findCamera(RobotConfig& c, std::string_view id) {
+    for (auto& cam : c.vision.cameras)
+        if (cam.id == id) return &cam;
+    return nullptr;
+}
+
+Pose3 cameraParentWorld(const RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam) {
+    const Pose3 chassis = chassisFrameWorld(c.chassis);
+    if (cam.attachment.onChassis()) return chassis;
+    if (const auto p = linkInChassis(c, catalog, cam.attachment.parentMechanismId, cam.attachment.parentLink)) return chassis * *p;
+    return chassis;
+}
+
+Pose3 cameraWorld(const RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam) {
+    return cameraParentWorld(c, catalog, cam) * cam.local;
+}
+
+Pose3 cameraInChassis(const RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam) {
+    if (cam.attachment.onChassis()) return cam.local;
+    if (const auto p = linkInChassis(c, catalog, cam.attachment.parentMechanismId, cam.attachment.parentLink)) return *p * cam.local;
+    return cam.local;
+}
+
+Pose3 fieldToDisplay(const RobotConfig& c, const EditorCatalog& catalog) {
+    // The start pose places the chassis frame (the COM) upright on the field; the display frame has the same frame at the COM
+    // offset over the hull centre.
+    const Pose3 chassisOnField = sdk::toPose3(effectiveStartPose(c, catalog), c.chassis.comHeightM);
+    return chassisFrameWorld(c.chassis) * chassisOnField.inverse();
+}
+
+sdk::CameraConfig makeCamera(const RobotConfig& c, sdk::CameraVendor vendor, const sdk::MechanismAttachment& attachment) {
+    const bool limelight = vendor == sdk::CameraVendor::Limelight;
+    sdk::CameraConfig cam;
+    cam.vendor = vendor;
+    cam.id = uniqueCameraId(c, limelight ? "limelight" : "photon");
+    cam.label = limelight ? "Limelight camera" : "PhotonVision camera";
+    for (const auto& other : c.vision.cameras)
+        if (other.label == cam.label) {
+            cam.label += " " + std::to_string(c.vision.cameras.size() + 1);
+            break;
+        }
+    // PhotonVision: the camera nickname, by default the id. Limelight: the table name, "limelight" for the first camera.
+    std::string network = cam.id;
+    if (limelight) std::replace(network.begin(), network.end(), '_', '-');
+    cam.ntName = uniqueNetworkName(c, vendor, network);
+    cam.attachment.parentMechanismId = attachment.onChassis() ? std::string(sdk::kChassisParent) : attachment.parentMechanismId;
+    cam.attachment.parentLink = attachment.parentLink.empty() ? std::string(sdk::kRootLink) : attachment.parentLink;
+    cam.frameRateHz = limelight ? 90.0 : 30.0;
+
+    cam.local.rotation = sdk::Quat::fromEuler(0.f, kCameraDefaultPitchRad, 0.f);
+    if (cam.attachment.onChassis()) {
+        // Near the front edge of the hull, on its centre line, above the frame. The chassis frame is the COM, the hull is centred
+        // on the display origin.
+        const sdk::ChassisSpec& s = c.chassis;
+        int siblings = 0;
+        for (const auto& other : c.vision.cameras)
+            if (other.attachment.onChassis()) ++siblings;
+        const float side = ((siblings % 2 == 0) ? 1.f : -1.f) * kCameraSiblingStepM * static_cast<float>((siblings + 1) / 2);
+        cam.local.position = Vec3{s.sizeM.x * 0.5f - kCameraMountInsetM - s.comOffsetM.x, side - s.comOffsetM.y,
+                                  s.groundClearanceM + s.sizeM.z + kCameraMountHeightAboveFrameM - s.comHeightM};
+    } else {
+        cam.local.position = Vec3{0.f, 0.f, 0.05f};
+    }
+    return cam;
+}
+
+std::string addCamera(RobotConfig& c, const EditorCatalog& catalog, sdk::CameraVendor vendor, const sdk::MechanismAttachment& attachment) {
+    sdk::MechanismAttachment att = attachment;
+    if (!att.onChassis()) {
+        const MechanismConfig* parent = c.findMechanism(att.parentMechanismId);
+        const sdk::MechanismTemplateInfo* tpl = parent != nullptr ? catalog.findTemplate(parent->type) : nullptr;
+        const std::string link = att.parentLink.empty() ? std::string(sdk::kRootLink) : att.parentLink;
+        if (parent == nullptr || (tpl != nullptr && !sdk::hasLink(*tpl, link))) att = sdk::MechanismAttachment{};
+    } else {
+        att = sdk::MechanismAttachment{};
+    }
+    sdk::CameraConfig cam = makeCamera(c, vendor, att);
+    std::string id = cam.id;
+    c.vision.cameras.push_back(std::move(cam));
+    return id;
+}
+
+std::string addCameraFromDetected(RobotConfig& c, const sdk::CameraRobotState& detected) {
+    if (detected.ntName.empty()) return {};
+    for (const auto& other : c.vision.cameras)
+        if (other.vendor == detected.vendor && other.networkName() == detected.ntName) return {};
+    sdk::CameraConfig cam = makeCamera(c, detected.vendor, {});
+    cam.id = uniqueCameraId(c, idFromName(detected.ntName, detected.vendor == sdk::CameraVendor::Limelight ? "limelight" : "photon"));
+    cam.label = detected.ntName;
+    cam.ntName = detected.ntName;
+    if (detected.vendor == sdk::CameraVendor::Limelight && detected.cameraPoseOverride &&
+        std::all_of(detected.cameraPoseOverride->begin(), detected.cameraPoseOverride->end(), [](double v) { return std::isfinite(v); })) {
+        // What the robot wrote with setCameraPose_RobotSpace: forward / side / up in metres from the robot origin on the floor
+        // (side is positive to the RIGHT) and roll / pitch / yaw in degrees with the opposite sign of WPILib's Rotation3d. The
+        // chassis frame sits at the COM height over the same point.
+        const auto& p = *detected.cameraPoseOverride;
+        const auto rad = [](double deg) { return static_cast<float>(sdk::degToRad(deg)); };
+        cam.local.position = Vec3{static_cast<float>(p[0]), static_cast<float>(-p[1]), static_cast<float>(p[2]) - c.chassis.comHeightM};
+        cam.local.rotation = sdk::Quat::fromEuler(rad(-p[3]), rad(-p[4]), rad(-p[5])).normalized();
+    }
+    std::string id = cam.id;
+    c.vision.cameras.push_back(std::move(cam));
+    return id;
+}
+
+bool removeCamera(RobotConfig& c, std::string_view id) {
+    const auto it = std::find_if(c.vision.cameras.begin(), c.vision.cameras.end(), [&](const sdk::CameraConfig& cam) { return cam.id == id; });
+    if (it == c.vision.cameras.end()) return false;
+    c.vision.cameras.erase(it);
+    return true;
+}
+
+std::string duplicateCamera(RobotConfig& c, std::string_view id) {
+    const sdk::CameraConfig* original = c.findCamera(id);
+    if (original == nullptr) return {};
+    sdk::CameraConfig copy = *original;
+    copy.id = uniqueCameraId(c, original->id);
+    copy.label = (original->label.empty() ? original->id : original->label) + " (copy)";
+    copy.ntName = uniqueNetworkName(c, original->vendor, original->networkName());
+    copy.local.position.y += 0.1f;
+    std::string newId = copy.id;
+    c.vision.cameras.push_back(std::move(copy));
+    return newId;
+}
+
+bool reattachCamera(RobotConfig& c, const EditorCatalog& catalog, std::string_view id, const std::string& newParent,
+                    const std::string& newLink, bool keepWorldPose) {
+    sdk::CameraConfig* cam = findCamera(c, id);
+    if (cam == nullptr) return false;
+    const std::string link = newLink.empty() ? std::string(sdk::kRootLink) : newLink;
+    if (onChassis(newParent)) {
+        if (link != sdk::kRootLink) return false;
+    } else {
+        const MechanismConfig* parent = c.findMechanism(newParent);
+        if (parent == nullptr) return false;
+        if (const auto* info = catalog.findTemplate(parent->type); info != nullptr && !sdk::hasLink(*info, link)) return false;
+    }
+    const Pose3 before = cameraWorld(c, catalog, *cam);
+    cam->attachment.parentMechanismId = onChassis(newParent) ? std::string(sdk::kChassisParent) : newParent;
+    cam->attachment.parentLink = link;
+    if (keepWorldPose) cam->local = cameraParentWorld(c, catalog, *cam).inverse() * before;
+    return true;
+}
+
+bool hasExplicitIntrinsics(const sdk::CameraIntrinsics& in) { return in.fxPx > 0.0 || in.fyPx > 0.0 || in.cxPx > 0.0 || in.cyPx > 0.0; }
+
+double effectiveHfovRad(const sdk::CameraIntrinsics& in) {
+    const double fx = in.fx();
+    if (!(std::isfinite(fx) && fx > 0.0) || in.widthPx < 1) return 0.0;
+    return 2.0 * std::atan(0.5 * in.widthPx / fx);
+}
+
+bool setCameraExplicitIntrinsics(RobotConfig& c, std::string_view id, bool explicitValues) {
+    sdk::CameraConfig* cam = findCamera(c, id);
+    if (cam == nullptr) return false;
+    sdk::CameraIntrinsics& in = cam->intrinsics;
+    if (!explicitValues) {
+        if (!hasExplicitIntrinsics(in)) return false;
+        in.fxPx = in.fyPx = in.cxPx = in.cyPx = 0.0;
+        return true;
+    }
+    if (!(std::isfinite(in.fx()) && in.fx() > 0.0)) return false;   // no usable field of view to freeze
+    const double fx = in.fx(), fy = in.fy(), cx = in.cx(), cy = in.cy();
+    if (in.fxPx == fx && in.fyPx == fy && in.cxPx == cx && in.cyPx == cy) return false;
+    in.fxPx = fx;
+    in.fyPx = fy;
+    in.cxPx = cx;
+    in.cyPx = cy;
+    return true;
+}
+
+bool setCameraProperty(RobotConfig& c, const EditorCatalog& catalog, std::string_view id, std::string_view key, const sdk::Value& value) {
+    sdk::CameraConfig* cam = findCamera(c, id);
+    if (cam == nullptr) return false;
+    sdk::CameraIntrinsics& in = cam->intrinsics;
+    if (key == "label") return setText(cam->label, value);
+    if (key == "ntName") return setText(cam->ntName, value, true);
+    if (key == "enabled") return setFlag(cam->enabled, value);
+    if (key == "parent") return value.isString() && reattachCamera(c, catalog, id, value.asString(), sdk::kRootLink);
+    if (key == "parentLink") return value.isString() && reattachCamera(c, catalog, id, cam->attachment.parentMechanismId, value.asString());
+    if (key == "local") return setPose(cam->local, value);
+
+    if (key == "widthPx") return setPixels(in.widthPx, value);
+    if (key == "heightPx") return setPixels(in.heightPx, value);
+    if (key == "hfovRad") return setDouble(in.hfovRad, value);
+    if (key == "fxPx") return setDouble(in.fxPx, value);
+    if (key == "fyPx") return setDouble(in.fyPx, value);
+    if (key == "cxPx") return setDouble(in.cxPx, value);
+    if (key == "cyPx") return setDouble(in.cyPx, value);
+    if (key == "distortion") {
+        if (!value.isArray() || value.array().size() != in.distortion.size()) return false;
+        std::array<double, 5> k{};
+        for (std::size_t i = 0; i < k.size(); ++i)
+            if (!finiteNumber(value.array()[i], k[i])) return false;
+        if (k == in.distortion) return false;
+        in.distortion = k;
+        return true;
+    }
+
+    if (key == "frameRateHz") return setDouble(cam->frameRateHz, value);
+    if (key == "latencyUs") return setCount(cam->latencyUs, value);
+    if (key == "captureLatencyUs") return setCount(cam->captureLatencyUs, value);
+
+    if (key == "tagSizeM") return setDouble(cam->tagSizeM, value);
+    if (key == "minTagPixels") return setDouble(cam->minTagPixels, value);
+    if (key == "maxViewAngleRad") return setDouble(cam->maxViewAngleRad, value);
+    if (key == "occlusion") return setFlag(cam->occlusion, value);
+    if (key == "multiTag") return setFlag(cam->multiTag, value);
+
+    if (key == "cornerNoisePx") return setDouble(cam->realism.cornerNoisePx, value);
+    if (key == "latencyJitterUs") return setCount(cam->realism.latencyJitterUs, value);
+    if (key == "dropoutProbability") return setDouble(cam->realism.dropoutProbability, value);
+
+    if (key == "assumedPose") {
+        if (value.isNull()) {
+            if (!cam->assumedPose) return false;
+            cam->assumedPose.reset();
+            return true;
+        }
+        Pose3 pose;
+        if (!sdk::fromValue(value, pose) || !std::isfinite(pose.position.x) || !std::isfinite(pose.position.y) ||
+            !std::isfinite(pose.position.z))
+            return false;
+        pose.rotation = pose.rotation.normalized();
+        if (cam->assumedPose == pose) return false;
+        cam->assumedPose = pose;
+        return true;
+    }
+    if (key == "assumedOverride") {
+        if (!value.isBool() || value.asBool() == cam->assumedPose.has_value()) return false;
+        if (value.asBool()) cam->assumedPose = cameraInChassis(c, catalog, *cam);   // start from where the camera really is
+        else cam->assumedPose.reset();
+        return true;
+    }
+    return false;
+}
+
+bool setVisionProperty(RobotConfig& c, std::string_view key, const sdk::Value& value) {
+    if (key == "layoutId") return setText(c.vision.layoutId, value);
+    if (key == "layoutFile") return setText(c.vision.layoutFile, value, true);
+    if (key == "photonMessageUuid") return setText(c.vision.photonMessageUuid, value, true, true);
+    return false;
 }
 
 // ---- device mappings --------------------------------------------------------------------------
@@ -730,6 +1096,8 @@ void setCom(RobotConfig& c, float offsetX, float offsetY, float height, bool com
         if (m.attachment.onChassis()) m.mount.position -= Vec3{dx, dy, dz};
     for (auto& z : c.zones)
         if (z.attachment.onChassis()) z.local.position -= Vec3{dx, dy, dz};
+    for (auto& cam : c.vision.cameras)
+        if (cam.attachment.onChassis()) cam.local.position -= Vec3{dx, dy, dz};
     if (catalog != nullptr) {
         if (sdk::Value* store = volumeStore(c, *catalog, "")) {
             for (const auto& vol : volumesFor(c, *catalog, "")) {

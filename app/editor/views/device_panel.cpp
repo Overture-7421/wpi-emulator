@@ -90,10 +90,13 @@ DevicePanel::DevicePanel(EditorController& controller, DetectedDevicesModel& mod
     empty_->setAlignment(Qt::AlignCenter);
     empty_->setMargin(14);
     empty_->setEnabled(false);
-    empty_->setText(ETR("No devices yet.\n\nClick \"Detect devices\", then run your robot code. Every motor controller, encoder and sensor it creates shows up here, ready to drag onto a mechanism slot."));
+    empty_->setText(ETR("No devices yet.\n\nClick \"Detect devices\", then run your robot code. Every motor controller, encoder and sensor it creates shows up here, ready to drag onto a mechanism slot. The PhotonVision and Limelight cameras it uses are listed here too."));
     stack_->addWidget(empty_);
     stack_->addWidget(table_);
     v->addWidget(stack_, 1);
+
+    cameras_ = new DetectedCamerasSection(controller_, icons, this);
+    v->addWidget(cameras_);
 
     summary_->setContentsMargins(8, 0, 8, 6);
     v->addWidget(summary_);

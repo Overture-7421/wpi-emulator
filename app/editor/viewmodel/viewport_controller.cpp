@@ -45,21 +45,52 @@ ViewportController::ViewportController(EditorController& editor, QObject* parent
     });
     connect(&editor_.selection(), &SelectionState::changed, this, [this] { onSelectionChanged(); });
     connect(&editor_.settings(), &EditorSettings::changed, this, [this] {
+        if (!(sceneOptions() == sceneOptions_)) rebuildScene();   // the Tags toggle
         Q_EMIT infoChanged();
         Q_EMIT transformFieldsChanged();
     });
+    connect(this, &ViewportController::cameraChanged, this, [this] { rebuildTagLabels(); });
     rebuildDecor();
     rebuildScene();
     rebuildGizmo();
 }
 
 // ---- scene ---------------------------------------------------------------------------------------
+SceneOptions ViewportController::sceneOptions() const {
+    const SelectionRef sel = editor_.selection().current();
+    SceneOptions options;
+    options.showTags = editor_.settings().showTags() || sel.kind == SelKind::Camera || sel.kind == SelKind::Vision;
+    if (sel.kind == SelKind::Camera) options.cameraId = sel.owner;
+    return options;
+}
+
 void ViewportController::rebuildScene() {
-    const SceneContent content = buildScene(editor_.document().config(), editor_.document().catalog(), theme_);
+    sceneOptions_ = sceneOptions();
+    const SceneContent content = buildScene(editor_.document().config(), editor_.document().catalog(), theme_, sceneOptions_);
     scene_.setContent(content, theme_.accent);
     const SelectionRef sel = editor_.selection().current();
     const SelectionRef highlight = (sel.kind == SelKind::Primitive || sel.kind == SelKind::Overlay) ? sel : formTargetOf(editor_.document().config(), sel);
     scene_.setHighlight(highlight, theme_.accent);
+    rebuildTagLabels();
+}
+
+void ViewportController::rebuildTagLabels() {
+    QVariantList labels;
+    const float w = static_cast<float>(viewW_), h = static_cast<float>(viewH_);
+    for (const SceneItem& item : scene_.items()) {
+        if (item.role != ItemRole::Tag) continue;
+        const auto px = camera_.project(item.world.position, w, h);
+        if (!px || px->first < 0.f || px->first > w || px->second < 0.f || px->second > h) continue;
+        QVariantMap label;
+        label.insert(QStringLiteral("x"), static_cast<double>(px->first));
+        label.insert(QStringLiteral("y"), static_cast<double>(px->second));
+        label.insert(QStringLiteral("text"), item.text);
+        label.insert(QStringLiteral("color"), item.color);
+        labels.push_back(label);
+    }
+    if (labels == tagLabels_) return;
+    tagLabels_ = std::move(labels);
+    Q_EMIT tagLabelsChanged();
 }
 
 void ViewportController::setTheme(const SceneTheme& theme) {
@@ -72,8 +103,12 @@ void ViewportController::setTheme(const SceneTheme& theme) {
 
 void ViewportController::onSelectionChanged() {
     const SelectionRef sel = editor_.selection().current();
-    const SelectionRef highlight = (sel.kind == SelKind::Primitive || sel.kind == SelKind::Overlay) ? sel : formTargetOf(editor_.document().config(), sel);
-    scene_.setHighlight(highlight, theme_.accent);
+    if (!(sceneOptions() == sceneOptions_)) {
+        rebuildScene();   // the AprilTags (and the ones the camera sees) follow the selection
+    } else {
+        const SelectionRef highlight = (sel.kind == SelKind::Primitive || sel.kind == SelKind::Overlay) ? sel : formTargetOf(editor_.document().config(), sel);
+        scene_.setHighlight(highlight, theme_.accent);
+    }
     rebuildGizmo();
     Q_EMIT infoChanged();
     Q_EMIT transformFieldsChanged();
@@ -143,6 +178,7 @@ SelectionRef ViewportController::transformSelection() const {
         case SelKind::Primitive:
         case SelKind::Mechanism:
         case SelKind::Zone:
+        case SelKind::Camera:
         case SelKind::Overlay: return sel;
         default: return {};
     }
@@ -181,7 +217,7 @@ void ViewportController::rebuildGizmo() {
 
     // Outline of everything that belongs to the selection.
     for (const SceneItem& item : scene_.items()) {
-        if (!scene_.isHighlighted(item) || item.role == ItemRole::Link) continue;
+        if (!scene_.isHighlighted(item) || item.role == ItemRole::Link || item.role == ItemRole::Frustum) continue;
         const Vec3 h = item.size * 0.5f;
         auto corner = [&](int sx, int sy, int sz) {
             return item.world.transformPoint({h.x * static_cast<float>(sx), h.y * static_cast<float>(sy), h.z * static_cast<float>(sz)});
@@ -284,7 +320,8 @@ void ViewportController::frameSelection() {
     for (const SceneItem& item : scene_.items()) {
         const bool selected = scene_.isHighlighted(item);
         if (!selected && !(editor_.selection().current().kind == SelKind::Robot || editor_.selection().current().isNone())) continue;
-        if (item.role == ItemRole::Link || item.role == ItemRole::Overlay) continue;
+        if (item.role == ItemRole::Link || item.role == ItemRole::Overlay || item.role == ItemRole::Tag) continue;
+        if (item.role == ItemRole::Frustum && !selected) continue;   // a camera's view reaches far: framed only with the camera itself
         if (item.ref.kind == SelKind::StartPose && !selected) continue;   // can be far from the robot: framed only when it is the selection
         const Vec3 h = item.size * 0.5f;
         for (int sx = -1; sx <= 1; sx += 2)
@@ -303,6 +340,7 @@ void ViewportController::frameSelection() {
 void ViewportController::setViewSize(qreal width, qreal height) {
     viewW_ = std::max<qreal>(width, 1);
     viewH_ = std::max<qreal>(height, 1);
+    rebuildTagLabels();
 }
 
 void ViewportController::wheel(qreal angleDeltaY) {
@@ -319,7 +357,7 @@ const SceneItem* ViewportController::pickItem(const QStringList& hitIds) const {
         const SceneItem* item = scene_.itemById(id.mid(2).toStdString());
         if (item == nullptr || item->ref.isNone()) continue;
         if (best == nullptr) best = item;
-        if (item->role != ItemRole::Overlay) {
+        if (item->role != ItemRole::Overlay && item->role != ItemRole::Frustum) {
             best = item;
             break;
         }

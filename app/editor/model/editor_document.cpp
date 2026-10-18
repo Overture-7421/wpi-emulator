@@ -180,6 +180,55 @@ bool EditorDocument::setZoneActivationMode(const QString& zoneId, sdk::Activatio
     return edit(ETR("Edit activation"), [&](sdk::RobotConfig& c) { return ops::setZoneActivationMode(c, sid, mode); });
 }
 
+QString EditorDocument::addCamera(sdk::CameraVendor vendor, const sdk::MechanismAttachment& attachment) {
+    std::string id;
+    edit(ETR("Add %1 camera").arg(QString::fromStdString(ops::vendorDisplayName(vendor))), [&](sdk::RobotConfig& c) {
+        id = ops::addCamera(c, catalog_, vendor, attachment);
+        return !id.empty();
+    });
+    return QString::fromStdString(id);
+}
+
+QString EditorDocument::addCameraFromDetected(const sdk::CameraRobotState& detected) {
+    std::string id;
+    edit(ETR("Add camera %1").arg(QString::fromStdString(detected.ntName)), [&](sdk::RobotConfig& c) {
+        id = ops::addCameraFromDetected(c, detected);
+        return !id.empty();
+    });
+    return QString::fromStdString(id);
+}
+
+bool EditorDocument::removeCamera(const QString& id) {
+    const std::string sid = id.toStdString();
+    const sdk::CameraConfig* cam = config_.findCamera(sid);
+    if (cam == nullptr) return false;
+    const QString name = QString::fromStdString(ops::cameraDisplayName(*cam));
+    return edit(ETR("Remove %1").arg(name), [&](sdk::RobotConfig& c) { return ops::removeCamera(c, sid); });
+}
+
+QString EditorDocument::duplicateCamera(const QString& id) {
+    const std::string sid = id.toStdString();
+    const sdk::CameraConfig* cam = config_.findCamera(sid);
+    if (cam == nullptr) return {};
+    const QString name = QString::fromStdString(ops::cameraDisplayName(*cam));
+    std::string created;
+    edit(ETR("Duplicate %1").arg(name), [&](sdk::RobotConfig& c) {
+        created = ops::duplicateCamera(c, sid);
+        return !created.empty();
+    });
+    return QString::fromStdString(created);
+}
+
+bool EditorDocument::reattachCamera(const QString& id, const QString& newParent, const QString& link) {
+    const std::string sid = id.toStdString();
+    const sdk::CameraConfig* cam = config_.findCamera(sid);
+    if (cam == nullptr) return false;
+    const QString name = QString::fromStdString(ops::cameraDisplayName(*cam));
+    return edit(ETR("Attach %1").arg(name), [&](sdk::RobotConfig& c) {
+        return ops::reattachCamera(c, catalog_, sid, newParent.toStdString(), link.toStdString());
+    });
+}
+
 bool EditorDocument::mapSlot(const sdk::SlotAddress& slot, const sdk::DeviceKey& device) {
     return edit(ETR("Map %1").arg(QString::fromStdString(ops::slotDisplayName(config_, catalog_, slot))),
                 [&](sdk::RobotConfig& c) { return ops::setMapping(c, slot, device); });

@@ -72,6 +72,12 @@ public:
     bool removeZoneCondition(const QString& zoneId, int index);
     bool setZoneCondition(const QString& zoneId, int index, const sdk::ZoneCondition& condition);
     bool setZoneActivationMode(const QString& zoneId, sdk::ActivationMode mode);
+    // ---- cameras (ADR 0017): property edits go through setProperty() with a SelKind::Camera / Vision selection
+    QString addCamera(sdk::CameraVendor vendor, const sdk::MechanismAttachment& attachment = {});
+    QString addCameraFromDetected(const sdk::CameraRobotState& detected);
+    bool removeCamera(const QString& id);
+    QString duplicateCamera(const QString& id);
+    bool reattachCamera(const QString& id, const QString& newParent, const QString& link = QStringLiteral("root"));
     // ---- slots
     bool mapSlot(const sdk::SlotAddress& slot, const sdk::DeviceKey& device);
     bool clearSlot(const sdk::SlotAddress& slot);

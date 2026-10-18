@@ -62,9 +62,10 @@ TEST_CASE("start pose: the Robot page and the marker's page show the effective p
     const auto cat = catalog();
     auto c = robot();
     const auto groups = propertyGroupsFor(c, cat, SelectionRef::robot());
-    REQUIRE(groups.size() == 2);
+    REQUIRE(groups.size() == 3);
     CHECK(groups[0].id == "robot");
     REQUIRE(groups[1].id == "robot.start");
+    CHECK(groups[2].id == "robot.vision");   // the project-level Vision card follows the Start pose card
     CHECK(groups[1].values.find("startX")->asDouble() == doctest::Approx(cat.defaultStartPose.xM));
     CHECK(groups[1].values.find("startY")->asDouble() == doctest::Approx(cat.defaultStartPose.yM));
     CHECK(sdk::validateProperties(groups[1].schema, groups[1].values).empty());

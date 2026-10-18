@@ -249,6 +249,49 @@ TEST_CASE("the wizard never invents a start pose and keeps the one the editor or
     CHECK_FALSE(updateRobotConfig(&fresh, b, context).sim.startPose.has_value());
 }
 
+TEST_CASE("re-running the wizard keeps the vision settings: the cameras, the AprilTag layout and the PhotonLib UUID") {
+    const sdk::RobotConfig fresh = buildRobotConfig(defaultBasicsFor(sdk::drivetrain_kind::kSwerve), {});
+    CHECK(fresh.vision == sdk::VisionConfig{});   // a new model has no cameras, no layout choice and no UUID override
+
+    sdk::RobotConfig existing = fresh;
+    sdk::MechanismConfig turret;
+    turret.id = "turret";
+    turret.type = "mechanism";
+    existing.mechanisms.push_back(turret);
+    existing.vision.layoutId = "game_2026.andymark";
+    existing.vision.layoutFile = "tags/practice_field.json";
+    existing.vision.photonMessageUuid = "4b2ff16a964b5e2bf04be0c1454d91c4";
+    sdk::CameraConfig front;
+    front.id = "photon_front";
+    front.label = "Front camera";
+    front.ntName = "photon-front";
+    front.local = sdk::Pose3{{0.3f, 0.f, 0.5f}, sdk::Quat::fromEuler(0.f, -0.35f, 0.f)};
+    front.frameRateHz = 45.0;
+    front.realism.cornerNoisePx = 0.4;
+    sdk::CameraConfig rear;
+    rear.id = "limelight_rear";
+    rear.vendor = sdk::CameraVendor::Limelight;
+    rear.enabled = false;
+    rear.attachment.parentMechanismId = "turret";
+    rear.assumedPose = sdk::Pose3{{-0.3f, 0.f, 0.45f}, sdk::Quat::fromYaw(3.14f)};
+    existing.vision.cameras = {front, rear};
+    const sdk::VisionConfig before = existing.vision;
+
+    // Another robot size, mass, bumpers and drivetrain: the wizard owns those, not the cameras mounted on the robot.
+    RobotBasics b = defaultBasicsFor(sdk::drivetrain_kind::kTank);
+    b.frameLengthM = 0.8;
+    b.massKg = 45.0;
+    b.bumperThicknessM = 0.05;
+    const sdk::RobotConfig merged = updateRobotConfig(&existing, b, RobotBuildContext{});
+    CHECK(merged.chassis.sizeM.x == doctest::Approx(0.8));
+    CHECK(merged.drivetrain.spec.kind == sdk::drivetrain_kind::kTank);
+    CHECK(merged.vision == before);
+    CHECK(merged.mechanisms.size() == 1);
+
+    // And again with the same basics: nothing moves.
+    CHECK(updateRobotConfig(&merged, b, RobotBuildContext{}).vision == before);
+}
+
 TEST_CASE("motor catalog lookup") {
     REQUIRE(findMotor(QStringLiteral("kraken_x60")) != nullptr);
     CHECK(findMotor(QStringLiteral("nope")) == nullptr);

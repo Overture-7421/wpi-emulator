@@ -22,6 +22,12 @@ void EditorSettings::setSnapEnabled(bool on) {
     Q_EMIT changed();
 }
 
+void EditorSettings::setShowTags(bool on) {
+    if (on == showTags_) return;
+    showTags_ = on;
+    Q_EMIT changed();
+}
+
 void EditorSettings::setRotateStepDeg(double deg) {
     if (deg == rotateStepDeg_ || deg <= 0.0) return;
     rotateStepDeg_ = deg;

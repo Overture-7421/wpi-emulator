@@ -89,6 +89,51 @@ bool removeZoneCondition(sdk::RobotConfig& c, std::string_view zoneId, int index
 bool setZoneCondition(sdk::RobotConfig& c, std::string_view zoneId, int index, const sdk::ZoneCondition& condition);
 bool setZoneActivationMode(sdk::RobotConfig& c, std::string_view zoneId, sdk::ActivationMode mode);
 
+// ---- cameras (ADR 0017) -----------------------------------------------------------------------
+// Cameras (RobotConfig::vision.cameras) hang on the chassis or a mechanism link like zones. A camera id shares the namespace of
+// mechanism and zone ids (the validator rejects clashes) and avoids the reserved names.
+std::string uniqueCameraId(const sdk::RobotConfig& c, std::string base);
+// `base` when no other camera of the vendor answers to that network name, else `base-2`, `base-3`, ... (`exceptCameraId` is ignored).
+std::string uniqueNetworkName(const sdk::RobotConfig& c, sdk::CameraVendor vendor, std::string base, std::string_view exceptCameraId = {});
+std::string vendorDisplayName(sdk::CameraVendor vendor);                  // "PhotonVision" / "Limelight"
+std::string cameraDisplayName(const sdk::CameraConfig& cam);              // the label, else the id
+sdk::CameraConfig* findCamera(sdk::RobotConfig& c, std::string_view id);
+// Pose of the frame a camera's `local` pose is expressed in: the parent link (the chassis frame when on the chassis).
+sdk::Pose3 cameraParentWorld(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam);
+// The camera frame (+X = optical axis) in the display frame, and in the CHASSIS frame (the frame the Limelight "assumed" pose uses).
+sdk::Pose3 cameraWorld(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam);
+sdk::Pose3 cameraInChassis(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam);
+// Field frame -> display frame: the field as the robot sees it from its (effective) start pose.
+sdk::Pose3 fieldToDisplay(const sdk::RobotConfig& c, const EditorCatalog& catalog);
+// A camera with the vendor's defaults on the front of the hull, looking forward and 20 degrees up. Ideal realism.
+sdk::CameraConfig makeCamera(const sdk::RobotConfig& c, sdk::CameraVendor vendor, const sdk::MechanismAttachment& attachment);
+// Returns the new id. An attachment to an unknown mechanism / link falls back to the chassis.
+std::string addCamera(sdk::RobotConfig& c, const EditorCatalog& catalog, sdk::CameraVendor vendor, const sdk::MechanismAttachment& attachment);
+// A camera for a name the robot code uses: vendor and network name come from the detection and the mount is a default one (a
+// Limelight's own camerapose_robotspace_set, when the robot wrote one, places it). Empty when the name is already configured.
+std::string addCameraFromDetected(sdk::RobotConfig& c, const sdk::CameraRobotState& detected);
+bool removeCamera(sdk::RobotConfig& c, std::string_view id);
+// Copy next to the original (same attachment); its network name is made unique. Returns the new id, empty when unknown.
+std::string duplicateCamera(sdk::RobotConfig& c, std::string_view id);
+// Re-attaches a camera to another parent / link; with `keepWorldPose` its local pose is recomputed so it does not move.
+bool reattachCamera(sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view id, const std::string& newParent,
+                    const std::string& newLink, bool keepWorldPose = true);
+// Sets one field of a camera, by its persisted name and in SI units: label, ntName, enabled, parent, parentLink, local, widthPx,
+// heightPx, hfovRad, fxPx, fyPx, cxPx, cyPx, distortion (array of 5), frameRateHz, latencyUs, captureLatencyUs, tagSizeM,
+// minTagPixels, maxViewAngleRad, occlusion, multiTag, cornerNoisePx, latencyJitterUs, dropoutProbability, assumedPose (a pose, or null
+// for "the physical pose") and assumedOverride (true starts from the physical pose). The id and the vendor are fixed when the camera
+// is created. Ranges are the validator's business; a value of the wrong type or a non-finite number changes nothing. False when
+// nothing changed.
+bool setCameraProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view id, std::string_view key, const sdk::Value& value);
+// Freezes the intrinsics the field of view derives (fx, fy, cx, cy) into explicit numbers, or derives them again (all zero).
+bool setCameraExplicitIntrinsics(sdk::RobotConfig& c, std::string_view id, bool explicitValues);
+// True once fx / fy / cx / cy are set explicitly (instead of derived from the field of view and the resolution).
+bool hasExplicitIntrinsics(const sdk::CameraIntrinsics& intrinsics);
+// The horizontal field of view the intrinsics produce (from fx when it is set); 0 when they cannot be evaluated.
+double effectiveHfovRad(const sdk::CameraIntrinsics& intrinsics);
+// Vision-level settings: layoutId, layoutFile (trimmed) and photonMessageUuid (trimmed, lower case).
+bool setVisionProperty(sdk::RobotConfig& c, std::string_view key, const sdk::Value& value);
+
 // ---- device mappings --------------------------------------------------------------------------
 std::vector<sdk::SlotMapping>* mappingList(sdk::RobotConfig& c, std::string_view owner);
 const sdk::SlotMapping* findMapping(const sdk::RobotConfig& c, const sdk::SlotAddress& slot);

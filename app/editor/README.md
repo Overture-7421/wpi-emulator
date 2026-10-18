@@ -1,6 +1,6 @@
 # Robot editor (`app/editor`)
 
-The 3D robot editor page: project tree (Robot → Chassis [centre of mass, shapes, Drivetrain → wheels], Mechanisms, Robot sensors, game node [volumes, zones]; followers nested under their source), and detected devices on the left (mechanisms are added from the tree's right-click menu; there is no catalog panel), the
+The 3D robot editor page: project tree (Robot → Chassis [centre of mass, shapes, Drivetrain → wheels], Mechanisms, Cameras, Robot sensors, game node [volumes, zones]; followers nested under their source), and detected devices (and the cameras the robot uses) on the left (mechanisms are added from the tree's right-click menu; there is no catalog panel), the
 Qt Quick 3D viewport with console / validation / telemetry tabs in the middle, and a property
 inspector generated from the SDK's `PropertySchema` metadata on the right.
 
@@ -129,6 +129,73 @@ origin, i.e. the COM frame of the snapshot); `nullopt` means "the game field's d
   `updateStartPoseDrag` / `endStartPoseDrag` only connect them to the document, the editor's grid steps apply and Ctrl toggles them, and
   QML stays a pointer forwarder. `F` on the marker frames it; framing the robot ignores it.
 
+## Cameras (ADR 0017)
+
+Cameras (`RobotConfig::vision`, `sdk/vision/camera_config.h`) are configured in the robot project: the emulator computes the AprilTag
+detections for them and a bridge in the robot process publishes the PhotonVision / Limelight NetworkTables entries. The editor only edits
+`RobotConfig::vision` (the JSON codec and the validator are core's), and learns two more things through the backend, so it knows no season and
+includes no core or plugin code: the selected plugin's AprilTag layouts (`EditorCatalog::fiducialLayouts`, `findFiducialLayout`,
+`activeFiducialLayout(VisionConfig)`, filled by the shell adapter from `IGameModule::contributeFiducialLayouts()` like `zoneKinds`) and the
+cameras the robot process reports using (`IEditorBackend::detectedCameras()` and `detectedCamerasChanged()`, from
+`ISimSnapshot::detectedCameras()`; entries are merged by (vendor, NetworkTables name), kept for the run and cleared when a new run or
+project starts; the controller republishes them as `detectedCameras()` / `detectedCamerasUpdated()`). The reports exist during a
+discovery-only session and for a project with no camera at all. `FakeEditorBackend` provides two sample layouts (`sampleLayouts()`, a 6 x 4 m
+field around the default start pose), scripted reports (`sampleDetectedCameras()`, `setDetectedCameras`, `announceCamera`, one camera announced
+after every second device by `--detect`) and a sample robot with a PhotonVision `photon_front` and a Limelight `limelight_rear`
+(`samples/vision_robot`'s mounts).
+
+* **Ops** (`model/config_ops.*`, camera section; undoable through `EditorDocument` and `EditorController`): `addCamera(vendor, attachment)`
+  (the id is unique against cameras, zones *and* mechanisms, which share one namespace; PhotonVision: NetworkTables name = id, 30 Hz; Limelight:
+  `limelight`, `limelight-2`, ..., 90 Hz; 1280 x 800, 90 degrees, ideal; mounted 5 cm inside the front edge, 20 cm above the frame, tilted 20
+  degrees up, a further chassis camera 12 cm to the side), `addCameraFromDetected(CameraRobotState)` (vendor and name from the report, the id a
+  sanitised unique version of the name, a Limelight's reported pose becomes its mount, nothing when a camera of that vendor and name exists),
+  `removeCamera`, `duplicateCamera` (own id and network name), `reattachCamera` (keeps the world pose, same rules as zones), `setCameraProperty`
+  (every `CameraConfig` field by its persisted name; the id and the vendor are fixed), `setCameraExplicitIntrinsics` (freeze the camera matrix from the
+  field of view or derive it again) and `setVisionProperty` (`layoutId`, `layoutFile`, `photonMessageUuid`). `removeMechanism` moves the cameras
+  of the removed mechanism to its parent in place; `setCom` keeps chassis cameras where they are.
+* **Selection / tree**: `SelectionRef::camera(id)` (`SelKind::Camera`) and `SelectionRef::vision()` (`SelKind::Vision`, the project-level
+  settings). The **Cameras** group sits under the robot after Mechanisms and selects the vision settings; its rows (`NodeKind::Camera`, detail
+  `photon-front · PhotonVision @ turret.mover`, dimmed and prefixed `disabled ·` when switched off) are draggable. `setIssues` gives a camera
+  row, and the group, the warning state through `locateIssue`. Context menus (`editor_page.cpp`): the robot, chassis, every mechanism and the
+  Cameras group offer **Add PhotonVision camera** / **Add Limelight camera**; a camera offers Duplicate, Delete and Attach to. Dragging a camera onto a
+  mechanism or the chassis emits `ProjectTreeModel::cameraDropped` (`kCameraMime`), which re-attaches it.
+* **Inspector** (`propertyGroupsFor`, schemas in `model/vision_specs.*`): `camera.general` (label, NetworkTables name with a vendor hint,
+  enabled; the id, the vendor, the table path and what the robot process reported about the camera are read-only lines), `camera.placement`
+  (attachment parent and link, pose in degrees), `camera.optics` (resolution, horizontal field of view or **Use a camera matrix** with fx / fy / cx /
+  cy, frame rate, latency; Limelight: the capture-latency share), `camera.detection` (tag size, minimum tag pixels, maximum view angle, occlusion,
+  multi-tag), `camera.realism` (corner noise, latency jitter, dropout %; collapsed while everything is zero, which reads *Ideal*) and, for a
+  Limelight only, `camera.assumed` (**Limelight pose**: the camera pose the Limelight believes: the physical mount unless an override is set).
+  The forms show milliseconds and percent; `applyCamera` translates them to the persisted microseconds and probability. The **Robot** page
+  has a **Vision** card (`robot.vision`: AprilTag layout from the catalog, a custom layout file, an advanced PhotonLib message UUID override
+  that is normally derived from the project's PhotonLib version) and the **Vision** selection (the Cameras group) shows the same card with the
+  list of cameras and the add buttons. A relative layout file starts at the robot project folder (said in the field's hint).
+* **Issues**: validator paths `vision.cameras[i].<field>` select the camera and the form field that shows them (the form's units: `latencyUs` →
+  `latencyMs`, `dropoutProbability` → `dropoutPercent`; a collapsed card opens), `vision.layoutId` / `layoutFile` / `photonMessageUuid` select the
+  Vision settings. `localIssues` adds `photon_uuid_malformed` (the override is not 32 hexadecimal digits). The vision subsystem's runtime
+  warnings carry no path, so `locateIssue` reads their code and message: `vision_layout_missing` → the layout field, `vision_camera_status` → the
+  camera named by id, `vision_camera_unconfigured` → the camera with that NetworkTables name, else the Vision settings.
+* **Viewport**: every camera is a small body behind a lens (`camera:<id>`, `:lens`, pickable), four edges to the far corners, the rectangle of the far
+  plane and a translucent far plane (`ItemRole::Frustum`, geometry from `app/common/camera_frustum.h`, shared with the run view; the plane is
+  picked only when nothing solid is under the cursor), depth 10 % of the layout's field length (1 to 3 m), 1.5 m without a layout. A camera that
+  is switched off is dimmed; the pyramid brightens while its camera is selected. `readTransform` / `writeTransform` (Move and Rotate, no size) give
+  the camera the same gizmos, numeric bar and undo merging as a zone; framing a camera includes its pyramid, framing the robot does not.
+  **Tags** in the viewport toolbar (`EditorSettings::showTags`), and any selected camera or the vision settings, draw the active layout's tags
+  (`ItemRole::Tag`, `tag:<id>`, never picked) as thin plates as the robot would see the field from its start pose (`ops::fieldToDisplay`), within 7
+  m of the robot; the ids are written next to the plates by QML from `ViewportController::tagLabels` (projected in C++). With a camera selected,
+  the tags it would see are tinted (`cameraSeesTag`: the vision engine's rules without the line of sight, so the real detections can be fewer).
+  A custom layout file draws nothing: the editor does not read it. Colours come from `SceneTheme` (`camera`, `cameraOff`, `tag`, `tagSeen`).
+* **Detected cameras**: `DevicePanel` ends with a **Cameras (n)** section (`views/detected_cameras_section.*`, hidden when empty) for the
+  cameras the robot code uses that the project does not list: a camera of the report belongs to the project when vendor and NetworkTables name
+  match (`unconfiguredCameras` in `model/detected_cameras.*`; ids are never compared, they belong to the run that reported them). Each row shows
+  the name, the vendor and a status line, **Add camera** (`EditorController::addCameraFromDetected`, selects the new camera) and, when
+  configured cameras of the same vendor go unused by the robot code, a hint that the name in the project may differ from the one in the code:
+  with exactly one such camera **Use this name** renames it (one undo step). The General card of a configured camera says whether the robot code
+  uses it, and under which other names it uses cameras of that vendor.
+* **Wizard**: `updateRobotConfig` copies the existing model and replaces only what the wizard owns, so cameras, layout, UUID override and start
+  pose survive a re-run (`app/tests/test_robot_basics.cpp`, `test_wizard_view_model.cpp`, through the stored files too).
+* **Tests**: `tests/app_editor/test_cameras.cc` (ops, document, controller, property groups, issues, tree, inspector, scene, viewport, detected
+  cameras), `app/tests/test_gui_shell.cpp` (the adapter's layouts and reports), and the wizard tests above.
+
 ## Building and testing
 
 * In the full tree: `app/CMakeLists.txt` adds this folder; target `wpiemu_app_editor` (static),
@@ -138,6 +205,6 @@ origin, i.e. the COM frame of the snapshot); `nullopt` means "the game field's d
   -DCMAKE_PREFIX_PATH=<Qt>` (see `standalone/CMakeLists.txt`).
 * Test sources live in `tests/app_editor/*.cc` (not `.cpp`: `tests/CMakeLists.txt` globs `*.cpp` into the Qt-free
   `wpiemu_tests`).
-* Demo: `wpiemu_editor_demo [--select intake|chassis|wheel:fl|slot:shooter.feeder|zone:pickup|plugin] [--detect] [--tank] [--light]
-  [--grab out.png]`.
+* Demo: `wpiemu_editor_demo [--select intake|chassis|wheel:fl|slot:shooter.feeder|zone:pickup|camera:photon_front|vision|plugin] [--detect]
+  [--view front|side|top|3d] [--frame] [--tags] [--disable-camera limelight_rear] [--tank] [--light] [--grab out.png]`.
 * Strings: model code uses `ETR("...")` (context `Editor`); run `lupdate -tr-function-alias translate+=ETR`.

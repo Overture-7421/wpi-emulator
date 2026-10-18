@@ -42,6 +42,7 @@ class ViewportController : public QObject {
     Q_PROPERTY(QVariantList gizmoHandles READ gizmoHandles NOTIFY gizmoChanged)
     Q_PROPERTY(QVariantList selectionEdges READ selectionEdges NOTIFY gizmoChanged)
     Q_PROPERTY(QVariantList decor READ decor NOTIFY themeChanged)
+    Q_PROPERTY(QVariantList tagLabels READ tagLabels NOTIFY tagLabelsChanged)
     Q_PROPERTY(QVariantList axisIndicator READ axisIndicator NOTIFY cameraChanged)
     Q_PROPERTY(QColor backgroundColor READ backgroundColor NOTIFY themeChanged)
     Q_PROPERTY(QColor textColor READ textColor NOTIFY themeChanged)
@@ -60,6 +61,8 @@ public:
     QVariantList gizmoHandles() const { return gizmo_; }
     QVariantList selectionEdges() const { return edges_; }
     QVariantList decor() const { return decor_; }
+    // The AprilTag ids to write on screen: {x, y, text, color} of every tag plate in the view, nothing while the tags are hidden.
+    QVariantList tagLabels() const { return tagLabels_; }
     QVariantList axisIndicator() const;
     QColor backgroundColor() const { return theme_.background; }
     QColor textColor() const { return theme_.text; }
@@ -85,6 +88,8 @@ public:
     const SceneTheme& theme() const { return theme_; }
     OrbitCamera& camera() { return camera_; }
     SceneModel& scene() { return scene_; }
+    // What the scene shows besides the robot: the tags follow the toolbar toggle, and a selected camera or the vision settings.
+    SceneOptions sceneOptions() const;
 
     TransformFields transformFields() const;
     bool setTransformComponent(int axis, double value);
@@ -107,6 +112,7 @@ Q_SIGNALS:
     void infoChanged();
     void modeChanged();
     void transformFieldsChanged();
+    void tagLabelsChanged();
 
 private:
     enum class DragKind { None, Orbit, Pan, Gizmo, StartPose };
@@ -136,6 +142,7 @@ private:
     void rebuildScene();
     void rebuildDecor();
     void rebuildGizmo();
+    void rebuildTagLabels();
     void refreshGizmoScale();   // camera moved: rebuild only when the on-screen size would visibly change
     void onSelectionChanged();
     SelectionRef transformSelection() const;
@@ -160,6 +167,8 @@ private:
     QVariantList gizmo_;
     QVariantList edges_;
     QVariantList decor_;
+    QVariantList tagLabels_;
+    SceneOptions sceneOptions_;   // what the scene was last built with
     qreal viewW_ = 800;
     qreal viewH_ = 600;
     Drag drag_;

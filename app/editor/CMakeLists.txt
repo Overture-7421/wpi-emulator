@@ -12,6 +12,7 @@ set(WPIEMU_EDITOR_SOURCES
     editor_page.cpp
     fake_editor_backend.cpp
     model/config_ops.cpp
+    model/detected_cameras.cpp
     model/editor_document.cpp
     model/motion_links.cpp
     model/property_groups.cpp
@@ -19,6 +20,7 @@ set(WPIEMU_EDITOR_SOURCES
     model/slot_status.cpp
     model/spec_values.cpp
     model/transform_access.cpp
+    model/vision_specs.cpp
     viewmodel/detected_devices_model.cpp
     viewmodel/editor_controller.cpp
     viewmodel/issue_model.cpp
@@ -28,6 +30,7 @@ set(WPIEMU_EDITOR_SOURCES
     viewmodel/viewport_controller.cpp
     views/activation_card.cpp
     views/bottom_panel.cpp
+    views/detected_cameras_section.cpp
     views/device_panel.cpp
     views/device_row.cpp
     views/drive_card.cpp

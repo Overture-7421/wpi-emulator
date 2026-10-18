@@ -21,7 +21,7 @@ void SceneModel::setContent(const SceneContent& content, const QColor& accent) {
 void SceneModel::setHighlight(const SelectionRef& target, const QColor& accent) {
     highlight_ = target;
     accent_ = accent;
-    if (!items_.empty()) Q_EMIT dataChanged(index(0), index(static_cast<int>(items_.size()) - 1), {ColorRole, SelectedRole});
+    if (!items_.empty()) Q_EMIT dataChanged(index(0), index(static_cast<int>(items_.size()) - 1), {ColorRole, OpacityRole, SelectedRole});
 }
 
 const SceneItem* SceneModel::itemById(const std::string& id) const {
@@ -38,7 +38,7 @@ bool SceneModel::isHighlighted(const SceneItem& item) const {
 
 QColor SceneModel::shade(const SceneItem& item) const {
     if (!isHighlighted(item)) return item.color;
-    const double k = item.role == ItemRole::Overlay ? 0.5 : 0.42;
+    const double k = item.role == ItemRole::Overlay || item.role == ItemRole::Frustum ? 0.5 : 0.42;
     return QColor::fromRgbF(item.color.redF() * (1 - k) + accent_.redF() * k, item.color.greenF() * (1 - k) + accent_.greenF() * k,
                             item.color.blueF() * (1 - k) + accent_.blueF() * k);
 }
@@ -66,7 +66,9 @@ QVariant SceneModel::data(const QModelIndex& index, int role) const {
             return it.shape == ItemShape::Box ? QVector3D(it.size.x / 100.f, it.size.y / 100.f, it.size.z / 100.f)
                                               : QVector3D(it.size.x / 100.f, it.size.z / 100.f, it.size.y / 100.f);
         case ColorRole: return shade(it);
-        case OpacityRole: return static_cast<double>(it.opacity);
+        case OpacityRole:
+            // A camera's view is a faint hint until the camera is selected.
+            return it.role == ItemRole::Frustum && isHighlighted(it) ? std::min(1.0, static_cast<double>(it.opacity) * 1.8) : static_cast<double>(it.opacity);
         case PickableRole: return it.pickable;
         case SelectedRole: return isHighlighted(it);
         default: return {};

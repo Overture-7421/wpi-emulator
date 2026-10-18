@@ -104,6 +104,11 @@ void ViewportWidget::buildToolbar(QLayout* layout) {
     snapButton_->setChecked(editor_.settings().snapEnabled());
     connect(snapButton_, &QToolButton::toggled, this, [this](bool on) { editor_.settings().setSnapEnabled(on); });
     layout->addWidget(snapButton_);
+    tagsButton_ = makeButton(ETR("Tags"), ETR("Show the AprilTags of the selected layout, as the robot sees the field from its start pose. They are always shown while a camera is selected."), this, true);
+    tagsButton_->setObjectName(QStringLiteral("viewport.tags"));
+    tagsButton_->setChecked(editor_.settings().showTags());
+    connect(tagsButton_, &QToolButton::toggled, this, [this](bool on) { editor_.settings().setShowTags(on); });
+    layout->addWidget(tagsButton_);
 
     layout->addWidget(separator(this));
     const std::pair<const char*, const char*> views[] = {{QT_TRANSLATE_NOOP("Editor", "Front"), "front"}, {QT_TRANSLATE_NOOP("Editor", "Side"), "side"},
@@ -155,6 +160,10 @@ void ViewportWidget::syncToolbar() {
     {
         const QSignalBlocker block(snapButton_);
         snapButton_->setChecked(editor_.settings().snapEnabled());
+    }
+    {
+        const QSignalBlocker block(tagsButton_);
+        tagsButton_->setChecked(editor_.settings().showTags());
     }
     const UnitSystem units = editor_.settings().units();
     fieldCaption_->setText(!f.valid ? QString()

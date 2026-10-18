@@ -230,3 +230,49 @@ TEST_CASE("reopening the wizard on a configured project starts from the stored r
     CHECK(s.session().config()->chassis.massKg == doctest::Approx(48.0));
     CHECK(s.session().config()->mechanisms.size() == 1);
 }
+
+TEST_CASE("running the wizard again keeps the cameras, the AprilTag layout, the PhotonLib UUID and the start pose, also on disk") {
+    TestEnvironment env;
+    TestProject project;
+    env.addProject(project);
+    AppServices& s = *env.services;
+    {
+        WizardViewModel first(s);
+        first.setProjectPath(project.path());
+        REQUIRE(first.finish().ok);
+    }
+    // what the editor and the run view add to the model
+    sdk::RobotConfig edited = *s.session().config();
+    sdk::CameraConfig front;
+    front.id = "photon_front";
+    front.label = "Front camera";
+    front.ntName = "photon-front";
+    front.local = sdk::Pose3{{0.25f, 0.f, 0.5f}, sdk::Quat::fromEuler(0.f, -0.25f, 0.f)};
+    front.realism.cornerNoisePx = 0.5;
+    sdk::CameraConfig rear;
+    rear.id = "limelight_rear";
+    rear.vendor = sdk::CameraVendor::Limelight;
+    rear.ntName = "limelight-rear";
+    rear.local = sdk::Pose3{{-0.25f, 0.f, 0.5f}, sdk::Quat::fromYaw(3.14159274f)};
+    rear.assumedPose = rear.local;
+    edited.vision.cameras = {front, rear};
+    edited.vision.layoutId = "game_2026.andymark";
+    edited.vision.photonMessageUuid = "4b2ff16a964b5e2bf04be0c1454d91c4";
+    edited.sim.startPose = sdk::StartPose{2.5f, 3.f, 0.5f};
+    REQUIRE(s.session().commit(edited, s.session().prefs()).ok());
+
+    WizardViewModel again(s);
+    RobotBasics b = again.basics();
+    b.massKg = 48.0;
+    again.setBasics(b);
+    REQUIRE(again.finish().ok);
+    CHECK(s.session().config()->chassis.massKg == doctest::Approx(48.0));
+    CHECK(s.session().config()->vision == edited.vision);
+    CHECK(s.session().config()->sim.startPose == edited.sim.startPose);
+
+    REQUIRE(s.session().close().ok());   // what a later session reads back from the stored files
+    REQUIRE(s.session().open(project.path()).ok());
+    REQUIRE(s.session().hasConfig());
+    CHECK(s.session().config()->vision == edited.vision);
+    CHECK(s.session().config()->sim.startPose == edited.sim.startPose);
+}

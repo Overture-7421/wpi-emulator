@@ -1,8 +1,11 @@
 #include "model/scene_builder.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <limits>
 
+#include "common/camera_frustum.h"
 #include "model/config_ops.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/units.h"
@@ -14,6 +17,15 @@ using sdk::Quat;
 using sdk::Vec3;
 
 namespace {
+
+constexpr float kCameraBodyDepthM = 0.05f;
+constexpr float kCameraBodyWidthM = 0.09f;
+constexpr float kCameraBodyHeightM = 0.05f;
+constexpr float kCameraLensDiameterM = 0.035f;
+constexpr float kCameraLensLengthM = 0.02f;
+constexpr float kTagPlateThicknessM = 0.012f;
+constexpr float kTagRangeM = 7.0f;   // tags farther than this from the robot are left out: the floor patch ends there
+constexpr double kMinCameraDepthM = 1e-3;
 
 QColor parseColor(const std::string& s, const QColor& fallback) {
     const QColor c(QString::fromStdString(s));
@@ -47,6 +59,67 @@ SceneItem lineBetween(std::string id, const Vec3& a, const Vec3& b, const QColor
     return item;
 }
 
+// A camera: a small body behind the lens, the lens, and the view pyramid (four edges to the far corners, the rectangle of the far plane
+// and a translucent far plane). All of it belongs to the camera (it is highlighted with it); the body and the plane select it.
+void addCameraItems(SceneContent& out, const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam, const SceneTheme& theme,
+                    float depthM) {
+    const SelectionRef ref = SelectionRef::camera(cam.id);
+    const Pose3 world = ops::cameraWorld(c, catalog, cam);
+    const QColor color = cam.enabled ? theme.camera : theme.cameraOff;
+    const float strength = cam.enabled ? 1.f : 0.45f;   // a camera that is switched off is dimmed
+
+    SceneItem body;
+    body.id = "camera:" + cam.id;
+    body.ref = body.group = ref;
+    body.role = ItemRole::Marker;
+    body.world = world * Pose3{Vec3{-0.5f * kCameraBodyDepthM, 0.f, 0.f}, Quat{}};   // the camera origin is the lens
+    body.size = Vec3{kCameraBodyDepthM, kCameraBodyWidthM, kCameraBodyHeightM};
+    body.color = color;
+    body.opacity = 0.95f * strength + 0.05f;
+    body.pickable = true;
+    out.items.push_back(body);
+
+    SceneItem lens;
+    lens.id = "camera:" + cam.id + ":lens";
+    lens.ref = lens.group = ref;
+    lens.role = ItemRole::Marker;
+    lens.shape = ItemShape::Cylinder;
+    lens.world = world * Pose3{Vec3{0.5f * kCameraLensLengthM, 0.f, 0.f}, Quat::fromAxisAngle({0.f, 1.f, 0.f}, static_cast<float>(sdk::kPi * 0.5))};   // axis +Z -> +X
+    lens.size = Vec3{kCameraLensDiameterM, kCameraLensDiameterM, kCameraLensLengthM};
+    lens.color = color.darker(190);
+    lens.opacity = body.opacity;
+    lens.pickable = true;
+    out.items.push_back(lens);
+
+    const double hfov = ops::effectiveHfovRad(cam.intrinsics);
+    const double vfov = hfov > 0.0 ? cam.intrinsics.vfovRad() : 0.0;
+    if (!(hfov > 0.0 && std::isfinite(vfov) && vfov > 0.0) || !(depthM > 0.f)) return;   // an invalid lens: the validator reports it
+    const camera::Frustum f = camera::frustum(world, hfov, vfov, depthM);
+
+    const float edge = 0.006f;
+    for (std::size_t i = 0; i < 4; ++i) {
+        SceneItem ray = lineBetween("camera:" + cam.id + ":ray" + std::to_string(i), f.apex, f.farCorners[i], color, edge);
+        SceneItem rim = lineBetween("camera:" + cam.id + ":rim" + std::to_string(i), f.farCorners[i], f.farCorners[(i + 1) % 4], color, edge);
+        for (SceneItem* line : {&ray, &rim}) {
+            line->role = ItemRole::Frustum;
+            line->ref = line->group = ref;
+            line->opacity = 0.42f * strength;
+            out.items.push_back(*line);
+        }
+    }
+    SceneItem plane;
+    plane.id = "camera:" + cam.id + ":view";
+    plane.ref = plane.group = ref;
+    plane.role = ItemRole::Frustum;
+    const Vec3 centre = (f.farCorners[0] + f.farCorners[2]) * 0.5f;
+    plane.world = Pose3{centre, world.rotation};
+    plane.size = Vec3{0.004f, sdk::length(f.farCorners[0] - f.farCorners[1]), sdk::length(f.farCorners[0] - f.farCorners[3])};
+    plane.color = color;
+    plane.opacity = 0.08f * strength;
+    plane.pickable = true;
+    out.items.push_back(plane);
+}
+
 }  // namespace
 
 Quat rotationFromX(const Vec3& direction) {
@@ -59,7 +132,7 @@ Quat rotationFromX(const Vec3& direction) {
     return Quat::fromAxisAngle(axis, std::acos(cosA));
 }
 
-SceneContent buildScene(const sdk::RobotConfig& c, const EditorCatalog& catalog, const SceneTheme& theme) {
+SceneContent buildScene(const sdk::RobotConfig& c, const EditorCatalog& catalog, const SceneTheme& theme, const SceneOptions& options) {
     SceneContent out;
     const Pose3 chassisFrame = ops::chassisFrameWorld(c.chassis);
     const SelectionRef chassisRef = SelectionRef::chassis();
@@ -272,7 +345,70 @@ SceneContent buildScene(const sdk::RobotConfig& c, const EditorCatalog& catalog,
         head.pickable = true;
         out.items.push_back(head);
     }
+
+    // Cameras: a body with a lens and the pyramid they look into.
+    const float depth = cameraFrustumDepthM(c, catalog);
+    for (const auto& cam : c.vision.cameras) addCameraItems(out, c, catalog, cam, theme, depth);
+
+    // AprilTags of the active layout, in the field frame as the robot sees it from its start pose: the tags near the robot appear where
+    // it would find them. Plates are never picked; the ones the selected camera would see are tinted.
+    if (options.showTags)
+        if (const sdk::FiducialLayout* layout = catalog.activeFiducialLayout(c.vision)) {
+            const Pose3 fieldInDisplay = ops::fieldToDisplay(c, catalog);
+            const sdk::CameraConfig* viewer = options.cameraId.empty() ? nullptr : c.findCamera(options.cameraId);
+            const Pose3 viewerWorld = viewer != nullptr ? ops::cameraWorld(c, catalog, *viewer) : Pose3{};
+            for (const sdk::FiducialTag& tag : layout->tags) {
+                const Pose3 world = fieldInDisplay * tag.pose;
+                if (std::hypot(world.position.x, world.position.y) > kTagRangeM) continue;
+                const float size = tag.sizeM > 0.f ? tag.sizeM : layout->tagSizeM;
+                SceneItem plate;
+                plate.id = "tag:" + std::to_string(tag.id);
+                plate.role = ItemRole::Tag;
+                plate.world = world * Pose3{Vec3{-0.5f * kTagPlateThicknessM, 0.f, 0.f}, Quat{}};   // behind the face, which is the tag pose
+                plate.size = Vec3{kTagPlateThicknessM, size, size};
+                const bool seen = viewer != nullptr && cameraSeesTag(*viewer, viewerWorld, world, viewer->tagSizeM > 0.0 ? viewer->tagSizeM : static_cast<double>(size));
+                plate.color = seen ? theme.tagSeen : theme.tag;
+                plate.opacity = 0.92f;
+                plate.text = QString::number(tag.id);
+                out.items.push_back(plate);
+            }
+        }
     return out;
+}
+
+float cameraFrustumDepthM(const sdk::RobotConfig& config, const EditorCatalog& catalog) {
+    const sdk::FiducialLayout* layout = catalog.activeFiducialLayout(config.vision);
+    if (layout == nullptr || !(layout->fieldLengthM > 0.f)) return 1.5f;
+    return std::clamp(0.1f * layout->fieldLengthM, 1.f, 3.f);
+}
+
+bool cameraSeesTag(const sdk::CameraConfig& camera, const Pose3& cameraWorld, const Pose3& tagWorld, double tagSizeM) {
+    const sdk::CameraIntrinsics& in = camera.intrinsics;
+    const double fx = in.fx(), fy = in.fy();
+    if (!(std::isfinite(fx) && fx > 0.0 && std::isfinite(fy) && fy > 0.0) || !(tagSizeM > 0.0)) return false;
+
+    // Facing: the tag's outward normal against the direction from the tag to the camera.
+    const Vec3 toCamera = cameraWorld.position - tagWorld.position;
+    const float distance = sdk::length(toCamera);
+    if (!(distance > 0.f)) return false;
+    const double facing = static_cast<double>(sdk::dot(tagWorld.rotation.rotate(Vec3{1.f, 0.f, 0.f}), toCamera)) / static_cast<double>(distance);
+    if (!(facing > 0.0) || facing < std::cos(camera.maxViewAngleRad)) return false;
+
+    // The four corners (tag frame: +X is the normal, +Y the viewer's right, +Z up) in the image.
+    const float h = static_cast<float>(0.5 * tagSizeM);
+    const Vec3 corners[4] = {{0.f, -h, -h}, {0.f, h, -h}, {0.f, h, h}, {0.f, -h, h}};
+    const Pose3 toCameraFrame = cameraWorld.inverse();
+    std::array<std::array<double, 2>, 4> px{};
+    for (std::size_t i = 0; i < 4; ++i) {
+        const Vec3 p = toCameraFrame.transformPoint(tagWorld.transformPoint(corners[i]));
+        if (!(static_cast<double>(p.x) >= kMinCameraDepthM)) return false;
+        px[i] = {in.cx() - fx * static_cast<double>(p.y) / static_cast<double>(p.x), in.cy() - fy * static_cast<double>(p.z) / static_cast<double>(p.x)};
+        if (px[i][0] < 0.0 || px[i][0] > in.widthPx || px[i][1] < 0.0 || px[i][1] > in.heightPx) return false;
+    }
+    double shortestEdge = std::numeric_limits<double>::infinity();
+    for (std::size_t i = 0; i < 4; ++i)
+        shortestEdge = std::min(shortestEdge, std::hypot(px[i][0] - px[(i + 1) % 4][0], px[i][1] - px[(i + 1) % 4][1]));
+    return shortestEdge >= camera.minTagPixels;
 }
 
 }  // namespace wpiemu::app::editor

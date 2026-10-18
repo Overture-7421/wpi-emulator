@@ -1,8 +1,11 @@
 // Standalone demo of the robot editor on top of FakeEditorBackend:
 //   wpiemu_editor_demo                       interactive window
 //   wpiemu_editor_demo --grab out.png        render once, save a PNG of the whole page, exit
-//   wpiemu_editor_demo --select intake       select an item first (chassis, drivetrain, wheel:fl, slot:intake.motor, zone:pickup, plugin)
-//   wpiemu_editor_demo --detect              run the scripted "Detect devices" before grabbing
+//   wpiemu_editor_demo --select intake       select an item first (chassis, drivetrain, wheel:fl, slot:intake.motor, zone:pickup, camera:photon_front, vision, plugin)
+//   wpiemu_editor_demo --detect              run the scripted "Detect devices" (and the cameras the robot code uses) before grabbing
+//   wpiemu_editor_demo --view top|front|side|3d   viewport preset (like the 1-4 keys);  --frame frames the selection (like F)
+//   wpiemu_editor_demo --tags                show the AprilTags of the layout (the Tags button)
+//   wpiemu_editor_demo --disable-camera limelight_rear   switch a camera off first (it is drawn dimmed)
 //   wpiemu_editor_demo --tank                tank drive with 3 wheels per side, 3 motors per side (linked wheels)
 //   wpiemu_editor_demo --light               light palette
 #include <QApplication>
@@ -17,6 +20,7 @@
 #include "wpiemu/sdk/mechanisms/motion_config.h"
 #include "model/selection.h"
 #include "viewmodel/editor_controller.h"
+#include "wpiemu/sdk/config/value_codec.h"
 
 using namespace wpiemu::app::editor;
 
@@ -88,6 +92,8 @@ SelectionRef parseSelection(const QString& text) {
     if (text == QStringLiteral("chassis")) return SelectionRef::chassis();
     if (text == QStringLiteral("drivetrain")) return SelectionRef::drivetrain();
     if (text == QStringLiteral("plugin")) return SelectionRef::plugin();
+    if (text == QStringLiteral("vision")) return SelectionRef::vision();
+    if (text.startsWith(QStringLiteral("camera:"))) return SelectionRef::camera(text.mid(7).toStdString());
     if (text.startsWith(QStringLiteral("zone:"))) return SelectionRef::zone(text.mid(5).toStdString());
     if (text.startsWith(QStringLiteral("wheel:"))) return SelectionRef::wheel(text.mid(6).toStdString());
     if (text.startsWith(QStringLiteral("slot:"))) {
@@ -110,7 +116,11 @@ int main(int argc, char* argv[]) {
     const QCommandLineOption tank(QStringLiteral("tank"), QStringLiteral("Use a tank drive with linked wheels."));
     const QCommandLineOption light(QStringLiteral("light"), QStringLiteral("Use the light palette."));
     const QCommandLineOption size(QStringLiteral("size"), QStringLiteral("Window size WxH."), QStringLiteral("size"), QStringLiteral("1500x900"));
-    parser.addOptions({grab, select, detect, tank, light, size});
+    const QCommandLineOption view(QStringLiteral("view"), QStringLiteral("Viewport preset: front, side, top or 3d."), QStringLiteral("preset"));
+    const QCommandLineOption frame(QStringLiteral("frame"), QStringLiteral("Frame the selection in the viewport."));
+    const QCommandLineOption tags(QStringLiteral("tags"), QStringLiteral("Show the AprilTags in the viewport."));
+    const QCommandLineOption disableCamera(QStringLiteral("disable-camera"), QStringLiteral("Switch a camera off first."), QStringLiteral("id"));
+    parser.addOptions({grab, select, detect, tank, light, size, view, frame, tags, disableCamera});
     parser.process(app);
 
     applyPalette(app, parser.isSet(light));
@@ -122,7 +132,22 @@ int main(int argc, char* argv[]) {
     page.resize(wh.value(0).toInt(), wh.value(1).toInt());
     page.show();
 
+    if (parser.isSet(disableCamera))
+        page.controller().document().setProperty(SelectionRef::camera(parser.value(disableCamera).toStdString()), "camera.general", "enabled",
+                                                 wpiemu::sdk::Value(false));
     if (parser.isSet(select)) page.controller().selection().set(parseSelection(parser.value(select)));
+    // The viewport shortcuts (1-4 views, F frames the selection) are page actions: trigger them like the keys would.
+    const auto press = [&page](const QString& key) {
+        for (QAction* a : page.actions())
+            if (a->shortcut() == QKeySequence(key)) a->trigger();
+    };
+    if (parser.isSet(view)) {
+        const QString preset = parser.value(view);
+        press(preset == QStringLiteral("front") ? QStringLiteral("1") : preset == QStringLiteral("side") ? QStringLiteral("2")
+              : preset == QStringLiteral("top") ? QStringLiteral("3") : QStringLiteral("4"));
+    }
+    if (parser.isSet(frame)) press(QStringLiteral("F"));
+    if (parser.isSet(tags)) page.controller().settings().setShowTags(true);
     if (parser.isSet(detect)) {
         backend.setDetectionStepMs(60);
         backend.startDetection();

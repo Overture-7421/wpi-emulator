@@ -21,6 +21,7 @@ public:
     sdk::RobotConfig config() const override;
     editor::EditorCatalog catalog() const override;
     std::vector<sdk::DiscoveredDevice> devices() const override { return devices_; }
+    std::vector<sdk::CameraRobotState> detectedCameras() const override { return cameras_; }
     std::vector<sdk::Issue> validate(const sdk::RobotConfig& config) const override;
     bool detecting() const override;
 
@@ -47,6 +48,7 @@ private:
     QString lastProject_;
     QString pendingProject_;
     std::vector<sdk::DiscoveredDevice> devices_;
+    std::vector<sdk::CameraRobotState> cameras_;   // what the robot process reports using; cleared with every new run / project
     std::vector<sdk::Issue> lastIssues_;
 };
 

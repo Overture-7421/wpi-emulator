@@ -79,6 +79,7 @@ inline QString busLabel(const std::string& bus) { return bus.empty() ? QStringLi
 inline constexpr const char* kDeviceMime = "application/x-wpiemu-device";
 inline constexpr const char* kMechanismMime = "application/x-wpiemu-mechanism";
 inline constexpr const char* kZoneMime = "application/x-wpiemu-zone";
+inline constexpr const char* kCameraMime = "application/x-wpiemu-camera";
 
 struct DevicePayload {
     sdk::DeviceKey key;

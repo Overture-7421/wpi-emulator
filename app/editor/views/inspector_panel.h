@@ -40,6 +40,9 @@ public:
     ActivationCard* activationCard() const { return activationCard_; }
     QLabel* startPoseHint() const { return startPoseHint_; }
     QToolButton* startPoseResetButton() const { return startPoseReset_; }
+    QLabel* visionHint() const { return visionHint_; }
+    QLabel* cameraRobotStatus() const { return cameraRobotStatus_; }
+    QLabel* cameraRealismHint() const { return cameraRealismHint_; }
 
 private:
     void rebuild();
@@ -55,6 +58,11 @@ private:
     QString editableName(const SelectionRef& target) const;
     void addPartCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
     void addZoneCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
+    void addCameraCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
+    void addVisionCard(const PropertyGroup& group);
+    void addVisionCameras();
+    void refreshCameraCards();
+    void refreshVisionCard();
     void addHeader(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
     void addShapes(const std::string& owner);
     void addChildren(const std::string& mechanismId);
@@ -73,6 +81,10 @@ private:
     QLineEdit* nameEdit_ = nullptr;
     QLabel* startPoseHint_ = nullptr;
     QToolButton* startPoseReset_ = nullptr;
+    QLabel* visionHint_ = nullptr;
+    QLabel* cameraEndpoint_ = nullptr;       // the camera's NetworkTables path
+    QLabel* cameraRobotStatus_ = nullptr;    // whether the robot code uses the camera, from the robot's report
+    QLabel* cameraRealismHint_ = nullptr;    // "Ideal" or what is switched on
     QMap<QString, QPair<int, QString>> issues_;
     ActivationCard* activationCard_ = nullptr;
     std::vector<PropertyFormWidget*> forms_;

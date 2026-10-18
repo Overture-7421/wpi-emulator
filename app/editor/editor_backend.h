@@ -8,8 +8,8 @@
 // demo use FakeEditorBackend. All members are called on the UI thread.
 //
 // Data flow
-//   backend -> editor : catalog() (what can be built), config() (what exists), devices() and the
-//                       discovery signals (what the robot code declared), issues (runtime warnings)
+//   backend -> editor : catalog() (what can be built), config() (what exists), devices() / detectedCameras()
+//                       and the discovery signals (what the robot code declared), issues (runtime warnings)
 //   editor  -> backend: submitConfig() on every edit (live), saveConfig() for autosave / Ctrl+S,
 //                       startDetection() / stopDetection() for the "Detect devices" button
 
@@ -33,6 +33,8 @@
 #include "wpiemu/sdk/mechanisms/mechanism.h"
 #include "wpiemu/sdk/physics/drivetrain.h"
 #include "wpiemu/sdk/telemetry/snapshot.h"
+#include "wpiemu/sdk/vision/fiducial_layout.h"
+#include "wpiemu/sdk/vision/vision_types.h"
 
 namespace wpiemu::app::editor {
 
@@ -52,6 +54,7 @@ struct EditorCatalog {
     sdk::PluginConfigSchema pluginSchema;                          // edited under RobotConfig::plugins[pluginId]
     std::vector<sdk::EditorPanelDescriptor> pluginPanels;
     std::vector<sdk::ZoneKindInfo> zoneKinds;                      // zone kinds the selected plugin owns (pickup, muzzle, ...)
+    std::vector<sdk::FiducialLayout> fiducialLayouts;              // AprilTag layouts the selected plugin ships; the first one is its default
     sdk::StartPose defaultStartPose;                               // where the robot starts while SimSettings::startPose is unset (the field's default spot, else the origin)
 
     const sdk::MechanismTemplateInfo* findTemplate(std::string_view type) const {
@@ -63,6 +66,17 @@ struct EditorCatalog {
         for (const auto& k : zoneKinds)
             if (k.kind == kind) return &k;
         return nullptr;
+    }
+    const sdk::FiducialLayout* findFiducialLayout(std::string_view id) const {
+        for (const auto& l : fiducialLayouts)
+            if (l.id == id) return &l;
+        return nullptr;
+    }
+    // The layout the runtime resolves from `vision`: nullptr for a custom file (the editor does not read it) or an unknown id.
+    const sdk::FiducialLayout* activeFiducialLayout(const sdk::VisionConfig& vision) const {
+        if (!vision.layoutFile.empty()) return nullptr;
+        if (!vision.layoutId.empty()) return findFiducialLayout(vision.layoutId);
+        return fiducialLayouts.empty() ? nullptr : &fiducialLayouts.front();
     }
     bool hasPlugin() const { return !pluginId.empty(); }
 };
@@ -77,6 +91,9 @@ public:
     virtual sdk::RobotConfig config() const = 0;                       // the persisted model to edit
     virtual EditorCatalog catalog() const = 0;
     virtual std::vector<sdk::DiscoveredDevice> devices() const = 0;    // everything announced so far
+    // The cameras the ROBOT process reports using (PhotonVision / Limelight topics seen on NetworkTables), including ones the
+    // model does not list. Live while a discovery or run session is active; empty otherwise.
+    virtual std::vector<sdk::CameraRobotState> detectedCameras() const { return {}; }
     // Whole-model validation (IConfigValidator). Cheap; called after edits. Runtime warnings that
     // need the hub arrive through issuesChanged() instead.
     virtual std::vector<sdk::Issue> validate(const sdk::RobotConfig& config) const = 0;
@@ -101,6 +118,8 @@ Q_SIGNALS:
     void catalogChanged();
     // Bulk refresh of devices() (e.g. a new run started).
     void devicesChanged();
+    // detectedCameras() changed (a camera appeared, was matched, or a new run cleared the list).
+    void detectedCamerasChanged();
     // Live discovery: first announce of a device, and later changes (alias state, liveness...).
     void deviceDiscovered(wpiemu::sdk::DiscoveredDevice device);
     void deviceUpdated(wpiemu::sdk::DiscoveredDevice device);
