@@ -501,16 +501,17 @@ std::shared_ptr<const ISimSnapshot> SimulationSession::buildSnapshot(bool paused
     const auto hubWarnings = hub_.warnings();
     d.warnings.assign(hubWarnings.begin(), hubWarnings.end());
     d.warnings.insert(d.warnings.end(), sessionWarnings_.begin(), sessionWarnings_.end());
-    if (vision_) {
-        const std::vector<HubWarning> robotCameraWarnings = vision_->warnings();
-        d.warnings.insert(d.warnings.end(), robotCameraWarnings.begin(), robotCameraWarnings.end());
-    }
+    const std::vector<HubWarning> robotCameraWarnings = robotCameras_.warnings(config_.vision);
+    d.warnings.insert(d.warnings.end(), robotCameraWarnings.begin(), robotCameraWarnings.end());
     d.warnings.insert(d.warnings.end(), extraWarnings.begin(), extraWarnings.end());
     d.batteryVoltageV = battery_.voltageV();
     d.driverStation = ds_;
     d.physicsStats = world_->stats();
     if (gameState_) gameState_->publish(builder);
-    if (vision_) vision_->contribute(builder, vision::VisionWorldView{*world_, chassis_.body, directory_.get()});
+    // What the robot reports about its cameras is listed whether or not an engine exists.
+    d.detectedCameras.assign(robotCameras_.states().begin(), robotCameras_.states().end());
+    if (vision_)
+        vision_->contribute(builder, vision::VisionWorldView{*world_, chassis_.body, directory_.get()}, robotCameras_);
     return builder.build();
 }
 

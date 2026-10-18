@@ -429,7 +429,7 @@ void SessionRunner::handleHello(const proto::Hello& hello) {
     programStarted_ = !options_.awaitProgramStart;
     peerSupportsArmed_ = hello.supportsArmed;
     session_.hub().clearDevices();
-    if (vision::VisionSystem* engine = session_.vision()) engine->clearRobotStates();  // a new robot process
+    session_.robotCameras().clear();  // a new robot process: nothing of the previous one applies
     watchdogMs_ = proto::negotiateWatchdogTimeoutMs(hello.proposedWatchdogMs, options_.preferredWatchdogMs);
     window_.begin(++sessionCounter_, window_.runEpoch());
     beginEpoch();
@@ -466,8 +466,8 @@ void SessionRunner::handleActuator(const proto::ActuatorFrame& frame) {
         case proto::AckVerdict::Completed:
             robotLoops_ = frame.robotLoopCount;
             session_.hub().onActuatorFrame(frame);
-            if (vision::VisionSystem* engine = session_.vision(); engine != nullptr && !frame.vision.empty()) {
-                engine->onRobotStates(frame.vision);  // informational: snapshot and warnings only
+            if (!frame.vision.empty()) {
+                session_.robotCameras().upsert(frame.vision);  // informational: snapshot and warnings only
                 snapshotDirty_ = true;
             }
             if (firstActuator_) {
@@ -503,7 +503,7 @@ void SessionRunner::handleDisconnect(const std::string& why) {
     sentLoopbackRevision_ = ~std::uint64_t{0};
     window_.begin(window_.sessionId(), window_.runEpoch());
     session_.hub().clearDevices();
-    if (vision::VisionSystem* engine = session_.vision()) engine->clearRobotStates();
+    session_.robotCameras().clear();
     snapshotDirty_ = true;
 }
 

@@ -46,6 +46,7 @@ struct Rig {
     FakeWorld world;
     sdk::Rng rng{2024};
     std::unique_ptr<wpiemu::core::vision::VisionSystem> system;
+    wpiemu::core::vision::RobotCameraStates robotStates;  // what the robot reported: shown in snapshots only
     sdk::SimTimeUs stepUs = 5000;
     sdk::SimTimeUs timeUs = 0;
     int tickCount = 0;
@@ -79,12 +80,12 @@ struct Rig {
     // The camera samples of a snapshot built right now.
     std::vector<sdk::CameraSample> cameras() const {
         sdk::SnapshotBuilder b;
-        system->contribute(b, viewOf(world, mechanisms));
+        system->contribute(b, viewOf(world, mechanisms), robotStates);
         return b.data().cameras;
     }
     sdk::SimSnapshotData snapshot() const {
         sdk::SnapshotBuilder b;
-        system->contribute(b, viewOf(world, mechanisms));
+        system->contribute(b, viewOf(world, mechanisms), robotStates);
         return std::move(b.data());
     }
     // Rng draws so far, given the seed the rig started with.

@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "wpiemu/core/vision/pose_solver.h"
-#include "wpiemu/sdk/config/validation_codes.h"
 
 namespace wpiemu::core::vision {
 
@@ -21,7 +20,6 @@ constexpr std::int64_t kScheduleUnitsPerFrame = 1'000'000'000'000LL;
 constexpr double kMaxFrameRateHz = 240.0;
 constexpr std::int64_t kMaxLatencyUs = 60'000'000;
 constexpr int kMaxImageSidePx = 16384;
-constexpr std::size_t kMaxRobotStates = 1024;
 // Stands in for an infinite reprojection error so that frames stay finite.
 constexpr double kMaxReprojErrPx = 1e9;
 
@@ -35,30 +33,6 @@ std::pair<double, double> gaussianPair(Rng& rng) {
 }
 
 bool finiteNonNegative(double v) { return std::isfinite(v) && v >= 0.0; }
-
-const char* vendorName(CameraVendor vendor) {
-    return vendor == CameraVendor::Limelight ? "Limelight" : "PhotonVision";
-}
-
-// What the robot process reports (CameraRobotState::status) about a camera it could not bring up
-// or leaves alone, as a severity and an explanation.
-std::pair<Severity, std::string> describeStatus(const std::string& status) {
-    if (status == "ntcore_unavailable")
-        return {Severity::Error,
-                "the robot process has no NetworkTables library to publish through, so the "
-                "camera publishes nothing"};
-    if (status == "photon_uuid_unsupported")
-        return {Severity::Error,
-                "the project's PhotonLib speaks a PhotonVision message definition the emulator "
-                "has no profile for, so the camera publishes nothing (update the emulator, or set "
-                "vision.photonMessageUuid once the definition is verified)"};
-    if (status == "foreign_publisher")
-        return {Severity::Warning,
-                "something in the robot already publishes this camera (a robot-side "
-                "PhotonCameraSim?), so the emulator leaves it alone"};
-    if (status == "disabled") return {Severity::Warning, "the camera is disabled"};
-    return {Severity::Warning, "the robot process reports the status '" + status + "'"};
-}
 
 // What makes a camera impossible to simulate, "" when fine.
 std::string cameraProblem(const CameraConfig& c) {
@@ -338,53 +312,6 @@ void VisionSystem::reset() {
     }
 }
 
-void VisionSystem::onRobotStates(std::span<const CameraRobotState> states) {
-    for (const CameraRobotState& state : states) {
-        const auto same = [&state](const CameraRobotState& e) {
-            return e.vendor == state.vendor && e.ntName == state.ntName;
-        };
-        if (const auto it = std::find_if(robotStates_.begin(), robotStates_.end(), same);
-            it != robotStates_.end())
-            *it = state;
-        else if (robotStates_.size() < kMaxRobotStates)
-            robotStates_.push_back(state);
-    }
-}
-
-const CameraRobotState* VisionSystem::robotStateOf(std::string_view cameraId) const {
-    for (const CameraRobotState& s : robotStates_)
-        if (s.cameraId == cameraId) return &s;
-    return nullptr;
-}
-
-std::vector<HubWarning> VisionSystem::warnings() const {
-    std::vector<HubWarning> out;
-    for (const CameraRobotState& s : robotStates_) {
-        if (s.cameraId.empty()) {
-            if (!s.present) continue;
-            const auto sameCamera = [&s](const Camera& c) {
-                return c.config.vendor == s.vendor && c.config.networkName() == s.ntName;
-            };
-            const bool disabledHere = std::any_of(
-                cameras_.begin(), cameras_.end(),
-                [&sameCamera](const Camera& c) { return !c.config.enabled && sameCamera(c); });
-            const char* reason = disabledHere
-                                     ? "disabled in the vision configuration"
-                                     : "not in the vision configuration (add it from the detected "
-                                       "cameras)";
-            out.push_back({Severity::Warning, DeviceId{},
-                           validation_code::kVisionCameraUnconfigured,
-                           std::string("the robot uses the ") + vendorName(s.vendor) +
-                               " camera '" + s.ntName + "', which is " + reason});
-        } else if (!s.status.empty()) {
-            auto [severity, what] = describeStatus(s.status);
-            out.push_back({severity, DeviceId{}, validation_code::kVisionCameraStatus,
-                           "camera '" + s.cameraId + "' (" + s.ntName + "): " + what});
-        }
-    }
-    return out;
-}
-
 VisionSetup VisionSystem::setup(std::string_view defaultPhotonUuid) const {
     const std::string uuid = !config_.photonMessageUuid.empty() ? config_.photonMessageUuid
                                                                 : std::string(defaultPhotonUuid);
@@ -412,11 +339,12 @@ VisionSetup VisionSystem::setup(std::string_view defaultPhotonUuid) const {
     return setup;
 }
 
-void VisionSystem::contribute(SnapshotBuilder& out, const VisionWorldView& view) const {
+void VisionSystem::contribute(SnapshotBuilder& out, const VisionWorldView& view,
+                              const RobotCameraStates& robotStates) const {
     const Pose3d chassis = fromSdk(view.world.pose(view.chassisBody));
     for (const Camera& cam : cameras_) {
         const Placement placement = placeCamera(cam.config, view.mechanisms);
-        const CameraRobotState* robot = robotStateOf(cam.config.id);
+        const CameraRobotState* robot = robotStates.forCamera(cam.config.id);
         CameraSample s;
         s.id = cam.config.id;
         s.label = cam.config.label;
@@ -442,7 +370,6 @@ void VisionSystem::contribute(SnapshotBuilder& out, const VisionWorldView& view)
     }
     for (const TagRecord& tag : tags_)
         out.addFiducial(FiducialSample{tag.tag.id, tag.tag.pose, static_cast<float>(tag.sizeM)});
-    for (const CameraRobotState& state : robotStates_) out.addDetectedCamera(state);
 }
 
 }  // namespace wpiemu::core::vision

@@ -365,7 +365,7 @@ TEST_CASE("session vision: snapshots carry the cameras and tags and place the ca
     state.ntName = "front";
     state.cameraId = "front";
     state.publishing = true;
-    s.vision()->onRobotStates(std::span<const CameraRobotState>(&state, 1));
+    s.robotCameras().upsert(std::span<const CameraRobotState>(&state, 1));
     snap = s.buildSnapshot(false, true);
     CHECK(snap->cameras()[0].robotConnected);
     REQUIRE(snap->detectedCameras().size() == 1);
@@ -467,40 +467,64 @@ TEST_CASE("session vision: an ideal camera never touches the session RNG, a real
     CHECK(gameDraws({noisy}) != withoutCamera);         // measurement noise comes from the same stream
 }
 
-TEST_CASE("session vision: what the robot reports about its cameras is shown and warned about, and survives a reset") {
-    Fixture f;
-    SimulationSession& s = f.make(f.config());
-    CameraRobotState refused;
+TEST_CASE("session vision: what the robot reports about its cameras is listed and warned about with or without an engine, and survives a reset") {
+    CameraRobotState refused;  // a configured camera the robot process could not bring up
     refused.ntName = "front";
     refused.cameraId = "front";
     refused.status = "photon_uuid_unsupported";
-    CameraRobotState stray;
+    CameraRobotState stray;  // a camera the robot uses that nobody simulates
     stray.ntName = "extra";
     stray.vendor = CameraVendor::Limelight;
-    const CameraRobotState states[] = {refused, stray};
-    s.vision()->onRobotStates(states);
+    CameraRobotState unmatched;  // the robot's "front" matched to no simulated camera: it got no setup
+    unmatched.ntName = "front";
 
-    auto codes = [&] {
-        std::vector<std::pair<std::string, Severity>> out;
-        const auto snap = s.buildSnapshot(false, true);
-        for (const HubWarning& w : snap->warnings())
-            if (w.code.rfind("vision_", 0) == 0) out.emplace_back(w.code, w.severity);
-        return out;
-    };
     using Codes = std::vector<std::pair<std::string, Severity>>;
-    const Codes expected = {{"vision_camera_status", Severity::Error},
-                            {"vision_camera_unconfigured", Severity::Warning}};
-    CHECK(codes() == expected);
-    CHECK(s.buildSnapshot(false, true)->detectedCameras().size() == 2);
+    struct Case {
+        const char* name;
+        bool camera;  // an enabled camera "front" in the configuration
+        bool layout;  // ... with the layout it needs
+        std::vector<CameraRobotState> reports;
+        Codes expected;
+    };
+    const Case cases[] = {
+        {"engine running", true, true, {refused, stray},
+         {{"vision_camera_status", Severity::Error}, {"vision_camera_unconfigured", Severity::Warning}}},
+        {"no camera configured", false, false, {stray}, {{"vision_camera_unconfigured", Severity::Warning}}},
+        {"camera without a layout", true, false, {unmatched},
+         {{"vision_layout_missing", Severity::Error}, {"vision_camera_unconfigured", Severity::Warning}}},
+    };
+    for (const Case& test : cases) {
+        INFO(test.name);
+        Fixture f;
+        RobotConfig c = test.layout ? f.config() : sampleConfig();
+        if (test.camera && !test.layout) c.vision.cameras = {wallCamera()};
+        SimulationSession& s = f.make(c);
+        CHECK((s.vision() != nullptr) == test.layout);
+        s.robotCameras().upsert(test.reports);
 
-    // the robot process outlives a simulation reset, so its report does too
-    s.reset();
-    CHECK(codes() == expected);
-    CHECK(s.buildSnapshot(false, true)->detectedCameras().size() == 2);
+        auto codes = [&] {
+            Codes out;
+            const auto snap = s.buildSnapshot(false, true);
+            for (const HubWarning& w : snap->warnings())
+                if (w.code.rfind("vision_", 0) == 0) out.emplace_back(w.code, w.severity);
+            return out;
+        };
+        CHECK(codes() == test.expected);
+        CHECK(s.buildSnapshot(false, true)->detectedCameras().size() == test.reports.size());
+        if (test.layout) CHECK(s.buildSnapshot(false, true)->cameras()[0].status == "photon_uuid_unsupported");
 
-    s.vision()->clearRobotStates();  // the connection is gone
-    CHECK(codes().empty());
-    CHECK(s.buildSnapshot(false, true)->detectedCameras().empty());
+        // the robot process outlives a simulation reset, so its report does too
+        s.reset();
+        CHECK(codes() == test.expected);
+        CHECK(s.buildSnapshot(false, true)->detectedCameras().size() == test.reports.size());
+
+        s.robotCameras().clear();  // the connection is gone: only what is not about the robot stays
+        Codes remaining;
+        for (const auto& e : test.expected)
+            if (e.first == "vision_layout_missing") remaining.push_back(e);
+        CHECK(codes() == remaining);
+        CHECK(s.buildSnapshot(false, true)->detectedCameras().empty());
+    }
 }
 
 TEST_CASE("session vision: over the real 2026 plugin the default layout loads and sees the trench tag") {

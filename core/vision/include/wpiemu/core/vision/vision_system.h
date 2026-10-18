@@ -4,8 +4,9 @@
 //
 // A pure function of truth (the chassis pose, mechanism link poses, the tag layout, line of sight
 // in the physics world), the camera configuration, the sim clock and SimContext::rng(). It never
-// reads anything the robot wrote: CameraRobotState is stored for the UI and warnings only. All the
-// vendor behaviour (topics, pipelines, MegaTag, ...) lives in the robot-process bridge.
+// reads anything the robot wrote: what the robot reports about its cameras (RobotCameraStates) is
+// shown next to the cameras in the snapshot, never used for measuring. All the vendor behaviour
+// (topics, pipelines, MegaTag, ...) lives in the robot-process bridge.
 //
 // Timing (vision spec, section D). T(N) is SensorFrame::simTimeUs of tick N (time after step N).
 //  * Capture: at tick N0, after the physics/game step, a camera whose accumulator is due captures
@@ -27,15 +28,14 @@
 #include <deque>
 #include <memory>
 #include <optional>
-#include <span>
 #include <string_view>
 #include <vector>
 
 #include "wpiemu/core/vision/camera_model.h"
+#include "wpiemu/core/vision/robot_camera_states.h"
 #include "wpiemu/core/vision/visibility.h"
 #include "wpiemu/core/vision/vision_math.h"
 #include "wpiemu/sdk/core/ids.h"
-#include "wpiemu/sdk/devices/discovered_device.h"
 #include "wpiemu/sdk/core/result.h"
 #include "wpiemu/sdk/core/rng.h"
 #include "wpiemu/sdk/core/units.h"
@@ -92,30 +92,19 @@ public:
     void collectDue(sdk::SimTimeUs sensorFrameSimTimeUs, std::vector<sdk::VisionFrame>& out);
 
     // Session reset / new epoch / reconnect: drops queued frames, restarts every capture schedule
-    // and forgets the latest capture. Sequence numbers and the frame counters continue. What the
-    // robot reported (onRobotStates) describes the robot process, not the simulation, so it
-    // survives a reset: only a lost connection forgets it (clearRobotStates).
+    // and forgets the latest capture. Sequence numbers and the frame counters continue.
     void reset();
-
-    // ActuatorFrame::vision: informational only (snapshot, warnings), never used for measurement.
-    // Entries are upserted by (vendor, ntName). clearRobotStates: the robot process went away.
-    void onRobotStates(std::span<const sdk::CameraRobotState> states);
-    void clearRobotStates() { robotStates_.clear(); }
-    std::span<const sdk::CameraRobotState> robotStates() const { return robotStates_; }
-
-    // The issue-list entries the robot-reported states imply:
-    //  * vision_camera_unconfigured (Warning): the robot uses a camera that is not simulated
-    //    (absent from the configuration, or disabled there);
-    //  * vision_camera_status (Error for ntcore_unavailable and photon_uuid_unsupported, else
-    //    Warning): a configured camera the robot process could not bring up or leaves alone.
-    std::vector<sdk::HubWarning> warnings() const;
 
     // HelloAck::vision: one entry per ENABLED camera. photonMessageUuid is the config override,
     // else `defaultPhotonUuid`, else "".
     sdk::VisionSetup setup(std::string_view defaultPhotonUuid) const;
 
-    // Cameras (placed from the live `view`), the layout's tags and the robot-reported states.
-    void contribute(sdk::SnapshotBuilder& out, const VisionWorldView& view) const;
+    // Cameras (placed from the live `view`) and the layout's tags. What the robot reported about
+    // each camera (CameraSample::robotConnected / status) is read from `robotStates`; it is shown,
+    // never used for measuring. The detected cameras themselves are not contributed here: they exist
+    // whether or not an engine does (see RobotCameraStates).
+    void contribute(sdk::SnapshotBuilder& out, const VisionWorldView& view,
+                    const RobotCameraStates& robotStates) const;
 
     sdk::SimTimeUs stepUs() const { return stepUs_; }
     const sdk::FiducialLayout& layout() const { return layout_; }
@@ -159,14 +148,12 @@ private:
                  const VisionWorldView& view, sdk::Rng& rng, sdk::SimTimeUs captureTimeUs);
     void detect(const Camera& cam, const Pose3d& fieldToCamera, const sdk::IPhysicsWorld& world,
                 sdk::Rng& rng, sdk::VisionFrame& frame) const;
-    const sdk::CameraRobotState* robotStateOf(std::string_view cameraId) const;
 
     sdk::VisionConfig config_;
     sdk::FiducialLayout layout_;
     sdk::SimTimeUs stepUs_ = 0;
     std::vector<Camera> cameras_;
     std::vector<TagRecord> tags_;
-    std::vector<sdk::CameraRobotState> robotStates_;
 };
 
 }  // namespace wpiemu::core::vision
