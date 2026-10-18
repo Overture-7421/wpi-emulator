@@ -339,6 +339,101 @@ TEST_CASE("validator: zone ids, attachments, kinds and geometry") {
     CHECK(count(issue_code::kZoneGeometryInvalid, "zones[8].local") == 1);
 }
 
+namespace {
+CameraConfig camera(const std::string& id, const std::string& name = "") {
+    CameraConfig c;
+    c.id = id;
+    c.name = name.empty() ? id : name;
+    return c;
+}
+}  // namespace
+
+TEST_CASE("validator: a well-formed camera is clean") {
+    Registries reg;
+    RobotConfig c = sampleConfig();
+    CameraConfig cam = camera("front");
+    cam.attachment.parentMechanismId = "intake";
+    cam.attachment.parentLink = "tip";
+    c.cameras.push_back(cam);
+    c.cameras.push_back(camera(""));
+    c.cameras.back().id = "rear";
+    c.cameras.back().name = "";
+    const auto issues = validate(c, reg);
+    for (const Issue& i : issues) MESSAGE(i.path << ": " << i.message << " [" << i.code << "]");
+    CHECK(issues.empty());
+}
+
+TEST_CASE("validator: camera ids, names, attachments, geometry and optics") {
+    Registries reg;
+    RobotConfig c = sampleConfig();
+    c.zones.push_back(zone("pickup"));
+    c.cameras.push_back(camera(""));                  // 0
+    c.cameras.push_back(camera("dup"));               // 1
+    c.cameras.push_back(camera("dup", "other"));      // 2
+    c.cameras.push_back(camera("intake"));            // 3: mechanism id
+    c.cameras.push_back(camera("pickup"));            // 4: zone id
+    c.cameras.push_back(camera("a", "same"));         // 5
+    c.cameras.push_back(camera("b", "same"));         // 6: same name, same kind
+    c.cameras.push_back(camera("c", "same"));         // 7: same name, other kind
+    c.cameras.back().kind = CameraKind::PhotonVision;
+    CameraConfig noParent = camera("noParent");       // 8
+    noParent.attachment.parentMechanismId = "ghost";
+    c.cameras.push_back(noParent);
+    CameraConfig noLink = camera("noLink");           // 9
+    noLink.attachment.parentMechanismId = "intake";
+    noLink.attachment.parentLink = "nolink";
+    c.cameras.push_back(noLink);
+    CameraConfig nan = camera("nan");                 // 10
+    nan.local.position.x = std::numeric_limits<float>::quiet_NaN();
+    c.cameras.push_back(nan);
+    CameraConfig bad = camera("bad");                 // 11
+    bad.hFovDeg = 180.0;
+    bad.vFovDeg = 0.0;
+    bad.maxRangeM = 0.0;
+    bad.maxIncidenceDeg = 91.0;
+    bad.fps = 241.0;
+    bad.latencyMs = 2001.0;
+    bad.widthPx = 0;
+    bad.heightPx = -1;
+    bad.positionNoiseM = -0.1;
+    bad.yawNoiseDeg = std::numeric_limits<double>::quiet_NaN();
+    c.cameras.push_back(bad);
+    CameraConfig edge = camera("edge");               // 12: boundary values are valid
+    edge.maxIncidenceDeg = 90.0;
+    edge.fps = 240.0;
+    edge.latencyMs = 0.0;
+    c.cameras.push_back(edge);
+
+    const auto issues = validate(c, reg);
+    const auto count = [&](const char* code, const std::string& path) {
+        return std::count_if(issues.begin(), issues.end(), [&](const Issue& i) {
+            return i.code == code && i.severity == Severity::Error && i.path == path;
+        });
+    };
+    CHECK(count(issue_code::kCameraIdInvalid, "cameras[0].id") == 1);
+    CHECK(count(issue_code::kCameraIdDuplicate, "cameras[2].id") == 1);
+    CHECK(count(issue_code::kCameraIdDuplicate, "cameras[3].id") == 1);
+    CHECK(count(issue_code::kCameraIdDuplicate, "cameras[4].id") == 1);
+    CHECK(count(issue_code::kZoneIdDuplicate, "zones[0].id") == 1);  // flagged from the zone side too
+    CHECK(count(issue_code::kCameraNameDuplicate, "cameras[6].name") == 1);
+    CHECK(count(issue_code::kCameraNameDuplicate, "cameras[7].name") == 0);
+    CHECK(count(validation_code::kAttachmentParentMissing, "cameras[8].attachment") == 1);
+    CHECK(count(validation_code::kAttachmentLinkMissing, "cameras[9].attachment") == 1);
+    CHECK(count(issue_code::kCameraGeometryInvalid, "cameras[10].pose") == 1);
+    for (const char* field : {"hFovDeg", "vFovDeg", "maxRangeM", "maxIncidenceDeg", "fps", "latencyMs", "widthPx", "heightPx",
+                              "positionNoiseM", "yawNoiseDeg"})
+        CHECK_MESSAGE(count(issue_code::kCameraOpticsInvalid, std::string("cameras[11].") + field) == 1, field);
+    for (const Issue& i : issues) CHECK_MESSAGE(i.path.find("cameras[12]") == std::string::npos, i.path);
+}
+
+TEST_CASE("validator: a zone that shares a camera id is rejected") {
+    Registries reg;
+    RobotConfig c = sampleConfig();
+    c.cameras.push_back(camera("shared"));
+    c.zones.push_back(zone("shared"));
+    CHECK(hasIssue(validate(c, reg), issue_code::kZoneIdDuplicate));
+}
+
 TEST_CASE("validator: zones need a game plugin and are checked against its kind schema") {
     RobotConfig c = sampleConfig();
     c.zones.push_back(zone("pickup"));

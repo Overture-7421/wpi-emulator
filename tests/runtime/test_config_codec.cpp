@@ -126,6 +126,76 @@ TEST_CASE("config codec: zones survive a roundtrip with their attachment and act
     CHECK(err.error().message.find("zones[0].activation.conditions[0].op") != std::string::npos);
 }
 
+TEST_CASE("config codec: cameras survive a roundtrip, default when fields are absent, and report paths") {
+    RobotConfig c = sampleConfig();
+    CameraConfig cam;
+    cam.id = "front";
+    cam.label = "Front limelight";
+    cam.name = "front";
+    cam.kind = CameraKind::PhotonVision;
+    cam.attachment.parentMechanismId = "intake";
+    cam.attachment.parentLink = "tip";
+    cam.local = Pose3{Vec3{0.1f, -0.2f, 0.3f}, Quat::fromYaw(0.25f)};
+    cam.hFovDeg = 62.5;
+    cam.vFovDeg = 48.0;
+    cam.maxRangeM = 7.5;
+    cam.maxIncidenceDeg = 60.0;
+    cam.fps = 45.0;
+    cam.latencyMs = 25.0;
+    cam.widthPx = 960;
+    cam.heightPx = 720;
+    cam.positionNoiseM = 0.02;
+    cam.yawNoiseDeg = 1.5;
+    c.cameras.push_back(cam);
+    CameraConfig onChassis;
+    onChassis.id = "rear";
+    c.cameras.push_back(onChassis);
+
+    const RobotConfigCodec codec;
+    const JsonValueCodec json;
+    const Value v = codec.toValue(c);
+    const Value& c0 = v.find("cameras")->array()[0];
+    CHECK(c0.find("kind")->asString() == "photonvision");
+    CHECK(v.find("cameras")->array()[1].find("kind")->asString() == "limelight");
+    CHECK(v.find("cameras")->array()[1].find("attachment")->find("parentMechanismId")->asString() == "chassis");
+
+    const auto parsed = json.parse(json.dump(v, true));
+    REQUIRE(parsed.ok());
+    const auto back = codec.fromValue(parsed.value());
+    REQUIRE_MESSAGE(back.ok(), (back.ok() ? "" : back.error().message));
+    REQUIRE(back.value().cameras.size() == 2);
+    CHECK(back.value().cameras[0] == cam);
+    CHECK(back.value().cameras[1] == onChassis);
+    CHECK(json.dump(codec.toValue(back.value()), true) == json.dump(v, true));
+
+    // absent = no cameras; absent fields take the CameraConfig defaults
+    Value bare = v;
+    bare.object().erase("cameras");
+    CHECK(codec.fromValue(bare).value().cameras.empty());
+    Value sparse = v;
+    sparse["cameras"] = Value::makeArray();
+    Value minimal = Value::makeObject();
+    minimal["id"] = "min";
+    sparse["cameras"].push_back(std::move(minimal));
+    const auto defaults = codec.fromValue(sparse);
+    REQUIRE(defaults.ok());
+    CameraConfig expected;
+    expected.id = "min";
+    CHECK(defaults.value().cameras[0] == expected);
+
+    for (const auto& [key, wrong] : std::vector<std::pair<std::string, Value>>{
+             {"kind", Value("laser")}, {"fps", Value("fast")}, {"widthPx", Value(1.5)}, {"pose", Value(3)}}) {
+        Value bad = v;
+        bad["cameras"].array()[0][key] = wrong;
+        const auto err = codec.fromValue(bad);
+        REQUIRE_FALSE(err.ok());
+        CHECK(err.error().message.find("cameras[0]." + key) != std::string::npos);
+    }
+    Value notArray = v;
+    notArray["cameras"] = Value::makeObject();
+    CHECK(codec.fromValue(notArray).error().message.find("cameras: expected an array") != std::string::npos);
+}
+
 TEST_CASE("config codec: floats are written as short decimals") {
     RobotConfig c = sampleConfig();
     c.chassis.sizeM = Vec3{0.7f, 0.7f, 0.12f};
