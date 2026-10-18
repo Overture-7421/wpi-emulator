@@ -75,11 +75,38 @@ IEEE-754 bit patterns, bools one byte, enums one byte.
   grow as well. A `Hello`/`HelloAck`/`SensorFrame`/`ActuatorFrame`/`DsState`/`SimControl`/`DeviceAnnounce`
   without its optional tail decodes with the defaults (tested).
 * **Errors**: `ProtocolError` malformed/truncated/out-of-range (closed enums `ClockMode`, `RobotMode`,
-  `AllianceStation`, `LogLevel`, `SignalDirection`, `SignalType` are validated; `SimCommand`, `TickResult`,
+  `AllianceStation`, `LogLevel`, `SignalDirection`, `SignalType`, `CameraVendor` are validated; `SimCommand`, `TickResult`,
   `ControlResult`, `WatchdogPolicy`, `RobotLanguage` pass through for the consumer's `default:` path);
   `VersionMismatch` unknown wire-format byte; `Unsupported` well-formed frame of an unknown message type
   (skippable). Decoding never throws, never allocates more than the caps allow, never reads out of bounds
   (fuzz-style tests: every truncation, bit flips, random garbage; ASan/UBSan/TSan clean on Linux).
+
+### Vision tails
+
+`HelloAck::vision` (`VisionSetup`), `SensorFrame::vision` and `ActuatorFrame::vision` are the **last** optional tail of
+their message, after the identity / watchdog fields. The encoder always writes the tail (an empty one is the single count
+byte `0`), so a newer peer's extra bytes always follow it; a message that ends before it decodes with no vision. The
+vision records are fixed layouts (no length prefix: they may change until the first release, ADR 0013):
+
+```
+pose        := f32 x y z | f32 qx qy qz qw                                       (28 bytes)
+pixel       := f64 x | f64 y                                                     (16 bytes)
+observation := i32 id | pixel[4] corners | pixel center | f64 yaw pitch skew areaPct distanceM
+               | pose fieldToTag, cameraToTagBest, cameraToTagAlt | f64 ambiguity reprojErrBest reprojErrAlt   (232 bytes)
+multiTag    := bool valid | pose fieldToCamera | f64 reprojErr | vector<i32> tagIds
+visionFrame := string cameraId | u8 vendor | string ntName | u64 sequence | i64 captureTimeUs latencyUs captureLatencyUs
+               | pose robotToCamera | vector<observation> | multiTag
+cameraSetup := string cameraId | u8 vendor | string ntName | i32 width height | f64 fx fy cx cy | f64[5] distortion
+               | f64 frameRateHz | i64 latencyUs | pose defaultAssumedRobotToCamera | string photonMessageUuid
+cameraState := string ntName | u8 vendor | string cameraId | bool present | u8 mask | the optionals set in `mask`
+               (bit 0..7: pipelineIndex i32, ledMode i32, imuMode i32, driverMode bool, throttle f64, fpsLimit f64,
+               robotOrientationDeg f64[6], cameraPoseOverride f64[6]) | bool publishing | string status | u64 framesPublished
+tail        := vector<visionFrame> (SensorFrame) | vector<cameraState> (ActuatorFrame) | vector<cameraSetup> (HelloAck)
+```
+
+`CameraVendor` (0 PhotonVision, 1 Limelight) is a closed enum. Caps (`binary_codec.h`): 1024 frames per `SensorFrame`, 1024
+observations per frame, 1024 multi-tag ids, 256 cameras per `HelloAck` / `ActuatorFrame`. A count above the cap or larger than
+the bytes left is a `ProtocolError`; the encoder refuses to produce such a message (`InvalidArgument`).
 
 ## Environment variables
 

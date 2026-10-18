@@ -375,9 +375,9 @@ TEST_CASE("codec: protocol v1 peers (frames without the appended fields) decode 
     CHECK_FALSE(h.supportsArmed);
     CHECK(h.wpilibYear == 2026);
 
-    // HelloAck v1: no runEpoch / watchdog fields.
+    // HelloAck v1: no runEpoch / watchdog fields, no vision tail.
     std::vector<std::byte> ack = encodeOk(sampleHelloAck());
-    ack.resize(ack.size() - (8 + 4 + 1));
+    ack.resize(ack.size() - (8 + 4 + 1 + 1));
     const auto a = std::get<HelloAck>(decodeOk(ack));
     CHECK(a.runEpoch == kFirstRunEpoch);
     CHECK(a.watchdogTimeoutMs == kDefaultWatchdogTimeoutMs);
@@ -386,7 +386,7 @@ TEST_CASE("codec: protocol v1 peers (frames without the appended fields) decode 
 
     // ActuatorFrame v1.
     std::vector<std::byte> act = encodeOk(sampleActuator());
-    act.resize(act.size() - (8 + 8 + 8 + 1));
+    act.resize(act.size() - (8 + 8 + 8 + 1 + 1));
     const auto af = std::get<ActuatorFrame>(decodeOk(act));
     CHECK(af.sessionId == kUnspecified);
     CHECK(af.runEpoch == kUnspecified);
@@ -396,7 +396,7 @@ TEST_CASE("codec: protocol v1 peers (frames without the appended fields) decode 
 
     // SensorFrame / DsState / SimControl v1.
     std::vector<std::byte> sf = encodeOk(sampleSensor());
-    sf.resize(sf.size() - 16);
+    sf.resize(sf.size() - (16 + 1));
     CHECK(std::get<SensorFrame>(decodeOk(sf)).runEpoch == kUnspecified);
     std::vector<std::byte> ds = encodeOk(sampleDs());
     ds.resize(ds.size() - 16);
@@ -591,7 +591,7 @@ TEST_CASE("codec: a large SensorFrame round trips") {
 TEST_CASE("codec: sizes are compact") {
     SensorFrame f;
     f.samples = sampleSignals(10);
-    CHECK(encodeOk(f).size() <= 3 + 8 + 8 + 4 + 8 + 8 + 1 + 1 + 10 * 14 + 16);
+    CHECK(encodeOk(f).size() <= 3 + 8 + 8 + 4 + 8 + 8 + 1 + 1 + 10 * 14 + 16 + 1);  // + the empty vision tail
     ActuatorFrame a;
     CHECK(encodeOk(a).size() < 64);
 }

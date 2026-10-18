@@ -1,5 +1,6 @@
 #include "wpiemu/ipc/binary_codec.h"
 
+#include <array>
 #include <bit>
 #include <cstring>
 #include <limits>
@@ -21,6 +22,30 @@ constexpr std::size_t kMaxPortCounts = 4096;
 constexpr std::size_t kMaxJoystickElements = 1024;
 constexpr std::size_t kHeaderBytes = 3;  // wireFormat + messageType
 constexpr std::size_t kSampleWireBytes = 14;
+
+// Fixed wire sizes of the vision records (see ipc/README.md); decode uses them to bound element
+// counts by the bytes left.
+constexpr std::size_t kPoseWireBytes = 7 * 4;
+constexpr std::size_t kPixelWireBytes = 2 * 8;
+constexpr std::size_t kObservationWireBytes =
+    4 + 5 * kPixelWireBytes + 5 * 8 + 3 * kPoseWireBytes + 3 * 8;
+constexpr std::size_t kTagIdWireBytes = 4;
+constexpr std::size_t kMinMultiTagWireBytes = 1 + kPoseWireBytes + 8 + 1;
+constexpr std::size_t kMinVisionFrameWireBytes =
+    1 + 1 + 1 + 3 * 8 + 8 + kPoseWireBytes + 1 + kMinMultiTagWireBytes;
+constexpr std::size_t kMinCameraSetupWireBytes =
+    1 + 1 + 1 + 2 * 4 + 4 * 8 + 5 * 8 + 8 + 8 + kPoseWireBytes + 1;
+constexpr std::size_t kMinCameraStateWireBytes = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 8;
+
+// CameraRobotState: which optional fields follow, in this bit order.
+constexpr std::uint8_t kHasPipelineIndex = 1u << 0;
+constexpr std::uint8_t kHasLedMode = 1u << 1;
+constexpr std::uint8_t kHasImuMode = 1u << 2;
+constexpr std::uint8_t kHasDriverMode = 1u << 3;
+constexpr std::uint8_t kHasThrottle = 1u << 4;
+constexpr std::uint8_t kHasFpsLimit = 1u << 5;
+constexpr std::uint8_t kHasRobotOrientation = 1u << 6;
+constexpr std::uint8_t kHasCameraPoseOverride = 1u << 7;
 
 class Writer {
 public:
@@ -291,6 +316,247 @@ void read(Reader& outer, JoystickState& j) {
     j.buttonCount = r.u8();
 }
 
+// ---- vision records (sdk/vision/vision_types.h): fixed layouts, no length prefix -----------------
+
+void write(Writer& w, const Pose3& p) {
+    w.f32(p.position.x);
+    w.f32(p.position.y);
+    w.f32(p.position.z);
+    w.f32(p.rotation.x);
+    w.f32(p.rotation.y);
+    w.f32(p.rotation.z);
+    w.f32(p.rotation.w);
+}
+
+void read(Reader& r, Pose3& p) {
+    p.position.x = r.f32();
+    p.position.y = r.f32();
+    p.position.z = r.f32();
+    p.rotation.x = r.f32();
+    p.rotation.y = r.f32();
+    p.rotation.z = r.f32();
+    p.rotation.w = r.f32();
+}
+
+void write(Writer& w, const PixelPoint& p) {
+    w.f64(p.x);
+    w.f64(p.y);
+}
+
+void read(Reader& r, PixelPoint& p) {
+    p.x = r.f64();
+    p.y = r.f64();
+}
+
+void write(Writer& w, const FiducialObservation& o) {
+    w.i32(o.id);
+    for (const PixelPoint& corner : o.cornersPx) write(w, corner);
+    write(w, o.centerPx);
+    w.f64(o.yawRad);
+    w.f64(o.pitchRad);
+    w.f64(o.skewRad);
+    w.f64(o.areaPct);
+    w.f64(o.distanceM);
+    write(w, o.fieldToTag);
+    write(w, o.cameraToTagBest);
+    write(w, o.cameraToTagAlt);
+    w.f64(o.ambiguity);
+    w.f64(o.reprojErrBestPx);
+    w.f64(o.reprojErrAltPx);
+}
+
+void read(Reader& r, FiducialObservation& o) {
+    o.id = r.i32();
+    for (PixelPoint& corner : o.cornersPx) read(r, corner);
+    read(r, o.centerPx);
+    o.yawRad = r.f64();
+    o.pitchRad = r.f64();
+    o.skewRad = r.f64();
+    o.areaPct = r.f64();
+    o.distanceM = r.f64();
+    read(r, o.fieldToTag);
+    read(r, o.cameraToTagBest);
+    read(r, o.cameraToTagAlt);
+    o.ambiguity = r.f64();
+    o.reprojErrBestPx = r.f64();
+    o.reprojErrAltPx = r.f64();
+}
+
+void write(Writer& w, const MultiTagSolution& m) {
+    w.boolean(m.valid);
+    write(w, m.fieldToCamera);
+    w.f64(m.reprojErrPx);
+    if (m.tagIds.size() > kMaxVisionTagIds) w.fail();
+    w.varint(m.tagIds.size());
+    for (int id : m.tagIds) w.i32(id);
+}
+
+void read(Reader& r, MultiTagSolution& m) {
+    m.valid = r.boolean();
+    read(r, m.fieldToCamera);
+    m.reprojErrPx = r.f64();
+    const std::size_t n = r.count(kTagIdWireBytes, kMaxVisionTagIds);
+    m.tagIds.reserve(n);
+    for (std::size_t i = 0; i < n && r.ok(); ++i) m.tagIds.push_back(r.i32());
+}
+
+void write(Writer& w, const VisionFrame& f) {
+    w.str(f.cameraId);
+    w.u8(static_cast<std::uint8_t>(f.vendor));
+    w.str(f.ntName);
+    w.u64(f.sequence);
+    w.i64(f.captureTimeUs);
+    w.i64(f.latencyUs);
+    w.i64(f.captureLatencyUs);
+    write(w, f.robotToCamera);
+    if (f.observations.size() > kMaxVisionObservations) w.fail();
+    w.varint(f.observations.size());
+    for (const FiducialObservation& o : f.observations) write(w, o);
+    write(w, f.multiTag);
+}
+
+void read(Reader& r, VisionFrame& f) {
+    f.cameraId = r.str();
+    f.vendor = enumUpTo<CameraVendor>(r, 1, "invalid CameraVendor");
+    f.ntName = r.str();
+    f.sequence = r.u64();
+    f.captureTimeUs = r.i64();
+    f.latencyUs = r.i64();
+    f.captureLatencyUs = r.i64();
+    read(r, f.robotToCamera);
+    const std::size_t n = r.count(kObservationWireBytes, kMaxVisionObservations);
+    f.observations.reserve(n);
+    for (std::size_t i = 0; i < n && r.ok(); ++i) read(r, f.observations.emplace_back());
+    read(r, f.multiTag);
+}
+
+void write(Writer& w, const std::vector<VisionFrame>& frames) {
+    if (frames.size() > kMaxVisionFrames) w.fail();
+    w.varint(frames.size());
+    for (const VisionFrame& f : frames) write(w, f);
+}
+
+void read(Reader& r, std::vector<VisionFrame>& frames) {
+    const std::size_t n = r.count(kMinVisionFrameWireBytes, kMaxVisionFrames);
+    frames.reserve(n);
+    for (std::size_t i = 0; i < n && r.ok(); ++i) read(r, frames.emplace_back());
+}
+
+void write(Writer& w, const CameraSetup& c) {
+    w.str(c.cameraId);
+    w.u8(static_cast<std::uint8_t>(c.vendor));
+    w.str(c.ntName);
+    w.i32(c.widthPx);
+    w.i32(c.heightPx);
+    w.f64(c.fxPx);
+    w.f64(c.fyPx);
+    w.f64(c.cxPx);
+    w.f64(c.cyPx);
+    for (double k : c.distortion) w.f64(k);
+    w.f64(c.frameRateHz);
+    w.i64(c.latencyUs);
+    write(w, c.defaultAssumedRobotToCamera);
+    w.str(c.photonMessageUuid);
+}
+
+void read(Reader& r, CameraSetup& c) {
+    c.cameraId = r.str();
+    c.vendor = enumUpTo<CameraVendor>(r, 1, "invalid CameraVendor");
+    c.ntName = r.str();
+    c.widthPx = r.i32();
+    c.heightPx = r.i32();
+    c.fxPx = r.f64();
+    c.fyPx = r.f64();
+    c.cxPx = r.f64();
+    c.cyPx = r.f64();
+    for (double& k : c.distortion) k = r.f64();
+    c.frameRateHz = r.f64();
+    c.latencyUs = r.i64();
+    read(r, c.defaultAssumedRobotToCamera);
+    c.photonMessageUuid = r.str();
+}
+
+void write(Writer& w, const VisionSetup& s) {
+    if (s.cameras.size() > kMaxVisionCameras) w.fail();
+    w.varint(s.cameras.size());
+    for (const CameraSetup& c : s.cameras) write(w, c);
+}
+
+void read(Reader& r, VisionSetup& s) {
+    const std::size_t n = r.count(kMinCameraSetupWireBytes, kMaxVisionCameras);
+    s.cameras.reserve(n);
+    for (std::size_t i = 0; i < n && r.ok(); ++i) read(r, s.cameras.emplace_back());
+}
+
+void write(Writer& w, const CameraRobotState& s) {
+    w.str(s.ntName);
+    w.u8(static_cast<std::uint8_t>(s.vendor));
+    w.str(s.cameraId);
+    w.boolean(s.present);
+    std::uint8_t mask = 0;
+    if (s.pipelineIndex) mask |= kHasPipelineIndex;
+    if (s.ledMode) mask |= kHasLedMode;
+    if (s.imuMode) mask |= kHasImuMode;
+    if (s.driverMode) mask |= kHasDriverMode;
+    if (s.throttle) mask |= kHasThrottle;
+    if (s.fpsLimit) mask |= kHasFpsLimit;
+    if (s.robotOrientationDeg) mask |= kHasRobotOrientation;
+    if (s.cameraPoseOverride) mask |= kHasCameraPoseOverride;
+    w.u8(mask);
+    if (s.pipelineIndex) w.i32(*s.pipelineIndex);
+    if (s.ledMode) w.i32(*s.ledMode);
+    if (s.imuMode) w.i32(*s.imuMode);
+    if (s.driverMode) w.boolean(*s.driverMode);
+    if (s.throttle) w.f64(*s.throttle);
+    if (s.fpsLimit) w.f64(*s.fpsLimit);
+    if (s.robotOrientationDeg)
+        for (double v : *s.robotOrientationDeg) w.f64(v);
+    if (s.cameraPoseOverride)
+        for (double v : *s.cameraPoseOverride) w.f64(v);
+    w.boolean(s.publishing);
+    w.str(s.status);
+    w.u64(s.framesPublished);
+}
+
+void read(Reader& r, CameraRobotState& s) {
+    s.ntName = r.str();
+    s.vendor = enumUpTo<CameraVendor>(r, 1, "invalid CameraVendor");
+    s.cameraId = r.str();
+    s.present = r.boolean();
+    const std::uint8_t mask = r.u8();
+    if (mask & kHasPipelineIndex) s.pipelineIndex = r.i32();
+    if (mask & kHasLedMode) s.ledMode = r.i32();
+    if (mask & kHasImuMode) s.imuMode = r.i32();
+    if (mask & kHasDriverMode) s.driverMode = r.boolean();
+    if (mask & kHasThrottle) s.throttle = r.f64();
+    if (mask & kHasFpsLimit) s.fpsLimit = r.f64();
+    if (mask & kHasRobotOrientation) {
+        std::array<double, 6> v{};
+        for (double& x : v) x = r.f64();
+        s.robotOrientationDeg = v;
+    }
+    if (mask & kHasCameraPoseOverride) {
+        std::array<double, 6> v{};
+        for (double& x : v) x = r.f64();
+        s.cameraPoseOverride = v;
+    }
+    s.publishing = r.boolean();
+    s.status = r.str();
+    s.framesPublished = r.u64();
+}
+
+void write(Writer& w, const std::vector<CameraRobotState>& states) {
+    if (states.size() > kMaxVisionCameras) w.fail();
+    w.varint(states.size());
+    for (const CameraRobotState& s : states) write(w, s);
+}
+
+void read(Reader& r, std::vector<CameraRobotState>& states) {
+    const std::size_t n = r.count(kMinCameraStateWireBytes, kMaxVisionCameras);
+    states.reserve(n);
+    for (std::size_t i = 0; i < n && r.ok(); ++i) read(r, states.emplace_back());
+}
+
 // ---- messages: base fields first, later fields in an optional tail ---------------------------------------------
 
 void write(Writer& w, const Hello& m) {
@@ -343,6 +609,7 @@ void write(Writer& w, const HelloAck& m) {
     w.u64(m.runEpoch);
     w.u32(m.watchdogTimeoutMs);
     w.u8(static_cast<std::uint8_t>(m.watchdogPolicy));
+    write(w, m.vision);
 }
 
 void read(Reader& r, HelloAck& m) {
@@ -358,6 +625,8 @@ void read(Reader& r, HelloAck& m) {
     m.runEpoch = r.u64();
     m.watchdogTimeoutMs = r.u32();
     m.watchdogPolicy = static_cast<WatchdogPolicy>(r.u8());
+    if (!r.more()) return;
+    read(r, m.vision);
 }
 
 void write(Writer& w, const DeviceAnnounce& m) {
@@ -401,6 +670,7 @@ void write(Writer& w, const SensorFrame& m) {
     write(w, m.samples);
     w.u64(m.sessionId);
     w.u64(m.runEpoch);
+    write(w, m.vision);
 }
 
 void read(Reader& r, SensorFrame& m) {
@@ -414,6 +684,8 @@ void read(Reader& r, SensorFrame& m) {
     if (!r.more()) return;
     m.sessionId = r.u64();
     m.runEpoch = r.u64();
+    if (!r.more()) return;
+    read(r, m.vision);
 }
 
 void write(Writer& w, const ActuatorFrame& m) {
@@ -426,6 +698,7 @@ void write(Writer& w, const ActuatorFrame& m) {
     w.u64(m.runEpoch);
     w.u64(m.ackTick);
     w.u8(static_cast<std::uint8_t>(m.result));
+    write(w, m.vision);
 }
 
 void read(Reader& r, ActuatorFrame& m) {
@@ -439,6 +712,8 @@ void read(Reader& r, ActuatorFrame& m) {
     m.runEpoch = r.u64();
     m.ackTick = r.u64();
     m.result = static_cast<TickResult>(r.u8());
+    if (!r.more()) return;
+    read(r, m.vision);
 }
 
 void write(Writer& w, const DsState& m) {
