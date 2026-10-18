@@ -11,7 +11,8 @@ CTEST_ARGS="${CTEST_ARGS:-}"
 
 sync_source() {
     mkdir -p "$SRC"
-    rsync -rt --delete --exclude=/build --exclude=/.git /host-src/ "$SRC/"
+    rsync -rt --delete --exclude=/build --exclude=/.git --exclude=/.vs --exclude=/.vscode --exclude=/.idea \
+        /host-src/ "$SRC/"
     find "$SRC" -name '*.sh' -not -path '*/build/*' -exec sed -i 's/\r$//' {} +
 }
 configure() {
