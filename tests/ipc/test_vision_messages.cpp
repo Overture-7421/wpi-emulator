@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <random>
 #include <span>
 #include <string>
 #include <vector>
@@ -389,8 +390,8 @@ TEST_CASE("vision codec: hostile vision counts and unknown vendors are protocol 
     // CameraVendor is a closed enum in all three records that carry it
     const auto vendorBreaks = [&](const Message& withVision, const Message& withoutVision) {
         std::vector<std::byte> bytes = encodeOk(withVision);
-        const std::size_t vendorAt = visionTailStart(withoutVision) + 1 +
-                                     2;  // count, then a one character string, then the vendor
+        // after the count comes a one character string, then the vendor
+        const std::size_t vendorAt = visionTailStart(withoutVision) + 1 + 2;
         REQUIRE(bytes[vendorAt] == std::byte{1});
         bytes[vendorAt] = std::byte{2};
         CHECK(decodeError(bytes) == ErrorCode::ProtocolError);
@@ -426,4 +427,40 @@ TEST_CASE("vision codec: extreme integers and non-finite doubles round trip bit 
     CHECK(std::signbit(back.vision[0].observations[0].cornersPx[2].x));
     CHECK(std::isinf(back.vision[0].observations[0].fieldToTag.position.x));
     CHECK(encodeOk(back) == bytes);
+}
+
+TEST_CASE("vision codec: fuzz - corrupted vision messages never crash and stay consistent") {
+    BinaryMessageCodec codec;
+    std::mt19937_64 rng(0xB15101);
+    const std::vector<Message> samples = {
+        sensorWith({visionFrame("front", CameraVendor::PhotonVision, 1, 3),
+                    visionFrame("left", CameraVendor::Limelight, 2, 1)}),
+        actuatorWith({fullState(), CameraRobotState{}}),
+        helloAckWith({cameraSetup("front", CameraVendor::PhotonVision),
+                      cameraSetup("left", CameraVendor::Limelight)})};
+    std::size_t decodedOk = 0;
+    for (int iteration = 0; iteration < 4000; ++iteration) {
+        std::vector<std::byte> f = encodeOk(samples[rng() % samples.size()]);
+        const int edits = 1 + static_cast<int>(rng() % 3);
+        for (int e = 0; e < edits && !f.empty(); ++e) {
+            switch (rng() % 3) {
+                case 0:
+                    f[rng() % f.size()] ^= static_cast<std::byte>(1u << (rng() % 8));
+                    break;
+                case 1:
+                    f[rng() % f.size()] = static_cast<std::byte>(rng() & 0xFF);
+                    break;
+                default:
+                    f.resize(rng() % (f.size() + 1));
+                    break;
+            }
+        }
+        const auto r = codec.decode(f);
+        if (!r.ok()) continue;
+        ++decodedOk;
+        std::vector<std::byte> again;
+        REQUIRE(codec.encode(r.value(), again).ok());  // whatever decoded can be encoded again
+        CHECK(codec.decode(again).ok());
+    }
+    CHECK(decodedOk > 0);
 }
