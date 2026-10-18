@@ -99,6 +99,7 @@ TEST_CASE("local validation reports unfilled slots, loopback devices and incompa
     auto c = robot();
     auto devices = FakeEditorBackend::sampleDevices();
     devices.push_back(FakeEditorBackend::makeDevice("phoenix6", "talonfx", 77, sdk::kBusUnknown, sdk::Capability::MotorOutput));
+    devices.push_back(FakeEditorBackend::makeDevice("wpilib", "roborio", 0, "rio", sdk::Capability::SupplyVoltage));
     const auto issues = localIssues(c, cat, directoryOf(devices));
     auto has = [&](const char* code, const std::string& pathPart) {
         for (const auto& i : issues)
@@ -108,6 +109,7 @@ TEST_CASE("local validation reports unfilled slots, loopback devices and incompa
     CHECK(has("slot_unfilled", "shooter.feeder"));
     CHECK(has("unmapped_loopback", "talonfx[77]"));
     CHECK_FALSE(has("unmapped_loopback", "talonfx[1]"));   // mapped devices are not loopback
+    CHECK_FALSE(has("unmapped_loopback", "roborio"));      // nothing can be mapped to the roboRIO: no warning
     CHECK(has("device_not_detected", "intake.motor"));
 
     ops::setMapping(c, {"intake", "motor"}, {"phoenix6", "pigeon2", 13, "canivore", -1});

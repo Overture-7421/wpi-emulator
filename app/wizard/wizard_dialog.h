@@ -41,7 +41,6 @@ public:
     QPushButton* nextButton() const { return nextButton_; }
     QPushButton* backButton() const { return backButton_; }
     QPushButton* cancelButton() const { return cancelButton_; }
-    Banner* errorBanner() const { return errorBanner_; }
     WizardPage* currentPage() const;
     QPushButton* stepButton(WizardStep step) const { return stepButtons_[static_cast<std::size_t>(step)]; }
 

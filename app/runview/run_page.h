@@ -59,7 +59,6 @@ public:
     QAction* restartRobotAction() const { return restartRobotAction_; }
     // Overlay toggles, the zone submenu and the console toggle; listed in the shell's View menu.
     QList<QAction*> viewActions() const;
-    QAction* hudAction() const { return hudAction_; }
     QComboBox* speedCombo() const { return speedCombo_; }
 
     // Polls the backend once (normally driven by a ~60 Hz timer): snapshot -> view models.

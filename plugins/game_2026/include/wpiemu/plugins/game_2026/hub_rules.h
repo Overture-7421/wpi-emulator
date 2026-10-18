@@ -20,7 +20,6 @@ struct AllianceScore {
     int teleopFuel = 0;
     int inactiveFuel = 0;  // entered a hub that was not scoring: no points
     int points() const { return autoFuel + teleopFuel; }  // 1 point per fuel in AUTO and TELEOP (Table 6-4)
-    int fuelProcessed() const { return autoFuel + teleopFuel + inactiveFuel; }
 };
 
 class HubRules {

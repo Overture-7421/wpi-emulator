@@ -68,7 +68,9 @@ void ProjectTreeDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
     if (!detail.isEmpty()) {
         QFont df = font;
         df.setBold(false);
-        df.setPointSizeF(df.pointSizeF() * 0.92);
+        // The theme stylesheet sizes fonts in pixels, for which pointSizeF() is -1.
+        if (df.pointSizeF() > 0) df.setPointSizeF(df.pointSizeF() * 0.92);
+        else if (df.pixelSize() > 0) df.setPixelSize(std::max(1, qRound(df.pixelSize() * 0.92)));
         const QFontMetrics fm(df);
         const QFontMetrics tm(font);
         const int maxDetail = std::max(40, r.width() / 2);
@@ -137,9 +139,11 @@ void ProjectTreeView::restoreExpansion() {
     if (firstReset_ && model_.rowCount() > 0) {
         firstReset_ = false;
         expandToDepth(1);
-        // Wheels and slots are noisy until asked for.
-        const QModelIndex drive = model_.indexForKey(QStringLiteral("drivetrain"));
-        if (drive.isValid()) collapse(drive);
+        // Wheels, slots and the chassis' shapes are noisy until asked for.
+        for (const QString& key : {QStringLiteral("drivetrain"), QStringLiteral("chassis")}) {
+            const QModelIndex idx = model_.indexForKey(key);
+            if (idx.isValid()) collapse(idx);
+        }
         for (int r = 0; r < model_.rowCount(model_.index(0, 0)); ++r) {
             const QModelIndex i = model_.index(r, 0, model_.index(0, 0));
             if (isExpanded(i)) expanded_.insert(model_.keyAt(i));

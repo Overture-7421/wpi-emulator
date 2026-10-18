@@ -61,8 +61,6 @@ public:
     sdk::TireModelRegistry& tireModels() { return tireModels_; }
     core::config::PluginRegistrar& pluginRegistrar() { return registrar_; }
     const core::config::ConfigValidator& validator() const { return validator_; }
-    const sdk::IValueTextCodec& textCodec() const { return textCodec_; }
-    const core::config::RobotConfigCodec& configCodec() const { return configCodec_; }
 
     // Converts the persisted model into what the build/run needs from the wizard's context.
     RobotBuildContext buildContext(const ProjectInspection& inspection) const;

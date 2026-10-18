@@ -104,4 +104,14 @@ inline bool isCompatible(const SlotSpec& spec, const DeviceDescriptor& device) {
     return device.capabilities.containsAll(requiredCapabilities(spec.type));
 }
 
+// True when at least one slot type could take `device`. Infrastructure such as the roboRIO or the power
+// distribution hub is detected but has nothing to map to, so it is never reported as unmapped.
+inline bool isMappable(const DeviceDescriptor& device) {
+    for (const SlotType t : {SlotType::Motor, SlotType::PositionSensor, SlotType::VelocitySensor, SlotType::LimitSwitch,
+                             SlotType::BeamBreak, SlotType::Imu, SlotType::AnalogSensor, SlotType::Solenoid,
+                             SlotType::DigitalOutput})
+        if (device.capabilities.containsAll(requiredCapabilities(t))) return true;
+    return false;
+}
+
 }  // namespace wpiemu::sdk

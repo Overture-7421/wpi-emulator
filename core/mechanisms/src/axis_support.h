@@ -95,11 +95,10 @@ std::string getString(const sdk::Value& props, const std::string& key, const std
 
 // PropertySpec builders.
 sdk::PropertySpec doubleProp(std::string key, std::string label, std::string description, sdk::PropertyUnit unit,
-                             double def, std::string group, double min, double max, bool advanced = false);
-sdk::PropertySpec boolProp(std::string key, std::string label, std::string description, bool def, std::string group,
-                           bool advanced = false);
+                             double def, std::string group, double min, double max);
+sdk::PropertySpec boolProp(std::string key, std::string label, std::string description, bool def, std::string group);
 sdk::PropertySpec enumProp(std::string key, std::string label, std::string description, std::string def,
-                           std::vector<sdk::EnumOption> options, std::string group, bool advanced = false);
+                           std::vector<sdk::EnumOption> options, std::string group);
 
 // One DOF at runtime. Owns its plant; reads the motor slots of `owner`, writes the sensor slots.
 class MechanismAxis {
@@ -125,8 +124,6 @@ public:
     const AxisSlotNames& slotNames() const { return slots_; }
     sdk::SlotAddress address(const std::string& slot) const { return {owner_, slot}; }
 
-    void setExternalLoad(double load) { externalLoad_ = load; }
-
 private:
     double outputRotations(double position) const;
     void writeFeedback(sdk::ISensorWriter& hub, double previousVelocity, double dt);
@@ -140,7 +137,6 @@ private:
     RotorSensorModel rotor_;
     LimitSwitchModel reverseSwitch_;
     LimitSwitchModel forwardSwitch_;
-    double externalLoad_ = 0.0;
     double appliedVoltageV_ = 0.0;
     double motorCurrentA_ = 0.0;
     double batteryCurrentA_ = 0.0;

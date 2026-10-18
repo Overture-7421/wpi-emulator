@@ -35,7 +35,6 @@ public:
     QLabel* titleLabel() const { return title_; }
     QLabel* detailLabel() const { return detail_; }
     QPushButton* restartButton() const { return restart_; }
-    QPushButton* consoleButton() const { return console_; }
 
 signals:
     void restartRequested();

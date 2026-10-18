@@ -37,9 +37,7 @@ public:
     double timeScale() const { return timeScale_; }
     bool paused() const { return paused_; }
     int startCount() const { return startCount_; }
-    int stopCount() const { return stopCount_; }
     int resetCount() const { return resetCount_; }
-    int stepRequests() const { return stepRequests_; }
     void emitLog(sdk::LogLevel level, LogStream stream, const QString& source, const QString& text);
 
     void simulateCrash(int exitCode = 1, const QString& detail = {});
@@ -112,7 +110,7 @@ private:
     int score_ = 0;
     double shotTimer_ = 0.0;
     double logTimer_ = 0.0;
-    int startCount_ = 0, stopCount_ = 0, resetCount_ = 0, stepRequests_ = 0;
+    int startCount_ = 0, resetCount_ = 0;
 };
 
 }  // namespace wpiemu::app::runview

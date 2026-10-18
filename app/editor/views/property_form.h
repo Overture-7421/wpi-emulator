@@ -1,12 +1,11 @@
 #pragma once
 
 // Renders one PropertyGroup (schema + values) as a form: grouped rows, units, conditional visibility,
-// an "Advanced" fold, per-field issue badges. It edits nothing itself: it reports user edits.
+// per-field issue badges. It edits nothing itself: it reports user edits.
 
 #include <QFormLayout>
 #include <QLabel>
 #include <QMap>
-#include <QToolButton>
 #include <QWidget>
 
 #include <vector>
@@ -53,9 +52,6 @@ private:
     QString editingKey_;
     QFormLayout* form_ = nullptr;
     std::vector<Row> rows_;
-    QToolButton* advancedToggle_ = nullptr;
-    bool showAdvanced_ = false;
-    int advancedCount_ = 0;
 };
 
 }  // namespace wpiemu::app::editor

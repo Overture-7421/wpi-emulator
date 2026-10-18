@@ -17,7 +17,6 @@ class PluginRegistrar {
 public:
     explicit PluginRegistrar(sdk::MechanismFactory& factory) : factory_(factory) {}
     sdk::Status ensureRegistered(sdk::IGameModule& module);
-    bool isRegistered(const std::string& pluginId) const { return registered_.count(pluginId) != 0; }
     const sdk::MechanismFactory& factory() const { return factory_; }
 
 private:

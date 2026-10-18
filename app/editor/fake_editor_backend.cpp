@@ -18,7 +18,7 @@ using sdk::PropertyUnit;
 namespace {
 
 PropertySpec num(const char* key, const char* label, const char* group, PropertyUnit unit, double def, double min, double max,
-                 double step = 0.0, bool advanced = false, const char* description = "") {
+                 double step = 0.0, const char* description = "") {
     PropertySpec s;
     s.key = key;
     s.label = label;
@@ -29,7 +29,6 @@ PropertySpec num(const char* key, const char* label, const char* group, Property
     s.min = min;
     s.max = max;
     s.step = step;
-    s.advanced = advanced;
     s.description = description;
     return s;
 }
@@ -252,7 +251,7 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
     cat.pluginSchema.schemaVersion = 1;
     cat.pluginSchema.properties.properties = {
         integer("preloadFuel", "Preloaded fuel", "Robot", 8, 0, 100, "Fuel the robot starts a match with."),
-        num("fuelDiameterM", "Fuel diameter", "Fuel", PropertyUnit::Meters, 0.15, 0.05, 0.4, 0.005, true)};
+        num("fuelDiameterM", "Fuel diameter", "Fuel", PropertyUnit::Meters, 0.15, 0.05, 0.4, 0.005)};
     sdk::Box3 hopper;
     hopper.pose.position = {-0.05f, 0.f, 0.f};
     hopper.sizeM = {0.4f, 0.5f, 0.3f};

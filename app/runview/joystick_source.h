@@ -56,7 +56,6 @@ public:
 
     void setKey(int qtKey, bool down);
     void releaseAll() { keys_.clear(); }
-    bool isDown(int qtKey) const { return keys_.count(qtKey) != 0; }
 
 private:
     std::set<int> keys_;

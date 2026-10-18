@@ -16,15 +16,6 @@ inline double normalizeSpeed(double v) {
     return v < -1.0 ? -1.0 : (v > 1.0 ? 1.0 : v);
 }
 
-// Legacy 8-bit PWM raw value (0 = full reverse, 255 = full forward, ~127.5 = neutral) <-> [-1, 1].
-inline double pwmRaw255ToSpeed(int raw) {
-    const int clamped = raw < 0 ? 0 : (raw > 255 ? 255 : raw);
-    return normalizeSpeed((static_cast<double>(clamped) - 127.5) / 127.5);
-}
-inline int speedToPwmRaw255(double speed) {
-    return static_cast<int>(std::lround((normalizeSpeed(speed) * 127.5) + 127.5));
-}
-
 // Rotations -> encoder counts (saturating to int32, NaN -> 0).
 inline int rotationsToCounts(double rotations, double countsPerRevolution) {
     const double c = rotations * countsPerRevolution;

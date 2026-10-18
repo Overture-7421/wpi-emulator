@@ -50,7 +50,9 @@ QModelIndex DetectedDevicesModel::indexOf(const std::string& physicalKey) const 
 }
 
 int DetectedDevicesModel::unmappedLiveCount() const {
-    return static_cast<int>(std::count_if(rows_.begin(), rows_.end(), [](const Row& r) { return r.device.live && !r.status.mapped(); }));
+    return static_cast<int>(std::count_if(rows_.begin(), rows_.end(), [](const Row& r) {
+        return r.device.live && !r.status.mapped() && sdk::isMappable(r.device.descriptor);
+    }));
 }
 
 QVariant DetectedDevicesModel::headerData(int section, Qt::Orientation orientation, int role) const {
@@ -72,6 +74,7 @@ QVariant DetectedDevicesModel::data(const QModelIndex& index, int role) const {
     switch (role) {
         case PhysicalKeyRole: return QString::fromStdString(d.physicalId().toString());
         case MappedRole: return row.status.mapped();
+        case MappableRole: return sdk::isMappable(d);
         case LiveRole: return row.device.live;
         case AliasRole: return static_cast<int>(row.status.alias);
         case RecentRole: return recent_.contains(QString::fromStdString(d.physicalId().toString()));
@@ -84,7 +87,8 @@ QVariant DetectedDevicesModel::data(const QModelIndex& index, int role) const {
                            : ETR("\nAliased: the robot code addresses this device through several buses. Harmless while one slot uses it.");
                 for (const auto& a : row.device.aliases) tip += QStringLiteral("\n  \xE2\x80\xA2 %1").arg(QString::fromStdString(a.toString()));
             }
-            tip += ETR("\nDrag onto a mechanism slot to map it.");
+            tip += sdk::isMappable(d) ? ETR("\nDrag onto a mechanism slot to map it.")
+                                      : ETR("\nBuilt into the robot controller: there is nothing to map it to.");
             return tip;
         }
         case Qt::DisplayRole:
@@ -100,7 +104,8 @@ QVariant DetectedDevicesModel::data(const QModelIndex& index, int role) const {
                         const auto& first = row.status.usedBy.front();
                         s = QStringLiteral("\xE2\x86\x92 %1").arg(QString::fromStdString(ops::slotDisplayName(document_.config(), document_.catalog(), first)));
                         if (row.status.usedBy.size() > 1) s += QStringLiteral(" +%1").arg(row.status.usedBy.size() - 1);
-                    } else s = ETR("unmapped (loopback)");
+                    } else if (!sdk::isMappable(d)) s = ETR("built in");
+                    else s = ETR("unmapped (loopback)");
                     if (row.status.alias == sdk::AliasState::Conflict) s = ETR("\xE2\x9A\xA0 alias conflict \xC2\xB7 ") + s;
                     else if (row.status.alias == sdk::AliasState::Aliased) s += ETR(" \xC2\xB7 aliased");
                     return s;
@@ -113,7 +118,7 @@ QVariant DetectedDevicesModel::data(const QModelIndex& index, int role) const {
 
 Qt::ItemFlags DetectedDevicesModel::flags(const QModelIndex& index) const {
     Qt::ItemFlags f = QAbstractTableModel::flags(index);
-    if (index.isValid()) f |= Qt::ItemIsDragEnabled;
+    if (index.isValid() && sdk::isMappable(rows_[static_cast<std::size_t>(index.row())].device.descriptor)) f |= Qt::ItemIsDragEnabled;
     return f;
 }
 

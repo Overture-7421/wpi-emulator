@@ -19,7 +19,6 @@ public:
     void setRunEnabled(bool enabled);
     bool runEnabled() const { return tabs_->isTabEnabled(kRunTab); }
     void requestMode(AppMode mode) { tabs_->setCurrentIndex(mode == AppMode::Run ? kRunTab : kEditorTab); }
-    QTabBar* tabBar() const { return tabs_; }
 
 signals:
     void modeRequested(wpiemu::app::AppMode mode);

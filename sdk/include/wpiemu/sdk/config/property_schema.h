@@ -59,7 +59,6 @@ struct PropertySpec {
     double step = 0.0;               // 0 = UI default
     std::vector<EnumOption> options; // Enum
     std::string group;               // inspector section ("Geometry", "Motor", ...)
-    bool advanced = false;           // collapsed by default
     bool required = false;
     PropertySection section = PropertySection::Configure;
     std::string axis;                // Drive properties: the motion axis they belong to ("axis", "deploy"...), "" = the first one

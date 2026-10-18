@@ -376,12 +376,10 @@ TEST_CASE("shell composition: authoritative save failure blocks every destructiv
     CHECK(f.env.demo->status().active());
     CHECK(f.wizardRuns == wizardRuns);
     CHECK(page.hasUnsavedChanges());
-    CHECK(page.controller().document().isModified());
     CHECK(page.controller().saveStatusText().contains("Save failed"));
     blocked.restore();
     f.window.saveAction()->trigger();
     CHECK_FALSE(page.hasUnsavedChanges());
-    CHECK_FALSE(page.controller().document().isModified());
     CHECK(f.env.services->session().config()->name == "Keep these edits");
 }
 
@@ -413,7 +411,6 @@ TEST_CASE("shell composition: shell and editor Save share success state and expo
     page.saveAction()->trigger();
     CHECK(warned);
     CHECK_FALSE(page.hasUnsavedChanges());
-    CHECK_FALSE(page.controller().document().isModified());
     CHECK(page.controller().saveStatusText().contains("Saved "));
     const auto stored = f.env.services->configs().load(project.path());
     REQUIRE(stored.ok());

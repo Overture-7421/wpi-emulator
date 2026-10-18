@@ -40,8 +40,6 @@ public:
     explicit ConsoleFilterModel(QObject* parent = nullptr);
 
     sdk::LogLevel minimumLevel() const { return minimumLevel_; }
-    bool streamEnabled(LogStream s) const { return streams_[static_cast<int>(s)]; }
-    const QString& searchText() const { return search_; }
 
     void setMinimumLevel(sdk::LogLevel level);
     void setStreamEnabled(LogStream stream, bool enabled);

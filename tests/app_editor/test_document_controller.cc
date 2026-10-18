@@ -166,7 +166,6 @@ TEST_CASE("controller: edits are pushed to the backend and autosaved after the d
     CHECK(autosaves == 1);
     CHECK(backend.saveCount() == 1);
     CHECK_FALSE(c.hasPendingChanges());
-    CHECK(c.document().isModified() == false);
 
     c.addMechanism("mechanism", {});
     CHECK(c.flushSave().ok());   // Ctrl+S does not wait for the timer
@@ -194,7 +193,6 @@ TEST_CASE("controller: failed autosave stays dirty until a successful explicit r
     c.addMechanism("mechanism", {});
     pumpEvents(120);
     CHECK(c.hasPendingChanges());
-    CHECK(c.document().isModified());
     CHECK(c.saveStatusText().contains("Save failed"));
     CHECK_FALSE(c.saveStatusText().contains("Saved "));
     CHECK(saved == 0);
@@ -202,7 +200,6 @@ TEST_CASE("controller: failed autosave stays dirty until a successful explicit r
     backend.setSaveError({});
     CHECK(c.flushSave().ok());
     CHECK_FALSE(c.hasPendingChanges());
-    CHECK_FALSE(c.document().isModified());
     CHECK(c.saveStatusText().contains("Saved "));
     CHECK(saved == 1);
 }

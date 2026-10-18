@@ -7,8 +7,6 @@
 # The SDK header game/ui_descriptors.h matches AUTOUIC's ui_*.h pattern; this module has no .ui files.
 set(CMAKE_AUTOUIC OFF)
 
-option(WPIEMU_BUILD_UI_DEMOS "Build the standalone UI demo executables (wpiemu_editor_demo)" ON)
-
 set(WPIEMU_EDITOR_SOURCES
     editor_backend.cpp
     editor_page.cpp

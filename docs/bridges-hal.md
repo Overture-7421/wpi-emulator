@@ -57,8 +57,7 @@ Directions: **O** = robot -> sim (observed), **I** = sim -> robot (written). Can
 ### Behaviour notes
 
 * **PWM / motor output.** `HALSIM_GetPWMSpeed` is already scaled by the robot's PWM config, so it is the normalised
-  `[-1, 1]` command. `hal_units.h` also has the legacy 0-255 <-> -1..1 helpers (`pwmRaw255ToSpeed`,
-  `speedToPwmRaw255`) for tools that still talk raw.
+  `[-1, 1]` command.
 * **Encoders.** HAL sim state is `count` (distance / distancePerPulse) and signed `period`. `position`/`velocity` are
   converted with `HalBridgeOptions::encoderCountsPerRevolution` (default 2048 counts per mechanism revolution; the
   HAL does not know the gearing). The robot's `reverseDirection` is honoured (the sim HAL ignores it): a reversed

@@ -34,25 +34,25 @@ sdk::PropertySchema shooterSchema() {
                             PropertyUnit::Meters, "Wheel radius: surface speed = angular speed x radius."));
     p.push_back(props::real("efficiency", "Efficiency", kGroupFlywheel, d.efficiency, 0.05, 1.5, PropertyUnit::Ratio,
                             "Exit velocity = flywheel surface speed x efficiency."));
-    p.push_back(props::real("fixedExitSpeedMps", "Fixed exit speed", kGroupFlywheel, 0.0, 0.0, 100.0,
-                            PropertyUnit::MetersPerSecond,
-                            "If > 0, fuel always leaves at this speed (no flywheel mechanism needed).", true));
     p.push_back(props::real("minExitSpeedMps", "Minimum exit speed", kGroupFlywheel, d.minExitSpeedMps, 0.0, 100.0,
                             PropertyUnit::MetersPerSecond, "Below this exit speed the shooter does not fire."));
+    p.push_back(props::real("fixedExitSpeedMps", "Fixed exit speed", kGroupFlywheel, 0.0, 0.0, 100.0,
+                            PropertyUnit::MetersPerSecond,
+                            "If > 0, fuel always leaves at this speed (no flywheel mechanism needed)."));
 
     p.push_back(props::real("hoodAngleRad", "Hood angle", kGroupAim, d.hoodAngleRad, -1.5, 1.5, PropertyUnit::Radians,
                             "Launch elevation above horizontal; added to the hood mechanism's value when one is named."));
     p.push_back(props::text("hoodMechanism", "Hood mechanism", kGroupAim, "", "Optional hood/pivot mechanism."));
     p.push_back(props::text("hoodValue", "Hood value", kGroupAim, d.hoodValue, "Published angle value name."));
-    p.push_back(props::real("hoodGain", "Hood gain", kGroupAim, d.hoodGain, -10.0, 10.0, PropertyUnit::Ratio,
-                            "Radians of elevation per radian of the hood value (-1 inverts).", true));
     p.push_back(props::text("turretMechanism", "Turret mechanism", kGroupAim, "",
                             "Optional turret mechanism (leave empty if this shooter is attached to the turret link)."));
     p.push_back(props::text("turretValue", "Turret value", kGroupAim, d.turretValue, "Published angle value name."));
-    p.push_back(props::real("turretGain", "Turret gain", kGroupAim, d.turretGain, -10.0, 10.0, PropertyUnit::Ratio,
-                            "Radians of yaw per radian of the turret value.", true));
     p.push_back(props::real("turretYawOffsetRad", "Yaw offset", kGroupAim, 0.0, -7.0, 7.0, PropertyUnit::Radians,
                             "Fixed yaw added to the turret value."));
+    p.push_back(props::real("hoodGain", "Hood gain", kGroupAim, d.hoodGain, -10.0, 10.0, PropertyUnit::Ratio,
+                            "Radians of elevation per radian of the hood value (-1 inverts)."));
+    p.push_back(props::real("turretGain", "Turret gain", kGroupAim, d.turretGain, -10.0, 10.0, PropertyUnit::Ratio,
+                            "Radians of yaw per radian of the turret value."));
 
     p.push_back(props::text("feedMechanism", "Feed mechanism", kGroupFeed, "",
                             "Indexer/kicker/roller that feeds the flywheel. Empty: fire whenever the flywheel is up "
@@ -65,11 +65,11 @@ sdk::PropertySchema shooterSchema() {
                             "Fuel launched per second while feeding."));
 
     p.push_back(props::real("exitSpeedJitter", "Exit speed jitter", kGroupDispersion, 0.0, 0.0, 0.5, PropertyUnit::Ratio,
-                            "Uniform +- fraction applied to each shot's exit speed (seeded RNG).", true));
+                            "Uniform +- fraction applied to each shot's exit speed (seeded RNG)."));
     p.push_back(props::real("aimJitterRad", "Aim jitter", kGroupDispersion, 0.0, 0.0, 0.5, PropertyUnit::Radians,
-                            "Uniform +- angle applied to yaw and pitch of each shot.", true));
+                            "Uniform +- angle applied to yaw and pitch of each shot."));
     p.push_back(props::flag("inheritRobotVelocity", "Inherit robot velocity", kGroupDispersion, true,
-                            "Add the muzzle's velocity (robot motion) to the fuel's launch velocity.", true));
+                            "Add the muzzle's velocity (robot motion) to the fuel's launch velocity."));
     return s;
 }
 

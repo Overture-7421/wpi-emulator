@@ -11,7 +11,6 @@ enum class Alliance : std::uint8_t { Red = 0, Blue = 1 };
 inline constexpr std::array<Alliance, 2> kAlliances{Alliance::Red, Alliance::Blue};
 
 constexpr std::size_t index(Alliance a) { return static_cast<std::size_t>(a); }
-constexpr Alliance opponent(Alliance a) { return a == Alliance::Red ? Alliance::Blue : Alliance::Red; }
 constexpr const char* allianceName(Alliance a) { return a == Alliance::Red ? "red" : "blue"; }
 
 // What a physics user tag refers to (ShapeDesc::userTag is returned in sensor events).

@@ -104,6 +104,22 @@ TEST_CASE("hub: an announced, unmapped device is looped back with a warning unti
     CHECK_FALSE(hub.resolve(kSlotA).has_value());
 }
 
+TEST_CASE("hub: a device no slot type can take (the roboRIO) never raises the unmapped warning") {
+    DeviceHub hub;
+    proto::DeviceAnnounce rio;
+    rio.id = DeviceId{9};
+    rio.descriptor.family = "wpilib";
+    rio.descriptor.type = "roborio";
+    rio.descriptor.id = 0;
+    rio.descriptor.bus = "rio";
+    rio.descriptor.capabilities = CapabilitySet(Capability::SupplyVoltage);
+    rio.signalSpecs = {sig(signal::kSupplyVoltage, SignalDirection::Input)};
+    hub.onAnnounce(rio);
+    REQUIRE(hub.discovered().size() == 1);
+    CHECK_FALSE(isMappable(hub.discovered()[0].descriptor));
+    CHECK_FALSE(hasWarning(hub, "unmapped_loopback"));
+}
+
 TEST_CASE("hub: the declared bus never takes part in resolving a device") {
     DeviceHub hub;
     hub.onAnnounce(talon(7, 4));

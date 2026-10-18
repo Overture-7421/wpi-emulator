@@ -154,7 +154,6 @@ TEST_CASE("hub rules: points, inactive fuel, grace period and the auto-winner la
     CHECK_FALSE(hubs.scoringOpen(Alliance::Red));
     CHECK_FALSE(hubs.recordFuel(Alliance::Red, st));
     CHECK(hubs.score(Alliance::Red).inactiveFuel == 1);
-    CHECK(hubs.score(Alliance::Red).fuelProcessed() == 4);
 
     // teleop starts: red won auto (3 > 1) -> red hub inactive in shift 1
     const auto teleop = ds(sdk::proto::RobotMode::Teleop, true);

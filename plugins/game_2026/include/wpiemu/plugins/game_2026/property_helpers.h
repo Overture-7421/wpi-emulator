@@ -33,21 +33,17 @@ inline sdk::PropertySpec integer(std::string key, std::string label, std::string
 }
 
 inline sdk::PropertySpec real(std::string key, std::string label, std::string group, double def, double lo, double hi,
-                              sdk::PropertyUnit unit, std::string description, bool advanced = false) {
+                              sdk::PropertyUnit unit, std::string description) {
     sdk::PropertySpec p = makeSpec(std::move(key), std::move(label), std::move(group), sdk::PropertyType::Double, unit,
                                    def, std::move(description));
     p.min = lo;
     p.max = hi;
-    p.advanced = advanced;
     return p;
 }
 
-inline sdk::PropertySpec flag(std::string key, std::string label, std::string group, bool def, std::string description,
-                              bool advanced = false) {
-    sdk::PropertySpec p = makeSpec(std::move(key), std::move(label), std::move(group), sdk::PropertyType::Bool,
-                                   sdk::PropertyUnit::None, def, std::move(description));
-    p.advanced = advanced;
-    return p;
+inline sdk::PropertySpec flag(std::string key, std::string label, std::string group, bool def, std::string description) {
+    return makeSpec(std::move(key), std::move(label), std::move(group), sdk::PropertyType::Bool,
+                    sdk::PropertyUnit::None, def, std::move(description));
 }
 
 inline sdk::PropertySpec choice(std::string key, std::string label, std::string group, std::string def,

@@ -47,7 +47,6 @@ public:
     bool slotConnected(int slotIndex) const;
     QString slotDeviceName(int slotIndex) const;
     bool gamepadBackendAvailable() const { return provider_ != nullptr; }
-    QString gamepadBackendName() const { return provider_ != nullptr ? provider_->backendName() : QString(); }
 
     // Polls every slot's device and evaluates its profile. Cheap; call at ~50 Hz.
     const std::array<sdk::proto::JoystickState, joy::kSlotCount>& sample();

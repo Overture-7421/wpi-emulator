@@ -77,7 +77,6 @@ public:
     int duplicatePrimitive(const QString& owner, int index);
 
     void markSaved() { undo_.setClean(); }
-    bool isModified() const { return !undo_.isClean(); }
 
 Q_SIGNALS:
     void changed(bool authoritative);   // undo/redo/load override even focused, uncommitted controls

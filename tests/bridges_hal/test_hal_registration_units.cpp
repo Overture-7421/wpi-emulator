@@ -16,18 +16,6 @@ TEST_CASE("hal units: speed normalisation handles NaN, inf and out-of-range") {
     CHECK(hal::normalizeSpeed(std::numeric_limits<double>::infinity()) == 0.0);
 }
 
-TEST_CASE("hal units: legacy 0-255 PWM raw maps to -1..1 and back") {
-    CHECK(hal::pwmRaw255ToSpeed(0) == doctest::Approx(-1.0));
-    CHECK(hal::pwmRaw255ToSpeed(255) == doctest::Approx(1.0));
-    CHECK(hal::pwmRaw255ToSpeed(128) == doctest::Approx(0.0).epsilon(0.01));
-    CHECK(hal::pwmRaw255ToSpeed(-40) == doctest::Approx(-1.0));  // clamped
-    CHECK(hal::pwmRaw255ToSpeed(900) == doctest::Approx(1.0));
-    CHECK(hal::speedToPwmRaw255(-1.0) == 0);
-    CHECK(hal::speedToPwmRaw255(1.0) == 255);
-    CHECK(hal::speedToPwmRaw255(5.0) == 255);
-    for (int raw = 0; raw <= 255; raw += 5) CHECK(hal::speedToPwmRaw255(hal::pwmRaw255ToSpeed(raw)) == raw);
-}
-
 TEST_CASE("hal units: encoder conversions") {
     CHECK(hal::rotationsToCounts(1.5, 2048.0) == 3072);
     CHECK(hal::rotationsToCounts(-0.5, 2048.0) == -1024);

@@ -25,8 +25,6 @@ public:
     SectionRole role() const { return role_; }
     QWidget* body() const { return body_; }
     QToolButton* header() const { return header_; }
-    bool isCollapsed() const { return !header_->isChecked(); }
-    void setTitle(const QString& title) { header_->setText(title); }
 
 private:
     SectionRole role_;

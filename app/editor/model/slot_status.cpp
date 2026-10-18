@@ -161,7 +161,7 @@ std::vector<sdk::Issue> localIssues(const sdk::RobotConfig& c, const EditorCatal
     for (auto& issue : sdk::validateDeviceAliases(c.allMappings())) out.push_back(std::move(issue));
 
     for (const sdk::DiscoveredDevice& d : devices.all()) {
-        if (!d.live) continue;
+        if (!d.live || !sdk::isMappable(d.descriptor)) continue;
         const DeviceStatus st = deviceStatus(c, d);
         if (!st.mapped() || st.alias == sdk::AliasState::Conflict) {
             if (st.alias == sdk::AliasState::Conflict && st.mapped()) continue;   // reported as a conflict above

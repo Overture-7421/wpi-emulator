@@ -55,7 +55,6 @@ public:
     QAction* settingsAction() const { return settingsAction_; }
     QAction* closeAction() const { return closeAction_; }
     QMenu* recentMenu() const { return recentMenu_; }
-    QString lastMessage() const { return lastMessage_; }
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -80,7 +79,6 @@ private:
     FolderPicker folderPicker_;
     MessageRunner messageRunner_;
     bool busyOpening_ = false;
-    QString lastMessage_;
 
     QStackedWidget* stack_;
     WelcomePage* welcome_;

@@ -31,13 +31,8 @@ public:
     RobotSchematicView* schematic() const { return schematic_; }
     Banner* banner() const { return banner_; }
     QLineEdit* nameEdit() const { return nameEdit_; }
-    QDoubleSpinBox* lengthSpin() const { return length_; }
-    QDoubleSpinBox* widthSpin() const { return width_; }
     QDoubleSpinBox* massSpin() const { return mass_; }
-    QDoubleSpinBox* wheelDiameterSpin() const { return wheelDiameter_; }
     QSpinBox* wheelsPerSideSpin() const { return wheelsPerSide_; }
-    QComboBox* driveMotorCombo() const { return driveMotor_; }
-    QComboBox* steerMotorCombo() const { return steerMotor_; }
     QToolButton* drivetrainButton(const std::string& kind) const;
 
 private:

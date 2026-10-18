@@ -25,7 +25,8 @@ namespace wpiemu::core::runtime {
 //
 // Behaviour (ARCHITECTURE 4, device_identity.h):
 //  * A declared address resolves to the discovered device with the same PhysicalDeviceId (bus ignored).
-//  * live && !mapped devices are in loopbackSet() and raise `unmapped_loopback`; devices in AliasState::Conflict
+//  * live && !mapped devices are in loopbackSet() and raise `unmapped_loopback` (not for devices no slot type can
+//    take, such as the roboRIO); devices in AliasState::Conflict
 //    are treated as unmapped (neutral reads, ignored writes, `device_alias_conflict` Error).
 //  * Slots with no (usable) device read neutral data and ignore writes.
 //  * Warnings are DERIVED from the current state on every change, so they are always de-duplicated and clear

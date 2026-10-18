@@ -309,7 +309,9 @@ void InspectorPanel::addDeviceCard(const SelectionRef& sel) {
                                  body);
         label->setWordWrap(true);
         v->addWidget(label);
-        QString usage = st.mapped() ? ETR("Mapped to:") : ETR("Not mapped: it runs in loopback (outputs are echoed back as inputs).");
+        QString usage = st.mapped() ? ETR("Mapped to:")
+                        : !sdk::isMappable(d) ? ETR("Built into the robot controller: there is nothing to map it to.")
+                                              : ETR("Not mapped: it runs in loopback (outputs are echoed back as inputs).");
         for (const auto& s : st.usedBy) usage += QStringLiteral("\n \xE2\x80\xA2 ") + qs(ops::slotDisplayName(controller_.document().config(), controller_.document().catalog(), s));
         v->addWidget(mutedLabel(usage, body));
     }

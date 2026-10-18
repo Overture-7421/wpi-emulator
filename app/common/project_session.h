@@ -32,8 +32,6 @@ public:
     bool needsSetup() const { return hasProject() && !hasConfig(); }
     std::shared_ptr<const sdk::RobotConfig> config() const { return config_; }
     const QString& loadError() const { return loadError_; }
-    // Validation findings of the stored model at load time (the editor shows live ones itself).
-    const std::vector<sdk::Issue>& loadIssues() const { return loadIssues_; }
     const ProjectPrefs& prefs() const { return prefs_; }
     // Game module selected for this project (config.gamePluginId, else by season); nullptr = core-only.
     const sdk::IGameModule* gameModule() const;
@@ -66,7 +64,6 @@ private:
     ProjectInspection inspection_;
     std::shared_ptr<const sdk::RobotConfig> config_;
     QString loadError_;
-    std::vector<sdk::Issue> loadIssues_;
     ProjectPrefs prefs_;
     std::function<sdk::Status()> pendingSaveHandler_;
 };

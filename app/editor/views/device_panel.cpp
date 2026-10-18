@@ -22,7 +22,7 @@ void DeviceRowDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opt
     if (recent && !(opt.state & QStyle::State_Selected)) painter->fillRect(opt.rect, QColor(88, 166, 255, 55));
 
     const int alias = index.data(DetectedDevicesModel::AliasRole).toInt();
-    const bool mapped = index.data(DetectedDevicesModel::MappedRole).toBool();
+    const bool mapped = index.data(DetectedDevicesModel::MappedRole).toBool() || !index.data(DetectedDevicesModel::MappableRole).toBool();
     const bool live = index.data(DetectedDevicesModel::LiveRole).toBool();
     if (index.column() == DetectedDevicesModel::ColDevice) {
         opt.icon = icons_.deviceStatus(live, mapped, alias);

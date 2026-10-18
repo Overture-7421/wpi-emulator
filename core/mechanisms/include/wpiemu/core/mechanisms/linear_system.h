@@ -60,9 +60,6 @@ struct DiscreteSystem {
 
 // Zero-order-hold discretization via the augmented-matrix exponential (WPILib DiscretizeAB).
 DiscreteSystem discretizeAB(const Matrix& a, const Matrix& b, double dtSeconds);
-inline DiscreteSystem discretize(const LinearSystem& sys, double dtSeconds) {
-    return discretizeAB(sys.A, sys.B, dtSeconds);
-}
 
 // ---- LinearSystemId equivalents ------------------------------------------------------------------
 // `motor` is ONE motor; `numMotors` identical motors share the gearbox. `gearing` = motor : output

@@ -5,7 +5,6 @@
 // userTag so sensor events map back to it. RAII: destruction removes every body.
 
 #include <cstdint>
-#include <functional>
 #include <vector>
 
 #include "wpiemu/plugins/game_2026/config.h"
@@ -39,7 +38,6 @@ public:
     sdk::Vec3 position(std::uint32_t id) const;
     sdk::BodyId bodyOf(std::uint32_t id) const { return alive(id) ? slots_[id - 1].body : sdk::BodyId{}; }
     std::size_t count() const { return alive_; }
-    std::uint64_t maskNormal() const { return normalMask_; }
 
     // fn(id, position) for every live fuel in id order.
     template <class Fn>

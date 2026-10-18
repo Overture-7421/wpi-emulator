@@ -13,7 +13,7 @@ already loaded).
    ├─ IncrementalSimDeviceBackend      late-value decorator: poll-safe while the robot builds devices
    ├─ GuardedSimDeviceBackend          write policy decorator (continuous single write, read-back, re-assert)
    │     └─ ISimDeviceBackend (SDK)    seam: fake in tests, HalSimDeviceBackend (HALSIM_*) in production
-   ├─ ITimeSyncAdvisor                 wall-clock advice for the CTRE firmware sim (+ RealtimePacer helper)
+   ├─ ITimeSyncAdvisor                 wall-clock advice for the CTRE firmware sim
    ├─ CtreSimNative (optional, L2)     config read-back through dynamically resolved CTRE exports
    └─ ICtreObservationSink (L3)        fed by an opt-in hook provider (none shipped); gives the CAN bus label
 ```
@@ -168,8 +168,6 @@ stepped runs make Phoenix controllers diverge from the robot loop. Mitigation (a
 
 * `ITimeSyncAdvisor::timeSyncAdvice()` returns `{paceToWallClock, maxRealtimeFactor = 1.0, pauseUnsafe}` while any
   Phoenix device is live (`TimeSyncPolicy::Ignore` turns it off, e.g. headless runs without closed-loop Phoenix code).
-* `RealtimePacer` (injectable clock) tells the extension's clock loop how long to wait before releasing the next tick so
-  sim time never exceeds `factor ×` wall time, without catch-up bursts after a stall.
 * Pause/step: a long `HALSIM_PauseTiming` lets the firmware sim run ahead; apply the advice (real-time pacing) and avoid
   long pauses while Phoenix closed-loop code is active. This was *not* re-measured here (M1 test with 0.5×/2× pending).
 

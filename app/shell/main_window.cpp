@@ -206,7 +206,6 @@ void MainWindow::refresh() {
 }
 
 void MainWindow::showMessage(const QString& text) {
-    lastMessage_ = text;
     messageRunner_(text);
 }
 

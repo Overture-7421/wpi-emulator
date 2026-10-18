@@ -25,11 +25,8 @@ public:
     QStringList problems() const;
 
     QComboBox* themeCombo() const { return theme_; }
-    QComboBox* unitsCombo() const { return units_; }
     QComboBox* rateCombo() const { return rate_; }
-    QLineEdit* wpilibEdit() const { return wpilib_; }
     QLineEdit* jdkEdit() const { return jdk_; }
-    QCheckBox* reopenCheck() const { return reopen_; }
     QDialogButtonBox* buttons() const { return buttons_; }
 
 public slots:

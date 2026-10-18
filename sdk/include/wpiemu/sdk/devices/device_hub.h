@@ -9,7 +9,8 @@
 //
 // Unmapped behaviour (Decision "discover-then-map"): a live device with no slot mapping is
 //  * put in the LoopbackSet sent to the extension (output echoed to input there),
-//  * reported once as a HubWarning{code="unmapped_loopback"}.
+//  * reported once as a HubWarning{code="unmapped_loopback"}, unless no slot type could ever take the device
+//    (isMappable(): e.g. the roboRIO), which is detected but never warned about.
 // A slot with no device returns neutral data (MotorOutput{valid=false}, false, 0) and ignores writes.
 
 #include <cstddef>

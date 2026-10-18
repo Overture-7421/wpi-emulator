@@ -29,7 +29,6 @@ public:
     int totalLineCount() const { return model_.rowCount(); }
 
     void setFollowTail(bool follow);
-    bool followTail() const { return follow_; }
 
 public slots:
     void copy();   // selected lines, or every visible line when nothing is selected

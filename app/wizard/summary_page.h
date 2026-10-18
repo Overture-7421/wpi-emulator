@@ -20,8 +20,6 @@ public:
     void onEnter() override { refresh(); }
 
     QCheckBox* detectCheck() const { return detectCheck_; }
-    QLabel* detectHint() const { return detectHint_; }
-    QString projectSummary() const { return projectValue_->text(); }
     QString robotSummary() const { return robotValue_->text(); }
     QString gameSummary() const { return gameValue_->text(); }
 

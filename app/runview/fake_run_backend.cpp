@@ -286,7 +286,6 @@ void FakeRunBackend::beginIfReady() {
 void FakeRunBackend::stopSimulation() {
     beginWhenReady_ = false;
     if (!simulating_) return;
-    ++stopCount_;
     simulating_ = false;
     refreshFlags();
     emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Simulation stopped; the robot keeps running"));
@@ -318,7 +317,6 @@ void FakeRunBackend::setPaused(bool paused) {
 }
 
 void FakeRunBackend::stepTicks(int ticks) {
-    ++stepRequests_;
     if (paused_) pendingSteps_ += std::max(1, ticks);
 }
 

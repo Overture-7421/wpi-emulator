@@ -209,7 +209,7 @@ know which mechanism slot each one drives:
    *"Starting robot program..."* until it connects. The robot code is always running, so devices appear
    as your code creates them.
 2. The **Detected devices** table lists **Device**, **Type**, **ID**, **Bus** and **Status**
-   (`unmapped (loopback)`, `gone`, alias warnings).
+   (`unmapped (loopback)`, `built in`, `gone`, alias warnings).
 3. **Drag a detected device** from the table onto a part or one of its slots **in the project tree**. Compatible
    targets highlight; incompatible drops are refused (*"Cannot map the device"*). The inspector only shows what is
    mapped; the **x** on a controller or sensor row unmaps it.
@@ -229,7 +229,8 @@ discovery snapshots remain listed as `gone`; their saved slot mappings are prese
 runtime device IDs being reused by a different device do not transfer physical identity or mappings.
 
 Devices that are detected but not mapped run in **loopback**: outputs are echoed back as inputs, so the code does not
-break, but nothing physical happens. Required slots that stay unmapped read neutral values.
+break, but nothing physical happens. Required slots that stay unmapped read neutral values. Devices built into the
+robot controller, such as the roboRIO, are listed as `built in`: there is no slot to map them to, so they never raise a warning.
 
 The **Validation** tab lists problems (unmapped required slots, duplicate mappings, alias conflicts...) and the
 **Console** tab shows discovery and run output. Changes are saved automatically and with `Ctrl+S`.

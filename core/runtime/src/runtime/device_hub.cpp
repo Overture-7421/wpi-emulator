@@ -384,7 +384,7 @@ void DeviceHub::refresh() {
                                          "declared " + k.toString() + " but observed on bus '" + d.observedBus + "'"});
                     break;
                 }
-        if (d.live && !d.mapped && d.aliasState != AliasState::Conflict)
+        if (d.live && !d.mapped && d.aliasState != AliasState::Conflict && isMappable(d.descriptor))
             warnings_.push_back({Severity::Warning, d.id, "unmapped_loopback",
                                  "device " + d.descriptor.key().toString() + " is not mapped to any slot: its output is looped back"});
         if (d.mapped) {

@@ -182,7 +182,6 @@ public:
     QObject* zones() { return &zones_; }
     QObject* entityGroups() { return &entities_; }
     PartListModel& robotModel() { return robot_; }
-    PartListModel& zoneModel() { return zones_; }
     EntityGroupModel& entityModel() { return entities_; }
     RobotRig& rig() { return rig_; }
     OrbitCamera& camera() { return camera_; }

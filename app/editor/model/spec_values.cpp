@@ -95,7 +95,6 @@ PropertySchema robotSchema() {
                         "Battery", "Higher resistance = deeper voltage sag under load.");
     s.properties.push_back(withRange(res, 1.0, 100.0, 1.0));
     auto brown = makeSpec("brownoutV", "Brownout voltage", PropertyType::Double, PropertyUnit::Volts, 6.8, "Battery");
-    brown.advanced = true;
     s.properties.push_back(withRange(brown, 4.0, 10.0, 0.1));
     return s;
 }
@@ -139,14 +138,11 @@ PropertySchema chassisSchema() {
     s.properties.push_back(withRange(comz, 0.02, 1.5, 0.005));
     auto mu = makeSpec("friction", "Hull friction", PropertyType::Double, PropertyUnit::None, d.material.friction, "Contact",
                        "Friction coefficient of bumpers/frame against walls and fuel.");
-    mu.advanced = true;
     s.properties.push_back(withRange(mu, 0.0, 2.0, 0.05));
     auto rest = makeSpec("restitution", "Hull bounciness", PropertyType::Double, PropertyUnit::None, d.material.restitution, "Contact");
-    rest.advanced = true;
     s.properties.push_back(withRange(rest, 0.0, 1.0, 0.05));
     auto inertia = makeSpec("inertia", "Inertia override (0 = from box)", PropertyType::Vec3, PropertyUnit::KgM2,
                             sdk::toValue(sdk::Vec3{}), "Contact");
-    inertia.advanced = true;
     s.properties.push_back(inertia);
     return s;
 }
@@ -191,11 +187,9 @@ PropertySchema drivetrainSchema(const EditorCatalog& catalog) {
     }
     s.properties.push_back(kind);
     auto tire = makeSpec("tireModel", "Tire model", PropertyType::String, PropertyUnit::None, "brush", "Traction");
-    tire.advanced = true;
     s.properties.push_back(tire);
     auto tau = makeSpec("loadTransferTauS", "Load-transfer filter", PropertyType::Double, PropertyUnit::Seconds, 0.02, "Traction",
                         "Low-pass time constant on chassis acceleration for quasi-static load transfer.");
-    tau.advanced = true;
     s.properties.push_back(withRange(tau, 0.0, 0.5, 0.005));
     return s;
 }
@@ -234,7 +228,6 @@ PropertySchema wheelSchema(const sdk::WheelSpec& wheel) {
     s.properties.push_back(withRange(mu, 0.1, 3.0, 0.05));
     auto lat = makeSpec("lateralScale", "Lateral grip scale", PropertyType::Double, PropertyUnit::None, d.tire.lateralScale, "Traction",
                         "1 = full grip sideways; omni/mecanum rollers are ~0.12\xE2\x80\x93" "0.15.");
-    lat.advanced = true;
     s.properties.push_back(withRange(lat, 0.0, 1.0, 0.01));
 
     auto drive = makeSpec("driveMotor", "Motor model", PropertyType::Enum, PropertyUnit::None, d.driveMotor.name, "Drive");
@@ -245,10 +238,8 @@ PropertySchema wheelSchema(const sdk::WheelSpec& wheel) {
     auto ratio = makeSpec("driveGearRatio", "Gear ratio (motor : output)", PropertyType::Double, PropertyUnit::Ratio, d.driveGearRatio, "Drive");
     s.properties.push_back(withRange(ratio, 1.0, 40.0, 0.05));
     auto eff = makeSpec("driveEfficiency", "Efficiency", PropertyType::Double, PropertyUnit::None, d.driveEfficiency, "Drive");
-    eff.advanced = true;
     s.properties.push_back(withRange(eff, 0.3, 1.0, 0.01));
     auto lim = makeSpec("driveCurrentLimit", "Current limit (0 = none)", PropertyType::Double, PropertyUnit::Amps, d.driveCurrentLimitA, "Drive");
-    lim.advanced = true;
     s.properties.push_back(withRange(lim, 0.0, 300.0, 5.0));
 
     // A swerve module is a steered wheel: its steering belongs to what the wheel is, not to how it is driven.
@@ -355,7 +346,6 @@ PropertySchema primitiveSchema() {
                                     "Adds a collision shape to the owning body (bumpers, frame rails)."));
     auto mass = makeSpec("massKg", "Mass (informational)", PropertyType::Double, PropertyUnit::Kilograms, 0.0, "Appearance",
                          "Shown in the mass budget; physics uses the owner's total mass.");
-    mass.advanced = true;
     s.properties.push_back(withRange(mass, 0.0, 100.0, 0.1));
     return s;
 }

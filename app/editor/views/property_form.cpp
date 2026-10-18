@@ -51,33 +51,12 @@ PropertyFormWidget::PropertyFormWidget(const PropertyGroup& group, UnitSystem un
     std::vector<const sdk::PropertySpec*> ordered;
     for (const auto& g : groups)
         for (const auto& p : group.schema.properties)
-            if (p.group == g && !p.advanced) ordered.push_back(&p);
-    for (const auto& g : groups)
-        for (const auto& p : group.schema.properties)
-            if (p.group == g && p.advanced) ordered.push_back(&p);
+            if (p.group == g) ordered.push_back(&p);
 
     std::string currentGroup = "\x01";
-    bool advancedHeadingShown = false;
     for (const sdk::PropertySpec* spec : ordered) {
-        if (spec->advanced && !advancedHeadingShown) {
-            advancedHeadingShown = true;
-            advancedToggle_ = new QToolButton(this);
-            advancedToggle_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-            advancedToggle_->setArrowType(Qt::RightArrow);
-            advancedToggle_->setAutoRaise(true);
-            advancedToggle_->setCheckable(true);
-            form_->addRow(advancedToggle_);
-            connect(advancedToggle_, &QToolButton::toggled, this, [this](bool on) {
-                showAdvanced_ = on;
-                advancedToggle_->setArrowType(on ? Qt::DownArrow : Qt::RightArrow);
-                updateVisibility();
-            });
-            currentGroup = "\x01";
-        } else if (showHeadings && !spec->advanced && spec->group != currentGroup && !spec->group.empty()) {
-            form_->addRow(subheading(qs(spec->group), this));
-        }
+        if (showHeadings && spec->group != currentGroup && !spec->group.empty()) form_->addRow(subheading(qs(spec->group), this));
         currentGroup = spec->group;
-        if (spec->advanced) ++advancedCount_;
 
         Row row;
         row.spec = *spec;
@@ -112,7 +91,6 @@ PropertyFormWidget::PropertyFormWidget(const PropertyGroup& group, UnitSystem un
         });
         rows_.push_back(std::move(row));
     }
-    if (advancedToggle_ != nullptr) advancedToggle_->setText(ETR("Advanced (%1)").arg(advancedCount_));
     setValues(group.values);
 }
 
@@ -124,7 +102,7 @@ bool PropertyFormWidget::conditionMet(const sdk::PropertySpec& spec) const {
 
 void PropertyFormWidget::updateVisibility() {
     for (const Row& r : rows_) {
-        const bool visible = conditionMet(r.spec) && (!r.spec.advanced || showAdvanced_);
+        const bool visible = conditionMet(r.spec);
         if (r.stacked) {
             r.label->setVisible(visible);
             r.container->setVisible(visible);
@@ -183,8 +161,6 @@ int PropertyFormWidget::visibleRowCount() const {
 bool PropertyFormWidget::focusField(const QString& key) {
     for (Row& r : rows_) {
         if (qs(r.spec.key) != key) continue;
-        if (r.spec.advanced && advancedToggle_ != nullptr) advancedToggle_->setChecked(true);
-        updateVisibility();
         r.editor->focusTarget()->setFocus(Qt::OtherFocusReason);
         for (QWidget* w = r.container->parentWidget(); w != nullptr; w = w->parentWidget())
             if (auto* area = qobject_cast<QScrollArea*>(w)) {

@@ -30,12 +30,10 @@ sdk::Status ProjectSession::open(const QString& rawPath) {
     prefs_ = prefsStore_.load(path_);
     config_.reset();
     loadError_.clear();
-    loadIssues_.clear();
     if (repository_.exists(path_)) {
         auto loaded = repository_.load(path_);
         if (loaded) {
-            loadIssues_ = loaded.value().issues;
-            config_ = std::make_shared<const sdk::RobotConfig>(std::move(loaded.value().config));
+            config_ =  std::make_shared<const sdk::RobotConfig>(std::move(loaded.value().config));
         } else {
             loadError_ = QString::fromStdString(loaded.error().message);
         }
@@ -57,7 +55,6 @@ sdk::Status ProjectSession::close() {
     inspection_ = {};
     config_.reset();
     loadError_.clear();
-    loadIssues_.clear();
     emit projectChanged();
     emit configChanged();
     return sdk::okStatus();
@@ -73,7 +70,6 @@ SaveOutcome ProjectSession::commit(const sdk::RobotConfig& config, const Project
     }
     config_ = std::make_shared<const sdk::RobotConfig>(config);
     loadError_.clear();
-    loadIssues_.clear();
     emit configChanged();
     return outcome;
 }

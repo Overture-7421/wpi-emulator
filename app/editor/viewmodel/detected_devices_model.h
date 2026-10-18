@@ -23,6 +23,7 @@ public:
     enum Role {
         PhysicalKeyRole = Qt::UserRole + 1,   // QString, PhysicalDeviceId::toString()
         MappedRole,                           // bool
+        MappableRole,                         // bool: some slot type could take it (false for the roboRIO, PDH...)
         LiveRole,                             // bool
         AliasRole,                            // int sdk::AliasState
         RecentRole,                           // bool: announced in the last few seconds

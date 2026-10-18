@@ -275,7 +275,8 @@ TEST_CASE("property form: conditional rows follow the values and edits are repor
     CHECK(form.hasField("color"));
     CHECK_FALSE(form.hasField("nope"));
     CHECK_FALSE(form.focusField("nope"));
-    CHECK(form.focusField("massKg"));                          // advanced fields are revealed when focused
+    CHECK(form.editorFor("massKg")->isVisibleTo(&form));       // there is no Advanced fold: every field is shown
+    CHECK(form.focusField("massKg"));
 }
 
 TEST_CASE("property form: field issues show a badge") {
@@ -309,6 +310,17 @@ TEST_CASE("page: the three columns are populated from the backend") {
     CHECK(f.page.viewport() != nullptr);
     // The 3D scene either loaded or told the user why it could not (e.g. no GPU on a CI box).
     CHECK((f.page.viewport()->sceneReady() || !f.page.viewport()->failureReason().isEmpty() || f.page.viewport()->quick()->status() == QQuickWidget::Loading));
+}
+
+TEST_CASE("page: the Chassis node starts collapsed and is revealed when one of its children is selected") {
+    PageFixture f;
+    auto* tree = f.page.tree();
+    auto* model = static_cast<ProjectTreeModel*>(tree->model());
+    CHECK(tree->isExpanded(model->indexForKey(QStringLiteral("robot"))));
+    CHECK_FALSE(tree->isExpanded(model->indexForKey(QStringLiteral("chassis"))));
+    CHECK_FALSE(tree->isExpanded(model->indexForKey(QStringLiteral("drivetrain"))));
+    f.c().selection().set(SelectionRef::com());
+    CHECK(tree->isExpanded(model->indexForKey(QStringLiteral("chassis"))));
 }
 
 TEST_CASE("page: selecting a mechanism shows its slots and generated property forms") {

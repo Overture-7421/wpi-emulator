@@ -63,13 +63,11 @@ sdk::PropertySchema configPropertySchema() {
     p.push_back(props::real("fuelRestitution", "Fuel restitution", kGroupPhysics, dim::kFuelRestitution, 0.0, 1.0,
                             PropertyUnit::None, "Bounciness of fuel."));
     p.push_back(props::real("fuelRollingResistance", "Fuel rolling resistance", kGroupPhysics,
-                            dim::kFuelRollingResistance, 0.0, 1.0, PropertyUnit::None, "Rolling resistance of fuel.",
-                            true));
+                            dim::kFuelRollingResistance, 0.0, 1.0, PropertyUnit::None, "Rolling resistance of fuel."));
     p.push_back(props::flag("fuelSleeping", "Fuel sleeping", kGroupPhysics, true,
-                            "Let resting fuel sleep (large performance win; disable only for debugging).", true));
+                            "Let resting fuel sleep (large performance win; disable only for debugging)."));
     p.push_back(props::real("shotGhostS", "Shot ghost time", kGroupPhysics, 0.15, 0.0, 1.0, PropertyUnit::Seconds,
-                            "Shot fuel ignores the robot's collision shapes for this long after leaving the shooter.",
-                            true));
+                            "Shot fuel ignores the robot's collision shapes for this long after leaving the shooter."));
 
     p.push_back(props::flag("enforceHubShifts", "Enforce hub shifts", kGroupRules, true,
                             "Apply the active/inactive hub schedule (manual 6.4.1). Off: both hubs score whenever the "
