@@ -2,10 +2,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
 
+#include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/devices/device_identity.h"
 #include "wpiemu/sdk/mechanisms/attachment.h"
 #include "wpiemu/sdk/mechanisms/motion_config.h"
@@ -129,6 +132,33 @@ bool ownsKind(const IGameModule* plugin, const std::string& kind) {
     return kind.size() > prefix.size() && kind.compare(0, prefix.size(), prefix) == 0;
 }
 
+// Attachment of a zone or a camera: the same link rules as a mechanism mount, reported with the
+// attachment_* codes. (Nothing can be attached to a zone or camera, so there is no cycle to check.)
+void validateAttachmentRef(const RobotConfig& c, const MechanismFactory& mechanisms,
+                           const MechanismAttachment& att, const std::string& attPath,
+                           std::vector<Issue>& out) {
+    if (att.parentLink.empty()) {
+        add(out, Severity::Error, attPath, "parent link must not be empty (use 'root')",
+            validation_code::kAttachmentLinkMissing);
+    } else if (att.onChassis()) {
+        if (att.parentLink != kRootLink)
+            add(out, Severity::Error, attPath,
+                "the chassis only exposes the link 'root', not '" + att.parentLink + "'",
+                validation_code::kAttachmentLinkMissing);
+    } else if (const MechanismConfig* parent = c.findMechanism(att.parentMechanismId);
+               parent == nullptr) {
+        add(out, Severity::Error, attPath,
+            "parent mechanism '" + att.parentMechanismId + "' does not exist",
+            validation_code::kAttachmentParentMissing);
+    } else if (const MechanismTemplateInfo* info = mechanisms.templateInfo(parent->type);
+               info != nullptr && !hasLink(*info, att.parentLink)) {
+        add(out, Severity::Error, attPath,
+            "mechanism '" + parent->id + "' (" + parent->type + ") has no link '" + att.parentLink +
+                "'",
+            validation_code::kAttachmentLinkMissing);
+    }
+}
+
 void validateZones(const RobotConfig& c, const MechanismFactory& mechanisms, const IGameModule* plugin, std::vector<Issue>& out) {
     if (c.zones.empty()) return;
     const std::vector<ZoneKindInfo> kinds = plugin != nullptr ? plugin->contributeZoneKinds() : std::vector<ZoneKindInfo>{};
@@ -145,22 +175,7 @@ void validateZones(const RobotConfig& c, const MechanismFactory& mechanisms, con
             add(out, Severity::Error, base + ".id", "duplicate zone id '" + z.id + "'", issue_code::kZoneIdDuplicate);
 
         // ---- attachment ----
-        const std::string attPath = base + ".attachment";
-        const MechanismAttachment& att = z.attachment;
-        if (att.parentLink.empty()) {
-            add(out, Severity::Error, attPath, "parent link must not be empty (use 'root')", validation_code::kAttachmentLinkMissing);
-        } else if (att.onChassis()) {
-            if (att.parentLink != kRootLink)
-                add(out, Severity::Error, attPath, "the chassis only exposes the link 'root', not '" + att.parentLink + "'",
-                    validation_code::kAttachmentLinkMissing);
-        } else if (const MechanismConfig* parent = c.findMechanism(att.parentMechanismId); parent == nullptr) {
-            add(out, Severity::Error, attPath, "parent mechanism '" + att.parentMechanismId + "' does not exist",
-                validation_code::kAttachmentParentMissing);
-        } else if (const MechanismTemplateInfo* info = mechanisms.templateInfo(parent->type);
-                   info != nullptr && !hasLink(*info, att.parentLink)) {
-            add(out, Severity::Error, attPath, "mechanism '" + parent->id + "' (" + parent->type + ") has no link '" + att.parentLink + "'",
-                validation_code::kAttachmentLinkMissing);
-        }
+        validateAttachmentRef(c, mechanisms, z.attachment, base + ".attachment", out);
 
         // ---- kind and properties ----
         const ZoneKindInfo* info = nullptr;
@@ -203,6 +218,132 @@ void validateZones(const RobotConfig& c, const MechanismFactory& mechanisms, con
                 add(out, Severity::Warning, cp + ".mechanism", "condition mechanism '" + cond.mechanismId + "' does not exist",
                     issue_code::kZoneConditionMechanismUnknown);
         }
+    }
+}
+
+constexpr int kMaxCameraResolutionPx = 16384;
+constexpr double kMaxCameraFrameRateHz = 240.0;
+constexpr std::int64_t kMaxCameraLatencyUs = 1'000'000;
+
+void validateCameraIntrinsics(const CameraIntrinsics& in, const std::string& base,
+                              std::vector<Issue>& out) {
+    const auto bad = [&](const std::string& field, const std::string& why) {
+        add(out, Severity::Error, base + "." + field, why,
+            validation_code::kCameraIntrinsicsInvalid);
+    };
+    if (in.widthPx < 1 || in.widthPx > kMaxCameraResolutionPx)
+        bad("widthPx",
+            "image width must be in [1, " + std::to_string(kMaxCameraResolutionPx) + "] px");
+    if (in.heightPx < 1 || in.heightPx > kMaxCameraResolutionPx)
+        bad("heightPx",
+            "image height must be in [1, " + std::to_string(kMaxCameraResolutionPx) + "] px");
+    const auto derivable = [&](double v, const char* field) {
+        if (!(std::isfinite(v) && v >= 0.0))
+            bad(field, std::string(field) + " must be finite and >= 0 (0 = derive it)");
+    };
+    derivable(in.fxPx, "fxPx");
+    derivable(in.fyPx, "fyPx");
+    derivable(in.cxPx, "cxPx");
+    derivable(in.cyPx, "cyPx");
+    if (!(in.fxPx > 0.0) && !(std::isfinite(in.hfovRad) && in.hfovRad > 0.0 && in.hfovRad < kPi))
+        bad("hfovRad", "horizontal field of view must be in (0, pi) rad unless fxPx is set");
+    if (!std::all_of(in.distortion.begin(), in.distortion.end(),
+                     [](double k) { return std::isfinite(k); }))
+        bad("distortion", "distortion coefficients must be finite");
+}
+
+// Cameras (RobotConfig::vision): ids, network names, attachment, intrinsics, rate/latency, tag and
+// realism parameters. Resolving the layout (plugin tables, layout files) is the vision runtime's
+// job; only an unknown plugin layout id is noticed here.
+void validateVision(const RobotConfig& c, const MechanismFactory& mechanisms,
+                    const IGameModule* plugin, std::vector<Issue>& out) {
+    const VisionConfig& vision = c.vision;
+    if (vision.cameras.empty()) return;
+
+    if (plugin != nullptr && vision.layoutFile.empty() && !vision.layoutId.empty()) {
+        const std::vector<FiducialLayout> layouts = plugin->contributeFiducialLayouts();
+        const bool known =
+            std::any_of(layouts.begin(), layouts.end(),
+                        [&](const FiducialLayout& l) { return l.id == vision.layoutId; });
+        if (!layouts.empty() && !known)
+            add(out, Severity::Warning, "vision.layoutId",
+                "plugin '" + plugin->metadata().id + "' has no fiducial layout '" +
+                    vision.layoutId + "'",
+                validation_code::kCameraLayoutUnknown);
+    }
+
+    std::set<std::string> ids;
+    // Enabled cameras only: a disabled camera never publishes, so it cannot clash.
+    std::set<std::pair<CameraVendor, std::string>> networkNames;
+    for (std::size_t i = 0; i < vision.cameras.size(); ++i) {
+        const CameraConfig& cam = vision.cameras[i];
+        const std::string base = "vision.cameras[" + std::to_string(i) + "]";
+
+        // ---- ids and network names ----
+        if (cam.id.empty() || cam.id == kChassisParent || cam.id == kRootLink)
+            add(out, Severity::Error, base + ".id",
+                cam.id.empty() ? std::string("camera id must not be empty")
+                               : "'" + cam.id + "' is reserved and cannot be a camera id",
+                validation_code::kCameraIdReserved);
+        else if (c.findMechanism(cam.id) != nullptr || c.findZone(cam.id) != nullptr)
+            add(out, Severity::Error, base + ".id",
+                "camera id '" + cam.id + "' is also a mechanism or zone id",
+                validation_code::kCameraIdDuplicate);
+        else if (!ids.insert(cam.id).second)
+            add(out, Severity::Error, base + ".id", "duplicate camera id '" + cam.id + "'",
+                validation_code::kCameraIdDuplicate);
+        if (cam.enabled && !networkNames.insert({cam.vendor, cam.networkName()}).second)
+            add(out, Severity::Error, base + ".ntName",
+                "another enabled " +
+                    std::string(cam.vendor == CameraVendor::Limelight ? "Limelight"
+                                                                      : "PhotonVision") +
+                    " camera already uses the network name '" + cam.networkName() + "'",
+                validation_code::kCameraNameDuplicate);
+
+        validateAttachmentRef(c, mechanisms, cam.attachment, base + ".attachment", out);
+        validateCameraIntrinsics(cam.intrinsics, base + ".intrinsics", out);
+
+        // ---- device behaviour ----
+        if (!(std::isfinite(cam.frameRateHz) && cam.frameRateHz > 0.0 &&
+              cam.frameRateHz <= kMaxCameraFrameRateHz))
+            add(out, Severity::Error, base + ".frameRateHz", "frame rate must be in (0, 240] Hz",
+                validation_code::kCameraFrameRateInvalid);
+        if (cam.latencyUs < 0 || cam.latencyUs > kMaxCameraLatencyUs)
+            add(out, Severity::Error, base + ".latencyUs", "latency must be in [0, 1 s]",
+                validation_code::kCameraLatencyInvalid);
+        if (cam.captureLatencyUs < 0)
+            add(out, Severity::Error, base + ".captureLatencyUs", "capture latency must be >= 0",
+                validation_code::kCameraLatencyInvalid);
+
+        // ---- detection ----
+        const auto badTag = [&](const char* field, const std::string& why) {
+            add(out, Severity::Error, base + "." + field, why,
+                validation_code::kCameraTagParamsInvalid);
+        };
+        if (!(std::isfinite(cam.tagSizeM) && cam.tagSizeM >= 0.0))
+            badTag("tagSizeM", "tag size must be finite and >= 0 (0 = the layout's size)");
+        if (!(std::isfinite(cam.minTagPixels) && cam.minTagPixels >= 0.0))
+            badTag("minTagPixels", "minimum tag size must be finite and >= 0 px");
+        if (!(std::isfinite(cam.maxViewAngleRad) && cam.maxViewAngleRad > 0.0 &&
+              cam.maxViewAngleRad <= kPi))
+            badTag("maxViewAngleRad", "maximum view angle must be in (0, pi] rad");
+
+        // ---- realism ----
+        const CameraRealism& re = cam.realism;
+        const auto badRealism = [&](const char* field, const std::string& why) {
+            add(out, Severity::Error, base + ".realism." + field, why,
+                validation_code::kCameraRealismInvalid);
+        };
+        if (!(std::isfinite(re.cornerNoisePx) && re.cornerNoisePx >= 0.0))
+            badRealism("cornerNoisePx", "corner noise must be finite and >= 0 px");
+        if (re.latencyJitterUs < 0 || re.latencyJitterUs > kMaxCameraLatencyUs)
+            badRealism("latencyJitterUs", "latency jitter must be in [0, 1 s]");
+        else if (cam.latencyUs >= 0 && re.latencyJitterUs > cam.latencyUs)
+            badRealism("latencyJitterUs",
+                       "latency jitter must not exceed the latency (it would go negative)");
+        if (!(std::isfinite(re.dropoutProbability) && re.dropoutProbability >= 0.0 &&
+              re.dropoutProbability <= 1.0))
+            badRealism("dropoutProbability", "dropout probability must be in [0, 1]");
     }
 }
 
@@ -398,6 +539,7 @@ std::vector<Issue> ConfigValidator::validate(const RobotConfig& config, const Me
         }
     }
     validateZones(config, mechanisms, selected, out);
+    validateVision(config, mechanisms, selected, out);
     return out;
 }
 

@@ -22,4 +22,34 @@ inline constexpr const char* kAttachmentCycle = "attachment_cycle";
 inline constexpr const char* kMechanismIdReserved = "mechanism_id_reserved";
 inline constexpr const char* kTemplateLinkInvalid = "template_link_invalid";
 
+// ---- vision cameras (vision/camera_config.h, ADR 0017) --------------------------------------------
+// Camera ids share the namespace of mechanism and zone ids. Attachment problems of a camera reuse
+// the kAttachment* codes above (path "vision.cameras[i].attachment"), exactly like zones.
+// Twice, or equal to a mechanism / zone id.
+inline constexpr const char* kCameraIdDuplicate = "camera_id_duplicate";
+// Empty, "chassis" or "root".
+inline constexpr const char* kCameraIdReserved = "camera_id_reserved";
+// Two enabled cameras of the same vendor with the same network name.
+inline constexpr const char* kCameraNameDuplicate = "camera_name_duplicate";
+inline constexpr const char* kCameraIntrinsicsInvalid = "camera_intrinsics_invalid";
+// Frame rate outside (0, 240] Hz.
+inline constexpr const char* kCameraFrameRateInvalid = "camera_frame_rate_invalid";
+// Latency (or capture latency) negative, or above 1 s.
+inline constexpr const char* kCameraLatencyInvalid = "camera_latency_invalid";
+// Tag size, minimum tag pixels or maximum view angle.
+inline constexpr const char* kCameraTagParamsInvalid = "camera_tag_params_invalid";
+inline constexpr const char* kCameraRealismInvalid = "camera_realism_invalid";
+// VisionConfig::layoutId names no layout of the selected game plugin although that plugin provides
+// some (Warning; not checked when a layoutFile is set or no plugin is selected). Resolving the
+// layout itself is the vision runtime's job.
+inline constexpr const char* kCameraLayoutUnknown = "camera_layout_unknown";
+
+// Runtime HubWarning codes of the vision subsystem (not raised by the config validator).
+// No fiducial layout could be resolved: unknown VisionConfig::layoutId, unreadable layoutFile. Error.
+inline constexpr const char* kVisionLayoutMissing = "vision_layout_missing";
+// The robot process uses a camera the config does not list (CameraRobotState::cameraId empty). Warning.
+inline constexpr const char* kVisionCameraUnconfigured = "vision_camera_unconfigured";
+// The robot process reports a problem with a camera (CameraRobotState::status). Warning or Error.
+inline constexpr const char* kVisionCameraStatus = "vision_camera_status";
+
 }  // namespace wpiemu::sdk::validation_code

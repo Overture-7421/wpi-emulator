@@ -8,7 +8,9 @@
 // Evolution rules (match sdk/ipc/messages.h): fields are appended at the END of a message or
 // record; a decoder defaults absent trailing fields (older peer) and ignores unread trailing bytes
 // (newer peer). Nested records (DeviceDescriptor, SignalSpec, JoystickState) are length-prefixed so
-// they can grow too. Decoding is bounds-checked and allocation-limited: it never trusts a length.
+// they can grow too; the vision records at the end of HelloAck / SensorFrame / ActuatorFrame are
+// fixed layouts (ipc/README.md, "Vision tails"). Decoding is bounds-checked and allocation-limited:
+// it never trusts a length.
 //
 // Decode error contract:
 //   ProtocolError   malformed / truncated / out-of-range content (the stream is not trustworthy)
@@ -28,6 +30,13 @@ namespace wpiemu::ipc {
 inline constexpr std::uint8_t kWireFormatVersion = 1;
 inline constexpr std::size_t kDefaultMaxFrameBytes = std::size_t{8} << 20;
 inline constexpr std::size_t kMaxStringBytes = std::size_t{1} << 20;
+
+// Element caps of the vision vectors. The encoder refuses a message above them (InvalidArgument) so
+// a peer is never sent something its decoder would reject as a protocol error.
+inline constexpr std::size_t kMaxVisionFrames = 1024;        // SensorFrame::vision
+inline constexpr std::size_t kMaxVisionObservations = 1024;  // VisionFrame::observations
+inline constexpr std::size_t kMaxVisionTagIds = 1024;        // MultiTagSolution::tagIds
+inline constexpr std::size_t kMaxVisionCameras = 256;        // HelloAck / ActuatorFrame cameras
 
 class BinaryMessageCodec final : public sdk::proto::IMessageCodec {
 public:

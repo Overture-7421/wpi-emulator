@@ -21,6 +21,7 @@
 #include "wpiemu/sdk/mechanisms/motion_link.h"
 #include "wpiemu/sdk/physics/chassis_spec.h"
 #include "wpiemu/sdk/physics/physics_types.h"
+#include "wpiemu/sdk/vision/camera_config.h"
 
 namespace wpiemu::sdk {
 
@@ -97,6 +98,10 @@ struct RobotConfig {
     // Game-owned zones (pickup volumes, muzzles, ...) attached to the chassis or a mechanism link (config/zone.h).
     std::vector<ZoneConfig> zones;
 
+    // Virtual PhotonVision / Limelight cameras and the AprilTag layout they see
+    // (vision/camera_config.h). Absent = none.
+    VisionConfig vision;
+
     const MechanismConfig* findMechanism(std::string_view id) const {
         for (const auto& m : mechanisms)
             if (m.id == id) return &m;
@@ -107,6 +112,7 @@ struct RobotConfig {
             if (z.id == id) return &z;
         return nullptr;
     }
+    const CameraConfig* findCamera(std::string_view id) const { return vision.findCamera(id); }
     const PluginSection* findPlugin(std::string_view id) const {
         const auto it = plugins.find(id);
         return it == plugins.end() ? nullptr : &it->second;
