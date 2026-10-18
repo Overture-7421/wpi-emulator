@@ -35,6 +35,7 @@
 #include "wpiemu/core/vision/visibility.h"
 #include "wpiemu/core/vision/vision_math.h"
 #include "wpiemu/sdk/core/ids.h"
+#include "wpiemu/sdk/devices/discovered_device.h"
 #include "wpiemu/sdk/core/result.h"
 #include "wpiemu/sdk/core/rng.h"
 #include "wpiemu/sdk/core/units.h"
@@ -85,18 +86,29 @@ public:
 
     // Appends the frames due in the SensorFrame whose simTimeUs is `sensorFrameSimTimeUs` (publish
     // time = sensorFrameSimTimeUs - step), oldest capture first, at most
-    // kMaxFramesPerSensorFrame in `out` in total; the rest stay queued for the next tick.
+    // kMaxFramesPerSensorFrame in `out` in total; the rest stay queued for the next tick. A frame
+    // that had to wait for a later tick reports the latency it really has, so that the capture
+    // time the robot derives from it (publish time - latency) stays true.
     void collectDue(sdk::SimTimeUs sensorFrameSimTimeUs, std::vector<sdk::VisionFrame>& out);
 
-    // Session reset / reconnect: drops queued frames, restarts every capture schedule and forgets
-    // the latest capture and the robot-reported states (the first ActuatorFrame of the new epoch
-    // lists them again). Sequence numbers and the frame counters continue.
+    // Session reset / new epoch / reconnect: drops queued frames, restarts every capture schedule
+    // and forgets the latest capture. Sequence numbers and the frame counters continue. What the
+    // robot reported (onRobotStates) describes the robot process, not the simulation, so it
+    // survives a reset: only a lost connection forgets it (clearRobotStates).
     void reset();
 
     // ActuatorFrame::vision: informational only (snapshot, warnings), never used for measurement.
-    // Entries are upserted by (vendor, ntName).
+    // Entries are upserted by (vendor, ntName). clearRobotStates: the robot process went away.
     void onRobotStates(std::span<const sdk::CameraRobotState> states);
+    void clearRobotStates() { robotStates_.clear(); }
     std::span<const sdk::CameraRobotState> robotStates() const { return robotStates_; }
+
+    // The issue-list entries the robot-reported states imply:
+    //  * vision_camera_unconfigured (Warning): the robot uses a camera that is not simulated
+    //    (absent from the configuration, or disabled there);
+    //  * vision_camera_status (Error for ntcore_unavailable and photon_uuid_unsupported, else
+    //    Warning): a configured camera the robot process could not bring up or leaves alone.
+    std::vector<sdk::HubWarning> warnings() const;
 
     // HelloAck::vision: one entry per ENABLED camera. photonMessageUuid is the config override,
     // else `defaultPhotonUuid`, else "".

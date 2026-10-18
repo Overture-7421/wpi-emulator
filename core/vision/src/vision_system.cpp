@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "wpiemu/core/vision/pose_solver.h"
+#include "wpiemu/sdk/config/validation_codes.h"
 
 namespace wpiemu::core::vision {
 
@@ -34,6 +35,30 @@ std::pair<double, double> gaussianPair(Rng& rng) {
 }
 
 bool finiteNonNegative(double v) { return std::isfinite(v) && v >= 0.0; }
+
+const char* vendorName(CameraVendor vendor) {
+    return vendor == CameraVendor::Limelight ? "Limelight" : "PhotonVision";
+}
+
+// What the robot process reports (CameraRobotState::status) about a camera it could not bring up
+// or leaves alone, as a severity and an explanation.
+std::pair<Severity, std::string> describeStatus(const std::string& status) {
+    if (status == "ntcore_unavailable")
+        return {Severity::Error,
+                "the robot process has no NetworkTables library to publish through, so the "
+                "camera publishes nothing"};
+    if (status == "photon_uuid_unsupported")
+        return {Severity::Error,
+                "the project's PhotonLib speaks a PhotonVision message definition the emulator "
+                "has no profile for, so the camera publishes nothing (update the emulator, or set "
+                "vision.photonMessageUuid once the definition is verified)"};
+    if (status == "foreign_publisher")
+        return {Severity::Warning,
+                "something in the robot already publishes this camera (a robot-side "
+                "PhotonCameraSim?), so the emulator leaves it alone"};
+    if (status == "disabled") return {Severity::Warning, "the camera is disabled"};
+    return {Severity::Warning, "the robot process reports the status '" + status + "'"};
+}
 
 // What makes a camera impossible to simulate, "" when fine.
 std::string cameraProblem(const CameraConfig& c) {
@@ -294,6 +319,8 @@ void VisionSystem::collectDue(SimTimeUs sensorFrameSimTimeUs, std::vector<Vision
         }
         if (next == nullptr) break;
         PendingFrame& pending = next->queue.front();
+        // Equal to the planned latency, unless the per-message cap held the frame back.
+        pending.frame.latencyUs = publishTimeUs - pending.frame.captureTimeUs;
         next->lastLatencyMs = static_cast<double>(pending.frame.latencyUs) / 1000.0;
         ++next->published;
         out.push_back(std::move(pending.frame));
@@ -309,7 +336,6 @@ void VisionSystem::reset() {
         cam.visibleTagIds.clear();
         cam.lastLatencyMs = 0.0;
     }
-    robotStates_.clear();
 }
 
 void VisionSystem::onRobotStates(std::span<const CameraRobotState> states) {
@@ -329,6 +355,34 @@ const CameraRobotState* VisionSystem::robotStateOf(std::string_view cameraId) co
     for (const CameraRobotState& s : robotStates_)
         if (s.cameraId == cameraId) return &s;
     return nullptr;
+}
+
+std::vector<HubWarning> VisionSystem::warnings() const {
+    std::vector<HubWarning> out;
+    for (const CameraRobotState& s : robotStates_) {
+        if (s.cameraId.empty()) {
+            if (!s.present) continue;
+            const auto sameCamera = [&s](const Camera& c) {
+                return c.config.vendor == s.vendor && c.config.networkName() == s.ntName;
+            };
+            const bool disabledHere = std::any_of(
+                cameras_.begin(), cameras_.end(),
+                [&sameCamera](const Camera& c) { return !c.config.enabled && sameCamera(c); });
+            const char* reason = disabledHere
+                                     ? "disabled in the vision configuration"
+                                     : "not in the vision configuration (add it from the detected "
+                                       "cameras)";
+            out.push_back({Severity::Warning, DeviceId{},
+                           validation_code::kVisionCameraUnconfigured,
+                           std::string("the robot uses the ") + vendorName(s.vendor) +
+                               " camera '" + s.ntName + "', which is " + reason});
+        } else if (!s.status.empty()) {
+            auto [severity, what] = describeStatus(s.status);
+            out.push_back({severity, DeviceId{}, validation_code::kVisionCameraStatus,
+                           "camera '" + s.cameraId + "' (" + s.ntName + "): " + what});
+        }
+    }
+    return out;
 }
 
 VisionSetup VisionSystem::setup(std::string_view defaultPhotonUuid) const {

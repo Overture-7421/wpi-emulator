@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 
 #include "vision_rig.h"
+#include "wpiemu/core/vision/visibility.h"
 #include "wpiemu/ipc/binary_codec.h"
 
 using namespace vision_test;
@@ -462,11 +464,15 @@ TEST_CASE("vision system: with more due frames than fit in one SensorFrame, the 
     for (std::size_t i = 0; i < out.size(); ++i) {
         CHECK(out[i].captureTimeUs == static_cast<sdk::SimTimeUs>(i / 256 + 1) * 5000);  // oldest first
         CHECK(out[i].cameraId == "cam" + std::to_string(i % 256));                       // then config order
+        // published at 25 ms: a frame that waited reports the latency it really has, so that the
+        // robot's capture time (publish time - latency) stays true
+        CHECK(out[i].latencyUs == 25000 - out[i].captureTimeUs);
     }
     std::vector<sdk::VisionFrame> rest;
     system->collectDue(6 * 5000, rest);
     REQUIRE(rest.size() == 256);
     CHECK(rest.front().captureTimeUs == 25000);
+    CHECK(rest.front().latencyUs == 0);
     std::vector<sdk::VisionFrame> none;
     system->collectDue(6 * 5000, none);
     CHECK(none.empty());
@@ -476,6 +482,41 @@ TEST_CASE("vision system: the engine limits mirror the IPC codec caps") {
     CHECK(vis::kMaxFramesPerSensorFrame == wpiemu::ipc::kMaxVisionFrames);
     CHECK(vis::kMaxObservationsPerFrame == wpiemu::ipc::kMaxVisionObservations);
     CHECK(vis::kMaxEnabledCameras == wpiemu::ipc::kMaxVisionCameras);
+}
+
+TEST_CASE("vision system: a frame never carries more observations than the IPC codec accepts, the smallest tags go") {
+    // 1100 tags on a wall 4 m ahead of the camera, all of them in view
+    std::vector<sdk::FiducialTag> tags;
+    for (int row = 0; row < 25; ++row)
+        for (int col = 0; col < 44; ++col)
+            tags.push_back(tagAt(row * 44 + col + 1, 4.f, -3.5f + 0.16f * static_cast<float>(col),
+                                 0.5f + 0.15f * static_cast<float>(row - 12)));
+    sdk::CameraConfig cam = frontCamera();
+    cam.frameRateHz = 200.0;
+    cam.latencyUs = 0;
+    cam.multiTag = false;  // a multi-tag fit over a thousand tags is not what this test is about
+    Rig rig(visionOf({cam}), layoutOf(tags));
+    const auto frames = rig.run(2);
+    REQUIRE(frames.size() == 1);
+    const std::vector<sdk::FiducialObservation>& observations = frames[0].frame.observations;
+    REQUIRE(observations.size() == vis::kMaxObservationsPerFrame);
+    CHECK(std::is_sorted(observations.begin(), observations.end(),
+                         [](const auto& a, const auto& b) { return a.areaPct > b.areaPct; }));
+
+    // the survivors are the largest ones: the smallest kept tag is as large as the 1024th of all
+    const vis::CameraModel model(cam.intrinsics);
+    const vis::VisibilityLimits limits{cam.minTagPixels, cam.maxViewAngleRad, false};
+    std::vector<double> areas;
+    for (const sdk::FiducialTag& tag : tags) {
+        const vis::TagVisibility v = vis::evaluateTagVisibility(
+            model, limits, poseYpr({0.0, 0.0, 0.5}, 0.0), vis::fromSdk(tag.pose), 0.1651, nullptr);
+        REQUIRE(v.visible());
+        areas.push_back(100.0 * vis::polygonAreaPx(v.cornersPx) / (1280.0 * 800.0));
+    }
+    std::sort(areas.begin(), areas.end(), std::greater<>());
+    REQUIRE(areas.size() == 1100);
+    CHECK(observations.back().areaPct == Approx(areas[vis::kMaxObservationsPerFrame - 1]));
+    CHECK(observations.front().areaPct == Approx(areas.front()));
 }
 
 TEST_CASE("vision system: create refuses configurations it cannot simulate") {

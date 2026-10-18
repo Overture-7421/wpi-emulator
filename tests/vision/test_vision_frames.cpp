@@ -477,8 +477,91 @@ TEST_CASE("vision snapshot: robot-reported camera state is merged into the camer
     for (std::size_t i = 0; i < after.size(); ++i) CHECK(after[i].frame == expected[i].frame);
     CHECK(before.size() == 3);  // 4 ticks at 200 Hz, zero latency: the captures of ticks 1..3
 
-    // a reset forgets what the robot reported: the first ActuatorFrame of the new epoch lists it again
+    // what the robot reported describes its process, not the simulation: a reset keeps it, only a
+    // lost connection forgets it
     rig.system->reset();
+    CHECK(rig.system->robotStates().size() == 3);
+    CHECK(rig.snapshot().detectedCameras.size() == 3);
+    CHECK(rig.cameras()[0].status == "photon_uuid_unsupported");
+    rig.system->clearRobotStates();
     CHECK(rig.system->robotStates().empty());
     CHECK(rig.snapshot().detectedCameras.empty());
+    CHECK(rig.cameras()[0].status.empty());
+}
+
+TEST_CASE("vision warnings: what the robot reports becomes issue-list entries") {
+    sdk::CameraConfig front = frontCamera("front");
+    front.ntName = "photon-front";
+    sdk::CameraConfig spare = frontCamera("spare");
+    spare.ntName = "photon-spare";
+    spare.enabled = false;
+    Rig rig(visionOf({front, spare}));
+    CHECK(rig.system->warnings().empty());
+
+    auto report = [&](sdk::CameraRobotState state) {
+        rig.system->onRobotStates(std::span<const sdk::CameraRobotState>(&state, 1));
+    };
+    sdk::CameraRobotState healthy;
+    healthy.ntName = "photon-front";
+    healthy.cameraId = "front";
+    healthy.publishing = true;
+    report(healthy);
+    CHECK(rig.system->warnings().empty());  // a working camera is not an issue
+
+    // the robot uses a camera nobody simulates
+    sdk::CameraRobotState stray;
+    stray.ntName = "mystery";
+    stray.vendor = sdk::CameraVendor::Limelight;
+    report(stray);
+    {
+        const auto w = rig.system->warnings();
+        REQUIRE(w.size() == 1);
+        CHECK(w[0].code == "vision_camera_unconfigured");
+        CHECK(w[0].severity == sdk::Severity::Warning);
+        CHECK_FALSE(w[0].device.valid());
+        CHECK(w[0].message.find("Limelight") != std::string::npos);
+        CHECK(w[0].message.find("'mystery'") != std::string::npos);
+        CHECK(w[0].message.find("not in the vision configuration") != std::string::npos);
+    }
+    // ... which is a configured but disabled camera: the same code, a more precise reason
+    sdk::CameraRobotState unmatchedSpare;
+    unmatchedSpare.ntName = "photon-spare";
+    report(unmatchedSpare);
+    {
+        const auto w = rig.system->warnings();
+        REQUIRE(w.size() == 2);
+        CHECK(w[1].code == "vision_camera_unconfigured");
+        CHECK(w[1].message.find("'photon-spare'") != std::string::npos);
+        CHECK(w[1].message.find("disabled in the vision configuration") != std::string::npos);
+    }
+    // a camera the robot does not use needs no warning, and the entry is replaced, not duplicated
+    stray.present = false;
+    unmatchedSpare.present = false;
+    report(stray);
+    report(unmatchedSpare);
+    CHECK(rig.system->warnings().empty());
+
+    struct Case {
+        const char* status;
+        sdk::Severity severity;
+    };
+    const Case cases[] = {{"ntcore_unavailable", sdk::Severity::Error},
+                          {"photon_uuid_unsupported", sdk::Severity::Error},
+                          {"foreign_publisher", sdk::Severity::Warning},
+                          {"disabled", sdk::Severity::Warning},
+                          {"something_new", sdk::Severity::Warning}};
+    for (const Case& c : cases) {
+        INFO(c.status);
+        sdk::CameraRobotState bad = healthy;
+        bad.publishing = false;
+        bad.status = c.status;
+        report(bad);
+        const auto w = rig.system->warnings();
+        REQUIRE(w.size() == 1);
+        CHECK(w[0].code == "vision_camera_status");
+        CHECK(w[0].severity == c.severity);
+        CHECK(w[0].message.find("camera 'front' (photon-front)") != std::string::npos);
+    }
+    report(healthy);  // the camera recovers: the entry disappears by itself
+    CHECK(rig.system->warnings().empty());
 }
