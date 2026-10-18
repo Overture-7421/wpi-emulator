@@ -9,6 +9,7 @@
 #include "wpiemu/core/physics/box3d_world.h"
 #include "wpiemu/core/runtime/simulation_session.h"
 #include "wpiemu/core/vision/vision_system.h"
+#include "wpiemu/ipc/binary_codec.h"
 #include "wpiemu/sdk/game/builtin_plugins.h"
 #include "wpiemu/sdk/testing/fake_clock_logger.h"
 #include "wpiemu/sdk/testing/fake_game_module.h"
@@ -386,6 +387,42 @@ TEST_CASE("session vision: identical sessions give identical frames, and so does
         }
     }
     CHECK(sequenceShift > 0);
+}
+
+TEST_CASE("session vision: what a run produces goes through the real IPC codec unchanged") {
+    CameraConfig noisy = wallCamera("noisy");
+    noisy.frameRateHz = 90.0;
+    noisy.realism = {0.6, 10000, 0.1};
+    CameraConfig limelight = wallCamera("left");
+    limelight.vendor = CameraVendor::Limelight;
+    limelight.ntName = "limelight-left";
+    limelight.frameRateHz = 60.0;
+    Fixture f;
+    SimulationSession& s = f.make(f.config({noisy, limelight}));
+    const wpiemu::ipc::BinaryMessageCodec codec;
+
+    proto::HelloAck ack;
+    ack.vision = s.vision()->setup("derived-uuid");
+    std::vector<std::byte> bytes;
+    REQUIRE(codec.encode(ack, bytes).ok());
+    auto decodedAck = codec.decode(bytes);
+    REQUIRE(decodedAck.ok());
+    REQUIRE(std::get_if<proto::HelloAck>(&decodedAck.value()) != nullptr);
+    CHECK(std::get<proto::HelloAck>(decodedAck.value()).vision == ack.vision);
+
+    proto::SensorFrame frame;
+    std::size_t carrying = 0;
+    for (int i = 0; i < 300; ++i) {
+        s.tick(frame, i == 0);
+        bytes.clear();
+        REQUIRE(codec.encode(frame, bytes).ok());  // the encoder refuses what exceeds the caps
+        auto decoded = codec.decode(bytes);
+        REQUIRE(decoded.ok());
+        REQUIRE(std::get_if<proto::SensorFrame>(&decoded.value()) != nullptr);
+        CHECK(std::get<proto::SensorFrame>(decoded.value()).vision == frame.vision);
+        if (!frame.vision.empty()) ++carrying;
+    }
+    CHECK(carrying > 50);
 }
 
 TEST_CASE("session vision: an ideal camera never touches the session RNG, a realistic one shares it") {
