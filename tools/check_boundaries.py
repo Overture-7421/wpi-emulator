@@ -104,6 +104,7 @@ TARGET_OWNERS = {
     "wpiemu_app_tests": "app",
     "wpiemu_host_tests": "app",
     "wpiemu_e2e_tests": "app",
+    "wpiemu_e2e_vision_tests": "app",
     "wpiemu_app_editor_tests": "app",
     "wpiemu_editor_demo": "app",
     "wpiemu_runview_demo": "app",
