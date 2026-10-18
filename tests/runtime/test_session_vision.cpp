@@ -38,6 +38,15 @@ public:
     }
 };
 
+// Moves the robot during the game step, like a game that pushes it or a plugin that respawns it.
+class PushModule final : public testing::FakeGameModule {
+public:
+    PushModule() : FakeGameModule("push_game", 2996) {}
+    void onTick(SimContext& ctx, double) override {
+        ctx.physics().setPose(ctx.chassisBody(), Pose3{Vec3{2.f, 0.f, 0.2f}, Quat{}});
+    }
+};
+
 // Draws from SimContext::rng() on every tick, like a game module with random spawn jitter.
 class RngConsumerModule final : public testing::FakeGameModule {
 public:
@@ -167,6 +176,19 @@ TEST_CASE("session vision: the capture uses the chassis pose after this tick's p
     REQUIRE(ticks[1].frames.size() == 1);
     const FiducialObservation& o = ticks[1].frames[0].observations[0];
     CHECK(o.distanceM == doctest::Approx(std::hypot(4.0 - 0.01, 0.5)).epsilon(1e-3));
+}
+
+TEST_CASE("session vision: the capture sees what the game step did to the robot") {
+    Fixture f;
+    REQUIRE(f.reg.plugins.add(std::make_unique<PushModule>()).ok());
+    REQUIRE(f.reg.registrar.ensureRegistered(*f.reg.plugins.find("push_game")).ok());
+    RobotConfig c = f.config();
+    c.gamePluginId = "push_game";
+    c.vision.cameras[0].latencyUs = 0;
+    const auto ticks = run(f.make(c), 3);
+    REQUIRE(ticks[1].frames.size() == 1);
+    // captured in tick 0, after the game moved the robot to x = 2 m: the wall is 2 m ahead, not 4
+    CHECK(ticks[1].frames[0].observations[0].distanceM < 2.2);
 }
 
 TEST_CASE("session vision: a camera on a mechanism link is posed through the session's link directory") {
