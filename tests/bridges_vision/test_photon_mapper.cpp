@@ -69,7 +69,8 @@ TEST_CASE("photon mapper: a frame becomes the targets PhotonVision reports, in P
         const sdk::FiducialObservation& o = frame.observations[i];
         const PhotonValue& t = targets.children()[i];
         CHECK(number(t, {"yaw"}) == doctest::Approx(o.yawRad * kRadToDeg).epsilon(1e-12));
-        CHECK(number(t, {"pitch"}) == doctest::Approx(o.pitchRad * kRadToDeg).epsilon(1e-12));
+        CHECK(number(t, {"pitch"}) ==
+              doctest::Approx(std::atan(std::tan(o.pitchRad) * std::cos(o.yawRad)) * kRadToDeg).epsilon(1e-12));
         CHECK(number(t, {"area"}) == o.areaPct);
         CHECK(number(t, {"skew"}) == 0.0);  // PhotonVision reports skew 0 for AprilTags
         CHECK(at(t, {"fiducialId"}).intValue() == o.id);
@@ -100,6 +101,36 @@ TEST_CASE("photon mapper: a frame becomes the targets PhotonVision reports, in P
     REQUIRE(tag1 != targets.children().end());
     CHECK(number(*tag1, {"yaw"}) > 0.0);
     CHECK(number(*tag1, {"pitch"}) < 0.0);
+}
+
+TEST_CASE("photon mapper: the pitch is corrected for the target's yaw like the coprocessor's, not the camera-plane angle") {
+    // 1280x800, fx = fy = 640: a tag centre at pixel (960, 267.7) is 320 px right of and 132.3 px above the image centre.
+    const double fx = 640.0;
+    const double fy = 640.0;
+    const double dx = 960.0 - 640.0;
+    const double dy = 400.0 - 267.7;
+    sdk::FiducialObservation o;
+    o.id = 3;
+    o.yawRad = std::atan(dx / fx);
+    o.pitchRad = std::atan(dy / fy);  // what the engine measures (spec B)
+    sdk::VisionFrame frame;
+    frame.observations.push_back(o);
+
+    const PhotonValue result = mapPhotonResult(frame, PhotonResultTiming{});
+    const PhotonValue& target = at(result, {"targets"}).children().front();
+    // photon-core: yaw = atan(dx / fx), pitch = atan(dy / (fy / cos(yaw))).
+    const double hardwareYaw = std::atan(dx / fx);
+    const double hardwarePitch = std::atan(dy / (fy / std::cos(hardwareYaw)));
+    CHECK(number(target, {"yaw"}) == doctest::Approx(hardwareYaw * kRadToDeg).epsilon(1e-12));
+    CHECK(number(target, {"pitch"}) == doctest::Approx(hardwarePitch * kRadToDeg).epsilon(1e-12));
+    CHECK(number(target, {"pitch"}) < o.pitchRad * kRadToDeg);  // 10.5 degrees against the engine's 11.7
+    // On the vertical centre line yaw is 0 and nothing changes.
+    sdk::VisionFrame centred;
+    sdk::FiducialObservation c = o;
+    c.yawRad = 0.0;
+    centred.observations.push_back(c);
+    CHECK(number(at(mapPhotonResult(centred, PhotonResultTiming{}), {"targets"}).children().front(), {"pitch"}) ==
+          doctest::Approx(c.pitchRad * kRadToDeg).epsilon(1e-12));
 }
 
 TEST_CASE("photon mapper: the multi-tag result is the field-to-camera transform with no alternate solution") {

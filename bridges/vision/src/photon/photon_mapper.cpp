@@ -31,9 +31,14 @@ PhotonValue cornerList(const std::array<sdk::PixelPoint, 4>& corners) {
 }
 
 PhotonValue mapTarget(const sdk::FiducialObservation& observation) {
+    // PhotonVision corrects the pitch for the target's yaw (photon-core TargetCalculations.calculateYawPitch, v2026.3.4):
+    // pitch = atan((cy - v) / (fy / cos(yaw))), the true elevation of the target above the optical axis plane. The engine's
+    // pitch is atan((cy - v) / fy) (spec B, shared with Limelight's ty), which is larger for any off-axis target; the two
+    // agree on the vertical centre line.
+    const double pitchRad = std::atan(std::tan(observation.pitchRad) * std::cos(observation.yawRad));
     PhotonValue target = PhotonValue::structure();
     target.set("yaw", PhotonValue::real(observation.yawRad * kDegreesPerRadian))
-        .set("pitch", PhotonValue::real(observation.pitchRad * kDegreesPerRadian))
+        .set("pitch", PhotonValue::real(pitchRad * kDegreesPerRadian))
         .set("area", PhotonValue::real(observation.areaPct))
         .set("skew", PhotonValue::real(kAprilTagSkewDeg))
         .set("fiducialId", PhotonValue::integer(observation.id))
