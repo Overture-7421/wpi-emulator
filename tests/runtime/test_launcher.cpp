@@ -1009,7 +1009,8 @@ TEST_CASE("launcher: ExternalDirect builds first, then runs the JVM from the des
     }
     REQUIRE(world.started.size() == 2);
     CHECK(world.started[0].args.back() == "simulateExternalJavaRelease");
-    CHECK(world.started[1].args.at(1) == "-jar");
+    const auto& jvmArgs = world.started[1].args;   // macOS adds -XstartOnFirstThread before -jar
+    CHECK(std::find(jvmArgs.begin(), jvmArgs.end(), "-jar") != jvmArgs.end());
     CHECK(world.started[1].env.at(env_var::kHalExtensions) == request.extensionLibrary.string());
 }
 
