@@ -30,6 +30,38 @@ void setEnv(const char* name, const std::string& value) {
 #endif
 }
 
+// The camera setup and a camera frame, so that the real binary codec and the real library see
+// vision on the wire.
+sdk::VisionSetup cameraSetup() {
+    sdk::CameraSetup camera;
+    camera.cameraId = camera.ntName = "photon-front";
+    camera.widthPx = 1280;
+    camera.heightPx = 800;
+    camera.fxPx = camera.fyPx = 640.0;
+    camera.cxPx = 640.0;
+    camera.cyPx = 400.0;
+    camera.latencyUs = 25000;
+    sdk::VisionSetup setup;
+    setup.cameras.push_back(camera);
+    return setup;
+}
+
+sdk::VisionFrame cameraFrame(std::uint64_t sequence) {
+    sdk::FiducialObservation tag;
+    tag.id = 25;
+    tag.areaPct = 1.5;
+    tag.distanceM = 2.0;
+    tag.cornersPx = {{{600.0, 420.0}, {660.0, 420.0}, {660.0, 360.0}, {600.0, 360.0}}};
+    tag.cameraToTagBest.position = {2.0f, 0.0f, 0.0f};
+    tag.cameraToTagAlt = tag.cameraToTagBest;
+    sdk::VisionFrame frame;
+    frame.cameraId = frame.ntName = "photon-front";
+    frame.sequence = sequence;
+    frame.latencyUs = 25000;
+    frame.observations.push_back(tag);
+    return frame;
+}
+
 class DllRobot {
 public:
     DllRobot() : thread_([this] { run(); }) {}
@@ -83,6 +115,8 @@ TEST_CASE("real extension library: loads through the HAL extension loader and ru
             emulator = std::make_unique<FakeEmulator>(std::move(transport).value(), codec);
             proto::HelloAck ack = defaultAck();
             ack.watchdogTimeoutMs = 5000;
+            // Camera setup and frames cross the real codec and the real library.
+            ack.vision = cameraSetup();
             emulator->autoAck(ack);
         }
     });
@@ -119,6 +153,7 @@ TEST_CASE("real extension library: loads through the HAL extension loader and ru
         const std::uint64_t t0 = HAL_GetFPGATime(&status);
         bool sawFullSpeed = false;
         for (int i = 0; i < 40; ++i) {
+            if (i % 4 == 0) emulator->nextVision = {cameraFrame(static_cast<std::uint64_t>(i) + 1)};
             const auto ack = emulator->tick({}, 5000, 12.4, 5000ms);
             REQUIRE(ack.has_value());
             REQUIRE(ack->result == proto::TickResult::Completed);

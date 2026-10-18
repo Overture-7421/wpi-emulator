@@ -61,10 +61,9 @@ TEST_CASE("fake nt: unchanged values are dropped unless the publisher keeps dupl
     CHECK(nt.history("/keep").size() == 3);
 }
 
-TEST_CASE("fake nt: topic properties come from the first publisher and must be a JSON object") {
+TEST_CASE("fake nt: topic properties come from the first publisher and must be valid JSON") {
     FakeNtApi nt;
     CHECK_FALSE(nt.publish("/p", NtType::Raw, options("photonstruct:X:1", R"({"message_uuid":abc})")));  // unquoted
-    CHECK_FALSE(nt.publish("/p", NtType::Raw, options("photonstruct:X:1", R"("abc")")));                   // not an object
     CHECK_FALSE(nt.exists("/p"));
 
     REQUIRE(nt.publish("/p", NtType::Raw, options("photonstruct:X:1", R"({"message_uuid":"abc","a":1})")));

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "wpiemu/core/vision/vision_system.h"
 #include "wpiemu/sdk/ipc/lifecycle.h"
 
 namespace wpiemu::core::runtime {
@@ -340,6 +341,8 @@ void SessionRunner::handle(InboundEvent& ev) {
         case InboundEvent::Kind::Message:
             if (ev.linkId != linkId_ || !link_) {
                 ++dropped_;  // late message of a replaced / closed link
+                if (std::holds_alternative<proto::VisionReport>(ev.message))
+                    logger_.debug("runner", "VisionReport of a closed or replaced link ignored");
                 break;
             }
             handleMessage(ev.message);
@@ -353,7 +356,11 @@ void SessionRunner::handleMessage(proto::Message& message) {
         return;
     }
     if (!helloDone_) {
-        logger_.warn("runner", "message before Hello ignored");
+        // A camera report may legitimately race the handshake; it is not worth a warning.
+        if (std::holds_alternative<proto::VisionReport>(message))
+            logger_.debug("runner", "VisionReport before the handshake ignored");
+        else
+            logger_.warn("runner", "message before Hello ignored");
         ++dropped_;
         return;
     }
@@ -363,6 +370,11 @@ void SessionRunner::handleMessage(proto::Message& message) {
         snapshotDirty_ = true;
     } else if (const auto* actuator = std::get_if<proto::ActuatorFrame>(&message)) {
         handleActuator(*actuator);
+    } else if (const auto* report = std::get_if<proto::VisionReport>(&message)) {
+        // Outside the tick window (no identity, no ack): valid in every connected state, armed, running, paused or
+        // waiting for an acknowledgement, and never a protocol error. Informational, like ActuatorFrame::vision.
+        session_.robotCameras().upsert(report->cameras);
+        snapshotDirty_ = true;
     } else if (const auto* ack = std::get_if<proto::SimControlAck>(&message)) {
         if (ack->commandId == resetCommandId_ && awaitingResetAck_) {
             awaitingResetAck_ = false;
@@ -428,6 +440,7 @@ void SessionRunner::handleHello(const proto::Hello& hello) {
     programStarted_ = !options_.awaitProgramStart;
     peerSupportsArmed_ = hello.supportsArmed;
     session_.hub().clearDevices();
+    session_.robotCameras().clear();  // a new robot process: nothing of the previous one applies
     watchdogMs_ = proto::negotiateWatchdogTimeoutMs(hello.proposedWatchdogMs, options_.preferredWatchdogMs);
     window_.begin(++sessionCounter_, window_.runEpoch());
     beginEpoch();
@@ -443,6 +456,8 @@ void SessionRunner::handleHello(const proto::Hello& hello) {
     ack.runEpoch = window_.runEpoch();
     ack.watchdogTimeoutMs = watchdogMs_;
     ack.watchdogPolicy = options_.watchdogPolicy;
+    if (const vision::VisionSystem* engine = session_.vision())
+        ack.vision = engine->setup(options_.photonMessageUuid);
     sendToRobot(ack);
     helloDone_ = true;
     firstActuator_ = true;
@@ -462,6 +477,10 @@ void SessionRunner::handleActuator(const proto::ActuatorFrame& frame) {
         case proto::AckVerdict::Completed:
             robotLoops_ = frame.robotLoopCount;
             session_.hub().onActuatorFrame(frame);
+            if (!frame.vision.empty()) {
+                session_.robotCameras().upsert(frame.vision);  // informational: snapshot and warnings only
+                snapshotDirty_ = true;
+            }
             if (firstActuator_) {
                 firstActuator_ = false;
                 session_.hub().markDiscoveryComplete();
@@ -495,6 +514,7 @@ void SessionRunner::handleDisconnect(const std::string& why) {
     sentLoopbackRevision_ = ~std::uint64_t{0};
     window_.begin(window_.sessionId(), window_.runEpoch());
     session_.hub().clearDevices();
+    session_.robotCameras().clear();
     snapshotDirty_ = true;
 }
 

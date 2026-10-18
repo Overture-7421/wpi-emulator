@@ -1,22 +1,40 @@
 #include "wpiemu/bridges/vision/limelight_vendor.h"
 
+#include <algorithm>
+
+#include "limelight_publisher.h"
+#include "wpiemu/bridges/vision/limelight_keys.h"
+
 namespace wpiemu::bridges::vision {
 
 namespace {
 
-// PLACEHOLDER owned by the limelight-publisher work stream, which replaces this whole file: no cameras yet.
-class LimelightVendorPlaceholder final : public IVisionVendor {
+class LimelightVendor final : public IVisionVendor {
 public:
     sdk::CameraVendor vendor() const override { return sdk::CameraVendor::Limelight; }
-    std::string_view topicPrefix() const override { return "/limelight"; }
-    std::unique_ptr<ICameraPublisher> createPublisher(INtApi&, sdk::ILogger&, const sdk::CameraSetup&) const override {
-        return nullptr;
+    std::string_view topicPrefix() const override { return limelight::kTopicPrefix; }
+
+    std::unique_ptr<ICameraPublisher> createPublisher(INtApi& nt, sdk::ILogger& log,
+                                                      const sdk::CameraSetup& setup) const override {
+        return std::make_unique<limelight::LimelightPublisher>(nt, log, setup);
     }
-    void discoverRobotCameras(std::span<const NtTopicInfo>, std::vector<std::string>&) const override {}
+
+    // A device table ("limelight", "limelight-<name>") belongs to a robot that uses the camera as soon as the ROBOT
+    // created one of the keys it is known to write (limelight_keys.h). Our own per-frame topics never count.
+    void discoverRobotCameras(std::span<const NtTopicInfo> topics, std::vector<std::string>& ntNames) const override {
+        for (const NtTopicInfo& info : topics) {
+            std::string_view table;
+            std::string_view key;
+            if (!limelight::splitTopic(info.name, table, key) || !limelight::isLimelightTable(table) ||
+                !limelight::isRobotWrittenKey(key))
+                continue;
+            if (std::find(ntNames.begin(), ntNames.end(), table) == ntNames.end()) ntNames.emplace_back(table);
+        }
+    }
 };
 
 }  // namespace
 
-std::unique_ptr<IVisionVendor> makeLimelightVendor() { return std::make_unique<LimelightVendorPlaceholder>(); }
+std::unique_ptr<IVisionVendor> makeLimelightVendor() { return std::make_unique<LimelightVendor>(); }
 
 }  // namespace wpiemu::bridges::vision

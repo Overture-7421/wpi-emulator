@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -44,6 +45,11 @@ struct SessionServices {
 // thread that unblocks the robot by itself when the emulator or the robot stops answering.
 class SimSession {
 public:
+    // The ActuatorFrame wire format caps the camera states of one frame (ipc::kMaxVisionCameras,
+    // cross-checked by the tests): a longer list would fail to encode and drop the connection, so
+    // the surplus is cut.
+    static constexpr std::size_t kMaxVisionStates = 256;
+
     SimSession(SessionServices services, std::unique_ptr<IpcLink> link, const sdk::proto::HelloAck& ack);
     ~SimSession();
     SimSession(const SimSession&) = delete;
@@ -71,6 +77,9 @@ private:
     SessionEnd serve();
     std::optional<SessionEnd> dispatch(sdk::proto::Message&& message);
     void onSensorFrame(sdk::proto::SensorFrame&& frame);
+    void applyVision(const std::vector<sdk::VisionFrame>& frames);
+    void reportVision();
+    void clampVisionStates();
     void onDsState(sdk::proto::DsState&& state);
     std::optional<SessionEnd> onControl(const sdk::proto::SimControl& control);
     void applyPendingDriverStation();
@@ -96,6 +105,10 @@ private:
     SignalDeltaFilter delta_;
     std::vector<sdk::DeviceId> loopback_;
     std::vector<sdk::SignalSample> outputs_;
+    std::vector<sdk::CameraRobotState> visionOut_;  // collectVision scratch, swapped into the ack
+    bool visionFull_ = true;        // next ack lists every camera (connection, Reset, new epoch)
+    bool visionReportFull_ = true;  // next VisionReport lists every camera (connection start)
+    bool visionClamped_ = false;    // the "too many camera states" warning was logged
     std::optional<sdk::proto::DsState> pendingDs_;
     std::optional<sdk::proto::SensorFrame> deferredFrame_;
     std::uint64_t ticksSinceFull_ = 0;

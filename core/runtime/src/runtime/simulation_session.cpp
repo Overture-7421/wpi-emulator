@@ -2,8 +2,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 
 #include "wpiemu/core/config/config_validator.h"
+#include "wpiemu/core/config/json_codec.h"
+#include "wpiemu/core/vision/fiducial_layout_io.h"
+#include "wpiemu/core/vision/vision_system.h"
 #include "wpiemu/sdk/mechanisms/motion_config.h"
 #include "wpiemu/sdk/mechanisms/attachment.h"
 
@@ -279,7 +283,33 @@ Status SimulationSession::build(SessionParts& parts) {
         gameState_->reset(*ctx_);
     }
 
+    // 6. vision cameras (ADR 0017): after the mechanisms, so mechanism-mounted cameras can be posed
+    if (Status s = buildVision(); !s) return s;
+
     world_->setPose(chassis_.body, chassis_.spawnPose);
+    return okStatus();
+}
+
+// The engine exists only while at least one camera is enabled and an AprilTag layout resolves (layoutFile, else the
+// selected plugin's layoutId / first layout). Without a layout the session runs as if there were no cameras and raises
+// vision_layout_missing (Error): the robot sees no camera at all rather than one that sees nothing.
+Status SimulationSession::buildVision() {
+    const auto& cameras = config_.vision.cameras;
+    if (std::none_of(cameras.begin(), cameras.end(), [](const CameraConfig& c) { return c.enabled; })) return okStatus();
+
+    const config::JsonValueCodec codec;
+    Result<FiducialLayout> layout =
+        vision::resolveFiducialLayout(config_.vision, module_, codec, std::filesystem::path(config_.project.path));
+    if (!layout) {
+        sessionWarnings_.push_back({Severity::Error, DeviceId{}, validation_code::kVisionLayoutMissing,
+                                    "vision is off: " + layout.error().message});
+        logger_->error("session", "vision is off: " + layout.error().message);
+        return okStatus();
+    }
+    Result<std::unique_ptr<vision::VisionSystem>> engine =
+        vision::VisionSystem::create(config_.vision, std::move(layout).value(), clock_.fixedStepUs(), directory_.get());
+    if (!engine) return engine.error();  // already prefixed with "vision"
+    vision_ = std::move(engine).value();
     return okStatus();
 }
 
@@ -301,6 +331,7 @@ void SimulationSession::reset() {
     brownoutWarned_ = false;
     std::erase_if(sessionWarnings_, [](const HubWarning& w) { return w.code == "brownout"; });
     if (gameState_) gameState_->reset(*ctx_);
+    if (vision_) vision_->reset();
 }
 
 void SimulationSession::setRobotPose(const Pose3& pose) {
@@ -412,6 +443,12 @@ void SimulationSession::tick(proto::SensorFrame& out, bool fullFrame) {
     if (gameState_) gameState_->step(*ctx_, dt);
     if (module_ != nullptr) module_->onTick(*ctx_, dt);
 
+    // Captures happen at T(N), the time after this step; the frames due in this SensorFrame are collected below
+    // once the clock advanced (they were captured on earlier ticks, never on this one).
+    if (vision_)
+        vision_->step(vision::VisionWorldView{*world_, chassis_.body, directory_.get()}, ctx_->rng(),
+                      clock_.simTimeUs() + clock_.fixedStepUs());
+
     writeImu(dt);
     hub_.setBatteryVoltage(battery_.update(options_.baselineCurrentA + mechanismCurrentA + drivetrainCurrentA));
     updateBrownoutWarning();
@@ -422,6 +459,10 @@ void SimulationSession::tick(proto::SensorFrame& out, bool fullFrame) {
     out.stepUs = static_cast<std::uint32_t>(clock_.fixedStepUs());
     out.batteryCurrentA = battery_.currentA();
     hub_.buildSensorFrame(out, fullFrame);  // also sets batteryVoltageV
+    if (vision_) {
+        out.vision.clear();
+        vision_->collectDue(out.simTimeUs, out.vision);
+    }
 }
 
 std::shared_ptr<const ISimSnapshot> SimulationSession::buildSnapshot(bool paused, bool robotConnected,
@@ -460,11 +501,17 @@ std::shared_ptr<const ISimSnapshot> SimulationSession::buildSnapshot(bool paused
     const auto hubWarnings = hub_.warnings();
     d.warnings.assign(hubWarnings.begin(), hubWarnings.end());
     d.warnings.insert(d.warnings.end(), sessionWarnings_.begin(), sessionWarnings_.end());
+    const std::vector<HubWarning> robotCameraWarnings = robotCameras_.warnings(config_.vision);
+    d.warnings.insert(d.warnings.end(), robotCameraWarnings.begin(), robotCameraWarnings.end());
     d.warnings.insert(d.warnings.end(), extraWarnings.begin(), extraWarnings.end());
     d.batteryVoltageV = battery_.voltageV();
     d.driverStation = ds_;
     d.physicsStats = world_->stats();
     if (gameState_) gameState_->publish(builder);
+    // What the robot reports about its cameras is listed whether or not an engine exists.
+    d.detectedCameras.assign(robotCameras_.states().begin(), robotCameras_.states().end());
+    if (vision_)
+        vision_->contribute(builder, vision::VisionWorldView{*world_, chassis_.body, directory_.get()}, robotCameras_);
     return builder.build();
 }
 

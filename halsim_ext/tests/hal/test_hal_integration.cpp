@@ -1,6 +1,8 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <atomic>
+#include <set>
 #include <thread>
 
 #include "fakes.h"
@@ -61,6 +63,55 @@ private:
     sdk::IBridgeHost* host_ = nullptr;
     sdk::DeviceId pwm_;
     sdk::DeviceId dio_;
+};
+
+// Camera hooks against the real HAL clock: the HAL time at which each hook ran relative to the
+// step.
+class VisionClockProbe final : public sdk::IDeviceBridge {
+public:
+    struct Applied {
+        std::uint64_t fpgaUs = 0;
+        std::size_t frames = 0;
+    };
+    struct Collected {
+        std::uint64_t fpgaUs = 0;
+        bool full = false;
+    };
+
+    std::string_view name() const override { return "test.vision_clock"; }
+    sdk::Status start(sdk::IBridgeHost&) override { return sdk::okStatus(); }
+    void poll() override {}
+    void collectOutputs(std::vector<sdk::SignalSample>&) override {}
+    void applyInputs(std::span<const sdk::SignalSample>) override {}
+    void applyLoopback(sdk::DeviceId) override {}
+    bool owns(sdk::DeviceId) const override { return false; }
+    void stop() noexcept override {}
+    void applyVision(std::span<const sdk::VisionFrame> frames) override {
+        std::lock_guard lock(mutex_);
+        applied_.push_back({now(), frames.size()});
+    }
+    void collectVision(std::vector<sdk::CameraRobotState>&, bool full) override {
+        std::lock_guard lock(mutex_);
+        collected_.push_back({now(), full});
+    }
+
+    std::vector<Applied> applied() const {
+        std::lock_guard lock(mutex_);
+        return applied_;
+    }
+    std::vector<Collected> collected() const {
+        std::lock_guard lock(mutex_);
+        return collected_;
+    }
+
+private:
+    static std::uint64_t now() {
+        std::int32_t status = 0;
+        return HAL_GetFPGATime(&status);
+    }
+    mutable std::mutex mutex_;
+    std::vector<Applied> applied_;
+    std::vector<Collected> collected_;
 };
 
 // What a TimedRobot does through the C HAL: create devices, observe program start, then run a 20 ms
@@ -224,4 +275,63 @@ TEST_CASE("real HAL: a vanished emulator never leaves the robot frozen") {
     // Real time flows again: the robot loop keeps running on its own.
     const int before = robot.loops;
     CHECK(waitUntil([&] { return robot.loops > before; }, 3000ms));
+}
+
+TEST_CASE("real HAL: camera frames are applied before the step and the camera state after it") {
+    RealRig rig;
+    auto owner = std::make_unique<VisionClockProbe>();
+    VisionClockProbe& probe = *owner;
+    rig.bridges.push_back(std::move(owner));
+    REQUIRE(rig.start());
+
+    MiniRobot robot;
+    REQUIRE(rig.emulator->waitForLifecycle(5000ms));
+
+    constexpr std::uint64_t kStepUs = 5000;
+    std::int32_t status = 0;
+    // HAL time stands still until the first tick.
+    const std::uint64_t t0 = HAL_GetFPGATime(&status);
+    constexpr std::uint64_t kTicks = 20;
+    for (std::uint64_t tick = 1; tick <= kTicks; ++tick) {
+        if (tick % 4 == 0) {
+            sdk::VisionFrame frame;
+            frame.cameraId = frame.ntName = "photon-front";
+            frame.sequence = tick;
+            frame.latencyUs = 25000;
+            rig.emulator->nextVision = {frame};
+        }
+        const auto ack = rig.emulator->tick({}, static_cast<std::uint32_t>(kStepUs), 12.2);
+        REQUIRE(ack.has_value());
+        REQUIRE(ack->result == proto::TickResult::Completed);
+    }
+
+    // The frames of SensorFrame N are applied before its step: the clock the robot (and ntcore)
+    // sees is T(N-1); the camera state is collected after it, at T(N).
+    const auto applied = probe.applied();
+    REQUIRE(applied.size() == kTicks / 4);
+    for (std::size_t i = 0; i < applied.size(); ++i) {
+        const std::uint64_t tick = 4 * (i + 1);
+        CHECK(applied[i].frames == 1);
+        CHECK(applied[i].fpgaUs == t0 + (tick - 1) * kStepUs);
+    }
+    // collectVision also runs outside the ticks (the report at program start, after every idle
+    // poll): always on a tick boundary, and the step of every tick is followed by one.
+    const auto collected = probe.collected();
+    std::set<std::uint64_t> times;
+    for (const auto& c : collected) {
+        CHECK(c.fpgaUs >= t0);
+        CHECK(c.fpgaUs <= t0 + kTicks * kStepUs);
+        CHECK((c.fpgaUs - t0) % kStepUs == 0);
+        times.insert(c.fpgaUs);
+    }
+    for (std::uint64_t tick = 1; tick <= kTicks; ++tick)
+        CHECK(times.count(t0 + tick * kStepUs) == 1);
+    REQUIRE_FALSE(collected.empty());
+    CHECK(collected.front().full);  // the first call of the connection
+    // ... and the first tick lists every camera again: no other call is a full one.
+    CHECK(std::count_if(collected.begin(), collected.end(), [](const auto& c) { return c.full; }) ==
+          2);
+
+    rig.runtime->stop();
+    CHECK_FALSE(HALSIM_IsTimingPaused());
 }

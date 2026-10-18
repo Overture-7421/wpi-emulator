@@ -103,8 +103,12 @@ public:
     // HALSIM_StepTiming. Only the vision bridge implements it; the default ignores the frames.
     virtual void applyVision(std::span<const VisionFrame> /*frames*/) {}
     // Robot -> emulator: appends what the robot did with each camera (informational): every camera
-    // when `full` (the first frame of an epoch or connection), otherwise only the entries that
-    // changed since the last call. Clock thread, after the step. The default appends nothing.
+    // when `full` (the first call of an epoch or connection), otherwise only the entries that
+    // changed since the last call. Clock thread. Called after the step of every lock-step tick
+    // (the result rides ActuatorFrame::vision) AND after bridge polls outside the tick path, where
+    // in free-running phases the robot runs concurrently (the result rides VisionReport), so
+    // implementations keep their own "already reported" state and stay cheap. The default appends
+    // nothing.
     virtual void collectVision(std::vector<CameraRobotState>& /*out*/, bool /*full*/) {}
 };
 

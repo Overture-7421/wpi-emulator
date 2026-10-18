@@ -9,6 +9,7 @@
 
 #include "wpiemu/core/runtime/device_hub.h"
 #include "wpiemu/core/runtime/sim_clock.h"
+#include "wpiemu/core/vision/robot_camera_states.h"
 #include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/core/rng.h"
@@ -20,6 +21,10 @@
 #include "wpiemu/sdk/physics/physics_world.h"
 #include "wpiemu/sdk/physics/tire_model.h"
 #include "wpiemu/sdk/telemetry/snapshot.h"
+
+namespace wpiemu::core::vision {
+class VisionSystem;
+}
 
 namespace wpiemu::core::runtime {
 
@@ -80,7 +85,7 @@ struct SessionParts {
 // One simulation run: owns the world, chassis, drivetrain, mechanisms, device hub, game state and runs the
 // per-tick pipeline of ARCHITECTURE section 4. Pure and synchronous: no threads, no I/O, no wall clock, so it is
 // deterministic and unit-testable; SessionRunner adds lock-step I/O around it.
-// Destruction order (reverse of construction): game state, mechanisms, drivetrain, field, world.
+// Destruction order (reverse of construction): vision, game state, mechanisms, drivetrain, field, world.
 // Threading: sim thread only.
 class SimulationSession {
 public:
@@ -88,13 +93,15 @@ public:
     SimulationSession(const SimulationSession&) = delete;
     SimulationSession& operator=(const SimulationSession&) = delete;
 
-    // One tick: mechanisms -> drivetrain -> physics -> game -> egress (IMU, battery) -> SensorFrame.
+    // One tick: mechanisms -> drivetrain -> physics -> game -> vision -> egress (IMU, battery) -> SensorFrame.
     // The caller has already ingested the previous ActuatorFrame into hub() (ingress) and set the DS state.
-    // Fills tick (0-based within the epoch), simTimeUs (after the step), stepUs, battery, samples; the runner stamps identity.
+    // Fills tick (0-based within the epoch), simTimeUs (after the step), stepUs, battery, samples and, when the
+    // project has cameras, the vision frames due in this frame (SensorFrame::vision); the runner stamps identity.
     void tick(sdk::proto::SensorFrame& out, bool fullFrame);
-    // Back to t = 0: chassis pose/velocity, drivetrain, mechanisms, game state, clock, RNG, battery. Bindings and
-    // discovered devices stay, but cached actuation/feedback is neutralized. Starts a new epoch of tick
-    // numbering; the next sensor frame is full even if the caller requests a delta.
+    // Back to t = 0: chassis pose/velocity, drivetrain, mechanisms, game state, clock, RNG, battery, and the vision
+    // schedule (queued frames dropped, sequence numbers continue; what the robot reported about its cameras stays,
+    // see robotCameras()). Bindings and discovered devices stay, but cached actuation/feedback is neutralized. Starts a
+    // new epoch of tick numbering; the next sensor frame is full even if the caller requests a delta.
     void reset();
     // Teleports the chassis to `pose` (world frame, body origin = COM) and starts it from rest: linear and angular velocity
     // are zeroed, the drivetrain's wheel state is reset and the IMU's velocity history restarts, so the robot code sees a
@@ -122,10 +129,22 @@ public:
     sdk::IDrivetrain* drivetrain() { return drivetrain_.get(); }
     sdk::IMechanismDirectory& mechanisms();
     sdk::IGameModule* gameModule() const { return module_; }
-    // Warnings the session raises itself (brownout, unresolved attachments), next to hub().warnings().
+    // Warnings the session raises itself (brownout, unresolved attachments, vision_layout_missing), next to
+    // hub().warnings().
     const std::vector<sdk::HubWarning>& sessionWarnings() const { return sessionWarnings_; }
+    // The vision engine (ADR 0017): null when no camera is enabled or when the AprilTag layout could not be resolved
+    // (then vision_layout_missing is among sessionWarnings() and the session runs without cameras).
+    vision::VisionSystem* vision() { return vision_.get(); }
+    const vision::VisionSystem* vision() const { return vision_.get(); }
+    // What the robot process reports about the cameras it uses (ActuatorFrame::vision and VisionReport). It exists whether
+    // or not an engine does: snapshots list it as detectedCameras() and raise the vision_camera_* warnings from it, so a
+    // project without cameras still learns which cameras its robot uses. reset() keeps it (it describes the robot process,
+    // not the simulation); the runner clears it when the connection is lost or replaced.
+    vision::RobotCameraStates& robotCameras() { return robotCameras_; }
+    const vision::RobotCameraStates& robotCameras() const { return robotCameras_; }
 
-    // Immutable view for the UI (what the runner hands to the snapshot sink).
+    // Immutable view for the UI (what the runner hands to the snapshot sink). Its warnings are the hub's, the
+    // session's (sessionWarnings()), those the robot's camera reports imply (vision_camera_*) and the caller's.
     std::shared_ptr<const sdk::ISimSnapshot> buildSnapshot(bool paused, bool robotConnected,
                                                            std::span<const sdk::HubWarning> extraWarnings = {}) const;
 
@@ -135,6 +154,7 @@ private:
     SimulationSession(SessionParts& parts, sdk::SimTimeUs stepUs);
 
     sdk::Status build(SessionParts& parts);
+    sdk::Status buildVision();
     void stepDrivetrain(double dt, double& currentA);
     void writeImu(double dt);
     void updateBrownoutWarning();
@@ -162,6 +182,8 @@ private:
     std::unique_ptr<Directory> directory_;
     std::unique_ptr<sdk::SimContext> ctx_;
     std::unique_ptr<sdk::IGameState> gameState_;
+    vision::RobotCameraStates robotCameras_;
+    std::unique_ptr<vision::VisionSystem> vision_;
 
     std::vector<sdk::WheelCommand> wheelCommands_;
     sdk::Vec3 lastVelocity_;

@@ -149,6 +149,7 @@ std::optional<SessionEnd> SimSession::waitForProgramStart() {
     programStarted_ = true;
     s_.bridges.poll();  // everything the robot constructor created is announced before the signal below
     drainRetired();
+    reportVision();  // and so are the cameras it uses
     post(proto::Message(proto::makeLifecycleLog(proto::kLifecycleProgramStarted)));
     s_.logger.info(kLog, "robot program started; " + std::to_string(s_.devices.liveCount()) + " device(s) announced");
     applyPendingDriverStation();
@@ -224,7 +225,10 @@ void SimSession::onSensorFrame(proto::SensorFrame&& frame) {
             return;
         case proto::FollowerAction::Step: break;
     }
-    if (epoch_.load() != follower_.runEpoch()) s_.bridges.resetInputHistory();
+    if (epoch_.load() != follower_.runEpoch()) {
+        s_.bridges.resetInputHistory();
+        visionFull_ = true;  // a new epoch starts with the full camera list, like after a Reset
+    }
     epoch_ = follower_.runEpoch();
     s_.logger.setSimTimeUs(frame.simTimeUs);
 
@@ -236,6 +240,7 @@ void SimSession::onSensorFrame(proto::SensorFrame&& frame) {
         s_.ports.power.setBattery(lastBatteryV_, lastBatteryA_);
     }
     s_.bridges.applyInputs(frame.samples);
+    applyVision(frame.vision);  // only frames the follower accepted get here
 
     if (lockstep_) {
         const std::uint64_t stepUs = frame.stepUs != 0 ? frame.stepUs : ack_.stepUs;
@@ -267,13 +272,59 @@ void SimSession::onSensorFrame(proto::SensorFrame&& frame) {
     const bool full = delta_.filter(outputs_, forceFull);
     if (full) ticksSinceFull_ = 0;
 
+    // Camera state: every camera whenever the signals are a full frame (and on the first frame of a
+    // connection or epoch), otherwise only what changed. Asked every completed tick, also while no
+    // camera is configured: the robot may use cameras nobody configured and the vision bridge
+    // reports them. The bridges track what changed since their previous call, so an entry that a
+    // VisionReport already carried is not repeated here.
+    visionOut_.clear();
+    s_.bridges.collectVision(visionOut_, full || visionFull_);
+    visionFull_ = false;
+    clampVisionStates();
+
     proto::ActuatorFrame ack = follower_.makeAck(frame, proto::TickResult::Completed);
     ack.full = full;
     ack.samples = outputs_;
+    ack.vision.swap(visionOut_);
     ack.robotLoopCount = s_.ports.clock.robotLoopCount();
     post(proto::Message(std::move(ack)));
     s_.stats.ticksCompleted.fetch_add(1, std::memory_order_relaxed);
     touch();
+}
+
+void SimSession::applyVision(const std::vector<sdk::VisionFrame>& frames) {
+    if (frames.empty()) return;  // nothing to time, nothing to count: costless without vision
+    const std::int64_t startNs = nowNs();
+    s_.bridges.applyVision(frames);
+    s_.stats.recordVisionApply(frames.size(), static_cast<std::uint64_t>(nowNs() - startNs) / 1000);
+}
+
+// The camera state outside the tick path, where no ActuatorFrame carries it: after the poll at
+// program start and after every idle poll (Armed / discovery-only, before BeginLockstep, after
+// EndLockstep, free-running phases, a degraded session). Only a non-empty report is sent, never one
+// per tick. The first call of a connection lists every camera, later ones what changed since the
+// previous call of either path.
+void SimSession::reportVision() {
+    visionOut_.clear();
+    s_.bridges.collectVision(visionOut_, visionReportFull_);
+    visionReportFull_ = false;
+    if (visionOut_.empty()) return;
+    clampVisionStates();
+    proto::VisionReport report;
+    report.cameras.swap(visionOut_);
+    post(proto::Message(std::move(report)));
+}
+
+// The wire format caps the list: cut the surplus, warn once per connection.
+void SimSession::clampVisionStates() {
+    if (visionOut_.size() <= kMaxVisionStates) return;
+    if (!visionClamped_) {
+        visionClamped_ = true;
+        s_.logger.warn(kLog, "vision: " + std::to_string(visionOut_.size()) +
+                                 " camera states in one message; only the first " +
+                                 std::to_string(kMaxVisionStates) + " are sent");
+    }
+    visionOut_.resize(kMaxVisionStates);
 }
 
 void SimSession::onDsState(proto::DsState&& state) {
@@ -318,6 +369,7 @@ std::optional<SessionEnd> SimSession::onControl(const proto::SimControl& control
                 s_.bridges.resetInputHistory();
                 delta_.reset();  // the next ActuatorFrame is a full one in the new epoch
                 ticksSinceFull_ = 0;
+                visionFull_ = true;
                 if (lockstep_ && unblocked_.exchange(false)) {  // re-engage lock-step after a stall
                     degraded_ = Degraded::None;
                     s_.ports.clock.pauseTiming();
@@ -328,6 +380,7 @@ std::optional<SessionEnd> SimSession::onControl(const proto::SimControl& control
                 s_.bridges.resetInputHistory();
                 delta_.reset();
                 ticksSinceFull_ = 0;
+                visionFull_ = true;
                 paused_ = false;
                 unblocked_ = false;
                 degraded_ = Degraded::None;
@@ -366,6 +419,7 @@ void SimSession::applyPendingDriverStation() {
 void SimSession::idle() {
     s_.bridges.poll();
     drainRetired();
+    reportVision();
     if (!lockstep_ && programStarted_) {
         applyPendingDriverStation();
         s_.bridges.applyLoopback(loopback_);
