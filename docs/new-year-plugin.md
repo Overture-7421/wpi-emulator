@@ -40,6 +40,18 @@ The app selects the plugin from the project's GradleRIO year (`RobotConfig::proj
 Per-tick order (docs/ARCHITECTURE.md §4): hub ingest -> mechanisms -> drivetrain -> physics step -> `IGameState::step`
 -> `onTick` -> snapshot. Mechanisms therefore publish their state *before* the game state reads it.
 
+**Contributing AprilTag layouts (vision).** So that robots with a camera can see your season's fiducials, override
+`contributeFiducialLayouts()` and return one `sdk::FiducialLayout` per official layout (for example the welded and the
+AndyMark field variants): an id `"game_<year>.<name>"`, a display name, the default `tagSizeM`, the field size and one
+`FiducialTag{id, pose, sizeM}` per tag. Poses are in the SDK world frame, which is WPILib's blue-origin frame, so the
+numbers of WPILib's `AprilTagFieldLayout` JSON are used unchanged; the tag frame is WPILib's too (origin at the tag
+centre, +X = the outward normal, +Z up). The first layout is the plugin default (used when `VisionConfig::layoutId` is
+empty) and the core never interprets the list; a project can also point `VisionConfig::layoutFile` at any WPILib layout
+JSON. Do not type the numbers by hand: generate a checked-in table from the JSON that ships in WPILib's `apriltag-java`
+jar, as `tools/gen_fiducial_layout.py` does for 2026 (it records the jar, the resources and their SHA-256 and has a
+`--check` mode), and test the table against your field model (`tests/game_2026/test_fiducial_layouts.cpp`; see
+[game_2026.md](game_2026.md#12-apriltag-layouts)).
+
 ## 3. Design rules
 
 * **Dependencies**: `wpiemu/sdk/**` only (no core, app, ipc, bridges, Qt, Box3D, other plugin). One target, links
