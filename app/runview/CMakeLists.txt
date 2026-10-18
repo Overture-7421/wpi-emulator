@@ -16,6 +16,8 @@ set(WPIEMU_RUNVIEW_SOURCES
     console_model.cpp
     hud_model.cpp
     scene_parts.cpp
+    camera_rig.cpp
+    camera_hud.cpp
     scene_model.cpp
     mechanism_overlay_model.cpp
     sim_stats.cpp
@@ -44,6 +46,8 @@ qt_add_resources(wpiemu_app_runview runview_qml
     FILES
         qml/RunScene.qml
         qml/PartModel.qml
+        qml/CameraVisual.qml
+        qml/CameraPanel.qml
         qml/HudStack.qml
         qml/HudWidget.qml
         qml/MechanismPanel.qml)

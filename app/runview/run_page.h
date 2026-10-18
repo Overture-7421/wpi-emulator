@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "camera_hud.h"
 #include "console_panel.h"
 #include "driver_station_model.h"
 #include "driver_station_panel.h"
@@ -52,12 +53,14 @@ public:
     SceneModel& scene() { return scene_; }
     HudModel& hud() { return hud_; }
     MechanismOverlayModel& mechanisms() { return mechanisms_; }
+    CameraHudModel& cameraHud() { return cameraHud_; }
     RunViewport* viewport() const { return viewport_; }
     const SimStatsValues& stats() const { return stats_.values(); }
 
     QAction* restartAction() const { return restartAction_; }
     QAction* restartRobotAction() const { return restartRobotAction_; }
-    // Overlay toggles, the zone submenu and the console toggle; listed in the shell's View menu.
+    // Overlay toggles (HUD, mechanisms, zones, cameras, AprilTags), the zone submenu and the console toggle; listed in the shell's View
+    // menu. The overlay toggles are remembered in the settings.
     QList<QAction*> viewActions() const;
     QComboBox* speedCombo() const { return speedCombo_; }
 
@@ -97,6 +100,7 @@ private:
     SceneModel scene_;
     HudModel hud_;
     MechanismOverlayModel mechanisms_;
+    CameraHudModel cameraHud_;
     ViewportTheme theme_;
     ViewportOptions viewOptions_;
     SimStats stats_;
@@ -114,6 +118,8 @@ private:
     QAction* hudAction_ = nullptr;
     QAction* mechAction_ = nullptr;
     QAction* zonesAction_ = nullptr;
+    QAction* camerasAction_ = nullptr;
+    QAction* tagsAction_ = nullptr;
     QTimer* pollTimer_ = nullptr;
     QTimer* dsTimer_ = nullptr;
 
