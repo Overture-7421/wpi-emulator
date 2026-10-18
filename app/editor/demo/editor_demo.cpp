@@ -5,6 +5,7 @@
 //   wpiemu_editor_demo --detect              run the scripted "Detect devices" (and the cameras the robot code uses) before grabbing
 //   wpiemu_editor_demo --view top|front|side|3d   viewport preset (like the 1-4 keys);  --frame frames the selection (like F)
 //   wpiemu_editor_demo --tags                show the AprilTags of the layout (the Tags button)
+//   wpiemu_editor_demo --disable-camera limelight_rear   switch a camera off first (it is drawn dimmed)
 //   wpiemu_editor_demo --tank                tank drive with 3 wheels per side, 3 motors per side (linked wheels)
 //   wpiemu_editor_demo --light               light palette
 #include <QApplication>
@@ -19,6 +20,7 @@
 #include "wpiemu/sdk/mechanisms/motion_config.h"
 #include "model/selection.h"
 #include "viewmodel/editor_controller.h"
+#include "wpiemu/sdk/config/value_codec.h"
 
 using namespace wpiemu::app::editor;
 
@@ -117,7 +119,8 @@ int main(int argc, char* argv[]) {
     const QCommandLineOption view(QStringLiteral("view"), QStringLiteral("Viewport preset: front, side, top or 3d."), QStringLiteral("preset"));
     const QCommandLineOption frame(QStringLiteral("frame"), QStringLiteral("Frame the selection in the viewport."));
     const QCommandLineOption tags(QStringLiteral("tags"), QStringLiteral("Show the AprilTags in the viewport."));
-    parser.addOptions({grab, select, detect, tank, light, size, view, frame, tags});
+    const QCommandLineOption disableCamera(QStringLiteral("disable-camera"), QStringLiteral("Switch a camera off first."), QStringLiteral("id"));
+    parser.addOptions({grab, select, detect, tank, light, size, view, frame, tags, disableCamera});
     parser.process(app);
 
     applyPalette(app, parser.isSet(light));
@@ -129,6 +132,9 @@ int main(int argc, char* argv[]) {
     page.resize(wh.value(0).toInt(), wh.value(1).toInt());
     page.show();
 
+    if (parser.isSet(disableCamera))
+        page.controller().document().setProperty(SelectionRef::camera(parser.value(disableCamera).toStdString()), "camera.general", "enabled",
+                                                 wpiemu::sdk::Value(false));
     if (parser.isSet(select)) page.controller().selection().set(parseSelection(parser.value(select)));
     // The viewport shortcuts (1-4 views, F frames the selection) are page actions: trigger them like the keys would.
     const auto press = [&page](const QString& key) {
