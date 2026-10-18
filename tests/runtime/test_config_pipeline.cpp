@@ -50,6 +50,37 @@ TEST_CASE("validator: chassis, wheel, sim and battery sanity") {
     CHECK(hasIssue(issues, issue_code::kBatteryInvalid));
 }
 
+TEST_CASE("validator: the start pose must be finite and a start pose far from the field only warns") {
+    Registries reg;
+    RobotConfig c = sampleConfig();
+    const auto startPoseIssues = [&](const RobotConfig& cfg) {
+        std::vector<Issue> out;
+        for (const Issue& i : validate(cfg, reg))
+            if (i.code == validation_code::kStartPoseInvalid) out.push_back(i);
+        return out;
+    };
+    CHECK(startPoseIssues(c).empty());                     // unset = default placement
+    c.sim.startPose = StartPose{4.f, 3.f, -3.f};
+    CHECK(startPoseIssues(c).empty());
+    c.sim.startPose = StartPose{-1000.f, 1000.f, 0.f};     // the limit itself is fine
+    CHECK(startPoseIssues(c).empty());
+
+    for (const StartPose distant : {StartPose{1000.5f, 0.f, 0.f}, StartPose{0.f, -2.0e6f, 0.f}}) {
+        c.sim.startPose = distant;
+        const auto issues = validate(c, reg);
+        CHECK(hasIssue(issues, validation_code::kStartPoseInvalid, Severity::Warning));
+        CHECK_FALSE(ConfigValidator::hasErrors(issues));
+    }
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    for (const StartPose bad : {StartPose{nan, 0.f, 0.f}, StartPose{0.f, inf, 0.f}, StartPose{0.f, 0.f, nan}}) {
+        c.sim.startPose = bad;
+        const auto issues = validate(c, reg);
+        CHECK(hasIssue(issues, validation_code::kStartPoseInvalid, Severity::Error));
+        CHECK(ConfigValidator::hasErrors(issues));
+    }
+}
+
 TEST_CASE("validator: tire and motor parameters must be finite and physically meaningful") {
     Registries reg;
     const float nan = std::numeric_limits<float>::quiet_NaN();

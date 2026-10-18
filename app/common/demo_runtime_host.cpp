@@ -201,10 +201,22 @@ void DemoRuntimeHost::restart() {
 }
 
 void DemoRuntimeHost::resetSimulation() {
-    x_ = y_ = yaw_ = 0.0;
+    // The configured start pose, else the origin (this stand-in has no game field to put a default spot in).
+    const std::optional<sdk::StartPose> start = scene_.config ? scene_.config->sim.startPose : std::nullopt;
+    x_ = start ? static_cast<double>(start->xM) : 0.0;
+    y_ = start ? static_cast<double>(start->yM) : 0.0;
+    yaw_ = start ? static_cast<double>(start->yawRad) : 0.0;
     vx_ = vy_ = omega_ = 0.0;
     wheelSpin_ = 0.0;
     tick_ = 0;
+    publish();
+}
+
+void DemoRuntimeHost::setRobotPose(const sdk::Pose3& pose) {
+    x_ = static_cast<double>(pose.position.x);
+    y_ = static_cast<double>(pose.position.y);
+    yaw_ = static_cast<double>(pose.rotation.yaw());
+    vx_ = vy_ = omega_ = 0.0;
     publish();
 }
 

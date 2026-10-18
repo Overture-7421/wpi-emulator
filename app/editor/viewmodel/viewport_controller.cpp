@@ -285,6 +285,7 @@ void ViewportController::frameSelection() {
         const bool selected = scene_.isHighlighted(item);
         if (!selected && !(editor_.selection().current().kind == SelKind::Robot || editor_.selection().current().isNone())) continue;
         if (item.role == ItemRole::Link || item.role == ItemRole::Overlay) continue;
+        if (item.ref.kind == SelKind::StartPose && !selected) continue;   // can be far from the robot: framed only when it is the selection
         const Vec3 h = item.size * 0.5f;
         for (int sx = -1; sx <= 1; sx += 2)
             for (int sy = -1; sy <= 1; sy += 2)
@@ -311,7 +312,7 @@ void ViewportController::wheel(qreal angleDeltaY) {
 }
 
 // ---- input ---------------------------------------------------------------------------------------
-SelectionRef ViewportController::chooseItem(const QStringList& hitIds) const {
+const SceneItem* ViewportController::pickItem(const QStringList& hitIds) const {
     const SceneItem* best = nullptr;
     for (const QString& id : hitIds) {
         if (!id.startsWith(QLatin1String("i:"))) continue;
@@ -323,6 +324,11 @@ SelectionRef ViewportController::chooseItem(const QStringList& hitIds) const {
             break;
         }
     }
+    return best;
+}
+
+SelectionRef ViewportController::chooseItem(const QStringList& hitIds) const {
+    const SceneItem* best = pickItem(hitIds);
     if (best == nullptr) return {};
     // Drill-down: clicking a mechanism's / the chassis' shape selects the owner first and the shape once
     // the owner is already selected.
@@ -344,6 +350,11 @@ void ViewportController::press(qreal x, qreal y, int button, int modifiers, cons
     if (button == Qt::LeftButton && !alt) {
         for (const QString& id : hitIds)
             if (id.startsWith(QLatin1String("h:")) && beginGizmoDrag(id, x, y)) return;
+        if (const SceneItem* item = pickItem(hitIds); item != nullptr && item->ref.kind == SelKind::StartPose) {
+            editor_.selection().set(item->ref);   // selecting is free, the pose only changes once the pointer moves
+            beginStartPoseDrag(QString::fromStdString(item->id), x, y);
+            return;
+        }
         const SelectionRef picked = chooseItem(hitIds);
         if (!picked.isNone()) {
             editor_.selection().set(picked);
@@ -374,6 +385,9 @@ void ViewportController::move(qreal x, qreal y, int, int modifiers) {
         case DragKind::Gizmo:
             if (drag_.moved) updateGizmoDrag(x, y, (modifiers & Qt::ControlModifier) != 0);
             break;
+        case DragKind::StartPose:
+            if (drag_.moved) updateStartPoseDrag(x, y, (modifiers & Qt::ControlModifier) != 0);
+            break;
         case DragKind::None: break;
     }
     drag_.last = pos;
@@ -382,6 +396,7 @@ void ViewportController::move(qreal x, qreal y, int, int modifiers) {
 
 void ViewportController::release(qreal, qreal, int) {
     if (drag_.kind == DragKind::Gizmo) endGizmoDrag();
+    else if (drag_.kind == DragKind::StartPose) endStartPoseDrag();
     else if (drag_.clickToDeselect && !drag_.moved) editor_.selection().set(SelectionRef::robot());
     drag_ = Drag{};
 }
@@ -462,6 +477,40 @@ void ViewportController::endGizmoDrag() {
     rebuildGizmo();
 }
 
+// ---- start pose marker ---------------------------------------------------------------------------
+bool ViewportController::beginStartPoseDrag(const QString& itemId, qreal x, qreal y) {
+    const sdk::StartPose start = ops::effectiveStartPose(editor_.document().config(), editor_.document().catalog());
+    Drag d;
+    d.kind = DragKind::StartPose;
+    d.last = d.start = QPointF(x, y);
+    d.session = QStringLiteral("g%1").arg(++dragCounter_);
+    if (itemId.startsWith(QLatin1String(kStartPoseNoseId))) {
+        d.floor = placement::FloorDrag::rotate(start, 0.f);
+    } else {
+        const Ray ray = camera_.rayAt(static_cast<float>(x), static_cast<float>(y), static_cast<float>(viewW_), static_cast<float>(viewH_));
+        const auto grab = placement::intersectHorizontalPlane(ray, 0.f);
+        if (!grab) return false;
+        d.floor = placement::FloorDrag::move(start, *grab);
+    }
+    drag_ = d;
+    return true;
+}
+
+void ViewportController::updateStartPoseDrag(qreal x, qreal y, bool snapToggle) {
+    if (drag_.kind != DragKind::StartPose) return;
+    const Ray ray = camera_.rayAt(static_cast<float>(x), static_cast<float>(y), static_cast<float>(viewW_), static_cast<float>(viewH_));
+    placement::Snap snap;
+    if (snapActive(snapToggle)) {
+        snap.moveStepM = static_cast<float>(editor_.settings().moveStepM());
+        snap.yawStepRad = degToRadF(static_cast<float>(editor_.settings().rotateStepDeg()));
+    }
+    if (const auto pose = drag_.floor.update(ray, snap)) editor_.document().setStartPose(*pose, drag_.session);
+}
+
+void ViewportController::endStartPoseDrag() {
+    if (drag_.kind == DragKind::StartPose) drag_.kind = DragKind::None;
+}
+
 // ---- numeric entry -------------------------------------------------------------------------------
 TransformFields ViewportController::transformFields() const {
     TransformFields f;
@@ -507,6 +556,8 @@ QString ViewportController::hintText() const {
 }
 
 QString ViewportController::infoText() const {
+    if (editor_.selection().current().kind == SelKind::StartPose)
+        return ETR("Start pose \xC2\xB7 drag the footprint to move it, drag the arrow to turn it \xC2\xB7 Ctrl toggles snapping");
     const TransformFields f = transformFields();
     if (!f.valid) return ETR("Click a part to select it \xC2\xB7 left/middle-drag pans \xC2\xB7 right-drag orbits \xC2\xB7 wheel zooms");
     return f.targetName;

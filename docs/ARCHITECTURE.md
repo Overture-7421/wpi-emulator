@@ -136,7 +136,8 @@ back-propagated load; independent sessions keep the original tick pipeline.
   with the robot via `HALSIM_StepTiming`. Sim time is exact integer microseconds from `ISimClock`; nothing reads a wall clock.
 * **Sim thread owns** physics, mechanisms, hub, game state, config, RNG. Nothing in `SimContext`
   is thread-safe. The UI never touches them: it reads `shared_ptr<const ISimSnapshot>` and sends
-  commands through `ISimController` (enqueued, applied at the start of the next tick).
+  commands through `ISimController` (enqueued, applied at the start of the next tick; `setRobotPose` teleports the chassis,
+  see [runtime.md](runtime.md) section 3).
 * **Extension side**: HAL callbacks (robot threads) only record events; the clock thread calls
   `IDeviceBridge::poll/collectOutputs/applyInputs/applyLoopback` while the robot is quiescent
   (between `HALSIM_StepTiming` calls). Socket I/O lives on one IPC thread. Never block in a HAL callback.
@@ -153,7 +154,7 @@ and a `HubWarning{"unmapped_loopback"}` is raised.
 One tick `N` (sim thread unless noted):
 
 1. **Ingest** the newest `ActuatorFrame` from tick N-1 into `IDeviceHubIngress` (frames whose `runEpoch`
-   is stale are dropped, §4.1); apply queued UI commands (`DsState`, `SimControl`, mapping changes).
+   is stale are dropped, §4.1); apply queued UI commands (`DsState`, `SimControl`, mapping changes, `setRobotPose`).
 2. **Mechanisms** in config order: `IMechanism::tick` reads `MotorOutput` per slot from the hub,
    steps its `IPlant`, writes encoder/limit feedback back to the hub (absolute truth).
    Mechanisms also **submit** to `ctx.coupling()` (chassis wrench, anchored constraints, payload mass)

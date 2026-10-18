@@ -137,6 +137,13 @@ bool renameWheel(sdk::RobotConfig& c, const std::string& oldName, const std::str
 sdk::WheelSpec* findWheel(sdk::RobotConfig& c, std::string_view name);
 const sdk::WheelSpec* findWheel(const sdk::RobotConfig& c, std::string_view name);
 
+// ---- start pose -------------------------------------------------------------------------------
+// Where the robot starts: the configured pose, else the backend's default placement (the field's start spot). Planar, in
+// the field frame; it is the pose of the chassis frame (the COM), like the pose the run view reports.
+sdk::StartPose effectiveStartPose(const sdk::RobotConfig& c, const EditorCatalog& catalog);
+// Sets the start pose, or clears it (nullopt = back to the default placement). false when nothing changes.
+bool setStartPose(sdk::RobotConfig& c, const std::optional<sdk::StartPose>& pose);
+
 // ---- primitives -------------------------------------------------------------------------------
 std::vector<sdk::PrimitiveSpec>* primitivesOf(sdk::RobotConfig& c, std::string_view owner);
 const std::vector<sdk::PrimitiveSpec>* primitivesOf(const sdk::RobotConfig& c, std::string_view owner);

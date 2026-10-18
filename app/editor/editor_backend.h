@@ -52,6 +52,7 @@ struct EditorCatalog {
     sdk::PluginConfigSchema pluginSchema;                          // edited under RobotConfig::plugins[pluginId]
     std::vector<sdk::EditorPanelDescriptor> pluginPanels;
     std::vector<sdk::ZoneKindInfo> zoneKinds;                      // zone kinds the selected plugin owns (pickup, muzzle, ...)
+    sdk::StartPose defaultStartPose;                               // where the robot starts while SimSettings::startPose is unset (the field's default spot, else the origin)
 
     const sdk::MechanismTemplateInfo* findTemplate(std::string_view type) const {
         for (const auto& t : mechanismTemplates)

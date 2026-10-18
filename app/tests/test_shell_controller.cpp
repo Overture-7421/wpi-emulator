@@ -3,6 +3,7 @@
 #include <QSignalSpy>
 
 #include "common/robot_basics.h"
+#include "shell/run_backend_adapter.h"
 #include "shell/shell_controller.h"
 #include "test_support.h"
 
@@ -153,6 +154,39 @@ TEST_CASE("starting the simulation reuses the launched robot and stopping leaves
     controller.stopSimulation();
     CHECK_FALSE(env.demo->status().simulating);
     CHECK(env.demo->status().active());   // the robot process stays alive
+    controller.stopRobot();
+}
+
+TEST_CASE("the run view teleports the robot through the shell and Reset returns to the saved start pose") {
+    TestEnvironment env;
+    ShellController controller(*env.services);
+    TestProject p;
+    REQUIRE(env.services->session().open(p.path()).ok());
+    sdk::RobotConfig config = buildRobotConfig(RobotBasics{}, env.services->buildContext(env.services->session().inspection()));
+    config.sim.startPose = sdk::StartPose{3.f, -2.f, 0.5f};
+    REQUIRE(env.services->session().commit(config, ProjectPrefs{}).ok());
+    REQUIRE(env.services->session().close().ok());
+    REQUIRE(controller.openProject(p.path()) == OpenOutcome::Opened);   // the pose travelled through robot.json
+    REQUIRE(waitFor([&] { return env.demo->status().programStarted; }));
+    controller.startSimulation();
+    REQUIRE(waitFor([&] { return env.demo->status().simulating; }));
+
+    const auto pose = [&] { return env.demo->latestSnapshot()->chassis().pose; };
+    CHECK(pose().position.x == doctest::Approx(3.f));
+    CHECK(pose().position.y == doctest::Approx(-2.f));
+    CHECK(pose().rotation.yaw() == doctest::Approx(0.5f));
+
+    RunBackendAdapter backend(*env.services);   // what the run view talks to
+    backend.setRobotPose(sdk::Pose3({1.f, 4.f, 0.2f}, sdk::Quat::fromYaw(-1.f)));
+    CHECK(pose().position.x == doctest::Approx(1.f));
+    CHECK(pose().position.y == doctest::Approx(4.f));
+    CHECK(pose().rotation.yaw() == doctest::Approx(-1.f));
+    CHECK(env.demo->latestSnapshot()->chassis().linearVelocity == sdk::Vec3{});   // a teleport leaves the robot at rest
+
+    backend.resetSimulation();
+    CHECK(pose().position.x == doctest::Approx(3.f));
+    CHECK(pose().position.y == doctest::Approx(-2.f));
+    CHECK(pose().rotation.yaw() == doctest::Approx(0.5f));
     controller.stopRobot();
 }
 

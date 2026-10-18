@@ -232,6 +232,23 @@ TEST_CASE("re-running the wizard keeps mechanisms, mappings and hand-made primit
     CHECK(extras == 1);
 }
 
+TEST_CASE("the wizard never invents a start pose and keeps the one the editor or the run view set") {
+    sdk::RobotConfig fresh = buildRobotConfig(defaultBasicsFor(sdk::drivetrain_kind::kSwerve), {});
+    CHECK_FALSE(fresh.sim.startPose.has_value());   // unset = the field's default placement
+
+    sdk::RobotConfig existing = fresh;
+    existing.sim.startPose = sdk::StartPose{2.5f, 3.f, 0.5f};
+    RobotBasics b = defaultBasicsFor(sdk::drivetrain_kind::kSwerve);
+    b.massKg = 45.0;
+    RobotBuildContext context;
+    context.stepUs = 2500;
+    const sdk::RobotConfig merged = updateRobotConfig(&existing, b, context);
+    CHECK(merged.sim.stepUs == 2500);                                // the wizard owns the step ...
+    REQUIRE(merged.sim.startPose.has_value());                       // ... but not where the robot starts
+    CHECK(*merged.sim.startPose == sdk::StartPose{2.5f, 3.f, 0.5f});
+    CHECK_FALSE(updateRobotConfig(&fresh, b, context).sim.startPose.has_value());
+}
+
 TEST_CASE("motor catalog lookup") {
     REQUIRE(findMotor(QStringLiteral("kraken_x60")) != nullptr);
     CHECK(findMotor(QStringLiteral("nope")) == nullptr);

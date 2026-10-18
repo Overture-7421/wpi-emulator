@@ -124,9 +124,11 @@ public:
     void control(const proto::SimControl& c) override { lastControl = c; }
     void bindSlot(const SlotAddress& s, const DeviceKey& d) override { bound = {s, d}; }
     void unbindSlot(const SlotAddress&) override { bound = {}; }
+    void setRobotPose(const Pose3& pose) override { lastPose = pose; }
     proto::DsState lastDs;
     proto::SimControl lastControl;
     SlotMapping bound;
+    Pose3 lastPose;
 };
 }  // namespace
 
@@ -141,7 +143,9 @@ TEST_CASE("UI-facing controller interface is mockable") {
     step.stepCount = 3;
     iface.control(step);
     iface.bindSlot({"intake", "motor"}, {"phoenix6", "talonfx", 4, "rio", -1});
+    iface.setRobotPose(Pose3{Vec3{1.f, 2.f, 0.3f}, Quat::fromYaw(0.5f)});
     CHECK(c.lastDs.enabled);
     CHECK(c.lastControl.stepCount == 3);
     CHECK(c.bound.slot.owner == "intake");
+    CHECK(c.lastPose.position.y == 2.f);
 }

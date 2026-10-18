@@ -98,6 +98,13 @@ TEST_CASE("real host: pending Run intent belongs to the project across config ed
     CHECK_FALSE(host.simulationStartPending());
 }
 
+TEST_CASE("real host: repositioning the robot while no robot runs is ignored") {
+    RealRuntimeHost host({});
+    host.setRobotPose(sdk::Pose3({1.f, 2.f, 0.2f}, sdk::Quat::fromYaw(0.3f)));   // there is no simulation session to teleport
+    CHECK(host.status().process == HostProcessState::Idle);
+    CHECK_FALSE(host.status().simulating);
+}
+
 TEST_CASE("Run intent: readiness consumes only the current project's deliberate request") {
     SimulationStartIntent intent;
     intent.projectReplaced();   // A

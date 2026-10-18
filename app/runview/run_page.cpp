@@ -113,6 +113,9 @@ void RunPage::build() {
     connect(viewport_, &RunViewport::homeRequested, this, [this] { scene_.resetCamera(); });
     connect(viewport_->overlay(), &StateOverlay::showConsoleRequested, this, [this] { setConsoleVisible(true); });
     connect(&scene_, &SceneModel::zoneLabelsChanged, this, &RunPage::rebuildZoneMenu);
+    connect(&scene_, &SceneModel::robotPoseRequested, this, [this](double xM, double yM, double zM, double yawRad) {
+        backend_.setRobotPose(sdk::toPose3(sdk::StartPose{static_cast<float>(xM), static_cast<float>(yM), static_cast<float>(yawRad)}, static_cast<float>(zM)));
+    });
     connect(&joysticks_, &JoystickManager::gamepadConnected, this, [this](const JoystickSourceInfo& info, int slot) {
         console_->append({QDateTime::currentMSecsSinceEpoch(), sdk::LogLevel::Info, LogStream::Emulator, tr("gamepad"),
                           tr("%1 connected, assigned to joystick port %2").arg(info.name).arg(slot)});
@@ -252,6 +255,7 @@ void RunPage::refreshControls(const sdk::ISimSnapshot* snapshot) {
     restartAction_->setEnabled(c.simulating);
     restartRobotAction_->setEnabled(c.canRestart);
     speedCombo_->setEnabled(c.simulating);
+    scene_.setPlacementEnabled(c.simulating);   // the robot can be dragged on the field while the simulation runs
 }
 
 void RunPage::pollNow() {

@@ -93,26 +93,60 @@ Item {
         id: pointer
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+        hoverEnabled: true
         property real lastX: 0
         property real lastY: 0
-        onPressed: (mouse) => { lastX = mouse.x; lastY = mouse.y }
+        property bool movingRobot: false
+        property bool hoverRobot: false
+        cursorShape: movingRobot ? Qt.ClosedHandCursor : (hoverRobot ? Qt.OpenHandCursor : Qt.ArrowCursor)
+        onPressed: (mouse) => {
+            lastX = mouse.x
+            lastY = mouse.y
+            // A plain left press on the robot picks it up while a simulation runs (the scene model decides); anywhere else it pans.
+            movingRobot = mouse.button === Qt.LeftButton && !(mouse.modifiers & (Qt.AltModifier | Qt.ShiftModifier))
+                && scene.beginRobotDrag(mouse.x, mouse.y)
+        }
         onPositionChanged: (mouse) => {
             const dx = mouse.x - lastX
             const dy = mouse.y - lastY
             lastX = mouse.x
             lastY = mouse.y
+            if (movingRobot) {
+                scene.dragRobot(mouse.x, mouse.y, mouse.modifiers)
+                return
+            }
+            if (!mouse.buttons) {
+                hoverRobot = scene.robotAt(mouse.x, mouse.y)
+                return
+            }
             // Same mapping as the editor: right-drag or Alt+left-drag orbits, left-drag, middle-drag or Shift+drag pans.
             const orbiting = !(mouse.buttons & Qt.MiddleButton) && !(mouse.modifiers & Qt.ShiftModifier)
                 && ((mouse.buttons & Qt.RightButton) || (mouse.modifiers & Qt.AltModifier))
             if (orbiting) scene.orbit(dx, dy)
             else scene.pan(dx, dy)
         }
-        onWheel: (wheel) => scene.zoom(wheel.angleDelta.y / 120.0)
+        onReleased: {
+            if (movingRobot) {
+                scene.endRobotDrag()
+                movingRobot = false
+            }
+        }
+        onCanceled: {
+            scene.endRobotDrag()
+            movingRobot = false
+        }
+        onExited: hoverRobot = false
+        onWheel: (wheel) => {
+            // While the robot is held the wheel turns it; otherwise it zooms.
+            if (!(movingRobot && scene.turnRobotDrag(wheel.angleDelta.y / 120.0, wheel.modifiers)))
+                scene.zoom(wheel.angleDelta.y / 120.0)
+        }
         onDoubleClicked: scene.resetCamera()
     }
 
-    onHeightChanged: scene.setViewHeight(height)
-    Component.onCompleted: scene.setViewHeight(height)
+    onWidthChanged: scene.setViewSize(width, height)
+    onHeightChanged: scene.setViewSize(width, height)
+    Component.onCompleted: scene.setViewSize(width, height)
 
     // Game-plugin HUD: generic renderer of HudWidgetDescriptors.
     Item {

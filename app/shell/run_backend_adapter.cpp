@@ -97,6 +97,8 @@ void RunBackendAdapter::setDriverStation(const sdk::proto::DsState& state) {
     services_.runtime().setDriverStation(state);
 }
 
+void RunBackendAdapter::setRobotPose(const sdk::Pose3& pose) { services_.runtime().setRobotPose(pose); }
+
 void RunBackendAdapter::onLog(const HostLogLine& line) {
     runview::RunLogEntry entry;
     entry.timestampMs = line.timestampMs;

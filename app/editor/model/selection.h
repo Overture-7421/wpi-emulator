@@ -22,6 +22,7 @@ enum class SelKind {
     Plugin,      // the selected game plugin's config section
     Zone,        // owner = zone id (RobotConfig::zones)
     Device,       // a detected device: owner = serialized DeviceKey (see device_mime.h)
+    StartPose,   // the start pose marker on the floor (SimSettings::startPose)
 };
 
 struct SelectionRef {
@@ -45,6 +46,7 @@ struct SelectionRef {
     static SelectionRef plugin() { return {SelKind::Plugin, {}, {}, -1}; }
     static SelectionRef zone(std::string id) { return {SelKind::Zone, std::move(id), {}, -1}; }
     static SelectionRef device(std::string key) { return {SelKind::Device, std::move(key), {}, -1}; }
+    static SelectionRef startPose() { return {SelKind::StartPose, {}, {}, -1}; }
 
     // Stable textual key (tree expansion state, QML item ids, tests).
     std::string key() const {

@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <limits>
 
 #include "runtime_fixtures.h"
 #include "wpiemu/core/runtime/simulation_session.h"
@@ -364,6 +365,133 @@ TEST_CASE("session: runs are deterministic and reset restores t = 0") {
     CHECK(out.tick == 0);  // numbering restarts with the epoch
     CHECK(out.simTimeUs == 5000);
     CHECK(s.hub().discovered().size() == 7);  // devices and bindings survive a reset
+}
+
+TEST_CASE("session: a configured start pose places the chassis, keeps its height and is where reset returns to") {
+    Fixture f;
+    RobotConfig c = sampleConfig();
+    c.sim.startPose = StartPose{3.f, -2.f, 1.2f};
+    SimulationSession& s = f.make(c);
+    const Pose3 start = s.world().pose(s.chassisBody());
+    CHECK(start.position.x == 3.f);
+    CHECK(start.position.y == -2.f);
+    CHECK(start.position.z == doctest::Approx(c.chassis.comHeightM));  // the reference builder's height is kept
+    CHECK(start.rotation.yaw() == doctest::Approx(1.2f).epsilon(1e-5));
+    CHECK(s.spawnPose() == start);
+
+    proto::SensorFrame out;
+    s.hub().onActuatorFrame(outputs({{101, 8.0}, {102, 8.0}, {103, 8.0}, {104, 8.0}}));
+    for (int i = 0; i < 20; ++i) s.tick(out, false);
+    CHECK(length(s.world().pose(s.chassisBody()).position - start.position) > 0.01f);
+    s.reset();
+    CHECK(s.world().pose(s.chassisBody()) == start);
+    CHECK(s.world().linearVelocity(s.chassisBody()) == Vec3{});
+}
+
+TEST_CASE("session: without a start pose the builder's own placement stays, with one it only keeps the builder's height") {
+    Fixture f;
+    const auto builder = [](IPhysicsWorld& world, const ChassisSpec&, const DrivetrainSpec&) -> Result<ChassisInfo> {
+        BodyDesc d;
+        d.type = BodyType::Dynamic;
+        d.pose = Pose3{Vec3{1.f, 2.f, 0.3f}, Quat::fromYaw(0.4f)};
+        ChassisInfo info;
+        info.body = world.createBody(d);
+        info.spawnPose = d.pose;
+        return info;
+    };
+    {
+        SessionParts p = f.parts(sampleConfig());
+        p.chassisBuilder = builder;
+        auto built = SessionBuilder::build(std::move(p));
+        REQUIRE(built.ok());
+        CHECK(built.value()->spawnPose().position == Vec3{1.f, 2.f, 0.3f});
+        CHECK(built.value()->spawnPose().rotation.yaw() == doctest::Approx(0.4f).epsilon(1e-5));
+    }
+    {
+        RobotConfig c = sampleConfig();
+        c.sim.startPose = StartPose{-5.f, 6.f, -0.8f};
+        SessionParts p = f.parts(c);
+        p.chassisBuilder = builder;
+        auto built = SessionBuilder::build(std::move(p));
+        REQUIRE(built.ok());
+        const Pose3 pose = built.value()->world().pose(built.value()->chassisBody());
+        CHECK(pose.position == Vec3{-5.f, 6.f, 0.3f});
+        CHECK(pose.rotation.yaw() == doctest::Approx(-0.8f).epsilon(1e-5));
+        CHECK(pose == built.value()->spawnPose());
+    }
+    {
+        // a start pose that is not finite (an unvalidated config) is ignored instead of poisoning the world
+        RobotConfig c = sampleConfig();
+        c.sim.startPose = StartPose{std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f};
+        SessionParts p = f.parts(c);
+        p.chassisBuilder = builder;
+        const std::size_t warnings = f.logger.count(LogLevel::Warn);
+        auto built = SessionBuilder::build(std::move(p));
+        REQUIRE(built.ok());
+        CHECK(built.value()->spawnPose().position == Vec3{1.f, 2.f, 0.3f});
+        CHECK(f.logger.count(LogLevel::Warn) == warnings + 1);
+    }
+}
+
+TEST_CASE("session: setRobotPose teleports the chassis from rest without touching mechanisms, clock or the IMU's sanity") {
+    Fixture f;
+    SimulationSession& s = f.make();
+    auto* drivetrain = dynamic_cast<wpiemu::test_runtime::TestDrivetrain*>(s.drivetrain());
+    auto* intake = dynamic_cast<wpiemu::test_runtime::TestRoller*>(s.mechanisms().find("intake"));
+    REQUIRE(drivetrain != nullptr);
+    REQUIRE(intake != nullptr);
+
+    // get the chassis moving fast so that a stale IMU velocity history would show up as a huge acceleration
+    s.world().setLinearVelocity(s.chassisBody(), Vec3{3.f, 0.f, 0.f});
+    s.world().setAngularVelocity(s.chassisBody(), Vec3{0.f, 0.f, 2.f});
+    proto::SensorFrame out;
+    s.tick(out, true);
+    s.tick(out, false);
+    const std::uint64_t tickBefore = s.clock().tickIndex();
+    const int drivetrainResets = drivetrain->resets;
+    const int intakeResets = intake->resets;
+    const int intakeTicks = intake->ticks;
+
+    const Pose3 target{Vec3{5.f, 2.f, 0.2f}, Quat::fromYaw(0.8f)};
+    s.setRobotPose(target);
+    const Pose3 pose = s.world().pose(s.chassisBody());
+    CHECK(pose.position == target.position);
+    CHECK(pose.rotation.yaw() == doctest::Approx(0.8f).epsilon(1e-5));
+    CHECK(s.world().linearVelocity(s.chassisBody()) == Vec3{});
+    CHECK(s.world().angularVelocity(s.chassisBody()) == Vec3{});
+    CHECK(drivetrain->resets == drivetrainResets + 1);
+    CHECK(intake->resets == intakeResets);   // mechanisms and the clock keep running
+    CHECK(s.clock().tickIndex() == tickBefore);
+    CHECK_FALSE(s.spawnPose() == s.world().pose(s.chassisBody()));   // reset() still goes to the spawn pose, not here
+
+    s.tick(out, true);
+    CHECK(intake->ticks == intakeTicks + 1);
+    // pigeon runtime id 107: 0 yaw, 3..5 angular velocity, 6..8 acceleration
+    CHECK(valueOf(out, 107, 0) == doctest::Approx(0.8).epsilon(1e-4));
+    CHECK(valueOf(out, 107, 5) == doctest::Approx(0.0).epsilon(1e-6));
+    CHECK(valueOf(out, 107, 6) == doctest::Approx(0.0).epsilon(1e-6));
+    CHECK(valueOf(out, 107, 7) == doctest::Approx(0.0).epsilon(1e-6));
+    CHECK(s.world().pose(s.chassisBody()).position == target.position);   // no forces, no gravity: it stays put
+
+    s.reset();
+    CHECK(s.world().pose(s.chassisBody()) == s.spawnPose());
+    CHECK(s.world().pose(s.chassisBody()).position.x == 0.f);
+}
+
+TEST_CASE("session: setRobotPose normalizes the rotation and ignores poses that are not finite") {
+    Fixture f;
+    SimulationSession& s = f.make();
+    s.setRobotPose(Pose3{Vec3{1.f, 1.f, 0.2f}, Quat{0.f, 0.f, 2.f, 2.f}});   // 90 degrees about +Z, not unit length
+    const Pose3 placed = s.world().pose(s.chassisBody());
+    CHECK(placed.rotation.yaw() == doctest::Approx(static_cast<float>(kPi) * 0.5f).epsilon(1e-5));
+    CHECK(placed.rotation.w * placed.rotation.w + placed.rotation.z * placed.rotation.z == doctest::Approx(1.f));
+
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const std::size_t warnings = f.logger.count(LogLevel::Warn);
+    s.setRobotPose(Pose3{Vec3{nan, 0.f, 0.2f}, Quat{}});
+    s.setRobotPose(Pose3{Vec3{0.f, 0.f, 0.2f}, Quat{0.f, nan, 0.f, 1.f}});
+    CHECK(s.world().pose(s.chassisBody()) == placed);
+    CHECK(f.logger.count(LogLevel::Warn) == warnings + 2);
 }
 
 TEST_CASE("session: RNG is reseeded from the config on reset") {

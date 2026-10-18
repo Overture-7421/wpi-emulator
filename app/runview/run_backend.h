@@ -103,6 +103,9 @@ public slots:
     virtual void stepTicks(int ticks) = 0;
     virtual void setTimeScale(double scale) = 0;
     virtual void setDriverStation(const wpiemu::sdk::proto::DsState& state) = 0;
+    // Drag-to-place: teleports the robot in the running simulation (the pose of the chassis' COM, world frame). Reset still
+    // returns to the project's start pose.
+    virtual void setRobotPose(const wpiemu::sdk::Pose3& pose) = 0;
 
 signals:
     void statusChanged();

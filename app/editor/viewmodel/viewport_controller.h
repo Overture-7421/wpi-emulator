@@ -14,6 +14,7 @@
 
 #include <optional>
 
+#include "common/robot_placement.h"
 #include "model/scene_theme.h"
 #include "model/transform_access.h"
 #include "viewmodel/editor_controller.h"
@@ -92,6 +93,10 @@ public:
     bool beginGizmoDrag(const QString& handle, qreal x, qreal y);
     void updateGizmoDrag(qreal x, qreal y, bool snapToggle);
     void endGizmoDrag();
+    // Start pose marker: `itemId` is the scene item under the cursor (kStartPoseFootprintId moves the pose, the nose turns it).
+    bool beginStartPoseDrag(const QString& itemId, qreal x, qreal y);
+    void updateStartPoseDrag(qreal x, qreal y, bool snapToggle);
+    void endStartPoseDrag();
     SelectionRef chooseItem(const QStringList& hitIds) const;
 
 Q_SIGNALS:
@@ -104,7 +109,7 @@ Q_SIGNALS:
     void transformFieldsChanged();
 
 private:
-    enum class DragKind { None, Orbit, Pan, Gizmo };
+    enum class DragKind { None, Orbit, Pan, Gizmo, StartPose };
     struct Drag {
         DragKind kind = DragKind::None;
         QPointF last;
@@ -124,6 +129,8 @@ private:
         sdk::Vec3 vec0;
         QString session;
         QString handle;
+        // start pose drag (moving the footprint or turning it by the nose)
+        placement::FloorDrag floor;
     };
 
     void rebuildScene();
@@ -132,6 +139,7 @@ private:
     void refreshGizmoScale();   // camera moved: rebuild only when the on-screen size would visibly change
     void onSelectionChanged();
     SelectionRef transformSelection() const;
+    const SceneItem* pickItem(const QStringList& hitIds) const;   // nearest solid item under the cursor, else the nearest volume
     float gizmoLength(const sdk::Vec3& origin) const;
     bool snapActive(bool toggle) const;
     QVariantMap entry(const QString& source, const sdk::Vec3& center, const QQuaternion& rotation, const QVector3D& scale,

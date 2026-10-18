@@ -13,10 +13,12 @@
 #include <QtQuick3D/qquick3dinstancing.h>
 
 #include <span>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "common/orbit_camera.h"
+#include "common/robot_placement.h"
 #include "run_backend.h"
 #include "scene_parts.h"
 
@@ -171,6 +173,7 @@ class SceneModel : public QObject {
     Q_PROPERTY(float fieldWidth READ fieldWidth NOTIFY fieldChanged)
     Q_PROPERTY(QVector3D fieldCenter READ fieldCenter NOTIFY fieldChanged)
     Q_PROPERTY(bool zonesVisible READ zonesVisible WRITE setZonesVisible NOTIFY zonesVisibleChanged)
+    Q_PROPERTY(bool robotDragging READ robotDragging NOTIFY robotDragChanged)
 public:
     explicit SceneModel(QObject* parent = nullptr);
 
@@ -209,6 +212,28 @@ public:
     Q_INVOKABLE void zoom(float steps) { camera_.zoom(steps); refreshCamera(); }
     Q_INVOKABLE void resetCamera();
     Q_INVOKABLE void setViewHeight(float heightPx) { viewHeightPx_ = heightPx > 1.f ? heightPx : 1.f; }
+    Q_INVOKABLE void setViewSize(float widthPx, float heightPx) {
+        viewWidthPx_ = widthPx > 1.f ? widthPx : 1.f;
+        setViewHeight(heightPx);
+    }
+
+    // ---- placing the robot with the mouse (a live teleport; the drag math is common/robot_placement.h) ----
+    // Offered only while a simulation runs: the page enables it. The pose handed out is upright at the height the chassis had
+    // when it was picked up; wheel while dragging turns it. A Reset or a new run starts from the start pose again.
+    void setPlacementEnabled(bool enabled);
+    bool placementEnabled() const { return placementEnabled_; }
+    bool robotDragging() const { return dragging_; }
+    // Is the robot under the pixel (x, y) of the view? (hover cursor)
+    Q_INVOKABLE bool robotAt(float x, float y) const;
+    // Left press at (x, y): picks the robot up when the ray through that pixel hits it and placement is enabled. True = it did,
+    // and the view must not pan.
+    Q_INVOKABLE bool beginRobotDrag(float x, float y);
+    // Moves the grabbed robot to follow the pointer. `modifiers` are Qt::KeyboardModifiers: Ctrl snaps to 10 cm and 15 degrees.
+    Q_INVOKABLE void dragRobot(float x, float y, int modifiers);
+    Q_INVOKABLE void endRobotDrag();
+    // Wheel while dragging: turns the robot about the grabbed spot (5 degrees a notch, counter-clockwise for a positive wheel).
+    // True when it consumed the wheel.
+    Q_INVOKABLE bool turnRobotDrag(float wheelSteps, int modifiers);
 
 signals:
     void poseChanged();
@@ -216,10 +241,14 @@ signals:
     void fieldChanged();
     void zonesVisibleChanged();
     void zoneLabelsChanged();
+    // The pose the dragged robot should take: x, y, height (m) and yaw (rad). The page forwards it to the backend.
+    void robotPoseRequested(double xM, double yM, double zM, double yawRad);
+    void robotDragChanged();
 
 private:
     void refreshCamera();
     void updateZones(const sdk::ISimSnapshot* snapshot);
+    placement::LocalBox robotBounds() const;   // the rig's parts in the chassis frame, a little grown for forgiving picking
 
     PartListModel field_;
     PartListModel robot_;
@@ -227,6 +256,7 @@ private:
     EntityGroupModel entities_;
     RobotRig rig_;
     OrbitCamera camera_;
+    float viewWidthPx_ = 1280.f;
     float viewHeightPx_ = 720.f;
     RunSceneInfo info_;
     ZoneRig zoneRig_;
@@ -234,7 +264,13 @@ private:
 
     QVector3D chassisPosition_;
     QQuaternion chassisRotation_;
+    sdk::Pose3 chassisPose_;
     bool robotVisible_ = false;
+    bool placementEnabled_ = false;
+    bool dragging_ = false;
+    placement::FloorDrag drag_;
+    float dragHeightM_ = 0.f;   // height the chassis had when picked up: kept while dragging
+    std::optional<sdk::StartPose> lastRequested_;
     QVector3D cameraPosition_;
     QQuaternion cameraRotation_;
     float cameraFov_ = 45.f;

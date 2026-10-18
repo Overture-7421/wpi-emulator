@@ -214,6 +214,11 @@ void FakeRunBackend::scatterBalls() {
 void FakeRunBackend::resetWorld() {
     pos_ = {2.0f, 4.1f, 0.2f};
     yaw_ = 0.f;
+    if (scene_.config && scene_.config->sim.startPose) {   // like the real session: the configured start pose wins
+        pos_.x = scene_.config->sim.startPose->xM;
+        pos_.y = scene_.config->sim.startPose->yM;
+        yaw_ = scene_.config->sim.startPose->yawRad;
+    }
     vel_ = {};
     omega_ = 0.f;
     armAngle_ = turretYaw_ = flywheel_ = carriage_ = 0.f;
@@ -341,6 +346,16 @@ void FakeRunBackend::setDriverStation(const sdk::proto::DsState& state) {
         emitLog(sdk::LogLevel::Info, LogStream::Stdout, QStringLiteral("robot"),
                 state.enabled ? QStringLiteral("Robot enabled") : QStringLiteral("Robot disabled"));
     ds_ = state;
+}
+
+void FakeRunBackend::setRobotPose(const sdk::Pose3& pose) {
+    ++poseCount_;
+    lastPose_ = pose;
+    pos_ = {pose.position.x, pose.position.y, pos_.z};   // the fake robot keeps its own height
+    yaw_ = pose.rotation.yaw();
+    vel_ = {};
+    omega_ = 0.f;
+    if (status_.process == RobotProcessState::Running) publish();
 }
 
 void FakeRunBackend::simulateCrash(int exitCode, const QString& detail) {

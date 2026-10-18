@@ -287,6 +287,10 @@ void RealRuntimeHost::setDriverStation(const sdk::proto::DsState& state) {
     if (session_) session_->controller().setDriverStation(state);
 }
 
+void RealRuntimeHost::setRobotPose(const sdk::Pose3& pose) {
+    if (session_) session_->controller().setRobotPose(pose);
+}
+
 void RealRuntimeHost::pump() {
     if (!session_) {
         timer_.stop();

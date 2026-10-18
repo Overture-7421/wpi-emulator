@@ -17,6 +17,76 @@ using wpiemu::test_runtime::Registries;
 using wpiemu::test_runtime::sampleConfig;
 using wpiemu::test_runtime::talonAnnounce;
 
+TEST_CASE("integration: a start pose and a teleport put the real Box3D robot upright on the floor at the right spot") {
+    Registries reg;
+    DrivetrainRegistry drivetrains;
+    TireModelRegistry tires;
+    REQUIRE(physics::registerPhysicsComponents(drivetrains, tires).ok());
+
+    RobotConfig c = sampleConfig();
+    c.sim.physics = PhysicsConfig{};  // real gravity
+    c.drivetrain.spec.kind = "swerve";
+    c.drivetrain.spec.tireModel = "brush";
+    c.drivetrain.mappings.clear();
+    for (WheelSpec& w : c.drivetrain.spec.wheels) {
+        w.kind = WheelKind::Swerve;
+        w.steered = true;
+        w.positionM.z = w.radiusM;
+    }
+    c.mechanisms.clear();
+    c.robotMappings.clear();
+    c.sim.startPose = StartPose{6.f, -3.f, 1.0f};
+
+    SessionParts parts;
+    parts.world = physics::createBox3dWorld(c.sim.physics);
+    REQUIRE(parts.world != nullptr);
+    parts.config = c;
+    parts.mechanisms = &reg.mechanisms;
+    parts.drivetrains = &drivetrains;
+    parts.tireModels = &tires;
+    parts.chassisBuilder = physicsChassisBuilder(physics::ChassisPlacement{1.f, 1.f, 0.f});   // the config wins over this placement
+    parts.coupling = std::make_unique<PhysicsCouplingDriver>();
+    auto built = SessionBuilder::build(std::move(parts));
+    REQUIRE_MESSAGE(built.ok(), (built.ok() ? "" : built.error().message));
+    SimulationSession& s = *built.value();
+    BodyDesc floor;
+    floor.type = BodyType::Static;
+    floor.pose.position = Vec3{0.f, 0.f, -0.5f};
+    ShapeDesc slab;
+    slab.geometry = BoxShape{Vec3{30.f, 30.f, 0.5f}};
+    slab.material = Material{0.8f, 0.f, 0.f};
+    slab.category = layer::Field;
+    REQUIRE(s.world().addShape(s.world().createBody(floor), slab).valid());
+
+    const auto settle = [&](int ticks) {
+        proto::SensorFrame out;
+        for (int i = 0; i < ticks; ++i) s.tick(out, i == 0);
+    };
+    const Pose3 spawn = s.spawnPose();
+    CHECK(spawn.position.x == 6.f);
+    CHECK(spawn.position.y == -3.f);
+    CHECK(spawn.rotation.yaw() == doctest::Approx(1.0f).epsilon(1e-5));
+    CHECK(spawn.position.z > 0.f);   // the builder's rest height is kept: the chassis does not start inside the floor
+    settle(300);
+    Pose3 pose = s.world().pose(s.chassisBody());
+    CHECK(std::abs(pose.position.x - 6.f) < 0.05f);
+    CHECK(std::abs(pose.position.y + 3.f) < 0.05f);
+    CHECK(std::abs(pose.rotation.yaw() - 1.0f) < 0.05f);
+    CHECK(std::abs(pose.position.z - spawn.position.z) < 0.05f);   // resting on its wheels
+
+    s.setRobotPose(Pose3{Vec3{-4.f, 2.f, spawn.position.z}, Quat::fromYaw(-2.0f)});
+    CHECK(s.world().linearVelocity(s.chassisBody()) == Vec3{});
+    settle(300);
+    pose = s.world().pose(s.chassisBody());
+    CHECK(std::abs(pose.position.x + 4.f) < 0.05f);
+    CHECK(std::abs(pose.position.y - 2.f) < 0.05f);
+    CHECK(std::abs(pose.rotation.yaw() + 2.0f) < 0.05f);
+    CHECK(std::abs(pose.position.z - spawn.position.z) < 0.05f);
+
+    s.reset();
+    CHECK(s.world().pose(s.chassisBody()) == spawn);
+}
+
 TEST_CASE("integration: the session drives a real Box3D swerve robot from hub voltages") {
     Registries reg;  // brings the roller mechanism + plugin registry; drivetrains/tires come from core/physics
     DrivetrainRegistry drivetrains;

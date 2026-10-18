@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "host/robot_session.h"
+
 namespace wpiemu::app {
 
 namespace {
@@ -39,14 +41,27 @@ editor::EditorCatalog EditorBackendAdapter::catalog() const {
     editor::EditorCatalog out;
     services_.mechanisms().forEach([&out](const std::string&, const sdk::MechanismTemplateInfo& info) { out.mechanismTemplates.push_back(info); });
     services_.drivetrains().forEach([&out](const std::string& kind, const sdk::DrivetrainInfo& info) { out.drivetrains.push_back({kind, info}); });
-    if (const sdk::IGameModule* module = services_.session().gameModule()) {
+    const sdk::IGameModule* module = services_.session().gameModule();
+    if (module != nullptr) {
         out.pluginId = module->metadata().id;
         out.pluginDisplayName = module->metadata().displayName;
         out.pluginSchema = module->contributeConfigSchema();
         out.pluginPanels = module->contributeEditorPanels();
         out.zoneKinds = module->contributeZoneKinds();
     }
+    out.defaultStartPose = defaultStartPose(module);
     return out;
+}
+
+sdk::StartPose EditorBackendAdapter::defaultStartPose(const sdk::IGameModule* module) const {
+    // The same spot RobotSession puts the robot when the config sets no start pose: inside the plugin's field, else the origin.
+    const std::string id = module != nullptr ? module->metadata().id : std::string();
+    if (id != fieldPluginId_ || (module != nullptr && field_ == nullptr)) {
+        field_ = module != nullptr ? host::describeField(services_.plugins().find(id)) : nullptr;
+        fieldPluginId_ = id;
+    }
+    const host::StartPlacement start = host::startPlacementFor(field_.get());
+    return sdk::StartPose{start.xM, start.yM, 0.f};
 }
 
 std::vector<sdk::Issue> EditorBackendAdapter::validate(const sdk::RobotConfig& config) const {
