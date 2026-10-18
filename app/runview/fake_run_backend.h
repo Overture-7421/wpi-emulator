@@ -6,10 +6,14 @@
 
 #include <QTimer>
 
+#include <cstdint>
 #include <functional>
 #include <random>
+#include <string>
+#include <vector>
 
 #include "run_backend.h"
+#include "wpiemu/sdk/mechanisms/attachment.h"
 
 namespace wpiemu::app::runview {
 
@@ -21,6 +25,17 @@ public:
         int startupDelayMs = 350;     // Starting -> Running, and Running -> Connected; 0 = synchronous
         int ballCount = 200;
         bool withGameContent = true;  // HUD descriptors + zone kinds/states + fuel
+        bool withVision = true;       // two cameras (PhotonVision on the chassis, Limelight on the turret) and an AprilTag layout
+    };
+
+    // How a synthetic camera misbehaves (simulateCameraFault).
+    enum class CameraFault {
+        None,
+        Disabled,              // switched off in the project: status "disabled"
+        NotConnected,          // the robot process never publishes it
+        NotUsedByRobot,        // published, but the robot code does not use it (CameraRobotState::present = false)
+        PhotonUuidUnsupported, // status "photon_uuid_unsupported": refused, nothing published
+        ForeignPublisher,      // status "foreign_publisher": the robot simulates this camera itself
     };
 
     explicit FakeRunBackend(QObject* parent = nullptr) : FakeRunBackend(Options{}, parent) {}
@@ -49,10 +64,15 @@ public:
     void simulateStall();
     void simulateFailedToStart(const QString& detail);
     void setLinkSettled();                        // jump straight to Running + Connected
+    // Vision failure injection. Faults stay until changed and survive a reset.
+    void simulateCameraFault(const QString& cameraId, CameraFault fault);
+    void simulateUnconfiguredCamera(const QString& ntName);   // the robot code uses a camera the project does not list ("" = none)
+    void simulateLayoutMissing(bool missing = true);          // no AprilTag layout: no tags and no detections
 
     static sdk::RobotConfig makeDemoConfig();
     static std::vector<sdk::ZoneKindInfo> makeZoneKinds();   // demo_game.pickup (Volume), demo_game.shooter (Muzzle)
     static sdk::FieldDescription makeDemoField();
+    static std::vector<sdk::FiducialSample> makeDemoTags();  // 18 tags on the walls and around the two hubs
 
 public slots:
     void launchRobot() override;
@@ -72,6 +92,13 @@ private:
         sdk::Vec3 vel;
         bool flying = false;
     };
+    // Per configured camera (RobotConfig::vision.cameras, same order).
+    struct CameraRuntime {
+        std::int64_t accUs = 0;        // time since the last capture
+        std::uint64_t captured = 0;
+        std::vector<int> visible;      // tags of the latest capture
+        CameraFault fault = CameraFault::None;
+    };
 
     void setStatus(RobotProcessState process, LinkState link, int exitCode = 0, const QString& detail = {});
     void refreshFlags();
@@ -79,9 +106,13 @@ private:
     void beginTransition(int delayMs, std::function<void()> fn);
     void onTimer();
     void stepWorld();
+    void stepCameras();
     void resetWorld();
     void publish();
+    void publishVision(sdk::SimSnapshotData& data) const;
     void scatterBalls();
+    sdk::LinkPoseSource linkSource() const;
+    CameraRuntime* findCamera(const QString& cameraId);
 
     Options options_;
     QTimer timer_;
@@ -111,6 +142,10 @@ private:
     float spin_[4] = {0, 0, 0, 0};
     float armAngle_ = 0.f, turretYaw_ = 0.f, flywheel_ = 0.f, carriage_ = 0.f;
     std::vector<Ball> balls_;
+    std::vector<sdk::FiducialSample> tags_;
+    std::vector<CameraRuntime> cameras_;
+    bool layoutMissing_ = false;
+    std::string unconfiguredCamera_;
     int fuelHeld_ = 12;
     int score_ = 0;
     double shotTimer_ = 0.0;
