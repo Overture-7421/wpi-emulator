@@ -19,6 +19,7 @@
 // Error handling: no exceptions; failures are logged via IBridgeHost::logger() and the affected
 // device is skipped.
 
+#include <cstdint>
 #include <memory>
 #include <span>
 #include <string>
@@ -50,12 +51,16 @@ public:
     // on (e.g. the CTRE constructor hook saw `new TalonFX(4, "canivore")`). The host forwards it to the
     // emulator (re-announce with DeviceAnnounce::observedBus). Never call it from static tables. Default: ignored.
     virtual void observeBus(DeviceId /*id*/, std::string_view /*busLabel*/) {}
-    // Vision cameras the emulator configured for this session (HelloAck::vision), valid for the
-    // whole session. Only the vision bridge reads it. Default: none.
+    // Vision cameras the emulator configured for this connection (HelloAck::vision). Only the vision
+    // bridge reads it; it stays valid until visionSetupRevision() changes. Default: none.
     virtual const VisionSetup& visionSetup() const {
         static const VisionSetup kNone;
         return kNone;
     }
+    // Incremented by the host every time a HelloAck is adopted (first connection and every
+    // reconnect), before the first SensorFrame of that connection is applied. A bridge that cached
+    // visionSetup() polls it from poll() and rebuilds its cameras when it changes. Default: 0.
+    virtual std::uint64_t visionSetupRevision() const { return 0; }
 };
 
 class IDeviceBridge {
