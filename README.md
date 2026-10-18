@@ -21,7 +21,12 @@ in year plugins; v1 ships `game_2026` (REBUILT). Current version: 0.1.0.
   CANrange, CANdi) through HAL SimDevices; Phoenix 5 rules (not verified against the real library).
 * **2026 game**: field with hub, bumps, trenches, tower, depots and outposts; fuel as physics bodies; hub shift rules,
   scoring, fuel intake and shooter wrappers, HUD, and editor panels for fuel / staging / match rules.
-* **Run view**: live 3D scene, game HUD, mechanism overlays, console, start / stop / restart / reset / pause / step,
+* **Vision cameras**: simulated **Limelight** and **PhotonVision** coprocessors for AprilTag pose estimation. Cameras are added in the
+  editor to the chassis or any mechanism (a turret camera moves with the turret); the emulator computes which tags each sees (field
+  of view, range, facing, frame rate, latency, optional noise) and the extension publishes the usual NetworkTables topics into the
+  robot's own NT instance, so `LimelightHelpers` and PhotonLib work on the unmodified project. No occlusion, distortion or object
+  detection ([docs/vision.md](docs/vision.md)).
+* **Run view**: live 3D scene, game HUD, mechanism overlays, camera view pyramids, console, start / stop / restart / reset / pause / step,
   and a built-in **Driver Station** (enable, e-stop, mode, alliance, timed match, joysticks via keyboard or gamepad).
 * **Deterministic, lock-step simulation**: the emulator is the clock master (default 5 ms step); runs are
   reproducible from a seed.
@@ -34,7 +39,8 @@ in year plugins; v1 ships `game_2026` (REBUILT). Current version: 0.1.0.
 | [docs/BUILDING.md](docs/BUILDING.md) | Build, test, options |
 | [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | Conventions, tests, adding a year plugin / device bridge / mechanism / vendor |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Modules and the dependency diagram, threading, per-tick data flow, extension points |
-| [docs/decisions/](docs/decisions/README.md) | ADRs 0001-0010 |
+| [docs/decisions/](docs/decisions/README.md) | ADRs 0001-0017 |
+| [docs/vision.md](docs/vision.md) | Simulated Limelight / PhotonVision cameras: model, frames, NetworkTables topics, adding a vendor |
 | [docs/packaging.md](docs/packaging.md) | Installers, AppImage / dmg, release workflow |
 | [docs/game_2026.md](docs/game_2026.md), [docs/new-year-plugin.md](docs/new-year-plugin.md) | The 2026 plugin; writing a new season |
 
@@ -45,7 +51,7 @@ in year plugins; v1 ships `game_2026` (REBUILT). Current version: 0.1.0.
 | `core/` | `wpiemu_core` | Game-agnostic sim core: Box3D physics, mechanisms and plants, runtime / config / launcher. No Qt. |
 | `ipc/` | `wpiemu_ipc` | Wire protocol + transport (named pipe / unix socket) between app and extension. |
 | `halsim_ext/` | `halsim_wpiemu` | HALSim extension loaded into the robot process. |
-| `bridges/hal`, `bridges/vendor` | `wpiemu_bridges_*` | Device bridges (HAL, CTRE Phoenix); `bridges/builtin_bridges.cpp` aggregates them. |
+| `bridges/hal`, `bridges/vendor`, `bridges/vision` | `wpiemu_bridges_*` | Device bridges (HAL, CTRE Phoenix) and vision bridges (Limelight, PhotonVision over ntcore); `bridges/builtin_bridges.cpp` aggregates them. |
 | `plugins/game_2026`, `plugins/_template` | `wpiemu_plugin_*` | Year plugins; link only the SDK; `plugins/builtin_plugins.cpp` aggregates them. |
 | `app/` | `wpiemu_app` | Qt Widgets + Quick 3D application (wizard, shell, editor, run view, `host/` robot session). |
 | `tests/` | `wpiemu_tests` | doctest unit tests + CTest checks (plus per-module test executables). |
@@ -86,7 +92,9 @@ v0.1.0. What is verified, and what is not:
 | Rendering tests | Offscreen CI cannot render Qt Quick 3D; visuals are checked manually with the demo executables. |
 
 **Not in v1 (roadmap candidates)**: REV Robotics (SPARK / PH vendor bridge, recipe in
-[docs/bridges-vendor.md](docs/bridges-vendor.md)), suspension, multiple robots, vision / camera simulation, seasons other
+[docs/bridges-vendor.md](docs/bridges-vendor.md)), suspension, multiple robots, seasons other
 than 2026 (copy `plugins/_template`), a real Driver Station connection, loadable (shared-library) plugins, code signing
-and MSI / deb / rpm packages, and other WPILib years for the extension (validated against 2026.2.1 only).
+and MSI / deb / rpm packages, and other WPILib years for the extension (validated against 2026.2.1 only). Vision is limited to AprilTags without occlusion,
+distortion or object detection (see [docs/vision.md](docs/vision.md)); its end-to-end check on `samples/vision_robot` is opt-in.
+<!-- VERIFY: README status claims about the vision sample e2e once the e2e-verify step has run -->
 Contributions: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).

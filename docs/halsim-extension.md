@@ -16,10 +16,11 @@ halsim_ext/
 bridges/builtin_bridges.cpp    the bridge aggregation seam (target wpiemu_bridges_builtin)
 ```
 
-Dependencies (ADR 0004): `sdk`, `ipc`, and the HAL headers. The extension never includes a `bridges/<x>` header: it
-calls `sdk::registerBuiltinBridges(DeviceBridgeRegistry&)` (declared in `sdk/devices/builtin_bridges.h`), defined by the
-aggregator target `wpiemu_bridges_builtin` that links `bridges/hal` (+ its HALSIM binding when the WPILib HAL was found)
-and `bridges/vendor`. Adding a bridge module = link it in `bridges/CMakeLists.txt` + one call in
+Dependencies (ADR 0004): `sdk`, `ipc`, and the HAL headers (plus ntcore for the vision binding, see *Vision cameras*). The extension never includes a `bridges/<x>` header: it
+calls `sdk::registerBuiltinBridges(DeviceBridgeRegistry&)` and `sdk::registerBuiltinVisionBridges(VisionBridgeRegistry&)`
+(declared in `sdk/devices/builtin_bridges.h`), defined by the
+aggregator target `wpiemu_bridges_builtin` that links `bridges/hal` (+ its HALSIM binding when the WPILib HAL was found),
+`bridges/vendor` and `bridges/vision`. Adding a bridge module = link it in `bridges/CMakeLists.txt` + one call in
 `bridges/builtin_bridges.cpp`.
 
 ## Entry point and environment
@@ -54,6 +55,10 @@ Environment (all optional except the endpoint; the emulator's launcher sets them
 1. **Handshake (synchronous, in `HALSIM_InitExtension`).** Connect, send `Hello` (pid, Java/C++, WPILib version, HAL port
    counts, proposed watchdog, `supportsArmed=true`), wait for `HelloAck` (`accepted`, `sessionId`, `runEpoch`, clock mode, `stepUs`,
    watchdog timeout/policy). A refused/missing ack leaves the robot untouched.
+   When the emulator has cameras configured it follows the `HelloAck` with a **`VisionSetup`** message (cameras, the robot's PhotonLib
+   version, the layout name), and sends it again for every new `runEpoch` (Reset, Begin, reconnect). It is delivered to the vision bridges
+   (`configure`) on the clock thread, see *Vision cameras*.
+   <!-- VERIFY: exact timing of VisionSetup relative to HelloAck / LoopbackSet / DsState and the epoch re-send (ipc / runner streams) -->
 2. **Pause + bridges.** In lock-step (`ClockMode::Lockstep`, not `discoveryOnly`) HAL time is paused **before** any robot code
    exists, then every bridge from `registerBuiltinBridges` is started (their `initialNotify` callbacks run here).
 3. **Clock thread** (the only thread that touches bridges and `HALSIM_StepTiming`): waits for
@@ -65,7 +70,8 @@ Environment (all optional except the endpoint; the emulator's launcher sets them
    starts counting the watchdog / advancing physics.
 4. **Per tick** (`SensorFrame` N): apply the latest `DsState` (HALSIM_SetDriverStation*, joysticks, game message,
    `NotifyNewData`), write the battery (`HALSIM_SetRoboRioVInVoltage/Current`), route `SignalSample`s to the owning
-   bridge (`applyInputs`), `HALSIM_StepTiming(stepUs)` (blocks until the whole robot loop body finished), poll the
+   bridge (`applyInputs`), publish the due camera frames (`SensorFrame::vision` -> vision bridges' `apply`, see below),
+   `HALSIM_StepTiming(stepUs)` (blocks until the whole robot loop body finished), poll the
    bridges (new devices are announced **before** the ack), `collectOutputs`, drop devices of the `LoopbackSet`,
    `applyLoopback` for those, delta-compress against the previous frame, send `ActuatorFrame{ackTick=N, result}`.
    Exactly one tick is outstanding; stale epochs / foreign sessions are dropped, duplicate ticks answer `ProtocolError`.
@@ -93,6 +99,28 @@ This generic seam does not depend on concrete vendor interfaces.
 
 **The emulator MUST forward `Pause` and `Resume` as `SimControl` messages.** Between frames there is no heartbeat: a
 silent emulator and a paused emulator are indistinguishable unless the extension was told about the pause.
+
+### Vision cameras (fan-out to `IVisionBridge`)
+
+`BridgeSet` owns, besides the device bridges, the vision bridges created by `registerBuiltinVisionBridges`
+([vision.md](vision.md), [ADR 0017](decisions/0017-vision-cameras.md)). Everything runs on the **clock thread** while the robot is
+quiescent, in the same place as `applyInputs`; HAL callbacks never reach a vision bridge.
+
+| Trigger | Call on every `IVisionBridge` |
+|---|---|
+| bridges started (before robot code runs, as for device bridges) | `start(logger)` (resolves ntcore; a failure is logged and the bridge stays inert) |
+| `VisionSetup` received (after `HelloAck`, and each new epoch) | `configure(setup)` (idempotent; creates the topics of the bridge's `CameraKind`) |
+| every `SensorFrame`, before `HALSIM_StepTiming` | `apply(frame.vision, simTimeUs)` for the frames due, then `poll(simTimeUs)` to mirror the robot-written pipeline / LED / driver-mode topics and advance heartbeats |
+| connection / reconnect, applied Reset / Begin, newer epoch adopted | `reset()` (queued frames and published results dropped; same triggers as `resetInputHistory`; retries do not reset) |
+| shutdown | `stop()` |
+
+<!-- VERIFY: exact order of apply vs poll, and whether SensorFrames with an empty vision list still call poll -->
+
+**ntcore dependency.** The real publisher links ntcore (`wpiemu_wpilib_ntcore`, found by `cmake/WpiEmuWpilib.cmake` from the same
+Maven cache as the HAL, `WPIEMU_NTCORE_FOUND`) and publishes into the robot's **default NT instance** with explicit timestamps from
+sim time (`HAL_GetFPGATime`), so results line up with `Timer.getFPGATimestamp()`. Without ntcore at build time the vision bridges
+report a clear `Status` from `start` and cameras stay inert; the HAL-free logic and the tests with a fake publisher still build.
+Details, the Limelight / PhotonVision topics and the reset semantics: [vision.md](vision.md).
 
 ### Failure handling (the extension unblocks the robot itself)
 
@@ -125,18 +153,19 @@ bridge has to tolerate that (open item, see the stream report).
 
 ## Building
 
-`cmake/WpiEmuWpilib.cmake` finds the WPILib HAL and wpiutil (headers + desktop shared libs, version
+`cmake/WpiEmuWpilib.cmake` finds the WPILib HAL, wpiutil and **ntcore** (headers + desktop shared libs, version
 `WPIEMU_WPILIB_VERSION`, default 2026.2.1):
 
 * `-DWPIEMU_WPILIB_ROOT=<dir>`: either a **Maven cache** (`…/wpilib/2026/maven`; also searched by default under
   `%PUBLIC%`, `$HOME`) – it is staged into `<build>/_wpilib/<version>` – or an already **extracted** root
   (`include/hal/HAL.h`, `include/wpi/string.h`, `<platform>/shared/wpiHal.*`). The staged root is re-exported as
   `WPIEMU_WPILIB_ROOT` for `bridges/hal` and `bridges/vendor`.
-* `-DWPIEMU_WPILIB_DOWNLOAD=ON`: fetch the four zips from frcmaven (CI on a clean machine).
+* `-DWPIEMU_WPILIB_DOWNLOAD=ON`: fetch the zips (HAL, wpiutil, ntcore: headers + desktop libraries) from frcmaven (CI on a clean machine).
 * Not found: configure still succeeds; `halsim_wpiemu` becomes a stub whose `HALSIM_InitExtension` returns `-1` with a clear
   message; the HAL-free `wpiemu_halsim_core` and its tests still build and run.
 
-The extension links `wpiHal` only (not wpiutil at run time). Windows: `/MD`, 64-bit. Linux/macOS: the extension carries a
+The extension links `wpiHal` only (not wpiutil at run time); the vision binding additionally links `ntcore` (imported target
+`wpiemu_wpilib_ntcore`, `WPIEMU_NTCORE_FOUND`; when it is missing the vision bridges are inert, nothing else changes). Windows: `/MD`, 64-bit. Linux/macOS: the extension carries a
 normal `DT_NEEDED`/install-name dependency on `libwpiHal` so the loader binds the copy the robot process already loaded
 (unverified on Linux/macOS; ADR 0001 lists the `RTLD_LOCAL` risk).
 

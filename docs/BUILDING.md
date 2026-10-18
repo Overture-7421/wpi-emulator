@@ -5,12 +5,17 @@
   (MSVC 2022, GCC 12+/Clang 15+, Apple Clang 15+), Ninja (non-VS presets).
 - Qt 6.8 LTS (msvc2022_64 / gcc_64 / macos) with the `qtquick3d` and `qtshadertools` modules.
 - Box3D v0.1.0 and doctest v2.4.11 are fetched automatically (FetchContent, pinned tags).
-- WPILib 2026.2.1 `hal-cpp` / `wpiutil-cpp` (headers + desktop `wpiHal` / `wpiutil` libraries) for the HALSim
-  extension and the HAL / vendor bridges. CMake finds them in the WPILib installer's Maven cache
+- WPILib 2026.2.1 `hal-cpp` / `wpiutil-cpp` / `ntcore-cpp` (headers + desktop `wpiHal` / `wpiutil` / `ntcore` libraries) for the HALSim
+  extension and the HAL / vendor / vision bridges. CMake finds them in the WPILib installer's Maven cache
   (`C:\Users\Public\wpilib\2026\maven`, `~/wpilib/2026/maven`), or in `-DWPIEMU_WPILIB_ROOT=<dir>` /
   `$WPIEMU_WPILIB_ROOT`, and extracts them into `build/<tree>/_wpilib/<version>`. On a machine without WPILib add
   `-DWPIEMU_WPILIB_DOWNLOAD=ON` to fetch the zips from frcmaven (needs network; this is what CI does). Without WPILib
   configure still succeeds, but the extension is not built with HAL support and the real-HAL tests do not run.
+  **ntcore** is located by the same logic (`halsim_ext/cmake/WpiEmuWpilib.cmake` creates the imported target
+  `wpiemu_wpilib_ntcore` and sets `WPIEMU_NTCORE_FOUND`). It is needed only by the vision bridges' real publisher
+  ([vision.md](vision.md)); without it the extension still builds and loads, simulated cameras are simply inert, and the
+  encoders and their fake-publisher tests build and run.
+  <!-- VERIFY: WPIEMU_NTCORE_FOUND semantics and the behaviour of the extension build without ntcore -->
   An already-extracted root (`include/hal/HAL.h`, `include/wpi/string.h`, desktop shared libraries)
   is also accepted through either the cache or environment. The resolved extracted root is passed
   to sibling HAL/vendor bridges for both discovery routes; the original user cache input is preserved.
@@ -85,6 +90,8 @@ Do not mix generators in one build dir (each preset has its own). `build/` is gi
   (`wpiemu_host_tests`, `RobotSession` against synthetic projects), `app.ui_tests` (shell/wizard, offscreen),
   `app_editor.tests`, `runview.ui_tests` (set `QT_QPA_PLATFORM=offscreen`; Qt Quick 3D rendering is not covered offscreen).
 - `ctest -N` lists everything; `ctest -R <regex>` runs a subset. The `e2e.shelby_2026` test is skipped unless opted in (below).
+- Vision: `tests/bridges_vision` (encoders, fake publisher), the camera cases in `tests/runtime`, `tests/ipc`, `tests/app_editor/test_cameras.cc`
+  and `tests/app_runview` run in the normal suites; see [vision.md](vision.md) section 9.
 
 Run the architecture check directly: `python tools/check_boundaries.py`.
 
@@ -116,3 +123,18 @@ ctest --preset windows-ninja-release -L e2e --output-on-failure
 ```
 The shell flavour (`RealRuntimeHost` + `ShellController`, extension found through the build-tree fallback) is the `real host e2e` case of `wpiemu_app_tests`,
 enabled by the same variable.
+
+### Vision sample end-to-end (opt-in)
+`samples/vision_robot/{java,cpp}` are WPILib 2026.2.1 sample robots that read a Limelight (`LimelightHelpers`, vendored into the
+sample) and a PhotonVision camera (PhotonLib `v2026.3.4` vendordep) and feed pose estimators; the robot code is unmodified by the
+emulator, the cameras are configured in its `robot.json`. The vision end-to-end case drives the robot near tags and asserts that both cameras report
+tags, the estimated pose matches the ground truth and `now - resultTimestamp` matches the configured latency. It needs the same
+prerequisites as above (WPILib toolchain, offline Maven) and a build with ntcore found (`WPIEMU_NTCORE_FOUND`):
+```powershell
+$env:WPIEMU_E2E = "1"
+$env:WPIEMU_E2E_PROJECT = "samples\vision_robot\java"     # or samples\vision_robot\cpp
+ctest --preset windows-vs2022-release -L e2e --output-on-failure
+```
+<!-- VERIFY: e2e case name, label and the exact assertions (e2e-verify step); whether relative project paths are accepted -->
+The project is copied to `%TEMP%` and never modified. `WPIEMU_E2E_VERBOSE=1` prints the robot console (the sample logs `tv`, `tid`, `botpose`,
+`PhotonPipelineResult` data and a PASS/FAIL line).

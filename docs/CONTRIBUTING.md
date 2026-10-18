@@ -27,7 +27,7 @@ Do not commit build output, per-project `.wpiemu/` folders, screenshots or logs 
 | `core/` (`src`, `physics`, `mechanisms`, `runtime`) | sdk, Box3D (private) | `wpiemu_core` |
 | `ipc/` | sdk | `wpiemu_ipc` |
 | `halsim_ext/` | sdk, ipc, the bridges aggregator, WPILib HAL | `halsim_wpiemu` |
-| `bridges/hal`, `bridges/vendor` | sdk (not each other) | `wpiemu_bridges_hal`, `wpiemu_bridges_vendor` |
+| `bridges/hal`, `bridges/vendor`, `bridges/vision` | sdk (not each other); `vision` also ntcore through its binding | `wpiemu_bridges_hal`, `wpiemu_bridges_vendor`, `wpiemu_bridges_vision` |
 | `bridges/` (aggregator) | sdk + every bridge module | `wpiemu_bridges_builtin` (only `halsim_ext` links it) |
 | `plugins/<name>` | sdk only | `wpiemu_plugin_<name>` |
 | `plugins/` (aggregator) | sdk + every plugin | `wpiemu_plugins_builtin` (only `app` links it) |
@@ -70,7 +70,7 @@ The imported WPILib targets are robot-process backends available to the extensio
 * **Test case names must not contain `;`**: CTest splits the discovery list on it and registers bogus half-named
   tests. Use `,` or `-` in names (`TEST_CASE("hub: one device, one slot, rebinding is a no-op")`). Keep names unique.
 * Layout mirrors the source: `tests/sdk`, `tests/ipc`, `tests/physics`, `tests/mechanisms`, `tests/runtime`,
-  `tests/bridges_hal`, `tests/bridges_vendor`, `tests/game_2026`, `tests/plugins`. Header-only fakes for isolated tests
+  `tests/bridges_hal`, `tests/bridges_vendor`, `tests/bridges_vision`, `tests/game_2026`, `tests/plugins`. Header-only fakes for isolated tests
   are in `sdk/include/wpiemu/sdk/testing/`.
 * Qt suites have their own executables (they need an event loop and run with `QT_QPA_PLATFORM=offscreen`):
   `app/tests` (`app.ui_tests`), `tests/app_editor` (`app_editor.tests`, files are `*.cc` so the Qt-free glob does not
@@ -78,7 +78,8 @@ The imported WPILib targets are robot-process backends available to the extensio
   Offscreen cannot render Qt Quick 3D; check visuals with the demo executables (`wpiemu_editor_demo`,
   `wpiemu_runview_demo`).
 * New SDK headers need no test wiring: `tests/sdk` generates a one-TU-per-header self-contained-include check.
-* The real-robot end-to-end test (`e2e.shelby_2026`) is opt-in, see BUILDING.md.
+* The real-robot end-to-end test (`e2e.shelby_2026`) is opt-in, see BUILDING.md; the vision sample variant runs on
+  `samples/vision_robot` (see "End-to-end test" there).
 * Add a regression test with every bug fix; test through the public interface with fakes first, add a Box3D
   integration test only for geometry that fakes cannot judge.
 
@@ -99,6 +100,8 @@ The checklist with method-by-method contract is [new-year-plugin.md](new-year-pl
 4. Tests in `tests/game_<year>/` (and run `tests/plugins/test_new_year_plugin.cpp`'s pattern for the zero-core-change
    proof), then `python tools/check_boundaries.py`.
 5. Write `docs/game_<year>.md` with sources for every number and an honest simplification list.
+6. Optional: override `IGameModule::aprilTagLayout()` with the season's AprilTag field (field frame, tag +X out of the face; see
+   [vision.md](vision.md)); without it the simulated cameras never see a tag.
 
 ### Add a device bridge (new device family)
 1. Create `bridges/<name>/` linking `wpiemu_sdk` only (plus vendor/HAL headers there), public headers at
@@ -142,6 +145,21 @@ vendor firmware integrates, create the bridge in `SharedSetup` and add one `regi
    `evaluateActivation(zone.activation, ctx.mechanisms())` (`sdk/game/zone_activation.h`). Never add season code to core or UI.
 3. The editor builds the add-zone menu, inspector and gizmo from the metadata. Test with `FakeGameModule` and
    `FakeMechanismDirectory`; see [ADR 0016](decisions/0016-zones.md).
+
+### Add a vision bridge (camera coprocessor vendor)
+Full guide: "Extension recipe: another vision vendor" in [vision.md](vision.md) and [ADR 0017](decisions/0017-vision-cameras.md). In short:
+
+1. Add the vendor's encoder to `bridges/vision/` (or a new `bridges/<name>/` module that links `wpiemu_sdk` only and is registered
+   in `tools/check_boundaries.py` like any bridge module). The encoder is a pure `CameraFrame` -> named values / bytes
+   function; ntcore (the real publisher) stays behind the module's publisher seam, never in the SDK.
+2. Implement `sdk::IVisionBridge` (`name()` = `"vision.<vendor>"`; `configure` idempotent and kind-filtered; `apply` publishes the
+   frames with `publishTimeUs <= simTimeUs`; `reset`; idempotent `stop`). It runs on the extension's clock thread only: no HAL
+   callbacks, no blocking.
+3. Expose `registerVisionBridges(sdk::VisionBridgeRegistry&)` and add one call in `bridges/builtin_bridges.cpp`
+   (`registerBuiltinVisionBridges`). Link it into `wpiemu_bridges_builtin`; the extension is untouched. If the vendor needs a new
+   `CameraKind`, extend `sdk/config/camera.h`, the codec, the validator and the editor's **Add camera** menu.
+4. Test with golden vectors and a fake publisher in `tests/bridges_vision/`, then `python tools/check_boundaries.py`, and document the
+   topic table in [vision.md](vision.md).
 
 ### Other extension points
 Drivetrain (`IDrivetrain`, `DrivetrainRegistry`), tire model (`ITireModel`), plant (`IPlant`, `PlantFactory`),

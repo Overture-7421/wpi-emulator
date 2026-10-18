@@ -20,3 +20,4 @@ Numbers are unique and sequential; never reuse or renumber an ADR (update refere
 | [0014](0014-multi-motor-gearboxes.md) | Several controllers per gearbox, with a per-motor Reversed flag |
 | [0015](0015-single-mechanism-template.md) | One core mechanism template (Motion: rotary, arm, linear); no catalog panel |
 | [0016](0016-zones.md) | Zones replace game wrapper mechanisms: generic `RobotConfig::zones`, plugin-owned kinds, activation conditions |
+| [0017](0017-vision-cameras.md) | Vision cameras: simulated Limelight / PhotonVision coprocessors published through ntcore inside the robot process; `RobotConfig::cameras`, `IVisionBridge`, `VisionSetup` |
