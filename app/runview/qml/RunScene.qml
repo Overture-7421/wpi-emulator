@@ -218,7 +218,7 @@ Item {
 
         HudStack { anchorIndex: 0; hAlign: 0; anchors.left: parent.left; anchors.top: parent.top }
         HudStack { anchorIndex: 1; hAlign: 1; anchors.horizontalCenter: parent.horizontalCenter; anchors.top: parent.top }
-        HudStack { anchorIndex: 2; hAlign: 2; anchors.right: parent.right; anchors.top: parent.top }
+        HudStack { id: hudTopRight; anchorIndex: 2; hAlign: 2; anchors.right: parent.right; anchors.top: parent.top }
         HudStack { anchorIndex: 3; hAlign: 0; anchors.left: parent.left; anchors.bottom: parent.bottom }
         HudStack { anchorIndex: 4; hAlign: 1; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom }
         HudStack { anchorIndex: 5; hAlign: 2; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.bottomMargin: 54 }
@@ -232,11 +232,12 @@ Item {
         visible: options.showMechanisms && scene.robotVisible && count > 0
     }
 
-    // Vision cards: right edge, centred (the mechanism cards use the left edge; the game HUD the corners and the top and bottom centre).
+    // Vision cards: right edge, centred (the mechanism cards use the left edge; the game HUD the corners and the top and bottom centre),
+    // but never over the game HUD of the top-right corner.
     CameraPanel {
         anchors.right: parent.right
         anchors.rightMargin: 12
-        anchors.verticalCenter: parent.verticalCenter
+        y: Math.max((parent.height - height) / 2, hudTopRight.visible ? hudTopRight.mapToItem(root, 0, hudTopRight.height).y + 8 : 12)
         visible: scene.camerasVisible && scene.robotVisible && count > 0
     }
 }
