@@ -38,9 +38,10 @@ ALLOWED: dict[str, set[str]] = {
     "core": {"sdk"},
     "ipc": {"sdk"},
     "halsim_ext": {"sdk", "ipc", "bridges"},
-    "bridges": {"sdk", "bridges/hal", "bridges/vendor"},
+    "bridges": {"sdk", "bridges/hal", "bridges/vendor", "bridges/vision"},
     "bridges/hal": {"sdk"},
     "bridges/vendor": {"sdk"},
+    "bridges/vision": {"sdk"},
     "app": {"sdk", "core", "ipc", "plugins"},
 }
 # Any plugin ("plugins/<name>") may reference only these (plus itself).
@@ -51,7 +52,7 @@ PLUGIN_ALLOWED = {"sdk"}
 AGGREGATOR = "plugins"
 AGGREGATOR_ALLOWED = {"sdk", AGGREGATOR, "plugins/*"}
 
-MODULE_OWNERS = ["sdk", "core", "ipc", "halsim_ext", "bridges", "bridges/hal", "bridges/vendor", "app"]
+MODULE_OWNERS = ["sdk", "core", "ipc", "halsim_ext", "bridges", "bridges/hal", "bridges/vendor", "bridges/vision", "app"]
 
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]', re.MULTILINE)
 QT_KEYWORD_RE = re.compile(r"\b(signals|slots|emit|foreach|Q_SIGNALS|Q_SLOTS|Q_EMIT|Q_FOREACH)\b")
@@ -88,6 +89,7 @@ TARGET_OWNERS = {
     "wpiemu_bridges_hal": "bridges/hal",
     "wpiemu_bridges_hal_halsim": "bridges/hal",
     "wpiemu_bridges_vendor": "bridges/vendor",
+    "wpiemu_bridges_vision": "bridges/vision",
     "wpiemu_app": "app",
     "wpiemu_app_common": "app",
     "wpiemu_app_host": "app",
@@ -358,6 +360,12 @@ def self_test() -> int:
         ("halsim_ext/src/a.cpp", '#include "../../bridges/builtin_bridges.cpp"\n', 1),
         ("halsim_ext/src/a.cpp", '#include <wpiemu/bridges/hal/a.h>\n', 1),
         ("bridges/vendor/src/a.cpp", '#include <wpiemu/bridges/hal/a.h>\n', 1),
+        ("bridges/vision/src/a.cpp", '#include <wpiemu/bridges/vision/a.h>\n#include <wpiemu/sdk/a.h>\n#include <vector>\n', 0),
+        ("bridges/vision/src/a.cpp", '#include <wpiemu/bridges/vendor/a.h>\n', 1),
+        ("bridges/vision/src/a.cpp", '#include <wpiemu/core/c.h>\n', 1),
+        ("bridges/vision/src/a.cpp", '#include <wpiemu/ipc/a.h>\n', 1),
+        ("halsim_ext/src/a.cpp", '#include <wpiemu/bridges/vision/a.h>\n', 1),
+        ("bridges/builtin_bridges.cpp", '#include <wpiemu/bridges/vision/a.h>\n#include <wpiemu/sdk/a.h>\n', 0),
     ]
     failures = 0
     for rel, text, expected in cases:
@@ -422,6 +430,14 @@ def self_test() -> int:
          "target_link_libraries(wpiemu_plugin_game_2026 PRIVATE wpiemu_core_physics wpiemu_app_common wpiemu_halsim_core wpiemu_bridges_hal_halsim wpiemu_bridges_builtin)\n", 5),
         ("bridges/vendor/CMakeLists.txt",
          "target_link_libraries(wpiemu_bridges_vendor PRIVATE wpiemu_bridges_hal_halsim)\n", 1),
+        ("bridges/vision/CMakeLists.txt",
+         "target_link_libraries(wpiemu_bridges_vision PUBLIC wpiemu_sdk ${CMAKE_DL_LIBS})\n", 0),
+        ("bridges/vision/CMakeLists.txt",
+         "target_link_libraries(wpiemu_bridges_vision PRIVATE wpiemu_bridges_vendor)\n", 1),
+        ("bridges/vision/CMakeLists.txt",
+         "target_link_libraries(wpiemu_bridges_vision PRIVATE wpiemu_core wpiemu_ipc)\n", 2),
+        ("halsim_ext/CMakeLists.txt",
+         "target_link_libraries(halsim_wpiemu PRIVATE wpiemu_bridges_vision)\n", 1),
         ("core/CMakeLists.txt",
          "target_link_libraries(wpiemu_core PRIVATE wpiemu_unknown wpiemu::unknown)\n", 2),
         ("core/CMakeLists.txt",

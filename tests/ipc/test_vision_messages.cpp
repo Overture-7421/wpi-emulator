@@ -265,6 +265,24 @@ TEST_CASE(
     CHECK(encodeOk(out) == bytes);
 }
 
+TEST_CASE("vision codec: a VisionReport (type 12) round trips and an empty one is a single count byte") {
+    VisionReport in;
+    in.cameras = {fullState(), CameraRobotState{}};
+    in.cameras[1].ntName = "photon-front";
+    in.cameras[1].present = false;
+    const std::vector<std::byte> bytes = encodeOk(in);
+    REQUIRE(bytes.size() > 4);
+    CHECK(bytes[1] == std::byte{12});  // MessageType::VisionReport, little endian u16 after the format byte
+    const auto out = std::get<VisionReport>(decodeOk(bytes));
+    CHECK(out.cameras == in.cameras);
+    CHECK(encodeOk(out) == bytes);
+
+    const std::vector<std::byte> empty = encodeOk(VisionReport{});
+    CHECK(empty.size() == 4);  // format byte + type + the count
+    CHECK(empty.back() == std::byte{0});
+    CHECK(std::get<VisionReport>(decodeOk(empty)).cameras.empty());
+}
+
 TEST_CASE("vision codec: empty vision is one count byte and decodes to the defaults") {
     for (const Message& m :
          {Message{sensorWith({})}, Message{actuatorWith({})}, Message{helloAckWith({})}}) {

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "wpiemu/core/vision/vision_system.h"
 #include "wpiemu/sdk/ipc/lifecycle.h"
 
 namespace wpiemu::core::runtime {
@@ -428,6 +429,7 @@ void SessionRunner::handleHello(const proto::Hello& hello) {
     programStarted_ = !options_.awaitProgramStart;
     peerSupportsArmed_ = hello.supportsArmed;
     session_.hub().clearDevices();
+    if (vision::VisionSystem* engine = session_.vision()) engine->clearRobotStates();  // a new robot process
     watchdogMs_ = proto::negotiateWatchdogTimeoutMs(hello.proposedWatchdogMs, options_.preferredWatchdogMs);
     window_.begin(++sessionCounter_, window_.runEpoch());
     beginEpoch();
@@ -443,6 +445,8 @@ void SessionRunner::handleHello(const proto::Hello& hello) {
     ack.runEpoch = window_.runEpoch();
     ack.watchdogTimeoutMs = watchdogMs_;
     ack.watchdogPolicy = options_.watchdogPolicy;
+    if (const vision::VisionSystem* engine = session_.vision())
+        ack.vision = engine->setup(options_.photonMessageUuid);
     sendToRobot(ack);
     helloDone_ = true;
     firstActuator_ = true;
@@ -462,6 +466,10 @@ void SessionRunner::handleActuator(const proto::ActuatorFrame& frame) {
         case proto::AckVerdict::Completed:
             robotLoops_ = frame.robotLoopCount;
             session_.hub().onActuatorFrame(frame);
+            if (vision::VisionSystem* engine = session_.vision(); engine != nullptr && !frame.vision.empty()) {
+                engine->onRobotStates(frame.vision);  // informational: snapshot and warnings only
+                snapshotDirty_ = true;
+            }
             if (firstActuator_) {
                 firstActuator_ = false;
                 session_.hub().markDiscoveryComplete();
@@ -495,6 +503,7 @@ void SessionRunner::handleDisconnect(const std::string& why) {
     sentLoopbackRevision_ = ~std::uint64_t{0};
     window_.begin(window_.sessionId(), window_.runEpoch());
     session_.hub().clearDevices();
+    if (vision::VisionSystem* engine = session_.vision()) engine->clearRobotStates();
     snapshotDirty_ = true;
 }
 

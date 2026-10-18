@@ -15,6 +15,7 @@
 //   app -> ext : LoopbackSet      (on every mapping change)
 //   app -> ext : DsState, SimControl (any time)
 //   ext -> app : SimControlAck    (one per SimControl with a non-zero commandId)
+//   ext -> app : VisionReport     (cameras the robot uses, while no ActuatorFrame flows: see the struct)
 //   per tick   : app -> ext SensorFrame (inputs for tick N + step dt)
 //                ext steps HALSIM_StepTiming(dt) then
 //                ext -> app ActuatorFrame (outputs observed after tick N, ackTick = N, result)
@@ -113,6 +114,7 @@ enum class MessageType : std::uint16_t {
     Log = 9,
     Goodbye = 10,
     SimControlAck = 11,
+    VisionReport = 12,
 };
 
 enum class RobotLanguage : std::uint8_t { Unknown = 0, Java = 1, Cpp = 2 };
@@ -318,8 +320,16 @@ struct Goodbye {
     std::string reason;
 };
 
+// ext -> app: what the robot process observed about its cameras (informational, exactly like ActuatorFrame::vision), sent OUTSIDE the
+// lock-step tick path: in a discovery-only (Armed) session, before lock-step begins, and whenever polling finds a camera or a change while
+// no ActuatorFrame is exchanged. In lock-step the same entries ride ActuatorFrame::vision. The receiver upserts by (vendor, ntName); the
+// first report of a connection lists every camera, later ones only what changed. It is not part of the tick window: no ack, no identity.
+struct VisionReport {
+    std::vector<CameraRobotState> cameras;
+};
+
 using Message = std::variant<Hello, HelloAck, DeviceAnnounce, LoopbackSet, SensorFrame,
-                             ActuatorFrame, DsState, SimControl, Log, Goodbye, SimControlAck>;
+                             ActuatorFrame, DsState, SimControl, Log, Goodbye, SimControlAck, VisionReport>;
 
 // Order of alternatives in `Message` == order of MessageType values minus 1; never reorder.
 inline MessageType typeOf(const Message& m) {

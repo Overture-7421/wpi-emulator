@@ -25,6 +25,7 @@ TEST_CASE("message type tags follow the variant order (frozen wire ids)") {
     CHECK(proto::typeOf(proto::Message{proto::Log{}}) == proto::MessageType::Log);
     CHECK(proto::typeOf(proto::Message{proto::Goodbye{}}) == proto::MessageType::Goodbye);
     CHECK(proto::typeOf(proto::Message{proto::SimControlAck{}}) == proto::MessageType::SimControlAck);
+    CHECK(proto::typeOf(proto::Message{proto::VisionReport{}}) == proto::MessageType::VisionReport);
     CHECK(proto::kMinCompatibleProtocolVersion <= proto::kProtocolVersion);
 }
 
