@@ -269,6 +269,8 @@ Status SimulationSession::build(SessionParts& parts) {
         gameState_->reset(*ctx_);
     }
 
+    vision_ = std::make_unique<VisionSystem>(config_, module_ != nullptr ? module_->aprilTagLayout() : AprilTagLayout{});
+
     world_->setPose(chassis_.body, chassis_.spawnPose);
     return okStatus();
 }
@@ -291,6 +293,7 @@ void SimulationSession::reset() {
     brownoutWarned_ = false;
     std::erase_if(sessionWarnings_, [](const HubWarning& w) { return w.code == "brownout"; });
     if (gameState_) gameState_->reset(*ctx_);
+    vision_->reset();
 }
 
 void SimulationSession::stepDrivetrain(double dt, double& currentA) {
@@ -397,6 +400,9 @@ void SimulationSession::tick(proto::SensorFrame& out, bool fullFrame) {
     out.stepUs = static_cast<std::uint32_t>(clock_.fixedStepUs());
     out.batteryCurrentA = battery_.currentA();
     hub_.buildSensorFrame(out, fullFrame);  // also sets batteryVoltageV
+
+    vision_->step(clock_.simTimeUs(), world_->pose(chassis_.body), directory_.get(), rng_);
+    out.vision = vision_->collectDue(clock_.simTimeUs());
 }
 
 std::shared_ptr<const ISimSnapshot> SimulationSession::buildSnapshot(bool paused, bool robotConnected,
@@ -440,6 +446,7 @@ std::shared_ptr<const ISimSnapshot> SimulationSession::buildSnapshot(bool paused
     d.driverStation = ds_;
     d.physicsStats = world_->stats();
     if (gameState_) gameState_->publish(builder);
+    vision_->publish(builder);
     return builder.build();
 }
 

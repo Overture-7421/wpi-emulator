@@ -74,6 +74,7 @@ void DemoRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<con
         scene_.hud = game->contributeHud();
         scene_.panels = game->contributeEditorPanels();
         scene_.zoneKinds = game->contributeZoneKinds();
+        scene_.tags = game->aprilTagLayout();
         scene_.gameName = QString::fromStdString(game->metadata().displayName);
     }
     plannedDevices_ = scene_.config ? demoDevicesFor(*scene_.config) : std::vector<sdk::DiscoveredDevice>{};

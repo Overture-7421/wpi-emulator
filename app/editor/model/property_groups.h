@@ -12,6 +12,7 @@
 
 #include "editor_backend.h"
 #include "model/selection.h"
+#include "model/units.h"
 #include "wpiemu/sdk/config/robot_config.h"
 
 namespace wpiemu::app::editor {
@@ -42,6 +43,11 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
 // What kind of mechanism this is: the label of its `motion` choice (Rotary / Arm / Linear) for a template that has one,
 // otherwise the template's display name.
 QString mechanismKindLabel(const sdk::MechanismConfig& m, const sdk::MechanismTemplateInfo& info);
+
+// The camera's robot-to-camera transform in the WPILib robot frame (see ops::cameraRobotPose) as one line in the
+// display units; `tooltip` (optional) receives the same pose in metres / radians, ready to copy into robot code.
+QString robotToCameraText(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam, UnitSystem units,
+                          QString* tooltip = nullptr);
 
 // Short human description of the selection ("Intake (roller)", "Wheel fl", ...).
 QString describeSelection(const sdk::RobotConfig& c, const EditorCatalog& catalog, const SelectionRef& sel);

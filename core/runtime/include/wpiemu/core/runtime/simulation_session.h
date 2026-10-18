@@ -9,6 +9,7 @@
 
 #include "wpiemu/core/runtime/device_hub.h"
 #include "wpiemu/core/runtime/sim_clock.h"
+#include "wpiemu/core/runtime/vision_system.h"
 #include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/core/rng.h"
@@ -77,7 +78,7 @@ struct SessionParts {
     SessionOptions options;
 };
 
-// One simulation run: owns the world, chassis, drivetrain, mechanisms, device hub, game state and runs the
+// One simulation run: owns the world, chassis, drivetrain, mechanisms, device hub, game state, cameras and runs the
 // per-tick pipeline of ARCHITECTURE section 4. Pure and synchronous: no threads, no I/O, no wall clock, so it is
 // deterministic and unit-testable; SessionRunner adds lock-step I/O around it.
 // Destruction order (reverse of construction): game state, mechanisms, drivetrain, field, world.
@@ -114,6 +115,9 @@ public:
     sdk::IDrivetrain* drivetrain() { return drivetrain_.get(); }
     sdk::IMechanismDirectory& mechanisms();
     sdk::IGameModule* gameModule() const { return module_; }
+    // Simulated cameras (empty when the config declares none).
+    VisionSystem& vision() { return *vision_; }
+    const VisionSystem& vision() const { return *vision_; }
     // Warnings the session raises itself (brownout, unresolved attachments), next to hub().warnings().
     const std::vector<sdk::HubWarning>& sessionWarnings() const { return sessionWarnings_; }
 
@@ -154,6 +158,7 @@ private:
     std::unique_ptr<Directory> directory_;
     std::unique_ptr<sdk::SimContext> ctx_;
     std::unique_ptr<sdk::IGameState> gameState_;
+    std::unique_ptr<VisionSystem> vision_;
 
     std::vector<sdk::WheelCommand> wheelCommands_;
     sdk::Vec3 lastVelocity_;

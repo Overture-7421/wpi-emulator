@@ -1,5 +1,6 @@
 # 2026 (REBUILT) game plugin. May link ONLY wpiemu_sdk (enforced by tools/check_boundaries.py).
 add_library(wpiemu_plugin_game_2026 STATIC
+    src/april_tags.cpp
     src/config.cpp
     src/field_layout.cpp
     src/fuel_layout.cpp

@@ -13,12 +13,17 @@
 
 #include "wpiemu/sdk/devices/builtin_bridges.h"
 #include "wpiemu/sdk/devices/device_bridge.h"
+#include "wpiemu/sdk/vision/vision_bridge.h"
 
 #if defined(WPIEMU_BUILTIN_HAL_HALSIM)
 #include "wpiemu/bridges/hal/hal_sim_binding.h"
 #endif
 #if defined(WPIEMU_BUILTIN_VENDOR_REGISTER)
 #include "wpiemu/bridges/vendor/vendor_bridges.h"
+#endif
+#include "wpiemu/bridges/vision/vision_bridges.h"
+#if defined(WPIEMU_BUILTIN_VISION_NT)
+#include "wpiemu/bridges/vision/nt_binding.h"
 #endif
 
 namespace wpiemu::sdk {
@@ -47,6 +52,19 @@ Status registerBuiltinBridges(DeviceBridgeRegistry& registry) {
 #endif
 #if defined(WPIEMU_BUILTIN_VENDOR_REGISTER)
     attempt(first, [&] { return bridges::vendor::WPIEMU_BUILTIN_VENDOR_REGISTER(registry); });
+#endif
+
+    return first;
+}
+
+Status registerBuiltinVisionBridges(VisionBridgeRegistry& registry) {
+    Status first = okStatus();
+
+#if defined(WPIEMU_BUILTIN_VISION_NT)
+    attempt(first, [&] { return bridges::vision::registerNtVisionBridges(registry); });
+#else
+    // Without the ntcore binding the bridges are registered but never publish.
+    attempt(first, [&] { return bridges::vision::registerVisionBridges(registry); });
 #endif
 
     return first;

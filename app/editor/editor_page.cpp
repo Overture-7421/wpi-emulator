@@ -250,7 +250,45 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                 connect(a, &QAction::triggered, this, [this, kind = QString::fromStdString(k.kind), att] { d->controller.addZone(kind, att); });
             }
         };
+        auto addCameraMenu = [&](QMenu* into, const sdk::MechanismAttachment& att) {
+            QMenu* sub = into->addMenu(d->icons.node(NodeKind::Camera), ETR("Add camera"));
+            for (const auto kind : {sdk::CameraKind::Limelight, sdk::CameraKind::PhotonVision}) {
+                const QString name = kind == sdk::CameraKind::PhotonVision ? QStringLiteral("PhotonVision") : QStringLiteral("Limelight");
+                connect(sub->addAction(name), &QAction::triggered, this, [this, kind, att] { d->controller.addCamera(kind, att); });
+            }
+        };
+        // "Attach to" for something hanging on the chassis or a mechanism link (zones, cameras).
+        using AttachFn = std::function<void(const QString& parent, const QString& link)>;
+        auto addAttachMenu = [&](QMenu* into, const AttachFn& attach) {
+            auto* sub = into->addMenu(ETR("Attach to"));
+            sub->addAction(ETR("Chassis"), this, [attach] { attach(QStringLiteral("chassis"), QStringLiteral("root")); });
+            for (const auto& m : cfg.mechanisms) {
+                const auto* info = cat.findTemplate(m.type);
+                const QString name = QString::fromStdString(ops::displayNameFor(m, cat));
+                const QString mechId = QString::fromStdString(m.id);
+                if (info == nullptr || info->links.empty()) {
+                    sub->addAction(name, this, [attach, mechId] { attach(mechId, QStringLiteral("root")); });
+                    continue;
+                }
+                auto* links = sub->addMenu(name);
+                links->addAction(ETR("Origin"), this, [attach, mechId] { attach(mechId, QStringLiteral("root")); });
+                for (const auto& l : info->links)
+                    links->addAction(QString::fromStdString(l.label.empty() ? l.name : l.label), this,
+                                     [attach, mechId, link = QString::fromStdString(l.name)] { attach(mechId, link); });
+            }
+        };
         switch (ref.kind) {
+            case SelKind::Camera: {
+                d->controller.selection().set(ref);
+                menu.addAction(ETR("Duplicate"), this, [this] { d->controller.duplicateSelection(); });
+                menu.addAction(ETR("Delete"), this, [this] { d->controller.deleteSelection(); });
+                menu.addSeparator();
+                const QString cameraId = QString::fromStdString(ref.owner);
+                addAttachMenu(&menu, [this, cameraId](const QString& parent, const QString& link) {
+                    d->controller.document().reattachCamera(cameraId, parent, link);
+                });
+                break;
+            }
             case SelKind::Zone: {
                 d->controller.selection().set(ref);
                 menu.addAction(ETR("Duplicate"), this, [this] { d->controller.duplicateSelection(); });
@@ -304,6 +342,12 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                     onMechanism.parentMechanismId = ref.owner;
                     addZoneKinds(&menu, onMechanism);
                 }
+                {
+                    sdk::MechanismAttachment onMechanism;
+                    onMechanism.parentMechanismId = ref.owner;
+                    menu.addSeparator();
+                    addCameraMenu(&menu, onMechanism);
+                }
                 break;
             }
             case SelKind::Slot:
@@ -344,6 +388,8 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                     menu.addSeparator();
                     addZoneKinds(&menu, sdk::MechanismAttachment{});
                 }
+                menu.addSeparator();
+                addCameraMenu(&menu, sdk::MechanismAttachment{});
                 break;
             case SelKind::Plugin:
                 addTemplates(&menu, [this](const QString& type, const ops::MechanismVariant& v) { d->controller.addMechanism(type, sdk::MechanismAttachment{}, v); }, true);
@@ -353,6 +399,7 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                 addTemplates(menu.addMenu(ETR("Add mechanism")), [this](const QString& type, const ops::MechanismVariant& v) {
                     d->controller.addMechanism(type, sdk::MechanismAttachment{}, v);
                 });
+                addCameraMenu(&menu, sdk::MechanismAttachment{});
                 break;
         }
         if (!menu.isEmpty()) menu.exec(global);
@@ -380,6 +427,9 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
     });
     connect(&s.treeModel, &ProjectTreeModel::zoneDropped, this, [this, chooseLink](const QString& id, const sdk::MechanismAttachment& att) {
         if (const auto link = chooseLink(att)) d->controller.document().reattachZone(id, QString::fromStdString(att.parentMechanismId), *link);
+    });
+    connect(&s.treeModel, &ProjectTreeModel::cameraDropped, this, [this, chooseLink](const QString& id, const sdk::MechanismAttachment& att) {
+        if (const auto link = chooseLink(att)) d->controller.document().reattachCamera(id, QString::fromStdString(att.parentMechanismId), *link);
     });
 
     connect(&c, &EditorController::deviceToast, this, [this](const QString& title, const QString& detail) { d->toasts->showToast(title, detail, 0); });

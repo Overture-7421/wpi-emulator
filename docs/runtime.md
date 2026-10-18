@@ -52,6 +52,11 @@ tests/runtime/                    doctest suite (fixtures in runtime_fixtures.h,
                "activation": { "mode": "all",
                                "conditions": [ { "mechanism": "flywheel", "value": "velocity", "op": "above",
                                                  "threshold": 100, "tolerance": 0.1, "absolute": true } ] } } ],
+  "cameras": [ { "id": "front_ll", "label": "Front Limelight", "name": "front", "kind": "limelight",
+                 "attachment": { "parentMechanismId": "chassis", "parentLink": "root" },
+                 "pose": { "position": {..}, "rotation": {x,y,z,w} },
+                 "hFovDeg": 75, "vFovDeg": 50, "maxRangeM": 6, "maxIncidenceDeg": 75, "fps": 30, "latencyMs": 40,
+                 "widthPx": 1280, "heightPx": 800, "positionNoiseM": 0, "yawNoiseDeg": 0 } ],
   "battery": { "nominalVoltageV": 12.6, "internalResistanceOhm": 0.015, "brownoutVoltageV": 6.8 },
   "sim": { "stepUs": 5000, "seed": 1, "physics": { "workerCount": 1, "subSteps": 4, "sleeping": true, "gravity": {..} } },
   "plugins": { "game_2026": { "schemaVersion": 1, "data": { ... } } }
@@ -84,8 +89,8 @@ SDK codes (`device_alias_conflict`, `attachment_*`, `mechanism_id_reserved`) plu
 `slot_unknown` (W for the `robot` owner), `slot_required_unmapped` (Error for mechanisms, Warning for drivetrain slots),
 `slot_duplicate_mapping`, `device_duplicate_mapping`, `slot_device_incompatible` (needs a capability lookup, unknown
 devices are skipped), `battery_invalid`, `sim_invalid` (step must divide 20 ms), `plugin_not_found` (W),
-`plugin_section_unknown` (W), `plugin_section_version_unsupported`, `plugin_property_invalid`, and the zone codes of
-"Zones" below.
+`plugin_section_unknown` (W), `plugin_section_version_unsupported`, `plugin_property_invalid`, and the zone and camera codes of
+"Zones" and "Cameras" below.
 Drivetrain slot names follow the convention `"<wheel>.drive"`, `"<wheel>.drive2"`.. (one per `driveMotorCount`, up to 8) / `"<wheel>.steer"` (steer for swerve/steered wheels), robot slot `"imu"`.
 A mapping may carry `"reversed": true` (Motor slots only, omitted when false): the controller spins against the mechanism's positive direction, and the hub negates its command and rotor feedback ([ADR 0014](decisions/0014-multi-motor-gearboxes.md)). New codes: `slot_motor_inactive` (W, a mapped motor above the motor count), `slot_reversed_invalid` (W, `reversed` on a non-motor slot).
 
@@ -107,6 +112,40 @@ Validator codes: `zone_id_invalid` (empty id), `zone_id_duplicate` (also an id e
 (non-finite pose, or a Volume size <= 0), `zone_condition_invalid` (empty value name, non-finite threshold, negative
 tolerance), `zone_condition_mechanism_unknown` (W). Attachment problems reuse `attachment_parent_missing` /
 `attachment_link_missing` with the path `zones[i].attachment`.
+
+### Cameras (`RobotConfig::cameras`)
+
+A camera ([ADR 0017](decisions/0017-vision-cameras.md), `sdk/config/camera.h`, user-facing description in [vision.md](vision.md)) is a
+simulated Limelight or PhotonVision coprocessor. Unlike a zone, core owns it completely (no plugin kind): `kind` is
+`"limelight"` or `"photonvision"` (`cameraKindKey`), `name` is the name robot code uses (Limelight table
+`limelight[-name]`, PhotonVision `PhotonCamera` name), `attachment` + `pose` (`CameraConfig::local`, camera frame +X forward,
++Z up, relative to the attachment link frame) place it on the chassis or a mechanism link exactly like a zone. The optics are
+`hFovDeg`, `vFovDeg`, `maxRangeM`, `maxIncidenceDeg`, `fps`, `latencyMs`, `widthPx`, `heightPx` and the pose noise `positionNoiseM` /
+`yawNoiseDeg` (defaults in the table of vision.md section 2). `cameras` may be absent on load (= none, schema stays 1) and is always written.
+
+Validator codes (`issue_code::kCamera*`, all **errors**): `camera_id_invalid` (empty id), `camera_id_duplicate` (a duplicate camera id, or an id
+equal to a mechanism or zone id; a zone id equal to a camera id is reported as `zone_id_duplicate`), `camera_name_duplicate` (two
+cameras of one kind share the robot-code name), `camera_geometry_invalid` (non-finite `pose`), `camera_optics_invalid` (path = the field:
+`hFovDeg` / `vFovDeg` in (0, 180), `maxRangeM` > 0, `maxIncidenceDeg` in (0, 90], `fps` in (0, 240], `latencyMs` in [0, 2000],
+`widthPx` / `heightPx` > 0, noise >= 0). Attachment problems reuse `attachment_parent_missing` / `attachment_link_missing` with the
+path `cameras[i].attachment`.
+
+### Vision (`VisionSystem`)
+
+`core/runtime/vision_system.h`, owned by `SimulationSession` (always constructed; with no cameras it does nothing). It needs the
+season's `AprilTagLayout` (`IGameModule::aprilTagLayout()` of the selected game plugin; none = cameras never see a tag) and the
+`IMechanismDirectory`. At the end of `SimulationSession::tick`, after the physics and game steps, the IMU / battery egress and the
+clock advance, for each camera whose capture is due (first capture on the first tick, then every `round(1e6/fps)` us, at step
+boundaries): camera world pose = chassis pose * `linkPoseInChassis(attachment)` * `local` (the same resolution zones use, so a camera
+on a turret moves with the turret; the chassis frame when the link cannot be resolved) -> the tags whose centre is in front of the camera,
+inside the field of view, within `maxRangeM` and facing the camera within `maxIncidenceDeg` (no occlusion) -> a `CameraFrame`
+(capture / publish times, robot-to-camera transform and robot pose in the WPILib robot frame = the floor point below the hull centre with the
+chassis yaw only, Gaussian noise from `SimContext::rng()` on the reported robot pose, so deterministic per seed) queued until
+`simTime >= capture + latency`. `collectDue` moves the due frames into `SensorFrame::vision`; the snapshot carries `CameraState` (world
+pose, `tagsVisible`, `visibleTagIds` of the last capture). `reset()` clears the queue and restarts sequence numbers and capture times.
+`SessionRunner` sends the `VisionSetup` message (cameras, the PhotonLib version from `RunnerOptions::photonVersion`, which `RobotSession`
+fills from `ProjectInspector`'s `photonlib` vendordep, and the layout name) right after `HelloAck` and again before the first frame of every
+epoch, also when there are no cameras. Rules, frames and the NetworkTables output: [vision.md](vision.md).
 
 ### Load pipeline
 
@@ -155,7 +194,7 @@ persisted mappings -> mechanisms (config order) -> game state; destruction is th
 
 `SimulationSession::tick(SensorFrame&, full)` is one pass of ARCHITECTURE 4 (steps 2-6): mechanisms -> drivetrain commands from `drivetrain.<wheel>.drive[N]|steer` (`sdk::wheelCommandFromHub`: every drive motor with its own voltage)
 slots (rotor feedback written back with the gear ratio) -> `coupling.beforeStep` -> `world.step` -> `coupling.afterStep` -> game state -> game `onTick` -> chassis IMU
-(`robot.imu`: yaw/pitch/roll, body rates, proper acceleration = +g at rest) -> battery. The battery uses the total current of the tick
+(`robot.imu`: yaw/pitch/roll, body rates, proper acceleration = +g at rest) -> battery -> cameras (`VisionSystem`, see Vision above). The battery uses the total current of the tick
 (mechanisms + wheel motors + `baselineCurrentA`) with a one-tick lag: `V = nominal - I R`, brownout with a 0.5 V hysteresis (warning `brownout`).
 Tick numbers restart at 0 per epoch; `reset()` restores pose, drivetrain, mechanisms, game state, clock, RNG and battery but keeps devices and bindings.
 It first resets hub signal history, so the first tick of every new epoch consumes neutral commands rather
@@ -228,7 +267,7 @@ Environment contract (`launcher::env_var`): `WPIEMU_EXT`, `WPIEMU_IPC_ENDPOINT` 
 ### `ProjectInspector` and `inspectToolchain` (wizard steps 1-2)
 
 Read-only: `build.gradle[.kts]` (GradleRIO version in Groovy, Kotlin and `classpath` forms -> year; variable version -> `.wpilib` `projectYear` / `settings.gradle` `frcYear`),
-language (`.wpilib` `currentLanguage` > build script signals > `src/main/{java,cpp}`), team number, Gradle wrapper files + Gradle version, `vendordeps/*.json`.
+language (`.wpilib` `currentLanguage` > build script signals > `src/main/{java,cpp}`), team number, Gradle wrapper files + Gradle version, `vendordeps/*.json` (the `photonlib` version is what the launcher puts in `VisionSetup::photonVersion`).
 `inspectToolchain` produces `ToolchainCheck`s (`project`, `gradlerio`, `game_plugin`, `gradle_wrapper`, `wpilib_install`, `jdk`, `cpp_toolchain`, `vendordeps`, `team`, `extension`) with
 `Ok/Info/Warning/Error` and a fix hint; `ready()` = no Error. WPILib is searched in `%PUBLIC%\wpilib\<year>` / `C:\Users\Public\wpilib\<year>` and `~/wpilib/<year>`; the JDK is
 the WPILib one, else `JAVA_HOME`, else `java` on `PATH` (Java >= 17 expected). It was verified against `FRC-Shelby-2026OS` (read-only; a test asserts nothing changed).

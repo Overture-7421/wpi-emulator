@@ -72,6 +72,11 @@ public:
     bool removeZoneCondition(const QString& zoneId, int index);
     bool setZoneCondition(const QString& zoneId, int index, const sdk::ZoneCondition& condition);
     bool setZoneActivationMode(const QString& zoneId, sdk::ActivationMode mode);
+    // ---- cameras
+    QString addCamera(sdk::CameraKind kind, const sdk::MechanismAttachment& attachment = {});
+    bool removeCamera(const QString& id);
+    QString duplicateCamera(const QString& id);
+    bool reattachCamera(const QString& id, const QString& newParent, const QString& link = QStringLiteral("root"));
     // ---- slots
     bool mapSlot(const sdk::SlotAddress& slot, const sdk::DeviceKey& device);
     bool clearSlot(const sdk::SlotAddress& slot);

@@ -129,6 +129,30 @@ bool ownsKind(const IGameModule* plugin, const std::string& kind) {
     return kind.size() > prefix.size() && kind.compare(0, prefix.size(), prefix) == 0;
 }
 
+// Attachment of a zone / camera: the chassis ('root') or an existing link of an existing mechanism.
+void validateAttachment(const RobotConfig& c, const MechanismFactory& mechanisms, const MechanismAttachment& att,
+                        const std::string& attPath, std::vector<Issue>& out) {
+    if (att.parentLink.empty()) {
+        add(out, Severity::Error, attPath, "parent link must not be empty (use 'root')", validation_code::kAttachmentLinkMissing);
+    } else if (att.onChassis()) {
+        if (att.parentLink != kRootLink)
+            add(out, Severity::Error, attPath, "the chassis only exposes the link 'root', not '" + att.parentLink + "'",
+                validation_code::kAttachmentLinkMissing);
+    } else if (const MechanismConfig* parent = c.findMechanism(att.parentMechanismId); parent == nullptr) {
+        add(out, Severity::Error, attPath, "parent mechanism '" + att.parentMechanismId + "' does not exist",
+            validation_code::kAttachmentParentMissing);
+    } else if (const MechanismTemplateInfo* info = mechanisms.templateInfo(parent->type);
+               info != nullptr && !hasLink(*info, att.parentLink)) {
+        add(out, Severity::Error, attPath, "mechanism '" + parent->id + "' (" + parent->type + ") has no link '" + att.parentLink + "'",
+            validation_code::kAttachmentLinkMissing);
+    }
+}
+
+bool finite(const Pose3& p) {
+    return finite(p.position) && std::isfinite(p.rotation.x) && std::isfinite(p.rotation.y) && std::isfinite(p.rotation.z) &&
+           std::isfinite(p.rotation.w);
+}
+
 void validateZones(const RobotConfig& c, const MechanismFactory& mechanisms, const IGameModule* plugin, std::vector<Issue>& out) {
     if (c.zones.empty()) return;
     const std::vector<ZoneKindInfo> kinds = plugin != nullptr ? plugin->contributeZoneKinds() : std::vector<ZoneKindInfo>{};
@@ -141,26 +165,12 @@ void validateZones(const RobotConfig& c, const MechanismFactory& mechanisms, con
             add(out, Severity::Error, base + ".id", "zone id must not be empty", issue_code::kZoneIdInvalid);
         else if (c.findMechanism(z.id) != nullptr)
             add(out, Severity::Error, base + ".id", "zone id '" + z.id + "' is also a mechanism id", issue_code::kZoneIdDuplicate);
+        else if (c.findCamera(z.id) != nullptr)
+            add(out, Severity::Error, base + ".id", "zone id '" + z.id + "' is also a camera id", issue_code::kZoneIdDuplicate);
         else if (!ids.insert(z.id).second)
             add(out, Severity::Error, base + ".id", "duplicate zone id '" + z.id + "'", issue_code::kZoneIdDuplicate);
 
-        // ---- attachment ----
-        const std::string attPath = base + ".attachment";
-        const MechanismAttachment& att = z.attachment;
-        if (att.parentLink.empty()) {
-            add(out, Severity::Error, attPath, "parent link must not be empty (use 'root')", validation_code::kAttachmentLinkMissing);
-        } else if (att.onChassis()) {
-            if (att.parentLink != kRootLink)
-                add(out, Severity::Error, attPath, "the chassis only exposes the link 'root', not '" + att.parentLink + "'",
-                    validation_code::kAttachmentLinkMissing);
-        } else if (const MechanismConfig* parent = c.findMechanism(att.parentMechanismId); parent == nullptr) {
-            add(out, Severity::Error, attPath, "parent mechanism '" + att.parentMechanismId + "' does not exist",
-                validation_code::kAttachmentParentMissing);
-        } else if (const MechanismTemplateInfo* info = mechanisms.templateInfo(parent->type);
-                   info != nullptr && !hasLink(*info, att.parentLink)) {
-            add(out, Severity::Error, attPath, "mechanism '" + parent->id + "' (" + parent->type + ") has no link '" + att.parentLink + "'",
-                validation_code::kAttachmentLinkMissing);
-        }
+        validateAttachment(c, mechanisms, z.attachment, base + ".attachment", out);
 
         // ---- kind and properties ----
         const ZoneKindInfo* info = nullptr;
@@ -183,9 +193,7 @@ void validateZones(const RobotConfig& c, const MechanismFactory& mechanisms, con
             }
 
         // ---- geometry ----
-        const Pose3& p = z.local;
-        if (!finite(p.position) || !std::isfinite(p.rotation.x) || !std::isfinite(p.rotation.y) || !std::isfinite(p.rotation.z) ||
-            !std::isfinite(p.rotation.w))
+        if (!finite(z.local))
             add(out, Severity::Error, base + ".local", "zone pose must be finite", issue_code::kZoneGeometryInvalid);
         const bool volume = info == nullptr || info->shape == ZoneShape::Volume;
         if (volume && (!finite(z.sizeM) || z.sizeM.x <= 0.f || z.sizeM.y <= 0.f || z.sizeM.z <= 0.f))
@@ -203,6 +211,49 @@ void validateZones(const RobotConfig& c, const MechanismFactory& mechanisms, con
                 add(out, Severity::Warning, cp + ".mechanism", "condition mechanism '" + cond.mechanismId + "' does not exist",
                     issue_code::kZoneConditionMechanismUnknown);
         }
+    }
+}
+
+void validateCameras(const RobotConfig& c, const MechanismFactory& mechanisms, std::vector<Issue>& out) {
+    std::set<std::string> ids;
+    std::set<std::pair<int, std::string>> names;
+    const auto inRange = [](double v, double lo, double hi) { return std::isfinite(v) && v > lo && v <= hi; };
+    for (std::size_t i = 0; i < c.cameras.size(); ++i) {
+        const CameraConfig& cam = c.cameras[i];
+        const std::string base = "cameras[" + std::to_string(i) + "]";
+
+        if (cam.id.empty())
+            add(out, Severity::Error, base + ".id", "camera id must not be empty", issue_code::kCameraIdInvalid);
+        else if (c.findMechanism(cam.id) != nullptr)
+            add(out, Severity::Error, base + ".id", "camera id '" + cam.id + "' is also a mechanism id", issue_code::kCameraIdDuplicate);
+        else if (c.findZone(cam.id) != nullptr)
+            add(out, Severity::Error, base + ".id", "camera id '" + cam.id + "' is also a zone id", issue_code::kCameraIdDuplicate);
+        else if (!ids.insert(cam.id).second)
+            add(out, Severity::Error, base + ".id", "duplicate camera id '" + cam.id + "'", issue_code::kCameraIdDuplicate);
+
+        if (!names.emplace(static_cast<int>(cam.kind), cam.name).second)
+            add(out, Severity::Error, base + ".name",
+                std::string("another ") + cameraKindKey(cam.kind) + " camera is already named '" + cam.name + "'",
+                issue_code::kCameraNameDuplicate);
+
+        validateAttachment(c, mechanisms, cam.attachment, base + ".attachment", out);
+
+        if (!finite(cam.local))
+            add(out, Severity::Error, base + ".pose", "camera pose must be finite", issue_code::kCameraGeometryInvalid);
+
+        const auto optics = [&](const char* field, bool ok, const char* why) {
+            if (!ok) add(out, Severity::Error, base + "." + field, why, issue_code::kCameraOpticsInvalid);
+        };
+        optics("hFovDeg", std::isfinite(cam.hFovDeg) && cam.hFovDeg > 0.0 && cam.hFovDeg < 180.0, "horizontal FOV must be in (0, 180) degrees");
+        optics("vFovDeg", std::isfinite(cam.vFovDeg) && cam.vFovDeg > 0.0 && cam.vFovDeg < 180.0, "vertical FOV must be in (0, 180) degrees");
+        optics("maxRangeM", std::isfinite(cam.maxRangeM) && cam.maxRangeM > 0.0, "maximum range must be positive");
+        optics("maxIncidenceDeg", inRange(cam.maxIncidenceDeg, 0.0, 90.0), "maximum incidence angle must be in (0, 90] degrees");
+        optics("fps", inRange(cam.fps, 0.0, 240.0), "frame rate must be in (0, 240]");
+        optics("latencyMs", std::isfinite(cam.latencyMs) && cam.latencyMs >= 0.0 && cam.latencyMs <= 2000.0, "latency must be in [0, 2000] ms");
+        optics("widthPx", cam.widthPx > 0, "image width must be positive");
+        optics("heightPx", cam.heightPx > 0, "image height must be positive");
+        optics("positionNoiseM", std::isfinite(cam.positionNoiseM) && cam.positionNoiseM >= 0.0, "position noise must be >= 0");
+        optics("yawNoiseDeg", std::isfinite(cam.yawNoiseDeg) && cam.yawNoiseDeg >= 0.0, "yaw noise must be >= 0");
     }
 }
 
@@ -398,6 +449,7 @@ std::vector<Issue> ConfigValidator::validate(const RobotConfig& config, const Me
         }
     }
     validateZones(config, mechanisms, selected, out);
+    validateCameras(config, mechanisms, out);
     return out;
 }
 

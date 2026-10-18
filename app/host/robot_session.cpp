@@ -277,6 +277,8 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     ro.discoveryOnly = options.mode == Mode::Armed;
     ro.awaitProgramStart = true;
     ro.preferredWatchdogMs = options.watchdogMs;
+    // The inspection is read-only and optional: without it PhotonVision cameras use the extension's default version.
+    if (const auto report = launcher::ProjectInspector(*reg.json).inspect(options.projectDir)) ro.photonVersion = report.value().photonLibVersion();
     self->runner_ = std::make_unique<runtime::SessionRunner>(*self->session_, self->inbox_, self->slot_, log, ro);
     self->runner_->setDriverStation(options.driverStation);
     self->runner_->start();

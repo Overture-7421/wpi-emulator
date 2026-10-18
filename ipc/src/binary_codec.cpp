@@ -19,6 +19,13 @@ constexpr std::size_t kMaxSamples = std::size_t{1} << 20;
 constexpr std::size_t kMaxLoopbackIds = std::size_t{1} << 20;
 constexpr std::size_t kMaxPortCounts = 4096;
 constexpr std::size_t kMaxJoystickElements = 1024;
+constexpr std::size_t kMaxCameras = 256;
+constexpr std::size_t kMaxVisionFrames = 1024;  // camera frames carried by one SensorFrame
+constexpr std::size_t kMaxTagsPerFrame = 1024;
+constexpr std::size_t kTagWireBytes = 4 + 28 + 4 * 8 + 8 * 8 + 8;
+// Smallest encoding of a CameraFrame (no tags) / CameraSetup (empty strings): bounds counts by the bytes left.
+constexpr std::size_t kCameraFrameMinWireBytes = 4 + 8 + 8 + 8 + 28 + 1 + 1 + 28 + 3 * 8;
+constexpr std::size_t kCameraSetupMinWireBytes = 3 + 1 + 2 + 28 + 6 * 8 + 2 * 4 + 2 * 8;
 constexpr std::size_t kHeaderBytes = 3;  // wireFormat + messageType
 constexpr std::size_t kSampleWireBytes = 14;
 
@@ -291,6 +298,134 @@ void read(Reader& outer, JoystickState& j) {
     j.buttonCount = r.u8();
 }
 
+// ---- vision records (flat: sizes are bounded by the counts below, not by the 16-bit record length) -------------
+
+void write(Writer& w, const Pose3& p) {
+    w.f32(p.position.x);
+    w.f32(p.position.y);
+    w.f32(p.position.z);
+    w.f32(p.rotation.x);
+    w.f32(p.rotation.y);
+    w.f32(p.rotation.z);
+    w.f32(p.rotation.w);
+}
+
+void read(Reader& r, Pose3& p) {
+    p.position.x = r.f32();
+    p.position.y = r.f32();
+    p.position.z = r.f32();
+    p.rotation.x = r.f32();
+    p.rotation.y = r.f32();
+    p.rotation.z = r.f32();
+    p.rotation.w = r.f32();
+}
+
+void write(Writer& w, const TagDetection& t) {
+    w.i32(t.id);
+    write(w, t.cameraToTag);
+    w.f64(t.yawDeg);
+    w.f64(t.pitchDeg);
+    w.f64(t.areaPercent);
+    w.f64(t.ambiguity);
+    for (double c : t.cornersPx) w.f64(c);
+    w.f64(t.distanceM);
+}
+
+void read(Reader& r, TagDetection& t) {
+    t.id = r.i32();
+    read(r, t.cameraToTag);
+    t.yawDeg = r.f64();
+    t.pitchDeg = r.f64();
+    t.areaPercent = r.f64();
+    t.ambiguity = r.f64();
+    for (double& c : t.cornersPx) c = r.f64();
+    t.distanceM = r.f64();
+}
+
+void write(Writer& w, const CameraFrame& f) {
+    w.u32(f.cameraIndex);
+    w.u64(f.sequence);
+    w.i64(f.captureTimeUs);
+    w.i64(f.publishTimeUs);
+    write(w, f.robotToCamera);
+    if (f.tags.size() > kMaxTagsPerFrame) w.fail();
+    w.varint(f.tags.size());
+    for (const TagDetection& t : f.tags) write(w, t);
+    w.boolean(f.hasRobotPose);
+    write(w, f.robotPoseField);
+    w.f64(f.avgTagDistM);
+    w.f64(f.avgTagAreaPercent);
+    w.f64(f.tagSpanM);
+}
+
+void read(Reader& r, CameraFrame& f) {
+    f.cameraIndex = r.u32();
+    f.sequence = r.u64();
+    f.captureTimeUs = r.i64();
+    f.publishTimeUs = r.i64();
+    read(r, f.robotToCamera);
+    const std::size_t n = r.count(kTagWireBytes, kMaxTagsPerFrame);
+    f.tags.reserve(n);
+    for (std::size_t i = 0; i < n && r.ok(); ++i) read(r, f.tags.emplace_back());
+    f.hasRobotPose = r.boolean();
+    read(r, f.robotPoseField);
+    f.avgTagDistM = r.f64();
+    f.avgTagAreaPercent = r.f64();
+    f.tagSpanM = r.f64();
+}
+
+void write(Writer& w, const CameraConfig& c) {
+    w.str(c.id);
+    w.str(c.label);
+    w.str(c.name);
+    w.u8(static_cast<std::uint8_t>(c.kind));
+    w.str(c.attachment.parentMechanismId);
+    w.str(c.attachment.parentLink);
+    write(w, c.local);
+    w.f64(c.hFovDeg);
+    w.f64(c.vFovDeg);
+    w.f64(c.maxRangeM);
+    w.f64(c.maxIncidenceDeg);
+    w.f64(c.fps);
+    w.f64(c.latencyMs);
+    w.i32(c.widthPx);
+    w.i32(c.heightPx);
+    w.f64(c.positionNoiseM);
+    w.f64(c.yawNoiseDeg);
+}
+
+void read(Reader& r, CameraConfig& c) {
+    c.id = r.str();
+    c.label = r.str();
+    c.name = r.str();
+    c.kind = enumUpTo<CameraKind>(r, 1, "invalid CameraKind");
+    c.attachment.parentMechanismId = r.str();
+    c.attachment.parentLink = r.str();
+    read(r, c.local);
+    c.hFovDeg = r.f64();
+    c.vFovDeg = r.f64();
+    c.maxRangeM = r.f64();
+    c.maxIncidenceDeg = r.f64();
+    c.fps = r.f64();
+    c.latencyMs = r.f64();
+    c.widthPx = r.i32();
+    c.heightPx = r.i32();
+    c.positionNoiseM = r.f64();
+    c.yawNoiseDeg = r.f64();
+}
+
+void write(Writer& w, const std::vector<CameraFrame>& frames) {
+    if (frames.size() > kMaxVisionFrames) w.fail();
+    w.varint(frames.size());
+    for (const CameraFrame& f : frames) write(w, f);
+}
+
+void read(Reader& r, std::vector<CameraFrame>& frames) {
+    const std::size_t n = r.count(kCameraFrameMinWireBytes, kMaxVisionFrames);
+    frames.reserve(n);
+    for (std::size_t i = 0; i < n && r.ok(); ++i) read(r, frames.emplace_back());
+}
+
 // ---- messages: base fields first, later fields in an optional tail ---------------------------------------------
 
 void write(Writer& w, const Hello& m) {
@@ -401,6 +536,7 @@ void write(Writer& w, const SensorFrame& m) {
     write(w, m.samples);
     w.u64(m.sessionId);
     w.u64(m.runEpoch);
+    write(w, m.vision);
 }
 
 void read(Reader& r, SensorFrame& m) {
@@ -414,6 +550,8 @@ void read(Reader& r, SensorFrame& m) {
     if (!r.more()) return;
     m.sessionId = r.u64();
     m.runEpoch = r.u64();
+    if (!r.more()) return;
+    read(r, m.vision);
 }
 
 void write(Writer& w, const ActuatorFrame& m) {
@@ -526,6 +664,24 @@ void read(Reader& r, Log& m) {
 void write(Writer& w, const Goodbye& m) { w.str(m.reason); }
 void read(Reader& r, Goodbye& m) { m.reason = r.str(); }
 
+void write(Writer& w, const VisionSetup& m) {
+    if (m.cameras.size() > kMaxCameras) w.fail();
+    w.varint(m.cameras.size());
+    for (const CameraSetup& c : m.cameras) write(w, c.config);
+    w.str(m.photonVersion);
+    w.str(m.layoutName);
+}
+
+void read(Reader& r, VisionSetup& m) {
+    const std::size_t n = r.count(kCameraSetupMinWireBytes, kMaxCameras);
+    m.cameras.reserve(n);
+    for (std::size_t i = 0; i < n && r.ok(); ++i) read(r, m.cameras.emplace_back().config);
+    if (!r.more()) return;
+    m.photonVersion = r.str();
+    if (!r.more()) return;
+    m.layoutName = r.str();
+}
+
 template <class T>
 Result<Message> decodeBody(std::span<const std::byte> body) {
     ReadState state;
@@ -582,6 +738,7 @@ Result<Message> BinaryMessageCodec::decode(std::span<const std::byte> frame) con
             case MessageType::Log: return decodeBody<Log>(body);
             case MessageType::Goodbye: return decodeBody<Goodbye>(body);
             case MessageType::SimControlAck: return decodeBody<SimControlAck>(body);
+            case MessageType::VisionSetup: return decodeBody<VisionSetup>(body);
         }
     } catch (const std::bad_alloc&) {
         return makeError(ErrorCode::Internal, "out of memory while decoding");

@@ -5,6 +5,7 @@
 #include <string>
 #include <utility>
 
+#include "wpiemu/plugins/game_2026/april_tags.h"
 #include "wpiemu/plugins/game_2026/config.h"
 #include "wpiemu/plugins/game_2026/field_layout.h"
 #include "wpiemu/plugins/game_2026/fuel_zones.h"
@@ -54,6 +55,8 @@ public:
     std::vector<sdk::EditorPanelDescriptor> contributeEditorPanels() const override { return editorPanels(); }
     std::vector<sdk::HudWidgetDescriptor> contributeHud() const override { return hudWidgets(); }
     std::vector<sdk::ZoneKindInfo> contributeZoneKinds() const override { return zoneKinds(); }
+
+    sdk::AprilTagLayout aprilTagLayout() const override { return game2026AprilTagLayout(); }
 
     // All per-tick game logic lives in Game2026State::step (it needs per-session state).
     void onTick(sdk::SimContext&, double) override {}

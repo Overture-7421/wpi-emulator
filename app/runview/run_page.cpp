@@ -171,6 +171,14 @@ void RunPage::buildActions() {    restartAction_ = new QAction(reloadIcon(), tr(
     zonesAction_->setChecked(scene_.zonesVisible());
     zoneMenu_ = new QMenu(tr("Individual zones"), this);
     zoneMenu_->setEnabled(false);
+    camerasAction_ = new QAction(tr("Cameras"), this);
+    camerasAction_->setCheckable(true);
+    camerasAction_->setChecked(scene_.simCamerasVisible());
+    camerasAction_->setToolTip(tr("Show the simulated vision cameras and their fields of view"));
+    tagsAction_ = new QAction(tr("AprilTags"), this);
+    tagsAction_->setCheckable(true);
+    tagsAction_->setChecked(scene_.tagsVisible());
+    tagsAction_->setToolTip(tr("Show the field AprilTags; tags seen by a camera are highlighted"));
 
     consoleAction_ = new QAction(tr("Console"), this);
     consoleAction_->setCheckable(true);
@@ -192,10 +200,14 @@ void RunPage::buildActions() {    restartAction_ = new QAction(reloadIcon(), tr(
     connect(hudAction_, &QAction::toggled, &viewOptions_, &ViewportOptions::setShowHud);
     connect(mechAction_, &QAction::toggled, &viewOptions_, &ViewportOptions::setShowMechanisms);
     connect(zonesAction_, &QAction::toggled, &scene_, &SceneModel::setZonesVisible);
+    connect(camerasAction_, &QAction::toggled, &scene_, &SceneModel::setSimCamerasVisible);
+    connect(tagsAction_, &QAction::toggled, &scene_, &SceneModel::setTagsVisible);
     connect(consoleAction_, &QAction::toggled, this, [this](bool on) { setConsoleVisible(on); });
 }
 
-QList<QAction*> RunPage::viewActions() const { return {hudAction_, mechAction_, zonesAction_, zoneMenu_->menuAction(), consoleAction_}; }
+QList<QAction*> RunPage::viewActions() const {
+    return {hudAction_, mechAction_, zonesAction_, zoneMenu_->menuAction(), camerasAction_, tagsAction_, consoleAction_};
+}
 
 void RunPage::setConsoleVisible(bool visible) {
     console_->setVisible(visible);

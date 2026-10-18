@@ -76,6 +76,13 @@ bool ProjectReport::hasVendorDep(std::string_view fragment) const {
     });
 }
 
+std::string ProjectReport::photonLibVersion() const {
+    for (const VendorDep& d : vendorDeps)
+        if (!d.version.empty() && (lower(d.name).find("photon") != std::string::npos || lower(d.fileName).find("photon") != std::string::npos))
+            return d.version;
+    return {};
+}
+
 Result<ProjectReport> ProjectInspector::inspect(const fs::path& dir) const {
     std::error_code ec;
     if (dir.empty()) return makeError(ErrorCode::InvalidArgument, "no project directory given");

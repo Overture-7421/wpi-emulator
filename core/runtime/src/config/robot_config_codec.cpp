@@ -404,6 +404,37 @@ void readZone(const Value& v, const std::string& path, Ctx& ctx, RobotConfig& cf
     cfg.zones.push_back(std::move(z));
 }
 
+void readCamera(const Value& v, const std::string& path, Ctx& ctx, RobotConfig& cfg) {
+    CameraConfig c;
+    ObjReader r(v, path, ctx);
+    r.str("id", c.id);
+    r.str("label", c.label);
+    r.str("name", c.name);
+    std::string kind;
+    if (r.str("kind", kind)) {
+        if (kind == cameraKindKey(CameraKind::Limelight)) c.kind = CameraKind::Limelight;
+        else if (kind == cameraKindKey(CameraKind::PhotonVision)) c.kind = CameraKind::PhotonVision;
+        else ctx.err(join(path, "kind"), "unknown camera kind '" + kind + "' (limelight|photonvision)");
+    }
+    if (const Value* a = r.get("attachment")) {
+        ObjReader ar(*a, join(path, "attachment"), ctx);
+        ar.str("parentMechanismId", c.attachment.parentMechanismId);
+        ar.str("parentLink", c.attachment.parentLink);
+    }
+    r.pose("pose", c.local);
+    r.dbl("hFovDeg", c.hFovDeg);
+    r.dbl("vFovDeg", c.vFovDeg);
+    r.dbl("maxRangeM", c.maxRangeM);
+    r.dbl("maxIncidenceDeg", c.maxIncidenceDeg);
+    r.dbl("fps", c.fps);
+    r.dbl("latencyMs", c.latencyMs);
+    r.i32("widthPx", c.widthPx);
+    r.i32("heightPx", c.heightPx);
+    r.dbl("positionNoiseM", c.positionNoiseM);
+    r.dbl("yawNoiseDeg", c.yawNoiseDeg);
+    cfg.cameras.push_back(std::move(c));
+}
+
 // ---- encode helpers --------------------------------------------------------------------------------
 
 Value fv(float f) { return Value(floatToDouble(f)); }
@@ -567,6 +598,30 @@ Value zoneValue(const ZoneConfig& z) {
     return o;
 }
 
+Value cameraValue(const CameraConfig& c) {
+    Value o = Value::makeObject();
+    o["id"] = c.id;
+    o["label"] = c.label;
+    o["name"] = c.name;
+    o["kind"] = std::string(cameraKindKey(c.kind));
+    Value a = Value::makeObject();
+    a["parentMechanismId"] = c.attachment.onChassis() ? std::string(kChassisParent) : c.attachment.parentMechanismId;
+    a["parentLink"] = c.attachment.parentLink;
+    o["attachment"] = std::move(a);
+    o["pose"] = poseValue(c.local);
+    o["hFovDeg"] = c.hFovDeg;
+    o["vFovDeg"] = c.vFovDeg;
+    o["maxRangeM"] = c.maxRangeM;
+    o["maxIncidenceDeg"] = c.maxIncidenceDeg;
+    o["fps"] = c.fps;
+    o["latencyMs"] = c.latencyMs;
+    o["widthPx"] = c.widthPx;
+    o["heightPx"] = c.heightPx;
+    o["positionNoiseM"] = c.positionNoiseM;
+    o["yawNoiseDeg"] = c.yawNoiseDeg;
+    return o;
+}
+
 }  // namespace
 
 Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value) const {
@@ -613,6 +668,14 @@ Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value) const {
         } else {
             for (std::size_t i = 0; i < zs->array().size(); ++i)
                 readZone(zs->array()[i], "zones[" + std::to_string(i) + "]", ctx, cfg);
+        }
+    }
+    if (const Value* cs = root.get("cameras")) {
+        if (!cs->isArray()) {
+            ctx.err("cameras", "expected an array");
+        } else {
+            for (std::size_t i = 0; i < cs->array().size(); ++i)
+                readCamera(cs->array()[i], "cameras[" + std::to_string(i) + "]", ctx, cfg);
         }
     }
     if (const Value* links = root.get("motionLinks")) {
@@ -727,6 +790,9 @@ Value RobotConfigCodec::toValue(const RobotConfig& cfg) const {
     Value zones = Value::makeArray();
     for (const ZoneConfig& z : cfg.zones) zones.push_back(zoneValue(z));
     root["zones"] = std::move(zones);
+    Value cameras = Value::makeArray();
+    for (const CameraConfig& c : cfg.cameras) cameras.push_back(cameraValue(c));
+    root["cameras"] = std::move(cameras);
     Value links = Value::makeArray();
     for (const auto& link : cfg.motionLinks) {
         Value item = Value::makeObject();

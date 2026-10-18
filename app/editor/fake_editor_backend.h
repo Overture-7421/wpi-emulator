@@ -55,6 +55,7 @@ public:
 private:
     void detectionStep();
     std::vector<sdk::Issue> validateZones(const sdk::RobotConfig& config) const;
+    std::vector<sdk::Issue> validateCameras(const sdk::RobotConfig& config) const;
 
     sdk::RobotConfig config_;
     EditorCatalog catalog_;

@@ -5,6 +5,9 @@ Implements [ADR 0002](decisions/0002-phoenix6-interception.md) layer **L1** (HAL
 there is no link-time dependency on WPILib or CTRE (both are resolved at run time from modules the robot process
 already loaded).
 
+> Limelight and PhotonVision are **not** device bridges (they are NetworkTables coprocessors, not HAL/CAN devices): they are
+> `IVisionBridge`s in `bridges/vision`, see [vision.md](vision.md).
+
 ```
  registerVendorBridges(DeviceBridgeRegistry&)              "ctre.phoenix6"  "ctre.phoenix5"
         │                                                        │

@@ -157,6 +157,33 @@ struct Registries {
     }
 };
 
+// A game module with one AprilTag (id 3) 3 m ahead of the spawn point, 1 m high, facing back at the robot. Select it with
+// RobotConfig::gamePluginId = "tag_game".
+class TagGameModule final : public testing::FakeGameModule {
+public:
+    TagGameModule() : FakeGameModule("tag_game", 2998) {}
+    AprilTagLayout aprilTagLayout() const override {
+        AprilTagLayout layout;
+        layout.name = "tag-layout";
+        AprilTag tag;
+        tag.id = 3;
+        tag.pose = Pose3{Vec3{3.f, 0.f, 1.f}, Quat::fromYaw(static_cast<float>(kPi))};
+        layout.tags.push_back(tag);
+        return layout;
+    }
+};
+
+// A camera on the chassis looking along +X from 1 m above the floor.
+inline CameraConfig frontCamera(const std::string& id = "front") {
+    CameraConfig cam;
+    cam.id = id;
+    cam.name = id;
+    cam.local = Pose3{Vec3{0.f, 0.f, 0.8f}, Quat{}};
+    cam.fps = 200.0;
+    cam.latencyMs = 20.0;
+    return cam;
+}
+
 inline WheelSpec wheel(const std::string& name, float x, float y) {
     WheelSpec w;
     w.name = name;

@@ -66,6 +66,14 @@ struct ZoneState {
     bool active = false;
 };
 
+// Runtime state of one simulated camera (RobotConfig::cameras).
+struct CameraState {
+    std::string id;                 // CameraConfig::id
+    Pose3 worldPose;                // camera frame in the field frame (+X forward) at the last capture
+    bool tagsVisible = false;       // the last captured frame saw at least one tag
+    std::vector<int> visibleTagIds; // tag ids in the last captured frame
+};
+
 class ISimSnapshot {
     WPIEMU_INTERFACE(ISimSnapshot)
 public:
@@ -82,6 +90,8 @@ public:
     virtual std::span<const HudValue> hud() const = 0;
     // Activation state of the robot's zones (empty when the game defines none).
     virtual std::span<const ZoneState> zones() const { return {}; }
+    // State of the robot's simulated cameras (empty when none are configured).
+    virtual std::span<const CameraState> cameras() const { return {}; }
     virtual std::span<const DiscoveredDevice> devices() const = 0;
     virtual std::span<const HubWarning> warnings() const = 0;
 
@@ -110,6 +120,7 @@ struct SimSnapshotData {
     std::vector<MechanismState> mechanisms;
     std::vector<HudValue> hud;
     std::vector<ZoneState> zones;
+    std::vector<CameraState> cameras;
     std::vector<DiscoveredDevice> devices;
     std::vector<HubWarning> warnings;
     double batteryVoltageV = 12.6;
@@ -132,6 +143,7 @@ public:
     std::span<const MechanismState> mechanisms() const override { return d_.mechanisms; }
     std::span<const HudValue> hud() const override { return d_.hud; }
     std::span<const ZoneState> zones() const override { return d_.zones; }
+    std::span<const CameraState> cameras() const override { return d_.cameras; }
     std::span<const DiscoveredDevice> devices() const override { return d_.devices; }
     std::span<const HubWarning> warnings() const override { return d_.warnings; }
     double batteryVoltageV() const override { return d_.batteryVoltageV; }
@@ -150,6 +162,7 @@ public:
     void addBody(BodySample b) { data_.bodies.push_back(std::move(b)); }
     void addMechanism(MechanismState m) { data_.mechanisms.push_back(std::move(m)); }
     void addZone(ZoneState z) { data_.zones.push_back(std::move(z)); }
+    void addCamera(CameraState c) { data_.cameras.push_back(std::move(c)); }
     EntityGroupSample& addEntityGroup(EntityGroupSample g) {
         data_.entityGroups.push_back(std::move(g));
         return data_.entityGroups.back();

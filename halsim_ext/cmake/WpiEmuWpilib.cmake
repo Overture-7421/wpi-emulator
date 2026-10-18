@@ -22,8 +22,12 @@
 #
 # Outputs:
 #   WPIEMU_WPILIB_FOUND            TRUE when headers and the desktop libs were found
-#   WPIEMU_WPILIB_RUNTIME_DIRS     directory holding the wpiHal/wpiutil shared libs (put on PATH for tests)
+#   WPIEMU_NTCORE_FOUND            TRUE when ntcore (ntcore-cpp headers + shared lib, and wpinet) was found as well
+#   WPIEMU_WPILIB_RUNTIME_DIRS     directory holding the wpiHal/wpiutil/ntcore shared libs (put on PATH for tests)
 #   targets wpiemu_wpilib_hal / wpiemu_wpilib_wpiutil   IMPORTED shared libraries (+ include dirs)
+#   targets wpiemu_wpilib_ntcore / wpiemu_wpilib_wpinet IMPORTED shared libraries, only when WPIEMU_NTCORE_FOUND.
+#                                  The ntcore artifacts (edu/wpi/first/ntcore/ntcore-cpp, wpinet-cpp) are optional;
+#                                  the bridges/vision ntcore binding is built only when they are present.
 # Nothing is defined (and configure still succeeds) when WPILib is not available.
 
 include_guard(GLOBAL)
@@ -33,6 +37,7 @@ set(WPIEMU_WPILIB_VERSION "2026.2.1" CACHE STRING "WPILib version of hal-cpp/wpi
 option(WPIEMU_WPILIB_DOWNLOAD "Download missing WPILib HAL/wpiutil zips from frcmaven" OFF)
 
 set(WPIEMU_WPILIB_FOUND FALSE)
+set(WPIEMU_NTCORE_FOUND FALSE)
 set(WPIEMU_WPILIB_RUNTIME_DIRS "")
 
 # Desktop platform classifier used in the Maven file names and the layout inside the zip.
@@ -115,6 +120,12 @@ if(NOT _wpiemu_extracted_root)
     _wpiemu_wpilib_fetch("${_hal_rel}" "${_wpiemu_wpilib_classifier}" _hal_libs_zip)
     _wpiemu_wpilib_fetch("${_util_rel}" "headers" _util_headers_zip)
     _wpiemu_wpilib_fetch("${_util_rel}" "${_wpiemu_wpilib_classifier}" _util_libs_zip)
+    # ntcore (+ the wpinet it loads) is optional: the vision bridges' ntcore binding is simply not built without it.
+    set(_nt_rel "edu/wpi/first/ntcore/ntcore-cpp/${WPIEMU_WPILIB_VERSION}/ntcore-cpp-${WPIEMU_WPILIB_VERSION}")
+    set(_net_rel "edu/wpi/first/wpinet/wpinet-cpp/${WPIEMU_WPILIB_VERSION}/wpinet-cpp-${WPIEMU_WPILIB_VERSION}")
+    _wpiemu_wpilib_fetch("${_nt_rel}" "headers" _nt_headers_zip)
+    _wpiemu_wpilib_fetch("${_nt_rel}" "${_wpiemu_wpilib_classifier}" _nt_libs_zip)
+    _wpiemu_wpilib_fetch("${_net_rel}" "${_wpiemu_wpilib_classifier}" _net_libs_zip)
 
     if(_hal_headers_zip AND _hal_libs_zip AND _util_headers_zip AND _util_libs_zip)
         set(_stage "${CMAKE_BINARY_DIR}/_wpilib/${WPIEMU_WPILIB_VERSION}")
@@ -125,6 +136,18 @@ if(NOT _wpiemu_extracted_root)
             file(ARCHIVE_EXTRACT INPUT "${_hal_libs_zip}" DESTINATION "${_stage}")
             file(ARCHIVE_EXTRACT INPUT "${_util_libs_zip}" DESTINATION "${_stage}")
             file(WRITE "${_stage}/.extracted" "${WPIEMU_WPILIB_VERSION}\n")
+        endif()
+        # ntcore is staged separately (own markers) so a stage extracted before ntcore was supported is completed.
+        if(_nt_headers_zip AND _nt_libs_zip AND _net_libs_zip)
+            if(NOT EXISTS "${_stage}/.ntcore-headers")
+                file(ARCHIVE_EXTRACT INPUT "${_nt_headers_zip}" DESTINATION "${_stage}/include")
+                file(WRITE "${_stage}/.ntcore-headers" "${WPIEMU_WPILIB_VERSION}\n")
+            endif()
+            if(NOT EXISTS "${_stage}/.ntcore-runtime")
+                file(ARCHIVE_EXTRACT INPUT "${_nt_libs_zip}" DESTINATION "${_stage}")
+                file(ARCHIVE_EXTRACT INPUT "${_net_libs_zip}" DESTINATION "${_stage}")
+                file(WRITE "${_stage}/.ntcore-runtime" "${WPIEMU_WPILIB_VERSION}\n")
+            endif()
         endif()
         set(_wpiemu_extracted_root "${_stage}")
     endif()
@@ -168,6 +191,36 @@ if(_wpiemu_extracted_root)
         endif()
         set(WPIEMU_WPILIB_FOUND TRUE)
         set(WPIEMU_WPILIB_RUNTIME_DIRS "${_dir}")
+
+        # ntcore is optional on top of the HAL: headers + shared library (+ wpinet, which ntcore loads).
+        if(WIN32)
+            set(_nt_loc "${_dir}/ntcore.dll")
+            set(_nt_imp "${_dir}/ntcore.lib")
+            set(_net_loc "${_dir}/wpinet.dll")
+            set(_net_imp "${_dir}/wpinet.lib")
+        elseif(APPLE)
+            set(_nt_loc "${_dir}/libntcore.dylib")
+            set(_net_loc "${_dir}/libwpinet.dylib")
+        else()
+            set(_nt_loc "${_dir}/libntcore.so")
+            set(_net_loc "${_dir}/libwpinet.so")
+        endif()
+        if(EXISTS "${_nt_loc}" AND EXISTS "${_net_loc}" AND EXISTS "${_wpiemu_extracted_root}/include/ntcore_c.h")
+            add_library(wpiemu_wpilib_wpinet SHARED IMPORTED GLOBAL)
+            set_target_properties(wpiemu_wpilib_wpinet PROPERTIES
+                IMPORTED_LOCATION "${_net_loc}"
+                INTERFACE_LINK_LIBRARIES wpiemu_wpilib_wpiutil)
+            add_library(wpiemu_wpilib_ntcore SHARED IMPORTED GLOBAL)
+            set_target_properties(wpiemu_wpilib_ntcore PROPERTIES
+                IMPORTED_LOCATION "${_nt_loc}"
+                INTERFACE_INCLUDE_DIRECTORIES "${_wpiemu_extracted_root}/include"
+                INTERFACE_LINK_LIBRARIES "wpiemu_wpilib_wpinet;wpiemu_wpilib_wpiutil")
+            if(WIN32)
+                set_target_properties(wpiemu_wpilib_wpinet PROPERTIES IMPORTED_IMPLIB "${_net_imp}")
+                set_target_properties(wpiemu_wpilib_ntcore PROPERTIES IMPORTED_IMPLIB "${_nt_imp}")
+            endif()
+            set(WPIEMU_NTCORE_FOUND TRUE)
+        endif()
     endif()
 endif()
 
@@ -176,4 +229,11 @@ if(WPIEMU_WPILIB_FOUND)
 else()
     message(STATUS "WPILib ${WPIEMU_WPILIB_VERSION}: NOT found (set -DWPIEMU_WPILIB_ROOT=<.../wpilib/2026/maven> or "
                    "-DWPIEMU_WPILIB_DOWNLOAD=ON); halsim_wpiemu is built as a stub that refuses to load")
+endif()
+
+if(WPIEMU_NTCORE_FOUND)
+    message(STATUS "WPILib ${WPIEMU_WPILIB_VERSION}: ntcore found; the vision bridges get their ntcore binding")
+elseif(WPIEMU_WPILIB_FOUND)
+    message(STATUS "WPILib ${WPIEMU_WPILIB_VERSION}: ntcore NOT found (ntcore-cpp/wpinet-cpp artifacts); the vision bridges "
+                   "are built without their ntcore binding and never publish")
 endif()

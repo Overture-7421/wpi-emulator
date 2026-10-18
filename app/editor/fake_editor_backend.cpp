@@ -394,6 +394,24 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
     muzzle.properties = sdk::defaultsOf(cat.findZoneKind(muzzle.kind)->properties);
     muzzle.activation.conditions = {condition("shooter", 30.0), condition("indexer", 5.0)};
     c.zones.push_back(std::move(muzzle));
+
+    // Vision cameras: a Limelight on the chassis and a PhotonVision camera riding on the turret.
+    sdk::CameraConfig limelight;
+    limelight.id = "limelight";
+    limelight.label = "Limelight";
+    limelight.kind = sdk::CameraKind::Limelight;
+    limelight.local.position = {0.33f, 0.f, 0.15f};
+    c.cameras.push_back(std::move(limelight));
+
+    sdk::CameraConfig photon;
+    photon.id = "photon";
+    photon.label = "Turret camera";
+    photon.name = "photon";
+    photon.kind = sdk::CameraKind::PhotonVision;
+    photon.attachment.parentMechanismId = "turret";
+    photon.attachment.parentLink = "mover";
+    photon.local.position = {0.1f, 0.f, 0.1f};
+    c.cameras.push_back(std::move(photon));
     return c;
 }
 
@@ -485,6 +503,7 @@ std::vector<sdk::Issue> FakeEditorBackend::validate(const sdk::RobotConfig& c) c
     }
     for (auto& issue : sdk::validateMechanismAttachments(c, factory_)) out.push_back(std::move(issue));
     for (auto& issue : validateZones(c)) out.push_back(std::move(issue));
+    for (auto& issue : validateCameras(c)) out.push_back(std::move(issue));
     for (auto& issue : sdk::validateDeviceAliases(c.allMappings())) out.push_back(std::move(issue));
     if (c.chassis.massKg < 10.f) out.push_back({sdk::Severity::Warning, "chassis.massKg", "chassis mass below 10 kg is unusual for an FRC robot", {}});
     return out;
@@ -495,7 +514,7 @@ std::vector<sdk::Issue> FakeEditorBackend::validateZones(const sdk::RobotConfig&
     for (std::size_t i = 0; i < c.zones.size(); ++i) {
         const sdk::ZoneConfig& z = c.zones[i];
         const std::string base = "zones[" + std::to_string(i) + "]";
-        if (z.id.empty() || c.findMechanism(z.id) != nullptr)
+        if (z.id.empty() || c.findMechanism(z.id) != nullptr || c.findCamera(z.id) != nullptr)
             out.push_back({sdk::Severity::Error, base + ".id", "zone id must be unique and not a mechanism id", "zone_id_duplicate"});
         const sdk::MechanismAttachment att = z.attachment;
         if (!att.onChassis()) {
@@ -523,6 +542,57 @@ std::vector<sdk::Issue> FakeEditorBackend::validateZones(const sdk::RobotConfig&
             if (c.findMechanism(z.activation.conditions[j].mechanismId) == nullptr)
                 out.push_back({sdk::Severity::Warning, base + ".activation.conditions[" + std::to_string(j) + "].mechanism",
                                "condition mechanism '" + z.activation.conditions[j].mechanismId + "' does not exist", "zone_condition_mechanism_unknown"});
+    }
+    return out;
+}
+
+std::vector<sdk::Issue> FakeEditorBackend::validateCameras(const sdk::RobotConfig& c) const {
+    // Mirrors the real validator's camera checks (core: config_validator.h, issue_code::kCamera*).
+    std::vector<sdk::Issue> out;
+    auto finite = [](double v) { return std::isfinite(v); };
+    for (std::size_t i = 0; i < c.cameras.size(); ++i) {
+        const sdk::CameraConfig& cam = c.cameras[i];
+        const std::string base = "cameras[" + std::to_string(i) + "]";
+        if (cam.id.empty())
+            out.push_back({sdk::Severity::Error, base + ".id", "camera id must not be empty", "camera_id_invalid"});
+        else if (c.findMechanism(cam.id) != nullptr || c.findZone(cam.id) != nullptr ||
+                 std::count_if(c.cameras.begin(), c.cameras.end(), [&](const sdk::CameraConfig& o) { return o.id == cam.id; }) > 1)
+            out.push_back({sdk::Severity::Error, base + ".id", "camera id must be unique and not a mechanism or zone id", "camera_id_duplicate"});
+        if (std::any_of(c.cameras.begin(), c.cameras.begin() + static_cast<std::ptrdiff_t>(i),
+                        [&](const sdk::CameraConfig& o) { return o.kind == cam.kind && o.name == cam.name; }))
+            out.push_back({sdk::Severity::Error, base + ".name", "another camera of this type already uses the name '" + cam.name + "'",
+                           "camera_name_duplicate"});
+        const sdk::MechanismAttachment att = cam.attachment;
+        if (!att.onChassis()) {
+            const sdk::MechanismConfig* parent = c.findMechanism(att.parentMechanismId);
+            const sdk::MechanismTemplateInfo* info = parent != nullptr ? catalog_.findTemplate(parent->type) : nullptr;
+            if (parent == nullptr)
+                out.push_back({sdk::Severity::Error, base + ".attachment", "parent mechanism '" + att.parentMechanismId + "' does not exist",
+                               sdk::validation_code::kAttachmentParentMissing});
+            else if (info != nullptr && !sdk::hasLink(*info, att.parentLink))
+                out.push_back({sdk::Severity::Error, base + ".attachment", "mechanism '" + parent->id + "' has no link '" + att.parentLink + "'",
+                               sdk::validation_code::kAttachmentLinkMissing});
+        } else if (att.parentLink != sdk::kRootLink) {
+            out.push_back({sdk::Severity::Error, base + ".attachment", "the chassis only exposes the link 'root'", sdk::validation_code::kAttachmentLinkMissing});
+        }
+        const sdk::Vec3 p = cam.local.position;
+        const sdk::Quat q = cam.local.rotation;
+        if (!(finite(p.x) && finite(p.y) && finite(p.z) && finite(q.x) && finite(q.y) && finite(q.z) && finite(q.w)))
+            out.push_back({sdk::Severity::Error, base + ".local", "camera pose must be finite", "camera_geometry_invalid"});
+        auto optics = [&](const char* key, bool ok, const char* what) {
+            if (!ok) out.push_back({sdk::Severity::Error, base + "." + key, what, "camera_optics_invalid"});
+        };
+        optics("hFovDeg", finite(cam.hFovDeg) && cam.hFovDeg > 0.0 && cam.hFovDeg < 180.0, "horizontal field of view must be in (0, 180) degrees");
+        optics("vFovDeg", finite(cam.vFovDeg) && cam.vFovDeg > 0.0 && cam.vFovDeg < 180.0, "vertical field of view must be in (0, 180) degrees");
+        optics("maxRangeM", finite(cam.maxRangeM) && cam.maxRangeM > 0.0, "max range must be positive");
+        optics("maxIncidenceDeg", finite(cam.maxIncidenceDeg) && cam.maxIncidenceDeg > 0.0 && cam.maxIncidenceDeg <= 90.0,
+               "max incidence must be in (0, 90] degrees");
+        optics("fps", finite(cam.fps) && cam.fps > 0.0, "frame rate must be positive");
+        optics("latencyMs", finite(cam.latencyMs) && cam.latencyMs >= 0.0, "latency must not be negative");
+        optics("widthPx", cam.widthPx > 0, "resolution must be positive");
+        optics("heightPx", cam.heightPx > 0, "resolution must be positive");
+        optics("positionNoiseM", finite(cam.positionNoiseM) && cam.positionNoiseM >= 0.0, "noise must not be negative");
+        optics("yawNoiseDeg", finite(cam.yawNoiseDeg) && cam.yawNoiseDeg >= 0.0, "noise must not be negative");
     }
     return out;
 }

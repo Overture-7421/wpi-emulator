@@ -22,6 +22,7 @@
 #include "wpiemu/sdk/game/zone_kind.h"
 #include "wpiemu/sdk/ipc/messages.h"
 #include "wpiemu/sdk/telemetry/snapshot.h"
+#include "wpiemu/sdk/vision/apriltag.h"
 
 namespace wpiemu::app::runview {
 
@@ -77,6 +78,7 @@ struct RunSceneInfo {
     std::vector<sdk::HudWidgetDescriptor> hud;
     std::vector<sdk::EditorPanelDescriptor> panels;       // viewport overlays (zones) are read from these
     std::vector<sdk::ZoneKindInfo> zoneKinds;             // kinds of RobotConfig::zones the game module declares
+    sdk::AprilTagLayout tags;                             // the game module's aprilTagLayout(); empty = no tags drawn
     QString gameName;                                     // "REBUILT (2026)"
 };
 

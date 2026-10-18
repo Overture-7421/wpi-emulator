@@ -1,6 +1,6 @@
 # Run view (`app/runview`)
 
-The run-time page of the emulator: a telemetry bar, with Restart (and its robot-code restart option), speed and the home-view button as icon buttons at the bottom-right of the 3D view (overlay and console toggles are exposed via `viewActions()` for the shell's View menu), live
+The run-time page of the emulator: a telemetry bar, with Restart (and its robot-code restart option), speed and the home-view button as icon buttons at the bottom-right of the 3D view (overlay and console toggles are exposed via `viewActions()` for the shell's View menu: Game HUD, Mechanism values, Zones, Cameras, AprilTags, Console), live
 Qt Quick 3D scene, game HUD, mechanism overlays, toolbar telemetry, console and the built-in Driver Station (bottom-left, with Setup/Joysticks in a popup).
 
 Static library `wpiemu_app_runview` (links only `wpiemu_sdk` + Qt). The shell constructs
@@ -12,7 +12,7 @@ implementation used by the tests, the demo and screenshots.
 | Area | Files | Notes |
 |---|---|---|
 | Backend seam | `run_backend.h/.cpp` | `IRunBackend` (QObject): start/stop/restart/reset/pause/step/time scale, `latestSnapshot()` (polled at ~60 Hz), DS state, `status()` (process + link state), `sceneInfo()` (config, field, HUD + overlay descriptors), `logEntry` signal |
-| Fake backend | `fake_run_backend.*` | synthetic swerve robot, 3 mechanisms with moving links, a pickup and a muzzle zone that light up while the intake is deployed / the flywheel runs, 200 instanced "fuel" balls, HUD values, failure injection (`simulateCrash`, `simulateHandshakeTimeout`, ...) |
+| Fake backend | `fake_run_backend.*` | synthetic swerve robot, 3 mechanisms with moving links, a pickup and a muzzle zone that light up while the intake is deployed / the flywheel runs, a chassis-mounted Limelight and a turret-mounted PhotonVision camera that see eight wall AprilTags (the visible set changes as the robot and turret move; autonomous mode drives a loop), 200 instanced "fuel" balls, HUD values, failure injection (`simulateCrash`, `simulateHandshakeTimeout`, ...) |
 | Presentation logic (Qt-light, unit tested) | `run_control.*`, `hud_model.*`, `sim_stats.*`, `scene_parts.*`, `console_model.*` | enable states, status chips/overlay text, HUD descriptor evaluation, SDK -> render parts |
 | Qt Quick bridge | `scene_model.*`, `mechanism_overlay_model.*`, `qml/*.qml` | models for the QML scene (instancing for fuel); the camera is the editor's `OrbitCamera` (`common/orbit_camera.h`) with a field-framed home view, same orbit/pan/zoom controls as the editor viewport; SDK Z-up is converted to Qt's Y-up in exactly one place (`RunScene.qml`, node `world`) |
 | Driver Station | `driver_station_model.*`, `driver_station_panel.*` | enable / disable / e-stop, mode, alliance, match sequencing from sim time, game message. `DsState::matchTimeS` = seconds **remaining** in the active segment while a timed match runs, `-1` otherwise (the game plugin then uses its integrated clock). The game message text is a manual fallback: when the loaded game plugin provides FMS data (`IGameState::gameSpecificMessage()`, e.g. 2026 hub order `R`/`B`) the runtime overlays it before the robot sees it |
@@ -60,6 +60,22 @@ The keyboard joystick (slot 0 by default) uses `W A S D` (left stick), arrow key
   `ZoneRig::update()` recomputes poses and active flags per snapshot without allocating and reports changed
   parts, so `SceneModel` only emits `dataChanged` for zones that moved or switched state.
   `resolveRobotZones()` / `resolveZoneOverlays()` are the plain, testable equivalents.
+* Simulated cameras (`RobotConfig::cameras`, ADR 0017) are drawn by `CameraRig` (`scene_parts.*`), the camera
+  analogue of `ZoneRig`; the View menu's "Cameras" toggle controls them. The pose in the chassis frame is the pose of
+  the attachment link (chassis = identity, a mechanism link = the same link-pose logic as zones, from
+  `MechanismState::links`) times `CameraConfig::local`, so a turret camera turns with the turret. Each camera is a
+  body marker plus the 8 edges of its frustum (thin translucent boxes; geometry from the shared
+  `common/camera_frustum.h`, also used by the editor; length = `maxRangeM` clamped to a readable size), coloured per
+  `CameraKind` (Limelight orange, PhotonVision blue). `ISimSnapshot::cameras()` (matched by camera id; unlisted =
+  inactive) drives the look: while `CameraState::tagsVisible` the frustum is brighter, more opaque and green, the
+  body is lightened; otherwise it is dim. `CameraRig::update()` reports changed parts like `ZoneRig`.
+  `resolveRobotCameras()` is the plain equivalent.
+* AprilTags come from `RunSceneInfo::tags` (the game module's `IGameModule::aprilTagLayout()`, copied by the runtime
+  hosts into `HostScene::tags` and by `RunBackendAdapter` into the scene info). `TagRig` draws each tag in the field
+  frame as thin plates (grey border, white plate, black square; +X is the face normal) and its id as a 2D label
+  projected in `RunScene.qml` (`SceneModel::tagLabels`). A tag listed in `CameraState::visibleTagIds` of **any**
+  camera (the union) gets a green border and label. The View menu's "AprilTags" toggle controls plates and labels.
+  Neither toggle is persisted (like Zones).
 * Game HUD: `HudWidgetDescriptor` + `ISimSnapshot::hud()`; nothing game specific lives in this directory.
 
 ## Gamepads

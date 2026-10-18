@@ -11,7 +11,7 @@ __pycache__/
 *.pyc
 aqtinstall.log
 *.log
-Testing/
+/Testing/
 
 # Disposable research spikes are never committed
 spikes/

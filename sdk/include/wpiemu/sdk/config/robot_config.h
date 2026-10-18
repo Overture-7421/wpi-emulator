@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "wpiemu/sdk/config/camera.h"
 #include "wpiemu/sdk/config/mechanism_attachment.h"
 #include "wpiemu/sdk/config/zone.h"
 #include "wpiemu/sdk/core/geometry.h"
@@ -97,6 +98,14 @@ struct RobotConfig {
     // Game-owned zones (pickup volumes, muzzles, ...) attached to the chassis or a mechanism link (config/zone.h).
     std::vector<ZoneConfig> zones;
 
+    // Simulated vision cameras (Limelight / PhotonVision) attached to the chassis or a mechanism link (config/camera.h).
+    std::vector<CameraConfig> cameras;
+
+    const CameraConfig* findCamera(std::string_view id) const {
+        for (const auto& c : cameras)
+            if (c.id == id) return &c;
+        return nullptr;
+    }
     const MechanismConfig* findMechanism(std::string_view id) const {
         for (const auto& m : mechanisms)
             if (m.id == id) return &m;

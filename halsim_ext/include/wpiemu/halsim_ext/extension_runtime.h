@@ -27,6 +27,8 @@ struct RuntimeDeps {
     std::vector<std::unique_ptr<sdk::IDeviceBridge>> bridges;
     // Console sink for the extension's log lines (default: stderr). Tests capture here.
     ForwardingLogger::ConsoleSink console;
+    // Simulated vision cameras (Limelight / PhotonVision). Optional; empty = no cameras are published.
+    std::vector<std::unique_ptr<sdk::IVisionBridge>> visionBridges;
 };
 
 // The extension's lifetime manager: connect + Hello/HelloAck, pause HAL time, start the bridges,

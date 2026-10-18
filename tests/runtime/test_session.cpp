@@ -250,6 +250,54 @@ TEST_CASE("session: SensorFrame bookkeeping - tick numbers, sim time, step") {
     CHECK(s.clock().simTimeUs() == 15000);
 }
 
+TEST_CASE("session: cameras capture after the physics step, deliver after their latency and restart on reset") {
+    Fixture f;
+    REQUIRE(f.reg.plugins.add(std::make_unique<wpiemu::test_runtime::TagGameModule>()).ok());
+    RobotConfig cfg = sampleConfig();
+    cfg.gamePluginId = "tag_game";
+    cfg.cameras.push_back(wpiemu::test_runtime::frontCamera());
+    SimulationSession& s = f.make(std::move(cfg));
+
+    const VisionSetup setup = s.vision().setup();
+    REQUIRE(setup.cameras.size() == 1);
+    CHECK(setup.layoutName == "tag-layout");
+
+    proto::SensorFrame out;
+    for (int tick = 1; tick <= 4; ++tick) {
+        s.tick(out, false);
+        CHECK(out.vision.empty());
+    }
+    s.tick(out, false);  // t = 25 ms: the frame captured at 5 ms is due
+    REQUIRE(out.vision.size() == 1);
+    CHECK(out.vision[0].captureTimeUs == 5000);
+    CHECK(out.vision[0].publishTimeUs == 25000);
+    REQUIRE(out.vision[0].tags.size() == 1);
+    CHECK(out.vision[0].tags[0].id == 3);
+    s.tick(out, false);
+    REQUIRE(out.vision.size() == 1);
+    CHECK(out.vision[0].captureTimeUs == 10000);
+
+    const auto snapshot = s.buildSnapshot(false, true);
+    REQUIRE(snapshot->cameras().size() == 1);
+    CHECK(snapshot->cameras()[0].visibleTagIds == std::vector<int>{3});
+
+    s.reset();
+    for (int tick = 1; tick <= 5; ++tick) s.tick(out, tick == 1);
+    REQUIRE(out.vision.size() == 1);
+    CHECK(out.vision[0].sequence == 0);
+    CHECK(out.vision[0].captureTimeUs == 5000);
+}
+
+TEST_CASE("session: without cameras the vision output stays empty") {
+    Fixture f;
+    SimulationSession& s = f.make();
+    CHECK(s.vision().empty());
+    proto::SensorFrame out;
+    s.tick(out, true);
+    CHECK(out.vision.empty());
+    CHECK(s.buildSnapshot(false, true)->cameras().empty());
+}
+
 TEST_CASE("session: robot outputs drive mechanisms and drivetrain, sensors flow back as rotor data") {
     Fixture f;
     SimulationSession& s = f.make();

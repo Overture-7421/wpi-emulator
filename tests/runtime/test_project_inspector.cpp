@@ -108,7 +108,19 @@ TEST_CASE("inspector: a Java GradleRIO project") {
     CHECK(r.hasVendorDep("phoenix"));
     CHECK(r.hasVendorDep("PHOTON"));
     CHECK_FALSE(r.hasVendorDep("rev"));
+    CHECK(r.photonLibVersion() == "v2026.1.1");
     for (const Issue& n : r.notes) CHECK(n.severity != Severity::Error);
+}
+
+TEST_CASE("inspector: photonlib version comes from the photon vendordep and is empty without one") {
+    ScratchDir d;
+    d.write("bot/build.gradle", kJavaBuild);
+    d.write("bot/vendordeps/Phoenix6.json", R"json({"name": "CTRE-Phoenix (v6)", "version": "26.1.0"})json");
+    CHECK(inspect(d.path() / "bot").photonLibVersion().empty());
+    d.write("bot/vendordeps/photonlib.json", R"json({"name": "photonlib", "version": "v2026.3.4"})json");
+    CHECK(inspect(d.path() / "bot").photonLibVersion() == "v2026.3.4");
+    d.write("bot/vendordeps/photonlib.json", R"json({"name": "photonlib"})json");  // no version declared
+    CHECK(inspect(d.path() / "bot").photonLibVersion().empty());
 }
 
 TEST_CASE("inspector: a C++ project, preferences decide the language, team number as a string") {

@@ -120,12 +120,17 @@ void SessionRunner::doTick(Clock::time_point now) {
     proto::SensorFrame frame;
     frame.sessionId = window_.sessionId();
     frame.runEpoch = window_.runEpoch();
+    const bool firstOfEpoch = needFull_;
     session_.tick(frame, needFull_);
     needFull_ = false;
 
     if (Status s = window_.onSent(frame); !s) {
         logger_.error("runner", "lock-step violation: " + s.error().message);
         return;
+    }
+    if (firstOfEpoch) {
+        sendVisionSetup();  // the extension (re)creates its camera state before the first frame of every epoch
+        if (!link_) return;
     }
     if (Status s = link_->send(frame); !s) {
         handleDisconnect("send failed: " + s.error().message);
@@ -443,6 +448,7 @@ void SessionRunner::handleHello(const proto::Hello& hello) {
     sendToRobot(ack);
     helloDone_ = true;
     firstActuator_ = true;
+    sendVisionSetup();
     logger_.info("runner", "robot connected: pid " + std::to_string(hello.pid) + ", " + hello.programName + ", WPILib " + hello.wpilibVersion +
                                ", session " + std::to_string(window_.sessionId()) + ", epoch " + std::to_string(window_.runEpoch()));
     sendLoopbackIfChanged(true);
@@ -527,6 +533,13 @@ void SessionRunner::sendDriverStation() {
     gameMessageSent_ = session_.gameSpecificMessage();
     session_.setDriverStation(ds);
     if (link_ && helloDone_) sendToRobot(ds);
+}
+
+void SessionRunner::sendVisionSetup() {
+    if (!link_ || !helloDone_) return;
+    sdk::VisionSetup setup = session_.vision().setup();
+    setup.photonVersion = options_.photonVersion;
+    sendToRobot(setup);
 }
 
 void SessionRunner::sendLoopbackIfChanged(bool force) {

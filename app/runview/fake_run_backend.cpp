@@ -116,7 +116,53 @@ sdk::RobotConfig FakeRunBackend::makeDemoConfig() {
     shooter.attachment = {"turret", "yaw"};
     shooter.local.position = {0.38f, 0.f, 0.12f};
     c.zones.push_back(std::move(shooter));
+
+    sdk::CameraConfig rear;
+    rear.id = "cam_rear";
+    rear.label = "Rear Limelight";
+    rear.name = "rear";
+    rear.kind = sdk::CameraKind::Limelight;
+    rear.local = {{-0.38f, 0.f, 0.1f},
+                  sdk::Quat::fromYaw(static_cast<float>(sdk::kPi)) * sdk::Quat::fromAxisAngle({0.f, 1.f, 0.f}, -0.3f)};
+    rear.maxRangeM = 5.0;
+    c.cameras.push_back(std::move(rear));
+
+    sdk::CameraConfig turretCam;
+    turretCam.id = "cam_turret";
+    turretCam.label = "Turret camera";
+    turretCam.name = "turret";
+    turretCam.kind = sdk::CameraKind::PhotonVision;
+    turretCam.attachment = {"turret", "yaw"};
+    turretCam.local = {{0.1f, 0.f, 0.22f}, sdk::Quat::fromAxisAngle({0.f, 1.f, 0.f}, -0.15f)};
+    turretCam.hFovDeg = 70.0;
+    turretCam.vFovDeg = 45.0;
+    turretCam.maxRangeM = 6.0;
+    c.cameras.push_back(std::move(turretCam));
     return c;
+}
+
+sdk::AprilTagLayout FakeRunBackend::makeDemoTags() {
+    sdk::AprilTagLayout layout;
+    layout.name = "demo";
+    layout.fieldLengthM = kFieldL;
+    layout.fieldWidthM = kFieldW;
+    const float pi = static_cast<float>(sdk::kPi);
+    auto add = [&](int id, sdk::Vec3 pos, float yaw) {
+        sdk::AprilTag t;
+        t.id = id;
+        t.pose = {pos, sdk::Quat::fromYaw(yaw)};
+        layout.tags.push_back(t);
+    };
+    // Blue wall (+X out of the face points into the field), red wall, then the two long walls.
+    add(1, {0.f, 2.6f, 1.2f}, 0.f);
+    add(2, {0.f, kHubY, 1.2f}, 0.f);
+    add(3, {0.f, 5.6f, 1.2f}, 0.f);
+    add(4, {kFieldL, 2.6f, 1.2f}, pi);
+    add(5, {kFieldL, kHubY, 1.2f}, pi);
+    add(6, {kFieldL, 5.6f, 1.2f}, pi);
+    add(7, {5.0f, 0.f, 1.0f}, pi * 0.5f);
+    add(8, {11.5f, kFieldW, 1.0f}, -pi * 0.5f);
+    return layout;
 }
 
 std::vector<sdk::ZoneKindInfo> FakeRunBackend::makeZoneKinds() {
@@ -167,6 +213,7 @@ FakeRunBackend::FakeRunBackend(Options options, QObject* parent) : IRunBackend(p
     scene_.config = std::make_shared<const sdk::RobotConfig>(makeDemoConfig());
     scene_.field = std::make_shared<const sdk::FieldDescription>(makeDemoField());
     scene_.gameName = QStringLiteral("Demo game");
+    scene_.tags = makeDemoTags();
     if (options_.withGameContent) {
         using sdk::HudAnchor;
         using sdk::HudWidgetKind;
@@ -565,6 +612,29 @@ void FakeRunBackend::publish() {
     climber.links.push_back({"carriage", sdk::Pose3{{0.f, 0.f, carriage_}, {}}});
     climber.values = {{"height", static_cast<double>(carriage_), "m"}};
     d.mechanisms.push_back(std::move(climber));
+
+    // Cameras: the same simple model as the real simulation (range, field of view, facing), on the live link poses.
+    const sdk::Pose3 turretFrame = d.chassis.pose * sdk::Pose3{{-0.1f, 0.f, 0.f}, {}} * sdk::Pose3{{}, sdk::Quat::fromYaw(turretYaw_)};
+    for (const auto& cam : scene_.config->cameras) {
+        const sdk::Pose3 frame = cam.attachment.onChassis() ? d.chassis.pose : turretFrame;
+        sdk::CameraState state;
+        state.id = cam.id;
+        state.worldPose = frame * cam.local;
+        const sdk::Pose3 inverse = state.worldPose.inverse();
+        const float tanH = std::tan(static_cast<float>(sdk::degToRad(cam.hFovDeg)) * 0.5f);
+        const float tanV = std::tan(static_cast<float>(sdk::degToRad(cam.vFovDeg)) * 0.5f);
+        const float minFacing = std::cos(static_cast<float>(sdk::degToRad(cam.maxIncidenceDeg)));
+        for (const auto& tag : scene_.tags.tags) {
+            const sdk::Vec3 local = inverse.transformPoint(tag.pose.position);
+            if (local.x <= 0.05f || sdk::length(local) > static_cast<float>(cam.maxRangeM)) continue;
+            if (std::fabs(local.y) > local.x * tanH || std::fabs(local.z) > local.x * tanV) continue;
+            const sdk::Vec3 toCamera = sdk::normalized(state.worldPose.position - tag.pose.position);
+            if (sdk::dot(tag.pose.rotation.rotate({1.f, 0.f, 0.f}), toCamera) < minFacing) continue;
+            state.visibleTagIds.push_back(tag.id);
+        }
+        state.tagsVisible = !state.visibleTagIds.empty();
+        d.cameras.push_back(std::move(state));
+    }
 
     if (options_.withGameContent) {
         d.zones.push_back({"pickup", armAngle_ > 1.2f});

@@ -13,6 +13,9 @@
 //   app -> ext : HelloAck (clock mode, step size, sessionId, runEpoch, negotiated watchdog)
 //   ext -> app : DeviceAnnounce*  (any time; re-announce on reconnect)
 //   app -> ext : LoopbackSet      (on every mapping change)
+//   app -> ext : VisionSetup      (after HelloAck on every connection, and again immediately before the first
+//                                  SensorFrame of every new run epoch / after a Reset, so the extension recreates
+//                                  its camera topics)
 //   app -> ext : DsState, SimControl (any time)
 //   ext -> app : SimControlAck    (one per SimControl with a non-zero commandId)
 //   per tick   : app -> ext SensorFrame (inputs for tick N + step dt)
@@ -53,6 +56,7 @@
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/devices/device_descriptor.h"
 #include "wpiemu/sdk/devices/signal.h"
+#include "wpiemu/sdk/vision/camera_frame.h"
 
 namespace wpiemu::sdk::proto {
 
@@ -112,6 +116,7 @@ enum class MessageType : std::uint16_t {
     Log = 9,
     Goodbye = 10,
     SimControlAck = 11,
+    VisionSetup = 12,
 };
 
 enum class RobotLanguage : std::uint8_t { Unknown = 0, Java = 1, Cpp = 2 };
@@ -182,6 +187,8 @@ struct SensorFrame {
     double batteryCurrentA = 0.0;        // informational (roboRIO current)
     bool full = false;                   // true: contains every Input signal; false: only changed ones
     std::vector<SignalSample> samples;
+    // Camera frames due this tick (CameraFrame::publishTimeUs <= simTimeUs), see vision/camera_frame.h.
+    std::vector<CameraFrame> vision;
     // identity of the run this frame belongs to (see classifyFrame).
     std::uint64_t sessionId = kUnspecified;
     std::uint64_t runEpoch = kUnspecified;
@@ -312,7 +319,7 @@ struct Goodbye {
 };
 
 using Message = std::variant<Hello, HelloAck, DeviceAnnounce, LoopbackSet, SensorFrame,
-                             ActuatorFrame, DsState, SimControl, Log, Goodbye, SimControlAck>;
+                             ActuatorFrame, DsState, SimControl, Log, Goodbye, SimControlAck, VisionSetup>;
 
 // Order of alternatives in `Message` == order of MessageType values minus 1; never reorder.
 inline MessageType typeOf(const Message& m) {

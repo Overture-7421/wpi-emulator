@@ -21,6 +21,7 @@ enum class SelKind {
     Overlay,     // plugin-declared volume: owner = mechanism id or "" (plugin level), sub = property key
     Plugin,      // the selected game plugin's config section
     Zone,        // owner = zone id (RobotConfig::zones)
+    Camera,      // owner = camera id (RobotConfig::cameras)
     Device,       // a detected device: owner = serialized DeviceKey (see device_mime.h)
 };
 
@@ -44,6 +45,7 @@ struct SelectionRef {
     static SelectionRef overlay(std::string owner, std::string key) { return {SelKind::Overlay, std::move(owner), std::move(key), -1}; }
     static SelectionRef plugin() { return {SelKind::Plugin, {}, {}, -1}; }
     static SelectionRef zone(std::string id) { return {SelKind::Zone, std::move(id), {}, -1}; }
+    static SelectionRef camera(std::string id) { return {SelKind::Camera, std::move(id), {}, -1}; }
     static SelectionRef device(std::string key) { return {SelKind::Device, std::move(key), {}, -1}; }
 
     // Stable textual key (tree expansion state, QML item ids, tests).

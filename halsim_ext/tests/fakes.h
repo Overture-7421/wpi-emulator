@@ -21,6 +21,7 @@
 #include "wpiemu/sdk/devices/device_bridge.h"
 #include "wpiemu/sdk/ipc/lifecycle.h"
 #include "wpiemu/sdk/ipc/lockstep.h"
+#include "wpiemu/sdk/vision/vision_bridge.h"
 #include "wpiemu/sdk/testing/in_memory_transport.h"
 
 namespace wpiemu::halsim::testing {
@@ -256,6 +257,43 @@ private:
     int inputBatches_ = 0;
 };
 
+// ---- a vision bridge that records what it is told -------------------------------------------------------
+class FakeVisionBridge final : public sdk::IVisionBridge {
+public:
+    explicit FakeVisionBridge(std::string name) : name_(std::move(name)) {}
+
+    std::string_view name() const override { return name_; }
+    sdk::Status start(sdk::ILogger&) override {
+        ++starts;
+        if (failStart) return sdk::makeError(sdk::ErrorCode::Internal, "fake vision start failure");
+        return sdk::okStatus();
+    }
+    void configure(const sdk::VisionSetup& setup) override {
+        ++configures;
+        lastSetup = setup;
+    }
+    void poll(sdk::SimTimeUs simTimeUs) override {
+        ++polls;
+        lastPollUs = simTimeUs;
+    }
+    void apply(std::span<const sdk::CameraFrame> frames, sdk::SimTimeUs simTimeUs) override {
+        ++applies;
+        lastApplyUs = simTimeUs;
+        for (const sdk::CameraFrame& f : frames) frameLog.push_back(f);
+    }
+    void reset() override { ++resets; }
+    void stop() noexcept override { ++stops; }
+
+    bool failStart = false;
+    std::atomic<int> starts{0}, configures{0}, polls{0}, applies{0}, resets{0}, stops{0};
+    std::atomic<sdk::SimTimeUs> lastPollUs{-1}, lastApplyUs{-1};
+    sdk::VisionSetup lastSetup;       // clock thread
+    std::vector<sdk::CameraFrame> frameLog;  // clock thread
+
+private:
+    std::string name_;
+};
+
 // ---- transport plumbing ---------------------------------------------------------------------------------
 // ITransportClient that hands out pre-made transports in order (one per connect()).
 class QueueClient final : public proto::ITransportClient {
@@ -354,6 +392,7 @@ public:
     std::uint64_t epoch = proto::kFirstRunEpoch;
     std::uint64_t nextTick = 1;
     sdk::SimTimeUs simTimeUs = 0;
+    std::vector<sdk::CameraFrame> pendingVision;   // attached to the next tick()
 
     // Sends one SensorFrame and returns the extension's ack (nullopt on timeout).
     std::optional<proto::ActuatorFrame> tick(std::vector<sdk::SignalSample> samples = {},
@@ -366,7 +405,8 @@ public:
         f.stepUs = stepUs;
         f.batteryVoltageV = batteryV;
         f.samples = std::move(samples);
-        f.sessionId = sessionId;
+        f.vision = std::move(pendingVision);
+        pendingVision.clear();
         f.runEpoch = epoch;
         const std::uint64_t tickNo = f.tick;
         if (!send(proto::Message(std::move(f)))) return std::nullopt;
@@ -477,6 +517,13 @@ struct Rig {
         return ref;
     }
 
+    FakeVisionBridge& addVisionBridge(std::string name = "fake.vision") {
+        auto b = std::make_unique<FakeVisionBridge>(std::move(name));
+        FakeVisionBridge& ref = *b;
+        visionBridges.push_back(std::move(b));
+        return ref;
+    }
+
     sdk::Status start() {
         RuntimeDeps deps{
             config,
@@ -488,7 +535,8 @@ struct Rig {
             console ? console : ForwardingLogger::ConsoleSink([this](std::string_view line) {
                 std::lock_guard lock(logMutex);
                 logLines.emplace_back(line);
-            })};
+            }),
+            std::move(visionBridges)};
         runtime = std::make_unique<ExtensionRuntime>(std::move(deps));
         return runtime->start();
     }
@@ -510,6 +558,7 @@ struct Rig {
     FakePower power;
     FakeProcess process;
     std::vector<std::unique_ptr<sdk::IDeviceBridge>> bridges;
+    std::vector<std::unique_ptr<sdk::IVisionBridge>> visionBridges;
     std::unique_ptr<ExtensionRuntime> runtime;
     std::mutex logMutex;
     std::vector<std::string> logLines;

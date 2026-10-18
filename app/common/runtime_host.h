@@ -77,6 +77,7 @@ struct HostScene {
     std::vector<sdk::HudWidgetDescriptor> hud;
     std::vector<sdk::EditorPanelDescriptor> panels;
     std::vector<sdk::ZoneKindInfo> zoneKinds;             // the game module's contributeZoneKinds()
+    sdk::AprilTagLayout tags;                             // the game module's aprilTagLayout()
     QString gameName;
 };
 

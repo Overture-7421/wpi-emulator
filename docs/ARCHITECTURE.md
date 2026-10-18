@@ -11,7 +11,8 @@ this document describes the code as built. Background and rationale: ADRs
 [0004](decisions/0004-modular-boundaries.md) (module boundaries),
 [0005](decisions/0005-sdk-freeze.md) (SDK freeze), [0006](decisions/0006-sdk-1-1-amendments.md) (SDK amendments),
 [0007](decisions/0007-ipc-transport.md) (IPC transport), [0008](decisions/0008-physics-implementation.md) (physics),
-[0009](decisions/0009-mechanisms-impl.md) (mechanisms), [0010](decisions/0010-runtime.md) (runtime / config / launcher).
+[0009](decisions/0009-mechanisms-impl.md) (mechanisms), [0010](decisions/0010-runtime.md) (runtime / config / launcher),
+[0017](decisions/0017-vision-cameras.md) (vision cameras).
 Full index: [decisions/README.md](decisions/README.md). How to build and contribute:
 [BUILDING.md](BUILDING.md), [CONTRIBUTING.md](CONTRIBUTING.md); using the product: [USER_GUIDE.md](USER_GUIDE.md).
 
@@ -23,6 +24,7 @@ Full index: [decisions/README.md](decisions/README.md). How to build and contrib
 | Generic mechanisms, plants, motor catalog | [mechanisms.md](mechanisms.md) |
 | HALSim extension (robot process side) | [halsim-extension.md](halsim-extension.md) |
 | HAL bridges / vendor (CTRE) bridges | [bridges-hal.md](bridges-hal.md), [bridges-vendor.md](bridges-vendor.md) |
+| Vision cameras (Limelight / PhotonVision), AprilTags, NetworkTables output | [vision.md](vision.md), [ADR 0017](decisions/0017-vision-cameras.md) |
 | 2026 game plugin / writing a new season | [game_2026.md](game_2026.md), [new-year-plugin.md](new-year-plugin.md) |
 | App shell, editor, run view | [app/README.md](../app/README.md), [app/editor/README.md](../app/editor/README.md), [app/runview/README.md](../app/runview/README.md) |
 | Installers and releases | [packaging.md](packaging.md) |
@@ -52,7 +54,7 @@ Full index: [decisions/README.md](decisions/README.md). How to build and contrib
    +--------------------------------+
 
    bridges/builtin_bridges.cpp (target wpiemu_bridges_builtin) is the same seam for device bridges:
-   it links bridges/hal + bridges/vendor, and only halsim_ext links it (enforced as a distinct
+   it links bridges/hal + bridges/vendor + bridges/vision, and only halsim_ext links it (enforced as a distinct
    aggregation owner by tools/check_boundaries.py).
 ```
 
@@ -63,7 +65,8 @@ Full index: [decisions/README.md](decisions/README.md). How to build and contrib
 | `ipc` | sdk | implements `ITransport` / `IMessageCodec` (named pipe / unix socket + binary codec, ADR 0007) |
 | `halsim_ext` | sdk, ipc, bridges aggregator (+ HAL headers) | `halsim_wpiemu`, runs inside the robot process |
 | `bridges/hal`, `bridges/vendor` | sdk (+ HAL / vendor headers) | not each other. `hal` = WPILib HAL families; `vendor` = CTRE Phoenix 6 / Phoenix 5 through SimDevices |
-| `bridges/` aggregator | sdk + every bridge module | only `wpiemu_bridges_builtin`, linked only by `halsim_ext` |
+| `bridges/vision` | sdk (+ ntcore headers in its binding) | not the other bridges. Simulated Limelight / PhotonVision coprocessors: encoders for `IVisionBridge`, published into the robot's NetworkTables through ntcore ([vision.md](vision.md), ADR 0017) |
+| `bridges/` aggregator | sdk + every bridge module | only `wpiemu_bridges_builtin`, linked only by `halsim_ext`; offers `registerBuiltinBridges` (device) and `registerBuiltinVisionBridges` (vision) |
 | `plugins/<name>` | sdk only | no core, app, ipc, bridges, or other plugin. Shipped: `game_2026`; `_template` (compiled, never aggregated) |
 | `plugins/` aggregator | sdk + every plugin | only `wpiemu_plugins_builtin` |
 | `app` | sdk, core, ipc, aggregator target, Qt | never includes/links a plugin directly. Sub-folders: `common` (models, `AppServices`, `RealRuntimeHost`), `wizard`, `shell`, `editor`, `runview`, `host` (Qt-free `RobotSession`), `resources`, `tests` |
@@ -72,7 +75,7 @@ Enforced mechanically by `tools/check_boundaries.py` (CTest `boundaries.check`):
 `target_link_libraries` rules, explicit implementation-target ownership (unknown first-party targets
 are errors), declaration/map completeness, plus a guard that headers do not use identifiers Qt turns into
 macros (`signals`, `slots`, `emit`, `foreach`).
-Imported `wpiemu_wpilib_hal` / `wpiemu_wpilib_wpiutil` targets are third-party robot-process
+Imported `wpiemu_wpilib_hal` / `wpiemu_wpilib_wpiutil` / `wpiemu_wpilib_ntcore` targets are third-party robot-process
 backends used by `halsim_ext`, not SDK dependencies or alternative bridge aggregation seams.
 
 ## 2. SDK file map (`sdk/include/wpiemu/sdk/`)
@@ -82,10 +85,11 @@ backends used by `halsim_ext`, not SDK dependencies or alternative bridge aggreg
 | `core/` | `interface.h` `result.h` `math.h` `units.h` `ids.h` `value.h` `logger.h` `clock.h` `rng.h` `registry.h` `geometry.h` `severity.h` `sim_context.h` | Basics every module uses; `SimContext` |
 | `physics/` | `physics_types.h` `physics_world.h` `tire_model.h` `chassis_spec.h` `drivetrain.h` | `IPhysicsWorld`, `ITireModel`, `IDrivetrain`, `ChassisSpec`/`WheelSpec` |
 | `dynamics/` | `motor_model.h` `plant.h` | `MotorSpec`/`IMotorModel`, `IPlant`/`PlantFactory` |
-| `devices/` | `device_descriptor.h` `device_identity.h` `signal.h` `signals.h` `slot.h` `frames.h` `discovered_device.h` `device_hub.h` `device_bridge.h` `sim_device_bridge.h` `channel_family_bridge.h` `builtin_bridges.h` | Device model (declared address vs physical identity), hub, bridges, the `registerBuiltinBridges` aggregation seam |
+| `devices/` | `device_descriptor.h` `device_identity.h` `signal.h` `signals.h` `slot.h` `frames.h` `discovered_device.h` `device_hub.h` `device_bridge.h` `sim_device_bridge.h` `channel_family_bridge.h` `builtin_bridges.h` | Device model (declared address vs physical identity), hub, bridges, the `registerBuiltinBridges` / `registerBuiltinVisionBridges` aggregation seams |
 | `mechanisms/` | `mechanism.h` `mechanism_state.h` `physics_coupling.h` `attachment.h` | `IMechanism`, `MechanismFactory`, template metadata, chassis coupling, link attachment |
 | `game/` | `game_module.h` `game_state.h` `field.h` `ui_descriptors.h` `zone_kind.h` `zone_activation.h` `plugin_registry.h` `builtin_plugins.h` `null_objects.h` | Year-plugin contract, zone kinds and activation evaluation |
-| `config/` | `robot_config.h` `mechanism_attachment.h` `zone.h` `property_schema.h` `plugin_config.h` `value_codec.h` `config_io.h` `validation_codes.h` | Persisted model (incl. zones), schemas, stable issue codes |
+| `config/` | `robot_config.h` `mechanism_attachment.h` `zone.h` `camera.h` `property_schema.h` `plugin_config.h` `value_codec.h` `config_io.h` `validation_codes.h` | Persisted model (incl. zones and cameras), schemas, stable issue codes |
+| `vision/` | `apriltag.h` `camera_frame.h` `vision_bridge.h` | AprilTag layout, `CameraFrame` / `VisionSetup` (emulator -> extension), `IVisionBridge` and `VisionBridgeRegistry` |
 | `ipc/` | `messages.h` `transport.h` `lockstep.h` `lifecycle.h` | Protocol structs, `ITransport`, `IMessageCodec`, `MessageChannel`, lock-step state machines, lifecycle signals carried as `Log` messages (e.g. robot program started) |
 | `telemetry/` | `snapshot.h` `sim_controller.h` | `ISimSnapshot` view-model, `ISimController` |
 | `testing/` | `fake_physics_world.h` `fake_device_hub.h` `fake_game_module.h` `fake_sim_environment.h` `fake_clock_logger.h` `in_memory_transport.h` `fake_mechanism_physics_coupling.h` `fake_mechanism_directory.h` | Header-only fakes for isolated tests |
@@ -145,7 +149,8 @@ back-propagated load; independent sessions keep the original tick pipeline.
 ## 4. Per-tick data flow (emulator <-> extension, ADR 0001 / 0002)
 
 Discovery (once, then incremental): `Hello` / `HelloAck`, then `DeviceAnnounce` per device (any
-time, idempotent by `DeviceKey`). The hub binds announced devices to slots from `RobotConfig`;
+time, idempotent by `DeviceKey`). Right after `HelloAck`, and again before the first frame of every epoch, the emulator sends a
+`VisionSetup` (the camera list, possibly empty) so the extension can create the NetworkTables topics before the first frame. The hub binds announced devices to slots from `RobotConfig`;
 live devices without a slot are put in `LoopbackSet` (extension echoes output to input, no IPC hop)
 and a `HubWarning{"unmapped_loopback"}` is raised.
 
@@ -162,9 +167,15 @@ One tick `N` (sim thread unless noted):
 4. **Physics** `IPhysicsWorld::step(dt)`; the runtime stores the step's constraint reactions.
 5. **Game** `IGameState::step` (sees this step's sensor/contact events), then `IGameModule::onTick`.
 6. **Egress**: chassis IMU written to the hub; battery model from `IMechanism::batteryCurrentA()` +
-   drivetrain currents; `buildSensorFrame` -> `SensorFrame{tick N, stepUs, batteryVoltageV, samples, sessionId, runEpoch}`.
-7. **Snapshot** built (`SnapshotBuilder`, mechanisms/game state `publish`) and handed to `ISnapshotSink`.
-8. **Extension**, on receipt: bridges `applyInputs` (writes `HAL_SetSimValue`, `HALSIM_Set*`),
+   drivetrain currents; the clock advances; `buildSensorFrame` -> `SensorFrame{tick N, stepUs, batteryVoltageV, samples, sessionId, runEpoch}`.
+7. **Cameras** (only when `RobotConfig::cameras` is not empty, [vision.md](vision.md)): `VisionSystem` resolves each camera's pose
+   from the chassis pose after the physics step and the live link pose of its attachment, computes the tags every camera whose
+   capture is due sees from the season's `AprilTagLayout` (FOV, range, facing; deterministic noise from `SimContext::rng()`), and
+   queues the `CameraFrame` until its simulated latency has elapsed; the frames whose publish time has come go into
+   `SensorFrame::vision`.
+8. **Snapshot** built (`SnapshotBuilder`, mechanisms/game state `publish`, `CameraState`) and handed to `ISnapshotSink`.
+9. **Extension**, on receipt: bridges `applyInputs` (writes `HAL_SetSimValue`, `HALSIM_Set*`), vision bridges `pollVision` then
+   `applyVision(frames, simTime)` (publishes the due camera results to NetworkTables through ntcore with sim-time timestamps),
    `HALSIM_StepTiming(stepUs)` (robot loop runs), bridges `collectOutputs`,
    `ActuatorFrame{tick N, ackTick N, result, sessionId, runEpoch}` sent back. Exactly one tick is ever outstanding.
 
@@ -267,6 +278,13 @@ v1 supports **static built-in plugins only** (one toolchain/CRT/flags). The SDK 
 size-prefixed `extern "C"` POD entry descriptor (sdk major/minor, id/year/version, create/destroy pair) in addition to
 `registerPlugin`; until then do not export C++ types across a DLL boundary (see `game/plugin_registry.h`).
 
+### 4.8 Cameras
+`RobotConfig::cameras` ([ADR 0017](decisions/0017-vision-cameras.md), `config/camera.h`): simulated Limelight / PhotonVision
+coprocessors attached to the chassis or a mechanism link like a zone. Core's `VisionSystem` (sim thread) decides which tags of
+`IGameModule::aprilTagLayout()` each camera sees and delays the result by the camera's latency; the frames due travel in
+`SensorFrame::vision`, and the extension's vision bridges (`IVisionBridge`, clock thread only) publish them into the robot's
+default NetworkTables instance. The full flow, camera model, frames and topic tables are in [vision.md](vision.md).
+
 ## 5. Extension points
 
 | To add... | Implement | Register with | Touches |
@@ -280,6 +298,8 @@ size-prefixed `extern "C"` POD entry descriptor (sdk major/minor, id/year/versio
 | A transport / wire codec | `ITransport` / `IMessageCodec` | composition root | `ipc/` |
 | Config fields / HUD / panels | `PropertySchema`, `HudWidgetDescriptor`, `EditorPanelDescriptor` | returned by `IGameModule::contribute*` | the plugin only |
 | A game zone kind (intake volume, muzzle) | `ZoneKindInfo` | `IGameModule::contributeZoneKinds()` | the plugin only (kind prefix = plugin id) |
+| A season's AprilTag field | `AprilTagLayout` | `IGameModule::aprilTagLayout()` | the plugin only |
+| A vision coprocessor vendor | `IVisionBridge` (encoder + `INtBackend`) | `VisionBridgeRegistry::registerBridge` inside `registerVisionBridges(registry)` | `bridges/vision` (or a new bridge module) + one call in `bridges/builtin_bridges.cpp`; a new `CameraKind` touches the SDK, codec and editor menu ([vision.md](vision.md)) |
 
 ## 6. Checklists
 
@@ -314,6 +334,7 @@ Historical split used while the modules were built in parallel; useful to see wh
 | Mechanisms & runtime | `core/mechanisms/`, `core/runtime/` (hub, sim loop, config codec, battery) | `mechanisms/*`, `devices/device_hub.h`, `dynamics/*`, `config/*` |
 | HAL bridges | `bridges/hal/` | `devices/*` |
 | Vendor bridges | `bridges/vendor/` | `devices/*` |
+| Vision bridges | `bridges/vision/` | `vision/*`, `config/camera.h` |
 | game_2026 | `plugins/game_2026/` | `game/*`, `mechanisms/*` |
 | UI | `app/wizard`, `app/editor`, `app/runview`, `app/shell`, `app/common`, `app/host` | `telemetry/*`, `config/*`, `mechanisms/mechanism.h` (metadata) |
 | Packaging/CI | `packaging/`, `.github/` | - |

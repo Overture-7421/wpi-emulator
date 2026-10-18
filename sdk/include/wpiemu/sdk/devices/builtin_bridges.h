@@ -5,6 +5,7 @@
 namespace wpiemu::sdk {
 
 class DeviceBridgeRegistry;
+class VisionBridgeRegistry;
 
 // Aggregation seam for device bridges (mirrors game/builtin_plugins.h).
 // DECLARED here so the extension composition root can call it without including or linking any
@@ -13,5 +14,9 @@ class DeviceBridgeRegistry;
 // module + one call in that file; the extension does not change.
 // Returns the first registration error (all modules are still attempted).
 Status registerBuiltinBridges(DeviceBridgeRegistry& registry);
+
+// Same seam for the vision bridges (vision/vision_bridge.h; Limelight, PhotonVision). Also DEFINED by
+// `wpiemu_bridges_builtin`; the extension keeps no knowledge of the concrete vision modules.
+Status registerBuiltinVisionBridges(VisionBridgeRegistry& registry);
 
 }  // namespace wpiemu::sdk

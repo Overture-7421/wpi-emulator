@@ -70,7 +70,9 @@ struct ExtensionRuntime::Impl {
         : deps(std::move(d)),
           logger(deps.config.logLevel, deps.console),
           bridges(std::move(deps.bridges), devices, logger),
-          services{deps.config, deps.ports, bridges, devices, logger, stats} {}
+          services{deps.config, deps.ports, bridges, devices, logger, stats} {
+        bridges.setVisionBridges(std::move(deps.visionBridges));
+    }
 
     sdk::Result<std::unique_ptr<SimSession>> connect() {
         sdk::Result<std::unique_ptr<proto::ITransport>> transport =

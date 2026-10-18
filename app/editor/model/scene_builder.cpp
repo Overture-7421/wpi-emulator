@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "common/camera_frustum.h"
 #include "model/config_ops.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/units.h"
@@ -234,6 +235,42 @@ SceneContent buildScene(const sdk::RobotConfig& c, const EditorCatalog& catalog,
         head.color = color;
         head.pickable = true;
         out.items.push_back(head);
+    }
+
+    // Cameras: a small body box at the mount and the field of view as 8 edge lines plus a translucent far plane.
+    for (const auto& cam : c.cameras) {
+        const SelectionRef ref = SelectionRef::camera(cam.id);
+        const QColor color = cam.kind == sdk::CameraKind::PhotonVision ? theme.photonVision : theme.limelight;
+        const Pose3 world = ops::cameraWorld(c, catalog, cam);
+
+        SceneItem body;
+        body.id = "camera:" + cam.id;
+        body.ref = body.group = ref;
+        body.role = ItemRole::Marker;
+        body.world = world;
+        body.size = Vec3{0.04f, 0.09f, 0.04f};
+        body.color = color;
+        body.pickable = true;
+        out.items.push_back(body);
+
+        const FrustumGeometry frustum = cameraFrustum(cam);
+        for (std::size_t i = 0; i < kFrustumEdges.size(); ++i) {
+            const auto [a, b] = kFrustumEdges[i];
+            SceneItem edge = lineBetween("camera:" + cam.id + ":edge:" + std::to_string(i), world.transformPoint(frustum.pts[a]),
+                                         world.transformPoint(frustum.pts[b]), color, 0.006f);
+            edge.ref = edge.group = ref;
+            out.items.push_back(edge);
+        }
+        SceneItem plane;
+        plane.id = "camera:" + cam.id + ":fov";
+        plane.ref = plane.group = ref;
+        plane.role = ItemRole::Overlay;
+        plane.world = world * Pose3{Vec3{frustum.lengthM, 0.f, 0.f}, Quat{}};
+        plane.size = Vec3{0.004f, std::fabs(frustum.pts[kFrustumTopLeft].y) * 2.f, std::fabs(frustum.pts[kFrustumTopLeft].z) * 2.f};
+        plane.color = color;
+        plane.opacity = 0.14f;
+        plane.pickable = true;
+        out.items.push_back(plane);
     }
     return out;
 }
