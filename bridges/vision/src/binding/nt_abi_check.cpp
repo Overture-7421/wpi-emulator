@@ -1,10 +1,10 @@
 #include "nt_binder.h"
 
 // The one translation unit of the vision bridge that sees the real ntcore C headers (staged at configure time from the
-// ntcore-cpp / wpiutil-cpp "headers" artifacts, CMake option WPIEMU_VISION_HAS_NTCORE). It contains no code that runs:
-// it proves, at compile time, that the declarations the binding is written against (nt_abi.h, nt_functions.h) are the
-// ABI of those headers. The first WPILib release that changes a layout or a signature fails here, loudly, instead of
-// corrupting memory in the robot process.
+// ntcore-cpp / wpiutil-cpp "headers" artifacts; CMake defines WPIEMU_VISION_HAS_NTCORE when it found them). It
+// contains no code that runs: it proves, at compile time, that the declarations the binding is written against
+// (nt_abi.h, nt_functions.h) are the ABI of those headers. The first WPILib release that changes a layout or a
+// signature fails here, loudly, instead of corrupting memory in the robot process.
 
 #ifdef WPIEMU_VISION_HAS_NTCORE
 
