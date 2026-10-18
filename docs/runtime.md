@@ -53,7 +53,8 @@ tests/runtime/                    doctest suite (fixtures in runtime_fixtures.h,
                                "conditions": [ { "mechanism": "flywheel", "value": "velocity", "op": "above",
                                                  "threshold": 100, "tolerance": 0.1, "absolute": true } ] } } ],
   "battery": { "nominalVoltageV": 12.6, "internalResistanceOhm": 0.015, "brownoutVoltageV": 6.8 },
-  "sim": { "stepUs": 5000, "seed": 1, "physics": { "workerCount": 1, "subSteps": 4, "sleeping": true, "gravity": {..} } },
+  "sim": { "stepUs": 5000, "seed": 1, "physics": { "workerCount": 1, "subSteps": 4, "sleeping": true, "gravity": {..} },
+           "startPose": { "xM": 2.0, "yM": 4.1, "yawRad": 0.0 } },
   "plugins": { "game_2026": { "schemaVersion": 1, "data": { ... } } }
 }
 ```
@@ -66,6 +67,20 @@ The generic SDK `Value` conversions remain unchanged. JSON conversion and its st
 classic locale, independent of the process locale.
 
 Unknown fields in a file are ignored on load and are not written back.
+
+### Start pose (`sim.startPose`)
+
+`SimSettings::startPose` is an `std::optional<StartPose>` (`sdk/config/robot_config.h`: `xM`, `yM`, `yawRad`, world frame,
+yaw counter-clockwise about +Z; `toPose3` / `toStartPose` convert to and from a `Pose3`). **Unset** (the key is absent and is
+only written when set) keeps today's placement exactly: the chassis builder's own spawn pose, which in the app is the field's
+default start spot (`host::startPlacementFor`, inside the plugin's field) and for the reference builder the origin. **Set**, the
+robot spawns there and `SimulationSession::reset()` (hence every Reset, Begin and reconnect) returns to it. The session applies it
+right after the chassis was built, so every `ChassisBuilder` honours it; x, y and the yaw come from the config, the chassis
+keeps the builder's own height and stays upright. `RobotSession` also passes it to the builder as the placement. An explicit pose
+at the origin is a real value, not "unset"; a partial object defaults its missing parts to 0; non-finite or wrongly typed
+components are pathed `ParseError`s (`sim.startPose.yM`). The editor writes it (numeric fields, dragging the footprint marker),
+the run view's "Set start pose from here" too; the wizard keeps it when basics change (`updateRobotConfig` starts from the
+existing config).
 
 ### Validation codes (`Issue::code`)
 
@@ -85,7 +100,8 @@ SDK codes (`device_alias_conflict`, `attachment_*`, `mechanism_id_reserved`) plu
 `slot_duplicate_mapping`, `device_duplicate_mapping`, `slot_device_incompatible` (needs a capability lookup, unknown
 devices are skipped), `battery_invalid`, `sim_invalid` (step must divide 20 ms), `plugin_not_found` (W),
 `plugin_section_unknown` (W), `plugin_section_version_unsupported`, `plugin_property_invalid`, and the zone codes of
-"Zones" below.
+"Zones" below. The SDK's `start_pose_invalid` (`sdk::validation_code::kStartPoseInvalid`, path `sim.startPose`) is an Error for a
+non-finite component and a Warning when |x| or |y| is above 1000 m.
 Drivetrain slot names follow the convention `"<wheel>.drive"`, `"<wheel>.drive2"`.. (one per `driveMotorCount`, up to 8) / `"<wheel>.steer"` (steer for swerve/steered wheels), robot slot `"imu"`.
 A mapping may carry `"reversed": true` (Motor slots only, omitted when false): the controller spins against the mechanism's positive direction, and the hub negates its command and rotor feedback ([ADR 0014](decisions/0014-multi-motor-gearboxes.md)). New codes: `slot_motor_inactive` (W, a mapped motor above the motor count), `slot_reversed_invalid` (W, `reversed` on a non-motor slot).
 
@@ -157,7 +173,9 @@ persisted mappings -> mechanisms (config order) -> game state; destruction is th
 slots (rotor feedback written back with the gear ratio) -> `coupling.beforeStep` -> `world.step` -> `coupling.afterStep` -> game state -> game `onTick` -> chassis IMU
 (`robot.imu`: yaw/pitch/roll, body rates, proper acceleration = +g at rest) -> battery. The battery uses the total current of the tick
 (mechanisms + wheel motors + `baselineCurrentA`) with a one-tick lag: `V = nominal - I R`, brownout with a 0.5 V hysteresis (warning `brownout`).
-Tick numbers restart at 0 per epoch; `reset()` restores pose, drivetrain, mechanisms, game state, clock, RNG and battery but keeps devices and bindings.
+Tick numbers restart at 0 per epoch; `reset()` restores pose (the start pose, see above), drivetrain, mechanisms, game state, clock, RNG and battery but keeps devices and bindings.
+`setRobotPose(Pose3)` is the teleport behind the UI's drag-to-place: it moves the chassis there, zeroes its linear and angular velocity, resets the drivetrain's wheel state and the IMU's velocity history
+(no acceleration spike, only a jump in the heading) and leaves mechanisms, game state, clock, RNG and the mechanism coupling alone; a non-finite pose is ignored with a warning.
 It first resets hub signal history, so the first tick of every new epoch consumes neutral commands rather
 than outputs accepted in the prior run (including repeated Armed End/Begin transitions).
 
@@ -166,7 +184,8 @@ than outputs accepted in the prior run (including repeated Armed End/Begin trans
   then `LoopbackSet` and `DsState`. Reconnect = new session id, new epoch, reset sim, devices cleared.
 * **Lock-step**: `LockstepWindow` (one outstanding tick), stale/foreign frames dropped and counted, ack verdicts handled (`Stalled`, `Stopped`, `ProtocolError`).
 * **Commands**: Pause/Resume/Step/SetTimeScale are local; Reset bumps the epoch, sends `SimControl{Reset}` and blocks ticking until it is acknowledged;
-  Stop is acknowledged (or abandoned after the watchdog) and ends the run. DS state and live `bindSlot/unbindSlot` are queued and applied on the sim thread.
+  Stop is acknowledged (or abandoned after the watchdog) and ends the run. DS state, live `bindSlot/unbindSlot` and `setRobotPose` are queued and applied on the sim thread at the start of the next `poll()`
+  (so also while paused or before a robot connected; a robot that connects afterwards starts a new epoch, which resets the pose to the start pose) and every applied command marks the snapshot dirty.
 * **Watchdog**: tick outstanding longer than the negotiated timeout => `RobotStalled`, no more frames until Reset/reconnect; late answers are ignored.
 * **Pacing**: `timeScale` 1 = real time (no catch-up burst after a stall), 0 = as fast as the robot answers.
 * **Brownout**: the DS state sent to the robot is forced to disabled while browned out and restored afterwards.
@@ -242,7 +261,7 @@ test share one implementation. `RobotSession::start(registries, config, options)
 2. `ConfigPipeline::process` (defaults, validation): errors refuse a **Run**, a **Discovery** only warns (and falls back to an empty
    model if the session cannot be built from a half-edited one);
 3. game plugin by `gamePluginId` / season (`selectPlugin`) + `PluginRegistrar`; **no plugin for the season = core-only mode** (a floor slab replaces the
-   plugin field, a log line says so); the robot starts inside the plugin's field (`startPlacementFor`), else at the origin;
+   plugin field, a log line says so); the robot starts at `sim.startPose` when the config sets one, else inside the plugin's field (`startPlacementFor`), else at the origin;
 4. `SessionBuilder::build` over a Box3D world, `physicsChassisBuilder` and `PhysicsCouplingDriver`;
 5. IPC: `ConnectionEndpoint::generate()` -> `makeLocalServer` -> `RobotLinkAcceptor` (binary codec) feeding the `MessageInbox`;
 6. `SessionRunner` thread (`awaitProgramStart = true`: no tick and no watchdog until the extension's `program_started` lifecycle Log, because a robot

@@ -108,6 +108,15 @@ void validateSimSettings(const RobotConfig& c, std::vector<Issue>& out) {
         add(out, Severity::Error, "sim.stepUs", "step must be positive and divide the 20 ms robot period evenly", issue_code::kSimInvalid);
     if (c.sim.physics.subSteps < 1) add(out, Severity::Error, "sim.physics.subSteps", "at least 1 sub-step", issue_code::kSimInvalid);
     if (c.sim.physics.workerCount < 1) add(out, Severity::Error, "sim.physics.workerCount", "at least 1 worker", issue_code::kSimInvalid);
+    if (c.sim.startPose) {
+        constexpr float kMaxStartPoseM = 1000.f;
+        const StartPose& p = *c.sim.startPose;
+        if (!std::isfinite(p.xM) || !std::isfinite(p.yM) || !std::isfinite(p.yawRad))
+            add(out, Severity::Error, "sim.startPose", "the start pose must be finite", validation_code::kStartPoseInvalid);
+        else if (std::fabs(p.xM) > kMaxStartPoseM || std::fabs(p.yM) > kMaxStartPoseM)
+            add(out, Severity::Warning, "sim.startPose", "the start pose is more than 1000 m from the field origin",
+                validation_code::kStartPoseInvalid);
+    }
     const BatteryConfig& b = c.battery;
     if (!(b.nominalVoltageV > 0.0) || !std::isfinite(b.nominalVoltageV))
         add(out, Severity::Error, "battery.nominalVoltageV", "nominal voltage must be positive", issue_code::kBatteryInvalid);

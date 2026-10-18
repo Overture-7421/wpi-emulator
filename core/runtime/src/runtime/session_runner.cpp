@@ -43,6 +43,7 @@ void SessionRunner::setDriverStation(const proto::DsState& ds) { enqueue(SetDs{d
 void SessionRunner::control(const proto::SimControl& command) { enqueue(Control{command}); }
 void SessionRunner::bindSlot(const SlotAddress& slot, const DeviceKey& device) { enqueue(Bind{slot, device}); }
 void SessionRunner::unbindSlot(const SlotAddress& slot) { enqueue(Unbind{slot}); }
+void SessionRunner::setRobotPose(const Pose3& pose) { enqueue(SetPose{pose}); }
 
 std::optional<proto::Hello> SessionRunner::robotHello() const {
     std::lock_guard lock(helloMutex_);
@@ -196,6 +197,8 @@ void SessionRunner::applyCommands(std::vector<Command>& batch) {
         } else if (auto* unbind = std::get_if<Unbind>(&c)) {
             session_.hub().unbind(unbind->slot);
             sendLoopbackIfChanged(false);
+        } else if (auto* pose = std::get_if<SetPose>(&c)) {
+            session_.setRobotPose(pose->pose);
         }
         snapshotDirty_ = true;
     }

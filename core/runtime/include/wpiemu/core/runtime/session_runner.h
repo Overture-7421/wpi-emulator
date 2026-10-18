@@ -59,7 +59,8 @@ enum class RunnerState {
 //  * handshake (Hello -> HelloAck with sessionId / runEpoch / negotiated watchdog), reconnect = new epoch + reset;
 //  * exactly one outstanding tick (LockstepWindow), stale/foreign frames dropped, ack verdicts handled;
 //  * commands: Pause / Resume / Step (local, the emulator is the clock master), Reset (epoch bump, acked by the
-//    extension), Stop (acked), SetTimeScale (pacing), DS state, live bind/unbind (LoopbackSet resent);
+//    extension), Stop (acked), SetTimeScale (pacing), DS state, live bind/unbind (LoopbackSet resent), setRobotPose
+//    (teleport of the chassis, applied at the start of the next poll even while paused);
 //  * stall watchdog: tick outstanding longer than the negotiated timeout -> RobotStalled, no more frames;
 //  * brownout: the DS state sent to the robot is forced disabled while the battery is browned out;
 //  * snapshot publishing to the ISnapshotSink (every N ticks and on state changes).
@@ -75,6 +76,7 @@ public:
     void control(const sdk::proto::SimControl& command) override;
     void bindSlot(const sdk::SlotAddress& slot, const sdk::DeviceKey& device) override;
     void unbindSlot(const sdk::SlotAddress& slot) override;
+    void setRobotPose(const sdk::Pose3& pose) override;
 
     // ---- driving ----
     // One iteration: apply queued commands, drain inbound events (waiting at most `maxWait` when there is nothing
@@ -103,7 +105,8 @@ private:
     struct Control { sdk::proto::SimControl command; };
     struct Bind { sdk::SlotAddress slot; sdk::DeviceKey device; };
     struct Unbind { sdk::SlotAddress slot; };
-    using Command = std::variant<SetDs, Control, Bind, Unbind>;
+    struct SetPose { sdk::Pose3 pose; };
+    using Command = std::variant<SetDs, Control, Bind, Unbind, SetPose>;
 
     void enqueue(Command command);
     void applyCommands(std::vector<Command>& batch);

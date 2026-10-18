@@ -1,6 +1,7 @@
 #include "host/robot_session.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <deque>
 #include <sstream>
@@ -187,6 +188,13 @@ Result<std::unique_ptr<runtime::SimulationSession>> buildSession(const Registrie
     core::physics::ChassisPlacement placement;
     placement.xM = start.xM;
     placement.yM = start.yM;
+    if (config.sim.startPose && std::isfinite(config.sim.startPose->xM) && std::isfinite(config.sim.startPose->yM) &&
+        std::isfinite(config.sim.startPose->yawRad)) {
+        // A configured start pose replaces the field's default spot (the session applies it to any builder; this places the body there from the start).
+        placement.xM = config.sim.startPose->xM;
+        placement.yM = config.sim.startPose->yM;
+        placement.yawRad = config.sim.startPose->yawRad;
+    }
     parts.config = std::move(config);
     parts.mechanisms = reg.mechanisms;
     parts.drivetrains = reg.drivetrains;

@@ -178,6 +178,16 @@ Status SimulationSession::build(SessionParts& parts) {
     Result<ChassisInfo> chassis = builder(*world_, config_.chassis, config_.drivetrain.spec);
     if (!chassis) return makeError(chassis.error().code, "chassis: " + chassis.error().message);
     chassis_ = chassis.value();
+    if (const auto& start = config_.sim.startPose) {
+        // The configured start pose wins over the builder's placement and keeps the chassis' own height. It is applied right
+        // away so that everything built below (drivetrain, mechanisms, game state) already sees the final pose.
+        if (std::isfinite(start->xM) && std::isfinite(start->yM) && std::isfinite(start->yawRad)) {
+            chassis_.spawnPose = toPose3(*start, chassis_.spawnPose.position.z);
+            world_->setPose(chassis_.body, chassis_.spawnPose);
+        } else {
+            logger_->warn("session", "sim.startPose is not finite: using the default placement");
+        }
+    }
     if (coupling_) coupling_->bind(*world_, chassis_.body, chassis_.baseMass);
     ctx_ = std::make_unique<SimContext>(SimContextServices{*world_, clock_, hub_, *logger_, config_, rng_, ds_, chassis_.body, nullptr,
                                                            coupling_ ? &coupling_->service() : nullptr});
@@ -291,6 +301,21 @@ void SimulationSession::reset() {
     brownoutWarned_ = false;
     std::erase_if(sessionWarnings_, [](const HubWarning& w) { return w.code == "brownout"; });
     if (gameState_) gameState_->reset(*ctx_);
+}
+
+void SimulationSession::setRobotPose(const Pose3& pose) {
+    const bool finite = std::isfinite(pose.position.x) && std::isfinite(pose.position.y) && std::isfinite(pose.position.z) &&
+                        std::isfinite(pose.rotation.x) && std::isfinite(pose.rotation.y) && std::isfinite(pose.rotation.z) &&
+                        std::isfinite(pose.rotation.w);
+    if (!finite) {
+        logger_->warn("session", "setRobotPose ignored: the pose is not finite");
+        return;
+    }
+    world_->setPose(chassis_.body, Pose3{pose.position, pose.rotation.normalized()});
+    world_->setLinearVelocity(chassis_.body, Vec3{});
+    world_->setAngularVelocity(chassis_.body, Vec3{});
+    lastVelocity_ = Vec3{};  // the IMU differentiates the velocity: restart from rest instead of reporting a jump as acceleration
+    if (drivetrain_) drivetrain_->reset();
 }
 
 void SimulationSession::stepDrivetrain(double dt, double& currentA) {

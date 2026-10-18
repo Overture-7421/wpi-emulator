@@ -658,6 +658,14 @@ Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value) const {
             pr.boolean("sleeping", cfg.sim.physics.sleeping);
             pr.vec3("gravity", cfg.sim.physics.gravity);
         }
+        if (const Value* sp = r.get("startPose")) {
+            ObjReader pr(*sp, "sim.startPose", ctx);
+            StartPose pose;
+            pr.flt("xM", pose.xM);
+            pr.flt("yM", pose.yM);
+            pr.flt("yawRad", pose.yawRad);
+            if (pr.valid()) cfg.sim.startPose = pose;
+        }
     }
     if (const Value* ps = root.get("plugins")) {
         if (!ps->isObject()) {
@@ -759,6 +767,13 @@ Value RobotConfigCodec::toValue(const RobotConfig& cfg) const {
     physics["sleeping"] = cfg.sim.physics.sleeping;
     physics["gravity"] = vec3Value(cfg.sim.physics.gravity);
     sim["physics"] = std::move(physics);
+    if (cfg.sim.startPose) {
+        Value startPose = Value::makeObject();
+        startPose["xM"] = fv(cfg.sim.startPose->xM);
+        startPose["yM"] = fv(cfg.sim.startPose->yM);
+        startPose["yawRad"] = fv(cfg.sim.startPose->yawRad);
+        sim["startPose"] = std::move(startPose);
+    }
     root["sim"] = std::move(sim);
 
     Value plugins = Value::makeObject();

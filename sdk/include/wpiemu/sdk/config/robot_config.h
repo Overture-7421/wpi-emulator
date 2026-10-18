@@ -41,10 +41,27 @@ struct BatteryConfig {
     double brownoutVoltageV = 6.8;
 };
 
+// A planar pose on the floor (world frame, Z-up NWU): where the robot starts and where reset() puts it back. The chassis keeps
+// its own height and stays upright. Also the currency of the placement UI (dragging the robot on the floor).
+struct StartPose {
+    float xM = 0.f;
+    float yM = 0.f;
+    float yawRad = 0.f;   // counter-clockwise about +Z
+
+    bool operator==(const StartPose&) const = default;
+};
+
+// The chassis pose of a robot standing at `start` with its body origin (the COM) at height `zM`.
+inline Pose3 toPose3(const StartPose& start, float zM) { return Pose3{Vec3{start.xM, start.yM, zM}, Quat::fromYaw(start.yawRad)}; }
+inline StartPose toStartPose(const Pose3& pose) { return StartPose{pose.position.x, pose.position.y, pose.rotation.yaw()}; }
+
 struct SimSettings {
     std::int64_t stepUs = 5000;     // 200 Hz
     std::uint64_t seed = 1;
     PhysicsConfig physics;
+    // Where the chassis starts and where reset() returns it. Unset = the composition root's default placement (the game
+    // field's start spot when the plugin has a field, else the origin). Persisted as sim.startPose only when set.
+    std::optional<StartPose> startPose;
 };
 
 struct DrivetrainConfig {

@@ -96,6 +96,14 @@ public:
     // discovered devices stay, but cached actuation/feedback is neutralized. Starts a new epoch of tick
     // numbering; the next sensor frame is full even if the caller requests a delta.
     void reset();
+    // Teleports the chassis to `pose` (world frame, body origin = COM) and starts it from rest: linear and angular velocity
+    // are zeroed, the drivetrain's wheel state is reset and the IMU's velocity history restarts, so the robot code sees a
+    // jump in the heading but no acceleration spike. Mechanisms, game state, the clock, the RNG and the coupling are
+    // untouched (use reset() for that); reset() still returns to spawnPose(). A non-finite pose is ignored with a warning.
+    void setRobotPose(const sdk::Pose3& pose);
+    // Where reset() puts the chassis: SimSettings::startPose (x, y and yaw at the chassis builder's height) when set,
+    // else the placement of the chassis builder.
+    const sdk::Pose3& spawnPose() const { return chassis_.spawnPose; }
 
     void setDriverStation(const sdk::proto::DsState& ds) { ds_ = ds; }
     const sdk::proto::DsState& driverStation() const { return ds_; }

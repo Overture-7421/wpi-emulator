@@ -792,6 +792,74 @@ TEST_CASE("runner: live bind/unbind through the controller resends the loopback 
     CHECK(rig.logger.count(LogLevel::Warn) >= 1);
 }
 
+TEST_CASE("runner: setRobotPose is queued for the sim thread and lands on the next poll, with or without a robot") {
+    Rig rig;
+    const Pose3 first{Vec3{4.f, -1.f, 0.25f}, Quat::fromYaw(0.9f)};
+    rig.runner->setRobotPose(first);
+    CHECK(rig.session->world().pose(rig.session->chassisBody()).position.x == 0.f);   // the controller side only enqueues
+    rig.runner->poll(0ms);
+    CHECK(rig.session->world().pose(rig.session->chassisBody()).position == first.position);
+    REQUIRE(rig.slot.latest() != nullptr);
+    CHECK(rig.slot.latest()->chassis().pose.position == first.position);              // the UI's snapshot is refreshed
+    CHECK(rig.slot.latest()->chassis().pose.rotation.yaw() == doctest::Approx(0.9f).epsilon(1e-5));
+    CHECK(rig.runner->ticksSent() == 0);
+
+    // a robot connects and runs: later teleports land between ticks, and the robot code sees the new heading
+    rig.handshake();
+    rig.runner->setRobotPose(Pose3{Vec3{-2.f, 3.f, 0.25f}, Quat::fromYaw(-0.4f)});
+    REQUIRE(rig.run([&] { return rig.slot.latest()->chassis().pose.position.x == -2.f; }));
+    std::size_t before = rig.ext->sensorFrames.size();
+    REQUIRE(rig.run([&] { return rig.ext->sensorFrames.size() > before + 1; }));
+    bool sawYaw = false;
+    for (const auto& frame : rig.ext->sensorFrames)
+        for (const auto& s : frame.samples)
+            if (s.device == DeviceId{107} && s.signal == 0 && std::abs(s.value + 0.4) < 1e-4) sawYaw = true;   // pigeon yaw
+    CHECK(sawYaw);
+}
+
+TEST_CASE("runner: setRobotPose also works while paused and the next Step starts from the new pose") {
+    Rig rig;
+    rig.handshake();
+    proto::SimControl pause;
+    pause.command = proto::SimCommand::Pause;
+    rig.runner->control(pause);
+    REQUIRE(rig.run([&] { return rig.runner->state() == RunnerState::Paused; }));
+    REQUIRE(rig.run([&] { return rig.runner->ticksSent() == rig.ext->sensorFrames.size(); }));
+    const std::uint64_t paused = rig.runner->ticksSent();
+
+    rig.runner->setRobotPose(Pose3{Vec3{6.f, 2.f, 0.25f}, Quat::fromYaw(1.5f)});
+    REQUIRE(rig.run([&] { return rig.slot.latest()->chassis().pose.position.x == 6.f; }));
+    CHECK(rig.slot.latest()->paused());
+    CHECK(rig.runner->state() == RunnerState::Paused);
+    CHECK(rig.runner->ticksSent() == paused);   // no tick is needed to apply it
+    CHECK(rig.session->world().linearVelocity(rig.session->chassisBody()) == Vec3{});
+
+    proto::SimControl step;
+    step.command = proto::SimCommand::Step;
+    step.stepCount = 1;
+    rig.runner->control(step);
+    REQUIRE(rig.run([&] { return rig.runner->ticksSent() == paused + 1; }));
+    CHECK(rig.session->world().pose(rig.session->chassisBody()).position.x == doctest::Approx(6.f));
+    CHECK(rig.session->world().pose(rig.session->chassisBody()).rotation.yaw() == doctest::Approx(1.5f).epsilon(1e-4));
+}
+
+TEST_CASE("runner: Reset after a teleport returns to the configured start pose") {
+    RobotConfig c = sampleConfig();
+    c.sim.startPose = StartPose{2.f, 1.f, 0.3f};
+    Rig rig(Rig::fast(), c);
+    rig.handshake();
+    CHECK(rig.session->world().pose(rig.session->chassisBody()).position.x == doctest::Approx(2.f));
+
+    rig.runner->setRobotPose(Pose3{Vec3{9.f, 8.f, 0.25f}, Quat{}});
+    REQUIRE(rig.run([&] { return rig.slot.latest()->chassis().pose.position.x == 9.f; }));
+    proto::SimControl reset;
+    reset.command = proto::SimCommand::Reset;
+    rig.runner->control(reset);
+    REQUIRE(rig.run([&] { return rig.runner->runEpoch() == 2 && rig.slot.latest()->chassis().pose.position.x == doctest::Approx(2.f); }));
+    CHECK(rig.session->world().pose(rig.session->chassisBody()).position.y == doctest::Approx(1.f));
+    CHECK(rig.session->world().pose(rig.session->chassisBody()).rotation.yaw() == doctest::Approx(0.3f).epsilon(1e-4));
+}
+
 TEST_CASE("runner: real-time pacing releases one tick per step interval of wall time") {
     RunnerOptions o = Rig::fast();
     o.timeScale = 1.0;

@@ -164,6 +164,72 @@ TEST_CASE("config codec: the structured attachment is the only form written and 
     CHECK(b.value().mechanisms[1].attachment.onChassis());
 }
 
+TEST_CASE("config codec: the start pose is written only when set and round-trips") {
+    const RobotConfigCodec codec;
+    const JsonValueCodec json;
+    RobotConfig c = sampleConfig();
+    REQUIRE_FALSE(c.sim.startPose.has_value());
+
+    // unset = the default placement: nothing is persisted and an absent key reads back as unset
+    const Value unset = codec.toValue(c);
+    CHECK(unset.find("sim")->find("startPose") == nullptr);
+    const auto none = codec.fromValue(unset);
+    REQUIRE(none.ok());
+    CHECK_FALSE(none.value().sim.startPose.has_value());
+
+    c.sim.startPose = StartPose{3.5f, -1.25f, 0.7f};
+    const Value v = codec.toValue(c);
+    const Value* stored = v.find("sim")->find("startPose");
+    REQUIRE(stored != nullptr);
+    CHECK(stored->find("xM")->asDouble() == 3.5);
+    CHECK(stored->find("yM")->asDouble() == -1.25);
+    CHECK(stored->find("yawRad")->asDouble() == doctest::Approx(0.7));
+
+    const auto parsed = json.parse(json.dump(v, true));
+    REQUIRE(parsed.ok());
+    const auto back = codec.fromValue(parsed.value());
+    REQUIRE_MESSAGE(back.ok(), (back.ok() ? "" : back.error().message));
+    REQUIRE(back.value().sim.startPose.has_value());
+    CHECK(*back.value().sim.startPose == *c.sim.startPose);
+    CHECK(json.dump(codec.toValue(back.value()), true) == json.dump(v, true));
+
+    // an explicit pose at the origin is a real value, not "unset"
+    c.sim.startPose = StartPose{};
+    const auto origin = codec.fromValue(codec.toValue(c));
+    REQUIRE(origin.ok());
+    REQUIRE(origin.value().sim.startPose.has_value());
+    CHECK(*origin.value().sim.startPose == StartPose{});
+}
+
+TEST_CASE("config codec: a partial start pose defaults its missing parts and bad values name their path") {
+    const RobotConfigCodec codec;
+    Value v = roundTripValue(sampleConfig());
+    v["sim"]["startPose"] = Value::makeObject();
+    v["sim"]["startPose"]["xM"] = 2.0;
+    auto r = codec.fromValue(v);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().sim.startPose.has_value());
+    CHECK(*r.value().sim.startPose == StartPose{2.f, 0.f, 0.f});
+
+    const auto rejected = [&](Value bad, const std::string& path) {
+        const auto result = codec.fromValue(bad);
+        REQUIRE_FALSE(result.ok());
+        CHECK(result.error().code == ErrorCode::ParseError);
+        CHECK(result.error().message.find(path) != std::string::npos);
+    };
+    Value wrongType = v;
+    wrongType["sim"]["startPose"]["yM"] = "left";
+    rejected(wrongType, "sim.startPose.yM");
+    Value notAnObject = v;
+    notAnObject["sim"]["startPose"] = 5;
+    rejected(notAnObject, "sim.startPose");
+    for (const double number : {1e100, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
+        Value tooBig = v;
+        tooBig["sim"]["startPose"]["yawRad"] = number;
+        rejected(tooBig, "sim.startPose.yawRad");
+    }
+}
+
 TEST_CASE("config codec: unknown fields are ignored") {
     Value v = roundTripValue(sampleConfig());
     v["futureRootField"] = Value::makeObject();
