@@ -2,10 +2,23 @@
 
 namespace wpiemu::bridges::vision {
 
+namespace {
+
+// A message UUID is hexadecimal text: a hand-edited robot.json may spell it in capitals.
+bool sameUuid(std::string_view a, std::string_view b) {
+    if (a.size() != b.size()) return false;
+    const auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; };
+    for (std::size_t i = 0; i < a.size(); ++i)
+        if (lower(a[i]) != lower(b[i])) return false;
+    return true;
+}
+
+}  // namespace
+
 const PhotonProfile* findPhotonProfile(std::string_view uuid) {
     if (uuid.empty()) return nullptr;
     for (const PhotonProfile& profile : knownPhotonProfiles()) {
-        if (profile.uuid == uuid) return &profile;
+        if (sameUuid(profile.uuid, uuid)) return &profile;
     }
     return nullptr;
 }

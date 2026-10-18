@@ -65,11 +65,16 @@ TEST_CASE("photon profile: the known profile is the one of PhotonLib v2025.3.2 t
           "photonstruct:PhotonPipelineResult:4b2ff16a964b5e2bf04be0c1454d91c4");
 }
 
-TEST_CASE("photon profile: unknown and empty UUIDs have no profile") {
+TEST_CASE("photon profile: unknown and empty UUIDs have no profile, capitals are the same UUID") {
     CHECK(findPhotonProfile("") == nullptr);
     CHECK(findPhotonProfile("deadbeefdeadbeefdeadbeefdeadbeef") == nullptr);
-    CHECK(findPhotonProfile("4B2FF16A964B5E2BF04BE0C1454D91C4") == nullptr);  // UUIDs are lower case, never guessed
     CHECK(findPhotonProfile("unverified") == nullptr);
+    CHECK(findPhotonProfile("4b2ff16a964b5e2bf04be0c1454d91c") == nullptr);  // one digit short
+    // Hex text of a hand-edited robot.json: the profile is found, and it keeps its canonical lower case spelling.
+    const PhotonProfile* capitals = findPhotonProfile("4B2FF16A964B5E2BF04BE0C1454D91C4");
+    REQUIRE(capitals != nullptr);
+    CHECK(capitals == findPhotonProfile("4b2ff16a964b5e2bf04be0c1454d91c4"));
+    CHECK(capitals->uuid == "4b2ff16a964b5e2bf04be0c1454d91c4");
 }
 
 TEST_CASE("photon profile: every UUID the SDK's version rule returns has a profile") {
