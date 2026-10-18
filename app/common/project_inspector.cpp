@@ -108,6 +108,11 @@ ProjectInspection GradleProjectInspector::inspect(const QString& rawPath) const 
         dep.name = o.value(QStringLiteral("name")).toString(f.completeBaseName());
         dep.version = o.value(QStringLiteral("version")).toString();
         out.vendorDeps.push_back(dep);
+        const QString photonlib = QStringLiteral("photonlib");
+        if (dep.name.contains(photonlib, Qt::CaseInsensitive) || f.fileName().contains(photonlib, Qt::CaseInsensitive)) {
+            out.hasPhotonlib = true;
+            if (out.photonlibVersion.isEmpty()) out.photonlibVersion = dep.version;
+        }
     }
 
     out.hasGradleWrapper = dir.exists(QStringLiteral("gradlew")) || dir.exists(QStringLiteral("gradlew.bat"));

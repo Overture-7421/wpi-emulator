@@ -139,5 +139,53 @@ TEST_CASE("report says whether the robot can be launched") {
     f.probe.addJava(QStringLiteral("/jdk/bin/java"), QStringLiteral("openjdk version \"17.0.9\""));
     const ToolchainReport ready = f.checker().run(inputFor(QStringLiteral("java"), 2026));
     CHECK(ready.canRunRobot());
-    CHECK(ready.checks.size() == 5);
+    CHECK(ready.checks.size() == 6);
+}
+
+TEST_CASE("vision check: PhotonLib support is reported and never required to launch the robot") {
+    Fixture f;
+    auto input = [](bool hasPhotonlib, const QString& version) {
+        ToolchainInput in = inputFor(QStringLiteral("java"), 2026);
+        in.hasPhotonlib = hasPhotonlib;
+        in.photonlibVersion = version;
+        return in;
+    };
+
+    const ToolchainCheck none = f.checker().checkVision(input(false, {}));
+    CHECK(none.id == QStringLiteral("vision"));
+    CHECK(none.status == CheckStatus::NotApplicable);
+    CHECK(none.detail.contains(QStringLiteral("No PhotonLib vendor library")));
+    CHECK(none.fixHint.isEmpty());
+
+    for (const char* version : {"v2026.3.4", "2025.3.2"}) {
+        const ToolchainCheck ok = f.checker().checkVision(input(true, QString::fromLatin1(version)));
+        CHECK(ok.status == CheckStatus::Ok);
+        CHECK(ok.detail == QStringLiteral("PhotonLib %1: supported (message definition 4b2ff16a...)").arg(QString::fromLatin1(version)));
+        CHECK(ok.fixHint.isEmpty());
+    }
+
+    for (const char* version : {"2026.9.0", "garbage"}) {   // not verified: PhotonVision cameras stay disabled
+        const ToolchainCheck warn = f.checker().checkVision(input(true, QString::fromLatin1(version)));
+        CHECK(warn.status == CheckStatus::Warning);
+        CHECK(warn.detail.contains(QString::fromLatin1(version)));
+        CHECK(warn.detail.contains(QStringLiteral("PhotonVision cameras are disabled for this project to avoid crashing the robot")));
+        CHECK(warn.fixHint.contains(QStringLiteral("vision.photonMessageUuid")));
+        CHECK(warn.fixHint.contains(QStringLiteral("robot.json")));
+        CHECK(warn.fixHint.contains(QStringLiteral("4b2ff16a964b5e2bf04be0c1454d91c4")));
+    }
+    const ToolchainCheck unreadable = f.checker().checkVision(input(true, {}));
+    CHECK(unreadable.status == CheckStatus::Warning);
+    CHECK(unreadable.detail.contains(QStringLiteral("could not be read")));
+    CHECK(!unreadable.fixHint.isEmpty());
+
+    // listed with the other checks, and a warning never keeps the robot from launching
+    f.probe.files.insert(QStringLiteral("/proj/gradlew"));
+    f.probe.environment[QStringLiteral("JAVA_HOME")] = QStringLiteral("/jdk");
+    f.probe.addJava(QStringLiteral("/jdk/bin/java"), QStringLiteral("openjdk version \"17.0.9\""));
+    const ToolchainReport report = f.checker().run(input(true, QStringLiteral("2026.9.0")));
+    const ToolchainCheck* vision = report.find(QStringLiteral("vision"));
+    REQUIRE(vision != nullptr);
+    CHECK(vision->status == CheckStatus::Warning);
+    CHECK(!vision->requiredToRun);
+    CHECK(report.canRunRobot());
 }

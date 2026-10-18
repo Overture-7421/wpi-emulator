@@ -64,6 +64,31 @@ TEST_CASE("inspector warns about a missing wrapper and an unreadable season") {
     CHECK(!in.hasErrors());
 }
 
+TEST_CASE("inspector finds the PhotonLib vendordep and its version") {
+    TestProject none;
+    const ProjectInspection absent = GradleProjectInspector().inspect(none.path());   // only Phoenix 6
+    CHECK(!absent.hasPhotonlib);
+    CHECK(absent.photonlibVersion.isEmpty());
+
+    TestProject java;
+    writeFile(java.path() + "/vendordeps/photonlib.json", R"json({"name": "photonlib", "version": "v2026.3.4"})json");
+    const ProjectInspection found = GradleProjectInspector().inspect(java.path());
+    CHECK(found.hasPhotonlib);
+    CHECK(found.photonlibVersion == QStringLiteral("v2026.3.4"));
+
+    TestProject byFile;   // the file name is enough, in any case
+    writeFile(byFile.path() + "/vendordeps/PhotonLib-2026.json", R"json({"name": "PhotonVision", "version": "2025.3.2"})json");
+    const ProjectInspection viaFile = GradleProjectInspector().inspect(byFile.path());
+    CHECK(viaFile.hasPhotonlib);
+    CHECK(viaFile.photonlibVersion == QStringLiteral("2025.3.2"));
+
+    TestProject broken;   // listed, but its version cannot be read
+    writeFile(broken.path() + "/vendordeps/photonlib.json", "[[[");
+    const ProjectInspection unreadable = GradleProjectInspector().inspect(broken.path());
+    CHECK(unreadable.hasPhotonlib);
+    CHECK(unreadable.photonlibVersion.isEmpty());
+}
+
 TEST_CASE("kotlin build scripts and sub-folders resolve to the project root") {
     TestProject p;
     QFile::remove(p.path() + "/build.gradle");

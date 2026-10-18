@@ -6,6 +6,7 @@
 #include <regex>
 
 #include "wpiemu/core/launcher/process.h"
+#include "wpiemu/sdk/vision/photon_profiles.h"
 
 namespace wpiemu::core::launcher {
 
@@ -67,14 +68,20 @@ bool hasSourceFiles(const fs::path& dir, std::initializer_list<const char*> exte
 
 std::string stringOf(const Value* v) { return v != nullptr && v->isString() ? v->asString() : (v != nullptr && v->isNumber() ? std::to_string(v->asInt()) : std::string()); }
 
+constexpr const char* kPhotonlibFragment = "photonlib";
+
+bool vendorDepMatches(const VendorDep& d, const std::string& needleLower) {
+    return lower(d.name).find(needleLower) != std::string::npos || lower(d.fileName).find(needleLower) != std::string::npos;
+}
+
 }  // namespace
 
 bool ProjectReport::hasVendorDep(std::string_view fragment) const {
     const std::string needle = lower(std::string(fragment));
-    return std::any_of(vendorDeps.begin(), vendorDeps.end(), [&](const VendorDep& d) {
-        return lower(d.name).find(needle) != std::string::npos || lower(d.fileName).find(needle) != std::string::npos;
-    });
+    return std::any_of(vendorDeps.begin(), vendorDeps.end(), [&](const VendorDep& d) { return vendorDepMatches(d, needle); });
 }
+
+bool ProjectReport::hasPhotonlib() const { return hasVendorDep(kPhotonlibFragment); }
 
 Result<ProjectReport> ProjectInspector::inspect(const fs::path& dir) const {
     std::error_code ec;
@@ -194,6 +201,12 @@ Result<ProjectReport> ProjectInspector::inspect(const fs::path& dir) const {
             r.vendorDeps.push_back(std::move(dep));
         }
     }
+
+    // ---- PhotonLib: the message definition the robot's PhotonLib speaks follows from its release ----
+    const auto photonlib = std::find_if(r.vendorDeps.begin(), r.vendorDeps.end(),
+                                        [](const VendorDep& d) { return vendorDepMatches(d, kPhotonlibFragment) && !d.version.empty(); });
+    if (photonlib != r.vendorDeps.end()) r.photonlibVersion = photonlib->version;
+    r.photonMessageUuid = photonMessageUuidForVersion(r.photonlibVersion);
     return r;
 }
 
@@ -422,6 +435,26 @@ ToolchainReport inspectToolchain(const ProjectReport& project, const ToolchainCo
             }
         if (project.hasVendorDep("phoenix6") || project.hasVendorDep("phoenix 6")) detail += " (Phoenix 6 detected: TalonFX / CANcoder / Pigeon 2 are simulated)";
         add("vendordeps", "Vendor libraries", st, detail, st == CheckStatus::Warning ? "Update the vendor libraries to the project's WPILib year." : std::string());
+    }
+
+    // vision: PhotonLib throws when the PhotonVision message definition differs from the one compiled into it, so
+    // PhotonVision results are only published for verified releases (sdk/vision/photon_profiles.h). Info or Warning,
+    // never an Error: the robot still runs, only its PhotonVision cameras are off.
+    if (!project.hasPhotonlib()) {
+        add("vision", "Vision (PhotonLib)", CheckStatus::Info,
+            "No PhotonLib vendor library: PhotonVision cameras are not used (Limelight cameras need no vendor library)");
+    } else if (!project.photonMessageUuid.empty()) {
+        add("vision", "Vision (PhotonLib)", CheckStatus::Ok,
+            "PhotonLib " + project.photonlibVersion + ": supported (message definition " + project.photonMessageUuid.substr(0, 8) + "...)");
+    } else {
+        const std::string consequence = "PhotonVision cameras are disabled for this project to avoid crashing the robot";
+        add("vision", "Vision (PhotonLib)", CheckStatus::Warning,
+            project.photonlibVersion.empty()
+                ? "The PhotonLib version could not be read from its vendordep file: " + consequence
+                : "PhotonLib " + project.photonlibVersion + " has not been verified with this emulator: " + consequence,
+            std::string("Update the emulator, or, once you have verified that this PhotonLib release still uses the PhotonVision message "
+                        "definition ") +
+                kPhotonMessageUuidV2025_3 + ", set vision.photonMessageUuid to that value in robot.json.");
     }
 
     // team number

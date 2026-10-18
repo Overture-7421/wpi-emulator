@@ -286,9 +286,20 @@ Environment contract (`launcher::env_var`): `WPIEMU_EXT`, `WPIEMU_IPC_ENDPOINT` 
 
 Read-only: `build.gradle[.kts]` (GradleRIO version in Groovy, Kotlin and `classpath` forms -> year; variable version -> `.wpilib` `projectYear` / `settings.gradle` `frcYear`),
 language (`.wpilib` `currentLanguage` > build script signals > `src/main/{java,cpp}`), team number, Gradle wrapper files + Gradle version, `vendordeps/*.json`.
-`inspectToolchain` produces `ToolchainCheck`s (`project`, `gradlerio`, `game_plugin`, `gradle_wrapper`, `wpilib_install`, `jdk`, `cpp_toolchain`, `vendordeps`, `team`, `extension`) with
+`ProjectReport::photonlibVersion` is the `version` of the vendordep whose name or file name contains `photonlib` (case-insensitive; the first one that has a version,
+empty when there is none or its file is unreadable) and `photonMessageUuid` is `sdk::photonMessageUuidForVersion(photonlibVersion)` (`sdk/vision/photon_profiles.h`): the
+PhotonVision message definition that release speaks, empty when there is no PhotonLib or its version is not a verified release. `hasPhotonlib()` tells "no PhotonLib" from "an
+unverifiable one".
+`inspectToolchain` produces `ToolchainCheck`s (`project`, `gradlerio`, `game_plugin`, `gradle_wrapper`, `wpilib_install`, `jdk`, `cpp_toolchain`, `vendordeps`, `vision`, `team`, `extension`) with
 `Ok/Info/Warning/Error` and a fix hint; `ready()` = no Error. WPILib is searched in `%PUBLIC%\wpilib\<year>` / `C:\Users\Public\wpilib\<year>` and `~/wpilib/<year>`; the JDK is
 the WPILib one, else `JAVA_HOME`, else `java` on `PATH` (Java >= 17 expected). It was verified against `FRC-Shelby-2026OS` (read-only; a test asserts nothing changed).
+
+The `vision` check exists because PhotonLib **throws** (Java and C++) when the message definition of a result differs from the one compiled into it, so the PhotonVision
+publisher only speaks definitions it has verified (ADR 0017). No PhotonLib vendordep: `Info` ("PhotonVision cameras are not used", Limelight needs no vendor library).
+A verified release: `Ok` ("PhotonLib v2026.3.4: supported (message definition 4b2ff16a...)"). PhotonLib with an unreadable, missing or unverified version: `Warning` that names the
+version and says PhotonVision cameras are disabled for the project, with the fix: update the emulator, or set `vision.photonMessageUuid` in `robot.json` once you have verified
+that the message definition is unchanged. It is never an `Error`, so it never blocks `ready()`: the robot still runs, only its PhotonVision cameras are off. The wizard's
+step 2 shows the same check (`app/common/toolchain_checker`, id `vision`, from `ProjectInspection::hasPhotonlib` / `photonlibVersion`).
 
 ## 6. Running it for real: `app/host` (`RobotSession`) and `RealRuntimeHost`
 
@@ -307,6 +318,13 @@ test share one implementation. `RobotSession::start(registries, config, options)
 7. `RobotLauncher` (`GradleInitScript` default, `ExternalDirect` = `simulateExternal*` + direct JVM/exe launch; selected with `WPIEMU_LAUNCH_MODE=direct`
    in the app). The JDK is the WPILib one of the project year. `WPIEMU_LIVE_DISCOVERY` is passed explicitly (`0` unless `Options::preStartPolling` /
    `WPIEMU_PRESTART_POLLING=1`): devices are announced when the robot program starts.
+
+**PhotonVision profile.** Step 6 also fills `RunnerOptions::photonMessageUuid` from `photonMessageUuidFor(projectDir, json)` (a `ProjectInspector` run on the project
+folder; an inspection error is ignored, the session never fails because of it): `""` without a photonlib vendordep (the bridge's default profile), the UUID of a verified
+release, or the literal `"unverified"` (`kPhotonUuidUnverified`) when photonlib is there but its version is unreadable or not verified. No profile has that value, so the
+bridge refuses PhotonVision cameras instead of guessing (a robot's PhotonLib throws on a message definition it does not know). `RobotConfig::vision.photonMessageUuid`, the
+user's override, takes precedence when the handshake's vision setup is built. `RobotSession::photonMessageUuid()` reports what the runner was given, and a `vision` warning
+is logged when it is `"unverified"`, there is no override and an enabled PhotonVision camera is configured.
 
 `status()` is a pure function of the launcher phase, the runner state and elapsed time; it is what the UI polls:
 

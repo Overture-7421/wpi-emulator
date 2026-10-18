@@ -157,6 +157,15 @@ StartPlacement startPlacementFor(const FieldDescription* field) {
     return {std::min(2.0f, field->lengthM * 0.15f), field->widthM * 0.5f};
 }
 
+// ---- vision ----------------------------------------------------------------------------------------------------------------------
+
+std::string photonMessageUuidFor(const fs::path& projectDir, const IValueTextCodec& json) {
+    const Result<launcher::ProjectReport> report = launcher::ProjectInspector(json).inspect(projectDir);
+    if (!report || !report.value().hasPhotonlib()) return {};
+    const std::string& uuid = report.value().photonMessageUuid;
+    return uuid.empty() ? kPhotonUuidUnverified : uuid;
+}
+
 // ---- construction -----------------------------------------------------------------------------------------------------------------
 
 RobotSession::RobotSession() {
@@ -285,6 +294,13 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     ro.discoveryOnly = options.mode == Mode::Armed;
     ro.awaitProgramStart = true;
     ro.preferredWatchdogMs = options.watchdogMs;
+    self->photonMessageUuid_ = photonMessageUuidFor(options.projectDir, *reg.json);
+    ro.photonMessageUuid = self->photonMessageUuid_;
+    if (self->photonMessageUuid_ == kPhotonUuidUnverified && cfg.vision.photonMessageUuid.empty() &&
+        std::any_of(cfg.vision.cameras.begin(), cfg.vision.cameras.end(),
+                    [](const CameraConfig& c) { return c.enabled && c.vendor == CameraVendor::PhotonVision; }))
+        log.warn("vision", "this project's PhotonLib version is not verified with the emulator: its PhotonVision cameras are disabled to avoid crashing "
+                           "the robot (set vision.photonMessageUuid in robot.json once you have verified the message definition, or update the emulator)");
     self->runner_ = std::make_unique<runtime::SessionRunner>(*self->session_, self->inbox_, self->slot_, log, ro);
     self->runner_->setDriverStation(options.driverStation);
     self->runner_->start();

@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <thread>
 #include <variant>
 #include <vector>
@@ -44,6 +45,10 @@ struct RunnerOptions {
     std::uint32_t snapshotEveryTicks = 4;       // 50 Hz at 200 Hz
     std::chrono::milliseconds snapshotMinInterval{20};
     std::uint64_t maxStepCredits = 100000;
+    // PhotonVision message UUID derived from the project's photonlib vendordep (RobotSession::start): "" = no photonlib, the bridge
+    // default profile; a value no profile has ("unverified") makes the bridge refuse PhotonVision cameras. A user override,
+    // RobotConfig::vision.photonMessageUuid, wins over it when the handshake's vision setup is built.
+    std::string photonMessageUuid;
 };
 
 enum class RunnerState {

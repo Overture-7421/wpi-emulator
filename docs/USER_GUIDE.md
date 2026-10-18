@@ -77,6 +77,7 @@ The app checks your machine; each row shows what it found and a "How to fix" hin
 | WPILib `<year>` installation | `C:\Users\Public\wpilib\<year>` / `~/wpilib/<year>` (optional if a JDK is found elsewhere) |
 | C++ toolchain | only for C++ projects |
 | Game module | whether the project's season has a built-in game plugin (only **2026** in v1) |
+| Vision (PhotonLib) | the project's `photonlib` vendordep: a verified release is *supported*; an unverified or unreadable version is a warning (the emulator's PhotonVision cameras stay off, because PhotonLib crashes the robot when it receives a message definition it does not know; the fix is to update the emulator, or to set `vision.photonMessageUuid` in `robot.json` (see [section 6](#6-settings-and-where-data-is-stored)) after verifying the definition is unchanged); no PhotonLib simply means no PhotonVision cameras (Limelight needs no vendor library). Never blocks running |
 
 Use **Re-check** after fixing something. A missing item does not block the wizard (*"You can finish the setup now and
 fix it before running"*). For a season without a game module a **Core-only mode** banner appears: the robot,

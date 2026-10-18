@@ -53,11 +53,12 @@ TEST_CASE("wizard dialog: first-run happy path from project to a saved robot") {
     dlg.nextButton()->click();
     CHECK(dlg.model().step() == WizardStep::Toolchain);
     REQUIRE(waitFor([&] { return dlg.model().toolchainChecked(); }));
-    CHECK(dlg.toolchainPage()->rowCount() == 5);
+    CHECK(dlg.toolchainPage()->rowCount() == 6);
     CHECK(dlg.toolchainPage()->rowStatus(QStringLiteral("jdk")) == CheckStatus::Ok);
     CHECK(dlg.toolchainPage()->rowStatus(QStringLiteral("gradle")) == CheckStatus::Ok);
     CHECK(dlg.toolchainPage()->rowStatus(QStringLiteral("cpp")) == CheckStatus::NotApplicable);
     CHECK(dlg.toolchainPage()->rowStatus(QStringLiteral("game")) == CheckStatus::Ok);
+    CHECK(dlg.toolchainPage()->rowStatus(QStringLiteral("vision")) == CheckStatus::NotApplicable);   // no PhotonLib vendordep
     CHECK(dlg.toolchainPage()->summaryBanner()->kind() == BannerKind::Success);
     CHECK(dlg.backButton()->isEnabled());
 
@@ -178,6 +179,31 @@ TEST_CASE("wizard dialog: missing tools are explained with a fix and do not bloc
     CHECK(dlg.toolchainPage()->rowStatus(QStringLiteral("jdk")) == CheckStatus::Ok);
     CHECK(dlg.toolchainPage()->rowStatus(QStringLiteral("cpp")) == CheckStatus::Ok);
     CHECK(dlg.toolchainPage()->rowStatus(QStringLiteral("game")) == CheckStatus::Warning);   // still core-only
+}
+
+TEST_CASE("wizard dialog: the vision row follows the project's PhotonLib") {
+    GuiEnvironment env;
+    TestProject unverified;
+    writeFile(unverified.path() + "/vendordeps/photonlib.json", R"json({"name": "photonlib", "version": "2026.9.0"})json");
+    TestProject supported;
+    writeFile(supported.path() + "/vendordeps/photonlib.json", R"json({"name": "photonlib", "version": "v2026.3.4"})json");
+    env.addProject(unverified);
+    env.addProject(supported);
+    WizardDialog dlg(*env.services, env.ui);
+    dlg.show();
+
+    enterProject(dlg, unverified.path());
+    dlg.nextButton()->click();
+    REQUIRE(waitFor([&] { return dlg.model().toolchainChecked(); }));
+    CHECK(dlg.toolchainPage()->rowStatus(QStringLiteral("vision")) == CheckStatus::Warning);
+    CHECK(dlg.toolchainPage()->summaryBanner()->kind() == BannerKind::Success);   // PhotonVision cameras are off, the robot still launches
+    CHECK(dlg.nextButton()->isEnabled());
+
+    dlg.backButton()->click();
+    enterProject(dlg, supported.path());
+    dlg.nextButton()->click();
+    REQUIRE(waitFor([&] { return dlg.model().toolchainChecked() && !dlg.model().toolchainRunning(); }));
+    CHECK(dlg.toolchainPage()->rowStatus(QStringLiteral("vision")) == CheckStatus::Ok);
 }
 
 TEST_CASE("wizard dialog: dropping a folder or a file inside it selects the project") {

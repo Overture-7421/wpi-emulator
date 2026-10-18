@@ -32,6 +32,9 @@ struct ProjectInspection {
     QString gradleRioVersion;
     int teamNumber = 0;           // 0 = unknown
     std::vector<VendorDep> vendorDeps;
+    // PhotonLib: a vendordep whose name or file name contains "photonlib" (feeds the toolchain page's vision check).
+    bool hasPhotonlib = false;
+    QString photonlibVersion;     // its "version"; empty when the file could not be read
     std::vector<InspectionNote> notes;
 
     // The project can be configured: a WPILib project was recognised.

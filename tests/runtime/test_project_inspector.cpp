@@ -401,6 +401,139 @@ TEST_CASE("toolchain: C++ projects need a host compiler, vendordep years are com
     }
 }
 
+// ---- PhotonLib: which PhotonVision message definition the robot's PhotonLib speaks -------------------------------------------------
+
+namespace {
+
+constexpr const char* kPhotonUuid = "4b2ff16a964b5e2bf04be0c1454d91c4";
+
+std::string photonlibJson(const std::string& version) {
+    return R"json({"fileName": "photonlib.json", "name": "photonlib", "frcYear": "2026", "version": ")json" + version + "\"}";
+}
+
+// A healthy Java project, so ready() only depends on what a test does to the vendordeps (file name -> JSON text).
+struct VisionProject {
+    ProjectReport report;
+    ToolchainReport toolchain;
+};
+
+VisionProject visionProject(const ScratchDir& d, const std::map<std::string, std::string>& vendordeps) {
+    d.write("bot/build.gradle", kJavaBuild);
+    addWrapper(d, "bot");
+    for (const auto& [file, text] : vendordeps) d.write("bot/vendordeps/" + file, text);
+    VisionProject p;
+    p.report = inspect(d.path() / "bot");
+    p.toolchain = inspectToolchain(p.report, context(d, makeWpilib(d, 2026)));
+    return p;
+}
+
+}  // namespace
+
+TEST_CASE("inspector: the PhotonLib version and the message UUID it implies") {
+    struct Case { const char* version; const char* uuid; };
+    const Case cases[] = {
+        {"v2026.3.4", kPhotonUuid},
+        {"v2026.1.1", kPhotonUuid},
+        {"2025.3.2", kPhotonUuid},  // the "v" is optional
+        {"2026.9.0", ""},           // newer than any verified release
+        {"2024.3.1", ""},
+        {"v2026.3.4-beta-1", ""},   // strict: no suffixes
+        {"garbage", ""},
+    };
+    for (const Case& c : cases) {
+        INFO(c.version);
+        ScratchDir d;
+        const ProjectReport r = visionProject(d, {{"photonlib.json", photonlibJson(c.version)}}).report;
+        CHECK(r.hasPhotonlib());
+        CHECK(r.photonlibVersion == c.version);
+        CHECK(r.photonMessageUuid == c.uuid);
+    }
+
+    ScratchDir none;
+    const ProjectReport absent =
+        visionProject(none, {{"Phoenix6.json", R"json({"name": "CTRE-Phoenix (v6)", "version": "26.1.0", "frcYear": "2026"})json"}}).report;
+    CHECK_FALSE(absent.hasPhotonlib());
+    CHECK(absent.photonlibVersion.empty());
+    CHECK(absent.photonMessageUuid.empty());
+
+    ScratchDir broken;
+    const ProjectReport unreadable = visionProject(broken, {{"photonlib.json", "[[["}}).report;
+    CHECK(unreadable.hasPhotonlib());  // still listed, by its file name
+    CHECK_FALSE(unreadable.vendorDeps.at(0).readable);
+    CHECK(unreadable.photonlibVersion.empty());
+    CHECK(unreadable.photonMessageUuid.empty());
+
+    ScratchDir versionless;
+    const ProjectReport noVersion = visionProject(versionless, {{"photonlib.json", R"json({"name": "photonlib"})json"}}).report;
+    CHECK(noVersion.hasPhotonlib());
+    CHECK(noVersion.photonlibVersion.empty());
+    CHECK(noVersion.photonMessageUuid.empty());
+
+    // the name or the file name finds it, in any case; a copy without a version does not hide the real one
+    ScratchDir named;
+    CHECK(visionProject(named, {{"photon.json", R"json({"name": "PhotonLib", "version": "v2026.3.4"})json"}}).report.photonMessageUuid == kPhotonUuid);
+    ScratchDir filed;
+    CHECK(visionProject(filed, {{"PhotonLib-2026.json", R"json({"name": "PhotonVision", "version": "2025.3.2"})json"}}).report.photonMessageUuid == kPhotonUuid);
+    ScratchDir twice;
+    const ProjectReport copies =
+        visionProject(twice, {{"photonlib-a.json", R"json({"name": "photonlib"})json"}, {"photonlib.json", photonlibJson("v2026.3.4")}}).report;
+    CHECK(copies.photonlibVersion == "v2026.3.4");
+    CHECK(copies.photonMessageUuid == kPhotonUuid);
+}
+
+TEST_CASE("toolchain: the vision check explains PhotonLib support and never blocks the launch") {
+    ScratchDir none;
+    const VisionProject absent =
+        visionProject(none, {{"Phoenix6.json", R"json({"name": "CTRE-Phoenix (v6)", "version": "26.1.0", "frcYear": "2026"})json"}});
+    const ToolchainCheck* noPhoton = absent.toolchain.find("vision");
+    REQUIRE(noPhoton != nullptr);
+    CHECK(noPhoton->status == CheckStatus::Info);
+    CHECK(noPhoton->detail == "No PhotonLib vendor library: PhotonVision cameras are not used (Limelight cameras need no vendor library)");
+    CHECK(noPhoton->fix.empty());
+    CHECK(absent.toolchain.ready());
+
+    for (const char* version : {"v2026.3.4", "2025.3.2"}) {
+        INFO(version);
+        ScratchDir d;
+        const VisionProject p = visionProject(d, {{"photonlib.json", photonlibJson(version)}});
+        const ToolchainCheck* c = p.toolchain.find("vision");
+        REQUIRE(c != nullptr);
+        CHECK(c->status == CheckStatus::Ok);
+        CHECK(c->detail == std::string("PhotonLib ") + version + ": supported (message definition 4b2ff16a...)");
+        CHECK(c->fix.empty());
+        CHECK(p.toolchain.ready());
+    }
+
+    for (const char* version : {"2026.9.0", "garbage"}) {  // a release the emulator has not verified: PhotonVision cameras stay off
+        INFO(version);
+        ScratchDir d;
+        const VisionProject p = visionProject(d, {{"photonlib.json", photonlibJson(version)}});
+        const ToolchainCheck* c = p.toolchain.find("vision");
+        REQUIRE(c != nullptr);
+        CHECK(c->status == CheckStatus::Warning);
+        CHECK(c->detail.find(std::string("PhotonLib ") + version) != std::string::npos);
+        CHECK(c->detail.find("PhotonVision cameras are disabled for this project to avoid crashing the robot") != std::string::npos);
+        CHECK(c->fix.find("vision.photonMessageUuid") != std::string::npos);
+        CHECK(c->fix.find("robot.json") != std::string::npos);
+        CHECK(c->fix.find(kPhotonUuid) != std::string::npos);
+        CHECK(c->fix.find("Update the emulator") != std::string::npos);
+        CHECK(p.toolchain.ready());
+    }
+
+    for (const char* broken : {"[[[", "{\"name\": \"photonlib\"}"}) {  // unreadable file, no version
+        INFO(broken);
+        ScratchDir d;
+        const VisionProject p = visionProject(d, {{"photonlib.json", broken}});
+        const ToolchainCheck* c = p.toolchain.find("vision");
+        REQUIRE(c != nullptr);
+        CHECK(c->status == CheckStatus::Warning);
+        CHECK(c->detail.find("could not be read") != std::string::npos);
+        CHECK(c->detail.find("PhotonVision cameras are disabled") != std::string::npos);
+        CHECK_FALSE(c->fix.empty());
+        CHECK(p.toolchain.ready());
+    }
+}
+
 // ---- the real project on this machine (read-only) ------------------------------------------------------------------------------
 
 namespace {

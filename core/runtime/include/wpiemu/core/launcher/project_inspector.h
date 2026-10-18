@@ -38,9 +38,13 @@ struct ProjectReport {
     bool hasWrapperProperties = false;
     std::string gradleVersion;             // from distributionUrl
     std::vector<VendorDep> vendorDeps;
+    // PhotonLib = the vendordep whose name or file name contains "photonlib" (the first one that has a version).
+    std::string photonlibVersion;          // its `version` ("v2026.3.4"); empty when there is no PhotonLib or its file is unreadable
+    std::string photonMessageUuid;         // sdk::photonMessageUuidForVersion(photonlibVersion); empty when absent or not a verified release
     std::vector<sdk::Issue> notes;         // non-fatal oddities found while reading
 
     bool hasVendorDep(std::string_view nameFragment) const;  // case-insensitive substring of the dep name or file name
+    bool hasPhotonlib() const;                               // hasVendorDep("photonlib"), whatever the state of its version
 };
 
 class ProjectInspector {
@@ -73,7 +77,7 @@ std::optional<WpilibInstall> findWpilibInstall(int year, const std::vector<std::
 enum class CheckStatus { Ok, Info, Warning, Error };
 
 struct ToolchainCheck {
-    std::string id;       // stable: "project", "gradlerio", "game_plugin", "gradle_wrapper", "jdk", "wpilib_install", "cpp_toolchain", "vendordeps", "team", "extension"
+    std::string id;       // stable: "project", "gradlerio", "game_plugin", "gradle_wrapper", "jdk", "wpilib_install", "cpp_toolchain", "vendordeps", "vision", "team", "extension"
     std::string title;
     CheckStatus status = CheckStatus::Ok;
     std::string detail;
@@ -86,7 +90,7 @@ struct ToolchainReport {
     std::filesystem::path jdkHome;        // the JDK to launch with (WPILib's or JAVA_HOME's); empty if none was found
     std::string javaVersion;              // from the JDK's `release` file, "" if unknown
 
-    bool ready() const;                   // no Error check
+    bool ready() const;                   // no Error check (Info and Warning never block)
     const ToolchainCheck* find(std::string_view id) const;
 };
 
