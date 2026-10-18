@@ -20,6 +20,10 @@ if(WPIEMU_BUILD_PLUGIN_TEMPLATE)
 endif()
 wpiemu_target_defaults(wpiemu_tests)
 target_compile_definitions(wpiemu_tests PRIVATE DOCTEST_CONFIG_USE_STD_HEADERS)
+# tests/bridges_vision/test_nt_binding_real.cpp plays the robot process: it loads the staged ntcore shared libraries
+# (ntcore, wpinet, wpiutil) from this directory by absolute path, so nothing has to be put on PATH. Empty when WPILib is not
+# staged (halsim_ext/cmake/WpiEmuWpilib.cmake); those tests then skip.
+target_compile_definitions(wpiemu_tests PRIVATE "WPIEMU_TEST_NTCORE_RUNTIME_DIR=\"${WPIEMU_WPILIB_NTCORE_RUNTIME_DIRS}\"")
 
 doctest_discover_tests(wpiemu_tests)
 
