@@ -210,6 +210,18 @@ TEST_CASE("vision: the robot frame is the floor below the hull centre with the c
     }
 }
 
+TEST_CASE("vision: a pitched chassis does not shift the floor-referenced robot pose") {
+    RobotConfig config = configWith({cameraAt("cam")});
+    config.chassis.comHeightM = 0.2f;
+    Rng rng;
+    VisionSystem vision(config, layoutOf({tagAt(1, Vec3{4.f, 2.f, 1.f})}));
+    const Pose3 chassis{Vec3{1.f, 2.f, 0.2f}, Quat::fromEuler(0.f, 0.15f, 0.f)};  // ~8.6 deg nose down
+    const auto frames = firstFrames(vision, rng, chassis);
+    REQUIRE(frames[0].hasRobotPose);
+    CHECK(frames[0].robotPoseField.position.x == doctest::Approx(1.f));
+    CHECK(frames[0].robotPoseField.position.y == doctest::Approx(2.f));
+    CHECK(frames[0].robotPoseField.position.z == doctest::Approx(0.f).epsilon(1e-4));
+}
 TEST_CASE("vision: capture cadence follows the frame rate and starts on the first step") {
     CameraConfig cam = cameraAt("cam");
     cam.fps = 20.0;  // 50 ms

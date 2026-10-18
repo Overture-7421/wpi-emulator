@@ -27,7 +27,7 @@ double distance(const Vec3& a, const Vec3& b) { return static_cast<double>(lengt
 
 VisionSystem::VisionSystem(const RobotConfig& config, AprilTagLayout layout)
     : layout_(std::move(layout)),
-      robotOriginInChassis_(-config.chassis.comOffsetM.x, -config.chassis.comOffsetM.y, -config.chassis.comHeightM) {
+      robotOriginInChassis_(-config.chassis.comOffsetM.x, -config.chassis.comOffsetM.y, 0.f) {
     cameras_.reserve(config.cameras.size());
     for (const CameraConfig& cfg : config.cameras) {
         CameraRuntime cam;
@@ -57,7 +57,11 @@ void VisionSystem::reset() {
 }
 
 void VisionSystem::step(SimTimeUs simTimeUs, const Pose3& chassisPose, IMechanismDirectory* mechanisms, Rng& rng) {
-    const Pose3 robotFrame{chassisPose.transformPoint(robotOriginInChassis_), Quat::fromYaw(chassisPose.rotation.yaw())};
+    // The robot frame is the WPILib one: the floor point below the hull centre with the chassis yaw only, so pitch/roll of the
+    // chassis never shifts the reported robot position.
+    const Quat yawOnly = Quat::fromYaw(chassisPose.rotation.yaw());
+    const Vec3 hullCentre = chassisPose.position + yawOnly.rotate(robotOriginInChassis_);
+    const Pose3 robotFrame{Vec3{hullCentre.x, hullCentre.y, 0.f}, yawOnly};
     for (std::size_t i = 0; i < cameras_.size(); ++i) {
         CameraRuntime& cam = cameras_[i];
         if (simTimeUs < cam.nextCaptureUs) continue;

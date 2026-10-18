@@ -33,4 +33,18 @@ if(WPIEMU_BUILD_TESTS)
     wpiemu_target_defaults(wpiemu_e2e_tests)
     add_test(NAME e2e.shelby_2026 COMMAND wpiemu_e2e_tests)
     set_tests_properties(e2e.shelby_2026 PROPERTIES LABELS e2e SKIP_RETURN_CODE 77 TIMEOUT 1500)
+
+    # Opt-in end-to-end test of the vision feature against samples/vision_robot (label e2e, see tests/e2e_vision_test.cpp).
+    add_executable(wpiemu_e2e_vision_tests tests/e2e_vision_test.cpp)
+    target_link_libraries(wpiemu_e2e_vision_tests PRIVATE doctest::doctest wpiemu_app_host wpiemu_plugins_builtin)
+    target_compile_definitions(wpiemu_e2e_vision_tests PRIVATE
+        DOCTEST_CONFIG_USE_STD_HEADERS
+        "WPIEMU_E2E_VISION_DEFAULT_PROJECT=\"${CMAKE_SOURCE_DIR}/samples/vision_robot/java\"")
+    if(TARGET halsim_wpiemu)
+        add_dependencies(wpiemu_e2e_vision_tests halsim_wpiemu)
+        target_compile_definitions(wpiemu_e2e_vision_tests PRIVATE "WPIEMU_E2E_EXTENSION=\"$<TARGET_FILE:halsim_wpiemu>\"")
+    endif()
+    wpiemu_target_defaults(wpiemu_e2e_vision_tests)
+    add_test(NAME e2e.vision_sample COMMAND wpiemu_e2e_vision_tests)
+    set_tests_properties(e2e.vision_sample PROPERTIES LABELS e2e SKIP_RETURN_CODE 77 TIMEOUT 1500)
 endif()
