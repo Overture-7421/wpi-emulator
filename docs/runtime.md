@@ -221,6 +221,7 @@ than outputs accepted in the prior run (including repeated Armed End/Begin trans
 * **Handshake**: `Hello` -> `HelloAck{sessionId, runEpoch, stepUs, negotiated watchdog, policy, vision}` (version below `kMinCompatibleProtocolVersion` is refused),
   then `LoopbackSet` and `DsState`. Reconnect = new session id, new epoch, reset sim, devices cleared.
 * **Lock-step**: `LockstepWindow` (one outstanding tick), stale/foreign frames dropped and counted, ack verdicts handled (`Stalled`, `Stopped`, `ProtocolError`).
+* **Camera reports**: `ActuatorFrame::vision` and the out-of-band `VisionReport` (no identity, no ack, accepted in every connected state after the handshake) feed `SimulationSession::robotCameras()`, see "Vision" below.
 * **Commands**: Pause/Resume/Step/SetTimeScale are local; Reset bumps the epoch, sends `SimControl{Reset}` and blocks ticking until it is acknowledged;
   Stop is acknowledged (or abandoned after the watchdog) and ends the run. DS state, live `bindSlot/unbindSlot` and `setRobotPose` are queued and applied on the sim thread at the start of the next `poll()`
   (so also while paused or before a robot connected; a robot that connects afterwards starts a new epoch, which resets the pose to the start pose) and every applied command marks the snapshot dirty.
@@ -246,6 +247,7 @@ The vision engine ([ADR 0017](decisions/0017-vision-virtual-coprocessors.md); th
 `wpiemu_core`: `VisionSystem` is a pure function of the truth (chassis pose, mechanism link poses, the AprilTag layout, line of sight in the
 physics world), the camera configuration, the sim clock and `SimContext::rng()`. It never reads what the robot wrote; everything vendor
 specific (NetworkTables, pipelines, MegaTag) lives in the robot-process bridge, which turns the neutral `VisionFrame`s into the real topics.
+What the robot reports about the cameras it uses is a separate, engine-independent state (`RobotCameraStates`, see "Robot camera reports").
 
 * **When it exists.** The session builds it after the mechanisms (so a mechanism-mounted camera can be posed from the live link poses), and only
   while at least one camera is enabled **and** an AprilTag layout resolves: `vision.layoutFile` (a WPILib `AprilTagFieldLayout` JSON, relative to
@@ -266,14 +268,23 @@ specific (NetworkTables, pipelines, MegaTag) lives in the robot-process bridge, 
   does not change any other consumer of `SimContext::rng()`; with realism the draws come from that one stream in camera config order (latency jitter, dropout, corner noise).
 * **Reset, new epoch, reconnect.** `SimulationSession::reset()` (so every Reset, Begin/EndLockstep and new connection) drops the queued frames and restarts every capture
   schedule with the clock; sequence numbers and the frame counters continue.
-* **Handshake and robot report** (`SessionRunner`). `HelloAck::vision` lists the enabled cameras; the PhotonVision message UUID is `vision.photonMessageUuid` (the user's
-  override) > `RunnerOptions::photonMessageUuid` (from the project's photonlib) > empty. `ActuatorFrame::vision` (`CameraRobotState`: the full list first, then changes) is
-  informational and never changes a measurement. It shows up as `ISimSnapshot::detectedCameras()`, in `CameraSample::robotConnected` / `status` and as warnings:
-  `vision_camera_unconfigured` (Warning: the robot uses a camera that is not simulated, absent or disabled in the configuration) and `vision_camera_status`
-  (Error for `ntcore_unavailable` and `photon_uuid_unsupported`, Warning for `foreign_publisher` and `disabled`). It survives a reset (it describes the robot process) and is
-  forgotten when the connection is lost or replaced.
+* **Handshake.** `HelloAck::vision` lists the enabled cameras (nothing when there is no engine); the PhotonVision message UUID is `vision.photonMessageUuid` (the
+  user's override) > `RunnerOptions::photonMessageUuid` (from the project's photonlib) > empty.
+* **Robot camera reports** (`RobotCameraStates`, `SimulationSession::robotCameras()`). What the robot process observed about the cameras it uses
+  (`CameraRobotState`) is kept **whether or not an engine exists**: a project without a configured camera, or without a resolvable layout, still learns which
+  PhotonVision / Limelight cameras its robot code uses, which is what the editor's "add from detected camera" and the `vision_camera_unconfigured` hint need.
+  It is fed by `ActuatorFrame::vision` while lock-step ticks run and by `VisionReport` (message 12, extension -> app) everywhere else: a discovery-only (Armed)
+  session, before `BeginLockstep`, free-running phases. A `VisionReport` is outside the tick window (no identity, no ack), so the runner accepts it in every
+  connected state once the handshake is done (armed, running, paused, waiting for an acknowledgement) and never treats it as a protocol error; before the
+  handshake, or from a closed or replaced link, it is ignored with a debug log. The first report of a connection lists every camera, later ones only what changed:
+  entries are upserted by (vendor, ntName). They are informational and never change a measurement; the engine only reads them to fill `CameraSample::robotConnected` /
+  `status`. Snapshots list them as `detectedCameras()` and raise, again with or without an engine:
+  `vision_camera_unconfigured` (Warning: the robot uses a camera that is not simulated: absent from the configuration, **also when no camera is configured at all**,
+  disabled there, or enabled but not simulated in this run, for instance without a layout; the message says which) and `vision_camera_status` (a configured camera:
+  Error for `ntcore_unavailable` and `photon_uuid_unsupported`, Warning for `foreign_publisher` and `disabled`). The state describes the robot process, not the
+  simulation: `reset()` keeps it, a lost or replaced connection and a new Hello clear it.
 * **Snapshot.** `cameras()` (world pose including attachment and mount, FOV, the tag ids of the latest capture, frames captured and published, last latency, connected,
-  status), `fiducials()` (the active layout's tags in the world frame) and `detectedCameras()`; all empty without an engine.
+  status) and `fiducials()` (the active layout's tags in the world frame) need an engine; `detectedCameras()` and the `vision_camera_*` warnings do not.
 
 ### Composition root recipe
 
@@ -394,8 +405,9 @@ backups, hub behaviour (aliases, loopback, delta frames), session ordering/deter
 transport (handshake, lock-step, pause/step/reset, watchdog, reconnect, stop, brownout, pacing, thread), launch planning, real process supervision
 (capture, env, kill tree, destructor, batch files), inspector/toolchain on synthetic projects and the real Shelby project, and (when `core/physics` is in the build) a
 Box3D swerve integration test. The vision engine has its own suite, `tests/vision/` (camera model, visibility, pose solving, schedule and latency, determinism and
-RNG use, snapshot and warnings, the real 2026 field and layouts), and its session and runner integration lives in `tests/runtime/test_session_vision.cpp` and the
-`runner: ...` cases about cameras. The same sources compile warning-free with MSVC `/W4 /WX` and g++ `-Wall -Wextra -Wpedantic -Werror` and pass on Windows and Linux (WSL).
+RNG use, snapshot, the robot's camera states and their warnings, the real 2026 field and layouts), and its session and runner integration lives in
+`tests/runtime/test_session_vision.cpp` and the `runner: ...` cases about cameras (handshake, frames across Reset and reconnect, camera reports and `VisionReport` in every
+connected state, with and without an engine). The same sources compile warning-free with MSVC `/W4 /WX` and g++ `-Wall -Wextra -Wpedantic -Werror` and pass on Windows and Linux (WSL).
 
 Above the runtime: `wpiemu_host_tests` (`app/host/tests`, CTest `host.*`) drives `RobotSession` against synthetic projects whose `gradlew` is a tiny script
 (no Gradle wrapper, bad model, build failure, handshake timeout, protocol mismatch through a fake extension client, crash after connect, user stop, core-only
