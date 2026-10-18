@@ -59,6 +59,7 @@ PhotonTarget target(int id, double yaw, double pitch, double area, double x, dou
 
 TEST_CASE("vision photon encoding: the type string is the PhotonLib 2026 message definition") {
     CHECK(photonPipelineResultTypeString() == "photonstruct:PhotonPipelineResult:4b2ff16a964b5e2bf04be0c1454d91c4");
+    CHECK(photonPipelineResultUuid() == "4b2ff16a964b5e2bf04be0c1454d91c4");
 }
 
 TEST_CASE("vision photon encoding: a two target multitag result matches the PhotonLib golden bytes") {

@@ -78,6 +78,8 @@ bool isVerifiedPhotonVersion(std::string_view version) {
 
 std::string_view photonPipelineResultTypeString() { return kTypeString; }
 
+std::string_view photonPipelineResultUuid() { return kTypeString.substr(kTypeString.rfind(':') + 1); }
+
 std::vector<std::uint8_t> encodePhotonPipelineResult(const PhotonResult& r) {
     PacketWriter w;
     w.i64(r.sequenceId);

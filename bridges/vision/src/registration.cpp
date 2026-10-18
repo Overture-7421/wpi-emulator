@@ -17,6 +17,9 @@ public:
     sdk::Status publish(std::string_view, const NtValue&, std::int64_t, std::string_view) override {
         return sdk::makeError(sdk::ErrorCode::Unsupported, "ntcore support is not available in this build");
     }
+    sdk::Status setTopicProperty(std::string_view, std::string_view, std::string_view) override {
+        return sdk::makeError(sdk::ErrorCode::Unsupported, "ntcore support is not available in this build");
+    }
     std::optional<NtValue> read(std::string_view) override { return std::nullopt; }
     void unpublish(std::string_view) override {}
 };

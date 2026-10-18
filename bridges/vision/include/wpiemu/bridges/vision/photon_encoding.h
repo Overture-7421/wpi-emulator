@@ -66,6 +66,10 @@ inline constexpr std::string_view kDefaultPhotonVersion = "v2026.3.4";
 // "photonstruct:PhotonPipelineResult:4b2ff16a964b5e2bf04be0c1454d91c4" (PhotonPipelineResult.photonStruct.getTypeString()).
 std::string_view photonPipelineResultTypeString();
 
+// "photonstruct:PhotonPipelineResult:4b2ff16a964b5e2bf04be0c1454d91c4" -> the interface UUID. PhotonLib publishes it
+// as the JSON string property "message_uuid" of rawBytes and compares it in its version check.
+std::string_view photonPipelineResultUuid();
+
 std::vector<std::uint8_t> encodePhotonPipelineResult(const PhotonResult& result);
 
 }  // namespace wpiemu::bridges::vision

@@ -89,8 +89,12 @@ bool PhotonBridge::ensureInitialized(Cam& cam, std::int64_t ntNow) {
     cam.heartbeat = 0;
     cam.nextHeartbeatUs = 0;
     sink_.putInt(cam.root + "/heartbeat", cam.heartbeat, ntNow);
-    // The first (empty) result creates the rawBytes topic with its type string, which PhotonLib's version check reads.
+    // The first (empty) result creates the rawBytes topic with its type string, which PhotonLib's version check reads
+    // together with the message_uuid property (PacketPublisher sets it as a JSON string).
     publishFrame(cam, nullptr, ntNow);
+    const std::string uuidJson = "\"" + std::string(photonPipelineResultUuid()) + "\"";
+    const sdk::Status property = sink_.backend().setTopicProperty(cam.root + "/rawBytes", "message_uuid", uuidJson);
+    if (!property.ok()) sink_.error("could not set message_uuid on " + cam.root + "/rawBytes: " + property.error().message);
     return true;
 }
 

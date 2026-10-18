@@ -24,6 +24,7 @@ public:
     };
     struct Topic {
         std::string typeString;
+        std::map<std::string, std::string> properties;  // name -> JSON text
         std::vector<Sample> history;
         const Sample& last() const { return history.back(); }
     };
@@ -41,6 +42,14 @@ public:
         if (t.history.empty()) t.typeString = std::string(typeString);
         t.history.push_back({value, timestampUs});
         ++publishCount;
+        return sdk::okStatus();
+    }
+
+    sdk::Status setTopicProperty(std::string_view path, std::string_view name, std::string_view jsonValue) override {
+        if (!isAvailable) return sdk::makeError(sdk::ErrorCode::InvalidState, "ntcore is not available");
+        const auto it = topics.find(std::string(path));
+        if (it == topics.end()) return sdk::makeError(sdk::ErrorCode::NotFound, "topic is not published");
+        it->second.properties[std::string(name)] = std::string(jsonValue);
         return sdk::okStatus();
     }
 

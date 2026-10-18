@@ -72,6 +72,10 @@ public:
     virtual sdk::Status publish(std::string_view path, const NtValue& value, std::int64_t timestampUs,
                                 std::string_view typeString = {}) = 0;
 
+    // Sets a property of an already published topic; `jsonValue` is the JSON text of the value (a JSON string
+    // needs its quotes). PhotonLib reads the "message_uuid" property of rawBytes in its version check.
+    virtual sdk::Status setTopicProperty(std::string_view path, std::string_view name, std::string_view jsonValue) = 0;
+
     // Latest value of a topic written by the robot (or anybody else), nullopt when it was never written.
     virtual std::optional<NtValue> read(std::string_view path) = 0;
 

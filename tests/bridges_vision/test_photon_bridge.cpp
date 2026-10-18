@@ -46,6 +46,8 @@ TEST_CASE("vision photon: topics are created under photonvision slash camera nam
     CHECK(rig.nt->has("/photonvision/ledModeState"));
     CHECK(rig.nt->topic(kCam + "/rawBytes")->typeString ==
           "photonstruct:PhotonPipelineResult:4b2ff16a964b5e2bf04be0c1454d91c4");
+    // PhotonLib's version check reads this JSON string property of the topic.
+    CHECK(rig.nt->topic(kCam + "/rawBytes")->properties.at("message_uuid") == "\"4b2ff16a964b5e2bf04be0c1454d91c4\"");
     // The raw topic exists with a first empty result so PhotonLib's version check can read its type string.
     CHECK(rawBytes(rig).size() == kMetadataBytes + 2);
 }
