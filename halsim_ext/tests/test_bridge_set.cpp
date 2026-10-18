@@ -11,6 +11,7 @@ namespace {
 struct Fixture {
     DeviceTable table;
     sdk::NullLogger logger;
+    FakeHalClock clock;
     std::atomic<bool> hooks{false};
 };
 
@@ -21,7 +22,7 @@ BridgeSet makeSet(Fixture& fx, std::vector<FakeBridge*>& raw, int count) {
         raw.push_back(b.get());
         bridges.push_back(std::move(b));
     }
-    return BridgeSet(std::move(bridges), fx.table, fx.logger);
+    return BridgeSet(std::move(bridges), fx.table, fx.logger, fx.clock);
 }
 }  // namespace
 

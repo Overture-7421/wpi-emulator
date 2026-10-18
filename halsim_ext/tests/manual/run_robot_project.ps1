@@ -8,6 +8,9 @@
   Not part of ctest (needs a WPILib installation, Gradle and a minute of wall time).
 .EXAMPLE
   .\run_robot_project.ps1 -Project C:\Users\me\FRC-Robot -BuildDir C:\src\wpi-emulator\build\windows-ninja -Config Release
+.EXAMPLE
+  .\run_robot_project.ps1 -Project samples\vision_robot\java -BuildDir build\windows-ninja -Vision -Seconds 10
+  (the fake emulator adds two synthetic cameras; the robot's VISION| telemetry lines are shown as well)
 #>
 param(
     [Parameter(Mandatory)] [string] $Project,
@@ -16,6 +19,7 @@ param(
     [string] $JavaHome = 'C:\Users\Public\wpilib\2026\jdk',
     [double] $Seconds = 5,
     [int] $TimeoutSeconds = 600,
+    [switch] $Vision,
     [switch] $KeepCopy
 )
 $ErrorActionPreference = 'Stop'
@@ -34,7 +38,9 @@ $emuOut = Join-Path $work 'emulator.out'
 $emuErr = Join-Path $work 'emulator.err'
 $endpointFile = Join-Path $work 'endpoint.txt'
 $robotProc = $null
-$emuProc = Start-Process -FilePath $emu -ArgumentList @('--endpoint-file', $endpointFile, '--seconds', $Seconds, '--dump-outputs') `
+$emuArgs = @('--endpoint-file', $endpointFile, '--seconds', $Seconds, '--dump-outputs')
+if ($Vision) { $emuArgs += '--vision' }
+$emuProc = Start-Process -FilePath $emu -ArgumentList $emuArgs `
     -RedirectStandardOutput $emuOut -RedirectStandardError $emuErr -PassThru -WindowStyle Hidden
 try {
     for ($i = 0; $i -lt 100 -and -not (Test-Path $endpointFile); $i++) { Start-Sleep -Milliseconds 100 }
@@ -56,9 +62,12 @@ try {
 
     Write-Host '--- fake emulator ---'
     Get-Content $emuOut | Select-Object -First 80
+    if ($Vision) { Write-Host '--- fake emulator (vision) ---'; Get-Content $emuOut | Select-String -Pattern '^(VISION_|SUMMARY)' }
     if ((Get-Content $emuErr -ErrorAction SilentlyContinue)) { Write-Host '--- emulator stderr ---'; Get-Content $emuErr }
     Write-Host '--- robot/gradle (extension lines) ---'
-    Get-Content $gradleOut, $gradleErr -ErrorAction SilentlyContinue | Select-String -Pattern 'wpiemu|HAL Extensions|startup complete|ERROR'
+    $robotLines = 'wpiemu|HAL Extensions|startup complete|ERROR'
+    if ($Vision) { $robotLines += '|VISION\|' }  # the sample robot's telemetry (samples/vision_robot/README.md)
+    Get-Content $gradleOut, $gradleErr -ErrorAction SilentlyContinue | Select-String -Pattern $robotLines
 
     $hello = (Get-Content $emuOut | Select-String -Pattern '^HELLO pid=(\d+)')
     if ($hello) { $robotProc = [int]$hello.Matches[0].Groups[1].Value }

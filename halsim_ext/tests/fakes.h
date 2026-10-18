@@ -354,6 +354,8 @@ public:
     std::uint64_t epoch = proto::kFirstRunEpoch;
     std::uint64_t nextTick = 1;
     sdk::SimTimeUs simTimeUs = 0;
+    // Camera frames of the next tick() (moved into its SensorFrame, then cleared).
+    std::vector<sdk::VisionFrame> nextVision;
 
     // Sends one SensorFrame and returns the extension's ack (nullopt on timeout).
     std::optional<proto::ActuatorFrame> tick(std::vector<sdk::SignalSample> samples = {},
@@ -366,6 +368,8 @@ public:
         f.stepUs = stepUs;
         f.batteryVoltageV = batteryV;
         f.samples = std::move(samples);
+        f.vision = std::move(nextVision);
+        nextVision.clear();
         f.sessionId = sessionId;
         f.runEpoch = epoch;
         const std::uint64_t tickNo = f.tick;

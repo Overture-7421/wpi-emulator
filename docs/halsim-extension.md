@@ -59,15 +59,17 @@ Environment (all optional except the endpoint; the emulator's launcher sets them
 3. **Clock thread** (the only thread that touches bridges and `HALSIM_StepTiming`): waits for
    `HALSIM_GetProgramStarted()` (polled, so the wait is interruptible; equivalent to `HALSIM_WaitForProgramStart`),
    then until a robot notifier is armed (TimedRobot arms it *after* it observed program start; stepping earlier would
-   shift the loop phase), polls the bridges **once** (every device the constructor created is announced) and sends
-   `Log{source="extension.lifecycle", message="program_started"}` (`sdk/ipc/lifecycle.h`).
+   shift the loop phase), polls the bridges **once** (every device the constructor created is announced), reports the
+   cameras the robot uses (`VisionReport`, see *Vision*) and sends `Log{source="extension.lifecycle", message="program_started"}` (`sdk/ipc/lifecycle.h`).
    **A `SensorFrame` that arrives earlier is held, not stepped.** The emulator must wait for that Log before it
    starts counting the watchdog / advancing physics.
 4. **Per tick** (`SensorFrame` N): apply the latest `DsState` (HALSIM_SetDriverStation*, joysticks, game message,
    `NotifyNewData`), write the battery (`HALSIM_SetRoboRioVInVoltage/Current`), route `SignalSample`s to the owning
-   bridge (`applyInputs`), `HALSIM_StepTiming(stepUs)` (blocks until the whole robot loop body finished), poll the
+   bridge (`applyInputs`), hand the camera frames to the bridges (`applyVision`, see *Vision*),
+   `HALSIM_StepTiming(stepUs)` (blocks until the whole robot loop body finished), poll the
    bridges (new devices are announced **before** the ack), `collectOutputs`, drop devices of the `LoopbackSet`,
-   `applyLoopback` for those, delta-compress against the previous frame, send `ActuatorFrame{ackTick=N, result}`.
+   `applyLoopback` for those, delta-compress against the previous frame, ask the bridges for the camera state
+   (`collectVision`), send `ActuatorFrame{ackTick=N, result}`.
    Exactly one tick is outstanding; stale epochs / foreign sessions are dropped, duplicate ticks answer `ProtocolError`.
    The first frame of an epoch (and every `fullFrameInterval`=400th) is `full`.
 5. **Commands.** `Pause`/`Resume` are tracked (the watchdog is disarmed while paused), `Step` is only accepted while paused,
@@ -101,7 +103,7 @@ silent emulator and a paused emulator are indistinguishable unless the extension
 | no message for the negotiated watchdog while lock-step is running and not paused | `HALSIM_ResumeTiming()` (policy `ResumeRealtime`) or terminate (`Terminate`); later frames are answered `Stopped`. |
 | a step does not return within the watchdog | `ActuatorFrame{RobotStalled}` for that tick is sent from the watchdog thread, then the same unblock. A late-returning step sends nothing. Lock-step resumes after a `Reset`. |
 | transport lost / emulator `Goodbye` | same unblock; then reconnects (re-handshake, re-announces all live devices with the same `DeviceId`s, new `sessionId`/epoch, lock-step re-engaged) unless the policy is `Terminate`. |
-| `stop()` (HAL shutdown hook) | resume timing, `Goodbye`, join (bounded wait; a thread stuck in a step is detached). |
+| `stop()` (HAL shutdown hook) | close the bridge set (no bridge call starts any more), resume timing, `Goodbye`, join (bounded wait; a thread stuck in a step or in a bridge call is detached), then stop the bridges. |
 
 Recovery acts **before diagnostics**, without acquiring the synchronous logger/console mutex or any
 bridge lock. Watchdog diagnostics are best-effort remote-only queue entries; they intentionally bypass
@@ -122,6 +124,84 @@ while the robot constructor runs (`WPIEMU_LIVE_DISCOVERY=0`) because the first e
 Phoenix 6 bridge concurrently with robot device construction crashes the JVM (access violation in the CTRE native sim).
 In free-running modes (`Realtime`, `discoveryOnly`) the robot runs concurrently with the polls by definition; the vendor
 bridge has to tolerate that (open item, see the stream report).
+
+`IBridgeHost::programStarted()` is the HAL's program-start flag (`HALSIM_GetProgramStarted`, an atomic read, any thread):
+false while the robot constructor runs (with `WPIEMU_LIVE_DISCOVERY=1` the bridges are polled during it), true from the
+poll at program start on. A bridge that creates robot-visible state of its own (the vision bridge's NetworkTables
+topics) waits for it, so that everything the constructor created is already visible to it.
+
+## Vision
+
+Cameras are not devices: they are keyed by name (`VisionFrame::cameraId` / `ntName` / `vendor`), have no `DeviceKey`
+and never go through the device table. The extension only moves camera data between the wire and the bridges through
+the defaulted SDK hooks `IBridgeHost::visionSetup()` / `visionSetupRevision()` / `programStarted()` and
+`IDeviceBridge::applyVision()` / `collectVision()`; the vendor protocols live in the vision bridge (it plugs in through
+`registerBuiltinBridges` like every other bridge). Without that bridge the hooks do nothing.
+
+**Per tick** (`SensorFrame` N), on the clock thread with the robot quiescent:
+
+```
+applyInputs -> applyVision -> HALSIM_StepTiming -> poll -> collectOutputs -> collectVision -> ActuatorFrame
+```
+
+* **Acceptance.** `SensorFrame::vision` is applied only for a frame the lock-step follower accepted (the same frames
+  that are stepped). Dropped frames (stale epoch, foreign session), duplicates (`ProtocolError`), and every frame
+  answered without a step (`RobotStalled`, `Stopped`, a second frame while one is held before program start) never
+  reach a bridge. A frame held until the program starts keeps its vision and is applied when it is stepped. Free-running
+  sessions apply it too (there is just no step).
+* **`applyVision(frames)`** gets all frames of the tick in one call, in wire order, and every active bridge sees all of
+  them (no routing: each bridge keeps the cameras it owns and ignores the rest). It runs *before* the step, so the HAL
+  clock reads T(N-1), the sim time after the previous tick, while it runs: the bridge stamps what it publishes with the
+  current NetworkTables time (the HAL clock) and its capture time is that minus `VisionFrame::latencyUs`, which is
+  already a whole number of steps. No camera frames, no call: ticks without vision are not timed, counted or allocated for.
+* **`collectVision(out, full)`** runs after the step and `collectOutputs`: every active bridge **appends** (never clears)
+  what the robot did with its cameras (`CameraRobotState`): every camera when `full`, otherwise only the entries that
+  changed since its previous call. The result rides `ActuatorFrame::vision`. It is asked on every completed tick, also
+  while no camera is configured, because the vision bridge reports the cameras the robot uses that nobody configured
+  (one virtual call per bridge, no allocation, nothing to do by default). `full` is true on the first completed tick of a
+  connection, after an applied `Reset` / `BeginLockstep`, when a frame adopts a newer epoch, and on every full signal
+  frame (`fullFrameInterval`). The wire format caps the list at 256 states (`ipc::kMaxVisionCameras`): the surplus is
+  cut and one warning is logged, so that an oversized list cannot drop the connection.
+
+**Outside the tick path (`VisionReport`).** Where no `ActuatorFrame` answers a tick, the camera state travels in a
+`proto::VisionReport` (message type 12, no ack, no identity, not part of the tick window): in an Armed
+(`discoveryOnly`) session, before `BeginLockstep` and after `EndLockstep`, in free-running phases, in a stalled or lost
+session, and for projects without configured cameras. The extension calls `collectVision(out, full)` once right after the
+bridge poll at program start (before the `program_started` log, so the emulator learns the cameras the robot uses at the
+moment it learns its devices) and after every later idle poll, and posts ONE report only when `out` is not empty: `full`
+on the first call of a connection (a reconnect starts again), deltas afterwards. Nothing is asked or reported before the
+program started, not even by the live-discovery polls of the constructor phase, and never from a HAL callback or the
+watchdog thread. Lock-step ticks keep using `ActuatorFrame::vision` and send no report. Both paths ask the same bridge,
+which tracks what changed since its previous call, so a change is reported once, by whichever path comes first; the
+first `ActuatorFrame` after `BeginLockstep`, a `Reset`, a new epoch and a reconnect lists every camera again. In
+free-running phases the robot runs concurrently with these calls, which the bridge has to tolerate as it does for
+`poll()`.
+
+**Setup and reconnect.** `HelloAck::vision` (empty when absent) is what `IBridgeHost::visionSetup()` returns for that
+connection. `visionSetupRevision()` is incremented every time a `HelloAck` is adopted, also for an identical setup: on the
+first connection before the bridges start, after a reconnect before the new session makes its first bridge call (the
+`resetInputHistory()` of the connection) and therefore before its first `SensorFrame`. A bridge that cached the setup
+compares the revision from `poll()` and rebuilds its cameras when it changed (existing topics are reused, cameras
+that disappeared go quiet). The reference from `visionSetup()` is valid until the revision changes; the setup is only
+replaced between sessions, never while a bridge call runs.
+
+**Rules for a bridge.** Everything above runs on the clock thread: no locking against the robot loop is needed, but
+never block, never do socket I/O and never throw (exceptions are not caught around bridge calls, like for every other
+hook). HAL callbacks only record events. Keep `applyVision` short: it is not part of the step the watchdog times, so a
+call slower than the negotiated watchdog is indistinguishable from a silent emulator and unfreezes the robot. The
+watchdog thread never calls a bridge and its `RobotStalled` ack carries no vision. A bridge that failed to start never
+sees vision. Create robot-visible state (NetworkTables topics) only once `programStarted()` is true.
+
+**Shutdown.** The HAL shutdown hook closes the bridge set first thing: from then on no `poll`, `applyInputs`,
+`applyVision`, `collectOutputs`, `collectVision` or `applyLoopback` starts, even on a clock thread that was stuck inside a
+bridge call and is detached when the bounded join times out. The bridges are `stop()`ped after the clock thread
+ended. The vision bridge must not touch ntcore once the clock thread has stopped (not even from `stop()`): the
+library may be torn down right after the hook returns.
+
+**Stats.** `ExtensionRuntime::stats()` counts `visionFramesApplied` (frames handed to the bridges),
+`visionApplyCalls` (ticks with camera frames) and, with the monotonic clock, `visionApplyTotalUs` / `visionApplyMaxUs`
+(time spent in the `applyVision` fan-outs, i.e. the publish cost). All zero while no `SensorFrame` carries a camera
+frame.
 
 ## Building
 
@@ -144,9 +224,9 @@ normal `DT_NEEDED`/install-name dependency on `libwpiHal` so the loader binds th
 
 | Where | What | Runs |
 |---|---|---|
-| `halsim_ext/tests/*.cpp` → `wpiemu_halsim_ext_tests` | 60+ doctest cases with fakes: config, device table, delta filter, IPC link, handshake, lock-step protocol, watchdog / stall / disconnect, reconnect | ctest `halsim_ext.*`, no WPILib needed |
-| `halsim_ext/tests/hal/` → `wpiemu_halsim_ext_hal_tests` | real sim HAL in-process: exact `StepTiming`, 25 loops per 500 ms, DS/battery/joystick, device I/O, unfreeze on disconnect; the real `halsim_wpiemu` library loaded through `HAL_LoadOneExtension` over a real named pipe with the binary codec and the real built-in bridges | ctest `halsim_ext.hal_integration` (when WPILib was found) |
-| `halsim_ext/tests/manual/run_robot_project.ps1` | a real Gradle robot project (`gradlew -I wpiemu-init.gradle simulateJava`) against `wpiemu_halsim_fake_emulator` | manual only |
+| `halsim_ext/tests/*.cpp` → `wpiemu_halsim_ext_tests` | 100+ doctest cases with fakes: config, device table, delta filter, IPC link, handshake, lock-step protocol, watchdog / stall / disconnect, reconnect, vision dispatch (call order, acceptance, setup revision, stats, shutdown) and the synthetic camera scenario of the fake emulator | ctest `halsim_ext.*`, no WPILib needed |
+| `halsim_ext/tests/hal/` → `wpiemu_halsim_ext_hal_tests` | real sim HAL in-process: exact `StepTiming`, 25 loops per 500 ms, DS/battery/joystick, device I/O, camera hooks at the HAL times T(N-1) / T(N), unfreeze on disconnect; the real `halsim_wpiemu` library loaded through `HAL_LoadOneExtension` over a real named pipe with the binary codec and the real built-in bridges | ctest `halsim_ext.hal_integration` (when WPILib was found) |
+| `halsim_ext/tests/manual/run_robot_project.ps1` | a real Gradle robot project (`gradlew -I wpiemu-init.gradle simulateJava`) against `wpiemu_halsim_fake_emulator`; `-Vision` adds the synthetic cameras | manual only |
 
 The tests live under `halsim_ext/tests/` (not `tests/`) because `tests/CMakeLists.txt` globs every `*.cpp` into the one
 `wpiemu_tests` executable, which cannot link the extension library or WPILib.
@@ -156,5 +236,10 @@ Manual run (the project is copied to `%TEMP%`, never modified):
 cmake --build build\windows-ninja --config Release --target halsim_wpiemu wpiemu_halsim_fake_emulator
 .\halsim_ext\tests\manual\run_robot_project.ps1 -Project C:\path\to\robot -BuildDir build\windows-ninja -Config Release
 ```
+Add `-Vision` (or pass `--vision` to `wpiemu_halsim_fake_emulator`) to give the fake emulator two synthetic cameras, a
+PhotonVision `photon-front` and a Limelight `limelight-rear`, that see 2026 welded tags from a robot standing at (2, 4):
+their setup rides the `HelloAck`, their frames the `SensorFrame`s, and every camera state coming back is printed as a
+`CAMERA` line (`halsim_ext/tests/manual/README.md`).
+
 Reference result (FRC-Shelby-2026OS, Java, 28 CAN devices): 1000 ticks of 5 ms = exactly 5.000 s of sim time,
 250 robot loops, 29 devices announced, ~1.8 s of wall time.
