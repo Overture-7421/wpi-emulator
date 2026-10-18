@@ -23,18 +23,17 @@ No SDK change was needed (SDK 1.1 used as frozen).
    stator-current limit expressed as a voltage limit (`CurrentLimitedMotorModel::limitedVoltage`). The plant stays a
    pure `V → motion` model. Battery draw reported to the runtime is `Σ max(0, V·I)/Vbattery`.
 5. **A single "axis" building block** (`MechanismAxis`, private): motors → voltage → `IPlant` → feedback
-   (rotor side, output encoders, limit switches). Templates are data-driven flavours of three classes
-   (`RollerMechanism`: roller/shooter/indexer; `OneDofMechanism`: generic_1dof/pivot/turret/elevator;
-   `IntakeMechanism`: deploy axis + roller), registered through `registerValidated` which applies schema defaults,
-   validates, logs and returns null on error. Adding a template = a flavour + one registration line (OCP).
+   (rotor side, output encoders, limit switches). Core registers one template built on it (`Mechanism`, later simplified from several flavours,
+   [ADR 0015](0015-single-mechanism-template.md)), registered through `registerValidated` which applies schema
+   defaults, validates, logs and returns null on error.
 6. **Followers**: one logical axis with `motorCount` motors; extra motor slots optional. Mapped extras contribute their
    own voltage, unmapped ones mirror the primary; the plant sees the mean (currents are linear in V).
 7. **Slots/sensors follow ADR 0002**: motor slots receive *rotor-side* feedback (`output × gearRatio`); `encoder` /
    `velocitySensor` slots get output-side values × `sensorRatio`. Limit switches come from the stops; beam breaks are
-   **never written** by the templates unless `generic_1dof` is set to the `window` source, so a game plugin owns them
-   through `ctx.devices().writeDigital` (plugins depend only on the SDK).
+   not a core concept (ADR 0015): a game plugin owns them through `ctx.devices().writeDigital` (plugins depend only
+   on the SDK).
 8. **Game-agnostic**: no season concepts. 2026 behaviour (fuel absorb/feed) reads `state().active` and named values
-   (`rollerSurfaceSpeed`, `surfaceSpeed`, …) or wraps these templates through the factory.
+   (`velocity`, `position`) or wraps the mechanism through the factory.
 9. **Gravity constant 9.8** in arm/elevator plants (WPILib sims), independent of `PhysicsConfig::gravity`; documented.
 10. **Default damping** of 0.001 N·m·s/rad on roller-type axes so a coasting roller spins down (an ideal DC model with
     a disconnected motor never loses speed).

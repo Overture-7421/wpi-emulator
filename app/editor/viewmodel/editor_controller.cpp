@@ -6,6 +6,7 @@
 #include <algorithm>
 
 #include "model/config_ops.h"
+#include "model/motion_links.h"
 #include "model/property_groups.h"
 #include "model/tr.h"
 
@@ -149,11 +150,15 @@ bool EditorController::selectionExists(const SelectionRef& ref) const {
 }
 
 void EditorController::ensureSelectionValid() {
-    if (!selectionExists(selection_.current())) selection_.set(SelectionRef::robot());
+    const SelectionRef current = selection_.current();
+    if (selectionExists(current)) return;
+    // A motor row that went away (motor count lowered): stay on the part it belonged to.
+    const SelectionRef part = current.kind == SelKind::Slot ? formTargetOf(document_.config(), current) : SelectionRef::robot();
+    selection_.set(selectionExists(part) ? part : SelectionRef::robot());
 }
 
-QString EditorController::addMechanism(const QString& type, const sdk::MechanismAttachment& attachment) {
-    const QString id = document_.addMechanism(type, attachment);
+QString EditorController::addMechanism(const QString& type, const sdk::MechanismAttachment& attachment, const ops::MechanismVariant& variant) {
+    const QString id = document_.addMechanism(type, attachment, variant);
     if (id.isEmpty()) {
         Q_EMIT statusMessage(ETR("Unknown mechanism template \"%1\".").arg(type), 2);
         return {};
@@ -163,14 +168,14 @@ QString EditorController::addMechanism(const QString& type, const sdk::Mechanism
     return id;
 }
 
-QString EditorController::addMechanismToSelection(const QString& type) {
+QString EditorController::addMechanismToSelection(const QString& type, const ops::MechanismVariant& variant) {
     sdk::MechanismAttachment att;
     const SelectionRef target = formTargetOf(document_.config(), selection_.current());
     if (target.kind == SelKind::Mechanism && selection_.current().kind != SelKind::Slot) {
         att.parentMechanismId = target.owner;
         att.parentLink = sdk::kRootLink;
     }
-    return addMechanism(type, att);
+    return addMechanism(type, att, variant);
 }
 
 bool EditorController::deleteSelection() {
@@ -201,6 +206,25 @@ bool EditorController::duplicateSelection() {
 
 bool EditorController::clearSlot(const sdk::SlotAddress& slot) { return document_.clearSlot(slot); }
 
+QString EditorController::setDrivenBy(const sdk::SlotAddress& target, const sdk::SlotAddress& source, double displayRatio) {
+    std::string error;
+    const EditorCatalog& catalog = document_.catalog();
+    const bool changed = document_.edit(ETR("Link motion"), [&](sdk::RobotConfig& c) {
+        error = applyDrivenBy(c, catalog, target, source, displayRatio);
+        return error.empty();
+    });
+    if (!changed && error.empty()) return {};   // nothing to do
+    return QString::fromStdString(error);
+}
+
+bool EditorController::clearDrivenBy(const sdk::SlotAddress& target) {
+    return document_.edit(ETR("Use own motor"), [&](sdk::RobotConfig& c) {
+        const auto before = c.motionLinks.size();
+        removeDrivenBy(c, target);
+        return c.motionLinks.size() != before;
+    });
+}
+
 QString EditorController::mapDevice(const SelectionRef& target, const sdk::DeviceKey& device, sdk::CapabilitySet caps) {
     const sdk::RobotConfig& c = document_.config();
     const sdk::DeviceKey key = ops::declaredKeyFor(c, device);
@@ -220,6 +244,25 @@ QString EditorController::mapDevice(const SelectionRef& target, const sdk::Devic
         const std::string owner = target.kind == SelKind::Wheel ? std::string(sdk::slot_owner::kDrivetrain) : target.owner;
         const std::string prefix = target.kind == SelKind::Wheel ? target.sub + "." : std::string();
         const auto best = bestSlotFor(c, document_.catalog(), owner, caps, prefix);
+        bool bestIsMotor = false;
+        if (best)
+            for (const auto& spec : ops::slotSpecsFor(c, document_.catalog(), owner))
+                if (spec.name == best->slot) bestIsMotor = spec.type == sdk::SlotType::Motor;
+        // No free motor row: a motor controller becomes one more motor of the part (one undo step).
+        if (!bestIsMotor)
+            if (const auto group = growableMotorGroup(c, document_.catalog(), owner, caps, prefix)) {
+                sdk::SlotAddress added;
+                const bool done = document_.edit(ETR("Add motor to %1").arg(describeSelection(c, document_.catalog(), target)), [&](sdk::RobotConfig& cfg) {
+                    if (!ops::setMotorCount(cfg, document_.catalog(), owner, group->countKey, group->count + 1)) return false;
+                    for (const auto& g : ops::motorGroups(cfg, document_.catalog(), owner))
+                        if (g.countKey == group->countKey && !g.slotNames.empty()) added = {owner, g.slotNames.back()};
+                    return !added.slot.empty() && ops::setMapping(cfg, added, key);
+                });
+                if (!done) return ETR("Could not add a motor.");
+                selection_.set(SelectionRef::slot(added.owner, added.slot));
+                Q_EMIT statusMessage(ETR("Added %1 as motor %2 of %3.").arg(deviceLabel(device)).arg(group->count + 1).arg(describeSelection(document_.config(), document_.catalog(), target)), 0);
+                return {};
+            }
         if (!best) return ETR("No free slot that accepts %1 on %2.").arg(deviceLabel(device), describeSelection(c, document_.catalog(), target));
         address = *best;
     } else {
@@ -233,6 +276,37 @@ QString EditorController::mapDevice(const SelectionRef& target, const sdk::Devic
     selection_.set(SelectionRef::slot(address.owner, address.slot));
     Q_EMIT statusMessage(ETR("Mapped %1 to %2.").arg(deviceLabel(device), QString::fromStdString(ops::slotDisplayName(c, document_.catalog(), address))), 0);
     return {};
+}
+
+bool EditorController::setMotorReversed(const sdk::SlotAddress& slot, bool reversed) {
+    const QString name = QString::fromStdString(ops::slotDisplayName(document_.config(), document_.catalog(), slot));
+    return document_.edit(reversed ? ETR("Reverse %1").arg(name) : ETR("Un-reverse %1").arg(name),
+                          [&](sdk::RobotConfig& c) { return ops::setMappingReversed(c, slot, reversed); });
+}
+
+bool EditorController::addMotor(const QString& owner, const QString& countKey) {
+    const std::string o = owner.toStdString(), key = countKey.toStdString();
+    for (const auto& g : ops::motorGroups(document_.config(), document_.catalog(), o))
+        if (g.countKey == key)
+            return document_.edit(ETR("Add motor"), [&](sdk::RobotConfig& c) { return ops::setMotorCount(c, document_.catalog(), o, key, g.count + 1); });
+    return false;
+}
+
+bool EditorController::removeMotor(const QString& owner, const QString& countKey) {
+    const std::string o = owner.toStdString(), key = countKey.toStdString();
+    for (const auto& g : ops::motorGroups(document_.config(), document_.catalog(), o))
+        if (g.countKey == key) {
+            const SelectionRef before = selection_.current();
+            const bool done = document_.edit(ETR("Remove motor"), [&](sdk::RobotConfig& c) { return ops::setMotorCount(c, document_.catalog(), o, key, g.count - 1); });
+            // The selected motor row may be the one that just went away: fall back to its part.
+            if (done && before.kind == SelKind::Slot && before.owner == o) {
+                const auto specs = ops::slotSpecsFor(document_.config(), document_.catalog(), o);
+                if (std::none_of(specs.begin(), specs.end(), [&](const sdk::SlotSpec& s) { return s.name == before.sub; }))
+                    selection_.set(formTargetOf(document_.config(), before));
+            }
+            return done;
+        }
+    return false;
 }
 
 void EditorController::toggleDetection() {

@@ -49,7 +49,7 @@ TEST_CASE("v2 defaults keep v1 frames meaningful") {
     CHECK(ack.watchdogTimeoutMs == proto::kDefaultWatchdogTimeoutMs);
     CHECK(ack.watchdogPolicy == proto::WatchdogPolicy::ResumeRealtime);
     CHECK(proto::kLockstepWindow == 1);
-    CHECK(proto::kProtocolVersion == 3);
+    CHECK(proto::kProtocolVersion == 1);
     CHECK(proto::kMinCompatibleProtocolVersion == 1);
     CHECK_FALSE(proto::Hello{}.supportsArmed);
 }

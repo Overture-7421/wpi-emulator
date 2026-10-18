@@ -18,7 +18,7 @@ struct DiscoveredDevice {
     std::vector<SignalSpec> signalSpecs;  // index == SignalSample::signal
     bool live = true;                 // false after the robot freed/destroyed it
     bool mapped = false;              // bound to a slot (else: loopback + warning); false while in Conflict
-    // ---- SDK 1.1 (device identity, device_identity.h) ----
+    // ---- device identity (device_identity.h) ----
     std::string observedBus;          // bus seen by an L3 hook; empty = not observed
     AliasState aliasState = AliasState::None;
     std::vector<DeviceKey> aliases;   // distinct declared addresses resolving to this device (empty/1 => None)

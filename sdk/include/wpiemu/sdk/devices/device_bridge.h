@@ -44,7 +44,7 @@ public:
     virtual ILogger& logger() = 0;
     // Optional per-session switches from HelloAck (e.g. CTRE L3 hooks).
     virtual bool enableOptionalHooks() const = 0;
-    // SDK 1.1. L3 observation: tells the host which bus label a previously announced device was seen
+    // L3 observation: tells the host which bus label a previously announced device was seen
     // on (e.g. the CTRE constructor hook saw `new TalonFX(4, "canivore")`). The host forwards it to the
     // emulator (re-announce with DeviceAnnounce::observedBus). Never call it from static tables. Default: ignored.
     virtual void observeBus(DeviceId /*id*/, std::string_view /*busLabel*/) {}
@@ -75,7 +75,7 @@ public:
     // Idempotent; restores any changed robot-visible state and unregisters callbacks.
     virtual void stop() noexcept = 0;
 
-    // SDK 1.4. New connection or simulation epoch: discard input integration/unwrap history.
+    // New connection or simulation epoch: discard input integration/unwrap history.
     // Clock thread, between steps, before the new epoch's inputs. Preserve discovered devices and
     // robot-requested firmware offsets/configuration. Bridges without history need do nothing.
     virtual void resetInputHistory() {}

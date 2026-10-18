@@ -222,8 +222,8 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
         return makeError(ErrorCode::NotFound, "The HALSim extension (" + options.extensionLibrary.string() +
                                                  ") was not found. Reinstall the emulator, build the halsim_wpiemu target, or set WPIEMU_EXTENSION_PATH.");
 
-    // ---- config: migration, defaults, validation ----
-    auto loaded = reg.pipeline->process(std::move(config), core::config::DecodeInfo{});
+    // ---- config: defaults, validation ----
+    auto loaded = reg.pipeline->process(std::move(config));
     if (!loaded) return makeError(loaded.error().code, "The robot configuration cannot be used: " + loaded.error().message);
     self->issues_ = loaded.value().issues;
     RobotConfig cfg = std::move(loaded.value().config);

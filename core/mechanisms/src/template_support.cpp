@@ -145,9 +145,7 @@ sdk::Status registerGenericMechanisms(sdk::MechanismFactory& factory, MechanismT
         if (const sdk::Status s = registerBuiltinPlants(*plants); !s.ok()) return s;
         deps.plants = std::move(plants);
     }
-    if (const sdk::Status s = detail::registerRollerFamily(factory, deps); !s.ok()) return s;
-    if (const sdk::Status s = detail::registerOneDofFamily(factory, deps); !s.ok()) return s;
-    return detail::registerIntake(factory, deps);
+    return detail::registerMechanism(factory, deps);
 }
 
 }  // namespace wpiemu::core::mechanisms

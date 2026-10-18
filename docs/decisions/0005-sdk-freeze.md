@@ -1,6 +1,6 @@
 # ADR 0005 - SDK freeze (`wpiemu_sdk` 1.0)
 
-- Status: accepted (amended additively by [ADR 0006](0006-sdk-1-1-amendments.md): SDK 1.1, protocol v2)
+- Status: accepted; the freeze and additive-only rules are superseded until release by [ADR 0013](0013-pre-release-single-sdk-version.md)
 - Date: 2026-10-15
 - Scope: the public, header-only SDK in `sdk/include/wpiemu/sdk/`, the plugin aggregation seam,
   and the process for changing either.

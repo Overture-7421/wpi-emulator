@@ -6,6 +6,7 @@
 #include <map>
 
 #include "model/config_ops.h"
+#include "model/motion_links.h"
 #include "model/tr.h"
 
 namespace wpiemu::app::editor {
@@ -40,29 +41,35 @@ QString slotTypeLabel(sdk::SlotType type) {
     return ETR("Device");
 }
 
+QString mappedLabel(const SlotInfo& info) {
+    if (!info.mapped) return {};
+    return info.reversed ? ETR("%1 (reversed)").arg(deviceLabel(*info.mapped)) : deviceLabel(*info.mapped);
+}
+
 std::vector<SlotInfo> slotInfos(const sdk::RobotConfig& c, const EditorCatalog& catalog, const DeviceDirectory& devices,
                                 std::string_view owner) {
     std::vector<SlotInfo> out;
     const auto conflicts = sdk::findAliasConflicts(c.allMappings());
+    const MotionIndex motion(c, catalog);
     for (const sdk::SlotSpec& spec : ops::slotSpecsFor(c, catalog, owner)) {
         SlotInfo info;
         info.address = {std::string(owner), spec.name};
         info.spec = spec;
         const sdk::SlotMapping* mapping = ops::findMapping(c, info.address);
+        if (motion.isFollowerMotor(info.address)) continue;
         if (mapping == nullptr) {
             info.state = spec.required ? SlotState::Unmapped : SlotState::OptionalEmpty;
             info.detail = spec.required ? ETR("Required: drop a %1 here or pick one from the list.").arg(slotTypeLabel(spec.type).toLower())
-                                        : ETR("Optional: unmapped slots read neutral values.");
-            const auto axes = sdk::motionAxisInfos(
-                c, [&](std::string_view type) { return catalog.findTemplate(type); });
-            if (sdk::motionFollowerMotor(c, axes, info.address))
-                info.detail = ETR("Driven by a motion link. No motor mapping is needed.");
+                          : spec.type == sdk::SlotType::Motor && spec.ordinal > 1
+                              ? ETR("Not mapped: this motor mirrors motor 1 (same direction). Map its controller to simulate it separately.")
+                              : ETR("Optional: unmapped slots read neutral values.");
             out.push_back(std::move(info));
             continue;
         }
         info.mapped = mapping->device;
+        info.reversed = mapping->reversed && spec.type == sdk::SlotType::Motor;
         info.state = SlotState::Mapped;
-        info.detail = ETR("Mapped to %1.").arg(deviceLabel(mapping->device));
+        info.detail = ETR("Mapped to %1.").arg(mappedLabel(info));
         const sdk::DiscoveredDevice* dev = devices.find(mapping->device);
         const bool inConflict = std::any_of(conflicts.begin(), conflicts.end(), [&](const sdk::AliasConflict& cf) {
             return cf.physical == mapping->device.physical();
@@ -96,6 +103,25 @@ std::optional<sdk::SlotAddress> bestSlotFor(const sdk::RobotConfig& c, const Edi
         if (!optionalFree) optionalFree = address;
     }
     return optionalFree;
+}
+
+std::optional<ops::MotorGroup> growableMotorGroup(const sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view owner,
+                                                  sdk::CapabilitySet caps, std::string_view slotPrefix) {
+    if (!caps.containsAll(sdk::requiredCapabilities(sdk::SlotType::Motor))) return std::nullopt;
+    const MotionIndex motion(c, catalog);
+    for (auto& group : ops::motorGroups(c, catalog, owner)) {
+        if (group.slotNames.empty() || group.count >= group.maxCount) continue;
+        if (!slotPrefix.empty() && group.slotNames.front().rfind(slotPrefix, 0) != 0) continue;
+        if (motion.isFollowerMotor({std::string(owner), group.slotNames.front()})) continue;
+        return group;
+    }
+    return std::nullopt;
+}
+
+bool canAcceptDevice(const sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view owner, sdk::CapabilitySet caps,
+                     std::string_view slotPrefix) {
+    return bestSlotFor(c, catalog, owner, caps, slotPrefix).has_value() ||
+           growableMotorGroup(c, catalog, owner, caps, slotPrefix).has_value();
 }
 
 DeviceStatus deviceStatus(const sdk::RobotConfig& c, const sdk::DiscoveredDevice& device) {
@@ -200,8 +226,15 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
     std::string rest;
 
     if (path.rfind("motionLinks", 0) == 0) {
+        const std::string id = path.size() > 12 ? path.substr(12) : std::string();
+        for (const auto& link : c.motionLinks)
+            if (link.id == id) {
+                loc.selection = MotionIndex::ownerOf(link.target);
+                loc.fieldKey = "drivenBy";
+                return loc;
+            }
         loc.selection = SelectionRef::robot();
-        loc.fieldKey = "motionLinks";
+        loc.fieldKey = "drivenBy";
         return loc;
     }
 

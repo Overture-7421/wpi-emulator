@@ -19,6 +19,7 @@ QSize ProjectTreeDelegate::sizeHint(const QStyleOptionViewItem& option, const QM
 }
 
 void ProjectTreeDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const {
+    painter->save();
     QStyleOptionViewItem opt = option;
     initStyleOption(&opt, index);
     const QString text = opt.text;
@@ -43,10 +44,12 @@ void ProjectTreeDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
     QFont font = opt.font;
     const bool group = kind == NodeKind::Group;
     if (group || kind == NodeKind::Robot) font.setBold(true);
+    const bool follower = index.data(ProjectTreeModel::FollowerRole).toBool();
+    if (follower && !selected) painter->setOpacity(0.6);   // read-only: driven by a motion link
     painter->setFont(font);
     const QColor fg = selected ? opt.palette.color(QPalette::HighlightedText) : opt.palette.color(QPalette::Text);
     QColor muted = selected ? opt.palette.color(QPalette::HighlightedText) : opt.palette.color(QPalette::PlaceholderText);
-    if (!selected && kind == NodeKind::Slot && state >= 0) {
+    if (!selected && (kind == NodeKind::Slot || kind == NodeKind::Wheel) && state >= 0) {
         const auto st = static_cast<SlotState>(state);
         if (st == SlotState::Unmapped || st == SlotState::NotDetected || st == SlotState::Incompatible || st == SlotState::AliasConflict)
             muted = IconFactory::stateColor(st);
@@ -83,6 +86,7 @@ void ProjectTreeDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
         painter->setPen(fg);
         painter->drawText(r, Qt::AlignVCenter | Qt::AlignLeft, QFontMetrics(font).elidedText(text, Qt::ElideRight, r.width()));
     }
+    painter->restore();
 }
 
 // ---- view ---------------------------------------------------------------------------------------

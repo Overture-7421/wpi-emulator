@@ -3,6 +3,7 @@
 //   wpiemu_editor_demo --grab out.png        render once, save a PNG of the whole page, exit
 //   wpiemu_editor_demo --select intake       select an item first (chassis, drivetrain, wheel:fl, slot:intake.motor, plugin)
 //   wpiemu_editor_demo --detect              run the scripted "Detect devices" before grabbing
+//   wpiemu_editor_demo --tank                tank drive with 3 wheels per side, 3 motors per side (linked wheels)
 //   wpiemu_editor_demo --light               light palette
 #include <QApplication>
 #include <QCommandLineParser>
@@ -12,6 +13,8 @@
 
 #include "editor_page.h"
 #include "fake_editor_backend.h"
+#include "model/motion_links.h"
+#include "wpiemu/sdk/mechanisms/motion_config.h"
 #include "model/selection.h"
 #include "viewmodel/editor_controller.h"
 
@@ -53,6 +56,34 @@ void applyPalette(QApplication& app, bool light) {
     app.setPalette(p);
 }
 
+// Six wheels, one powered wheel per side (three motors each, the right side reversed); the other wheels follow it.
+wpiemu::sdk::RobotConfig tankConfig() {
+    namespace sdk = wpiemu::sdk;
+    sdk::RobotConfig c = FakeEditorBackend::sampleConfig();
+    c.name = "Tank Robot";
+    c.drivetrain.spec.kind = sdk::drivetrain_kind::kTank;
+    c.drivetrain.spec.wheels.clear();
+    c.drivetrain.mappings.clear();
+    int canId = 1;
+    for (const char side : {'l', 'r'})
+        for (int i = 0; i < 3; ++i) {
+            sdk::WheelSpec w;
+            w.name = std::string(1, side) + std::to_string(i + 1);
+            w.positionM = {0.28f - 0.28f * static_cast<float>(i), side == 'l' ? 0.28f : -0.28f, w.radiusM};
+            c.drivetrain.spec.wheels.push_back(w);
+            if (i == 0) {
+                c.drivetrain.spec.wheels.back().driveMotorCount = 3;
+                for (int m = 0; m < 3; ++m)
+                    c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, sdk::driveSlotName(w.name, m)},
+                                                     {"phoenix6", "talonfx", canId++, "canivore", -1},
+                                                     side == 'r'});
+            }
+        }
+    c.motionLinks.clear();
+    c.motionLinks = sdk::tankMotionLinks(c).value();
+    return c;
+}
+
 SelectionRef parseSelection(const QString& text) {
     if (text == QStringLiteral("chassis")) return SelectionRef::chassis();
     if (text == QStringLiteral("drivetrain")) return SelectionRef::drivetrain();
@@ -75,13 +106,15 @@ int main(int argc, char* argv[]) {
     const QCommandLineOption grab(QStringLiteral("grab"), QStringLiteral("Save a PNG of the page and exit."), QStringLiteral("file"));
     const QCommandLineOption select(QStringLiteral("select"), QStringLiteral("Select an item first."), QStringLiteral("item"));
     const QCommandLineOption detect(QStringLiteral("detect"), QStringLiteral("Run the scripted device detection before grabbing."));
+    const QCommandLineOption tank(QStringLiteral("tank"), QStringLiteral("Use a tank drive with linked wheels."));
     const QCommandLineOption light(QStringLiteral("light"), QStringLiteral("Use the light palette."));
     const QCommandLineOption size(QStringLiteral("size"), QStringLiteral("Window size WxH."), QStringLiteral("size"), QStringLiteral("1500x900"));
-    parser.addOptions({grab, select, detect, light, size});
+    parser.addOptions({grab, select, detect, tank, light, size});
     parser.process(app);
 
     applyPalette(app, parser.isSet(light));
     FakeEditorBackend backend;
+    if (parser.isSet(tank)) backend.setConfig(tankConfig());
     EditorPage page(backend);
     page.setWindowTitle(QStringLiteral("WPI Emulator - robot editor (demo)"));
     const QStringList wh = parser.value(size).split(QLatin1Char('x'));

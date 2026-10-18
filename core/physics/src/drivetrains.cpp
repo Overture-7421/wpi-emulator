@@ -17,6 +17,15 @@ constexpr float kMinHeadingLength = 1e-4f;
 
 double finiteOrZero(double v) { return std::isfinite(v) ? v : 0.0; }
 
+int driveMotorCount(const WheelSpec& w) { return std::clamp(w.driveMotorCount, 1, kMaxMotorsPerAxis); }
+
+// Voltage of drive motor `i`: its own entry when the command lists motors (extras repeat motor 0).
+double driveVoltage(const WheelCommand& cmd, int i) {
+    if (cmd.driveMotors <= 0) return cmd.driveVoltageV;
+    const int n = std::min(cmd.driveMotors, kMaxMotorsPerAxis);
+    return cmd.driveMotorVoltagesV[static_cast<std::size_t>(i < n ? i : 0)];
+}
+
 bool isRoller(WheelKind kind) { return kind == WheelKind::Omni || kind == WheelKind::Mecanum; }
 
 }  // namespace
@@ -81,13 +90,16 @@ TractionDrivetrain::~TractionDrivetrain() = default;
 std::vector<SlotSpec> TractionDrivetrain::slotSpecs() const {
     std::vector<SlotSpec> out;
     for (const Wheel& w : wheels_) {
-        SlotSpec drive;
-        drive.name = w.spec->name + ".drive";
-        drive.label = w.spec->name + " drive motor";
-        drive.type = SlotType::Motor;
-        drive.required = true;
-        drive.description = "Drive motor of wheel '" + w.spec->name + "'";
-        out.push_back(std::move(drive));
+        for (int i = 0; i < driveMotorCount(*w.spec); ++i) {
+            SlotSpec drive;
+            drive.name = driveSlotName(w.spec->name, i);
+            drive.label = w.spec->name + " drive motor" + (i > 0 ? " " + std::to_string(i + 1) : std::string());
+            drive.type = SlotType::Motor;
+            drive.required = i == 0;
+            drive.description = i == 0 ? "Drive motor of wheel '" + w.spec->name + "'"
+                                       : "Additional drive motor on the gearbox of wheel '" + w.spec->name + "'";
+            out.push_back(std::move(drive));
+        }
         if (w.policy.steered) {
             SlotSpec steer;
             steer.name = w.spec->name + ".steer";
@@ -117,32 +129,40 @@ void TractionDrivetrain::reset() {
     accelX_ = accelY_ = 0.f;
 }
 
-WheelDrive TractionDrivetrain::driveFor(const Wheel& w, double voltageV, double& supplyCurrentA) const {
+WheelDrive TractionDrivetrain::driveFor(const Wheel& w, const WheelCommand& cmd, double& supplyCurrentA) const {
     const WheelSpec& s = *w.spec;
     const double gear = std::max(s.driveGearRatio, 1e-6f);
-    const double count = std::max(1, s.driveMotorCount);
+    const int count = driveMotorCount(s);
     const double eta = std::clamp(static_cast<double>(s.driveEfficiency), 0.01, 1.0);
     const double motorOmega = gear * w.omega;
-
-    double current = w.driveMotor->currentA(voltageV, motorOmega);
-    double torque = w.driveMotor->torqueNm(voltageV, motorOmega);
-    const double slope = w.driveMotor->torqueNm(voltageV, motorOmega + 1.0) - torque;  // d torque / d omega, < 0
-    bool limited = false;
-    const double limit = s.driveCurrentLimitA;
-    if (limit > 0.0 && std::fabs(current) > limit) {
-        torque *= limit / std::fabs(current);
-        current = std::copysign(limit, current);
-        limited = true;
-    }
-
     const double nominal = std::max(1e-3, w.driveMotor->spec().nominalVoltageV);
-    supplyCurrentA = count * std::max(0.0, voltageV * current / nominal);
+
+    // Each motor has its own voltage (a reversed one fights the others); torque, damping and current add up.
+    double torqueSum = 0.0, dampingSum = 0.0;
+    bool limited = false;
+    supplyCurrentA = 0.0;
+    for (int i = 0; i < count; ++i) {
+        const double voltageV = finiteOrZero(driveVoltage(cmd, i));
+        double current = w.driveMotor->currentA(voltageV, motorOmega);
+        double torque = w.driveMotor->torqueNm(voltageV, motorOmega);
+        const double slope = w.driveMotor->torqueNm(voltageV, motorOmega + 1.0) - torque;  // d torque / d omega, < 0
+        const double limit = s.driveCurrentLimitA;
+        if (limit > 0.0 && std::fabs(current) > limit) {
+            torque *= limit / std::fabs(current);
+            current = std::copysign(limit, current);
+            limited = true;
+        } else {
+            dampingSum += std::max(0.0, -slope);
+        }
+        torqueSum += torque;
+        supplyCurrentA += std::max(0.0, voltageV * current / nominal);
+    }
 
     WheelDrive d;
     d.omegaRadPerSec = static_cast<float>(w.omega);
-    d.torqueNm = static_cast<float>(eta * gear * count * torque);
-    d.dampingNmS = limited ? 0.f : static_cast<float>(std::max(0.0, -slope) * eta * gear * gear * count);
-    d.inertiaKgM2 = static_cast<float>(count * options_.rotorInertiaKgM2 * gear * gear + s.inertiaKgM2);
+    d.torqueNm = static_cast<float>(eta * gear * torqueSum);
+    d.dampingNmS = static_cast<float>(dampingSum * eta * gear * gear);
+    d.inertiaKgM2 = static_cast<float>(static_cast<double>(count) * options_.rotorInertiaKgM2 * gear * gear + s.inertiaKgM2);
     return d;
 }
 
@@ -178,20 +198,19 @@ void TractionDrivetrain::step(std::span<const WheelCommand> commands, float dt) 
 std::vector<MotionAxisBinding> TractionDrivetrain::motionAxes() {
     std::vector<MotionAxisBinding> out;
     for (std::size_t i = 0; i < wheels_.size(); ++i) {
-        const SlotAddress address{slot_owner::kDrivetrain, wheels_[i].spec->name + ".drive"};
+        const SlotAddress address{slot_owner::kDrivetrain, driveSlotName(wheels_[i].spec->name, 0)};
+        MotionAxisInfo info{address, PlantKind::Angular, {}};
+        for (int m = 0; m < driveMotorCount(*wheels_[i].spec); ++m)
+            info.motorSlots.push_back({slot_owner::kDrivetrain, driveSlotName(wheels_[i].spec->name, m)});
         out.push_back(
-            {{address, PlantKind::Angular, {address}},
+            {std::move(info),
              [this, i] {
                  return PlantState{states_[i].driveWheelAngleRad,
                                    states_[i].driveWheelOmegaRadPerSec};
              },
-             [this, i, address](SimContext& ctx, double dt, std::optional<PlantState> motion) {
-                 const auto drive = ctx.devices().motorOutput(address);
-                 const auto steer = ctx.devices().motorOutput(
-                     {slot_owner::kDrivetrain, wheels_[i].spec->name + ".steer"});
-                 advanceWheel(
-                     i, {drive.valid ? drive.voltageV : 0.0, steer.valid ? steer.voltageV : 0.0},
-                     static_cast<float>(dt), motion);
+             [this, i](SimContext& ctx, double dt, std::optional<PlantState> motion) {
+                 advanceWheel(i, wheelCommandFromHub(ctx.devices(), *wheels_[i].spec),
+                              static_cast<float>(dt), motion);
              }});
     }
     return out;
@@ -257,7 +276,6 @@ void TractionDrivetrain::advanceWheel(std::size_t i, WheelCommand cmd, float dt,
     const Quat rot = world_->isValid(body_) ? world_->pose(body_).rotation : Quat{};
     Wheel& w = wheels_[i];
     WheelState& st = states_[i];
-    const double driveV = finiteOrZero(cmd.driveVoltageV);
     const double steerV = finiteOrZero(cmd.steerVoltageV);
 
     double supply = 0.0;
@@ -267,7 +285,7 @@ void TractionDrivetrain::advanceWheel(std::size_t i, WheelCommand cmd, float dt,
         drive.omegaRadPerSec = static_cast<float>(w.omega);
         drive.inertiaKgM2 = w.spec->inertiaKgM2;
     } else {
-        drive = driveFor(w, driveV, supply);
+        drive = driveFor(w, cmd, supply);
     }
 
     TireInput in;

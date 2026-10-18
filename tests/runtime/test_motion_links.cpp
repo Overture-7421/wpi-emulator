@@ -41,7 +41,6 @@ struct Rig {
 
 RobotConfig tank() {
     RobotConfig c;
-    c.motionLinksConfigured = true;
     c.drivetrain.spec.kind = drivetrain_kind::kTank;
     for (const int side : {1, -1})
         for (int i = 0; i < 3; ++i) {
@@ -152,20 +151,22 @@ TEST_CASE(
     "motion links: cross-owner chains use final motion, preserve starts and clamp only followers") {
     Rig rig;
     RobotConfig c;
-    c.motionLinksConfigured = true;
     MechanismConfig source;
     source.id = "source";
-    source.type = "roller";
+    source.type = "mechanism";
     source.mappings = {{{"source", "motor"}, {"phoenix6", "talonfx", 1, "", -1}}};
     MechanismConfig follower;
     follower.id = "follower";
-    follower.type = "elevator";
+    follower.type = "mechanism";
+    follower.properties["motion"] = "linear";
+    follower.properties["minPosition"] = 0.0;
+    follower.properties["maxPosition"] = 0.8;
     follower.properties["startPosition"] = 0.2;
     follower.properties["drumRadiusM"] = 0.05;
     follower.mappings = {{{"follower", "encoder"}, {"phoenix6", "cancoder", 4, "", -1}}};
     MechanismConfig chained;
     chained.id = "chained";
-    chained.type = "roller";
+    chained.type = "mechanism";
     // Deliberately opposite to dependency order.
     c.mechanisms = {chained, follower, source};
     c.motionLinks = {{"linear", {"source", "axis"}, {"follower", "axis"}, 0.1},
@@ -208,20 +209,21 @@ TEST_CASE(
     CHECK(state(*s, {"follower", "axis"}).position == doctest::Approx(0.2));
 }
 
-TEST_CASE("motion links: codec preserves link and endpoint unknown fields") {
+TEST_CASE("motion links: the codec round-trips links and never invents or upgrades them") {
     config::RobotConfigCodec codec;
     auto c = tank();
+    auto independent = codec.fromValue(codec.toValue(c));
+    REQUIRE(independent.ok());
+    CHECK(independent.value().motionLinks.empty());   // an unlinked tank stays unlinked
+
     c.motionLinks = tankMotionLinks(c).value();
-    auto stored = codec.toValue(c);
-    stored["motionLinks"].array()[0]["future"] = "kept";
-    stored["motionLinks"].array()[0]["source"]["future"] = 42;
-    auto decoded = codec.fromValue(stored);
+    REQUIRE(c.motionLinks.size() == 4);
+    auto decoded = codec.fromValue(codec.toValue(c));
     REQUIRE(decoded.ok());
-    CHECK(codec.toValue(decoded.value()) == stored);
+    CHECK(codec.toValue(decoded.value()) == codec.toValue(c));
 }
 
-TEST_CASE(
-    "motion links: pipeline upgrades tank layouts once and preserves mappings and unrelated data") {
+TEST_CASE("motion links: the pipeline validates links but does not create them") {
     Rig rig;
     config::RobotConfigCodec codec;
     config::ConfigValidator validator(&rig.tires, {});
@@ -229,51 +231,36 @@ TEST_CASE(
     GamePluginRegistry plugins;
     config::ConfigPipeline pipeline(codec, validator, registrar, rig.drivetrains, plugins);
     auto c = tank();
-    c.motionLinksConfigured = false;
-    c.unknownFields[""]["futureSetting"] = 17;
-    auto loaded = pipeline.process(c, {});
+    auto loaded = pipeline.process(c);
     REQUIRE(loaded.ok());
     CHECK(loaded.value().valid());
-    CHECK(loaded.value().migrated());
-    CHECK(loaded.value().config.motionLinks.size() == 4);
-    CHECK(loaded.value().config.drivetrain.mappings.size() == 2);
-    CHECK(loaded.value().config.drivetrain.mappings[0].slot == c.drivetrain.mappings[0].slot);
-    CHECK(loaded.value().config.unknownFields == c.unknownFields);
-    auto again = pipeline.load(codec.toValue(loaded.value().config));
-    REQUIRE(again.ok());
-    CHECK(again.value().valid());
-    CHECK_FALSE(again.value().migrated());
-    CHECK(again.value().config.motionLinks.size() == 4);
+    CHECK(loaded.value().config.motionLinks.empty());
 
-    SUBCASE("explicit independent mode is retained") {
-        c.motionLinksConfigured = true;
-        auto independent = pipeline.process(c, {});
-        REQUIRE(independent.ok());
-        CHECK(independent.value().config.motionLinks.empty());
-        CHECK_FALSE(independent.value().migrated());
-    }
-    SUBCASE("conflicts preserve every motor mapping") {
+    c.motionLinks = tankMotionLinks(c).value();
+    auto linked = pipeline.process(c);
+    REQUIRE(linked.ok());
+    CHECK(linked.value().valid());
+    CHECK(linked.value().config.motionLinks.size() == 4);
+
+    SUBCASE("a mapped motor on a follower is a validation error") {
         c.drivetrain.mappings.push_back(
             {{slot_owner::kDrivetrain, "left0.drive"}, {"phoenix6", "talonfx", 3, "", -1}});
-        auto conflict = pipeline.process(c, {});
+        auto conflict = pipeline.process(c);
         REQUIRE(conflict.ok());
         CHECK_FALSE(conflict.value().valid());
-        CHECK(conflict.value().config.motionLinks.empty());
         CHECK(conflict.value().config.drivetrain.mappings.size() == 3);
-        CHECK_FALSE(conflict.value().config.motionLinksConfigured);
     }
 }
-
 TEST_CASE("motion links: wheel and mechanism chains have no cross-owner tick delay") {
     Rig rig;
     auto c = tank();
     MechanismConfig source;
     source.id = "source";
-    source.type = "roller";
+    source.type = "mechanism";
     source.mappings = {{{"source", "motor"}, {"phoenix6", "talonfx", 3, "", -1}}};
     MechanismConfig follower;
     follower.id = "follower";
-    follower.type = "roller";
+    follower.type = "mechanism";
     c.mechanisms = {follower, source};
     c.drivetrain.mappings.clear();
     c.motionLinks = {

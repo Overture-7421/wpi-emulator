@@ -29,10 +29,9 @@ bool ConfigRepository::exists(const QString& projectPath) const {
 }
 
 sdk::Result<core::config::LoadedConfig> ConfigRepository::load(const QString& projectPath) const {
-    core::config::DecodeInfo decode;
-    auto opened = repo_.open(toPath(projectPath), nullptr, &decode);
+    auto opened = repo_.open(toPath(projectPath));
     if (!opened) return opened.error();
-    return pipeline_.process(std::move(opened.value()), decode);
+    return pipeline_.process(std::move(opened.value()));
 }
 
 SaveOutcome ConfigRepository::save(const QString& projectPath, const sdk::RobotConfig& config) const {

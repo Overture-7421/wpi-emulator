@@ -53,14 +53,4 @@ struct LimitSwitchModel {
     bool reading(double p) const { return pressed(p) == pressedValue; }
 };
 
-// A beam break across a position window of the mechanism (e.g. "something sits in the feeder").
-struct WindowBeamBreakModel {
-    double minPosition = 0.0;
-    double maxPosition = 0.0;
-    bool blockedValue = true;      // reading while the beam is blocked
-
-    bool blocked(double p) const { return p >= minPosition && p <= maxPosition; }
-    bool reading(double p) const { return blocked(p) == blockedValue; }
-};
-
 }  // namespace wpiemu::core::mechanisms

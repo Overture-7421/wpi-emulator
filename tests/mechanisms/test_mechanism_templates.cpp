@@ -76,73 +76,98 @@ sdk::Value props(std::initializer_list<std::pair<const char*, sdk::Value>> kv) {
     return v;
 }
 
-const std::vector<std::string> kAllTypes = {"roller",  "generic_1dof", "intake", "shooter",
-                                            "pivot",   "turret",       "elevator", "indexer"};
+
+// Variants of the one template, as a user would configure them.
+sdk::Value with(sdk::Value base, std::initializer_list<std::pair<const char*, sdk::Value>> kv) {
+    for (const auto& [k, x] : kv) base[k] = x;
+    return base;
+}
+
+sdk::Value elevatorProps(std::initializer_list<std::pair<const char*, sdk::Value>> extra = {}) {
+    return with(props({{"motion", "linear"}, {"motorCount", 2}, {"gearRatio", 8.0}, {"massKg", 6.0}, {"drumRadiusM", 0.0225},
+                       {"minPosition", 0.0}, {"maxPosition", 0.8}, {"simulateGravity", true}, {"viscousFrictionNmS", 0.0}}),
+                extra);
+}
+
+sdk::Value pivotProps(std::initializer_list<std::pair<const char*, sdk::Value>> extra = {}) {
+    return with(props({{"motion", "arm"}, {"gearRatio", 60.0}, {"momentOfInertiaKgM2", 0.0}, {"massKg", 2.0}, {"lengthM", 0.3},
+                       {"minPosition", 0.0}, {"maxPosition", 1.5}, {"simulateGravity", true}, {"viscousFrictionNmS", 0.0}}),
+                extra);
+}
+
+sdk::Value turretProps(std::initializer_list<std::pair<const char*, sdk::Value>> extra = {}) {
+    return with(props({{"gearRatio", 40.0}, {"momentOfInertiaKgM2", 0.05}, {"minPosition", -3.3}, {"maxPosition", 3.3}}), extra);
+}
+
+constexpr const char* kType = "mechanism";
 
 }  // namespace
 
-TEST_CASE("generic mechanism templates are registered with complete, consistent metadata") {
+TEST_CASE("the core registers exactly one template, with complete and consistent metadata") {
     Rig rig;
-    CHECK(rig.factory.size() == kAllTypes.size());
-    for (const std::string& type : kAllTypes) {
-        INFO(type);
-        const sdk::MechanismTemplateInfo* info = rig.factory.templateInfo(type);
-        REQUIRE(info != nullptr);
-        CHECK(info->type == type);
-        CHECK(info->origin == "core");
-        CHECK_FALSE(info->displayName.empty());
-        CHECK_FALSE(info->category.empty());
-        CHECK_FALSE(info->description.empty());
-        CHECK_FALSE(info->defaultGeometry.empty());
-        CHECK(sdk::templateLinkIssues(*info).empty());
-        CHECK_FALSE(info->links.empty());
+    CHECK(rig.factory.size() == 1);
+    const sdk::MechanismTemplateInfo* info = rig.factory.templateInfo(kType);
+    REQUIRE(info != nullptr);
+    CHECK(info->type == kType);
+    CHECK(info->origin == "core");
+    CHECK_FALSE(info->displayName.empty());
+    CHECK_FALSE(info->description.empty());
+    CHECK_FALSE(info->defaultGeometry.empty());
+    CHECK(sdk::templateLinkIssues(*info).empty());
+    CHECK(info->links.size() == 1);
+    CHECK(info->motionAxes.size() == 1);
 
-        std::set<std::string> slotNames;
-        bool hasRequiredMotor = false;
-        for (const sdk::SlotSpec& s : info->slotSpecs) {
-            CHECK(slotNames.insert(s.name).second);   // unique
-            CHECK_FALSE(s.label.empty());
-            if (s.required) {
-                CHECK(s.type == sdk::SlotType::Motor);
-                hasRequiredMotor = true;
-            }
+    std::set<std::string> slotNames;
+    bool hasRequiredMotor = false;
+    for (const sdk::SlotSpec& s : info->slotSpecs) {
+        CHECK(slotNames.insert(s.name).second);   // unique
+        CHECK_FALSE(s.label.empty());
+        CHECK(s.type != sdk::SlotType::BeamBreak);   // beam breaks belong to the game plugin
+        if (s.required) {
+            CHECK(s.type == sdk::SlotType::Motor);
+            hasRequiredMotor = true;
         }
-        if (type != "intake") CHECK(hasRequiredMotor);
-
-        std::set<std::string> keys;
-        for (const sdk::PropertySpec& p : info->properties.properties) {
-            CHECK(keys.insert(p.key).second);   // unique
-            CHECK_FALSE(p.label.empty());
-            CHECK_FALSE(p.group.empty());
-            if (p.type == sdk::PropertyType::Enum) {
-                bool found = false;
-                for (const sdk::EnumOption& o : p.options) found = found || o.value == p.defaultValue.asString();
-                CHECK(found);
-            }
-        }
-        // defaults satisfy their own schema
-        for (const sdk::Issue& issue : sdk::validateProperties(info->properties, sdk::defaultsOf(info->properties)))
-            CHECK_MESSAGE(issue.severity != sdk::Severity::Error, issue.path << ": " << issue.message);
     }
-    CHECK(rig.factory.size() == 8);
+    CHECK(hasRequiredMotor);
+
+    std::set<std::string> keys;
+    for (const sdk::PropertySpec& p : info->properties.properties) {
+        CHECK(keys.insert(p.key).second);   // unique
+        CHECK_FALSE(p.label.empty());
+        CHECK_FALSE(p.group.empty());
+        if (p.type == sdk::PropertyType::Enum) {
+            bool found = false;
+            for (const sdk::EnumOption& o : p.options) found = found || o.value == p.defaultValue.asString();
+            CHECK(found);
+        }
+    }
+    CHECK(keys.count("motion") == 1);
+    // a new mechanism is a ready-to-run 10:1 Kraken that holds its position at neutral
+    const sdk::Value defaults = sdk::defaultsOf(info->properties);
+    CHECK(defaults.find("gearRatio")->asDouble() == 10.0);
+    CHECK(defaults.find("neutralMode")->asString() == "brake");
+    // its shape is named after the link it must follow (shapes bind to links by name) and sits off the axis
+    REQUIRE(info->defaultGeometry.size() == 1);
+    CHECK(info->defaultGeometry[0].name == "mover");
+    CHECK(info->defaultGeometry[0].local.position.x > 0.f);
+    for (const sdk::Issue& issue : sdk::validateProperties(info->properties, sdk::defaultsOf(info->properties)))
+        CHECK_MESSAGE(issue.severity != sdk::Severity::Error, issue.path << ": " << issue.message);
+
     // registering twice is an error, not a silent override
     sdk::MechanismFactory again;
     REQUIRE(registerGenericMechanisms(again).ok());
     CHECK(registerGenericMechanisms(again).error().code == sdk::ErrorCode::AlreadyExists);
 }
 
-TEST_CASE("every template builds from an empty property set and publishes its declared links") {
+TEST_CASE("every motion variant builds from defaults and publishes its mover link") {
     Rig rig;
-    for (const std::string& type : kAllTypes) {
-        INFO(type);
-        auto m = rig.make(type, "m");
+    const sdk::MechanismTemplateInfo* info = rig.factory.templateInfo(kType);
+    for (const sdk::Value& variant : {sdk::Value::makeObject(), elevatorProps(), pivotProps(), turretProps()}) {
+        auto m = rig.make(kType, "m", variant);
         CHECK(m->id() == "m");
-        CHECK(m->type() == type);
-        const sdk::MechanismTemplateInfo* info = rig.factory.templateInfo(type);
+        CHECK(m->type() == kType);
         for (int i = 0; i < 20; ++i) m->tick(rig.env.ctx, kDt);
         const sdk::MechanismState s = m->state();
-        CHECK(s.id == "m");
-        CHECK(s.type == type);
         for (const sdk::LinkSpec& l : info->links) {
             CHECK(link(s, l.name) != nullptr);
             CHECK(m->linkPose(l.name).has_value());
@@ -154,13 +179,12 @@ TEST_CASE("every template builds from an empty property set and publishes its de
     }
 }
 
-TEST_CASE("roller spin-up matches the WPILib LinearSystemId solution and drives the sensors") {
+TEST_CASE("rotary spin-up matches the WPILib LinearSystemId solution and drives the sensors") {
     Rig rig;
     rig.bind("r", "motor", sdk::SlotType::Motor);
     rig.bind("r", "encoder", sdk::SlotType::PositionSensor);
     rig.bind("r", "velocitySensor", sdk::SlotType::VelocitySensor);
-    auto m = rig.make("roller", "r",
-                      props({{"gearRatio", 3.0}, {"momentOfInertiaKgM2", 0.002}, {"radiusM", 0.04}, {"viscousFrictionNmS", 0.0}}));
+    auto m = rig.make(kType, "r", props({{"axis", "y"}, {"gearRatio", 3.0}, {"momentOfInertiaKgM2", 0.002}, {"viscousFrictionNmS", 0.0}}));
     rig.drive("r", "motor", 12.0);
     rig.run(*m, 100);
 
@@ -174,7 +198,6 @@ TEST_CASE("roller spin-up matches the WPILib LinearSystemId solution and drives 
     const sdk::MechanismState s = m->state();
     CHECK(value(s, "velocity") == doctest::Approx(w).epsilon(1e-9));
     CHECK(value(s, "position") == doctest::Approx(x).epsilon(1e-9));
-    CHECK(value(s, "surfaceSpeed") == doctest::Approx(w * 0.04).epsilon(1e-9));
     CHECK(value(s, "voltage") == doctest::Approx(12.0));
     CHECK(s.active);
 
@@ -192,20 +215,19 @@ TEST_CASE("roller spin-up matches the WPILib LinearSystemId solution and drives 
     REQUIRE(vel.has_value());
     CHECK(vel->velocityRps == doctest::Approx(w / sdk::kTwoPi).epsilon(1e-9));
 
-    // spin axis link rotates about +Y by the wrapped position
-    const sdk::LinkPose* l = link(s, "roller");
+    // the mover link rotates about the selected axis (+Y) by the wrapped position
+    const sdk::LinkPose* l = link(s, "mover");
     REQUIRE(l != nullptr);
     const sdk::Vec3 axisCheck = l->pose.rotation.rotate({0.f, 1.f, 0.f});
     CHECK(axisCheck.y == doctest::Approx(1.0f).epsilon(1e-5));
-    CHECK(std::abs(2.0 * std::atan2(l->pose.rotation.y, l->pose.rotation.w) -
-                   std::remainder(x, sdk::kTwoPi)) < 1e-4);
+    CHECK(std::abs(2.0 * std::atan2(l->pose.rotation.y, l->pose.rotation.w) - std::remainder(x, sdk::kTwoPi)) < 1e-4);
 }
 
 TEST_CASE("sensor ratio, inversion and offset apply to position sensors only") {
     Rig rig;
     rig.bind("r", "motor", sdk::SlotType::Motor);
     rig.bind("r", "encoder", sdk::SlotType::PositionSensor);
-    auto m = rig.make("roller", "r", props({{"sensorRatio", 2.0}, {"sensorInverted", true}, {"sensorOffsetRot", 0.5}}));
+    auto m = rig.make(kType, "r", props({{"sensorRatio", 2.0}, {"sensorInverted", true}, {"sensorOffsetRot", 0.5}}));
     rig.drive("r", "motor", 6.0);
     rig.run(*m, 40);
     const double pos = value(m->state(), "position");
@@ -218,7 +240,7 @@ TEST_CASE("sensor ratio, inversion and offset apply to position sensors only") {
 TEST_CASE("battery sag limits the applied voltage and the stator limit caps the current") {
     Rig rig;
     rig.bind("r", "motor", sdk::SlotType::Motor);
-    auto m = rig.make("roller", "r", props({{"statorCurrentLimitA", 40.0}}));
+    auto m = rig.make(kType, "r", props({{"statorCurrentLimitA", 40.0}}));
     rig.env.hub.setBatteryVoltage(8.0);
     rig.drive("r", "motor", 12.0);
     m->tick(rig.env.ctx, kDt);   // at stall: the limit, not the supply, decides
@@ -228,19 +250,18 @@ TEST_CASE("battery sag limits the applied voltage and the stator limit caps the 
 
     Rig sag;
     sag.bind("s", "motor", sdk::SlotType::Motor);
-    auto unlimited = sag.make("roller", "s");
+    auto unlimited = sag.make(kType, "s");
     sag.env.hub.setBatteryVoltage(8.0);
     sag.drive("s", "motor", 12.0);
     sag.run(*unlimited, 3);
     CHECK(value(unlimited->state(), "voltage") == doctest::Approx(8.0));
-    // battery draw is positive and about V*I/Vbat = I at full duty
-    CHECK(unlimited->batteryCurrentA() > 0.0);
+    CHECK(unlimited->batteryCurrentA() > 0.0);   // about V*I/Vbat = I at full duty
 }
 
 TEST_CASE("battery current at stall equals the stall current and is zero when idle") {
     Rig rig;
     rig.bind("r", "motor", sdk::SlotType::Motor);
-    auto m = rig.make("roller", "r", props({{"gearRatio", 100.0}, {"momentOfInertiaKgM2", 10.0}}));
+    auto m = rig.make(kType, "r", props({{"gearRatio", 100.0}, {"momentOfInertiaKgM2", 10.0}, {"neutralMode", "coast"}}));
     rig.drive("r", "motor", 12.0);
     m->tick(rig.env.ctx, kDt);
     const sdk::MotorSpec kraken = *MotorCatalog::builtin().spec("kraken_x60");
@@ -254,7 +275,7 @@ TEST_CASE("follower motors: mapped ones add their own voltage, unmapped ones mir
     {
         Rig rig;
         rig.bind("r", "motor", sdk::SlotType::Motor);
-        auto m = rig.make("roller", "r", props({{"motorCount", 2}}));
+        auto m = rig.make(kType, "r", props({{"motorCount", 2}}));
         rig.drive("r", "motor", 10.0);
         m->tick(rig.env.ctx, kDt);
         CHECK(value(m->state(), "voltage") == doctest::Approx(10.0));   // mirrored
@@ -264,7 +285,7 @@ TEST_CASE("follower motors: mapped ones add their own voltage, unmapped ones mir
         Rig rig;
         rig.bind("r", "motor", sdk::SlotType::Motor);
         rig.bind("r", "motor2", sdk::SlotType::Motor);
-        auto m = rig.make("roller", "r", props({{"motorCount", 2}}));
+        auto m = rig.make(kType, "r", props({{"motorCount", 2}}));
         rig.drive("r", "motor", 10.0);
         rig.drive("r", "motor2", 4.0);
         m->tick(rig.env.ctx, kDt);
@@ -273,23 +294,62 @@ TEST_CASE("follower motors: mapped ones add their own voltage, unmapped ones mir
     }
 }
 
-TEST_CASE("an inverted motor reverses the mechanism but keeps the rotor sign convention") {
+TEST_CASE("opposed motors cancel their torque but both still draw current") {
+    const double resistance = MotorCatalog::builtin().spec("kraken_x60")->resistanceOhm();
     Rig rig;
     rig.bind("r", "motor", sdk::SlotType::Motor);
-    auto m = rig.make("roller", "r", props({{"motorInverted", true}}));
-    rig.drive("r", "motor", 8.0);
+    rig.bind("r", "motor2", sdk::SlotType::Motor);
+    auto m = rig.make(kType, "r", props({{"motorCount", 2}}));
+    rig.drive("r", "motor", 10.0);
+    rig.drive("r", "motor2", -10.0);   // mechanism frame: a reversed motor driven forward by robot code
     rig.run(*m, 30);
-    CHECK(value(m->state(), "velocity") < 0.0);
-    const auto fb = rig.env.hub.lastMotorFeedback({"r", "motor"});
-    REQUIRE(fb.has_value());
-    CHECK(fb->rotorVelocityRps > 0.0);   // the controller sees its positive direction moving
+    CHECK(value(m->state(), "voltage") == doctest::Approx(0.0));
+    CHECK(value(m->state(), "velocity") == doctest::Approx(0.0).epsilon(1e-9));
+    CHECK(value(m->state(), "current") == doctest::Approx(2.0 * 10.0 / resistance));
+    CHECK(m->batteryCurrentA() > 0.0);
+}
+
+TEST_CASE("five motors on one mechanism add up: mean voltage into the plant, summed current") {
+    Rig rig;
+    const double volts[5] = {12.0, 12.0, 6.0, 6.0, 0.0};
+    const char* slots[5] = {"motor", "motor2", "motor3", "motor4", "motor5"};
+    for (const char* slot : slots) rig.bind("s", slot, sdk::SlotType::Motor);
+    auto m = rig.make(kType, "s", props({{"motorCount", 5}}));
+    for (int i = 0; i < 5; ++i) rig.drive("s", slots[i], volts[i]);
+    m->tick(rig.env.ctx, kDt);
+    CHECK(value(m->state(), "voltage") == doctest::Approx(7.2));
+    const double resistance = MotorCatalog::builtin().spec("kraken_x60")->resistanceOhm();
+    CHECK(value(m->state(), "current") == doctest::Approx((12.0 + 12.0 + 6.0 + 6.0) / resistance));
+    for (const char* slot : slots) CHECK(rig.env.hub.lastMotorFeedback({"s", slot}).has_value());
+}
+
+TEST_CASE("motor slots beyond the motor count are not read and carry a count marker") {
+    Rig rig;
+    const sdk::MechanismTemplateInfo* info = rig.factory.templateInfo(kType);
+    REQUIRE(info != nullptr);
+    int motors = 0;
+    for (const sdk::SlotSpec& s : info->slotSpecs)
+        if (s.type == sdk::SlotType::Motor) {
+            ++motors;
+            CHECK(s.countKey == "motorCount");
+            CHECK(s.ordinal == motors);
+        }
+    CHECK(motors == sdk::kMaxMotorsPerAxis);
+
+    rig.bind("s", "motor", sdk::SlotType::Motor);
+    rig.bind("s", "motor3", sdk::SlotType::Motor);
+    auto m = rig.make(kType, "s", props({{"motorCount", 2}}));
+    rig.drive("s", "motor", 10.0);
+    rig.drive("s", "motor3", -12.0);   // inactive
+    m->tick(rig.env.ctx, kDt);
+    CHECK(value(m->state(), "voltage") == doctest::Approx(10.0));   // motor 2 unmapped: mirrors motor 1
 }
 
 TEST_CASE("neutral mode: a brake decelerates faster than coast") {
     auto coastDown = [](const char* mode) {
         Rig rig;
         rig.bind("r", "motor", sdk::SlotType::Motor);
-        auto m = rig.make("roller", "r", props({{"neutralMode", mode}}));
+        auto m = rig.make(kType, "r", props({{"neutralMode", mode}}));
         rig.drive("r", "motor", 12.0);
         rig.run(*m, 100);
         rig.drive("r", "motor", 0.0);
@@ -301,11 +361,10 @@ TEST_CASE("neutral mode: a brake decelerates faster than coast") {
     CHECK(brake < coast);
 }
 
-TEST_CASE("shooter publishes the flywheel surface speed and spins up toward the free speed") {
+TEST_CASE("a flywheel is a rotary mechanism: it spins up toward the free speed and reverses") {
     Rig rig;
     rig.bind("s", "motor", sdk::SlotType::Motor);
-    auto m = rig.make("shooter", "s",
-                      props({{"radiusM", 0.05}, {"gearRatio", 1.0}, {"momentOfInertiaKgM2", 0.004}, {"viscousFrictionNmS", 0.0}}));
+    auto m = rig.make(kType, "s", props({{"gearRatio", 1.0}, {"momentOfInertiaKgM2", 0.004}, {"viscousFrictionNmS", 0.0}}));
     CHECK_FALSE(m->state().active);
     rig.drive("s", "motor", 12.0);
     rig.run(*m, 400);
@@ -315,21 +374,19 @@ TEST_CASE("shooter publishes the flywheel surface speed and spins up toward the 
     const double vInf = 12.0 * kraken.kvRadPerSecPerVolt();
     CHECK(value(s, "velocity") == doctest::Approx(vInf * (1.0 - std::exp(sys.A(1, 1) * 400 * kDt))).epsilon(1e-9));
     CHECK(value(s, "velocity") < vInf);
-    CHECK(value(s, "surfaceSpeed") == doctest::Approx(value(s, "velocity") * 0.05));
     CHECK(s.active);
-    CHECK(link(s, "flywheel") != nullptr);
     rig.drive("s", "motor", -12.0);
     rig.run(*m, 800);
-    CHECK(value(m->state(), "surfaceSpeed") < 0.0);   // reverses
+    CHECK(value(m->state(), "velocity") < 0.0);   // reverses
 }
 
-TEST_CASE("elevator: gravity, hard stops, limit switches and the carriage link") {
+TEST_CASE("linear: gravity, hard stops, limit switches and the mover link") {
     Rig rig;
     rig.bind("e", "motor", sdk::SlotType::Motor);
     rig.bind("e", "reverseLimit", sdk::SlotType::LimitSwitch);
     rig.bind("e", "forwardLimit", sdk::SlotType::LimitSwitch);
     rig.bind("e", "encoder", sdk::SlotType::PositionSensor);
-    auto m = rig.make("elevator", "e");
+    auto m = rig.make(kType, "e", elevatorProps());
 
     m->tick(rig.env.ctx, kDt);   // sits on the lower stop (brake, V = 0)
     CHECK(value(m->state(), "position") == 0.0);
@@ -339,15 +396,15 @@ TEST_CASE("elevator: gravity, hard stops, limit switches and the carriage link")
     rig.drive("e", "motor", 12.0);
     rig.run(*m, 400);
     sdk::MechanismState s = m->state();
-    CHECK(value(s, "position") == 0.8);      // default travel
+    CHECK(value(s, "position") == 0.8);
     CHECK(value(s, "velocity") == 0.0);
     CHECK(value(s, "atUpperLimit") == 1.0);
     CHECK(rig.env.hub.lastDigital({"e", "forwardLimit"}).value() == true);
     CHECK(rig.env.hub.lastDigital({"e", "reverseLimit"}).value() == false);
-    const sdk::LinkPose* carriage = link(s, "carriage");
-    REQUIRE(carriage != nullptr);
-    CHECK(carriage->pose.position.z == doctest::Approx(0.8f));
-    CHECK(carriage->pose.position.x == 0.0f);
+    const sdk::LinkPose* mover = link(s, "mover");
+    REQUIRE(mover != nullptr);
+    CHECK(mover->pose.position.z == doctest::Approx(0.8f));
+    CHECK(mover->pose.position.x == 0.0f);
     // encoder on the drum: position / (2 pi r)
     CHECK(rig.env.hub.lastEncoder({"e", "encoder"})->positionRot == doctest::Approx(0.8 / (sdk::kTwoPi * 0.0225)));
 
@@ -362,10 +419,10 @@ TEST_CASE("elevator: gravity, hard stops, limit switches and the carriage link")
     CHECK(value(m->state(), "position") == 0.0);
 }
 
-TEST_CASE("elevator without power sinks under gravity unless held by the feed-forward voltage") {
+TEST_CASE("linear without power sinks under gravity unless held by the feed-forward voltage") {
     Rig rig;
     rig.bind("e", "motor", sdk::SlotType::Motor);
-    auto m = rig.make("elevator", "e", props({{"startPosition", 0.4}, {"neutralMode", "coast"}}));
+    auto m = rig.make(kType, "e", elevatorProps({{"startPosition", 0.4}, {"neutralMode", "coast"}}));
     rig.drive("e", "motor", 0.0);
     rig.run(*m, 60);
     CHECK(value(m->state(), "position") < 0.4);
@@ -374,7 +431,7 @@ TEST_CASE("elevator without power sinks under gravity unless held by the feed-fo
     auto holdTest = [&](double volts) {
         Rig r2;
         r2.bind("e", "motor", sdk::SlotType::Motor);
-        auto e2 = r2.make("elevator", "e", props({{"startPosition", 0.4}}));
+        auto e2 = r2.make(kType, "e", elevatorProps({{"startPosition", 0.4}}));
         r2.drive("e", "motor", volts);
         r2.run(*e2, 200);
         return value(e2->state(), "position");
@@ -387,23 +444,28 @@ TEST_CASE("elevator without power sinks under gravity unless held by the feed-fo
     CHECK(holdTest(kg * 0.8) < 0.4);
 }
 
-TEST_CASE("elevator travel axis moves the carriage link") {
+TEST_CASE("linear travel axis moves the mover link, and only Z works against gravity") {
     Rig rig;
     rig.bind("e", "motor", sdk::SlotType::Motor);
-    auto m = rig.make("elevator", "e", props({{"axis", "x"}, {"startPosition", 0.3}}));
+    auto m = rig.make(kType, "e", elevatorProps({{"axis", "x"}, {"startPosition", 0.3}}));
     const sdk::MechanismState snapshot = m->state();
-    const sdk::LinkPose* c = link(snapshot, "carriage");
+    const sdk::LinkPose* c = link(snapshot, "mover");
     REQUIRE(c != nullptr);
     CHECK(c->pose.position.x == doctest::Approx(0.3f));   // published before the first tick
     CHECK(c->pose.position.z == 0.0f);
+
+    // along X nothing pulls it down
+    rig.drive("e", "motor", 0.0);
+    rig.run(*m, 60);
+    CHECK(value(m->state(), "position") == doctest::Approx(0.3).epsilon(1e-9));
 }
 
-TEST_CASE("pivot: angle from horizontal raises the +X end, gravity is held by the feed-forward") {
+TEST_CASE("arm: angle from horizontal raises the +X end, gravity is held by the feed-forward") {
     Rig rig;
     rig.bind("p", "motor", sdk::SlotType::Motor);
-    auto m = rig.make("pivot", "p", props({{"startPosition", 0.5}, {"neutralMode", "coast"}}));
+    auto m = rig.make(kType, "p", pivotProps({{"startPosition", 0.5}, {"neutralMode", "coast"}}));
     const sdk::MechanismState snapshot = m->state();
-    const sdk::LinkPose* arm = link(snapshot, "arm");
+    const sdk::LinkPose* arm = link(snapshot, "mover");
     REQUIRE(arm != nullptr);
     const sdk::Vec3 tip = arm->pose.rotation.rotate({1.f, 0.f, 0.f});
     CHECK(tip.z == doctest::Approx(std::sin(0.5)).epsilon(1e-5));
@@ -412,7 +474,6 @@ TEST_CASE("pivot: angle from horizontal raises the +X end, gravity is held by th
     rig.run(*m, 20);   // unpowered, coasting: it falls
     CHECK(value(m->state(), "position") < 0.5);
 
-    // stops at [0, 1.5] by default
     rig.drive("p", "motor", 12.0);
     rig.run(*m, 600);
     CHECK(value(m->state(), "position") == 1.5);
@@ -423,23 +484,23 @@ TEST_CASE("pivot: angle from horizontal raises the +X end, gravity is held by th
     CHECK(value(m->state(), "atLowerLimit") == 1.0);
 }
 
-TEST_CASE("turret: yaw link, stops and the continuous variant") {
+TEST_CASE("a rotary mechanism with stops is a turret; equal stops make it continuous") {
     Rig rig;
     rig.bind("t", "motor", sdk::SlotType::Motor);
     rig.bind("t", "forwardLimit", sdk::SlotType::LimitSwitch);
-    auto m = rig.make("turret", "t");
+    auto m = rig.make(kType, "t", turretProps());
     rig.drive("t", "motor", 6.0);
     rig.run(*m, 1000);
     CHECK(value(m->state(), "position") == 3.3);
     CHECK(rig.env.hub.lastDigital({"t", "forwardLimit"}).value() == true);
     const sdk::MechanismState snapshot = m->state();
-    const sdk::LinkPose* l = link(snapshot, "turret");
+    const sdk::LinkPose* l = link(snapshot, "mover");
     REQUIRE(l != nullptr);
     CHECK(l->pose.rotation.yaw() == doctest::Approx(3.3 - sdk::kTwoPi).epsilon(1e-4).scale(1.0));
 
     Rig rig2;
     rig2.bind("t", "motor", sdk::SlotType::Motor);
-    auto cont = rig2.make("turret", "t", props({{"minPosition", 0.0}, {"maxPosition", 0.0}}));
+    auto cont = rig2.make(kType, "t", turretProps({{"minPosition", 0.0}, {"maxPosition", 0.0}}));
     rig2.drive("t", "motor", 6.0);
     rig2.run(*cont, 1000);
     CHECK(value(cont->state(), "position") > 10.0);   // no stops
@@ -449,80 +510,25 @@ TEST_CASE("limit switch polarity and margin properties") {
     Rig rig;
     rig.bind("e", "motor", sdk::SlotType::Motor);
     rig.bind("e", "reverseLimit", sdk::SlotType::LimitSwitch);
-    auto m = rig.make("elevator", "e", props({{"limitPressedValue", false}}));
+    auto m = rig.make(kType, "e", elevatorProps({{"limitPressedValue", false}}));
     m->tick(rig.env.ctx, kDt);
     CHECK(rig.env.hub.lastDigital({"e", "reverseLimit"}).value() == false);   // pressed reads false
 }
 
-TEST_CASE("intake is active only while the roller spins AND the intake is deployed") {
-    Rig rig;
-    rig.bind("i", "rollerMotor", sdk::SlotType::Motor);
-    rig.bind("i", "deployMotor", sdk::SlotType::Motor);
-    rig.bind("i", "deployForwardLimit", sdk::SlotType::LimitSwitch);
-    auto m = rig.make("intake", "i",
-                      props({{"deployMinPosition", 0.0}, {"deployMaxPosition", 1.2}, {"deployedTolerance", 0.02},
-                             {"rollerNeutralMode", "brake"}}));
-    rig.drive("i", "rollerMotor", 12.0);
-    rig.run(*m, 100);
-    sdk::MechanismState s = m->state();
-    CHECK(value(s, "rollerSurfaceSpeed") > 0.5);
-    CHECK(value(s, "deployed") == 0.0);
-    CHECK_FALSE(s.active);   // stowed
-
-    rig.drive("i", "deployMotor", 12.0);
-    rig.run(*m, 600);
-    s = m->state();
-    CHECK(value(s, "deployPosition") == 1.2);
-    CHECK(value(s, "deployed") == 1.0);
-    CHECK(s.active);
-    CHECK(rig.env.hub.lastDigital({"i", "deployForwardLimit"}).value() == true);
-
-    rig.drive("i", "rollerMotor", 0.0);
-    rig.run(*m, 600);
-    CHECK_FALSE(m->state().active);   // deployed but the roller stopped (brake mode: spins down fast)
-
-    // the roller link is a child of the deploy link and spins about its own axis
-    const sdk::MechanismState snapshot = m->state();
-    const sdk::LinkPose* roller = link(snapshot, "roller");
-    const sdk::LinkPose* deploy = link(snapshot, "deploy");
-    REQUIRE(roller != nullptr);
-    REQUIRE(deploy != nullptr);
-    const sdk::Vec3 expected = deploy->pose.transformPoint({0.3f, 0.f, 0.f});
-    CHECK(roller->pose.position.x == doctest::Approx(expected.x).epsilon(1e-5));
-    CHECK(roller->pose.position.z == doctest::Approx(expected.z).epsilon(1e-5));
-    CHECK(rig.factory.templateInfo("intake")->links.size() == 2);
-}
-
-TEST_CASE("intake without a deploy axis is always deployed") {
-    Rig rig;
-    rig.bind("i", "rollerMotor", sdk::SlotType::Motor);
-    auto m = rig.make("intake", "i", props({{"deployEnabled", false}}));
-    CHECK_FALSE(m->state().active);
-    rig.drive("i", "rollerMotor", 12.0);
-    rig.run(*m, 100);
-    CHECK(m->state().active);
-    CHECK(value(m->state(), "deployed") == 1.0);
-    CHECK(link(m->state(), "deploy") == nullptr);
-    CHECK(link(m->state(), "roller") != nullptr);
-}
-
-TEST_CASE("pivot accepts the reviewed high-stiffness continuous arm configuration") {
+TEST_CASE("arm accepts the reviewed high-stiffness continuous configuration") {
     for (const double dt : {0.001, 0.002, 0.004, 0.005, 0.01, 0.02}) {
         Rig rig;
         rig.bind("p", "motor", sdk::SlotType::Motor);
-        auto m = rig.make("pivot", "p",
-                          props({{"motorModel", "kraken_x60"},
-                                 {"motorCount", 1},
-                                 {"gearRatio", 300.0},
-                                 {"momentOfInertiaKgM2", 0.01},
-                                 {"massKg", 2.0},
-                                 {"lengthM", 0.3},
-                                 {"comFraction", 0.5},
-                                 {"efficiency", 1.0},
-                                 {"simulateGravity", true},
-                                 {"minPosition", 0.0},
-                                 {"maxPosition", 0.0},
-                                 {"startPosition", 0.0}}));
+        auto m = rig.make(kType, "p",
+                          pivotProps({{"motorModel", "kraken_x60"},
+                                      {"motorCount", 1},
+                                      {"gearRatio", 300.0},
+                                      {"momentOfInertiaKgM2", 0.01},
+                                      {"comFraction", 0.5},
+                                      {"efficiency", 1.0},
+                                      {"minPosition", 0.0},
+                                      {"maxPosition", 0.0},
+                                      {"startPosition", 0.0}}));
         rig.drive("p", "motor", 6.0);
         m->tick(rig.env.ctx, dt);
         CHECK(std::isfinite(value(m->state(), "position")));
@@ -534,111 +540,10 @@ TEST_CASE("pivot accepts the reviewed high-stiffness continuous arm configuratio
     }
 }
 
-TEST_CASE("intake gravity lowers the forward COM in its positive Y deploy coordinate") {
-    Rig rig;
-    auto p = props({{"deployStartPosition", 0.5},
-                    {"deploySimulateGravity", true},
-                    {"deployNeutralMode", "coast"},
-                    {"deployMomentOfInertiaKgM2", 0.1}});
-    auto m = rig.make("intake", "i", p);
-    auto before = m->state();
-    const double initialZ = link(before, "deploy")->pose.transformPoint({0.175f, 0.f, 0.f}).z;
-    rig.run(*m, 20);
-    auto after = m->state();
-    CHECK(value(after, "deployPosition") > 0.5);
-    CHECK(link(after, "deploy")->pose.transformPoint({0.175f, 0.f, 0.f}).z < initialZ);
-    m->reset();
-    CHECK(value(m->state(), "deployPosition") == 0.5);
-    CHECK(value(m->state(), "deployVelocity") == 0.0);
-
-    rig.bind("held", "deployMotor", sdk::SlotType::Motor);
-    auto held = rig.make("intake", "held", p);
-    const auto motor = *MotorCatalog::builtin().spec("kraken_x60");
-    const auto sys = singleJointedArmSystem(motor, 1, 0.1, 30.0);
-    const double holdingVoltage =
-        -3.0 * kPlantGravityMps2 * 0.175 * std::cos(0.5) / 0.1 / sys.B(1, 0);
-    rig.drive("held", "deployMotor", holdingVoltage);
-    rig.run(*held, 100);
-    CHECK(value(held->state(), "deployPosition") == doctest::Approx(0.5).epsilon(1e-9));
-    CHECK(std::abs(value(held->state(), "deployVelocity")) < 1e-9);
-}
-
-TEST_CASE("intake gravity projects onto the selected arm or linear deploy axis") {
-    for (const char* motion : {"arm", "linear"}) {
-        for (const char* axis : {"x", "y", "z"}) {
-            INFO(motion, axis);
-            Rig rig;
-            auto m = rig.make("intake", "i",
-                              props({{"deployMotion", motion},
-                                     {"deployAxis", axis},
-                                     {"deployStartPosition", 0.5},
-                                     {"deploySimulateGravity", true},
-                                     {"deployNeutralMode", "coast"}}));
-            rig.run(*m, 10);
-            const double position = value(m->state(), "deployPosition");
-            if (std::string(motion) == "arm" && std::string(axis) == "y")
-                CHECK(position > 0.5);
-            else if (std::string(motion) == "linear" && std::string(axis) == "z")
-                CHECK(position < 0.5);
-            else
-                CHECK(position == doctest::Approx(0.5).epsilon(1e-12));
-        }
-    }
-}
-
-TEST_CASE("indexer never writes its beam breaks: the game logic owns them") {
-    Rig rig;
-    rig.bind("x", "motor", sdk::SlotType::Motor);
-    rig.bind("x", "entryBeamBreak", sdk::SlotType::BeamBreak);
-    rig.bind("x", "exitBeamBreak", sdk::SlotType::BeamBreak);
-    auto m = rig.make("indexer", "x");
-    rig.drive("x", "motor", 12.0);
-    rig.run(*m, 50);
-    CHECK_FALSE(rig.env.hub.lastDigital({"x", "entryBeamBreak"}).has_value());
-    CHECK(m->state().active);
-
-    // a game plugin writes through the hub; the mechanism does not overwrite it
-    rig.env.hub.writeDigital({"x", "entryBeamBreak"}, true);
-    rig.run(*m, 5);
-    CHECK(rig.env.hub.lastDigital({"x", "entryBeamBreak"}).value() == true);
-}
-
-TEST_CASE("generic 1-DOF: motion types, position-window beam break and limit switches") {
+TEST_CASE("arm mode holds against gravity and rotary mode ignores it") {
     Rig rig;
     rig.bind("g", "motor", sdk::SlotType::Motor);
-    rig.bind("g", "beamBreak", sdk::SlotType::BeamBreak);
-    auto m = rig.make("generic_1dof", "g",
-                      props({{"motion", "linear"}, {"minPosition", 0.0}, {"maxPosition", 1.0}, {"gearRatio", 20.0},
-                             {"beamBreakSource", "window"}, {"beamBreakMin", 0.2}, {"beamBreakMax", 0.4}}));
-    m->tick(rig.env.ctx, kDt);
-    CHECK(rig.env.hub.lastDigital({"g", "beamBreak"}).value() == false);   // at 0: beam open
-    rig.drive("g", "motor", 3.0);
-    bool blocked = false, passed = false;
-    for (int i = 0; i < 2000; ++i) {
-        rig.run(*m, 1);
-        const double p = value(m->state(), "position");
-        const bool b = rig.env.hub.lastDigital({"g", "beamBreak"}).value();
-        REQUIRE(b == (p >= 0.2 && p <= 0.4));
-        blocked = blocked || b;
-        passed = passed || (blocked && !b);
-    }
-    CHECK(blocked);
-    CHECK(passed);   // it travelled through the window
-    CHECK(value(m->state(), "position") == doctest::Approx(1.0));
-
-    // external source: the template leaves the slot alone
-    Rig ext;
-    ext.bind("g", "beamBreak", sdk::SlotType::BeamBreak);
-    ext.bind("g", "motor", sdk::SlotType::Motor);
-    auto e = ext.make("generic_1dof", "g");
-    ext.run(*e, 5);
-    CHECK_FALSE(ext.env.hub.lastDigital({"g", "beamBreak"}).has_value());
-}
-
-TEST_CASE("generic 1-DOF arm mode holds against gravity and rotary mode ignores it") {
-    Rig rig;
-    rig.bind("g", "motor", sdk::SlotType::Motor);
-    auto arm = rig.make("generic_1dof", "g",
+    auto arm = rig.make(kType, "g",
                         props({{"motion", "arm"}, {"simulateGravity", true}, {"massKg", 2.0}, {"lengthM", 0.4},
                                {"gearRatio", 80.0}, {"minPosition", -1.0}, {"maxPosition", 1.5}, {"neutralMode", "coast"}}));
     rig.run(*arm, 40);
@@ -646,39 +551,37 @@ TEST_CASE("generic 1-DOF arm mode holds against gravity and rotary mode ignores 
 
     Rig rot;
     rot.bind("g", "motor", sdk::SlotType::Motor);
-    auto spinner = rot.make("generic_1dof", "g", props({{"simulateGravity", true}}));   // rotary: no mass/gravity model
+    auto spinner = rot.make(kType, "g", props({{"simulateGravity", true}}));   // rotary: no mass/gravity model
     rot.run(*spinner, 40);
     CHECK(value(spinner->state(), "position") == 0.0);
 }
 
 TEST_CASE("invalid properties are rejected with a logged reason") {
     Rig rig;
-    auto expectFail = [&](const std::string& type, sdk::Value p, const std::string& needle) {
+    auto expectFail = [&](sdk::Value p, const std::string& needle) {
         INFO(needle);
         const size_t errorsBefore = rig.env.logger.count(sdk::LogLevel::Error);
-        auto r = rig.create(type, "bad", std::move(p));
+        auto r = rig.create(kType, "bad", std::move(p));
         CHECK_FALSE(r.ok());
         REQUIRE(rig.env.logger.count(sdk::LogLevel::Error) == errorsBefore + 1);
         const auto entries = rig.env.logger.entries();
         CHECK(entries.back().message.find(needle) != std::string::npos);
     };
-    expectFail("roller", props({{"motorModel", "not_a_motor"}}), "motorModel");
-    expectFail("roller", props({{"gearRatio", -2.0}}), "gearRatio");
-    expectFail("roller", props({{"gearRatio", "fast"}}), "gearRatio");
-    expectFail("roller", props({{"spinAxis", "w"}}), "spinAxis");
-    expectFail("elevator", props({{"minPosition", 1.0}, {"maxPosition", 0.5}}), "maxPosition");
-    expectFail("elevator", props({{"startPosition", 5.0}}), "startPosition");
-    expectFail("elevator", props({{"drumRadiusM", 0.0}}), "drumRadiusM");
-    expectFail("generic_1dof", props({{"beamBreakSource", "window"}, {"beamBreakMin", 2.0}, {"beamBreakMax", 1.0}}),
-               "beamBreakMax");
-    expectFail("intake", props({{"deployAxis", "q"}}), "deployAxis");
-    expectFail("turret", props({{"motorCount", 0}}), "motorCount");
+    expectFail(props({{"motorModel", "not_a_motor"}}), "motorModel");
+    expectFail(props({{"gearRatio", -2.0}}), "gearRatio");
+    expectFail(props({{"gearRatio", "fast"}}), "gearRatio");
+    expectFail(props({{"axis", "w"}}), "axis");
+    expectFail(props({{"motion", "teleport"}}), "motion");
+    expectFail(elevatorProps({{"minPosition", 1.0}, {"maxPosition", 0.5}}), "maxPosition");
+    expectFail(elevatorProps({{"startPosition", 5.0}}), "startPosition");
+    expectFail(elevatorProps({{"drumRadiusM", 0.0}}), "drumRadiusM");
+    expectFail(props({{"motorCount", 0}}), "motorCount");
 }
 
 TEST_CASE("unknown extra properties only warn, defaults fill missing ones") {
     Rig rig;
-    auto m = rig.make("roller", "r", props({{"futureField", 1}}));
-    CHECK(m->type() == "roller");
+    auto m = rig.make(kType, "r", props({{"futureField", 1}}));
+    CHECK(m->type() == kType);
     CHECK(rig.env.logger.count(sdk::LogLevel::Error) == 0);
 }
 
@@ -686,7 +589,7 @@ TEST_CASE("mechanism ticks are deterministic") {
     auto run = [] {
         Rig rig;
         rig.bind("p", "motor", sdk::SlotType::Motor);
-        auto m = rig.make("pivot", "p");
+        auto m = rig.make(kType, "p", pivotProps());
         for (int i = 0; i < 500; ++i) {
             rig.drive("p", "motor", 6.0 * std::sin(i * 0.02));
             rig.run(*m, 1);
@@ -698,36 +601,36 @@ TEST_CASE("mechanism ticks are deterministic") {
 
 TEST_CASE("an unmapped required motor behaves neutrally and unmapped sensors are ignored") {
     Rig rig;
-    auto m = rig.make("elevator", "e");   // nothing bound at all
+    auto m = rig.make(kType, "e", elevatorProps());   // nothing bound at all
     rig.run(*m, 100);
     CHECK(value(m->state(), "position") == 0.0);
     CHECK(m->batteryCurrentA() == 0.0);
 }
 
-TEST_CASE("mechanism attachment: a pivot mounted on the elevator carriage follows it") {
+TEST_CASE("mechanism attachment: an arm mounted on the linear mover follows it") {
     Rig rig;
     rig.bind("e", "motor", sdk::SlotType::Motor);
-    auto elevator = rig.make("elevator", "e");
-    auto pivot = rig.make("pivot", "p");
+    auto lift = rig.make(kType, "e", elevatorProps());
+    auto arm = rig.make(kType, "p", pivotProps());
     rig.env.config.mechanisms.resize(2);
     rig.env.config.mechanisms[0].id = "e";
-    rig.env.config.mechanisms[0].type = "elevator";
+    rig.env.config.mechanisms[0].type = kType;
     rig.env.config.mechanisms[0].mount = sdk::Pose3{{0.2f, 0.f, 0.1f}, sdk::Quat{}};
     rig.env.config.mechanisms[1].id = "p";
-    rig.env.config.mechanisms[1].type = "pivot";
-    rig.env.config.mechanisms[1].attachTo("e", "carriage");
+    rig.env.config.mechanisms[1].type = kType;
+    rig.env.config.mechanisms[1].attachTo("e", "mover");
 
     wpiemu::sdk::testing::FakeMechanismDirectory dir(rig.env.config, &rig.factory);
-    dir.add(elevator.get());
-    dir.add(pivot.get());
+    dir.add(lift.get());
+    dir.add(arm.get());
     rig.drive("e", "motor", 12.0);
-    rig.run(*elevator, 400);
+    rig.run(*lift, 400);
     const auto pose = dir.linkPoseInChassis("p", "root");
     REQUIRE(pose.has_value());
     CHECK(pose->position.x == doctest::Approx(0.2f));
     CHECK(pose->position.z == doctest::Approx(0.1f + 0.8f).epsilon(1e-5));
-    // and the pivot's own moving link is further resolved through the chain
-    const auto arm = dir.linkPoseInChassis("p", "arm");
-    REQUIRE(arm.has_value());
-    CHECK(arm->position.z == doctest::Approx(0.9f).epsilon(1e-5));
+    // and the arm's own moving link is further resolved through the chain
+    const auto mover = dir.linkPoseInChassis("p", "mover");
+    REQUIRE(mover.has_value());
+    CHECK(mover->position.z == doctest::Approx(0.9f).epsilon(1e-5));
 }

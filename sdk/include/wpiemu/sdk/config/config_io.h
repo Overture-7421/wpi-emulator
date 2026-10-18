@@ -27,11 +27,9 @@ public:
 class IRobotConfigCodec {
     WPIEMU_INTERFACE(IRobotConfigCodec)
 public:
-    // Applies core schema migrations (older versions upgrade; newer => VersionMismatch). Plugin
-    // sections are kept verbatim here; the coordinator then runs the selected plugin's migration
-    // (IGameModule::configMigrators, then IGameModule::migrateRobotConfig). Order: core migration ->
-    // plugin migration -> defaults -> validation -> construction. Writers emit BOTH
-    // MechanismConfig::parent and the structured attachment; readers prefer the structured form.
+    // Decodes the current schema only: a different `schemaVersion` is rejected (VersionMismatch), there is no
+    // migration. Plugin sections are kept verbatim; the coordinator then applies defaults, validates and
+    // constructs. Unknown fields are ignored.
     virtual Result<RobotConfig> fromValue(const Value& value) const = 0;
     virtual Value toValue(const RobotConfig& config) const = 0;
 };
@@ -50,15 +48,15 @@ class GamePluginRegistry;
 class DrivetrainRegistry;
 
 // Whole-model validation: unknown mechanism types, missing/duplicate ids, property schema
-// violations, slot mappings to incompatible devices, dangling parents, plugin sections
-// older/newer than the plugin supports, etc. Implemented in core.
+// violations, slot mappings to incompatible devices, dangling parents, plugin sections whose
+// version is not the plugin's, etc. Implemented in core.
 //
-// SDK 1.1 contract (every Issue below carries a stable `code`, see config/validation_codes.h):
+// Contract (every Issue below carries a stable `code`, see config/validation_codes.h):
 //  * device aliases: append validateDeviceAliases(config.allMappings()) (devices/device_identity.h);
 //    independent mappings of aliases of one physical device are an Error (device_alias_conflict);
 //  * mechanism attachment: append validateMechanismAttachments(config, mechanisms)
 //    (mechanisms/attachment.h): missing parent / missing link / cycle / reserved id are Errors.
-// Validation runs after migration and defaults (see IGameModule::migrateRobotConfig for the pipeline).
+// Validation runs after defaults are applied.
 class IConfigValidator {
     WPIEMU_INTERFACE(IConfigValidator)
 public:

@@ -22,8 +22,8 @@
 
 namespace wpiemu::sdk {
 
-// Version of the CORE schema (chassis/drivetrain/mechanisms/mappings). Bumped by ADR when a
-// non-additive change happens; additive fields keep the version and default when absent.
+// Version of the CORE schema (chassis/drivetrain/mechanisms/mappings). The SDK stays at version 1 until
+// release (ADR 0013): files with any other version are rejected, there is no migration.
 inline constexpr int kRobotConfigSchemaVersion = 1;
 
 struct ProjectInfo {
@@ -50,7 +50,7 @@ struct DrivetrainConfig {
     std::vector<SlotMapping> mappings;   // owner == slot_owner::kDrivetrain
 };
 
-// Reserved attachment names (SDK 1.1). "chassis" is the parent id meaning the robot chassis; "root" is
+// Reserved attachment names. "chassis" is the parent id meaning the robot chassis; "root" is
 // the link every mechanism and the chassis expose (its own origin/mount frame). Neither may be used as
 // a mechanism instance id / non-root link name.
 inline constexpr const char* kChassisParent = "chassis";
@@ -70,29 +70,15 @@ struct MechanismConfig {
     std::string id;          // unique instance id (also the SlotAddress owner), e.g. "intake"
     std::string type;        // MechanismFactory key, e.g. "roller", "elevator", "game_2026.shooter"
     std::string label;
-    // LEGACY (1.0): "chassis" or another mechanism id; implies parentLink "root". Kept source-compatible;
-    // `attachment` below wins when present. Writers keep both in sync (attachTo()).
-    std::string parent = kChassisParent;
     Pose3 mount;             // relative to the parent LINK frame (the chassis frame for the chassis)
     std::vector<PrimitiveSpec> geometry;   // box/cylinder primitives (visual and optional collision)
     Value properties = Value::makeObject();   // validated against the template's PropertySchema
     std::vector<SlotMapping> mappings;
-    // SDK 1.1: structured attachment. Absent => derived from `parent` with link "root".
-    std::optional<MechanismAttachment> attachment;
+    MechanismAttachment attachment;   // defaults to the chassis root
 
-    MechanismAttachment resolvedAttachment() const {
-        if (attachment) return *attachment;
-        MechanismAttachment a;
-        a.parentMechanismId = parent.empty() ? std::string(kChassisParent) : parent;
-        return a;
-    }
-    // Sets the structured attachment and mirrors the id into the legacy `parent`.
     void attachTo(std::string parentMechanismId, std::string parentLink = kRootLink) {
-        MechanismAttachment a;
-        a.parentMechanismId = parentMechanismId.empty() ? std::string(kChassisParent) : std::move(parentMechanismId);
-        a.parentLink = std::move(parentLink);
-        parent = a.parentMechanismId;
-        attachment = std::move(a);
+        attachment.parentMechanismId = parentMechanismId.empty() ? std::string(kChassisParent) : std::move(parentMechanismId);
+        attachment.parentLink = std::move(parentLink);
     }
 };
 
@@ -119,15 +105,7 @@ struct RobotConfig {
     // key = plugin id (e.g. "game_2026"). Opaque to core.
     std::map<std::string, PluginSection, std::less<>> plugins;
 
-    // SDK 1.1 (additive). Fields the codec did not recognise (written by a newer/other tool), kept so a
-    // load -> save round trip does not lose them. Object keyed by owner path ("" = root, "mechanisms/<id>",
-    // "drivetrain", "drivetrain/wheels/<name>", ...), each value an object of unknown key -> Value.
-    // Written by IRobotConfigCodec only; editors leave it alone.
-    Value unknownFields = Value::makeObject();
-
     std::vector<MotionLink> motionLinks;
-    // Explicit independent configurations opt out of the legacy tank upgrade, too.
-    bool motionLinksConfigured = false;
 
     const MechanismConfig* findMechanism(std::string_view id) const {
         for (const auto& m : mechanisms)

@@ -36,14 +36,25 @@ public:
 
     // ---- actions (all undoable unless noted) ----
     // Adds a mechanism; with a mechanism selected it is attached to that mechanism's `link`.
-    QString addMechanism(const QString& type, const sdk::MechanismAttachment& attachment);
-    QString addMechanismToSelection(const QString& type);
+    QString addMechanism(const QString& type, const sdk::MechanismAttachment& attachment, const ops::MechanismVariant& variant = {});
+    QString addMechanismToSelection(const QString& type, const ops::MechanismVariant& variant = {});
     bool deleteSelection();
     bool duplicateSelection();
     // Maps a dropped / chosen device: onto a slot, or onto the best free compatible slot of a
     // mechanism / wheel. Returns a human message on failure (empty on success).
     QString mapDevice(const SelectionRef& target, const sdk::DeviceKey& device, sdk::CapabilitySet caps);
     bool clearSlot(const sdk::SlotAddress& slot);
+    // Reversed: the mapped controller spins against the mechanism's positive direction (undoable).
+    bool setMotorReversed(const sdk::SlotAddress& slot, bool reversed);
+    // Adds/removes the last motor row of a motor group (see ops::MotorGroup); `owner` is a mechanism id or "drivetrain".
+    bool addMotor(const QString& owner, const QString& countKey);
+    bool removeMotor(const QString& owner, const QString& countKey);
+    // Motion links (ADR 0012): make `target` follow `source` (ratio in the units the UI shows) / take its own
+    // motor again. setDrivenBy drops the target's own motor mappings in the same undo step and returns why the edit
+    // was refused (empty on success).
+    QString setDrivenBy(const sdk::SlotAddress& target, const sdk::SlotAddress& source, double displayRatio);
+    bool clearDrivenBy(const sdk::SlotAddress& target);
+    // Tank presets (ADR 0012).
     void toggleDetection();
     void focusIssue(const sdk::Issue& issue);
     sdk::Status flushSave();             // persist now (Ctrl+S), retain dirty state on failure

@@ -127,22 +127,22 @@ record events; never block or perform socket I/O there.
 - Persistence belongs to core's `ProjectConfigRepository`, behind app's
   `ConfigRepository`. Preserve mechanisms, mappings, and plugin sections when
   updating wizard basics; do not replace the whole model.
-- Config loading order is core migration, selected plugin migration, defaults,
-  validation, then construction. Plugins may migrate only their own config
-  section and mechanisms whose type starts with their plugin id plus `.`.
+- Config loading order is decode (current schema only, no migration), defaults,
+  validation, then construction. A plugin owns only its config section and
+  mechanisms whose type starts with its plugin id plus `.`.
   Validation issue codes are stable SDK keys. JSON numeric stream fallbacks
   must use `std::locale::classic()`.
 - Distinguish declared `DeviceKey` addresses from physical identity: vendor
   simulation cannot necessarily distinguish CAN buses. Never invent a bus
   label from a static rule (`busIsStatic=false`); preserve alias-conflict
   validation and neutral/loopback behavior.
-- SDK evolution is additive: append defaulted fields, enum values, and protocol
-  variant alternatives. Bump `kSdkVersionMinor` for additive API changes and
-  `kProtocolVersion` for wire changes. Breaking SDK changes require an ADR and
-  major bump; see ADRs 0004-0006.
+- Until release the SDK is version 1.0 and the protocol is 1 (ADR 0013): no
+  compatibility, migrations, legacy fields or version bumps; change the SDK
+  freely. `schemaVersion` in robot.json and plugin sections is 1 and anything
+  else is rejected.
 - New seasons use `plugins/_template`, SDK interfaces, and the plugin aggregator
   (`docs/new-year-plugin.md`). Mechanisms use slots, plants, and coupling
-  interfaces; palette/inspector UI is generated from template metadata.
+  interfaces; context-menu/inspector UI is generated from template metadata.
   New bridges use canonical signals in `sdk/devices/signals.h` and register via
   the bridge aggregator. Use the extension recipes in `docs/CONTRIBUTING.md`.
 - Tests mirror module layout and can use header-only fakes under

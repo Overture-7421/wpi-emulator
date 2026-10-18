@@ -12,8 +12,8 @@ namespace sdk = wpiemu::sdk;
 TEST_CASE("editor ops: ids are derived from the template type and kept unique") {
     auto c = robot();
     CHECK(ops::baseIdForType("game_2026.fuel_intake") == "fuel_intake");
-    CHECK(ops::baseIdForType("roller") == "roller");
-    CHECK(ops::uniqueMechanismId(c, "roller") == "roller");
+    CHECK(ops::baseIdForType("mechanism") == "mechanism");
+    CHECK(ops::uniqueMechanismId(c, "mechanism") == "mechanism");
     CHECK(ops::uniqueMechanismId(c, "intake") == "intake_2");
     CHECK(ops::uniqueMechanismId(c, "chassis") == "chassis_2");   // reserved owner names are never handed out
     CHECK(ops::uniqueMechanismId(c, "drivetrain") == "drivetrain_2");
@@ -22,21 +22,34 @@ TEST_CASE("editor ops: ids are derived from the template type and kept unique") 
 TEST_CASE("editor ops: adding a mechanism attaches it and defaults its properties") {
     const auto cat = catalog();
     auto c = robot();
-    const auto* roller = cat.findTemplate("roller");
-    REQUIRE(roller != nullptr);
+    const auto* mechanism = cat.findTemplate("mechanism");
+    REQUIRE(mechanism != nullptr);
 
-    const std::string id = ops::addMechanism(c, *roller, {});
+    const std::string id = ops::addMechanism(c, *mechanism, {});
     const auto* m = c.findMechanism(id);
     REQUIRE(m != nullptr);
-    CHECK(m->type == "roller");
-    CHECK(m->resolvedAttachment().onChassis());
+    CHECK(m->type == "mechanism");
+    CHECK(m->attachment.onChassis());
     CHECK(m->properties.find("gearRatio") != nullptr);
-    CHECK(m->geometry.size() == roller->defaultGeometry.size());
+    CHECK(m->geometry.size() == mechanism->defaultGeometry.size());
     CHECK(m->mappings.empty());
 
-    const std::string child = ops::addMechanism(c, *roller, {"turret", "top"});
-    CHECK(c.findMechanism(child)->parent == "turret");
-    CHECK(c.findMechanism(child)->resolvedAttachment().parentLink == "top");
+    const std::string child = ops::addMechanism(c, *mechanism, {"turret", "mover"});
+    CHECK(c.findMechanism(child)->attachment.parentLink == "mover");
+}
+
+TEST_CASE("editor ops: a variant presets the choice property and names the mechanism after it") {
+    const auto cat = catalog();
+    auto c = robot();
+    const auto* mechanism = cat.findTemplate("mechanism");
+    REQUIRE(mechanism != nullptr);
+    const std::string arm = ops::addMechanism(c, *mechanism, {}, {"motion", "arm"});
+    CHECK(arm == "arm");
+    CHECK(c.findMechanism(arm)->properties.find("motion")->asString() == "arm");
+    CHECK(c.findMechanism(arm)->label == "Arm");
+    const std::string linear = ops::addMechanism(c, *mechanism, {}, {"motion", "linear"});
+    CHECK(c.findMechanism(linear)->properties.find("motion")->asString() == "linear");
+    CHECK(ops::addMechanism(c, *mechanism, {}, {"motion", "arm"}) == "arm_2");
 }
 
 TEST_CASE("editor ops: normalizeOrder lists parents before children") {
@@ -58,9 +71,8 @@ TEST_CASE("editor ops: reparenting keeps the world placement and refuses cycles"
     auto c = robot();
     const sdk::Vec3 before = rootWorld(c, cat, "climber");
 
-    REQUIRE(ops::reparentMechanism(c, cat, "climber", "turret", "top"));
-    CHECK(c.findMechanism("climber")->resolvedAttachment().parentMechanismId == "turret");
-    CHECK(c.findMechanism("climber")->parent == "turret");   // legacy field is kept in sync
+    REQUIRE(ops::reparentMechanism(c, cat, "climber", "turret", "mover"));
+    CHECK(c.findMechanism("climber")->attachment.parentMechanismId == "turret");
     CHECK(approx(rootWorld(c, cat, "climber"), before));
 
     CHECK_FALSE(ops::canReparent(c, "turret", "shooter"));      // shooter hangs below the turret
@@ -74,7 +86,7 @@ TEST_CASE("editor ops: reparenting keeps the world placement and refuses cycles"
 TEST_CASE("editor ops: attachments produced by the editor satisfy the SDK validation contract") {
     const auto cat = catalog();
     auto c = robot();
-    ops::reparentMechanism(c, cat, "climber", "turret", "top");
+    ops::reparentMechanism(c, cat, "climber", "turret", "mover");
     FakeEditorBackend backend;
     for (const auto& issue : backend.validate(c)) CHECK(issue.severity != sdk::Severity::Error);
 }
@@ -86,7 +98,7 @@ TEST_CASE("editor ops: removing a mechanism re-attaches its children without mov
     REQUIRE(ops::removeMechanism(c, cat, "turret"));
     CHECK(c.findMechanism("turret") == nullptr);
     REQUIRE(c.findMechanism("shooter") != nullptr);
-    CHECK(c.findMechanism("shooter")->resolvedAttachment().onChassis());
+    CHECK(c.findMechanism("shooter")->attachment.onChassis());
     CHECK(approx(rootWorld(c, cat, "shooter"), shooterBefore));
     CHECK_FALSE(ops::removeMechanism(c, cat, "turret"));
 }
@@ -99,21 +111,9 @@ TEST_CASE("editor ops: duplicating copies the sub-tree, not the device mappings"
     CHECK(c.mechanisms.size() == before + 2);   // turret + its shooter child
     const auto* shooter2 = c.findMechanism("shooter_2");
     REQUIRE(shooter2 != nullptr);
-    CHECK(shooter2->resolvedAttachment().parentMechanismId == "turret_2");
+    CHECK(shooter2->attachment.parentMechanismId == "turret_2");
     CHECK(shooter2->mappings.empty());
     CHECK(c.findMechanism("shooter")->mappings.size() == 1);   // the original keeps its mapping
-}
-
-TEST_CASE("editor ops: renaming updates children and slot owners") {
-    auto c = robot();
-    REQUIRE(ops::renameMechanism(c, "shooter", "launcher"));
-    CHECK(c.findMechanism("launcher")->mappings.front().slot.owner == "launcher");
-    CHECK_FALSE(ops::renameMechanism(c, "launcher", "intake"));    // taken
-    CHECK_FALSE(ops::renameMechanism(c, "launcher", "chassis"));   // reserved
-    CHECK_FALSE(ops::renameMechanism(c, "launcher", ""));
-    REQUIRE(ops::renameMechanism(c, "turret", "yaw"));
-    CHECK(c.findMechanism("launcher")->resolvedAttachment().parentMechanismId == "yaw");
-    CHECK(c.findMechanism("launcher")->parent == "yaw");
 }
 
 TEST_CASE("editor ops: moving the COM re-expresses everything so the robot looks the same") {
@@ -244,3 +244,4 @@ TEST_CASE("editor ops: mapping a device reuses an existing alias of the same phy
     CHECK_FALSE(ops::clearMapping(c, {"intake", "deploy"}));
     CHECK_FALSE(ops::setMapping(c, {"nobody", "x"}, fresh));
 }
+

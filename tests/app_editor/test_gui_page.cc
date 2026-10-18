@@ -13,6 +13,7 @@
 #include <QToolButton>
 
 #include "editor_page.h"
+#include "model/motion_links.h"
 #include "model/property_groups.h"
 #include "model/spec_values.h"
 #include "test_support.h"
@@ -21,13 +22,12 @@
 #include "viewmodel/project_tree_model.h"
 #include "views/bottom_panel.h"
 #include "views/device_panel.h"
+#include "views/drive_card.h"
 #include "views/field_editors.h"
 #include "views/inspector_panel.h"
-#include "views/motion_links_panel.h"
-#include "views/palette_panel.h"
 #include "views/project_tree_view.h"
 #include "views/property_form.h"
-#include "views/slot_row.h"
+#include "views/device_row.h"
 #include "views/toast_overlay.h"
 #include "views/viewport_widget.h"
 #include "wpiemu/sdk/config/value_codec.h"
@@ -52,100 +52,100 @@ struct PageFixture {
 
 }  // namespace
 
-TEST_CASE("motion links UI: mixed units, signed ratios, validation and undo") {
+TEST_CASE("driven-by panel: mixed units, signed ratios, undo and own motor") {
     FakeEditorBackend backend;
     EditorController controller(backend);
+    IconFactory icons;
     auto config = robot();
-    config.mechanisms.clear();
     sdk::MechanismConfig source;
     source.id = "source";
-    source.type = "roller";
+    source.type = "mechanism";
     sdk::MechanismConfig follower;
     follower.id = "follower";
-    follower.type = "elevator";
+    follower.type = "mechanism";
+    follower.properties["motion"] = "linear";
     config.mechanisms = {source, follower};
     controller.document().load(config);
+    const auto& catalog = controller.document().catalog();
+    const QString sourceText = QStringLiteral("Driven by %1").arg(
+        QString::fromStdString(axisLabel(controller.document().config(), catalog, {"source", "axis"})));
 
     {
-        MotionLinksPanel panel(controller);
-        auto* src = panel.findChild<QComboBox*>("motionLinks.source");
-        auto* dst = panel.findChild<QComboBox*>("motionLinks.target");
-        auto* ratio = panel.findChild<QDoubleSpinBox*>("motionLinks.ratio");
-        auto* apply = panel.findChild<QPushButton*>("motionLinks.apply");
+        DriveCard panel(controller, icons, SelectionRef::mechanism("follower"));
+        auto* src = panel.findChild<QComboBox*>("drivenBy.source:follower.axis");
+        auto* ratio = panel.findChild<QDoubleSpinBox*>("drivenBy.ratio:follower.axis");
         REQUIRE(src != nullptr);
-        REQUIRE(dst != nullptr);
         REQUIRE(ratio != nullptr);
-        REQUIRE(apply != nullptr);
-        src->setCurrentIndex(src->findText("source.axis"));
-        dst->setCurrentIndex(dst->findText("follower.axis"));
-        REQUIRE(src->currentIndex() >= 0);
-        REQUIRE(dst->currentIndex() >= 0);
-        ratio->setValue(-0.1);
-        apply->click();
+        const int index = src->findText(sourceText);
+        REQUIRE(index > 0);
+        src->setCurrentIndex(index);
+        src->activated(index);
         REQUIRE(controller.document().config().motionLinks.size() == 1);
-        CHECK(controller.document().config().motionLinks[0].ratio ==
-              doctest::Approx(-0.1 / sdk::kTwoPi));
+        ratio->setValue(-0.1);   // m per rev: stored in SI (m per rad)
+        ratio->editingFinished();
+        REQUIRE(controller.document().config().motionLinks.size() == 1);
+        CHECK(controller.document().config().motionLinks[0].ratio == doctest::Approx(-0.1 / sdk::kTwoPi));
     }
-
+    controller.document().undoStack()->undo();
     controller.document().undoStack()->undo();
     CHECK(controller.document().config().motionLinks.empty());
     controller.document().undoStack()->redo();
+    controller.document().undoStack()->redo();
     REQUIRE(controller.document().config().motionLinks.size() == 1);
     {
-        MotionLinksPanel panel(controller);
-        auto* list = panel.findChild<QListWidget*>("motionLinks.list");
-        REQUIRE(list != nullptr);
-        list->setCurrentRow(0);
-        auto* ratio = panel.findChild<QDoubleSpinBox*>("motionLinks.ratio");
+        DriveCard panel(controller, icons, SelectionRef::mechanism("follower"));
+        auto* ratio = panel.findChild<QDoubleSpinBox*>("drivenBy.ratio:follower.axis");
         CHECK(ratio->value() == doctest::Approx(-0.1));
-        ratio->setValue(0.2);
-        panel.findChild<QPushButton*>("motionLinks.apply")->click();
-        CHECK(controller.document().config().motionLinks[0].ratio ==
-              doctest::Approx(0.2 / sdk::kTwoPi));
-    }
-    {
-        MotionLinksPanel panel(controller);
-        panel.findChild<QListWidget*>("motionLinks.list")->setCurrentRow(0);
-        panel.findChild<QPushButton*>("motionLinks.remove")->click();
+        CHECK(panel.findChild<QLabel*>("drivenBy.units:follower.axis")->text() == "m / rev");
+        auto* src = panel.findChild<QComboBox*>("drivenBy.source:follower.axis");
+        src->setCurrentIndex(0);
+        src->activated(0);   // back to its own motor
         CHECK(controller.document().config().motionLinks.empty());
     }
     controller.document().undoStack()->undo();
     REQUIRE(controller.document().config().motionLinks.size() == 1);
     const sdk::DeviceKey motor{"phoenix6", "talonfx", 1, "", -1};
-    CHECK_FALSE(controller
-                    .mapDevice(SelectionRef::slot("follower", "motor"), motor,
-                               sdk::CapabilitySet{sdk::Capability::MotorOutput})
-                    .isEmpty());
+    CHECK_FALSE(controller.mapDevice(SelectionRef::slot("follower", "motor"), motor, sdk::CapabilitySet{sdk::Capability::MotorOutput}).isEmpty());
 }
 
-TEST_CASE("motion links UI: tank preset respects mapped sources and is undoable") {
-    FakeEditorBackend backend;
-    EditorController controller(backend);
-    auto config = robot();
-    config.drivetrain.spec.kind = sdk::drivetrain_kind::kTank;
-    config.drivetrain.mappings.clear();
-    config.motionLinks.clear();
-    config.drivetrain.mappings.push_back(
-        {{"drivetrain", "bl.drive"}, {"phoenix6", "talonfx", 1, "", -1}});
-    controller.document().load(config);
+TEST_CASE("driven-by panel: linking a part drops its motor mapping in the same undo step") {
+    PageFixture f;
+    auto& doc = f.c().document();
+    REQUIRE(ops::findMapping(doc.config(), {"intake", "motor"}) != nullptr);
     {
-        MotionLinksPanel panel(controller);
-        auto* preset = panel.findChild<QPushButton*>("motionLinks.tankPreset");
-        REQUIRE(preset != nullptr);
-        preset->click();
+        IconFactory icons;
+        DriveCard panel(f.c(), icons, SelectionRef::mechanism("intake"));
+        auto* src = panel.findChild<QComboBox*>("drivenBy.source:intake.axis");
+        REQUIRE(src != nullptr);
+        const int index = src->findText("Driven by fl");
+        REQUIRE(index > 0);
+        src->setCurrentIndex(index);
+        src->activated(index);
     }
-    REQUIRE(controller.document().config().motionLinks.size() == 2);
-    bool leftSource = false;
-    for (const auto& link : controller.document().config().motionLinks)
-        if (link.target.slot == "fl.drive") {
-            CHECK(link.source.slot == "bl.drive");
-            leftSource = true;
-        }
-    CHECK(leftSource);
-    controller.document().undoStack()->undo();
-    CHECK(controller.document().config().motionLinks.empty());
-    controller.document().undoStack()->redo();
-    CHECK(controller.document().config().motionLinks.size() == 2);
+    REQUIRE(doc.config().motionLinks.size() == 1);
+    CHECK(ops::findMapping(doc.config(), {"intake", "motor"}) == nullptr);
+    doc.undoStack()->undo();
+    CHECK(doc.config().motionLinks.empty());
+    CHECK(ops::findMapping(doc.config(), {"intake", "motor"}) != nullptr);
+}
+
+TEST_CASE("inspector: a follower wheel has no drive slot but shows what drives it") {
+    PageFixture f;
+    REQUIRE(f.c().setDrivenBy({"drivetrain", "fl.drive"}, {"drivetrain", "fr.drive"}, 1.0).isEmpty());
+    f.c().selection().set(SelectionRef::wheel("fl"));
+    pumpEvents(20);
+    bool steer = false;
+    for (auto* row : f.page.inspector()->slotRows()) {
+        CHECK(row->address().slot != "fl.drive");
+        steer = steer || row->address().slot == "fl.steer";
+    }
+    CHECK(steer);   // steering is not part of the link
+    CHECK(f.page.inspector()->findChild<QComboBox*>("drivenBy.source:drivetrain.fl.drive") != nullptr);
+
+    f.c().selection().set(SelectionRef::wheel("fr"));
+    pumpEvents(20);
+    for (auto* b : f.page.inspector()->findChildren<QToolButton*>())
+        CHECK(b->text() != "fl");   // followers are shown in the tree, not listed in the source's inspector
 }
 
 // ---- editors and forms -------------------------------------------------------------------------------
@@ -301,7 +301,6 @@ TEST_CASE("property form: field issues show a badge") {
 
 TEST_CASE("page: the three columns are populated from the backend") {
     PageFixture f;
-    CHECK(f.page.palette()->templateCount() == 10);              // 8 core + 2 plugin templates
     CHECK(f.page.tree()->model()->rowCount() == 1);
     CHECK(f.page.devicePanel()->table()->model()->rowCount() == 9);
     CHECK(f.page.inspector()->titleText() == "Sample Robot");
@@ -320,11 +319,13 @@ TEST_CASE("page: selecting a mechanism shows its slots and generated property fo
     CHECK(insp->slotRows().size() == 3);
     CHECK(insp->form("mech.props") != nullptr);
     CHECK(insp->form("mech.placement") != nullptr);
-    CHECK(insp->form("mech.general") != nullptr);
+    CHECK(insp->form("mech.general") == nullptr);   // the instance id is not shown
     CHECK(insp->form("mech.props")->hasField("pickupZone"));
 
+    f.c().selection().set(SelectionRef::mechanism("shooter"));
+    CHECK(insp->form("panel:game_2026.aiming") != nullptr);       // plugin panel contributed to matching templates only
     f.c().selection().set(SelectionRef::mechanism("indexer"));
-    CHECK(insp->form("panel:game_2026.feeding") != nullptr);      // plugin panel contributed to matching templates only
+    CHECK(insp->form("panel:game_2026.aiming") == nullptr);
     f.c().selection().set(SelectionRef::plugin());
     CHECK(insp->form("panel:game_2026.hopper") != nullptr);
     CHECK(insp->form("plugin")->hasField("preloadFuel"));
@@ -337,7 +338,7 @@ TEST_CASE("page: selecting a mechanism shows its slots and generated property fo
 TEST_CASE("page: editing a value in the inspector updates the model and can be undone") {
     PageFixture f;
     f.c().selection().set(SelectionRef::mechanism("turret"));
-    auto* form = f.page.inspector()->form("mech.props");
+    auto* form = f.page.inspector()->form("mech.drive:axis");
     REQUIRE(form != nullptr);
     auto* spin = qobject_cast<QDoubleSpinBox*>(form->editorFor("gearRatio")->focusTarget());
     REQUIRE(spin != nullptr);
@@ -432,71 +433,33 @@ TEST_CASE("page: units follow the toolbar choice") {
     CHECK(approx(f.c().document().config().chassis.massKg, 60.f));
 }
 
-TEST_CASE("page: picking a device from a slot's list maps it") {
+TEST_CASE("page: a mapped controller row shows the device, Reversed and unmap edit the model, there is no picker") {
     PageFixture f;
     f.c().selection().set(SelectionRef::mechanism("shooter"));
-    SlotRowWidget* feeder = nullptr;
-    for (auto* row : f.page.inspector()->slotRows())
+    DeviceRowWidget* flywheel = nullptr;
+    DeviceRowWidget* feeder = nullptr;
+    for (auto* row : f.page.inspector()->slotRows()) {
+        if (row->address().slot == "flywheel") flywheel = row;
         if (row->address().slot == "feeder") feeder = row;
+    }
+    REQUIRE(flywheel != nullptr);
     REQUIRE(feeder != nullptr);
-    CHECK(feeder->picker()->currentIndex() == 0);                    // unmapped
-    int pick = -1;
-    for (int i = 1; i < feeder->picker()->count(); ++i)
-        if (feeder->picker()->itemText(i).startsWith("TalonFX 5")) pick = i;
-    REQUIRE(pick > 0);
-    feeder->picker()->setCurrentIndex(pick);
-    QMetaObject::invokeMethod(feeder->picker(), "activated", Q_ARG(int, pick));
-    const auto* mapping = ops::findMapping(f.c().document().config(), {"shooter", "feeder"});
-    REQUIRE(mapping != nullptr);
-    CHECK(mapping->device.id == 5);
-    CHECK(mapping->device.bus == "canivore");   // the existing declared alias wins
-    // Unmapping through the combo's first entry.
-    QMetaObject::invokeMethod(feeder->picker(), "activated", Q_ARG(int, 0));
-    CHECK(ops::findMapping(f.c().document().config(), {"shooter", "feeder"}) == nullptr);
-}
+    CHECK(flywheel->deviceText().contains("TalonFX 11"));
+    CHECK_FALSE(flywheel->reversedBox()->isHidden());
+    CHECK(feeder->deviceText().contains("Not mapped"));
+    CHECK(feeder->reversedBox()->isHidden());
+    CHECK(feeder->findChildren<QComboBox*>().isEmpty());
 
-TEST_CASE("page: incompatible devices are disabled in a slot's picker") {
-    PageFixture f;
-    f.c().selection().set(SelectionRef::mechanism("shooter"));
-    SlotRowWidget* feeder = nullptr;
+    flywheel->reversedBox()->setChecked(true);
+    CHECK(ops::findMapping(f.c().document().config(), {"shooter", "flywheel"})->reversed);
+    f.c().document().undoStack()->undo();
+    CHECK_FALSE(ops::findMapping(f.c().document().config(), {"shooter", "flywheel"})->reversed);
+    pumpEvents(20);
     for (auto* row : f.page.inspector()->slotRows())
-        if (row->address().slot == "feeder") feeder = row;
-    REQUIRE(feeder != nullptr);
-    bool pigeonDisabled = false;
-    for (int i = 0; i < feeder->picker()->count(); ++i)
-        if (feeder->picker()->itemText(i).startsWith("Pigeon")) pigeonDisabled = !(feeder->picker()->model()->flags(feeder->picker()->model()->index(i, 0)) & Qt::ItemIsEnabled);
-    CHECK(pigeonDisabled);
+        if (row->address().slot == "flywheel") flywheel = row;
+    flywheel->unmapButton()->click();
+    CHECK(ops::findMapping(f.c().document().config(), {"shooter", "flywheel"}) == nullptr);
 }
-
-TEST_CASE("page: dropping a device on a slot row maps it, a wrong kind is refused") {
-    PageFixture f;
-    f.c().selection().set(SelectionRef::mechanism("shooter"));
-    SlotRowWidget* feeder = nullptr;
-    for (auto* row : f.page.inspector()->slotRows())
-        if (row->address().slot == "feeder") feeder = row;
-    REQUIRE(feeder != nullptr);
-
-    sdk::DiscoveredDevice motor = FakeEditorBackend::makeDevice("phoenix6", "talonfx", 61, sdk::kBusUnknown, sdk::Capability::MotorOutput);
-    QMimeData good;
-    good.setData(kDeviceMime, encodeDevice(motor));
-    QDragEnterEvent enter(QPoint(5, 5), Qt::CopyAction, &good, Qt::LeftButton, Qt::NoModifier);
-    QApplication::sendEvent(feeder, &enter);
-    CHECK(enter.isAccepted());
-    QDropEvent drop(QPointF(5, 5), Qt::CopyAction, &good, Qt::LeftButton, Qt::NoModifier);
-    QApplication::sendEvent(feeder, &drop);
-    CHECK(ops::findMapping(f.c().document().config(), {"shooter", "feeder"})->device.id == 61);
-
-    sdk::DiscoveredDevice imu = FakeEditorBackend::makeDevice("phoenix6", "pigeon2", 62, sdk::kBusUnknown, sdk::Capability::Imu);
-    QMimeData bad;
-    bad.setData(kDeviceMime, encodeDevice(imu));
-    f.c().selection().set(SelectionRef::mechanism("shooter"));
-    for (auto* row : f.page.inspector()->slotRows())
-        if (row->address().slot == "feeder") feeder = row;
-    QDragEnterEvent enterBad(QPoint(5, 5), Qt::CopyAction, &bad, Qt::LeftButton, Qt::NoModifier);
-    QApplication::sendEvent(feeder, &enterBad);
-    CHECK_FALSE(enterBad.isAccepted());
-}
-
 TEST_CASE("page: dropping a device on the tree maps it and selects the slot") {
     PageFixture f;
     auto* model = f.page.tree()->model();
@@ -510,36 +473,6 @@ TEST_CASE("page: dropping a device on the tree maps it and selects the slot") {
     CHECK(f.c().selection().current() == SelectionRef::slot("shooter", "feeder"));
     f.c().document().undoStack()->undo();
     CHECK(ops::findMapping(f.c().document().config(), {"shooter", "feeder"}) == nullptr);
-}
-
-TEST_CASE("page: dropping a template on a mechanism attaches it as a child") {
-    PageFixture f;
-    auto* model = f.page.tree()->model();
-    const QModelIndex turret = static_cast<ProjectTreeModel*>(model)->indexFor(SelectionRef::mechanism("turret"));
-    QMimeData mime;
-    mime.setData(kTemplateMime, QByteArray("hood"));
-    CHECK(model->dropMimeData(&mime, Qt::CopyAction, -1, 0, turret));
-    CHECK(f.c().document().config().findMechanism("hood")->resolvedAttachment().parentMechanismId == "turret");
-}
-
-TEST_CASE("page: the palette adds templates to the robot") {
-    PageFixture f;
-    auto* list = f.page.palette()->list();
-    QListWidgetItem* roller = nullptr;
-    for (int i = 0; i < list->count(); ++i)
-        if (list->item(i)->text() == "Generic roller") roller = list->item(i);
-    REQUIRE(roller != nullptr);
-    list->setCurrentItem(roller);
-    QMetaObject::invokeMethod(list, "itemDoubleClicked", Q_ARG(QListWidgetItem*, roller));
-    CHECK(f.c().document().config().findMechanism("roller") != nullptr);
-    CHECK(f.c().selection().current() == SelectionRef::mechanism("roller"));
-    CHECK(f.page.inspector()->slotRows().size() == 1);              // generic roller: just the motor
-
-    // Templates can be dragged: the list produces the template mime.
-    auto* mime = list->model()->mimeData({list->model()->index(list->row(roller), 0)});
-    REQUIRE(mime != nullptr);
-    CHECK(mime->data(kTemplateMime) == "roller");
-    delete mime;
 }
 
 TEST_CASE("page: Detect devices streams devices into the list and raises toasts") {
@@ -619,10 +552,6 @@ TEST_CASE("page: backend signals reach the editor (config, catalog, issues, log,
     f.backend.snapshotChanged(std::make_shared<const sdk::SimSnapshot>(data));
     CHECK(f.page.bottomPanel()->telemetryTable()->rowCount() >= 3);
 
-    auto catalog = FakeEditorBackend::sampleCatalog();
-    catalog.mechanismTemplates.resize(2);
-    f.backend.setCatalog(catalog);
-    CHECK(f.page.palette()->templateCount() == 2);
 }
 
 TEST_CASE("page: autosave fires after edits and Save persists immediately") {
@@ -630,7 +559,7 @@ TEST_CASE("page: autosave fires after edits and Save persists immediately") {
     f.page.setAutosaveDelayMs(20);
     int autosaves = 0;
     QObject::connect(&f.page, &EditorPage::autosaveRequested, &f.page, [&] { ++autosaves; });
-    f.c().addMechanism("roller", {});
+    f.c().addMechanism("mechanism", {});
     CHECK(f.page.hasUnsavedChanges());
     pumpEvents(150);
     CHECK(autosaves == 1);
@@ -695,4 +624,152 @@ TEST_CASE("page: the QML viewport answers pick queries with the ids the controll
     QMetaObject::invokeMethod(root, "hitsAt", Q_RETURN_ARG(QVariant, hits), Q_ARG(QVariant, cx), Q_ARG(QVariant, cy));
     // Whatever is at the centre of the view, every id must be well formed.
     for (const QVariant& id : hits.toList()) CHECK((id.toString().startsWith("i:") || id.toString().startsWith("h:")));
+}
+TEST_CASE("inspector: motor rows follow the motor count field and Reversed edits the mapping") {
+    PageFixture f;
+    f.c().selection().set(SelectionRef::mechanism("climber"));
+    pumpEvents(20);
+    auto motorRows = [&] {
+        int n = 0;
+        for (auto* row : f.page.inspector()->slotRows())
+            if (row->address().owner == "climber" && row->address().slot.rfind("motor", 0) == 0) ++n;
+        return n;
+    };
+    CHECK(motorRows() == 1);
+    auto* drive = f.page.inspector()->form("mech.drive:axis");
+    REQUIRE(drive != nullptr);
+    auto* count = qobject_cast<QDoubleSpinBox*>(drive->editorFor("motorCount")->focusTarget());
+    REQUIRE(count != nullptr);
+    count->setFocus();
+    pumpEvents(10);
+    count->setValue(2);
+    pumpEvents(20);
+    CHECK(motorRows() == 2);
+
+    REQUIRE(f.c().mapDevice(SelectionRef::slot("climber", "motor2"), {"phoenix6", "talonfx", 46, "rio", -1}, sdk::CapabilitySet{sdk::Capability::MotorOutput}).isEmpty());
+    pumpEvents(20);
+    QCheckBox* reversed = nullptr;
+    for (auto* row : f.page.inspector()->slotRows())
+        if (row->address().slot == "motor2") reversed = row->reversedBox();
+    REQUIRE(reversed != nullptr);
+    CHECK_FALSE(reversed->isHidden());
+    reversed->setChecked(true);
+    CHECK(ops::findMapping(f.c().document().config(), {"climber", "motor2"})->reversed);
+
+    pumpEvents(20);
+    drive = f.page.inspector()->form("mech.drive:axis");
+    count = qobject_cast<QDoubleSpinBox*>(drive->editorFor("motorCount")->focusTarget());
+    count->setFocus();
+    pumpEvents(10);
+    count->setValue(1);
+    pumpEvents(20);
+    CHECK(motorRows() == 1);
+    CHECK(ops::findMapping(f.c().document().config(), {"climber", "motor2"}) == nullptr);
+}
+
+TEST_CASE("inspector: a part page is Name, Drive, Configure, Placement cards and the name is editable") {
+    PageFixture f;
+    f.c().selection().set(SelectionRef::mechanism("climber"));
+    pumpEvents(20);
+    auto* insp = f.page.inspector();
+    REQUIRE(insp->nameEdit() != nullptr);
+    CHECK(insp->nameEdit()->text() == "Climber");
+    // Cards in order, each its own role.
+    QStringList order;
+    for (auto* card : insp->findChildren<SectionCard*>()) order << card->objectName();
+    CHECK(order.mid(0, 3) == QStringList{"card.drive", "card.configure", "card.placement"});
+    CHECK(insp->findChild<QToolButton*>("drive.own:climber.axis") != nullptr);
+    // Type is the motion (Rotary / Arm / Linear); there is no template switch and no repeated drag hint.
+    CHECK(insp->findChild<QComboBox*>("configure.typeCombo") == nullptr);
+    CHECK(insp->form("mech.props")->hasField("motion"));
+    for (auto* label : insp->findChildren<QLabel*>()) CHECK_FALSE(label->text().contains("Drag a detected device"));
+    CHECK(insp->form("mech.drive:axis")->hasField("gearRatio"));   // motor model and gearing live in Drive, not Configure
+    CHECK_FALSE(insp->form("mech.props")->hasField("gearRatio"));
+
+    // No "Mechanism · Mechanism" subtitle; the tree row names the Type instead of the template.
+    for (auto* label : insp->findChildren<QLabel*>()) CHECK(label->text() != "Mechanism · Mechanism");
+    CHECK(mechanismKindLabel(*f.c().document().config().findMechanism("climber"), *f.c().document().catalog().findTemplate("mechanism")) == "Linear");
+
+    insp->nameEdit()->setText("Lift");
+    insp->nameEdit()->editingFinished();
+    CHECK(f.c().document().config().findMechanism("climber")->label == "Lift");
+
+    // A wheel renames through the same field and the selection follows.
+    f.c().selection().set(SelectionRef::wheel("fl"));
+    pumpEvents(20);
+    insp->nameEdit()->setText("front_left");
+    insp->nameEdit()->editingFinished();
+    CHECK(ops::findWheel(f.c().document().config(), "front_left") != nullptr);
+    CHECK(f.c().selection().current() == SelectionRef::wheel("front_left"));
+}
+
+TEST_CASE("inspector: the Own motors / Linked choice follows the link state and hides the motor rows") {
+    PageFixture f;
+    f.c().selection().set(SelectionRef::wheel("fl"));
+    pumpEvents(20);
+    auto* own = f.page.inspector()->findChild<QToolButton*>("drive.own:drivetrain.fl.drive");
+    auto* linked = f.page.inspector()->findChild<QToolButton*>("drive.linked:drivetrain.fl.drive");
+    REQUIRE(own != nullptr);
+    REQUIRE(linked != nullptr);
+    CHECK(own->isChecked());
+    linked->click();
+    CHECK(f.page.inspector()->findChild<QComboBox*>("drivenBy.source:drivetrain.fl.drive")->isVisibleTo(f.page.inspector()));
+    REQUIRE(f.c().setDrivenBy({"drivetrain", "fl.drive"}, {"drivetrain", "fr.drive"}, 1.0).isEmpty());
+    pumpEvents(20);
+    CHECK(f.page.inspector()->findChild<QToolButton*>("drive.linked:drivetrain.fl.drive")->isChecked());
+    f.page.inspector()->findChild<QToolButton*>("drive.own:drivetrain.fl.drive")->click();   // back to own motors
+    pumpEvents(20);
+    CHECK(f.c().document().config().motionLinks.empty());
+}
+
+TEST_CASE("inspector: Drive is device-agnostic and a swerve wheel's steering lives in Configure") {
+    PageFixture f;
+    f.c().selection().set(SelectionRef::wheel("fl"));
+    pumpEvents(20);
+    auto* insp = f.page.inspector();
+    auto* drive = insp->form("wheel.drive");
+    REQUIRE(drive != nullptr);
+    for (const char* key : {"driveMotor", "driveMotorCount", "driveGearRatio"}) CHECK(drive->hasField(key));
+    CHECK_FALSE(drive->hasField("steerMotor"));
+    CHECK_FALSE(drive->hasField("steered"));
+    auto* configure = insp->form("wheel");
+    REQUIRE(configure != nullptr);
+    CHECK(configure->hasField("kind"));
+    CHECK(configure->hasField("steerMotor"));
+    for (auto* row : insp->slotRows()) {
+        const bool inDrive = insp->findChild<SectionCard*>("card.drive")->isAncestorOf(row);
+        if (row->address().slot == "fl.steer") CHECK_FALSE(inDrive);
+        if (row->address().slot == "fl.drive") {
+            CHECK(inDrive);
+            CHECK(row->titleText() == "Motor 1");
+        }
+    }
+    f.c().document().setProperty(SelectionRef::wheel("fl"), "wheel", "kind", sdk::Value("standard"));
+    pumpEvents(20);
+    for (auto* row : f.page.inspector()->slotRows())
+        if (row->address().slot == "fl.drive") CHECK(row->titleText() == "Motor 1");   // refreshes keep the generic label
+    for (auto* row : f.page.inspector()->slotRows()) CHECK(row->address().slot != "fl.steer");
+}
+
+TEST_CASE("inspector: the Robot and Drivetrain pages have no Getting started or Wheels card") {
+    PageFixture f;
+    auto* insp = f.page.inspector();
+    for (const SelectionRef& sel : {SelectionRef::robot(), SelectionRef::drivetrain()}) {
+        f.c().selection().set(sel);
+        pumpEvents(20);
+        for (auto* card : insp->findChildren<SectionCard*>()) {
+            const QString title = card->header()->text();
+            CHECK_FALSE(title.contains("Getting started"));
+            CHECK_FALSE(title.contains("Wheels"));
+        }
+        CHECK(insp->findChild<QPushButton*>("drivetrain.linkBySide") == nullptr);
+        CHECK(insp->findChild<QPushButton*>("drivetrain.independent") == nullptr);
+    }
+    f.c().selection().set(SelectionRef::drivetrain());
+    pumpEvents(20);
+    CHECK(insp->form("drivetrain") != nullptr);                  // Configure stays: type, tire model, load transfer
+    CHECK(insp->findChildren<SectionCard*>().size() == 1);
+    f.c().selection().set(SelectionRef::robot());
+    pumpEvents(20);
+    CHECK(insp->form("robot") != nullptr);
 }

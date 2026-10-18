@@ -37,8 +37,9 @@ the SDK stays untouched):
 | `IVendorMirrorSync::reassertAfterVendorMirror()` | call from a HAL `SimPeriodicBefore` callback that runs *after* the CTRE wrappers' own mirror (see "Pigeon yaw") |
 | `ITimeSyncAdvisor::timeSyncAdvice()` | wall-clock pacing advice (see "Time base") |
 | `VendorSimDeviceBridge::setInputWritesEnabled(id, bool)` | "emulator owns the device" switch (see "Robots that simulate themselves") |
-| `IDeviceBridge::resetInputHistory()` (SDK 1.4, default no-op) | generic clock-thread lifecycle hook; vendor override discards input/unwrap history without changing firmware offsets |
+| `IDeviceBridge::resetInputHistory()` (default no-op) | generic clock-thread lifecycle hook; vendor override discards input/unwrap history without changing firmware offsets |
 | `VendorSimDeviceBridge::configOf(id)` / `VendorBridgeOptions::onConfig` | CTRE config snapshot (gear ratio, invert, remote sensor); filled from `collectOutputs()` / `readPendingConfigs()` only |
+| Reversed motors | commands reach the hub **after** the controller's own inversion; the hub negates them (and the rotor feedback written back) for a mapping with `reversed` ([ADR 0014](decisions/0014-multi-motor-gearboxes.md)). Reading `invert` from `configOf()` to pre-fill the flag is not done yet |
 | `VendorSimDeviceBridge::readPendingConfigs(n)` | explicit config read-back for a host that knows the robot is quiescent |
 | `ICtreObservationSink` | the sink an opt-in hook provider feeds (bus label) |
 
@@ -54,7 +55,7 @@ Build option: `-DWPIEMU_WPILIB_ROOT=<dir>` where `<dir>` (or `<dir>/include`) co
 compiles the real binding (`WPIEMU_VENDOR_HAS_WPILIB`). Without it the bridges register but see no devices and log one
 warning at start. The binding attaches to `wpiHal` with `GetModuleHandle` / `dlopen(RTLD_NOLOAD)`; it never loads a copy.
 
-## Identity and bus (SDK 1.1, ADR 0006)
+## Identity and bus (ADR 0006)
 
 Every rule has `busIsStatic = false`: SimDevice names carry no bus, so `DeviceDescriptor::bus == kBusUnknown` and the
 bridge never fabricates one. `DeviceKey::physical()` (family/type/id) is the simulator identity: a TalonFX 4 on `rio`
@@ -226,7 +227,7 @@ from the vendor bridge's point of view. A device announced early may be re-annou
 `halsim_ext` cannot call `IVendorMirrorSync` today: it must not include `bridges/vendor` (ADR 0004) and the SDK has no
 neutral interface. Minimal API:
 
-1. **SDK (additive, e.g. `sdk/devices/loop_hook.h`)**
+1. **SDK (e.g. `sdk/devices/loop_hook.h`)**
    ```cpp
    // Implemented by a bridge that wants to run right before robot code each loop iteration.
    class IRobotLoopHook {

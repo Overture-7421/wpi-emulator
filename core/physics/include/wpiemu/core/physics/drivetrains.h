@@ -87,7 +87,7 @@ private:
         sdk::Vec3 normal;
     };
 
-    sdk::WheelDrive driveFor(const Wheel& w, double voltageV, double& supplyCurrentA) const;
+    sdk::WheelDrive driveFor(const Wheel& w, const sdk::WheelCommand& command, double& supplyCurrentA) const;
     void stepSteer(Wheel& w, sdk::WheelState& st, double voltageV, float dt) const;
     void advanceWheel(std::size_t index, sdk::WheelCommand command, float dt,
                       std::optional<sdk::PlantState> motion = std::nullopt);

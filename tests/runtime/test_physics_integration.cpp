@@ -125,7 +125,6 @@ TEST_CASE("integration: two motors move and turn a six-contact linked tank in Bo
         {{slot_owner::kDrivetrain, "left1.drive"}, {"phoenix6", "talonfx", 1, "", -1}},
         {{slot_owner::kDrivetrain, "right1.drive"}, {"phoenix6", "talonfx", 2, "", -1}}};
     c.motionLinks = tankMotionLinks(c).value();
-    c.motionLinksConfigured = true;
     SessionParts parts;
     parts.world = physics::createBox3dWorld(c.sim.physics);
     parts.config = c;

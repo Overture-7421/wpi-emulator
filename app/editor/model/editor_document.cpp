@@ -70,12 +70,12 @@ bool EditorDocument::edit(const QString& text, const std::function<bool(sdk::Rob
     return true;
 }
 
-QString EditorDocument::addMechanism(const QString& type, const sdk::MechanismAttachment& attachment) {
+QString EditorDocument::addMechanism(const QString& type, const sdk::MechanismAttachment& attachment, const ops::MechanismVariant& variant) {
     const sdk::MechanismTemplateInfo* info = catalog_.findTemplate(type.toStdString());
     if (info == nullptr) return {};
     std::string id;
     edit(ETR("Add %1").arg(QString::fromStdString(info->displayName)), [&](sdk::RobotConfig& c) {
-        id = ops::addMechanism(c, *info, attachment);
+        id = ops::addMechanism(c, *info, attachment, variant);
         return true;
     });
     return QString::fromStdString(id);

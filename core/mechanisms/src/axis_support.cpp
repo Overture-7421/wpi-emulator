@@ -38,12 +38,6 @@ const char* motionKey(Motion m) {
     return "rotary";
 }
 
-std::string propKey(std::string_view prefix, std::string_view base) {
-    std::string out(prefix);
-    out.append(base);
-    if (!prefix.empty()) out[prefix.size()] = static_cast<char>(std::toupper(static_cast<unsigned char>(base.front())));
-    return out;
-}
 
 double getDouble(const sdk::Value& props, const std::string& key, double fallback) {
     const sdk::Value* v = props.find(key);
@@ -101,61 +95,62 @@ sdk::PropertySpec enumProp(std::string key, std::string label, std::string descr
     return p;
 }
 
-AxisSlotNames axisSlotNames(const AxisOptions& o) {
+AxisSlotNames axisSlotNames() {
     AxisSlotNames n;
-    for (int i = 0; i < std::max(o.maxMotors, 1); ++i)
-        n.motors.push_back(propKey(o.prefix, i == 0 ? "motor" : "motor" + std::to_string(i + 1)));
-    n.encoder = propKey(o.prefix, "encoder");
-    n.velocity = propKey(o.prefix, "velocitySensor");
-    n.reverseLimit = propKey(o.prefix, "reverseLimit");
-    n.forwardLimit = propKey(o.prefix, "forwardLimit");
+    for (int i = 0; i < sdk::kMaxMotorsPerAxis; ++i) n.motors.push_back(i == 0 ? "motor" : "motor" + std::to_string(i + 1));
+    n.encoder = "encoder";
+    n.velocity = "velocitySensor";
+    n.reverseLimit = "reverseLimit";
+    n.forwardLimit = "forwardLimit";
     return n;
 }
 
 std::vector<sdk::SlotSpec> axisSlots(const AxisOptions& o) {
-    const AxisSlotNames names = axisSlotNames(o);
+    const AxisSlotNames names = axisSlotNames();
     std::vector<sdk::SlotSpec> out;
     for (std::size_t i = 0; i < names.motors.size(); ++i) {
         sdk::SlotSpec s;
         s.name = names.motors[i];
-        s.label = o.title + (i == 0 ? "Motor" : "Motor " + std::to_string(i + 1));
+        s.label = i == 0 ? "Motor" : "Motor " + std::to_string(i + 1);
         s.type = sdk::SlotType::Motor;
         s.required = i == 0 && o.motorRequired;
         s.description = i == 0 ? "Motor controller driving this axis; the simulator writes rotor position/velocity back."
                                : "Additional motor on the same gearbox (leave unmapped to mirror the first motor).";
+        s.countKey = "motorCount";
+        s.ordinal = static_cast<int>(i) + 1;
         out.push_back(std::move(s));
     }
     if (o.encoderSlots) {
-        out.push_back({names.encoder, o.title + "Position sensor", sdk::SlotType::PositionSensor, false,
+        out.push_back({names.encoder, "Position sensor", sdk::SlotType::PositionSensor, false,
                        "Encoder / CANcoder on the mechanism output (see the sensor ratio property)."});
-        out.push_back({names.velocity, o.title + "Velocity sensor", sdk::SlotType::VelocitySensor, false,
+        out.push_back({names.velocity, "Velocity sensor", sdk::SlotType::VelocitySensor, false,
                        "Velocity-only sensor on the mechanism output."});
     }
     if (o.limitSwitchSlots) {
-        out.push_back({names.reverseLimit, o.title + "Reverse limit switch", sdk::SlotType::LimitSwitch, false,
+        out.push_back({names.reverseLimit, "Reverse limit switch", sdk::SlotType::LimitSwitch, false,
                        "Closes at the lower (minimum position) stop."});
-        out.push_back({names.forwardLimit, o.title + "Forward limit switch", sdk::SlotType::LimitSwitch, false,
+        out.push_back({names.forwardLimit, "Forward limit switch", sdk::SlotType::LimitSwitch, false,
                        "Closes at the upper (maximum position) stop."});
     }
     return out;
 }
 
 sdk::MotionAxisSpec axisMotionSpec(const AxisOptions& o) {
-    return {o.prefix.empty() ? "axis" : o.prefix,
+    return {"axis",
             o.motion == Motion::Linear ? sdk::PlantKind::Linear : sdk::PlantKind::Angular,
-            axisSlotNames(o).motors,
-            o.selectableMotion ? propKey(o.prefix, "motion") : "",
+            axisSlotNames().motors,
+            o.selectableMotion ? "motion" : "",
             {}};
 }
 
 std::vector<sdk::PropertySpec> axisProperties(const AxisOptions& o, const MotorCatalog& motors) {
     using sdk::PropertyUnit;
     std::vector<sdk::PropertySpec> out;
-    const auto k = [&](std::string_view base) { return propKey(o.prefix, base); };
-    const std::string gMotor = o.title + "Motor";
-    const std::string gDyn = o.title + "Dynamics";
-    const std::string gLim = o.title + "Limits";
-    const std::string gSen = o.title + "Sensors";
+    const auto k = [](std::string_view base) { return std::string(base); };
+    const std::string gMotor = "Motor";
+    const std::string gDyn = "Dynamics";
+    const std::string gLim = "Limits";
+    const std::string gSen = "Sensors";
 
     std::vector<sdk::EnumOption> motorOptions;
     for (const MotorCatalogEntry& e : motors.entries()) motorOptions.push_back({e.key, e.label});
@@ -164,23 +159,22 @@ std::vector<sdk::PropertySpec> axisProperties(const AxisOptions& o, const MotorC
     sdk::PropertySpec count;
     count.key = k("motorCount");
     count.label = "Motor count";
-    count.description = "Identical motors on the gearbox (map extra ones to the follower slots, or leave them mirrored).";
+    count.description = "Identical motors on the gearbox. Map a controller to each one (use Reversed for a motor that "
+                        "spins against the mechanism), or leave extra ones unmapped to mirror the first motor.";
     count.type = sdk::PropertyType::Int;
     count.unit = PropertyUnit::Count;
     count.defaultValue = o.motorCount;
     count.min = 1;
-    count.max = 8;
+    count.max = sdk::kMaxMotorsPerAxis;
     count.group = gMotor;
     out.push_back(std::move(count));
     out.push_back(doubleProp(k("gearRatio"), "Gear ratio", "Motor : mechanism output (> 1 reduces speed).",
                              PropertyUnit::Ratio, o.gearRatio, gMotor, 0.01, 10000.0));
-    out.push_back(doubleProp(k("efficiency"), "Drivetrain efficiency", "Fraction of motor torque delivered to the output.",
+    out.push_back(doubleProp(k("efficiency"), "Efficiency", "Fraction of motor torque delivered to the output.",
                              PropertyUnit::Ratio, o.efficiency, gMotor, 0.05, 1.0, true));
-    out.push_back(boolProp(k("motorInverted"), "Motor inverted",
-                           "Positive command moves the mechanism in the negative direction.", false, gMotor));
     out.push_back(enumProp(k("neutralMode"), "Neutral mode", "Behaviour at zero output: brake shorts the motor, coast frees it.",
                            o.brake ? "brake" : "coast", {{"coast", "Coast"}, {"brake", "Brake"}}, gMotor));
-    out.push_back(doubleProp(k("statorCurrentLimitA"), "Stator current limit",
+    out.push_back(doubleProp(k("statorCurrentLimitA"), "Current limit",
                              "Per-motor current limit, 0 = unlimited.", PropertyUnit::Amps, 0.0, gMotor, 0.0, 500.0));
     out.push_back(boolProp(k("reportMotorLimits"), "Report limits on motor controller",
                            "Also set the motor controller's forward/reverse limit signals at the stops.", false, gMotor, true));
@@ -190,9 +184,9 @@ std::vector<sdk::PropertySpec> axisProperties(const AxisOptions& o, const MotorC
     const bool arm = o.selectableMotion || o.motion == Motion::Arm;
     const bool linear = o.selectableMotion || o.motion == Motion::Linear;
     if (o.selectableMotion)
-        out.push_back(enumProp(k("motion"), "Motion type", "Rotary spinner, gravity-loaded arm, or linear slide.",
+        out.push_back(enumProp(k("motion"), "Type", "Rotary spinner, gravity-loaded arm, or linear slide.",
                                motionKey(o.motion),
-                               {{"rotary", "Rotary"}, {"arm", "Arm / pivot"}, {"linear", "Linear / elevator"}}, gDyn));
+                               {{"rotary", "Rotary"}, {"arm", "Arm"}, {"linear", "Linear"}}, gDyn));
     if (rotaryJ)
         out.push_back(doubleProp(k("momentOfInertiaKgM2"), "Moment of inertia",
                                  o.motion == Motion::Arm || o.selectableMotion
@@ -260,11 +254,18 @@ std::vector<sdk::PropertySpec> axisProperties(const AxisOptions& o, const MotorC
         out.push_back(doubleProp(k("sensorOffsetRot"), "Sensor offset", "Added to the sensor position, in rotations.",
                                  PropertyUnit::None, 0.0, gSen, -1e6, 1e6, true));
     }
+    // The actuation properties form the Drive card of this axis in the editor.
+    for (const char* base : {"motorModel", "motorCount", "gearRatio", "efficiency", "neutralMode", "statorCurrentLimitA", "reportMotorLimits"})
+        for (sdk::PropertySpec& p : out)
+            if (p.key == k(base)) {
+                p.section = sdk::PropertySection::Drive;
+                p.axis = "axis";
+            }
     return out;
 }
 
 sdk::Result<AxisSettings> readAxisSettings(const AxisOptions& o, const sdk::Value& props, const MotorCatalog& motors) {
-    const auto k = [&](std::string_view base) { return propKey(o.prefix, base); };
+    const auto k = [](std::string_view base) { return std::string(base); };
     AxisSettings s;
     s.motion = o.motion;
     if (o.selectableMotion) {
@@ -334,7 +335,6 @@ sdk::Result<AxisSettings> readAxisSettings(const AxisOptions& o, const sdk::Valu
     if (!(s.statorCurrentLimitA >= 0.0)) return invalidProp(k("statorCurrentLimitA"), "must be >= 0");
     s.neutral = getString(props, k("neutralMode"), o.brake ? "brake" : "coast") == "brake" ? NeutralMode::Brake
                                                                                               : NeutralMode::Coast;
-    s.motorInverted = getBool(props, k("motorInverted"), false);
     s.reportMotorLimits = getBool(props, k("reportMotorLimits"), false);
     s.encoder.sensorRatio = getDouble(props, k("sensorRatio"), 1.0);
     s.encoder.inverted = getBool(props, k("sensorInverted"), false);
@@ -346,9 +346,9 @@ sdk::Result<AxisSettings> readAxisSettings(const AxisOptions& o, const sdk::Valu
 MechanismAxis::MechanismAxis(std::string owner, AxisOptions options, AxisSettings settings,
                              std::unique_ptr<sdk::IPlant> plant, MotorDrive drive)
     : owner_(std::move(owner)), options_(std::move(options)), settings_(std::move(settings)),
-      slots_(axisSlotNames(options_)), plant_(std::move(plant)), drive_(std::move(drive)) {
+      slots_(axisSlotNames()), plant_(std::move(plant)), drive_(std::move(drive)) {
     if (!plant_) sdk::contractViolation("MechanismAxis: null plant");
-    rotor_ = {settings_.plant.gearRatio, settings_.motorInverted};
+    rotor_ = {settings_.plant.gearRatio, false};  // per-motor reversal happens in the device hub
     reverseSwitch_ = {settings_.plant.minPosition, LimitSwitchModel::Side::AtOrBelow, settings_.limitMargin,
                       settings_.limitPressedValue};
     forwardSwitch_ = {settings_.plant.maxPosition, LimitSwitchModel::Side::AtOrAbove, settings_.limitMargin,
@@ -363,7 +363,7 @@ void MechanismAxis::reset() {
 
 sdk::MotionAxisBinding MechanismAxis::motionBinding() {
     sdk::MotionAxisInfo info{
-        address(options_.prefix.empty() ? "axis" : options_.prefix), plant_->kind(), {}};
+        address("axis"), plant_->kind(), {}};
     for (const auto& motor : slots_.motors) info.motorSlots.push_back(address(motor));
     return {std::move(info), [this] { return plant_->state(); },
             [this](sdk::SimContext& ctx, double dt, std::optional<sdk::PlantState> motion) {
@@ -387,28 +387,21 @@ double MechanismAxis::outputRotations(double position) const {
 void MechanismAxis::tick(sdk::SimContext& ctx, double dt) {
     sdk::IDeviceHub& hub = ctx.devices();
     const double battery = hub.batteryVoltage();
-    const double sign = settings_.motorInverted ? -1.0 : 1.0;
     const double omega = plant_->motorShaftOmegaRadPerSec();
     const std::size_t motorCount = static_cast<std::size_t>(settings_.plant.motorCount);
 
-    const auto motorVoltage = [&](const sdk::MotorOutput& raw) {
-        sdk::MotorOutput out = raw;
-        out.voltageV *= sign;
-        out.dutyCycle *= sign;
-        out.torqueCurrentA *= sign;
-        return drive_.voltage(out, omega, battery);
-    };
+    // Commands arrive in the mechanism frame (the hub already applied each motor's Reversed flag). Unmapped
+    // extra motors mirror the primary; mapped ones contribute their own voltage. Torque is linear in the
+    // voltage, so the plant sees the mean over all motors while currents are summed per motor.
+    const auto motorVoltage = [&](const sdk::MotorOutput& out) { return drive_.voltage(out, omega, battery); };
 
-    // Unmapped follower motors mirror the primary; mapped ones contribute their own voltage.
-    // Motor currents are linear in the voltage, so the plant sees the mean over all motors.
     std::vector<double> volts;
     volts.reserve(motorCount);
     volts.push_back(motorVoltage(hub.motorOutput(address(slots_.motors.front()))));
-    for (std::size_t i = 1; i < slots_.motors.size() && volts.size() < motorCount; ++i) {
-        const sdk::MotorOutput out = hub.motorOutput(address(slots_.motors[i]));
-        if (out.valid) volts.push_back(motorVoltage(out));
+    for (std::size_t i = 1; i < motorCount; ++i) {
+        const sdk::MotorOutput out = i < slots_.motors.size() ? hub.motorOutput(address(slots_.motors[i])) : sdk::MotorOutput{};
+        volts.push_back(out.valid ? motorVoltage(out) : volts.front());
     }
-    while (volts.size() < motorCount) volts.push_back(volts.front());
 
     double sum = 0.0, current = 0.0, draw = 0.0;
     for (const double v : volts) {
@@ -437,7 +430,8 @@ void MechanismAxis::writeFeedback(sdk::ISensorWriter& hub, double previousVeloci
         feedback.forwardLimit = forwardSwitch_.pressed(x.position);
         feedback.reverseLimit = reverseSwitch_.pressed(x.position);
     }
-    for (const std::string& slot : slots_.motors) hub.writeMotorFeedback(address(slot), feedback);
+    const std::size_t activeMotors = std::min(slots_.motors.size(), static_cast<std::size_t>(settings_.plant.motorCount));
+    for (std::size_t i = 0; i < activeMotors; ++i) hub.writeMotorFeedback(address(slots_.motors[i]), feedback);
 
     if (options_.encoderSlots) {
         const sdk::EncoderFeedback e = settings_.encoder.sample(rot, rps);

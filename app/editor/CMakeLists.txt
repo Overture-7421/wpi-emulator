@@ -15,6 +15,7 @@ set(WPIEMU_EDITOR_SOURCES
     fake_editor_backend.cpp
     model/config_ops.cpp
     model/editor_document.cpp
+    model/motion_links.cpp
     model/property_groups.cpp
     model/scene_builder.cpp
     model/slot_status.cpp
@@ -29,14 +30,14 @@ set(WPIEMU_EDITOR_SOURCES
     viewmodel/viewport_controller.cpp
     views/bottom_panel.cpp
     views/device_panel.cpp
+    views/device_row.cpp
+    views/drive_card.cpp
     views/field_editors.cpp
     views/icon_factory.cpp
     views/inspector_panel.cpp
-    views/motion_links_panel.cpp
-    views/palette_panel.cpp
     views/project_tree_view.cpp
     views/property_form.cpp
-    views/slot_row.cpp
+    views/section_card.cpp
     views/toast_overlay.cpp
     views/viewport_widget.cpp
 )

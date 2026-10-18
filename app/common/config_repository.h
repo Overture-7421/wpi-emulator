@@ -23,7 +23,7 @@ struct SaveOutcome {
 };
 
 // Qt-facing facade over core's ProjectConfigRepository (app-data copy + <project>/.wpiemu/robot.json)
-// and ConfigPipeline (migration -> defaults -> validation). All path handling is delegated to core so
+// and ConfigPipeline (defaults -> validation). All path handling is delegated to core so
 // the editor, the wizard and the launcher agree on locations.
 class ConfigRepository {
 public:

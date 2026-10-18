@@ -43,6 +43,10 @@ struct EnumOption {
     std::string label;
 };
 
+// Which inspector card a property belongs to. Drive = how the part is actuated (motor model, count, gearing);
+// Placement = where it sits; everything else is Configure.
+enum class PropertySection { Configure, Drive, Placement };
+
 struct PropertySpec {
     std::string key;                 // unique within the schema; stable (persisted)
     std::string label;
@@ -57,6 +61,8 @@ struct PropertySpec {
     std::string group;               // inspector section ("Geometry", "Motor", ...)
     bool advanced = false;           // collapsed by default
     bool required = false;
+    PropertySection section = PropertySection::Configure;
+    std::string axis;                // Drive properties: the motion axis they belong to ("axis", "deploy"...), "" = the first one
     // Conditional visibility: shown only when property `visibleWhenKey` equals `visibleWhenEquals`.
     std::string visibleWhenKey;
     PropertyValue visibleWhenEquals;

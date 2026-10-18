@@ -31,6 +31,8 @@ inline constexpr const char* kPropertyInvalid = "property_invalid";
 inline constexpr const char* kSlotOwnerUnknown = "slot_owner_unknown";
 inline constexpr const char* kSlotOwnerMismatch = "slot_owner_mismatch";
 inline constexpr const char* kSlotUnknown = "slot_unknown";
+inline constexpr const char* kSlotMotorInactive = "slot_motor_inactive";
+inline constexpr const char* kSlotReversedInvalid = "slot_reversed_invalid";
 inline constexpr const char* kSlotRequiredUnmapped = "slot_required_unmapped";
 inline constexpr const char* kSlotDuplicateMapping = "slot_duplicate_mapping";
 inline constexpr const char* kDeviceDuplicateMapping = "device_duplicate_mapping";
@@ -39,13 +41,12 @@ inline constexpr const char* kBatteryInvalid = "battery_invalid";
 inline constexpr const char* kSimInvalid = "sim_invalid";
 inline constexpr const char* kPluginNotFound = "plugin_not_found";
 inline constexpr const char* kPluginUnknownSection = "plugin_section_unknown";
-inline constexpr const char* kPluginSectionNewer = "plugin_section_newer";
-inline constexpr const char* kPluginSectionOutdated = "plugin_section_outdated";
+inline constexpr const char* kPluginSectionVersion = "plugin_section_version_unsupported";
 inline constexpr const char* kPluginPropertyInvalid = "plugin_property_invalid";
 }  // namespace issue_code
 
-// Slot names of the drivetrain owner (sdk::slot_owner::kDrivetrain): "<wheel>.drive", and "<wheel>.steer"
-// for swerve / steered wheels. Matches IDrivetrain::slotSpecs() by convention (the validator has no world to
+// Slot names of the drivetrain owner (sdk::slot_owner::kDrivetrain): "<wheel>.drive" (+ "<wheel>.drive2"..
+// up to driveMotorCount), and "<wheel>.steer" for swerve / steered wheels. Matches IDrivetrain::slotSpecs() by convention (the validator has no world to
 // instantiate a drivetrain in).
 std::vector<sdk::SlotSpec> drivetrainSlotSpecs(const sdk::DrivetrainSpec& spec);
 // robot-level slots: "imu".

@@ -127,7 +127,7 @@ Pose3 mechanismRootWorld(const RobotConfig& c, const EditorCatalog& catalog, std
 
 Pose3 mechanismParentWorld(const RobotConfig& c, const EditorCatalog& catalog, const MechanismConfig& m) {
     const Pose3 chassis = chassisFrameWorld(c.chassis);
-    const sdk::MechanismAttachment att = m.resolvedAttachment();
+    const sdk::MechanismAttachment att = m.attachment;
     if (att.onChassis()) return chassis;
     if (const auto p = linkInChassis(c, catalog, att.parentMechanismId, att.parentLink)) return chassis * *p;
     return chassis;
@@ -135,20 +135,31 @@ Pose3 mechanismParentWorld(const RobotConfig& c, const EditorCatalog& catalog, c
 
 // ---- mechanisms -------------------------------------------------------------------------------
 MechanismConfig makeMechanism(const RobotConfig& c, const sdk::MechanismTemplateInfo& info,
-                              const sdk::MechanismAttachment& attachment) {
+                              const sdk::MechanismAttachment& attachment, const MechanismVariant& variant) {
     MechanismConfig m;
-    m.id = uniqueMechanismId(c, baseIdForType(info.type));
+    std::string baseId = baseIdForType(info.type);
+    std::string baseLabel = info.displayName;
+    if (!variant.first.empty())
+        for (const auto& p : info.properties.properties)
+            if (p.key == variant.first)
+                for (const auto& o : p.options)
+                    if (o.value == variant.second) {
+                        baseId = o.value;
+                        baseLabel = o.label;
+                    }
+    m.id = uniqueMechanismId(c, baseId);
     m.type = info.type;
-    m.label = info.displayName;
+    m.label = baseLabel;
     for (const auto& other : c.mechanisms)
-        if (other.type == info.type) { m.label = info.displayName + " " + std::to_string(c.mechanisms.size() + 1); break; }
+        if (other.id == baseId || other.label == baseLabel) { m.label = baseLabel + " " + std::to_string(c.mechanisms.size() + 1); break; }
     m.geometry = info.defaultGeometry;
     m.properties = sdk::defaultsOf(info.properties);
+    if (!variant.first.empty()) m.properties[variant.first] = variant.second;
     m.attachTo(attachment.parentMechanismId, attachment.parentLink);
-    if (m.resolvedAttachment().onChassis()) {
+    if (m.attachment.onChassis()) {
         int siblings = 0;
         for (const auto& other : c.mechanisms)
-            if (other.resolvedAttachment().onChassis()) ++siblings;
+            if (other.attachment.onChassis()) ++siblings;
         const float step = 0.15f;
         const float x = ((siblings % 2 == 0) ? 1.f : -1.f) * step * static_cast<float>((siblings + 1) / 2);
         const float hullTop = c.chassis.groundClearanceM + c.chassis.sizeM.z - c.chassis.comHeightM;
@@ -157,8 +168,9 @@ MechanismConfig makeMechanism(const RobotConfig& c, const sdk::MechanismTemplate
     return m;
 }
 
-std::string addMechanism(RobotConfig& c, const sdk::MechanismTemplateInfo& info, const sdk::MechanismAttachment& attachment) {
-    MechanismConfig m = makeMechanism(c, info, attachment);
+std::string addMechanism(RobotConfig& c, const sdk::MechanismTemplateInfo& info, const sdk::MechanismAttachment& attachment,
+                         const MechanismVariant& variant) {
+    MechanismConfig m = makeMechanism(c, info, attachment, variant);
     std::string id = m.id;
     c.mechanisms.push_back(std::move(m));
     normalizeOrder(c);
@@ -168,7 +180,7 @@ std::string addMechanism(RobotConfig& c, const sdk::MechanismTemplateInfo& info,
 std::vector<std::string> childrenOf(const RobotConfig& c, std::string_view id) {
     std::vector<std::string> out;
     for (const auto& m : c.mechanisms) {
-        const sdk::MechanismAttachment a = m.resolvedAttachment();
+        const sdk::MechanismAttachment a = m.attachment;
         if (!a.onChassis() && a.parentMechanismId == id && m.id != id) out.push_back(m.id);
     }
     return out;
@@ -224,7 +236,7 @@ bool reparentMechanism(RobotConfig& c, const EditorCatalog& catalog, std::string
 bool removeMechanism(RobotConfig& c, const EditorCatalog& catalog, std::string_view id) {
     MechanismConfig* m = findMech(c, id);
     if (m == nullptr) return false;
-    const sdk::MechanismAttachment att = m->resolvedAttachment();
+    const sdk::MechanismAttachment att = m->attachment;
     for (const auto& child : childrenOf(c, id)) {
         if (!reparentMechanism(c, catalog, child, att.parentMechanismId, att.parentLink)) {
             if (MechanismConfig* cm = findMech(c, child)) cm->attachTo(sdk::kChassisParent);
@@ -265,7 +277,7 @@ std::string duplicateMechanism(RobotConfig& c, std::string_view id) {
     };
     for (std::size_t i = 0; i < copies.size(); ++i) {
         MechanismConfig& copy = copies[i];
-        const sdk::MechanismAttachment att = copy.resolvedAttachment();
+        const sdk::MechanismAttachment att = copy.attachment;
         if (i == 0) {
             copy.label = (copy.label.empty() ? subtree[0] : copy.label) + " (copy)";
             copy.mount.position.y += 0.1f;
@@ -291,24 +303,6 @@ std::string duplicateMechanism(RobotConfig& c, std::string_view id) {
     return rootId;
 }
 
-bool renameMechanism(RobotConfig& c, std::string_view id, const std::string& newId) {
-    if (newId.empty() || reservedOwner(newId) || c.findMechanism(newId) != nullptr) return false;
-    MechanismConfig* m = findMech(c, id);
-    if (m == nullptr) return false;
-    const std::string old(id);
-    m->id = newId;
-    for (auto& link : c.motionLinks) {
-        if (link.source.owner == old) link.source.owner = newId;
-        if (link.target.owner == old) link.target.owner = newId;
-    }
-    for (auto& mapping : m->mappings) mapping.slot.owner = newId;
-    for (auto& other : c.mechanisms) {
-        if (other.parent == old) other.parent = newId;
-        if (other.attachment && other.attachment->parentMechanismId == old) other.attachment->parentMechanismId = newId;
-    }
-    return true;
-}
-
 void normalizeOrder(RobotConfig& c) {
     std::vector<MechanismConfig> pending = std::move(c.mechanisms);
     std::vector<MechanismConfig> ordered;
@@ -320,7 +314,7 @@ void normalizeOrder(RobotConfig& c) {
     while (!pending.empty() && progress) {
         progress = false;
         for (auto it = pending.begin(); it != pending.end();) {
-            const sdk::MechanismAttachment a = it->resolvedAttachment();
+            const sdk::MechanismAttachment a = it->attachment;
             if (a.onChassis() || emitted(a.parentMechanismId)) {
                 ordered.push_back(std::move(*it));
                 it = pending.erase(it);
@@ -373,6 +367,17 @@ bool setMapping(RobotConfig& c, const SlotAddress& slot, const DeviceKey& device
     return true;
 }
 
+bool setMappingReversed(RobotConfig& c, const SlotAddress& slot, bool reversed) {
+    auto* list = mappingList(c, slot.owner);
+    if (list == nullptr) return false;
+    for (auto& m : *list)
+        if (m.slot == slot) {
+            m.reversed = reversed;
+            return true;
+        }
+    return false;
+}
+
 bool clearMapping(RobotConfig& c, const SlotAddress& slot) {
     auto* list = mappingList(c, slot.owner);
     if (list == nullptr) return false;
@@ -403,14 +408,22 @@ std::vector<sdk::SlotSpec> robotSlotSpecs() {
 std::vector<sdk::SlotSpec> drivetrainSlotSpecs(const sdk::DrivetrainSpec& spec) {
     std::vector<sdk::SlotSpec> out;
     for (const auto& w : spec.wheels) {
-        sdk::SlotSpec drive;
-        drive.name = w.name + ".drive";
-        drive.label = w.name + " drive";
-        drive.type = sdk::SlotType::Motor;
-        drive.description = "Motor controller driving wheel '" + w.name + "'.";
-        out.push_back(drive);
+        const int motors = std::clamp(w.driveMotorCount, 1, sdk::kMaxMotorsPerAxis);
+        for (int i = 0; i < motors; ++i) {
+            sdk::SlotSpec drive;
+            drive.name = sdk::driveSlotName(w.name, i);
+            drive.label = w.name + " drive" + (i > 0 ? " " + std::to_string(i + 1) : std::string());
+            drive.type = sdk::SlotType::Motor;
+            drive.required = i == 0;
+            drive.description = i == 0 ? "Motor controller driving wheel '" + w.name + "'."
+                                       : "Additional motor controller on the gearbox of wheel '" + w.name + "'.";
+            drive.countKey = w.name + ".driveMotorCount";
+            drive.ordinal = i + 1;
+            out.push_back(drive);
+        }
         if (w.steered) {
-            sdk::SlotSpec steer = drive;
+            sdk::SlotSpec steer;
+            steer.type = sdk::SlotType::Motor;
             steer.name = w.name + ".steer";
             steer.label = w.name + " steer";
             steer.description = "Motor controller steering module '" + w.name + "'.";
@@ -420,6 +433,101 @@ std::vector<sdk::SlotSpec> drivetrainSlotSpecs(const sdk::DrivetrainSpec& spec) 
     return out;
 }
 
+namespace {
+constexpr std::string_view kWheelCountSuffix = ".driveMotorCount";
+
+// Current and maximum motor count behind `countKey`; false when the key is unknown for the owner.
+bool motorCountOf(const RobotConfig& c, const EditorCatalog& catalog, std::string_view owner, std::string_view countKey, int& count, int& maxCount) {
+    if (owner == sdk::slot_owner::kDrivetrain) {
+        if (countKey.size() <= kWheelCountSuffix.size() || countKey.substr(countKey.size() - kWheelCountSuffix.size()) != kWheelCountSuffix) return false;
+        const sdk::WheelSpec* w = findWheel(c, countKey.substr(0, countKey.size() - kWheelCountSuffix.size()));
+        if (w == nullptr) return false;
+        maxCount = sdk::kMaxMotorsPerAxis;
+        count = std::clamp(w->driveMotorCount, 1, maxCount);
+        return true;
+    }
+    const MechanismConfig* m = c.findMechanism(owner);
+    const auto* info = m != nullptr ? catalog.findTemplate(m->type) : nullptr;
+    if (info == nullptr) return false;
+    maxCount = 0;
+    for (const auto& spec : info->slotSpecs)
+        if (spec.countKey == countKey) maxCount = std::max(maxCount, spec.ordinal);
+    if (maxCount == 0) return false;
+    count = 1;
+    if (const sdk::PropertySpec* p = info->properties.find(std::string(countKey))) count = static_cast<int>(p->defaultValue.asInt(1));
+    if (const sdk::Value* v = m->properties.find(std::string(countKey))) count = static_cast<int>(v->asInt(count));
+    count = std::clamp(count, 1, maxCount);
+    return true;
+}
+}  // namespace
+
+std::string wheelOfSlot(std::string_view slotName) {
+    const auto dot = slotName.rfind('.');
+    if (dot == std::string_view::npos || dot == 0) return {};
+    std::string_view tail = slotName.substr(dot + 1);
+    if (tail == "steer") return std::string(slotName.substr(0, dot));
+    if (tail.substr(0, 5) != "drive") return {};
+    tail.remove_prefix(5);
+    for (const char ch : tail)
+        if (ch < '0' || ch > '9') return {};
+    return std::string(slotName.substr(0, dot));
+}
+
+std::vector<MotorGroup> motorGroups(const RobotConfig& c, const EditorCatalog& catalog, std::string_view owner) {
+    std::vector<MotorGroup> out;
+    for (const auto& spec : slotSpecsFor(c, catalog, owner)) {
+        if (spec.type != sdk::SlotType::Motor || spec.countKey.empty()) continue;
+        auto it = std::find_if(out.begin(), out.end(), [&](const MotorGroup& g) { return g.countKey == spec.countKey; });
+        if (it == out.end()) {
+            MotorGroup g;
+            g.countKey = spec.countKey;
+            if (!motorCountOf(c, catalog, owner, g.countKey, g.count, g.maxCount)) continue;
+            out.push_back(std::move(g));
+            it = std::prev(out.end());
+        }
+        it->slotNames.push_back(spec.name);
+    }
+    return out;
+}
+
+void pruneInactiveMappings(RobotConfig& c, const EditorCatalog& catalog, std::string_view owner) {
+    auto* list = mappingList(c, owner);
+    if (list == nullptr) return;
+    std::vector<std::string> active;
+    for (const auto& spec : slotSpecsFor(c, catalog, owner)) active.push_back(spec.name);
+    list->erase(std::remove_if(list->begin(), list->end(),
+                               [&](const sdk::SlotMapping& m) {
+                                   if (std::find(active.begin(), active.end(), m.slot.slot) != active.end()) return false;
+                                   // Only motor slots that exist for a higher motor number are pruned; unknown slots are left for the validator.
+                                   if (owner == sdk::slot_owner::kDrivetrain) {
+                                       const std::string wheel = wheelOfSlot(m.slot.slot);
+                                       return !wheel.empty() && findWheel(c, wheel) != nullptr && m.slot.slot != wheel + ".steer";
+                                   }
+                                   const MechanismConfig* mech = c.findMechanism(owner);
+                                   const auto* info = mech != nullptr ? catalog.findTemplate(mech->type) : nullptr;
+                                   if (info == nullptr) return false;
+                                   return std::any_of(info->slotSpecs.begin(), info->slotSpecs.end(),
+                                                      [&](const sdk::SlotSpec& s) { return s.name == m.slot.slot && !s.countKey.empty(); });
+                               }),
+                list->end());
+}
+
+bool setMotorCount(RobotConfig& c, const EditorCatalog& catalog, std::string_view owner, const std::string& countKey, int count) {
+    int current = 0, maxCount = 0;
+    if (!motorCountOf(c, catalog, owner, countKey, current, maxCount)) return false;
+    count = std::clamp(count, 1, maxCount);
+    if (count == current) return false;
+    if (owner == sdk::slot_owner::kDrivetrain) {
+        findWheel(c, countKey.substr(0, countKey.size() - kWheelCountSuffix.size()))->driveMotorCount = count;
+    } else {
+        MechanismConfig* m = findMech(c, owner);
+        if (!m->properties.isObject()) m->properties = sdk::Value::makeObject();
+        m->properties[countKey] = count;
+    }
+    pruneInactiveMappings(c, catalog, owner);
+    return true;
+}
+
 std::vector<sdk::SlotSpec> slotSpecsFor(const RobotConfig& c, const EditorCatalog& catalog, std::string_view owner) {
     std::vector<sdk::SlotSpec> out;
     if (owner == sdk::slot_owner::kRobot)
@@ -427,7 +535,13 @@ std::vector<sdk::SlotSpec> slotSpecsFor(const RobotConfig& c, const EditorCatalo
     else if (owner == sdk::slot_owner::kDrivetrain)
         out = drivetrainSlotSpecs(c.drivetrain.spec);
     else if (const MechanismConfig* m = c.findMechanism(owner))
-        if (const auto* info = catalog.findTemplate(m->type)) out = info->slotSpecs;
+        if (const auto* info = catalog.findTemplate(m->type)) {
+            for (const auto& spec : info->slotSpecs) {
+                int count = 0, maxCount = 0;
+                if (!spec.countKey.empty() && motorCountOf(c, catalog, owner, spec.countKey, count, maxCount) && spec.ordinal > count) continue;
+                out.push_back(spec);
+            }
+        }
     const auto axes =
         sdk::motionAxisInfos(c, [&](std::string_view type) { return catalog.findTemplate(type); });
     for (auto& slot : out)
@@ -471,7 +585,7 @@ void setCom(RobotConfig& c, float offsetX, float offsetY, float height, bool com
     }
     for (auto& p : c.chassis.primitives) p.local.position -= Vec3{dx, dy, dz};
     for (auto& m : c.mechanisms)
-        if (m.resolvedAttachment().onChassis()) m.mount.position -= Vec3{dx, dy, dz};
+        if (m.attachment.onChassis()) m.mount.position -= Vec3{dx, dy, dz};
     if (catalog != nullptr) {
         if (sdk::Value* store = volumeStore(c, *catalog, "")) {
             for (const auto& vol : volumesFor(c, *catalog, "")) {
@@ -540,7 +654,7 @@ bool removeWheel(RobotConfig& c, const std::string& name) {
     auto& maps = c.drivetrain.mappings;
     maps.erase(std::remove_if(maps.begin(), maps.end(),
                               [&](const sdk::SlotMapping& m) {
-                                  return m.slot.slot == name + ".drive" || m.slot.slot == name + ".steer";
+                                  return wheelOfSlot(m.slot.slot) == name;
                               }),
                maps.end());
     return true;
@@ -557,10 +671,8 @@ bool renameWheel(RobotConfig& c, const std::string& oldName, const std::string& 
         if (link.target == SlotAddress{sdk::slot_owner::kDrivetrain, oldName + ".drive"})
             link.target.slot = newName + ".drive";
     }
-    for (auto& m : c.drivetrain.mappings) {
-        if (m.slot.slot == oldName + ".drive") m.slot.slot = newName + ".drive";
-        else if (m.slot.slot == oldName + ".steer") m.slot.slot = newName + ".steer";
-    }
+    for (auto& m : c.drivetrain.mappings)
+        if (wheelOfSlot(m.slot.slot) == oldName) m.slot.slot = newName + m.slot.slot.substr(oldName.size());
     return true;
 }
 

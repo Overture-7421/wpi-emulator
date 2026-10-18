@@ -13,6 +13,7 @@
 #include <functional>
 
 #include "editor_backend.h"
+#include "model/config_ops.h"
 #include "model/selection.h"
 #include "model/transform_access.h"
 #include "wpiemu/sdk/config/robot_config.h"
@@ -58,7 +59,7 @@ public:
     bool edit(const QString& text, const std::function<bool(sdk::RobotConfig&)>& mutator, const QString& mergeKey = {});
 
     // ---- mechanisms
-    QString addMechanism(const QString& type, const sdk::MechanismAttachment& attachment = {});
+    QString addMechanism(const QString& type, const sdk::MechanismAttachment& attachment = {}, const ops::MechanismVariant& variant = {});
     bool removeMechanism(const QString& id);
     QString duplicateMechanism(const QString& id);
     bool reparentMechanism(const QString& id, const QString& newParent, const QString& link = QStringLiteral("root"));

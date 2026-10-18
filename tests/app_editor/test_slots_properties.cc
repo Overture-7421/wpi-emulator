@@ -1,5 +1,6 @@
 #include "test_support.h"
 
+#include "model/motion_links.h"
 #include "model/property_groups.h"
 #include "model/slot_status.h"
 #include "model/spec_values.h"
@@ -55,6 +56,29 @@ TEST_CASE("slot status: incompatible devices and alias conflicts are flagged") {
     CHECK(slotInfos(d, cat, directoryOf(devices), "drivetrain")[0].state == SlotState::AliasConflict);
 }
 
+TEST_CASE("slot status: the motor slot of a following axis is not listed and issues point at the follower") {
+    auto c = robot();
+    const auto cat = catalog();
+    REQUIRE(applyDrivenBy(c, cat, {"intake", "axis"}, {"drivetrain", "fl.drive"}, 1.0).empty());
+    const DeviceDirectory none;
+
+    for (const auto& info : slotInfos(c, cat, none, "intake")) CHECK(info.spec.name != "motor");
+    CHECK(slotInfos(c, cat, none, "intake").size() < slotInfos(robot(), cat, none, "intake").size());
+    const auto best = bestSlotFor(c, cat, "intake", sdk::CapabilitySet(sdk::Capability::MotorOutput));
+    CHECK((!best || best->slot != "motor"));
+
+    const MotionIndex motion(c, cat);
+    const OwnerMotion intake = motion.ownerMotion(SelectionRef::mechanism("intake"));
+    REQUIRE(intake.primarySource);
+    CHECK(*intake.primarySource == SelectionRef::wheel("fl"));
+    const OwnerMotion wheel = motion.ownerMotion(SelectionRef::wheel("fl"));
+    REQUIRE(wheel.drives.size() == 1);
+    CHECK(wheel.drives[0] == SelectionRef::mechanism("intake"));
+
+    const auto where = locateIssue(c, cat, {sdk::Severity::Error, "motionLinks." + c.motionLinks[0].id, "x", "motion_link_invalid"});
+    CHECK(where.selection == SelectionRef::mechanism("intake"));
+    CHECK(where.fieldKey == "drivenBy");
+}
 TEST_CASE("slot status: the best slot for a dropped device prefers unfilled required slots") {
     const auto cat = catalog();
     auto c = robot();
@@ -136,24 +160,25 @@ TEST_CASE("property groups: generic schema forms for chassis, wheels, mechanisms
     CHECK(sdk::validateProperties(chassis[0].schema, chassis[0].values).empty());
 
     auto wheel = propertyGroupsFor(c, cat, SelectionRef::wheel("fl"));
-    REQUIRE(wheel.size() == 1);
-    CHECK(sdk::validateProperties(wheel[0].schema, wheel[0].values).empty());
+    REQUIRE(wheel.size() == 3);   // drive, configure, placement
+    CHECK(wheel[0].id == "wheel.drive");
+    CHECK(wheel[1].id == "wheel");
+    CHECK(wheel[2].id == "wheel.placement");
+    CHECK(wheel[1].schema.properties.front().key == "kind");   // the type leads Configure
+    for (const auto& g : wheel) CHECK(sdk::validateProperties(g.schema, g.values).empty());
 
     // A slot edits its owner; the shooter has its own template group plus a placement group.
     auto shooter = propertyGroupsFor(c, cat, SelectionRef::slot("shooter", "flywheel"));
     std::vector<std::string> ids;
     for (const auto& g : shooter) ids.push_back(g.id);
-    CHECK(ids == std::vector<std::string>{"mech.general", "mech.placement", "mech.props"});
+    CHECK(ids == std::vector<std::string>{"mech.drive:axis", "mech.props", "mech.placement", "panel:game_2026.aiming"});
     CHECK(formTargetOf(c, SelectionRef::slot("shooter", "flywheel")) == SelectionRef::mechanism("shooter"));
     CHECK(formTargetOf(c, SelectionRef::slot("drivetrain", "fl.drive")) == SelectionRef::wheel("fl"));
     CHECK(formTargetOf(c, SelectionRef::slot("robot", "imu")) == SelectionRef::robot());
     CHECK(formTargetOf(c, SelectionRef::overlay("", "hopperVolume")) == SelectionRef::plugin());
 
-    // Plugin panels for indexer/roller mechanisms and the plugin section.
-    auto indexer = propertyGroupsFor(c, cat, SelectionRef::mechanism("indexer"));
-    bool feeding = false;
-    for (const auto& g : indexer) feeding = feeding || g.id == "panel:game_2026.feeding";
-    CHECK(feeding);
+    // Plugin panels reach matching templates only, plus the plugin section.
+    for (const auto& g : propertyGroupsFor(c, cat, SelectionRef::mechanism("indexer"))) CHECK(g.id != "panel:game_2026.aiming");
     auto plugin = propertyGroupsFor(c, cat, SelectionRef::plugin());
     bool hopper = false;
     for (const auto& g : plugin) hopper = hopper || g.id == "panel:game_2026.hopper";
@@ -165,8 +190,9 @@ TEST_CASE("property groups: placement offers every non-descendant as a parent") 
     const auto cat = catalog();
     auto c = robot();
     auto groups = propertyGroupsFor(c, cat, SelectionRef::mechanism("turret"));
-    const auto* placement = &groups[1];
-    REQUIRE(placement->id == "mech.placement");
+    const auto it = std::find_if(groups.begin(), groups.end(), [](const auto& g) { return g.id == "mech.placement"; });
+    REQUIRE(it != groups.end());
+    const auto* placement = &*it;
     std::vector<std::string> options;
     for (const auto& o : placement->schema.find("parent")->options) options.push_back(o.value);
     CHECK(std::find(options.begin(), options.end(), "chassis") != options.end());
@@ -176,8 +202,10 @@ TEST_CASE("property groups: placement offers every non-descendant as a parent") 
 
     auto shooterGroups = propertyGroupsFor(c, cat, SelectionRef::mechanism("shooter"));
     std::vector<std::string> links;
-    for (const auto& o : shooterGroups[1].schema.find("parentLink")->options) links.push_back(o.value);
-    CHECK(links == std::vector<std::string>{"root", "top"});   // parent is the turret
+    const auto shooterPlacement = std::find_if(shooterGroups.begin(), shooterGroups.end(), [](const auto& g) { return g.id == "mech.placement"; });
+    REQUIRE(shooterPlacement != shooterGroups.end());
+    for (const auto& o : shooterPlacement->schema.find("parentLink")->options) links.push_back(o.value);
+    CHECK(links == std::vector<std::string>{"root", "mover"});   // parent is the turret
 }
 
 TEST_CASE("property edits write through to the right place") {
@@ -188,14 +216,13 @@ TEST_CASE("property edits write through to the right place") {
     CHECK(c.findMechanism("turret")->properties.find("gearRatio")->asDouble() == 55.0);
     CHECK(applyProperty(c, cat, sel, "mech.general", "label", sdk::Value("Yaw")));
     CHECK(c.findMechanism("turret")->label == "Yaw");
-    CHECK(applyProperty(c, cat, sel, "mech.general", "id", sdk::Value("yaw")));
-    CHECK(c.findMechanism("yaw") != nullptr);
-    CHECK(c.findMechanism("shooter")->resolvedAttachment().parentMechanismId == "yaw");
+    CHECK_FALSE(applyProperty(c, cat, sel, "mech.general", "id", sdk::Value("yaw")));   // the id is internal, not editable
+    CHECK(c.findMechanism("turret") != nullptr);
 
     sdk::Pose3 mount;
     mount.position = {0.1f, 0.2f, 0.3f};
-    CHECK(applyProperty(c, cat, SelectionRef::mechanism("yaw"), "mech.placement", "mount", sdk::toValue(mount)));
-    CHECK(approx(c.findMechanism("yaw")->mount.position, {0.1f, 0.2f, 0.3f}));
+    CHECK(applyProperty(c, cat, SelectionRef::mechanism("turret"), "mech.placement", "mount", sdk::toValue(mount)));
+    CHECK(approx(c.findMechanism("turret")->mount.position, {0.1f, 0.2f, 0.3f}));
 
     CHECK(applyProperty(c, cat, SelectionRef::plugin(), "plugin", "preloadFuel", sdk::Value(12)));
     CHECK(c.findPlugin("game_2026")->data.find("preloadFuel")->asInt() == 12);
@@ -204,8 +231,12 @@ TEST_CASE("property edits write through to the right place") {
 
     CHECK(applyProperty(c, cat, SelectionRef::wheel("fl"), "wheel", "radius", sdk::Value(0.05)));
     CHECK(approx(ops::findWheel(c, "fl")->radiusM, 0.05f));
-    CHECK(applyProperty(c, cat, SelectionRef::wheel("fl"), "wheel", "steered", sdk::Value(false)));
+    CHECK(ops::findWheel(c, "fl")->steered);
+    CHECK(applyProperty(c, cat, SelectionRef::wheel("fl"), "wheel", "kind", sdk::Value("standard")));
+    CHECK_FALSE(ops::findWheel(c, "fl")->steered);   // only a swerve module steers
     CHECK(ops::findMapping(c, {"drivetrain", "fl.steer"}) == nullptr);   // the steer mapping goes away with the steering
+    CHECK(applyProperty(c, cat, SelectionRef::wheel("fl"), "wheel", "kind", sdk::Value("swerve")));
+    CHECK(ops::findWheel(c, "fl")->steered);
     CHECK(applyProperty(c, cat, SelectionRef::drivetrain(), "drivetrain", "kind", sdk::Value("tank")));
     CHECK(c.drivetrain.spec.kind == "tank");
     CHECK(applyProperty(c, cat, SelectionRef::robot(), "robot", "name", sdk::Value("Bot")));
@@ -282,4 +313,80 @@ TEST_CASE("transforms: read and write for chassis, COM, wheels, shapes, mechanis
 
     CHECK_FALSE(readTransform(c, cat, SelectionRef::plugin()));
     CHECK_FALSE(readTransform(c, cat, SelectionRef::mechanism("nobody")));
+}
+
+namespace {
+std::vector<std::string> motorSlotNames(const sdk::RobotConfig& c, const EditorCatalog& cat, const std::string& owner, const std::string& prefix = {}) {
+    std::vector<std::string> names;
+    for (const auto& s : ops::slotSpecsFor(c, cat, owner))
+        if (s.type == sdk::SlotType::Motor && s.name.rfind(prefix, 0) == 0) names.push_back(s.name);
+    return names;
+}
+}  // namespace
+
+TEST_CASE("motors: slot rows follow the motor count and the motors that disappear are unmapped") {
+    const auto cat = catalog();
+    auto c = robot();
+    CHECK(motorSlotNames(c, cat, "climber") == std::vector<std::string>{"motor"});
+    REQUIRE(ops::setMotorCount(c, cat, "climber", "motorCount", 3));
+    CHECK(motorSlotNames(c, cat, "climber") == std::vector<std::string>{"motor", "motor2", "motor3"});
+    const auto groups = ops::motorGroups(c, cat, "climber");
+    REQUIRE(groups.size() == 1);
+    CHECK(groups[0].count == 3);
+    CHECK(groups[0].maxCount == 3);
+
+    ops::setMapping(c, {"climber", "motor3"}, {"phoenix6", "talonfx", 32, "rio", -1});
+    CHECK(ops::setMotorCount(c, cat, "climber", "motorCount", 2));
+    CHECK(ops::findMapping(c, {"climber", "motor3"}) == nullptr);
+    CHECK_FALSE(ops::setMotorCount(c, cat, "climber", "motorCount", 2));   // unchanged
+    CHECK(ops::setMotorCount(c, cat, "climber", "motorCount", 99));        // clamped to the template's slots
+    CHECK(ops::motorGroups(c, cat, "climber")[0].count == 3);
+
+    // Editing the property directly prunes as well.
+    ops::setMapping(c, {"climber", "motor2"}, {"phoenix6", "talonfx", 31, "rio", -1});
+    REQUIRE(applyProperty(c, cat, SelectionRef::mechanism("climber"), "mech.props", "motorCount", sdk::Value(1)));
+    CHECK(ops::findMapping(c, {"climber", "motor2"}) == nullptr);
+}
+
+TEST_CASE("motors: a wheel gets one drive row per motor and the reversed flag survives re-mapping") {
+    const auto cat = catalog();
+    auto c = robot();
+    CHECK(motorSlotNames(c, cat, "drivetrain", "fl.") == std::vector<std::string>{"fl.drive", "fl.steer"});
+    spec::applyWheel(c, "fl", "driveMotorCount", sdk::Value(3));
+    CHECK(motorSlotNames(c, cat, "drivetrain", "fl.") ==
+          std::vector<std::string>{"fl.drive", "fl.drive2", "fl.drive3", "fl.steer"});
+    const auto groups = ops::motorGroups(c, cat, "drivetrain");
+    CHECK(std::any_of(groups.begin(), groups.end(), [](const ops::MotorGroup& g) { return g.countKey == "fl.driveMotorCount" && g.count == 3 && g.maxCount == 8; }));
+
+    const sdk::SlotAddress second{"drivetrain", "fl.drive2"};
+    ops::setMapping(c, second, {"phoenix6", "talonfx", 30, "rio", -1});
+    CHECK(ops::setMappingReversed(c, second, true));
+    ops::setMapping(c, second, {"phoenix6", "talonfx", 31, "rio", -1});   // swap the controller
+    CHECK(ops::findMapping(c, second)->reversed);
+    CHECK_FALSE(ops::setMappingReversed(c, {"drivetrain", "fl.drive3"}, true));   // unmapped
+
+    CHECK(ops::renameWheel(c, "fl", "front"));
+    CHECK(ops::findMapping(c, {"drivetrain", "front.drive2"}) != nullptr);
+    CHECK(ops::wheelOfSlot("front.drive12") == "front");
+    CHECK(ops::wheelOfSlot("front.driver").empty());
+
+    spec::applyWheel(c, "front", "driveMotorCount", sdk::Value(1));
+    CHECK(ops::findMapping(c, {"drivetrain", "front.drive2"}) == nullptr);
+    CHECK(ops::findMapping(c, {"drivetrain", "front.drive"}) != nullptr);   // the first motor stays
+    CHECK(ops::findMapping(c, {"drivetrain", "front.steer"}) != nullptr);
+}
+
+TEST_CASE("motors: slot status shows reversed motors and which unmapped motors mirror motor 1") {
+    const auto cat = catalog();
+    auto c = robot();
+    ops::setMotorCount(c, cat, "climber", "motorCount", 2);
+    ops::setMapping(c, {"climber", "motor"}, {"phoenix6", "talonfx", 5, "rio", -1});
+    ops::setMappingReversed(c, {"climber", "motor"}, true);
+    const auto infos = slotInfos(c, cat, directoryOf({}), "climber");
+    REQUIRE(infos.size() >= 2);
+    CHECK(infos[0].reversed);
+    CHECK(mappedLabel(infos[0]).contains("reversed"));
+    CHECK(infos[1].spec.name == "motor2");
+    CHECK(infos[1].state == SlotState::OptionalEmpty);
+    CHECK(infos[1].detail.contains("mirrors"));
 }

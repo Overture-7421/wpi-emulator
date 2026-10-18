@@ -84,6 +84,13 @@ PropertySpec volume(const char* key, const char* label, const char* group, const
     return s;
 }
 
+PropertySpec intCount(const char* key, const char* label, const char* group, int def, int max) {
+    PropertySpec p = num(key, label, group, PropertyUnit::Count, def, 1.0, max, 1.0);
+    p.type = PropertyType::Int;
+    p.defaultValue = def;
+    return p;
+}
+
 sdk::SlotSpec slot(const char* name, const char* label, sdk::SlotType type, bool required, const char* description = "") {
     sdk::SlotSpec s;
     s.name = name;
@@ -91,6 +98,14 @@ sdk::SlotSpec slot(const char* name, const char* label, sdk::SlotType type, bool
     s.type = type;
     s.required = required;
     s.description = description;
+    return s;
+}
+
+// Motor `ordinal` (1-based) of a gearbox whose motor count is the property `motorCount`.
+sdk::SlotSpec motorSlot(const char* name, const char* label, int ordinal, bool required) {
+    sdk::SlotSpec s = slot(name, label, sdk::SlotType::Motor, required);
+    s.countKey = "motorCount";
+    s.ordinal = ordinal;
     return s;
 }
 
@@ -125,16 +140,23 @@ sdk::MechanismTemplateInfo templ(const char* type, const char* name, const char*
     t.origin = origin;
     t.slotSpecs = std::move(slots);
     t.properties.properties = std::move(props);
+    for (auto& p : t.properties.properties)
+        if (p.group == "Motor") {
+            p.section = sdk::PropertySection::Drive;
+            p.axis = "axis";
+        }
     t.defaultGeometry = std::move(geometry);
     t.links = std::move(links);
     for (const auto& s : t.slotSpecs)
-        if (s.type == sdk::SlotType::Motor) {
+        if (s.type == sdk::SlotType::Motor && s.ordinal > 1) {
+            t.motionAxes.back().motorSlots.push_back(s.name);
+        } else if (s.type == sdk::SlotType::Motor) {
             const bool deploy = s.name == "deploy";
             t.motionAxes.push_back(
-                {deploy ? "deploy" : std::string(type) == "intake" ? "roller" : "axis",
-                 std::string(type) == "elevator" ? sdk::PlantKind::Linear : sdk::PlantKind::Angular,
+                {deploy ? "deploy" : "axis",
+                 sdk::PlantKind::Angular,
                  {s.name},
-                 std::string(type) == "generic_1dof" ? "motion" : "",
+                 std::string(type) == "mechanism" ? "motion" : "",
                  deploy ? "hasDeploy" : ""});
         }
     return t;
@@ -174,99 +196,23 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
     const char* kMech = "Mechanism";
     const char* kMotor = "Motor";
 
+    // The one core template: a single motor-driven degree of freedom (Motion = rotary | arm | linear).
     cat.mechanismTemplates.push_back(templ(
-        "intake", "Intake", "Intake", "Roller intake with an optional deploy arm.",
-        {slot("motor", "Roller motor", sdk::SlotType::Motor, true), slot("deploy", "Deploy motor", sdk::SlotType::Motor, false),
-         slot("deployEncoder", "Deploy encoder", sdk::SlotType::PositionSensor, false),
-         slot("beam", "Game piece sensor", sdk::SlotType::BeamBreak, false, "Beam break that sees a game piece in the intake.")},
-        {num("rollerDiameterM", "Roller diameter", kMech, PropertyUnit::Meters, 0.05, 0.01, 0.2, 0.005),
-         num("gearRatio", "Gear ratio", kMotor, PropertyUnit::Ratio, 3.0, 0.5, 60.0, 0.1),
-         choice("motorType", "Motor", kMotor, "NEO", motorChoices()),
-         num("activeThresholdRpm", "Active above", kMech, PropertyUnit::RadiansPerSecond, 20.0, 0.0, 600.0, 1.0, false,
-             "Roller speed above which the intake counts as running."),
-         flag("hasDeploy", "Deployable", kMech, false), num("deployAngleRad", "Deploy angle", kMech, PropertyUnit::Radians, 1.2, 0.0, 3.0, 0.02)},
-        {prim("roller", sdk::PrimitiveKind::Cylinder, {0.f, 0.f, 0.f}, {}, "#e9a23b", 0.03f, 0.5f, true),
-         prim("frame", sdk::PrimitiveKind::Box, {-0.06f, 0.f, 0.02f}, {0.1f, 0.5f, 0.05f}, "#9aa5b1")}));
-
-    cat.mechanismTemplates.push_back(templ(
-        "shooter", "Shooter / flywheel", "Shooter", "Flywheel launcher with a motor and optional encoder.",
-        {slot("motor", "Flywheel motor", sdk::SlotType::Motor, true), slot("encoder", "Flywheel encoder", sdk::SlotType::VelocitySensor, false)},
-        {num("wheelDiameterM", "Wheel diameter", kMech, PropertyUnit::Meters, 0.1016, 0.03, 0.3, 0.005),
-         num("momentKgM2", "Flywheel inertia", kMech, PropertyUnit::KgM2, 0.0025, 0.0001, 0.1, 0.0001),
-         num("gearRatio", "Gear ratio", kMotor, PropertyUnit::Ratio, 1.0, 0.2, 10.0, 0.05),
-         choice("motorType", "Motor", kMotor, "Kraken X60", motorChoices()),
-         num("efficiency", "Launch efficiency", kMech, PropertyUnit::Ratio, 0.8, 0.1, 1.0, 0.01, true)},
-        {prim("flywheel", sdk::PrimitiveKind::Cylinder, {0.f, 0.f, 0.f}, {}, "#c75d4d", 0.05f, 0.1f, true),
-         prim("housing", sdk::PrimitiveKind::Box, {-0.06f, 0.f, 0.f}, {0.14f, 0.16f, 0.12f}, "#9aa5b1")},
-        {link("exit", "Exit point", {0.1f, 0.f, 0.f})}));
-
-    cat.mechanismTemplates.push_back(templ(
-        "hood", "Hood / pivot", "Shooter", "Pivoting arm or hood.",
-        {slot("motor", "Pivot motor", sdk::SlotType::Motor, true), slot("encoder", "Pivot encoder", sdk::SlotType::PositionSensor, true),
-         slot("lowerLimit", "Lower limit", sdk::SlotType::LimitSwitch, false)},
-        {num("armLengthM", "Arm length", kMech, PropertyUnit::Meters, 0.25, 0.02, 1.5, 0.01),
-         num("armMassKg", "Arm mass", kMech, PropertyUnit::Kilograms, 1.5, 0.05, 20.0, 0.1),
-         num("minAngleRad", "Lower limit", kMech, PropertyUnit::Radians, 0.0, -3.14, 3.14, 0.02),
-         num("maxAngleRad", "Upper limit", kMech, PropertyUnit::Radians, 1.0, -3.14, 3.14, 0.02),
-         num("gearRatio", "Gear ratio", kMotor, PropertyUnit::Ratio, 60.0, 1.0, 400.0, 1.0),
-         choice("motorType", "Motor", kMotor, "NEO", motorChoices())},
-        {prim("arm", sdk::PrimitiveKind::Box, {0.1f, 0.f, 0.f}, {0.25f, 0.18f, 0.02f}, "#6aa6d8")}, {link("tip", "Arm tip", {0.25f, 0.f, 0.f})}));
-
-    cat.mechanismTemplates.push_back(templ(
-        "turret", "Turret", "Shooter", "Rotating base for a shooter (yaw axis).",
-        {slot("motor", "Turret motor", sdk::SlotType::Motor, true), slot("encoder", "Turret encoder", sdk::SlotType::PositionSensor, true)},
-        {num("inertiaKgM2", "Inertia", kMech, PropertyUnit::KgM2, 0.04, 0.001, 1.0, 0.001),
-         num("gearRatio", "Gear ratio", kMotor, PropertyUnit::Ratio, 40.0, 1.0, 400.0, 1.0),
-         num("minAngleRad", "Min angle", kMech, PropertyUnit::Radians, -3.14, -6.3, 6.3, 0.05),
-         num("maxAngleRad", "Max angle", kMech, PropertyUnit::Radians, 3.14, -6.3, 6.3, 0.05),
-         choice("motorType", "Motor", kMotor, "NEO", motorChoices())},
-        {prim("ring", sdk::PrimitiveKind::Cylinder, {0.f, 0.f, 0.02f}, {}, "#7e8fa3", 0.12f, 0.04f)}, {link("top", "Top plate", {0.f, 0.f, 0.04f})}));
-
-    cat.mechanismTemplates.push_back(templ(
-        "elevator", "Elevator / climber", "Climber", "Linear lift with a moving carriage.",
-        {slot("motor", "Lift motor", sdk::SlotType::Motor, true), slot("encoder", "Lift encoder", sdk::SlotType::PositionSensor, false),
-         slot("lowerLimit", "Bottom limit", sdk::SlotType::LimitSwitch, false), slot("upperLimit", "Top limit", sdk::SlotType::LimitSwitch, false)},
-        {num("carriageMassKg", "Carriage mass", kMech, PropertyUnit::Kilograms, 4.0, 0.1, 40.0, 0.1),
-         num("drumRadiusM", "Drum radius", kMech, PropertyUnit::Meters, 0.0254, 0.005, 0.1, 0.001),
-         num("gearRatio", "Gear ratio", kMotor, PropertyUnit::Ratio, 10.0, 1.0, 100.0, 0.5),
-         num("minHeightM", "Min height", kMech, PropertyUnit::Meters, 0.0, 0.0, 2.0, 0.01),
-         num("maxHeightM", "Max height", kMech, PropertyUnit::Meters, 0.6, 0.05, 3.0, 0.01),
-         choice("motorType", "Motor", kMotor, "Kraken X60", motorChoices())},
-        {prim("rail", sdk::PrimitiveKind::Box, {0.f, 0.f, 0.3f}, {0.05f, 0.1f, 0.6f}, "#9aa5b1"),
-         prim("carriage", sdk::PrimitiveKind::Box, {0.04f, 0.f, 0.05f}, {0.06f, 0.12f, 0.08f}, "#e9a23b")},
-        {link("carriage", "Carriage", {0.04f, 0.f, 0.05f})}));
-
-    cat.mechanismTemplates.push_back(templ(
-        "indexer", "Indexer / conveyor", "Intake", "Belt or roller stack that moves game pieces.",
-        {slot("motor", "Conveyor motor", sdk::SlotType::Motor, true), slot("entry", "Entry sensor", sdk::SlotType::BeamBreak, false),
-         slot("exit", "Exit sensor", sdk::SlotType::BeamBreak, false)},
-        {num("rollerDiameterM", "Roller diameter", kMech, PropertyUnit::Meters, 0.04, 0.01, 0.2, 0.005),
-         num("gearRatio", "Gear ratio", kMotor, PropertyUnit::Ratio, 5.0, 0.5, 60.0, 0.1),
-         choice("motorType", "Motor", kMotor, "NEO 550", motorChoices()),
-         num("activeThresholdRpm", "Active above", kMech, PropertyUnit::RadiansPerSecond, 20.0, 0.0, 600.0, 1.0)},
-        {prim("belt", sdk::PrimitiveKind::Box, {0.f, 0.f, 0.f}, {0.3f, 0.12f, 0.05f}, "#6aa6d8")}));
-
-    cat.mechanismTemplates.push_back(templ(
-        "roller", "Generic roller", "Generic", "A motor spinning a roller: no position, only speed.",
-        {slot("motor", "Motor", sdk::SlotType::Motor, true)},
-        {num("rollerDiameterM", "Roller diameter", kMech, PropertyUnit::Meters, 0.05, 0.01, 0.3, 0.005),
-         num("inertiaKgM2", "Inertia", kMech, PropertyUnit::KgM2, 0.001, 0.00001, 0.5, 0.0001),
-         num("gearRatio", "Gear ratio", kMotor, PropertyUnit::Ratio, 1.0, 0.1, 100.0, 0.1),
-         choice("motorType", "Motor", kMotor, "NEO", motorChoices())},
-        {prim("roller", sdk::PrimitiveKind::Cylinder, {0.f, 0.f, 0.f}, {}, "#b58be0", 0.025f, 0.2f, true)}));
-
-    cat.mechanismTemplates.push_back(templ(
-        "generic_1dof", "Generic 1-DOF", "Generic", "Any single degree of freedom: linear or rotary.",
-        {slot("motor", "Motor", sdk::SlotType::Motor, true), slot("encoder", "Encoder", sdk::SlotType::PositionSensor, false),
-         slot("lowerLimit", "Lower limit", sdk::SlotType::LimitSwitch, false), slot("upperLimit", "Upper limit", sdk::SlotType::LimitSwitch, false)},
-        {choice("motion", "Motion", kMech, "linear", {{"linear", "Linear"}, {"rotary", "Rotary"}}),
-         num("loadKg", "Load mass / inertia", kMech, PropertyUnit::Kilograms, 2.0, 0.01, 100.0, 0.1),
-         num("gearRatio", "Gear ratio", kMotor, PropertyUnit::Ratio, 20.0, 0.1, 500.0, 0.5),
-         num("minPosition", "Min position", kMech, PropertyUnit::None, 0.0, -10.0, 10.0, 0.01),
-         num("maxPosition", "Max position", kMech, PropertyUnit::None, 1.0, -10.0, 10.0, 0.01),
-         choice("motorType", "Motor", kMotor, "NEO", motorChoices())},
-        {prim("body", sdk::PrimitiveKind::Box, {0.f, 0.f, 0.f}, {0.12f, 0.12f, 0.12f}, "#8fbf8f")}, {link("output", "Output", {0.f, 0.f, 0.1f})}));
-
+        "mechanism", "Mechanism", "Mechanism", "One motor-driven degree of freedom: rotary, arm or linear.",
+        {motorSlot("motor", "Motor", 1, true), motorSlot("motor2", "Motor 2", 2, false), motorSlot("motor3", "Motor 3", 3, false),
+         slot("encoder", "Position sensor", sdk::SlotType::PositionSensor, false),
+         slot("lowerLimit", "Reverse limit switch", sdk::SlotType::LimitSwitch, false),
+         slot("upperLimit", "Forward limit switch", sdk::SlotType::LimitSwitch, false)},
+        {choice("motion", "Type", kMech, "rotary", {{"rotary", "Rotary"}, {"arm", "Arm"}, {"linear", "Linear"}}),
+         intCount("motorCount", "Motor count", kMotor, 1, 3),
+         choice("motorType", "Motor model", kMotor, "Kraken X60", motorChoices()),
+         num("gearRatio", "Gear ratio", kMotor, PropertyUnit::Ratio, 10.0, 0.1, 500.0, 0.5),
+         num("inertiaKgM2", "Moment of inertia", kMech, PropertyUnit::KgM2, 0.01, 0.0001, 10.0, 0.001),
+         num("massKg", "Mass", kMech, PropertyUnit::Kilograms, 2.0, 0.01, 100.0, 0.1),
+         num("minPosition", "Minimum position", kMech, PropertyUnit::None, 0.0, -10.0, 10.0, 0.01),
+         num("maxPosition", "Maximum position", kMech, PropertyUnit::None, 0.0, -10.0, 10.0, 0.01)},
+        {prim("mover", sdk::PrimitiveKind::Box, {0.10f, 0.f, 0.f}, {0.20f, 0.05f, 0.05f}, "#9b59b6")},
+        {link("mover", "Moving part", {0.f, 0.f, 0.05f})}));
     // ---- plugin templates (prefix = plugin id) with the pickup-zone volume ----
     sdk::Box3 zone;
     zone.pose.position = {0.3f, 0.f, 0.f};
@@ -321,15 +267,15 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
     hopperPanel.order = 1;
     cat.pluginPanels.push_back(hopperPanel);
 
-    sdk::EditorPanelDescriptor feeding;
-    feeding.id = "game_2026.feeding";
-    feeding.title = "Fuel feeding";
-    feeding.scope = sdk::PanelScope::Mechanism;
-    feeding.mechanismTypes = {"indexer", "roller"};
-    feeding.properties.properties = {flag("feedsShooter", "Feeds the shooter", "Feeding", false, "While running, the shooter fires."),
-                                     num("feedThresholdRpm", "Feeding above", "Feeding", PropertyUnit::RadiansPerSecond, 30.0, 0.0, 600.0, 1.0)};
-    feeding.order = 2;
-    cat.pluginPanels.push_back(feeding);
+    // A mechanism-scope panel: only mechanisms of the listed (plugin) templates get it.
+    sdk::EditorPanelDescriptor aiming;
+    aiming.id = "game_2026.aiming";
+    aiming.title = "Aiming";
+    aiming.scope = sdk::PanelScope::Mechanism;
+    aiming.mechanismTypes = {"game_2026.fuel_shooter"};
+    aiming.properties.properties = {num("hoodAngleRad", "Hood angle", "Aiming", PropertyUnit::Radians, 0.7, 0.0, 1.5, 0.01)};
+    aiming.order = 2;
+    cat.pluginPanels.push_back(aiming);
     return cat;
 }
 
@@ -381,11 +327,20 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
     };
     auto* intake = add("game_2026.fuel_intake", "intake", "Intake", {0.50f, 0.f, -0.06f});
     intake->mappings.push_back({{"intake", "motor"}, {"phoenix6", "talonfx", 10, "canivore", -1}});
-    add("indexer", "indexer", "Indexer", {0.05f, 0.f, -0.04f});
-    add("turret", "turret", "Turret", {-0.15f, 0.f, 0.0f});
-    auto* shooter = add("game_2026.fuel_shooter", "shooter", "Shooter", {0.02f, 0.f, 0.06f}, "turret", "top");
+    auto* indexer = add("mechanism", "indexer", "Indexer", {0.05f, 0.f, -0.04f});
+    indexer->geometry = {prim("belt", sdk::PrimitiveKind::Box, {0.f, 0.f, 0.f}, {0.3f, 0.12f, 0.05f}, "#6aa6d8")};
+    auto* turret = add("mechanism", "turret", "Turret", {-0.15f, 0.f, 0.0f});
+    turret->properties["minPosition"] = -3.14;
+    turret->properties["maxPosition"] = 3.14;
+    turret->properties["gearRatio"] = 40.0;
+    turret->geometry = {prim("ring", sdk::PrimitiveKind::Cylinder, {0.f, 0.f, 0.02f}, {}, "#7e8fa3", 0.12f, 0.04f)};
+    auto* shooter = add("game_2026.fuel_shooter", "shooter", "Shooter", {0.02f, 0.f, 0.06f}, "turret", "mover");
     shooter->mappings.push_back({{"shooter", "flywheel"}, {"phoenix6", "talonfx", 11, "canivore", -1}});
-    add("elevator", "climber", "Climber", {-0.33f, 0.28f, -0.05f});
+    auto* climber = add("mechanism", "climber", "Climber", {-0.33f, 0.28f, -0.05f});
+    climber->properties["motion"] = "linear";
+    climber->properties["maxPosition"] = 0.6;
+    climber->geometry = {prim("rail", sdk::PrimitiveKind::Box, {0.f, 0.f, 0.3f}, {0.05f, 0.1f, 0.6f}, "#9aa5b1"),
+                         prim("carriage", sdk::PrimitiveKind::Box, {0.04f, 0.f, 0.05f}, {0.06f, 0.12f, 0.08f}, "#e9a23b")};
     return c;
 }
 

@@ -3,8 +3,13 @@
 #include <QMimeData>
 
 #include <algorithm>
+#include <functional>
+#include <map>
+#include <set>
 
 #include "model/config_ops.h"
+#include "model/motion_links.h"
+#include "model/property_groups.h"
 #include "model/tr.h"
 
 namespace wpiemu::app::editor {
@@ -41,14 +46,12 @@ std::unique_ptr<ProjectTreeModel::Node> ProjectTreeModel::build() const {
         parent.children.push_back(std::move(n));
         return *parent.children.back();
     };
-    auto addSlots = [&](Node& parent, std::string_view owner, const std::string& prefix) {
+    auto addSlots = [&](Node& parent, std::string_view owner) {
         bool warn = false;
         for (const SlotInfo& info : slotInfos(c, cat, devices_, owner)) {
-            if (!prefix.empty() && info.spec.name.rfind(prefix, 0) != 0) continue;
-            const QString label = prefix.empty() ? qs(info.spec.label.empty() ? info.spec.name : info.spec.label)
-                                                 : qs(info.spec.name.substr(prefix.size()));
+            const QString label = qs(info.spec.label.empty() ? info.spec.name : info.spec.label);
             QString detail;
-            if (info.mapped) detail = deviceLabel(*info.mapped);
+            if (info.mapped) detail = mappedLabel(info);
             else detail = info.spec.required ? ETR("not mapped") : ETR("optional");
             Node& n = add(parent, NodeKind::Slot, QStringLiteral("slot:%1:%2").arg(qs(std::string(owner)), qs(info.spec.name)),
                           SelectionRef::slot(std::string(owner), info.spec.name), label, detail);
@@ -71,34 +74,143 @@ std::unique_ptr<ProjectTreeModel::Node> ProjectTreeModel::build() const {
 
     Node& drive = add(robot, NodeKind::Drivetrain, QStringLiteral("drivetrain"), SelectionRef::drivetrain(), ETR("Drivetrain"),
                       qs(c.drivetrain.spec.kind));
-    for (const auto& w : c.drivetrain.spec.wheels) {
-        Node& wn = add(drive, NodeKind::Wheel, QStringLiteral("wheel:%1").arg(qs(w.name)), SelectionRef::wheel(w.name), qs(w.name),
-                       qs(w.driveMotor.name));
-        wn.warning = addSlots(wn, sdk::slot_owner::kDrivetrain, w.name + ".");
-    }
-
     Node& mechs = add(robot, NodeKind::Group, QStringLiteral("mechanisms"), SelectionRef{}, ETR("Mechanisms"),
                       QString::number(c.mechanisms.size()));
-    for (const auto& m : c.mechanisms)
-        if (m.resolvedAttachment().onChassis()) addMechanismNode(mechs, c, m);
-    // Mechanisms whose parent is missing (broken config) still show up so they can be fixed.
-    for (const auto& m : c.mechanisms) {
-        const auto att = m.resolvedAttachment();
-        if (!att.onChassis() && c.findMechanism(att.parentMechanismId) == nullptr) addMechanismNode(mechs, c, m);
-    }
-
     Node& sensors = add(robot, NodeKind::Group, QStringLiteral("sensors"), SelectionRef{}, ETR("Robot sensors"));
-    addSlots(sensors, sdk::slot_owner::kRobot, {});
+    addSlots(sensors, sdk::slot_owner::kRobot);
 
     if (cat.hasPlugin()) {
         Node& plugin = add(robot, NodeKind::Plugin, QStringLiteral("plugin"), SelectionRef::plugin(), qs(cat.pluginDisplayName), ETR("game rules"));
         for (const auto& vol : ops::volumesFor(c, cat, ""))
             add(plugin, NodeKind::Volume, QStringLiteral("volume::%1").arg(qs(vol.key)), SelectionRef::overlay({}, vol.key), qs(vol.label), ETR("volume"));
     }
+
+    // Wheels and mechanisms are created detached, then placed: a follower sits under the owner that drives it,
+    // everything else under its structural parent (drivetrain, mechanism attachment, mechanisms group).
+    const MotionIndex motion(c, cat);
+    struct Owner {
+        std::unique_ptr<Node> node;
+        QString structuralKey;   // key of the structural parent (an owner or a group)
+        QString linkKey;         // key of the owner that drives it; empty when it is not a follower
+    };
+    std::vector<Owner> owners;
+    auto ownerKey = [](const SelectionRef& ref) {
+        return ref.kind == SelKind::Wheel ? QStringLiteral("wheel:%1").arg(qs(ref.sub)) : QStringLiteral("mech:%1").arg(qs(ref.owner));
+    };
+    for (const auto& w : c.drivetrain.spec.wheels) {
+        Owner o;
+        o.node = makeWheelNode(c, w, motion);
+        o.structuralKey = drive.key;
+        o.linkKey = linkKeyFor(motion, o.node->ref, ownerKey);
+        owners.push_back(std::move(o));
+    }
+    for (const auto& m : c.mechanisms) {
+        Owner o;
+        o.node = makeMechanismNode(c, m, motion);
+        const auto att = m.attachment;
+        o.structuralKey = att.onChassis() || c.findMechanism(att.parentMechanismId) == nullptr ? mechs.key : QStringLiteral("mech:%1").arg(qs(att.parentMechanismId));
+        o.linkKey = linkKeyFor(motion, o.node->ref, ownerKey);
+        owners.push_back(std::move(o));
+    }
+
+    std::map<QString, Node*> byKey;
+    std::map<QString, std::size_t> index;
+    for (std::size_t i = 0; i < owners.size(); ++i) {
+        byKey[owners[i].node->key] = owners[i].node.get();
+        index[owners[i].node->key] = i;
+    }
+    byKey[drive.key] = &drive;
+    byKey[mechs.key] = &mechs;
+    for (auto& o : owners)
+        if (!index.count(o.linkKey)) o.linkKey.clear();   // the source is not a tree node (broken model)
+
+    std::map<QString, QString> parentOf;
+    for (const auto& o : owners) parentOf[o.node->key] = o.linkKey.isEmpty() ? o.structuralKey : o.linkKey;
+    // A link may point back along the structural chain; the owner that closes such a loop keeps its structural parent.
+    for (const auto& o : owners) {
+        QString k = o.node->key;
+        std::set<QString> seen;
+        while (index.count(k) && seen.insert(k).second) k = parentOf[k];
+        if (k == o.node->key) parentOf[o.node->key] = o.structuralKey;
+    }
+    for (auto& o : owners) {
+        Node* parent = byKey[parentOf[o.node->key]];
+        o.node->parent = parent;
+        o.node->nestedByLink = parent->key != o.structuralKey;
+        parent->children.push_back(std::move(o.node));
+    }
     return root;
 }
 
-void ProjectTreeModel::addMechanismNode(Node& parentNode, const sdk::RobotConfig& c, const sdk::MechanismConfig& m) const {
+QString ProjectTreeModel::linkKeyFor(const MotionIndex& motion, const SelectionRef& owner, const std::function<QString(const SelectionRef&)>& key) {
+    const OwnerMotion om = motion.ownerMotion(owner);
+    return om.primarySource ? key(*om.primarySource) : QString();
+}
+
+QString ProjectTreeModel::motionDetail(const sdk::RobotConfig& c, const EditorCatalog& cat, const MotionIndex& motion, const OwnerMotion& om) {
+    QStringList parts;
+    if (!om.incoming.empty()) {
+        const sdk::MotionLink& link = *om.incoming.front();
+        const sdk::MotionAxisInfo* from = motion.axis(link.source);
+        const sdk::MotionAxisInfo* to = motion.axis(link.target);
+        const double ratio = from != nullptr && to != nullptr ? ratioFromSi(link.ratio, from->kind, to->kind) : link.ratio;
+        QString text = ETR("follows %1 \xC3\x97%2").arg(qs(axisLabel(c, cat, link.source)), QString::number(ratio, 'g', 4));
+        if (om.incoming.size() > 1) text += QStringLiteral(" +%1").arg(om.incoming.size() - 1);
+        parts << text;
+    }
+    if (!om.drives.empty()) parts << ETR("drives %1").arg(om.drives.size());
+    return parts.join(QStringLiteral(" \xC2\xB7 "));
+}
+
+std::unique_ptr<ProjectTreeModel::Node> ProjectTreeModel::makeWheelNode(const sdk::RobotConfig& c, const sdk::WheelSpec& w, const MotionIndex& motion) const {
+    const EditorCatalog& cat = document_.catalog();
+    auto node = std::make_unique<Node>();
+    Node& n = *node;
+    n.kind = NodeKind::Wheel;
+    n.key = QStringLiteral("wheel:%1").arg(qs(w.name));
+    n.ref = SelectionRef::wheel(w.name);
+    n.text = qs(w.name);
+
+    const std::string prefix = w.name + ".";
+    std::vector<SlotInfo> slots;
+    for (SlotInfo& info : slotInfos(c, cat, devices_, sdk::slot_owner::kDrivetrain))
+        if (info.spec.name.rfind(prefix, 0) == 0) slots.push_back(std::move(info));
+
+    const OwnerMotion om = motion.ownerMotion(n.ref);
+    n.follower = om.followsAll;
+    QStringList parts;
+    // A wheel whose only slot is its drive motor shows that motor on the wheel row itself.
+    if (slots.size() == 1 && slots.front().spec.name == w.name + ".drive") {
+        const SlotInfo& s = slots.front();
+        parts << (s.mapped ? mappedLabel(s) : (s.spec.required ? ETR("not mapped") : ETR("optional")));
+        n.state = static_cast<int>(s.state);
+        n.warning = needsAttention(s.state);
+        n.tooltip = qs(s.spec.description) + (s.spec.description.empty() ? QString() : QStringLiteral("\n")) + s.detail;
+    } else {
+        for (const SlotInfo& s : slots) {
+            auto child = std::make_unique<Node>();
+            child->kind = NodeKind::Slot;
+            child->key = QStringLiteral("slot:%1:%2").arg(qs(std::string(sdk::slot_owner::kDrivetrain)), qs(s.spec.name));
+            child->ref = SelectionRef::slot(std::string(sdk::slot_owner::kDrivetrain), s.spec.name);
+            child->text = qs(s.spec.name.substr(prefix.size()));
+            child->detail = s.mapped ? mappedLabel(s) : (s.spec.required ? ETR("not mapped") : ETR("optional"));
+            child->state = static_cast<int>(s.state);
+            child->tooltip = qs(s.spec.description) + (s.spec.description.empty() ? QString() : QStringLiteral("\n")) + s.detail;
+            child->parent = &n;
+            n.warning = n.warning || needsAttention(s.state);
+            n.children.push_back(std::move(child));
+        }
+    }
+    const QString motionText = motionDetail(c, cat, motion, om);
+    if (!motionText.isEmpty()) parts << motionText;
+    n.detail = parts.join(QStringLiteral(" \xC2\xB7 "));
+    if (!om.incoming.empty())
+        n.tooltip = ETR("Driven by %1 through a motion link; it takes no motor of its own.").arg(qs(axisLabel(c, cat, om.incoming.front()->source))) +
+                    (n.tooltip.isEmpty() ? QString() : QStringLiteral("\n") + n.tooltip);
+    return node;
+}
+
+std::unique_ptr<ProjectTreeModel::Node> ProjectTreeModel::makeMechanismNode(const sdk::RobotConfig& c, const sdk::MechanismConfig& m, const MotionIndex& motion) const {
     const EditorCatalog& cat = document_.catalog();
     auto node = std::make_unique<Node>();
     Node& n = *node;
@@ -107,41 +219,43 @@ void ProjectTreeModel::addMechanismNode(Node& parentNode, const sdk::RobotConfig
     n.ref = SelectionRef::mechanism(m.id);
     n.text = qs(ops::displayNameFor(m, cat));
     const auto* info = cat.findTemplate(m.type);
-    n.detail = info != nullptr ? qs(info->displayName) : qs(m.type) + ETR(" (unknown template)");
-    const auto att = m.resolvedAttachment();
-    if (!att.onChassis()) n.detail += QStringLiteral(" @ %1").arg(qs(att.parentMechanismId + (att.parentLink == sdk::kRootLink ? "" : "." + att.parentLink)));
-    n.parent = &parentNode;
-    parentNode.children.push_back(std::move(node));
-    Node& self = *parentNode.children.back();
+    QString detail = info != nullptr ? mechanismKindLabel(m, *info) : qs(m.type) + ETR(" (unknown template)");
+    const auto att = m.attachment;
+    const OwnerMotion om = motion.ownerMotion(n.ref);
+    n.follower = om.followsAll;
+    // A follower is placed under its source, not where it is attached, so its attachment stays visible as text.
+    if (!att.onChassis()) detail += QStringLiteral(" @ %1").arg(qs(att.parentMechanismId + (att.parentLink == sdk::kRootLink ? "" : "." + att.parentLink)));
+    else if (om.primarySource) detail += ETR(" @ chassis");
+    const QString motionText = motionDetail(c, cat, motion, om);
+    n.detail = motionText.isEmpty() ? detail : detail + QStringLiteral(" \xC2\xB7 ") + motionText;
+    if (!om.incoming.empty())
+        n.tooltip = ETR("Driven by %1 through a motion link; its linked motors need no mapping.").arg(qs(axisLabel(c, cat, om.incoming.front()->source)));
 
-    auto addChild = [&](NodeKind kind, QString key, SelectionRef ref, QString text, QString detail, int state = -1) -> Node& {
+    auto addChild = [&](NodeKind kind, QString key, SelectionRef ref, QString text, QString childDetail, int state = -1) -> Node& {
         auto child = std::make_unique<Node>();
         child->kind = kind;
         child->key = std::move(key);
         child->ref = std::move(ref);
         child->text = std::move(text);
-        child->detail = std::move(detail);
+        child->detail = std::move(childDetail);
         child->state = state;
-        child->parent = &self;
-        self.children.push_back(std::move(child));
-        return *self.children.back();
+        child->parent = &n;
+        n.children.push_back(std::move(child));
+        return *n.children.back();
     };
     for (const SlotInfo& s : slotInfos(c, cat, devices_, m.id)) {
-        QString detail = s.mapped ? deviceLabel(*s.mapped) : (s.spec.required ? ETR("not mapped") : ETR("optional"));
+        QString slotDetail = s.mapped ? mappedLabel(s) : (s.spec.required ? ETR("not mapped") : ETR("optional"));
         Node& sn = addChild(NodeKind::Slot, QStringLiteral("slot:%1:%2").arg(qs(m.id), qs(s.spec.name)), SelectionRef::slot(m.id, s.spec.name),
-                            qs(s.spec.label.empty() ? s.spec.name : s.spec.label), detail, static_cast<int>(s.state));
+                            qs(s.spec.label.empty() ? s.spec.name : s.spec.label), slotDetail, static_cast<int>(s.state));
         sn.tooltip = qs(s.spec.description) + (s.spec.description.empty() ? QString() : QStringLiteral("\n")) + s.detail;
-        self.warning = self.warning || needsAttention(s.state);
+        n.warning = n.warning || needsAttention(s.state);
     }
     for (std::size_t i = 0; i < m.geometry.size(); ++i)
         addChild(NodeKind::Shape, QStringLiteral("shape:%1:%2").arg(qs(m.id)).arg(i), SelectionRef::primitive(m.id, static_cast<int>(i)),
                  qs(m.geometry[i].name), m.geometry[i].kind == sdk::PrimitiveKind::Box ? ETR("box") : ETR("cylinder"));
     for (const auto& vol : ops::volumesFor(c, cat, m.id))
         addChild(NodeKind::Volume, QStringLiteral("volume:%1:%2").arg(qs(m.id), qs(vol.key)), SelectionRef::overlay(m.id, vol.key), qs(vol.label), ETR("volume"));
-    for (const auto& child : c.mechanisms) {
-        const auto ca = child.resolvedAttachment();
-        if (!ca.onChassis() && ca.parentMechanismId == m.id && child.id != m.id) addMechanismNode(self, c, child);
-    }
+    return node;
 }
 
 void ProjectTreeModel::flatten(const Node& n, std::vector<const Node*>& out) {
@@ -164,6 +278,8 @@ void ProjectTreeModel::copyContents(Node& dst, const Node& src) {
     dst.tooltip = src.tooltip;
     dst.state = src.state;
     dst.warning = src.warning;
+    dst.follower = src.follower;
+    dst.nestedByLink = src.nestedByLink;
     for (std::size_t i = 0; i < dst.children.size(); ++i) copyContents(*dst.children[i], *src.children[i]);
 }
 
@@ -227,6 +343,7 @@ QVariant ProjectTreeModel::data(const QModelIndex& index, int role) const {
         case DetailRole: return n->detail;
         case KeyRole: return n->key;
         case WarningRole: return n->warning;
+        case FollowerRole: return n->follower;
         case RefKeyRole: return qs(n->ref.key());
         default: return {};
     }
@@ -274,12 +391,13 @@ Qt::ItemFlags ProjectTreeModel::flags(const QModelIndex& index) const {
     const Node* n = nodeAt(index);
     if (n == nullptr) return f;
     if (!n->ref.isNone()) f |= Qt::ItemIsSelectable;
-    if (n->kind == NodeKind::Mechanism) f |= Qt::ItemIsDragEnabled;
+    // Followers sit under their source, not under their attachment, so they cannot be re-attached by dragging.
+    if (n->kind == NodeKind::Mechanism && !n->nestedByLink) f |= Qt::ItemIsDragEnabled;
     return f;
 }
 
 QStringList ProjectTreeModel::mimeTypes() const {
-    return {QString::fromLatin1(kDeviceMime), QString::fromLatin1(kTemplateMime), QString::fromLatin1(kMechanismMime)};
+    return {QString::fromLatin1(kDeviceMime), QString::fromLatin1(kMechanismMime)};
 }
 
 QMimeData* ProjectTreeModel::mimeData(const QModelIndexList& indexes) const {
@@ -298,14 +416,15 @@ bool ProjectTreeModel::acceptsDevice(const Node* target, sdk::CapabilitySet caps
     if (target == nullptr) return false;
     const sdk::RobotConfig& c = document_.config();
     if (target->kind == NodeKind::Slot) {
+        if (MotionIndex(c, document_.catalog()).isFollowerMotor({target->ref.owner, target->ref.sub})) return false;
         for (const auto& spec : ops::slotSpecsFor(c, document_.catalog(), target->ref.owner))
             if (spec.name == target->ref.sub) return slotAccepts(spec, caps);
         return false;
     }
     if (target->kind == NodeKind::Mechanism)
-        return bestSlotFor(c, document_.catalog(), target->ref.owner, caps).has_value();
+        return canAcceptDevice(c, document_.catalog(), target->ref.owner, caps);
     if (target->kind == NodeKind::Wheel)
-        return bestSlotFor(c, document_.catalog(), sdk::slot_owner::kDrivetrain, caps, target->ref.sub + ".").has_value();
+        return canAcceptDevice(c, document_.catalog(), sdk::slot_owner::kDrivetrain, caps, target->ref.sub + ".");
     return false;
 }
 
@@ -315,7 +434,6 @@ bool ProjectTreeModel::canDropMimeData(const QMimeData* data, Qt::DropAction, in
 
     const bool attachTarget = target == nullptr || target->kind == NodeKind::Mechanism || target->kind == NodeKind::Chassis ||
                               target->kind == NodeKind::Robot || (target->kind == NodeKind::Group && target->key == QStringLiteral("mechanisms"));
-    if (data != nullptr && data->hasFormat(QString::fromLatin1(kTemplateMime))) return attachTarget;
     if (data != nullptr && data->hasFormat(QString::fromLatin1(kMechanismMime))) {
         if (!attachTarget) return false;
         const std::string id = data->data(QString::fromLatin1(kMechanismMime)).toStdString();
@@ -334,10 +452,6 @@ bool ProjectTreeModel::dropMimeData(const QMimeData* data, Qt::DropAction action
     }
     sdk::MechanismAttachment att;
     if (target != nullptr && target->kind == NodeKind::Mechanism) att.parentMechanismId = target->ref.owner;
-    if (data->hasFormat(QString::fromLatin1(kTemplateMime))) {
-        Q_EMIT templateDropped(QString::fromUtf8(data->data(QString::fromLatin1(kTemplateMime))), att);
-        return true;
-    }
     Q_EMIT mechanismDropped(QString::fromUtf8(data->data(QString::fromLatin1(kMechanismMime))), att);
     return true;
 }

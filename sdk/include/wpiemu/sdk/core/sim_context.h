@@ -37,7 +37,7 @@ struct SimContextServices {
     const proto::DsState& driverStation;  // latest DS state (enabled/mode/alliance/match time)
     BodyId chassisBody;                   // the robot's rigid body in `physics` (invalid before it is built)
     IMechanismDirectory* mechanisms = nullptr;  // null until mechanisms are built
-    IMechanismPhysicsCoupling* coupling = nullptr;  // SDK 1.1; null => SimContext::coupling() is a null object
+    IMechanismPhysicsCoupling* coupling = nullptr;  // null => SimContext::coupling() is a null object
 };
 
 class SimContext {
@@ -61,7 +61,7 @@ public:
     // Null until the runtime has built them (e.g. during IGameModule::createGameState).
     IGameState* gameState() { return gameState_; }
     IMechanismDirectory* mechanisms() { return s_.mechanisms; }
-    // SDK 1.1. Never null: a no-op null object (capabilities() all false) when the runtime did not bind
+    // Never null: a no-op null object (capabilities() all false) when the runtime did not bind
     // one. Mechanisms submit before the physics step and read prior-step loads (see physics_coupling.h).
     IMechanismPhysicsCoupling& coupling() { return s_.coupling != nullptr ? *s_.coupling : nullCoupling_; }
 

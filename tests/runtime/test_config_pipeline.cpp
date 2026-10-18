@@ -210,6 +210,28 @@ TEST_CASE("validator: slots - unknown, owner mismatch, required, duplicates") {
     CHECK(hasIssue(issues, issue_code::kDeviceDuplicateMapping));
 }
 
+TEST_CASE("validator: motor counts, inactive motor slots and the reversed flag") {
+    Registries reg;
+    RobotConfig c = sampleConfig();
+    c.mechanisms[0].mappings.push_back({{"intake", "motor2"}, DeviceKey{"hal", "pwm", 3, "rio", -1}, true});   // motor count is 1
+    auto issues = validate(c, reg);
+    CHECK(hasIssue(issues, issue_code::kSlotMotorInactive, Severity::Warning));
+    c.mechanisms[0].properties["motorCount"] = 2;
+    CHECK_FALSE(hasIssue(validate(c, reg), issue_code::kSlotMotorInactive));
+
+    c.mechanisms[0].mappings.push_back({{"intake", "encoder"}, DeviceKey{"phoenix6", "cancoder", 12, "rio", -1}, true});
+    CHECK(hasIssue(validate(c, reg), issue_code::kSlotReversedInvalid, Severity::Warning));   // only motors can be reversed
+
+    RobotConfig wheels = sampleConfig();
+    wheels.drivetrain.spec.wheels[0].driveMotorCount = 9;
+    CHECK(hasIssue(validate(wheels, reg), issue_code::kWheelInvalid, Severity::Error));
+    wheels.drivetrain.spec.wheels[0].driveMotorCount = 3;
+    wheels.drivetrain.mappings.push_back({{slot_owner::kDrivetrain, driveSlotName(wheels.drivetrain.spec.wheels[0].name, 2)},
+                                          DeviceKey{"hal", "pwm", 6, "rio", -1}});
+    CHECK_FALSE(hasIssue(validate(wheels, reg), issue_code::kSlotUnknown));   // drive3 exists now
+    wheels.drivetrain.spec.wheels[0].driveMotorCount = 2;
+    CHECK(hasIssue(validate(wheels, reg), issue_code::kSlotUnknown));         // drive3 is gone
+}
 TEST_CASE("validator: aliases of one physical device mapped independently are rejected") {
     Registries reg;
     RobotConfig c = sampleConfig();
@@ -233,21 +255,21 @@ TEST_CASE("validator: slot/device capability check uses the injected catalog and
     CHECK_FALSE(hasIssue(validate(ok, reg, ConfigValidator(nullptr, catalog)), issue_code::kSlotDeviceIncompatible));
 }
 
-TEST_CASE("validator: plugin sections - unknown, newer, outdated, invalid data") {
+TEST_CASE("validator: plugin sections - unknown, unsupported version, invalid data") {
     Registries reg;
     RobotConfig c = sampleConfig();
     c.gamePluginId = "fake_game";
-    c.plugins["fake_game"] = PluginSection{2, Value::makeObject()};
+    c.plugins["fake_game"] = PluginSection{1, Value::makeObject()};
     c.plugins["fake_game"].data["capacity"] = 1000;  // schema max 100
     c.plugins["ghost_game"] = PluginSection{1, Value::makeObject()};
     auto issues = validate(c, reg);
     CHECK(hasIssue(issues, issue_code::kPluginPropertyInvalid));
     CHECK(hasIssue(issues, issue_code::kPluginUnknownSection, Severity::Warning));
 
-    c.plugins["fake_game"].schemaVersion = 3;
-    CHECK(hasIssue(validate(c, reg), issue_code::kPluginSectionNewer));
-    c.plugins["fake_game"].schemaVersion = 1;
-    CHECK(hasIssue(validate(c, reg), issue_code::kPluginSectionOutdated));
+    for (const int version : {0, 2}) {
+        c.plugins["fake_game"].schemaVersion = version;
+        CHECK(hasIssue(validate(c, reg), issue_code::kPluginSectionVersion));
+    }
 
     RobotConfig missing = sampleConfig();
     missing.gamePluginId = "nope";
@@ -293,58 +315,21 @@ TEST_CASE("pipeline: selects the plugin by year, registers its mechanisms once, 
     CHECK(l.valid());
     // plugin section created with defaults at the current version, mechanism property defaults filled
     REQUIRE(l.config.findPlugin("fake_game") != nullptr);
-    CHECK(l.config.findPlugin("fake_game")->schemaVersion == 2);
+    CHECK(l.config.findPlugin("fake_game")->schemaVersion == 1);
     CHECK(l.config.findPlugin("fake_game")->data.find("capacity")->asInt() == 3);
     CHECK(l.config.mechanisms[0].properties.find("gearRatio")->asDouble() == 1.0);
-    CHECK_FALSE(l.migrated());
 }
 
-TEST_CASE("pipeline: plugin migration chain then whole-config hook, in that order") {
-    PipelineFixture f;
-    RobotConfig c = sampleConfig();
-    c.gamePluginId = "fake_game";
-    c.plugins["fake_game"] = PluginSection{1, Value::makeObject()};
-    c.plugins["fake_game"].data["cap"] = 9;  // v1 name, the migrator renames it
-    MechanismConfig legacy;
-    legacy.id = "old";
-    legacy.type = "fake_game.legacy_mechanism";  // renamed by migrateRobotConfig
-    legacy.mappings.push_back({{"old", "motor"}, DeviceKey{"hal", "pwm", 1, "rio", -1}});
-    c.mechanisms.push_back(legacy);
-
-    const auto loaded = f.pipeline.load(f.stored(c));
-    REQUIRE_MESSAGE(loaded.ok(), (loaded.ok() ? "" : loaded.error().message));
-    const LoadedConfig& l = loaded.value();
-    CHECK(l.pluginMigrated);
-    CHECK(l.migrated());
-    CHECK(l.persistedPluginVersion == 1);
-    CHECK(f.reg.fakeCounters->migrateRobotConfigCalls == 1);
-    CHECK(f.reg.fakeCounters->lastPersistedVersion == 1);
-    CHECK(l.config.findPlugin("fake_game")->schemaVersion == 2);
-    CHECK(l.config.findPlugin("fake_game")->data.find("capacity")->asInt() == 9);
-    CHECK(l.config.findPlugin("fake_game")->data.find("cap") == nullptr);
-    CHECK(l.config.findMechanism("old")->type == "fake_game.fake_mechanism");
-    CHECK(l.valid());
-
-    // a current section does not run the hook
-    PipelineFixture g;
-    RobotConfig current = sampleConfig();
-    current.plugins["fake_game"] = PluginSection{2, Value::makeObject()};
-    const auto again = g.pipeline.load(g.stored(current));
-    REQUIRE(again.ok());
-    CHECK_FALSE(again.value().pluginMigrated);
-    CHECK(g.reg.fakeCounters->migrateRobotConfigCalls == 0);
+TEST_CASE("pipeline: a plugin section with another schema version is refused, there is no migration") {
+    for (const int version : {0, 2, 5}) {
+        PipelineFixture f;
+        RobotConfig c = sampleConfig();
+        c.plugins["fake_game"] = PluginSection{version, Value::makeObject()};
+        const auto r = f.pipeline.load(f.stored(c));
+        REQUIRE_FALSE(r.ok());
+        CHECK(r.error().code == ErrorCode::VersionMismatch);
+    }
 }
-
-TEST_CASE("pipeline: a newer plugin section is refused before any hook runs") {
-    PipelineFixture f;
-    RobotConfig c = sampleConfig();
-    c.plugins["fake_game"] = PluginSection{5, Value::makeObject()};
-    const auto r = f.pipeline.load(f.stored(c));
-    REQUIRE_FALSE(r.ok());
-    CHECK(r.error().code == ErrorCode::VersionMismatch);
-    CHECK(f.reg.fakeCounters->migrateRobotConfigCalls == 0);
-}
-
 TEST_CASE("pipeline: no plugin for the year -> core features only, other sections kept") {
     PipelineFixture f;
     RobotConfig c = sampleConfig();
@@ -354,69 +339,6 @@ TEST_CASE("pipeline: no plugin for the year -> core features only, other section
     REQUIRE(r.ok());
     CHECK(r.value().pluginId.empty());
     CHECK(r.value().config.findPlugin("fake_game")->schemaVersion == 1);  // untouched
-}
-
-TEST_CASE("pipeline: a plugin hook that touches data it does not own is rejected") {
-    class Greedy final : public testing::FakeGameModule {
-    public:
-        using FakeGameModule::FakeGameModule;
-        Status migrateRobotConfig(RobotConfig& config, int) const override {
-            config.battery.nominalVoltageV = 13.0;  // core field: not the plugin's
-            return okStatus();
-        }
-    };
-    class Meddler final : public testing::FakeGameModule {
-    public:
-        using FakeGameModule::FakeGameModule;
-        Status migrateRobotConfig(RobotConfig& config, int) const override {
-            for (MechanismConfig& m : config.mechanisms) m.label = "hijacked";  // core mechanism: not owned
-            return okStatus();
-        }
-    };
-    for (int variant = 0; variant < 2; ++variant) {
-        Registries reg(false);
-        if (variant == 0) REQUIRE(reg.plugins.add(std::make_unique<Greedy>("fake_game", 2999)).ok());
-        else REQUIRE(reg.plugins.add(std::make_unique<Meddler>("fake_game", 2999)).ok());
-        RobotConfigCodec codec;
-        ConfigValidator validator;
-        PluginRegistrar registrar(reg.mechanisms);
-        ConfigPipeline pipeline(codec, validator, registrar, reg.drivetrains, reg.plugins);
-        RobotConfig c = sampleConfig();
-        c.plugins["fake_game"] = PluginSection{1, Value::makeObject()};
-        const auto r = pipeline.load(codec.toValue(c));
-        REQUIRE_FALSE(r.ok());
-        CHECK(r.error().code == ErrorCode::InvalidState);
-        CHECK(r.error().message.find("does not own") != std::string::npos);
-    }
-}
-
-TEST_CASE("pipeline: a failing plugin section migration is reported") {
-    class BrokenMigrator final : public IConfigMigrator {
-    public:
-        int fromVersion() const override { return 1; }
-        int toVersion() const override { return 2; }
-        Status migrate(Value&) const override { return makeError(ErrorCode::InvalidArgument, "section is garbage"); }
-    };
-    class BadModule final : public testing::FakeGameModule {
-    public:
-        using FakeGameModule::FakeGameModule;
-        std::vector<std::unique_ptr<IConfigMigrator>> configMigrators() const override {
-            std::vector<std::unique_ptr<IConfigMigrator>> m;
-            m.push_back(std::make_unique<BrokenMigrator>());
-            return m;
-        }
-    };
-    Registries reg(false);
-    REQUIRE(reg.plugins.add(std::make_unique<BadModule>("fake_game", 2999)).ok());
-    RobotConfigCodec codec;
-    ConfigValidator validator;
-    PluginRegistrar registrar(reg.mechanisms);
-    ConfigPipeline pipeline(codec, validator, registrar, reg.drivetrains, reg.plugins);
-    RobotConfig c = sampleConfig();
-    c.plugins["fake_game"] = PluginSection{1, Value::makeObject()};
-    const auto r = pipeline.load(codec.toValue(c));
-    REQUIRE_FALSE(r.ok());
-    CHECK(r.error().message.find("section is garbage") != std::string::npos);
 }
 
 TEST_CASE("pipeline: validation problems come back as issues next to the config") {

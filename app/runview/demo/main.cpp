@@ -80,7 +80,7 @@ int main(int argc, char* argv[]) {
     } else if (scenario == QLatin1String("timeout")) {
         QTimer::singleShot(300, &app, [&] { backend.simulateHandshakeTimeout(); });
     } else if (scenario == QLatin1String("mismatch")) {
-        QTimer::singleShot(300, &app, [&] { backend.simulateProtocolMismatch(QStringLiteral("Extension speaks protocol v1, this app needs v2 or newer.")); });
+        QTimer::singleShot(300, &app, [&] { backend.simulateProtocolMismatch(QStringLiteral("Extension speaks an older protocol than this app supports.")); });
     } else if (scenario == QLatin1String("failed")) {
         QTimer::singleShot(300, &app, [&] { backend.simulateFailedToStart(QStringLiteral("gradlew: command not found (JAVA_HOME is not set)")); });
     }

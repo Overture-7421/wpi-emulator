@@ -45,9 +45,7 @@ sdk::Result<std::string> readTextFile(const std::filesystem::path& file);  // No
 
 // ---- stores -----------------------------------------------------------------------------------------
 
-// One robot.json on disk. load(): NotFound when absent; when the file was written by an older core schema it is
-// upgraded in memory, the original is first copied to "<file>.v<N>.bak" (never overwritten) and only then is the
-// upgraded file written back. If the backup fails the file is left untouched (a warning is logged).
+// One robot.json on disk. load(): NotFound when absent; a file with another schemaVersion is refused (no migration).
 class FileConfigStore final : public sdk::IRobotConfigStore {
 public:
     FileConfigStore(std::filesystem::path file, std::string label, const sdk::IValueTextCodec& text, const RobotConfigCodec& codec,
@@ -59,8 +57,8 @@ public:
 
     const std::filesystem::path& path() const { return file_; }
     bool exists() const;
-    const DecodeInfo& lastDecode() const { return lastDecode_; }
-    // Copies the current file to "<file>.<tag>.bak" ("-2", "-3"... when taken). Returns the backup path.
+    // Copies the current file to "<file>.<tag>.bak" ("-2", "-3"... when taken). Returns the backup path
+    // (importFromProject keeps the app-data copy this way before replacing it).
     sdk::Result<std::filesystem::path> backup(std::string_view tag) const;
 
 private:
@@ -69,7 +67,6 @@ private:
     const sdk::IValueTextCodec& text_;
     const RobotConfigCodec& codec_;
     sdk::ILogger* logger_;
-    DecodeInfo lastDecode_;
 };
 
 enum class ConfigSource { AppData, Project };
@@ -87,7 +84,7 @@ public:
     FileConfigStore appDataStore(const std::filesystem::path& projectDir) const;
     FileConfigStore projectStore(const std::filesystem::path& projectDir) const;
 
-    sdk::Result<sdk::RobotConfig> open(const std::filesystem::path& projectDir, ConfigSource* usedSource = nullptr, DecodeInfo* decode = nullptr) const;
+    sdk::Result<sdk::RobotConfig> open(const std::filesystem::path& projectDir, ConfigSource* usedSource = nullptr) const;
     sdk::Status save(const std::filesystem::path& projectDir, const sdk::RobotConfig& config, bool alsoExport = false) const;
     sdk::Status exportToProject(const std::filesystem::path& projectDir) const;     // app-data copy -> project
     sdk::Result<sdk::RobotConfig> importFromProject(const std::filesystem::path& projectDir) const;  // project -> app-data copy

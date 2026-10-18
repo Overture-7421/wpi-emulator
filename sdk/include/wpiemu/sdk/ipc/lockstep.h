@@ -1,6 +1,6 @@
 #pragma once
 
-// Reference state machines for the lock-step rules of protocol v2 (messages.h, ADR 0006), shared by
+// Reference state machines for the lock-step rules (messages.h, ADR 0006), shared by
 // both ends so they cannot drift apart. Pure bookkeeping: no I/O, no clocks, no threads (call from
 // the thread that owns the channel's receive side). Wall-clock watchdog timing stays with the
 // caller, which tells these classes when it expired.

@@ -1,6 +1,5 @@
-// The 2026 wrappers driven by the REAL generic core mechanisms (roller / shooter flywheel / indexer / pivot /
-// turret / intake): proves the named values the plugin reads (velocity, position, rollerVelocity, deployed) are the
-// ones core actually publishes, end to end from a motor command to a fuel body leaving the muzzle.
+// The 2026 wrappers driven by the REAL generic core mechanisms (the single "mechanism" template as roller / flywheel / indexer):
+// proves the named values the plugin reads (velocity, position) are the ones core actually publishes, end to end from a motor command to a fuel body leaving the muzzle.
 #include <doctest/doctest.h>
 
 #include <cmath>
@@ -43,10 +42,10 @@ TEST_CASE("core roller + shooter + indexer drive the 2026 intake and shooter end
     for (const char* id : {"roller", "flywheel", "indexer"}) s.env.hub.autoBind({id, "motor"}, sdk::SlotType::Motor);
 
     sdk::Value flyProps = sdk::Value::makeObject();
-    flyProps["radiusM"] = 0.05;
-    s.addMechanism("roller", "roller");
-    s.addMechanism("flywheel", "shooter", flyProps);
-    s.addMechanism("indexer", "indexer");
+    flyProps["gearRatio"] = 1.0;
+    s.addMechanism("roller", "mechanism");
+    s.addMechanism("flywheel", "mechanism", flyProps);
+    s.addMechanism("indexer", "mechanism");
     sdk::Value intake = sdk::Value::makeObject();
     intake["rollerMechanism"] = "roller";
     intake["pickupZone"] = boxValue({0.45f, 0.f, 0.2f}, {0.30f, 0.60f, 0.40f});
@@ -91,34 +90,4 @@ TEST_CASE("core roller + shooter + indexer drive the 2026 intake and shooter end
     CHECK(shot.active);
     CHECK(value(shot, "exitSpeed") == doctest::Approx(std::fabs(value(fly, "velocity")) * 0.05 * 0.6).epsilon(0.05));
     CHECK(value(shot, "exitSpeed") > 4.0);
-}
-
-TEST_CASE("core intake mechanism: deployed + roller activation through its published values") {
-    Session s;
-    withCoreTemplates(s);
-    s.section()["neutralFuel"] = 0;
-    s.section()["depotFuel"] = 0;
-
-    s.addMechanism("coreIntake", "intake");
-    sdk::Value wrapper = sdk::Value::makeObject();
-    wrapper["activation"] = "roller_and_deployed";
-    wrapper["rollerMechanism"] = "coreIntake";
-    wrapper["rollerValue"] = "rollerVelocity";
-    wrapper["deployMechanism"] = "coreIntake";
-    wrapper["deployValue"] = "deployed";
-    wrapper["deployedPosition"] = 1.0;
-    wrapper["deployedTolerance"] = 0.5;
-    wrapper["pickupZone"] = boxValue({0.45f, 0.f, 0.2f}, {0.30f, 0.60f, 0.40f});
-    s.addMechanism("fuelIntake", kIntakeType, wrapper);
-    s.start();
-    s.setChassis({4.f, 3.f, 0.f});
-
-    // the core intake publishes what the wrapper reads
-    const sdk::MechanismState core = s.mechanisms.front()->state();
-    CHECK_FALSE(std::isnan(value(core, "rollerVelocity")));
-    CHECK_FALSE(std::isnan(value(core, "deployed")));
-
-    s.game->pool().spawn({4.45f, 3.f, 0.075f}, {});
-    s.tick(20);
-    CHECK(s.game->fuelOnField() == 1);  // not spinning, not deployed
 }

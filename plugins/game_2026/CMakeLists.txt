@@ -12,7 +12,6 @@ add_library(wpiemu_plugin_game_2026 STATIC
     src/hub_rules.cpp
     src/match_clock.cpp
     src/mechanism_io.cpp
-    src/migration.cpp
     src/plugin_info.cpp)
 add_library(wpiemu::plugin_game_2026 ALIAS wpiemu_plugin_game_2026)
 target_include_directories(wpiemu_plugin_game_2026 PUBLIC include)

@@ -55,12 +55,19 @@ inline CapabilitySet requiredCapabilities(SlotType t) {
     return {};
 }
 
+// Most motors one gearbox (a mechanism axis or a drivetrain wheel) can have.
+inline constexpr int kMaxMotorsPerAxis = 8;
+
 struct SlotSpec {
     std::string name;         // unique within the owner, e.g. "motor", "encoder", "forwardLimit"
     std::string label;        // UI text
     SlotType type = SlotType::Motor;
     bool required = true;     // unmapped required slot => validation error; optional => loopback/neutral
     std::string description;
+    // Extra motors: the slot only exists while the owner's integer property `countKey` is >= `ordinal`
+    // (1-based motor number). Empty `countKey` = always present.
+    std::string countKey;
+    int ordinal = 0;
 };
 
 // Where a slot lives. `owner` is a mechanism instance id, or one of the reserved owners below.
@@ -77,9 +84,17 @@ inline constexpr const char* kDrivetrain = "drivetrain";  // slots "<wheel>.driv
 inline constexpr const char* kRobot = "robot";            // robot-level slots, e.g. "imu"
 }  // namespace slot_owner
 
+// Drive slot `index` (0-based) of a drivetrain wheel: "<wheel>.drive", "<wheel>.drive2", ...
+inline std::string driveSlotName(const std::string& wheel, int index) {
+    return wheel + ".drive" + (index > 0 ? std::to_string(index + 1) : std::string());
+}
+
 struct SlotMapping {
     SlotAddress slot;
     DeviceKey device;
+    // Motor slots only: the controller spins against the mechanism's positive direction (it is mounted
+    // mirrored, or robot code inverted it). The hub negates its command and the rotor feedback.
+    bool reversed = false;
 
     bool operator==(const SlotMapping&) const = default;
 };

@@ -11,11 +11,11 @@ in year plugins; v1 ships `game_2026` (REBUILT). Current version: 0.1.0.
   vendordep or build change in the robot project.
 * **Setup wizard**: project inspection (season, language, team, vendordeps), toolchain check (JDK, Gradle wrapper,
   WPILib, C++ compiler, game module), robot description (swerve / tank / mecanum) and optional first device discovery.
-* **3D robot editor**: chassis, wheels and collision shapes, mechanism palette (roller, 1-DOF, intake, shooter,
-  hood/arm, turret, elevator, indexer), attachment links, **detect devices** and drag-and-drop mapping of detected
+* **3D robot editor**: chassis, wheels and collision shapes, one generic mechanism (rotary, arm or linear: flywheel, roller,
+  turret, hood, elevator...) added from the tree's context menu, attachment links, **detect devices** and drag-and-drop mapping of detected
   devices to mechanism / wheel slots, validation, undo/redo, imperial or metric display.
 * **Physics**: Box3D rigid-body chassis with tire models and swerve / tank / mecanum drivetrains, battery sag and
-  brownout, exact DC-motor plants (flywheel, arm, elevator, turret) with current limits and WPILib motor data.
+  brownout, exact DC-motor plants (rotary, arm, linear) with current limits and WPILib motor data.
 * **Device bridges**: WPILib HAL families (PWM, DIO, analog, encoders, relays, solenoids, PCM/PH, power
   distribution, LEDs, roboRIO, accelerometer, raw CAN) and CTRE Phoenix 6 (TalonFX/FXS, CANcoder, Pigeon 2, CANdle,
   CANrange, CANdi) through HAL SimDevices; Phoenix 5 rules (not verified against the real library).

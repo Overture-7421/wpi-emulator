@@ -23,6 +23,8 @@ struct PrimitiveSpec {
     // Mechanism primitives only: the mechanism link this primitive follows. Empty (default) = derive it from the
     // primitive name prefix (see app/runview linkForPrimitive); "root" = fixed to the mechanism root frame.
     std::string link;
+
+    bool operator==(const PrimitiveSpec&) const = default;
 };
 
 }  // namespace wpiemu::sdk

@@ -131,12 +131,4 @@ TEST_CASE("limit switch and window beam break models honour sides, margin and po
     CHECK(lower.pressed(0.0));
     CHECK(lower.pressed(-1.0));
     CHECK_FALSE(lower.pressed(1e-3));
-
-    WindowBeamBreakModel beam{0.2, 0.4, true};
-    CHECK(beam.reading(0.3));
-    CHECK(beam.reading(0.2));
-    CHECK_FALSE(beam.reading(0.41));
-    beam.blockedValue = false;
-    CHECK_FALSE(beam.reading(0.3));
-    CHECK(beam.reading(0.0));
 }

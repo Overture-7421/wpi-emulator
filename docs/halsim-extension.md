@@ -81,11 +81,9 @@ Environment (all optional except the endpoint; the emulator's launcher sets them
    reapplied. Retry does not refresh retention order. New connections start fresh history; `Stop` ends
    the connection, so its retry guarantee ends when the transport closes.
 
-SDK **1.4** / wire **v3** appends the optional `Hello::supportsArmed` boolean. Absent means **false**
-(including older v2 peers); protocol version and free-form extension version do not imply support.
-Production advertises true. The runner refuses a discovery-only handshake without explicit support
-and never sends Begin/End to such peers. Legacy normal lock-step remains accepted (minimum wire v1);
-the additive trailing field is ignored by older decoders.
+The optional `Hello::supportsArmed` boolean is absent => **false**; protocol version and free-form extension
+version do not imply support. Production advertises true. The runner refuses a discovery-only handshake without
+explicit support and never sends Begin/End to such peers. Normal lock-step remains accepted (minimum wire version 1).
 
 `BridgeSet` calls the defaulted SDK `IDeviceBridge::resetInputHistory()` on the clock thread before
 the first feedback of a new connection/reconnect, on applied Reset/Begin, and when a SensorFrame
@@ -96,7 +94,7 @@ This generic seam does not depend on concrete vendor interfaces.
 **The emulator MUST forward `Pause` and `Resume` as `SimControl` messages.** Between frames there is no heartbeat: a
 silent emulator and a paused emulator are indistinguishable unless the extension was told about the pause.
 
-### Failure handling (SDK 1.1: the extension unblocks the robot itself)
+### Failure handling (the extension unblocks the robot itself)
 
 | Event | Extension behaviour |
 |---|---|

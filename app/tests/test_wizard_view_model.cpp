@@ -212,7 +212,7 @@ TEST_CASE("reopening the wizard on a configured project starts from the stored r
     sdk::RobotConfig edited = *s.session().config();
     sdk::MechanismConfig m;
     m.id = "intake";
-    m.type = "roller";
+    m.type = "mechanism";
     edited.mechanisms.push_back(m);
     REQUIRE(s.session().commit(edited, s.session().prefs()).ok());
 

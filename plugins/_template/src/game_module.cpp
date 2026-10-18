@@ -62,8 +62,7 @@ private:
 // ---- the module: a stateless facade ---------------------------------------------------------------------------
 class TemplateModule final : public sdk::IGameModule {
 public:
-    // 0. identity. TODO(new season): displayName, description, and minSdkMinor = 1 if you use SDK 1.1 features
-    //    (migrateRobotConfig, resolved mechanism link poses, the physics coupling).
+    // 0. identity. TODO(new season): displayName, description (and minSdkMinor if you need a newer SDK minor).
     sdk::GameMetadata metadata() const override {
         sdk::GameMetadata m;
         m.id = std::string(pluginId());
@@ -88,16 +87,13 @@ public:
     }
 
     // 4. config fields shown by the generic inspector and persisted under RobotConfig::plugins[<id>].
-    //    Bump schemaVersion for every incompatible change and add the matching IConfigMigrator (v1 -> v2, ...).
+    //    The SDK stays at version 1 until release: a section with another schemaVersion is rejected (no migration).
     //    TODO(new season): describe your fields with PropertySpec (key, label, type, default, range, group).
     sdk::PluginConfigSchema contributeConfigSchema() const override {
         sdk::PluginConfigSchema schema;
         schema.schemaVersion = 1;
         return schema;
     }
-    // std::vector<std::unique_ptr<sdk::IConfigMigrator>> configMigrators() const override;    // section data steps
-    // sdk::Status migrateRobotConfig(sdk::RobotConfig&, int persistedVersion) const override; // whole-config steps:
-    //   may only touch config.plugins[<id>] and mechanisms for which sdk::ownsMechanismType(<id>, type) holds.
 
     // 5. optional UI contributions (Qt-free descriptors the app renders generically).
     // std::vector<sdk::EditorPanelDescriptor> contributeEditorPanels() const override;

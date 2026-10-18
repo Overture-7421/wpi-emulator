@@ -1,7 +1,7 @@
 # ipc/ - transports, wire codec, handshake
 
 Target `wpiemu_ipc` (static, position independent; depends on `wpiemu_sdk` only). Implements the
-interfaces declared in `sdk/ipc/transport.h` for the protocol of `sdk/ipc/messages.h` (v2).
+interfaces declared in `sdk/ipc/transport.h` for the protocol of `sdk/ipc/messages.h` (version 1).
 Rationale for the transport choice: [ADR 0007](../docs/decisions/0007-ipc-transport.md).
 
 | Header (`wpiemu/ipc/`) | What |
@@ -72,8 +72,8 @@ IEEE-754 bit patterns, bools one byte, enums one byte.
 
 * **Evolution**: appended fields are an *optional tail*: a decoder defaults tail fields that are absent
   (older peer) and ignores bytes it does not know (newer peer); records are length-prefixed so they can
-  grow as well. A v1 `Hello`/`HelloAck`/`SensorFrame`/`ActuatorFrame`/`DsState`/`SimControl`/`DeviceAnnounce`
-  decodes with v2 defaults (tested).
+  grow as well. A `Hello`/`HelloAck`/`SensorFrame`/`ActuatorFrame`/`DsState`/`SimControl`/`DeviceAnnounce`
+  without its optional tail decodes with the defaults (tested).
 * **Errors**: `ProtocolError` malformed/truncated/out-of-range (closed enums `ClockMode`, `RobotMode`,
   `AllianceStation`, `LogLevel`, `SignalDirection`, `SignalType` are validated; `SimCommand`, `TickResult`,
   `ControlResult`, `WatchdogPolicy`, `RobotLanguage` pass through for the consumer's `default:` path);

@@ -220,7 +220,7 @@ PropertySchema wheelSchema(const sdk::WheelSpec& wheel) {
     const sdk::WheelSpec d;
     s.properties.push_back(makeSpec("name", "Name", PropertyType::String, PropertyUnit::None, "wheel", "Wheel",
                                     "Unique within the drivetrain; used in the slot names (<name>.drive)."));
-    auto kind = makeSpec("kind", "Wheel type", PropertyType::Enum, PropertyUnit::None, "standard", "Wheel");
+    auto kind = makeSpec("kind", "Type", PropertyType::Enum, PropertyUnit::None, "standard", "Wheel");
     kind.options = {{"standard", "Standard"}, {"omni", "Omni"}, {"mecanum", "Mecanum"}, {"swerve", "Swerve module"}};
     s.properties.push_back(kind);
     s.properties.push_back(makeSpec("position", "Hub position (z = height above floor)", PropertyType::Vec3, PropertyUnit::Meters,
@@ -237,31 +237,37 @@ PropertySchema wheelSchema(const sdk::WheelSpec& wheel) {
     lat.advanced = true;
     s.properties.push_back(withRange(lat, 0.0, 1.0, 0.01));
 
-    auto drive = makeSpec("driveMotor", "Drive motor", PropertyType::Enum, PropertyUnit::None, d.driveMotor.name, "Drive");
+    auto drive = makeSpec("driveMotor", "Motor model", PropertyType::Enum, PropertyUnit::None, d.driveMotor.name, "Drive");
     motorOptions(drive, wheel.driveMotor);
     s.properties.push_back(drive);
-    auto count = makeSpec("driveMotorCount", "Drive motors per wheel", PropertyType::Int, PropertyUnit::Count, 1, "Drive");
-    s.properties.push_back(withRange(count, 1, 4, 1));
-    auto ratio = makeSpec("driveGearRatio", "Drive gear ratio (motor : wheel)", PropertyType::Double, PropertyUnit::Ratio, d.driveGearRatio, "Drive");
+    auto count = makeSpec("driveMotorCount", "Motor count", PropertyType::Int, PropertyUnit::Count, 1, "Drive");
+    s.properties.push_back(withRange(count, 1, sdk::kMaxMotorsPerAxis, 1));
+    auto ratio = makeSpec("driveGearRatio", "Gear ratio (motor : output)", PropertyType::Double, PropertyUnit::Ratio, d.driveGearRatio, "Drive");
     s.properties.push_back(withRange(ratio, 1.0, 40.0, 0.05));
-    auto eff = makeSpec("driveEfficiency", "Drivetrain efficiency", PropertyType::Double, PropertyUnit::None, d.driveEfficiency, "Drive");
+    auto eff = makeSpec("driveEfficiency", "Efficiency", PropertyType::Double, PropertyUnit::None, d.driveEfficiency, "Drive");
     eff.advanced = true;
     s.properties.push_back(withRange(eff, 0.3, 1.0, 0.01));
-    auto lim = makeSpec("driveCurrentLimit", "Drive current limit (0 = none)", PropertyType::Double, PropertyUnit::Amps, d.driveCurrentLimitA, "Drive");
+    auto lim = makeSpec("driveCurrentLimit", "Current limit (0 = none)", PropertyType::Double, PropertyUnit::Amps, d.driveCurrentLimitA, "Drive");
     lim.advanced = true;
     s.properties.push_back(withRange(lim, 0.0, 300.0, 5.0));
 
-    auto steered = makeSpec("steered", "Steered (swerve azimuth)", PropertyType::Bool, PropertyUnit::None, false, "Steer");
-    s.properties.push_back(steered);
-    auto steer = makeSpec("steerMotor", "Steer motor", PropertyType::Enum, PropertyUnit::None, d.steerMotor.name, "Steer");
+    // A swerve module is a steered wheel: its steering belongs to what the wheel is, not to how it is driven.
+    auto steer = makeSpec("steerMotor", "Steer motor model", PropertyType::Enum, PropertyUnit::None, d.steerMotor.name, "Steering");
     motorOptions(steer, wheel.steerMotor);
-    steer.visibleWhenKey = "steered";
-    steer.visibleWhenEquals = true;
+    steer.visibleWhenKey = "kind";
+    steer.visibleWhenEquals = std::string("swerve");
     s.properties.push_back(steer);
-    auto sratio = makeSpec("steerGearRatio", "Steer gear ratio", PropertyType::Double, PropertyUnit::Ratio, d.steerGearRatio, "Steer");
-    sratio.visibleWhenKey = "steered";
-    sratio.visibleWhenEquals = true;
+    auto sratio = makeSpec("steerGearRatio", "Steer gear ratio", PropertyType::Double, PropertyUnit::Ratio, d.steerGearRatio, "Steering");
+    sratio.visibleWhenKey = "kind";
+    sratio.visibleWhenEquals = std::string("swerve");
     s.properties.push_back(withRange(sratio, 1.0, 100.0, 0.1));
+    for (auto& p : s.properties) {
+        if (p.group == "Drive") p.section = sdk::PropertySection::Drive;
+        else if (p.key == "position") {
+            p.section = sdk::PropertySection::Placement;
+            p.group = "Placement";
+        }
+    }
     return s;
 }
 
@@ -279,7 +285,6 @@ Value wheelValues(const sdk::WheelSpec& w) {
     o["driveGearRatio"] = w.driveGearRatio;
     o["driveEfficiency"] = w.driveEfficiency;
     o["driveCurrentLimit"] = w.driveCurrentLimitA;
-    o["steered"] = w.steered;
     o["steerMotor"] = w.steerMotor.name;
     o["steerGearRatio"] = w.steerGearRatio;
     return o;
@@ -292,26 +297,35 @@ void applyWheel(sdk::RobotConfig& c, const std::string& wheelName, const std::st
     }
     sdk::WheelSpec* w = ops::findWheel(c, wheelName);
     if (w == nullptr) return;
-    if (key == "kind") w->kind = wheelKindFrom(v.asString(), w->kind);
+    if (key == "kind") {
+        w->kind = wheelKindFrom(v.asString(), w->kind);
+        w->steered = w->kind == sdk::WheelKind::Swerve;
+        if (!w->steered) {
+            auto& maps = c.drivetrain.mappings;
+            maps.erase(std::remove_if(maps.begin(), maps.end(), [&](const sdk::SlotMapping& m) { return m.slot.slot == w->name + ".steer"; }), maps.end());
+        }
+    }
     else if (key == "position") w->positionM = vec(v, w->positionM);
     else if (key == "radius") w->radiusM = numF(v, w->radiusM);
     else if (key == "width") w->widthM = numF(v, w->widthM);
     else if (key == "mu") w->tire.mu = numF(v, w->tire.mu);
     else if (key == "lateralScale") w->tire.lateralScale = numF(v, w->tire.lateralScale);
     else if (key == "driveMotor") w->driveMotor = motorByName(v.asString(), w->driveMotor);
-    else if (key == "driveMotorCount") w->driveMotorCount = std::max(1, static_cast<int>(v.asInt(w->driveMotorCount)));
+    else if (key == "driveMotorCount") {
+        w->driveMotorCount = std::clamp(static_cast<int>(v.asInt(w->driveMotorCount)), 1, sdk::kMaxMotorsPerAxis);
+        auto& maps = c.drivetrain.mappings;
+        maps.erase(std::remove_if(maps.begin(), maps.end(),
+                                  [&](const sdk::SlotMapping& m) {
+                                      for (int i = 0; i < w->driveMotorCount; ++i)
+                                          if (m.slot.slot == sdk::driveSlotName(w->name, i)) return false;
+                                      return ops::wheelOfSlot(m.slot.slot) == w->name && m.slot.slot != w->name + ".steer";
+                                  }),
+                   maps.end());
+    }
     else if (key == "driveGearRatio") w->driveGearRatio = numF(v, w->driveGearRatio);
     else if (key == "driveEfficiency") w->driveEfficiency = numF(v, w->driveEfficiency);
     else if (key == "driveCurrentLimit") w->driveCurrentLimitA = numF(v, w->driveCurrentLimitA);
-    else if (key == "steered") {
-        w->steered = v.asBool(w->steered);
-        if (!w->steered) {
-            auto& maps = c.drivetrain.mappings;
-            maps.erase(std::remove_if(maps.begin(), maps.end(),
-                                      [&](const sdk::SlotMapping& m) { return m.slot.slot == w->name + ".steer"; }),
-                       maps.end());
-        }
-    } else if (key == "steerMotor") w->steerMotor = motorByName(v.asString(), w->steerMotor);
+    else if (key == "steerMotor") w->steerMotor = motorByName(v.asString(), w->steerMotor);
     else if (key == "steerGearRatio") w->steerGearRatio = numF(v, w->steerGearRatio);
 }
 

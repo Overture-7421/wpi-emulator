@@ -23,7 +23,6 @@
 #include "views/device_panel.h"
 #include "views/icon_factory.h"
 #include "views/inspector_panel.h"
-#include "views/palette_panel.h"
 #include "views/project_tree_view.h"
 #include "views/toast_overlay.h"
 #include "views/viewport_widget.h"
@@ -62,7 +61,6 @@ struct EditorPage::Impl {
     IssueModel issueModel;
 
     ProjectTreeView* tree = nullptr;
-    PalettePanel* palette = nullptr;
     DevicePanel* devices = nullptr;
     ViewportWidget* viewport = nullptr;
     BottomPanel* bottom = nullptr;
@@ -170,17 +168,14 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
 
     // ---- left column ----
     s.tree = new ProjectTreeView(s.treeModel, s.icons, this);
-    s.palette = new PalettePanel(c, s.icons, this);
     s.devices = new DevicePanel(c, s.deviceModel, s.icons, this);
     auto* left = new QSplitter(Qt::Vertical, this);
     left->setChildrenCollapsible(false);
     left->addWidget(titled(ETR("Project"), s.tree, left));
-    left->addWidget(titled(ETR("Add mechanism"), s.palette, left));
     left->addWidget(s.devices);
-    left->setStretchFactor(0, 4);
-    left->setStretchFactor(1, 3);
-    left->setStretchFactor(2, 4);
-    left->setSizes({300, 200, 280});
+    left->setStretchFactor(0, 5);
+    left->setStretchFactor(1, 4);
+    left->setSizes({420, 380});
     left->setMinimumWidth(250);
 
     // ---- centre ----
@@ -224,12 +219,26 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
         const sdk::RobotConfig& cfg = d->controller.document().config();
         const EditorCatalog& cat = d->controller.document().catalog();
         QMenu menu(this);
-        auto addTemplates = [&](QMenu* into, const std::function<void(const QString&)>& fn) {
+        // Core templates only; the game plugin's own templates are added from the plugin node.
+        // A core template with a `motion` choice is offered once per choice (Rotary / Arm / Linear).
+        using AddFn = std::function<void(const QString&, const ops::MechanismVariant&)>;
+        auto addTemplates = [&](QMenu* into, const AddFn& fn, bool plugin = false) {
             for (const auto& t : cat.mechanismTemplates) {
-                QAction* a = into->addAction(d->icons.glyph(QString::fromStdString(t.displayName).left(1).toUpper(), IconFactory::colorForCategory(QString::fromStdString(t.category))),
-                                             QString::fromStdString(t.displayName));
+                if (plugin ? t.origin != cat.pluginId : t.origin != "core") continue;
                 const QString type = QString::fromStdString(t.type);
-                connect(a, &QAction::triggered, this, [fn, type] { fn(type); });
+                const QColor color = IconFactory::colorForCategory(QString::fromStdString(t.category));
+                const sdk::PropertySpec* motion = nullptr;
+                for (const auto& p : t.properties.properties)
+                    if (!plugin && p.key == "motion" && p.type == sdk::PropertyType::Enum) motion = &p;
+                if (motion == nullptr) {
+                    QAction* a = into->addAction(d->icons.glyph(QString::fromStdString(t.displayName).left(1).toUpper(), color), QString::fromStdString(t.displayName));
+                    connect(a, &QAction::triggered, this, [fn, type] { fn(type, {}); });
+                    continue;
+                }
+                for (const auto& o : motion->options) {
+                    QAction* a = into->addAction(d->icons.glyph(QString::fromStdString(o.label).left(1).toUpper(), color), QString::fromStdString(o.label));
+                    connect(a, &QAction::triggered, this, [fn, type, key = motion->key, value = o.value] { fn(type, {key, value}); });
+                }
             }
         };
         switch (ref.kind) {
@@ -255,7 +264,7 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                             d->controller.document().reparentMechanism(QString::fromStdString(ref.owner), QString::fromStdString(id), QString::fromStdString(link));
                         });
                 }
-                addTemplates(menu.addMenu(ETR("Add attached mechanism")), [this](const QString& type) { d->controller.addMechanismToSelection(type); });
+                addTemplates(menu.addMenu(ETR("Add attached mechanism")), [this](const QString& type, const ops::MechanismVariant& v) { d->controller.addMechanismToSelection(type, v); });
                 break;
             }
             case SelKind::Slot:
@@ -270,6 +279,10 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                 break;
             case SelKind::Wheel:
                 d->controller.selection().set(ref);
+                menu.addAction(ETR("Add wheel"), this, [this] {
+                    const QString n = d->controller.document().addWheel();
+                    if (!n.isEmpty()) d->controller.selection().set(SelectionRef::wheel(n.toStdString()));
+                });
                 menu.addAction(ETR("Delete wheel"), this, [this] { d->controller.deleteSelection(); });
                 break;
             case SelKind::Drivetrain:
@@ -279,15 +292,22 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                 });
                 break;
             case SelKind::Chassis:
+                addTemplates(menu.addMenu(ETR("Add mechanism")), [this](const QString& type, const ops::MechanismVariant& v) {
+                    d->controller.addMechanism(type, sdk::MechanismAttachment{}, v);
+                });
+                menu.addSeparator();
                 for (auto kind : {sdk::PrimitiveKind::Box, sdk::PrimitiveKind::Cylinder})
                     menu.addAction(kind == sdk::PrimitiveKind::Box ? ETR("Add box") : ETR("Add cylinder"), this, [this, kind] {
                         const int i = d->controller.document().addPrimitive(QString::fromLatin1(ops::kChassisOwner), kind);
                         if (i >= 0) d->controller.selection().set(SelectionRef::primitive(ops::kChassisOwner, i));
                     });
                 break;
+            case SelKind::Plugin:
+                addTemplates(&menu, [this](const QString& type, const ops::MechanismVariant& v) { d->controller.addMechanism(type, sdk::MechanismAttachment{}, v); }, true);
+                break;
             default:
-                addTemplates(menu.addMenu(ETR("Add mechanism")), [this](const QString& type) {
-                    d->controller.addMechanism(type, sdk::MechanismAttachment{});
+                addTemplates(menu.addMenu(ETR("Add mechanism")), [this](const QString& type, const ops::MechanismVariant& v) {
+                    d->controller.addMechanism(type, sdk::MechanismAttachment{}, v);
                 });
                 break;
         }
@@ -296,9 +316,6 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
     connect(&s.treeModel, &ProjectTreeModel::deviceDropped, this, [this](const SelectionRef& target, const sdk::DeviceKey& key, quint32 caps) {
         const QString err = d->controller.mapDevice(target, key, sdk::CapabilitySet{caps});
         if (!err.isEmpty()) d->toasts->showToast(ETR("Cannot map the device"), err, 1);
-    });
-    connect(&s.treeModel, &ProjectTreeModel::templateDropped, this, [this](const QString& type, const sdk::MechanismAttachment& att) {
-        d->controller.addMechanism(type, att);
     });
     connect(&s.treeModel, &ProjectTreeModel::mechanismDropped, this, [this](const QString& id, const sdk::MechanismAttachment& att) {
         const sdk::RobotConfig& cfg = d->controller.document().config();
@@ -360,7 +377,6 @@ EditorPage::~EditorPage() {
     delete d->bottom;
     delete d->viewport;
     delete d->devices;
-    delete d->palette;
     delete d->tree;
 }
 
@@ -377,7 +393,6 @@ EditorController& EditorPage::controller() const { return d->controller; }
 ViewportWidget* EditorPage::viewport() const { return d->viewport; }
 InspectorPanel* EditorPage::inspector() const { return d->inspector; }
 DevicePanel* EditorPage::devicePanel() const { return d->devices; }
-PalettePanel* EditorPage::palette() const { return d->palette; }
 BottomPanel* EditorPage::bottomPanel() const { return d->bottom; }
 ProjectTreeView* EditorPage::tree() const { return d->tree; }
 ToastOverlay* EditorPage::toasts() const { return d->toasts; }

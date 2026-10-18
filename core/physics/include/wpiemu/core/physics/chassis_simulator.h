@@ -4,7 +4,7 @@
 // SDK registries, headless mechanism coupling and IMU truth. The sim runtime can use it directly or compose the
 // pieces itself.
 //
-// Tick order (SDK 1.1, docs/ARCHITECTURE.md section 4):
+// Tick order (docs/ARCHITECTURE.md section 4):
 //   mechanisms submit to coupling()  ->  prepareStep(): drivetrain forces  ->  world.step()  ->  completeStep().
 // step() does the last three for you (it steps the world).
 

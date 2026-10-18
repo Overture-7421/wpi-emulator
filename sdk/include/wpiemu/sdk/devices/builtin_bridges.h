@@ -6,7 +6,7 @@ namespace wpiemu::sdk {
 
 class DeviceBridgeRegistry;
 
-// Aggregation seam for device bridges (SDK 1.1 additive; mirrors game/builtin_plugins.h).
+// Aggregation seam for device bridges (mirrors game/builtin_plugins.h).
 // DECLARED here so the extension composition root can call it without including or linking any
 // bridges/<x> module; DEFINED by the `wpiemu_bridges_builtin` target (bridges/builtin_bridges.cpp),
 // the only place that knows every built-in bridge module. Adding a vendor = a bridges/<name>/

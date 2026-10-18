@@ -9,7 +9,7 @@ nothing here knows a season. Decisions and rationale: [ADR 0009](decisions/0009-
 #include "wpiemu/core/mechanisms/motor_catalog.h"         // MotorCatalog, CurrentLimitedMotorModel
 #include "wpiemu/core/mechanisms/linear_system.h"         // LinearSystemId equivalents, expm, discretizeAB
 #include "wpiemu/core/mechanisms/motor_drive.h"           // MotorOutput -> motor voltage
-#include "wpiemu/core/mechanisms/sensor_models.h"         // encoder / rotor / limit / beam-break models
+#include "wpiemu/core/mechanisms/sensor_models.h"         // encoder / rotor / limit models
 
 // composition root
 sdk::MechanismFactory mechanisms;
@@ -54,7 +54,7 @@ Catalogs are plain values (no global); extend with `add({key, label, spec})`.
 
 ## 2. Plants (`IPlant`, `PlantFactory`)
 
-Generic templates also expose opt-in motion axes (`axis`, or intake `deploy`/`roller`).
+The core template exposes one opt-in motion axis (`axis`).
 With a configured motion link, a follower uses ratio-scaled source motion instead of advancing
 its plant/motors. Starting positions, travel limits, encoders, published geometry, and
 game-facing values still apply; follower motor current is zero. A follower may not have an
@@ -105,82 +105,78 @@ and stiff arms across 1/2/4/5/10/20 ms ticks. Arm/elevator gravity uses WPILib's
 
 ## 3. Motor command → voltage (`MotorDrive`)
 
-Per motor and tick, from `MotorOutput`: no data → neutral; torque-current request → `V = I R + w/Kv`; else
+Per motor and tick, from `MotorOutput` (already in the mechanism frame: the hub negates a mapping's **Reversed** motors): no data → neutral; torque-current request → `V = I R + w/Kv`; else
 `voltageV` (or `dutyCycle × battery` when only duty is set). Then saturate at `±hub.batteryVoltage()` (battery
 sag), then the stator current limit. **Neutral** (zero command/unmapped): *brake* = 0 V (shorted, back-EMF
 braking), *coast* = `V = w/Kv` (no current). Battery draw per motor = `max(0, V·I)/Vbattery`
 (`IMechanism::batteryCurrentA()`).
 
-## 4. Generic templates (`registerGenericMechanisms`)
+## 4. The core template (`registerGenericMechanisms`)
 
-All templates share the **axis** model below, add template-specific properties, publish `MechanismState` and
-write sensors through slots. Position/limits are SI: radians (rotary/arm) or metres (linear).
+Core registers **one** template, `mechanism`: a single motor-driven degree of freedom
+([ADR 0015](decisions/0015-single-mechanism-template.md)). Flywheel, roller, belt, turret, hood, arm, elevator and
+climber are all the same machine with different **Motion** and numbers, so they are configured, not coded. It
+publishes `MechanismState` and writes sensors through slots. Position/limits are SI: radians (rotary/arm) or
+metres (linear).
 
-### Axis slots (prefix `deploy`/`roller` in the intake, none elsewhere)
+### Slots
 
 | slot | type | required | meaning |
 |---|---|---|---|
-| `motor` | Motor | yes (intake `deployMotor`: no) | primary motor controller; receives rotor position/velocity/acceleration (rotor side, i.e. **before** the device's sensor-to-mechanism ratio: `output rot × gearRatio`) |
-| `motor2`..`motor4` | Motor | no | extra motors; the plant sees the **mean** voltage over `motorCount` motors, unmapped ones mirror the primary (intake: `motor2` only) |
-| `encoder` | PositionSensor | no | output-side position/velocity in rotations × `sensorRatio` (± inversion, + `sensorOffsetRot`); linear axes report **drum** rotations |
+| `motor` | Motor | yes | primary motor controller; receives rotor position/velocity/acceleration (rotor side, i.e. **before** the device's sensor-to-mechanism ratio: `output rot × gearRatio`) |
+| `motor2`..`motor8` | Motor | no | extra motors (active while `motorCount` ≥ their number). Each mapped motor contributes its own voltage; the plant sees the **mean** over `motorCount` motors, unmapped ones mirror the primary. A mapping's **Reversed** flag ([ADR 0014](decisions/0014-multi-motor-gearboxes.md)) flips that motor's command and rotor feedback in the device hub, so the mechanism only ever sees mechanism-frame values: two equal motors with opposite signs cancel their torque but still draw full current. |
+| `encoder` | PositionSensor | no | output-side position/velocity in rotations × `sensorRatio` (± inversion, + `sensorOffsetRot`); linear motion reports **drum** rotations |
 | `velocitySensor` | VelocitySensor | no | same data on a velocity-only slot |
 | `reverseLimit` / `forwardLimit` | LimitSwitch | no | closed at the min / max stop (`limitMargin`, polarity `limitPressedValue`) |
 
-### Axis properties (key; prefix applies in the intake)
+### Properties
 
 | group | key | default | notes |
 |---|---|---|---|
-| Motor | `motorModel` | per template | catalog key |
-| | `motorCount` | 1 | 1..8 |
-| | `gearRatio` | per template | motor : output |
+| Motion | `motion` | rotary | `rotary` (plant `dc_motor`, no gravity), `arm` (plant `arm`, pivots about Y, 0 rad = horizontal, positive raises the +X end, gravity on), `linear` (plant `elevator`, translates along `axis`, gravity only for Z) |
+| | `axis` | z | rotation / travel axis for rotary and linear; an arm always pivots about Y |
+| Motor | `motorModel` | `kraken_x60` | catalog key |
+| | `motorCount` | 1 | 1..8; selects how many motor slots are active |
+| | `gearRatio` | 10 | motor : output |
 | | `efficiency` | 1 | 0.05..1 |
-| | `motorInverted` | false | positive command moves the mechanism negative; rotor feedback keeps the controller's sign |
-| | `neutralMode` | coast / brake (arms, turret, elevator) | |
+| | `neutralMode` | brake | coast / brake |
 | | `statorCurrentLimitA` | 0 | per motor, 0 = off |
 | | `reportMotorLimits` | false | also set `MotorFeedback::forwardLimit/reverseLimit` |
-| Dynamics | `motion` | (generic/intake deploy only) rotary \| arm \| linear | |
-| | `momentOfInertiaKgM2` | per template | rotary J; arm: 0 = uniform rod `m L²/3` |
-| | `massKg`, `lengthM`, `comFraction` | | arm mass, pivot→tip length, CoM fraction (WPILib: 0.5) |
+| Dynamics | `momentOfInertiaKgM2` | 0.01 | rotary J; arm: 0 = uniform rod `m L²/3` |
+| | `massKg`, `lengthM`, `comFraction` | 2, 0.3, 0.5 | arm mass, pivot→tip length, CoM fraction (WPILib: 0.5) |
 | | `massKg`, `drumRadiusM` | | linear carriage (+payload) mass, drum radius |
-| | `simulateGravity` | arm/linear templates: true | arm 0 rad = horizontal |
-| | `viscousFrictionNmS`, `coulombFrictionNm` | rollers 0.001 / 0 | output side |
-| Limits | `minPosition`, `maxPosition`, `startPosition` | | equal min/max = no stops; start must lie inside |
+| | `simulateGravity` | true | arm and linear only; arm 0 rad = horizontal |
+| | `viscousFrictionNmS`, `coulombFrictionNm` | 0.001 / 0 | output side (the viscous default lets a coasting rotary mechanism spin down) |
+| Limits | `minPosition`, `maxPosition`, `startPosition` | 0, 0, 0 | equal min/max = no stops (a turret with equal stops is continuous); start must lie inside |
 | | `limitMargin`, `limitPressedValue` | 1e-6, true | |
 | Sensors | `sensorRatio`, `sensorInverted`, `sensorOffsetRot` | 1, false, 0 | |
 
-### Template list
+Link: `mover` (the moving part: rotation about `axis`, or about Y by −θ for an arm, or translation along `axis`).
+Published `values`: `position`, `velocity`, `voltage`, `current`, `atLowerLimit`, `atUpperLimit`; `active` =
+moving faster than 0.01 rad/s | m/s. One axis is exposed to motion links (`axis`).
 
-| type | display / category | axes | extra properties | links | published `values` (`active`) |
-|---|---|---|---|---|---|
-| `roller` | Generic roller / Generic | 1 rotary (flywheel plant) | `radiusM` 0.03, `spinAxis` y, `activeSurfaceSpeedMps` 0.5 | `roller` | position, velocity, **surfaceSpeed**, voltage, current (`active`: \|surface speed\| ≥ threshold) |
-| `generic_1dof` | Generic 1-DOF / Generic | rotary \| arm \| linear, stops, limit switches | `axis` z, `beamBreakSource` external\|window, `beamBreakMin/Max`, `beamBreakBlockedValue`; slot `beamBreak` | `mover` | position, velocity, voltage, current, atLowerLimit, atUpperLimit (`active`: moving > 0.01) |
-| `intake` | Intake / Intake | `deploy…` (arm or linear, stops, limit switches) + `roller…` | `deployEnabled`, `deployAxis` y, `deployedAtMax`, `deployedTolerance` 0.05, `rollerOffset` (0.3,0,0), `rollerRadiusM`, `rollerSpinAxis`, `activeSurfaceSpeedMps` | `deploy`, `roller` (child of deploy) | deployPosition, deployVelocity, deployed, rollerVelocity, **rollerSurfaceSpeed**, voltages, currents (`active`: roller above threshold **and** deployed) |
-| `shooter` | Shooter / flywheel / Shooter | 1 rotary flywheel | as roller (radius 0.05, threshold 1 m/s) | `flywheel` | as roller; **surfaceSpeed** = ω·radius for exit-speed models |
-| `pivot` | Hood / pivot / Arm | 1 arm (gravity), stops [0, 1.5], limit switches | | `arm` (angle from horizontal, + raises +X: rotation about Y by −θ) | as generic |
-| `turret` | Turret / Turret | 1 rotary, stops ±3.3 rad, limit switches | | `turret` (yaw about Z) | as generic |
-| `elevator` | Elevator / climber / Elevator | 1 linear (gravity), stops [0, 0.8], limit switches | `axis` z | `carriage` (translation) | as generic |
-| `indexer` | Indexer / conveyor / Indexer | 1 rotary belt | as roller + slots `entryBeamBreak`, `exitBeamBreak` | `belt` | as roller |
+### Recipes
 
-Intake deploy rotation is about `deployAxis` by **+θ without sign flip** (about +Y positive lowers a forward
-intake; so positive = deploying). `rollerOffset` is in the deploy frame. With deploy gravity enabled,
-the arm COM is assumed along local +X: gravity increases +Y deploy angle near horizontal, while
-rotation about X or Z has no gravitational torque. Linear deploy gravity acts only on a Z axis
-(toward negative position); horizontal X/Y slides have no gravity load. This is a local-frame
-approximation, not mount/chassis-tilt-dependent gravity.
+| machine | Motion | settings |
+|---|---|---|
+| flywheel / shooter wheel | rotary | gear ratio ~1, inertia of the wheel, no stops |
+| roller / indexer belt / intake roller | rotary | no stops |
+| turret | rotary | stops ±θ (equal stops = continuous), gear ratio ~40 |
+| hood / pivot / arm / deploying intake | arm | stops, length, mass |
+| elevator / climber | linear | stops, mass, drum radius, 2+ motors |
+
+Intake deploy + roller is two mechanisms: an arm and a rotary roller attached to its `mover` link. The season plugin
+([game_2026.md](game_2026.md)) wraps them by id; the core knows nothing about intakes.
 
 ### Sensors and the game-state hook
 
 * Encoders, rotor feedback and limit switches are ideal (noise-free) and written **every tick** (absolute truth).
-* Limit switches derive from the stops. `generic_1dof` can also drive its `beamBreak` slot from a position
-  window (`beamBreakSource = window`).
-* **Beam breaks driven by game logic**: with source `external` (default) and for the indexer's
-  `entryBeamBreak`/`exitBeamBreak`, the template **never writes** the slot. A game plugin writes it through
-  `ctx.devices().writeDigital({mechanismId, "entryBeamBreak"}, blocked)`; nothing else touches it.
-* Game plugins read `IMechanism::state()` (`active`, named values such as `rollerSurfaceSpeed`/`surfaceSpeed`,
-  link poses) through `IMechanismDirectory`; they never need a core header.
-
+* Limit switches derive from the stops. Beam breaks are not a mechanism property: a game plugin writes digital
+  slots through `ctx.devices().writeDigital(...)` from the mechanism state it reads.
+* Game plugins read `IMechanism::state()` (`active`, `position`/`velocity`, link poses) through
+  `IMechanismDirectory`; they never need a core header.
 ### Errors
 
 `MechanismFactory::create` returns an error (and the reason goes to `ctx.sim.logger()` category `mechanisms`)
 for: unknown `motorModel`, out-of-range / mistyped properties, `maxPosition < minPosition`, `startPosition`
-outside the stops, non-physical plant parameters, bad `axis`/`spinAxis`. Unknown keys only warn.
+outside the stops, non-physical plant parameters, bad `motion`/`axis`. Unknown keys only warn.

@@ -74,7 +74,7 @@ sdk::RobotConfig FakeRunBackend::makeDemoConfig() {
 
     sdk::MechanismConfig intake;
     intake.id = "intake";
-    intake.type = "roller";
+    intake.type = "mechanism";
     intake.label = "Intake";
     intake.mount.position = {0.38f, 0.f, -0.06f};
     intake.geometry.push_back(box("arm.bar", {0.17f, 0.f, 0.f}, {0.34f, 0.5f, 0.03f}, "#f59e0b"));
@@ -83,7 +83,7 @@ sdk::RobotConfig FakeRunBackend::makeDemoConfig() {
 
     sdk::MechanismConfig turret;
     turret.id = "turret";
-    turret.type = "turret";
+    turret.type = "mechanism";
     turret.label = "Turret";
     turret.mount.position = {-0.1f, 0.f, 0.f};
     turret.geometry.push_back(cylinder("base", {0.f, 0.f, 0.03f}, {}, 0.17f, 0.06f, "#6b7280"));
@@ -93,7 +93,7 @@ sdk::RobotConfig FakeRunBackend::makeDemoConfig() {
 
     sdk::MechanismConfig climber;
     climber.id = "climber";
-    climber.type = "elevator";
+    climber.type = "mechanism";
     climber.label = "Climber";
     climber.mount.position = {-0.3f, 0.f, 0.f};
     climber.geometry.push_back(box("rail", {0.f, 0.f, 0.25f}, {0.04f, 0.04f, 0.5f}, "#6b7280"));
@@ -258,7 +258,7 @@ void FakeRunBackend::launchRobot() {
             setStatus(RobotProcessState::Running, LinkState::Connected);
             programStarted_ = true;
             refreshFlags();
-            emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("extension"), QStringLiteral("Extension connected (protocol v2)"));
+            emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("extension"), QStringLiteral("Extension connected"));
             publish();
             beginIfReady();
         });
@@ -532,7 +532,7 @@ void FakeRunBackend::publish() {
     auto armPose = [&] { return sdk::Pose3{{}, sdk::Quat::fromAxisAngle({0.f, 1.f, 0.f}, -armAngle_)}; };
     sdk::MechanismState intake;
     intake.id = "intake";
-    intake.type = "roller";
+    intake.type = "mechanism";
     intake.active = armAngle_ > 1.2f;
     intake.links.push_back({"arm", armPose()});
     intake.values = {{"deploy angle", static_cast<double>(armAngle_), "rad"}, {"roller", intake.active ? 420.0 : 0.0, "rad/s"}};
@@ -540,7 +540,7 @@ void FakeRunBackend::publish() {
 
     sdk::MechanismState turret;
     turret.id = "turret";
-    turret.type = "turret";
+    turret.type = "mechanism";
     turret.active = flywheel_ > 250.f;
     turret.links.push_back({"yaw", sdk::Pose3{{}, sdk::Quat::fromYaw(turretYaw_)}});
     turret.values = {{"yaw", static_cast<double>(turretYaw_), "rad"}, {"flywheel", static_cast<double>(flywheel_), "rad/s"}};
@@ -548,7 +548,7 @@ void FakeRunBackend::publish() {
 
     sdk::MechanismState climber;
     climber.id = "climber";
-    climber.type = "elevator";
+    climber.type = "mechanism";
     climber.active = carriage_ > 0.01f;
     climber.links.push_back({"carriage", sdk::Pose3{{0.f, 0.f, carriage_}, {}}});
     climber.values = {{"height", static_cast<double>(carriage_), "m"}};

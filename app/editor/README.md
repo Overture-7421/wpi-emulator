@@ -1,6 +1,6 @@
 # Robot editor (`app/editor`)
 
-The 3D robot editor page: project tree, mechanism palette and detected devices on the left, the
+The 3D robot editor page: project tree (followers nested under their source), and detected devices on the left (mechanisms are added from the tree's right-click menu; there is no catalog panel), the
 Qt Quick 3D viewport with console / validation / telemetry tabs in the middle, and a property
 inspector generated from the SDK's `PropertySchema` metadata on the right.
 
@@ -28,18 +28,37 @@ project in which they were submitted.
 
 ## Layers
 
-The inspector's Motion links panel edits one-way source/target/ratio relationships using
-document snapshot commands. It obtains typed axes from SDK template metadata, converts
-rev/m display ratios to SI, validates before applying, and provides linked/independent tank
-presets. Linked motor slots are optional and cannot be mapped independently; sensor slots
-remain usable. Rename preserves endpoint references; delete leaves actionable broken-link
-issues; duplicate copies incoming links to the copied axis.
+Motion links (ADR 0012) are edited from the **Motion** section of a wheel's or mechanism's inspector
+(`views/drive_card.*`): an **Own motors | Linked to another part** choice, a source and a ratio per motion axis, converted between
+the displayed rev/rev, m/m, m/rev, rev/m and SI storage. `model/motion_links.*` (`MotionIndex`,
+`OwnerMotion`, `applyDrivenBy`) answers who follows whom for wheels and mechanisms alike. A part driven
+by a link takes no motor: its motor slot is not listed (tree, inspector, drops), linking drops its mapping in the
+same undo step, and the project tree nests it under its source as a read-only row (`FollowerRole`);
+sensor slots stay usable. Because tree position then means "driven by", follower mechanisms are not draggable
+and their attachment is shown as `@ parent` text. Each wheel is linked from its own Drive card (no drivetrain-level preset).
+Rename preserves endpoint references; delete leaves actionable broken-link issues; duplicate copies
+incoming links to the copied axis.
+
+Gearboxes with several motors (ADR 0014): `SlotSpec::countKey/ordinal` make `ops::slotSpecsFor` list one motor row per
+motor (`ops::motorGroups`, `setMotorCount`, `pruneInactiveMappings`; wheels use `<wheel>.driveMotorCount`). A controller row
+(`views/device_row.*`) shows the mapped device, a **Reversed** toggle (`EditorController::setMotorReversed`, undoable) and
+unmap; devices are never picked in the inspector, they are dragged onto the tree, and `mapDevice` on a part with no free
+motor row appends a motor in the same undo step (`growableMotorGroup`). Followers of a motion link list no motor rows.
+
+Type: a mechanism's type is its `motion` property (Rotary / Arm / Linear; there is no template switching, and the Add mechanism menus list core templates only, plugin templates are added from the plugin node's menu); a wheel's type is its `kind` (a swerve module is steered,
+which moves the steer motor, ratio and controller row into Configure).
+
+Inspector layout: a part (wheel / mechanism) page is an editable Name, then `views/section_card.*` cards with a colour per
+role: **Drive** (`PropertySpec::section == Drive`, grouped per motion axis by `PropertySpec::axis`; `views/drive_card.*`),
+**Configure** (type, other properties, plugin panels, read-only sensor rows), **Placement**, **Shapes**. `propertyGroupsFor`
+emits `mech.drive:<axis>`, `mech.props`, `mech.placement` (wheels: `wheel.drive`, `wheel`, `wheel.placement`);
+`applyProperty` accepts all of them.
 
 | Folder | Contents | May include |
 |---|---|---|
 | `model/` | `EditorDocument` (config + `QUndoStack`), pure edit operations (`config_ops`), property groups / schemas, slot status + local validation, scene builder, transform access | SDK, Qt Core/Gui |
 | `viewmodel/` | `EditorController` (actions, backend sync, validation, autosave), tree / device / issue / scene item models, `ViewportController` (camera, gizmo, picking) | model |
-| `views/` | widgets only: inspector, property form + field editors, slot rows, tree view, device panel, palette, bottom tabs, toasts, viewport host | viewmodel, model |
+| `views/` | widgets only: inspector, property form + field editors, slot rows, tree view, device panel, bottom tabs, toasts, viewport host | viewmodel, model |
 | `qml/` | `Viewport3D.qml`, a thin renderer fed by `ViewportController` (all colours, lists and camera values come from C++) | - |
 
 Every edit is a snapshot command on the undo stack (`ConfigEditCommand`) built from the Qt-free
@@ -69,6 +88,6 @@ Ctrl toggles snapping while dragging, Del deletes, Ctrl+D duplicates, Esc clears
   -DCMAKE_PREFIX_PATH=<Qt>` (see `standalone/CMakeLists.txt`).
 * Test sources live in `tests/app_editor/*.cc` (not `.cpp`: `tests/CMakeLists.txt` globs `*.cpp` into the Qt-free
   `wpiemu_tests`).
-* Demo: `wpiemu_editor_demo [--select intake|chassis|wheel:fl|slot:shooter.feeder|plugin] [--detect] [--light]
+* Demo: `wpiemu_editor_demo [--select intake|chassis|wheel:fl|slot:shooter.feeder|plugin] [--detect] [--tank] [--light]
   [--grab out.png]`.
 * Strings: model code uses `ETR("...")` (context `Editor`); run `lupdate -tr-function-alias translate+=ETR`.

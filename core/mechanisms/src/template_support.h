@@ -74,10 +74,8 @@ using TemplateBuilder =
 // info.properties, logs failures through ctx.sim.logger() and returns null for them.
 sdk::Status registerValidated(sdk::MechanismFactory& factory, sdk::MechanismTemplateInfo info, TemplateBuilder builder);
 
-// Per-family registration (one translation unit each).
-sdk::Status registerRollerFamily(sdk::MechanismFactory& factory, const TemplateDeps& deps);   // roller, shooter, indexer
-sdk::Status registerOneDofFamily(sdk::MechanismFactory& factory, const TemplateDeps& deps);   // generic_1dof, pivot, turret, elevator
-sdk::Status registerIntake(sdk::MechanismFactory& factory, const TemplateDeps& deps);
+// The single core template (mechanism_family.cpp).
+sdk::Status registerMechanism(sdk::MechanismFactory& factory, const TemplateDeps& deps);
 
 // NamedValue helper.
 inline sdk::NamedValue namedValue(std::string name, double value, std::string unit) {

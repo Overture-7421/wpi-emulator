@@ -8,29 +8,11 @@
 #include "wpiemu/core/config/robot_config_codec.h"
 
 using namespace wpiemu::sdk;
-using wpiemu::core::config::DecodeInfo;
 using wpiemu::core::config::JsonValueCodec;
 using wpiemu::core::config::RobotConfigCodec;
 using wpiemu::test_runtime::sampleConfig;
 
 namespace {
-
-// Moves a v0 file ("wheelBase" key) to v1 ("name"): used to prove the core migration chain runs first.
-class RenameMigrator final : public IConfigMigrator {
-public:
-    int fromVersion() const override { return 0; }
-    int toVersion() const override { return 1; }
-    Status migrate(Value& data) const override {
-        if (!data.isObject()) return makeError(ErrorCode::ParseError, "not an object");
-        if (const Value* old = data.find("robotName")) {
-            const Value moved = *old;
-            data.object().erase("robotName");
-            data["name"] = moved;
-        }
-        data["schemaVersion"] = 1;
-        return okStatus();
-    }
-};
 
 Value roundTripValue(const RobotConfig& c) {
     const RobotConfigCodec codec;
@@ -48,10 +30,11 @@ TEST_CASE("config codec: a full config survives config -> Value -> JSON text -> 
     c.drivetrain.spec.wheels[0].tire.mu = 1.3f;
     c.drivetrain.spec.wheels[1].steered = true;
     c.mechanisms[0].properties["gearRatio"] = 2.5;
+    c.mechanisms[0].mappings.push_back({{"intake", "motor2"}, DeviceKey{"phoenix6", "talonfx", 11, "rio", -1}, true});
     c.mechanisms[0].geometry.push_back({"roller", PrimitiveKind::Cylinder, Pose3{}, Vec3{}, 0.04f, 0.3f, "#00ff00", false, 0.f, "arm"});
     c.sim.seed = 12345;
     c.sim.physics.gravity = Vec3{0.f, 0.f, -9.81f};
-    c.plugins["fake_game"] = PluginSection{2, Value::makeObject()};
+    c.plugins["fake_game"] = PluginSection{1, Value::makeObject()};
     c.plugins["fake_game"].data["capacity"] = 7;
     c.gamePluginId = "fake_game";
 
@@ -79,6 +62,8 @@ TEST_CASE("config codec: a full config survives config -> Value -> JSON text -> 
     REQUIRE(r.mechanisms.size() == 1);
     CHECK(r.mechanisms[0].properties.find("gearRatio")->asDouble() == 2.5);
     CHECK(r.mechanisms[0].mappings == c.mechanisms[0].mappings);
+    CHECK(r.mechanisms[0].mappings.back().reversed);
+    CHECK_FALSE(r.mechanisms[0].mappings.front().reversed);
     CHECK(r.mechanisms[0].mount.position == c.mechanisms[0].mount.position);
     CHECK(r.mechanisms[0].geometry[0].kind == PrimitiveKind::Cylinder);
     CHECK(r.mechanisms[0].geometry[0].link == "arm");
@@ -88,7 +73,7 @@ TEST_CASE("config codec: a full config survives config -> Value -> JSON text -> 
     CHECK(r.sim.physics.gravity.z == -9.81f);
     CHECK(r.gamePluginId == "fake_game");
     REQUIRE(r.findPlugin("fake_game") != nullptr);
-    CHECK(r.findPlugin("fake_game")->schemaVersion == 2);
+    CHECK(r.findPlugin("fake_game")->schemaVersion == 1);
     CHECK(r.findPlugin("fake_game")->data.find("capacity")->asInt() == 7);
     // and the second generation is textually identical
     CHECK(json.dump(codec.toValue(r), true) == json.dump(v, true));
@@ -102,69 +87,50 @@ TEST_CASE("config codec: floats are written as short decimals") {
     CHECK(text.find("0.699999") == std::string::npos);
 }
 
-TEST_CASE("config codec: writes both legacy parent and structured attachment, structured wins on read") {
+TEST_CASE("config codec: the structured attachment is the only form written and read") {
     RobotConfig c = sampleConfig();
     MechanismConfig arm;
     arm.id = "arm";
     arm.type = "roller";
     arm.attachTo("intake", "tip");
     c.mechanisms.push_back(arm);
-    c.mechanisms[0].parent = "chassis";  // legacy only, no structured form
 
     const Value v = roundTripValue(c);
     const Value& m0 = v.find("mechanisms")->array()[0];
-    CHECK(m0.find("parent")->asString() == "chassis");
+    CHECK(m0.find("parent") == nullptr);
     CHECK(m0.find("attachment")->find("parentLink")->asString() == "root");
     const Value& m1 = v.find("mechanisms")->array()[1];
-    CHECK(m1.find("parent")->asString() == "intake");
+    CHECK(m1.find("parent") == nullptr);
     CHECK(m1.find("attachment")->find("parentMechanismId")->asString() == "intake");
     CHECK(m1.find("attachment")->find("parentLink")->asString() == "tip");
 
-    // a hand-edited file where the two disagree: the structured form wins and `parent` is re-synced
-    Value edited = v;
-    edited["mechanisms"].array()[1]["parent"] = "chassis";
-    const auto r = RobotConfigCodec{}.fromValue(edited);
+    const auto r = RobotConfigCodec{}.fromValue(v);
     REQUIRE(r.ok());
-    CHECK(r.value().mechanisms[1].parent == "intake");
-    REQUIRE(r.value().mechanisms[1].attachment.has_value());
-    CHECK(r.value().mechanisms[1].attachment->parentLink == "tip");
+    CHECK(r.value().mechanisms[1].attachment.parentMechanismId == "intake");
+    CHECK(r.value().mechanisms[1].attachment.parentLink == "tip");
 
-    // a 1.0 file with only `parent`: no structured attachment is invented
-    Value legacy = v;
-    legacy["mechanisms"].array()[1].object().erase("attachment");
-    legacy["mechanisms"].array()[1]["parent"] = "intake";
-    const auto l = RobotConfigCodec{}.fromValue(legacy);
-    REQUIRE(l.ok());
-    CHECK_FALSE(l.value().mechanisms[1].attachment.has_value());
-    CHECK(l.value().mechanisms[1].resolvedAttachment().parentMechanismId == "intake");
+    // a file without any attachment mounts the mechanism on the chassis root
+    Value bare = v;
+    bare["mechanisms"].array()[1].object().erase("attachment");
+    const auto b = RobotConfigCodec{}.fromValue(bare);
+    REQUIRE(b.ok());
+    CHECK(b.value().mechanisms[1].attachment.onChassis());
 }
 
-TEST_CASE("config codec: unknown fields are preserved at every level") {
+TEST_CASE("config codec: unknown fields are ignored") {
     Value v = roundTripValue(sampleConfig());
     v["futureRootField"] = Value::makeObject();
-    v["futureRootField"]["x"] = 1;
     v["chassis"]["wedgeAngle"] = 12.5;
-    v["drivetrain"]["wheels"].array()[0]["rollerCount"] = 9;
     v["mechanisms"].array()[0]["notes"] = "hand written";
-    v["plugins"] = Value::makeObject();
-    Value section = Value::makeObject();
-    section["schemaVersion"] = 1;
-    section["data"] = Value::makeObject();
-    section["extra"] = "kept";
-    v["plugins"].object().set("other_game", section);
 
     const RobotConfigCodec codec;
     const auto r = codec.fromValue(v);
     REQUIRE(r.ok());
     const Value out = codec.toValue(r.value());
-    CHECK(out.find("futureRootField")->find("x")->asInt() == 1);
-    CHECK(out.find("chassis")->find("wedgeAngle")->asDouble() == 12.5);
-    CHECK(out.find("drivetrain")->find("wheels")->array()[0].find("rollerCount")->asInt() == 9);
-    CHECK(out.find("mechanisms")->array()[0].find("notes")->asString() == "hand written");
-    CHECK(out.find("plugins")->find("other_game")->find("extra")->asString() == "kept");
-    CHECK(out == v);  // the whole document is unchanged by a load/save cycle
+    CHECK(out.find("futureRootField") == nullptr);
+    CHECK(out.find("chassis")->find("wedgeAngle") == nullptr);
+    CHECK(out.find("mechanisms")->array()[0].find("notes") == nullptr);
 }
-
 TEST_CASE("config codec: absent fields default, wrong types are reported with their path") {
     Value minimal = Value::makeObject();
     minimal["schemaVersion"] = 1;
@@ -201,56 +167,21 @@ TEST_CASE("config codec: absent fields default, wrong types are reported with th
     CHECK_FALSE(RobotConfigCodec{}.fromValue(zeroQuat).ok());
 }
 
-TEST_CASE("config codec: newer schema is refused, older runs the migration chain") {
-    Value newer = roundTripValue(sampleConfig());
-    newer["schemaVersion"] = kRobotConfigSchemaVersion + 1;
-    const auto refused = RobotConfigCodec{}.fromValue(newer);
-    REQUIRE_FALSE(refused.ok());
-    CHECK(refused.error().code == ErrorCode::VersionMismatch);
-
-    // no migrator for v0 -> VersionMismatch
-    Value old = roundTripValue(sampleConfig());
-    old["schemaVersion"] = 0;
-    CHECK(RobotConfigCodec{}.fromValue(old).error().code == ErrorCode::VersionMismatch);
-
-    // with a v0 -> v1 migrator the old key is renamed first, then decoded
-    std::vector<std::unique_ptr<IConfigMigrator>> chain;
-    chain.push_back(std::make_unique<RenameMigrator>());
-    const RobotConfigCodec codec(std::move(chain));
-    Value v0 = Value::makeObject();
-    v0["schemaVersion"] = 0;
-    v0["robotName"] = "Legacy";
-    DecodeInfo info;
-    const auto r = codec.fromValue(v0, &info);
-    REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
-    CHECK(r.value().name == "Legacy");
+TEST_CASE("config codec: only the current schema version is accepted, there is no migration") {
+    for (const int version : {0, kRobotConfigSchemaVersion + 1}) {
+        Value other = roundTripValue(sampleConfig());
+        other["schemaVersion"] = version;
+        const auto refused = RobotConfigCodec{}.fromValue(other);
+        REQUIRE_FALSE(refused.ok());
+        CHECK(refused.error().code == ErrorCode::VersionMismatch);
+    }
+    // a hand-written file may omit the version
+    Value bare = roundTripValue(sampleConfig());
+    bare.object().erase("schemaVersion");
+    const auto r = RobotConfigCodec{}.fromValue(bare);
+    REQUIRE(r.ok());
     CHECK(r.value().schemaVersion == kRobotConfigSchemaVersion);
-    CHECK(info.migrated);
-    CHECK(info.persistedVersion == 0);
-
-    DecodeInfo current;
-    REQUIRE(codec.fromValue(roundTripValue(sampleConfig()), &current).ok());
-    CHECK_FALSE(current.migrated);
-    CHECK(RobotConfigCodec::storedVersion(Value::makeObject()) == 1);
-    CHECK(RobotConfigCodec::storedVersion(Value(5)) == 0);
 }
-
-TEST_CASE("config codec: failing migrator aborts the load") {
-    class Failing final : public IConfigMigrator {
-    public:
-        int fromVersion() const override { return 0; }
-        int toVersion() const override { return 1; }
-        Status migrate(Value&) const override { return makeError(ErrorCode::InvalidState, "boom"); }
-    };
-    std::vector<std::unique_ptr<IConfigMigrator>> chain;
-    chain.push_back(std::make_unique<Failing>());
-    Value v0 = Value::makeObject();
-    v0["schemaVersion"] = 0;
-    const auto r = RobotConfigCodec(std::move(chain)).fromValue(v0);
-    REQUIRE_FALSE(r.ok());
-    CHECK(r.error().message == "boom");
-}
-
 TEST_CASE("config codec: numeric integer boundaries are checked before conversion") {
     const RobotConfigCodec codec;
     const JsonValueCodec json;
@@ -264,9 +195,7 @@ TEST_CASE("config codec: numeric integer boundaries are checked before conversio
     };
     for (const char* version : {"1.9", "1e100", "2147483648", "-2147483649"}) {
         rejected(std::string("\"schemaVersion\":") + version, "schemaVersion");
-        Value v = Value::makeObject();
-        v["schemaVersion"] = json.parse(version).value();
-        CHECK(RobotConfigCodec::storedVersion(v) == 0);
+
     }
     for (const char* step : {"1e100", "9223372036854775808", "-9223372036854777856", "1.5"})
         rejected(std::string("\"sim\":{\"stepUs\":") + step + "}", "sim.stepUs");
@@ -352,7 +281,6 @@ TEST_CASE("config codec: nonfinite and out-of-range float components are parse e
                                 std::numeric_limits<double>::quiet_NaN()}) {
         Value v = codec.toValue(sampleConfig());
         v["schemaVersion"] = number;
-        CHECK(RobotConfigCodec::storedVersion(v) == 0);
         CHECK(codec.fromValue(v).error().code == ErrorCode::ParseError);
         v["schemaVersion"] = 1;
         v["sim"]["stepUs"] = number;

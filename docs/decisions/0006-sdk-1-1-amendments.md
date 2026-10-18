@@ -1,6 +1,6 @@
 # ADR 0006 - SDK 1.1 amendments (additive)
 
-- Status: accepted
+- Status: accepted; version numbering, the migration hook and the legacy `parent` are superseded by [ADR 0013](0013-pre-release-single-sdk-version.md)
 - Date: 2026-10-15
 - Amends: [ADR 0005](0005-sdk-freeze.md) (SDK freeze). `kSdkVersionMinor` 0 -> 1, `proto::kProtocolVersion` 1 -> 2.
 - Scope: `sdk/include/wpiemu/sdk/` and `tests/sdk/` only. Everything below follows ADR 0005 section 4
@@ -49,15 +49,14 @@ from fabricating one. `Issue::code` + `config/validation_codes.h`; the config va
 independent mappings of conflicting aliases (`device_alias_conflict`, `validateDeviceAliases`). Safe runtime
 behaviour: a conflicted device is looped back and its slots are neutral, with a hub warning.
 
-### 4. Config migration hook - `game/game_module.h`, `config/plugin_config.h`
-`IGameModule::migrateRobotConfig(RobotConfig&, int persistedPluginVersion) const` (default no-op). Pipeline:
-core migration -> selected plugin migration (section migrators, then this hook) -> defaults -> validation ->
-construction. A plugin owns only its section and mechanisms with `ownsMechanismType(id, type)`.
-`GameMetadata::minSdkMinor` lets a plugin require 1.1.
+### 4. Plugin ownership - `config/plugin_config.h`
+A plugin owns only its section and mechanisms with `ownsMechanismType(id, type)`.
+(ADR 0013 removed the migration hook this section originally introduced.)
+`GameMetadata::minSdkMinor` lets a plugin require a minimum SDK minor.
 
 ### 5. Mechanism attachment - `config/robot_config.h`, `mechanisms/mechanism.h`, `mechanisms/attachment.h`
-`MechanismConfig::attachment` (`{parentMechanismId, parentLink = "root"}`) augments the legacy `parent`
-(kept; structured form wins; `attachTo()` keeps both in sync). Every mechanism and the chassis expose the
+`MechanismConfig::attachment` (`{parentMechanismId, parentLink = "root"}`) is the only attachment form
+(`attachTo()` sets it; ADR 0013 removed the legacy `parent` string). Every mechanism and the chassis expose the
 stable link `root`; templates add `LinkSpec`s; `IMechanism::linkPose` and
 `IMechanismDirectory::linkPoseInChassis` give resolved transforms; `validateMechanismAttachments` defines the
 validation contract (missing parent / link, cycles, reserved id). `MechanismFactory::registerTemplate` rejects
@@ -70,7 +69,7 @@ descriptor in addition to `registerPlugin` (noted in `game/plugin_registry.h`).
 
 ## Consequences
 * Existing code compiles unchanged: new struct fields are appended with defaults, new virtuals are
-  non-pure, the legacy `MechanismConfig::parent` and `DeviceDescriptor::bus` remain.
+  non-pure, and `DeviceDescriptor::bus` remains.
 * Behavioural notes for implementers:
   * `IDeviceDirectory::find(const DeviceKey&)` now matches on physical identity (bus ignored).
   * `SimContext::coupling()` is always valid; check `capabilities()` before relying on a feature.

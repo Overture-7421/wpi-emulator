@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <array>
 #include <span>
 #include <string>
 #include <string_view>
@@ -8,6 +10,7 @@
 
 #include "wpiemu/sdk/core/interface.h"
 #include "wpiemu/sdk/core/registry.h"
+#include "wpiemu/sdk/devices/device_hub.h"
 #include "wpiemu/sdk/devices/slot.h"
 #include "wpiemu/sdk/mechanisms/motion_link.h"
 #include "wpiemu/sdk/physics/chassis_spec.h"
@@ -16,11 +19,35 @@
 
 namespace wpiemu::sdk {
 
-// Per-wheel actuation for ONE step, taken from the mapped motor slots (MotorOutput::voltageV).
+// Per-wheel actuation for ONE step, taken from the mapped motor slots (MotorOutput::voltageV, already in the
+// wheel frame: positive spins the wheel forward).
 struct WheelCommand {
-    double driveVoltageV = 0.0;
+    double driveVoltageV = 0.0;   // every drive motor, unless `driveMotorVoltagesV` is filled
     double steerVoltageV = 0.0;   // swerve only
+    // Individual drive motors (index = driveSlotName order). Used when `driveMotors` > 0; motors beyond it
+    // repeat motor 0.
+    std::array<double, kMaxMotorsPerAxis> driveMotorVoltagesV{};
+    int driveMotors = 0;
 };
+
+// Reads the wheel's drive/steer motor slots (owner = slot_owner::kDrivetrain). Every drive slot up to
+// WheelSpec::driveMotorCount contributes its own voltage; unmapped ones mirror drive motor 0.
+inline WheelCommand wheelCommandFromHub(const IActuatorReader& hub, const WheelSpec& wheel) {
+    WheelCommand cmd;
+    const int count = std::clamp(wheel.driveMotorCount, 1, kMaxMotorsPerAxis);
+    for (int i = 0; i < count; ++i) {
+        const MotorOutput out = hub.motorOutput({slot_owner::kDrivetrain, driveSlotName(wheel.name, i)});
+        if (out.valid)
+            cmd.driveMotorVoltagesV[static_cast<std::size_t>(i)] = out.voltageV;
+        else if (i > 0)
+            cmd.driveMotorVoltagesV[static_cast<std::size_t>(i)] = cmd.driveMotorVoltagesV[0];
+    }
+    cmd.driveMotors = count;
+    cmd.driveVoltageV = cmd.driveMotorVoltagesV[0];
+    const MotorOutput steer = hub.motorOutput({slot_owner::kDrivetrain, wheel.name + ".steer"});
+    cmd.steerVoltageV = steer.valid ? steer.voltageV : 0.0;
+    return cmd;
+}
 
 // Per-wheel result after IDrivetrain::step, used to feed motor encoders / CANcoders / snapshots.
 struct WheelState {

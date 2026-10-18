@@ -1,5 +1,5 @@
 // 2026 (REBUILT) game module: the thin IGameModule facade over the plugin's parts (field layout,
-// fuel game state, 2026 mechanisms, config schema, HUD/editor descriptors, migrations). The module
+// fuel game state, 2026 mechanisms, config schema, HUD/editor descriptors). The module
 // itself holds no session state.
 #include <memory>
 #include <string>
@@ -11,7 +11,6 @@
 #include "wpiemu/plugins/game_2026/fuel_shooter.h"
 #include "wpiemu/plugins/game_2026/game_state.h"
 #include "wpiemu/plugins/game_2026/game_ui.h"
-#include "wpiemu/plugins/game_2026/migration.h"
 #include "wpiemu/plugins/game_2026/plugin.h"
 #include "wpiemu/plugins/game_2026/plugin_info.h"
 #include "wpiemu/sdk/game/game_module.h"
@@ -31,7 +30,6 @@ public:
         m.description = "FRC 2026 REBUILT: fuel, hubs with active/inactive shifts, bumps, trenches, towers.";
         m.pluginVersion = 1;
         m.minSdkMajor = 1;
-        m.minSdkMinor = 1;  // migrateRobotConfig and resolved mechanism link poses (SDK 1.1)
         return m;
     }
 
@@ -55,10 +53,6 @@ public:
     }
 
     sdk::PluginConfigSchema contributeConfigSchema() const override { return configSchema(); }
-    std::vector<std::unique_ptr<sdk::IConfigMigrator>> configMigrators() const override { return makeConfigMigrators(); }
-    sdk::Status migrateRobotConfig(sdk::RobotConfig& config, int persistedPluginVersion) const override {
-        return migrateGame2026Config(config, persistedPluginVersion);
-    }
 
     std::vector<sdk::EditorPanelDescriptor> contributeEditorPanels() const override { return editorPanels(); }
     std::vector<sdk::HudWidgetDescriptor> contributeHud() const override { return hudWidgets(); }

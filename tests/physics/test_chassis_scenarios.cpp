@@ -611,3 +611,53 @@ TEST_CASE("drivetrain: a tire model returning NaN neither moves the body nor cor
     }
     CHECK(std::fabs(world->linearVelocity(sim->body()).x) < 0.05f);
 }
+
+namespace {
+
+void driveMotors(Rig& rig, std::initializer_list<double> volts) {
+    for (WheelCommand& c : rig.cmd) {
+        c.driveMotors = static_cast<int>(volts.size());
+        std::size_t i = 0;
+        for (const double v : volts) c.driveMotorVoltagesV[i++] = v;
+    }
+}
+
+DrivetrainSpec multiMotorTank(int motors) {
+    DrivetrainSpec spec = tankSpec(2, WheelKind::Standard);
+    for (WheelSpec& w : spec.wheels) w.driveMotorCount = motors;
+    return spec;
+}
+
+}  // namespace
+
+TEST_CASE("wheels with several motors: each motor adds its own voltage, mirrored motors match the old scalar command") {
+    Rig scalar(multiMotorTank(3));
+    scalar.setDrive(6.0);
+    const float expected = speedOver(scalar, 0.5f);
+    CHECK(expected > 0.1f);
+
+    Rig mirrored(multiMotorTank(3));
+    driveMotors(mirrored, {6.0});   // motors beyond the listed ones repeat motor 0
+    CHECK(speedOver(mirrored, 0.5f) == doctest::Approx(expected).epsilon(1e-4));
+
+    Rig mixed(multiMotorTank(3));
+    driveMotors(mixed, {12.0, 6.0, 0.0});   // same mean voltage, so the same torque
+    CHECK(speedOver(mixed, 0.5f) == doctest::Approx(expected).epsilon(1e-3));
+}
+
+TEST_CASE("wheels with opposed motors do not move the robot but still draw current") {
+    Rig rig(multiMotorTank(2));
+    driveMotors(rig, {12.0, -12.0});   // a motor that is reversed relative to its partner
+    rig.run(0.5f);
+    CHECK(std::fabs(rig.bodyVelocity().x) < 0.01f);
+    for (const WheelState& s : rig.sim->drivetrain().wheelStates()) CHECK(s.driveMotorCurrentA > 1.0);
+}
+
+TEST_CASE("every drive motor of a wheel gets its own slot") {
+    Rig rig(multiMotorTank(3));
+    std::vector<std::string> names;
+    for (const SlotSpec& s : rig.sim->drivetrain().slotSpecs()) names.push_back(s.name);
+    const std::vector<std::string> left0 = {"left0.drive", "left0.drive2", "left0.drive3"};
+    CHECK(std::vector<std::string>(names.begin(), names.begin() + 3) == left0);
+    CHECK(names.size() == 12);
+}

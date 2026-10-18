@@ -16,25 +16,45 @@ using sdk::Value;
 
 namespace {
 
-PropertySpec textSpec(std::string key, std::string label, std::string group, Value def, std::string description = {}) {
-    PropertySpec s;
-    s.key = std::move(key);
-    s.label = std::move(label);
-    s.type = PropertyType::String;
-    s.defaultValue = std::move(def);
-    s.group = std::move(group);
-    s.description = std::move(description);
-    return s;
-}
-
 PropertyGroup groupOf(std::string id, QString title, sdk::PropertySchema schema, Value values, bool collapsed = false) {
     PropertyGroup g;
     g.id = std::move(id);
     g.title = std::move(title);
     g.schema = std::move(schema);
+    // Only this group's own keys: groups cut from one schema share the value object.
+    if (values.isObject()) {
+        Value own = Value::makeObject();
+        for (const auto& p : g.schema.properties)
+            if (const Value* v = values.find(p.key)) own[p.key] = *v;
+        values = std::move(own);
+    }
     g.values = std::move(values);
     g.collapsed = collapsed;
     return g;
+}
+
+template <class Pred>
+sdk::PropertySchema subset(const sdk::PropertySchema& schema, Pred keep) {
+    sdk::PropertySchema out;
+    for (const auto& p : schema.properties)
+        if (keep(p)) out.properties.push_back(p);
+    return out;
+}
+
+// The "what is it" property (wheel kind, motion type) leads the Configure card.
+bool isTypeKey(const std::string& key) {
+    return key == "kind" || key == "motion" || (key.size() > 6 && key.compare(key.size() - 6, 6, "Motion") == 0);
+}
+
+void typeFirst(sdk::PropertySchema& schema) {
+    std::stable_partition(schema.properties.begin(), schema.properties.end(), [](const PropertySpec& p) { return isTypeKey(p.key); });
+}
+
+QString axisTitle(const std::string& axis) {
+    if (axis == "axis" || axis.empty()) return {};
+    QString t = QString::fromStdString(axis);
+    t[0] = t[0].toUpper();
+    return t;
 }
 
 Value withDefaults(const sdk::PropertySchema& schema, const Value& stored) {
@@ -61,7 +81,7 @@ std::vector<const sdk::EditorPanelDescriptor*> panelsFor(const EditorCatalog& ca
 
 Value placementValues(const sdk::MechanismConfig& m) {
     Value o = Value::makeObject();
-    const sdk::MechanismAttachment a = m.resolvedAttachment();
+    const sdk::MechanismAttachment a = m.attachment;
     o["parent"] = a.onChassis() ? std::string(sdk::kChassisParent) : a.parentMechanismId;
     o["parentLink"] = a.parentLink;
     o["mount"] = sdk::toValue(m.mount);
@@ -93,7 +113,7 @@ sdk::PropertySchema placementSchema(const sdk::RobotConfig& c, const EditorCatal
     link.group = parent.group;
     link.defaultValue = std::string(sdk::kRootLink);
     link.options.push_back({sdk::kRootLink, ETR("Origin").toStdString()});
-    const sdk::MechanismAttachment att = m.resolvedAttachment();
+    const sdk::MechanismAttachment att = m.attachment;
     if (!att.onChassis())
         if (const sdk::MechanismConfig* pm = c.findMechanism(att.parentMechanismId))
             if (const auto* info = catalog.findTemplate(pm->type))
@@ -109,16 +129,6 @@ sdk::PropertySchema placementSchema(const sdk::RobotConfig& c, const EditorCatal
     mount.group = parent.group;
     mount.defaultValue = sdk::toValue(sdk::Pose3{});
     s.properties.push_back(mount);
-    return s;
-}
-
-sdk::PropertySchema generalSchema() {
-    sdk::PropertySchema s;
-    s.properties.push_back(textSpec("label", ETR("Name").toStdString(), ETR("General").toStdString(), "", ETR("Shown in the tree and the viewport.").toStdString()));
-    PropertySpec id = textSpec("id", ETR("Instance id").toStdString(), ETR("General").toStdString(), "",
-                               ETR("Stable id used in robot.json and slot names. Renaming updates mappings and children.").toStdString());
-    id.advanced = true;
-    s.properties.push_back(id);
     return s;
 }
 
@@ -156,8 +166,21 @@ std::vector<PropertyGroup> propertyGroupsFor(const sdk::RobotConfig& c, const Ed
             out.push_back(groupOf("drivetrain", ETR("Drivetrain"), spec::drivetrainSchema(catalog), spec::drivetrainValues(c.drivetrain.spec)));
             break;
         case SelKind::Wheel:
-            if (const sdk::WheelSpec* w = ops::findWheel(c, sel.sub))
-                out.push_back(groupOf("wheel", ETR("Wheel"), spec::wheelSchema(*w), spec::wheelValues(*w)));
+            if (const sdk::WheelSpec* w = ops::findWheel(c, sel.sub)) {
+                const sdk::PropertySchema full = spec::wheelSchema(*w);
+                const Value values = spec::wheelValues(*w);
+                using S = sdk::PropertySection;
+                auto in = [](S s) { return [s](const PropertySpec& p) { return p.key != "name" && p.section == s; }; };
+                PropertyGroup drive = groupOf("wheel.drive", ETR("Drive"), subset(full, in(S::Drive)), values);
+                drive.section = S::Drive;
+                out.push_back(std::move(drive));
+                sdk::PropertySchema configure = subset(full, in(S::Configure));
+                typeFirst(configure);
+                out.push_back(groupOf("wheel", ETR("Wheel"), std::move(configure), values));
+                PropertyGroup place = groupOf("wheel.placement", ETR("Placement"), subset(full, in(S::Placement)), values);
+                place.section = S::Placement;
+                out.push_back(std::move(place));
+            }
             break;
         case SelKind::Primitive:
             if (const auto* list = ops::primitivesOf(c, sel.owner); list != nullptr && sel.index >= 0 && sel.index < static_cast<int>(list->size()))
@@ -166,15 +189,35 @@ std::vector<PropertyGroup> propertyGroupsFor(const sdk::RobotConfig& c, const Ed
         case SelKind::Mechanism: {
             const sdk::MechanismConfig* m = c.findMechanism(sel.owner);
             if (m == nullptr) break;
-            Value general = Value::makeObject();
-            general["label"] = m->label;
-            general["id"] = m->id;
-            out.push_back(groupOf("mech.general", ETR("Mechanism"), generalSchema(), general));
-            out.push_back(groupOf("mech.placement", ETR("Placement"), placementSchema(c, catalog, *m), placementValues(*m)));
             if (const auto* info = catalog.findTemplate(m->type)) {
-                if (!info->properties.properties.empty())
-                    out.push_back(groupOf("mech.props", QString::fromStdString(info->displayName), info->properties, withDefaults(info->properties, m->properties)));
+                using S = sdk::PropertySection;
+                const Value values = withDefaults(info->properties, m->properties);
+                // One Drive group per motion axis; drive properties without an axis go to the first one.
+                std::vector<std::string> axes;
+                for (const auto& p : info->properties.properties)
+                    if (p.section == S::Drive && !p.axis.empty() && std::find(axes.begin(), axes.end(), p.axis) == axes.end()) axes.push_back(p.axis);
+                for (const auto& p : info->properties.properties)
+                    if (p.section == S::Drive && p.axis.empty()) {
+                        if (axes.empty()) axes.push_back({});
+                        break;
+                    }
+                for (std::size_t i = 0; i < axes.size(); ++i) {
+                    const std::string axis = axes[i];
+                    auto schema = subset(info->properties, [&](const PropertySpec& p) {
+                        return p.section == S::Drive && (p.axis == axis || (p.axis.empty() && i == 0));
+                    });
+                    PropertyGroup g = groupOf("mech.drive:" + axis, axisTitle(axis), std::move(schema), values);
+                    g.section = S::Drive;
+                    g.axis = axis;
+                    out.push_back(std::move(g));
+                }
+                sdk::PropertySchema configure = subset(info->properties, [](const PropertySpec& p) { return p.section != S::Drive; });
+                typeFirst(configure);
+                if (!configure.properties.empty())
+                    out.push_back(groupOf("mech.props", QString::fromStdString(info->displayName), std::move(configure), values));
             }
+            out.push_back(groupOf("mech.placement", ETR("Placement"), placementSchema(c, catalog, *m), placementValues(*m)));
+            out.back().section = sdk::PropertySection::Placement;
             for (const auto* panel : panelsFor(catalog, sdk::PanelScope::Mechanism, m->type))
                 out.push_back(groupOf("panel:" + panel->id, QString::fromStdString(panel->title), panel->properties, withDefaults(panel->properties, m->properties)));
             break;
@@ -200,7 +243,7 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
     if (groupId == "robot") { spec::applyRobot(c, key, value); return true; }
     if (groupId == "chassis") { spec::applyChassis(c, catalog, key, value); return true; }
     if (groupId == "drivetrain") { spec::applyDrivetrain(c, key, value); return true; }
-    if (groupId == "wheel") { spec::applyWheel(c, sel.sub, key, value); return true; }
+    if (groupId == "wheel" || groupId == "wheel.drive" || groupId == "wheel.placement") { spec::applyWheel(c, sel.sub, key, value); return true; }
     if (groupId == "primitive") {
         auto* list = ops::primitivesOf(c, sel.owner);
         if (list == nullptr || sel.index < 0 || sel.index >= static_cast<int>(list->size())) return false;
@@ -213,13 +256,11 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
             if (cand.id == sel.owner) m = &cand;
         if (m == nullptr) return false;
         if (groupId == "mech.general") {
-            if (key == "label") m->label = value.asString(m->label);
-            else if (key == "id") return ops::renameMechanism(c, m->id, value.asString(m->id));
-            return true;
+            return key == "label" ? (m->label = value.asString(m->label), true) : false;
         }
         if (groupId == "mech.placement") {
             if (key == "mount") { sdk::fromValue(value, m->mount); return true; }
-            const sdk::MechanismAttachment att = m->resolvedAttachment();
+            const sdk::MechanismAttachment att = m->attachment;
             if (key == "parent") {
                 const std::string parent = value.asString(sdk::kChassisParent);
                 return ops::reparentMechanism(c, catalog, m->id, parent, sdk::kRootLink);
@@ -227,9 +268,10 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
             if (key == "parentLink") return ops::reparentMechanism(c, catalog, m->id, att.parentMechanismId, value.asString(sdk::kRootLink));
             return false;
         }
-        if (groupId == "mech.props" || groupId.rfind("panel:", 0) == 0) {
+        if (groupId == "mech.props" || isDriveGroup(groupId) || groupId.rfind("panel:", 0) == 0) {
             if (!m->properties.isObject()) m->properties = Value::makeObject();
             m->properties[key] = value;
+            ops::pruneInactiveMappings(c, catalog, m->id);
             return true;
         }
     }
@@ -241,6 +283,17 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
         return true;
     }
     return false;
+}
+
+QString mechanismKindLabel(const sdk::MechanismConfig& m, const sdk::MechanismTemplateInfo& info) {
+    for (const auto& p : info.properties.properties) {
+        if (p.key != "motion" || p.type != sdk::PropertyType::Enum) continue;
+        const Value* stored = m.properties.isObject() ? m.properties.find(p.key) : nullptr;
+        const std::string value = stored != nullptr ? stored->asString() : p.defaultValue.asString();
+        for (const auto& o : p.options)
+            if (o.value == value) return QString::fromStdString(o.label);
+    }
+    return QString::fromStdString(info.displayName);
 }
 
 QString describeSelection(const sdk::RobotConfig& c, const EditorCatalog& catalog, const SelectionRef& sel) {

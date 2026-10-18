@@ -61,25 +61,31 @@ TEST_CASE("tank basics produce wheels per side and skip steering") {
     CHECK(findWheel(c, "right2") != nullptr);
     // wheels are spread front to back
     CHECK(findWheel(c, "left0")->positionM.x < findWheel(c, "left2")->positionM.x);
-    CHECK(c.motionLinksConfigured);
     CHECK(c.motionLinks.size() == 4);
 }
 
-TEST_CASE("tank setup updates retain custom links and mappings needing reference repair") {
+TEST_CASE("tank setup updates keep custom links while the wheel layout is unchanged and regenerate them when it changes") {
     auto basics = defaultBasicsFor(sdk::drivetrain_kind::kTank);
     basics.wheelsPerSide = 3;
     auto existing = buildRobotConfig(basics, {});
     existing.motionLinks[0].ratio = -2;
     existing.drivetrain.mappings.push_back(
         {{"drivetrain", "left2.drive"}, {"phoenix6", "talonfx", 1, "", -1}});
+
+    const auto same = updateRobotConfig(&existing, basics, {});
+    REQUIRE(same.motionLinks.size() == existing.motionLinks.size());
+    CHECK(same.motionLinks[0].ratio == -2);
+    CHECK(same.drivetrain.mappings == existing.drivetrain.mappings);
+
     basics.wheelsPerSide = 2;
     const auto updated = updateRobotConfig(&existing, basics, {});
-    CHECK(updated.motionLinks.size() == existing.motionLinks.size());
-    CHECK(updated.motionLinks[0].ratio == -2);
-    CHECK(updated.drivetrain.mappings == existing.drivetrain.mappings);
     CHECK(updated.drivetrain.spec.wheels.size() == 4);
+    CHECK(updated.motionLinks.size() == 2);   // one follower per side
+    for (const auto& link : updated.motionLinks) {
+        CHECK(findWheel(updated, link.source.slot.substr(0, link.source.slot.find('.'))) != nullptr);
+        CHECK(findWheel(updated, link.target.slot.substr(0, link.target.slot.find('.'))) != nullptr);
+    }
 }
-
 TEST_CASE("mecanum basics use opposing roller angles on diagonals") {
     const sdk::RobotConfig c = buildRobotConfig(defaultBasicsFor(sdk::drivetrain_kind::kMecanum), {});
     REQUIRE(c.drivetrain.spec.wheels.size() == 4);
@@ -197,7 +203,7 @@ TEST_CASE("re-running the wizard keeps mechanisms, mappings and hand-made primit
     sdk::RobotConfig existing = buildRobotConfig(defaultBasicsFor(sdk::drivetrain_kind::kSwerve), {});
     sdk::MechanismConfig m;
     m.id = "intake";
-    m.type = "roller";
+    m.type = "mechanism";
     existing.mechanisms.push_back(m);
     existing.robotMappings.push_back({{"robot", "imu"}, {"phoenix6", "pigeon2", 0, "rio", -1}});
     existing.drivetrain.mappings.push_back({{"drivetrain", "fl.drive"}, {"phoenix6", "talonfx", 1, "rio", -1}});

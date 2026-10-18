@@ -23,7 +23,7 @@ struct GameMetadata {
     std::string description;
     int pluginVersion = 1;      // plugin's own version (informational)
     int minSdkMajor = 1;        // plugin was written against this SDK major (refused otherwise)
-    int minSdkMinor = 0;        // SDK 1.1: minimum SDK minor the plugin needs (e.g. 1 for migrateRobotConfig/coupling)
+    int minSdkMinor = 0;        // minimum SDK minor the plugin needs (refused otherwise)
 };
 
 // The YEAR PLUGIN contract. One implementation per season, living entirely in plugins/game_<year>/.
@@ -57,33 +57,6 @@ public:
     // Plugin-declared config fields (fuel capacity, intake zone, shooter params, ...), rendered
     // by the generic inspector and persisted under RobotConfig::plugins[metadata().id].
     virtual PluginConfigSchema contributeConfigSchema() const = 0;
-    // Steps upgrading older sections to contributeConfigSchema().schemaVersion (v1->v2, ...).
-    virtual std::vector<std::unique_ptr<IConfigMigrator>> configMigrators() const { return {}; }
-
-    // SDK 1.1. Whole-config migration hook for changes a section-only IConfigMigrator cannot express
-    // (renaming/adding/removing this plugin's mechanisms, re-pointing their mappings or attachments).
-    //
-    // Config load pipeline (the coordinator in core/app, in this order):
-    //   1. core migration      IRobotConfigCodec::fromValue upgrades RobotConfig::schemaVersion;
-    //   2. plugin migration    for the SELECTED plugin only, when its persisted section version is older
-    //                          than contributeConfigSchema().schemaVersion:
-    //                            a. configMigrators() chain upgrades the section's `data`;
-    //                            b. then migrateRobotConfig(config, persistedPluginVersion);
-    //   3. defaults            missing core/plugin properties get their schema defaults;
-    //   4. validation          IConfigValidator;
-    //   5. construction        mechanisms/field/game state are built from the validated config.
-    // `persistedPluginVersion` is the section version as READ FROM STORAGE (before step 2a), so the hook
-    // can branch on how old the file was; by the time it runs, config.plugins[id].schemaVersion is already
-    // current. Not called when the section is absent or already current. Newer-than-supported sections are
-    // refused by the coordinator (VersionMismatch) before any hook runs.
-    //
-    // OWNERSHIP RULE: the hook may only modify this plugin's section and mechanisms for which
-    // ownsMechanismType(metadata().id, mechanism.type) holds (config/plugin_config.h). It must not touch
-    // anything else; the coordinator may reject a result that does. Idempotent and deterministic; pure
-    // data transformation (no logging side effects needed, no SimContext exists yet).
-    virtual Status migrateRobotConfig(RobotConfig& /*config*/, int /*persistedPluginVersion*/) const {
-        return okStatus();
-    }
 
     virtual std::vector<EditorPanelDescriptor> contributeEditorPanels() const { return {}; }
     virtual std::vector<HudWidgetDescriptor> contributeHud() const { return {}; }

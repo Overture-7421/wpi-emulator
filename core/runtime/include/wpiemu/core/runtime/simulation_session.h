@@ -65,7 +65,7 @@ struct SessionOptions {
 // Everything the builder needs, already constructed by the composition root. Non-owning pointers must outlive
 // the session; `world`, `coupling` are moved in.
 struct SessionParts {
-    sdk::RobotConfig config;                          // migrated, defaulted, validated
+    sdk::RobotConfig config;                          // defaulted, validated
     std::unique_ptr<sdk::IPhysicsWorld> world;        // required
     const sdk::MechanismFactory* mechanisms = nullptr;      // required (plugin templates already registered)
     const sdk::DrivetrainRegistry* drivetrains = nullptr;   // required when the config has wheels

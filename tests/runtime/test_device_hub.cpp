@@ -490,3 +490,45 @@ TEST_CASE("hub: persisted mappings round trip and the revision tracks loopback c
     CHECK_FALSE(status.ok());  // second one steals the device
     CHECK(partial.exportMappings().size() == 2);  // the others were still applied
 }
+
+TEST_CASE("hub: a reversed motor slot flips its command and its rotor feedback") {
+    DeviceHub hub;
+    hub.onAnnounce(talon(1, 1));
+    hub.onAnnounce(talon(2, 2));
+    const SlotAddress second{"arm", "motor2"};
+    const DeviceKey talon2{"phoenix6", "talonfx", 2, "rio", -1};
+    REQUIRE(hub.loadMappings(std::vector<SlotMapping>{{kSlotA, kTalon1}, {second, talon2, true}}).ok());
+    CHECK_FALSE(hub.isReversed(kSlotA));
+    CHECK(hub.isReversed(second));
+
+    hub.onActuatorFrame(frame({{DeviceId{1}, 0, 0.5}, {DeviceId{1}, 1, 6.0}, {DeviceId{1}, 2, 20.0},
+                               {DeviceId{2}, 0, 0.5}, {DeviceId{2}, 1, 6.0}, {DeviceId{2}, 2, 20.0}}));
+    const MotorOutput a = hub.motorOutput(kSlotA), b = hub.motorOutput(second);
+    CHECK(a.voltageV == 6.0);
+    CHECK(b.voltageV == -6.0);
+    CHECK(b.dutyCycle == -0.5);
+    CHECK(b.torqueCurrentA == -20.0);
+
+    MotorFeedback fb;
+    fb.rotorPositionRot = 2.0;
+    fb.rotorVelocityRps = 3.0;
+    fb.rotorAccelerationRps2 = 4.0;
+    hub.writeMotorFeedback(kSlotA, fb);
+    hub.writeMotorFeedback(second, fb);
+    proto::SensorFrame out;
+    hub.buildSensorFrame(out, true);
+    auto valueOf = [&](std::uint32_t device, std::uint16_t index) {
+        for (const auto& s : out.samples)
+            if (s.device == DeviceId{device} && s.signal == index) return s.value;
+        return -999.0;
+    };
+    CHECK(valueOf(1, 3) == 2.0);
+    CHECK(valueOf(2, 3) == -2.0);
+    CHECK(valueOf(2, 4) == -3.0);
+    CHECK(valueOf(2, 5) == -4.0);
+
+    const auto exported = hub.exportMappings();
+    CHECK(std::find(exported.begin(), exported.end(), SlotMapping{second, talon2, true}) != exported.end());
+    hub.unbind(second);
+    CHECK_FALSE(hub.isReversed(second));
+}

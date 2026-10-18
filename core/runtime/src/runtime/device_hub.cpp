@@ -31,6 +31,7 @@ Status DeviceHub::loadMappings(std::span<const SlotMapping> mappings) {
     for (const SlotMapping& m : mappings) {
         Status s = bind(m.slot, m.device);
         if (!s && !first) first = s.error();
+        if (s) setReversed(m.slot, m.reversed);
     }
     if (first) return *first;
     return okStatus();
@@ -39,8 +40,15 @@ Status DeviceHub::loadMappings(std::span<const SlotMapping> mappings) {
 std::vector<SlotMapping> DeviceHub::exportMappings() const {
     std::vector<SlotMapping> out;
     out.reserve(bindings_.size());
-    for (const auto& [slot, key] : bindings_) out.push_back({slot, key});
+    for (const auto& [slot, key] : bindings_) out.push_back({slot, key, isReversed(slot)});
     return out;
+}
+
+void DeviceHub::setReversed(const SlotAddress& slot, bool reversed) {
+    if (reversed)
+        reversed_.insert(slot);
+    else
+        reversed_.erase(slot);
 }
 
 void DeviceHub::markDiscoveryComplete() {
@@ -80,6 +88,7 @@ Status DeviceHub::bind(const SlotAddress& slot, const DeviceKey& device) {
 }
 
 void DeviceHub::unbind(const SlotAddress& slot) {
+    reversed_.erase(slot);
     if (bindings_.erase(slot) != 0) refresh();
 }
 
@@ -162,6 +171,11 @@ MotorOutput DeviceHub::motorOutput(const SlotAddress& slot) const {
         out.torqueCurrentA = outputValue(e, torque);
         out.hasTorqueCurrent = std::abs(out.torqueCurrentA) > 1e-9;
     }
+    if (isReversed(slot)) {
+        out.dutyCycle = -out.dutyCycle;
+        out.voltageV = -out.voltageV;
+        out.torqueCurrentA = -out.torqueCurrentA;
+    }
     return out;
 }
 
@@ -180,9 +194,10 @@ bool DeviceHub::digitalOutput(const SlotAddress& slot) const {
 void DeviceHub::writeMotorFeedback(const SlotAddress& slot, const MotorFeedback& f) {
     const auto i = usable(slot);
     if (!i) return;
-    if (!setFirstInput(*i, {signal::kRotorPosition, signal::kPosition}, f.rotorPositionRot)) return;
-    setFirstInput(*i, {signal::kRotorVelocity, signal::kVelocity}, f.rotorVelocityRps);
-    setInput(*i, signal::kRotorAcceleration, f.rotorAccelerationRps2);
+    const double s = isReversed(slot) ? -1.0 : 1.0;
+    if (!setFirstInput(*i, {signal::kRotorPosition, signal::kPosition}, s * f.rotorPositionRot)) return;
+    setFirstInput(*i, {signal::kRotorVelocity, signal::kVelocity}, s * f.rotorVelocityRps);
+    setInput(*i, signal::kRotorAcceleration, s * f.rotorAccelerationRps2);
     if (f.forwardLimit) setInput(*i, signal::kForwardLimit, *f.forwardLimit ? 1.0 : 0.0);
     if (f.reverseLimit) setInput(*i, signal::kReverseLimit, *f.reverseLimit ? 1.0 : 0.0);
 }

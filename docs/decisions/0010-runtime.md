@@ -1,6 +1,6 @@
 # ADR 0010 - Runtime, configuration and launcher (`core/runtime`)
 
-Status: **Accepted** (implemented in `core/runtime/`, tested on Windows/MSVC and Linux/g++; macOS shares the POSIX code).
+Status: **Accepted** (implemented in `core/runtime/`, tested on Windows/MSVC and Linux/g++; macOS shares the POSIX code). Migration, unknown-field preservation and upgrade backups were removed by [ADR 0013](0013-pre-release-single-sdk-version.md).
 Details of the API: [docs/runtime.md](../runtime.md).
 
 ## Decisions
@@ -10,18 +10,14 @@ Details of the API: [docs/runtime.md](../runtime.md).
    distinct), exact error positions and no FetchContent in `core`. nlohmann/json was rejected: its objects sort keys (or need
    `ordered_json`), a second tree type would need conversion code anyway, and it adds a build-time dependency to a module that otherwise
    needs none. The codec lives behind `IValueTextCodec`, so swapping it later is a one-file change. Hostile input is bounded (nesting 128).
-2. **Unknown-field preservation needs one additive SDK field.** `RobotConfig::unknownFields` (a `Value` object keyed by owner path, defaulted
-   empty) is the only SDK 1.1 addition. The codec fills it; editors never touch it. Without it a file written by a newer build would silently lose
-   data when an older build saved it. Unknown keys inside arrays of mappings/primitives are not preserved (they have no stable identity).
-3. **The coordinator is a class, not a convention.** `ConfigPipeline` implements ARCHITECTURE 4.4 once (core migration -> plugin section chain ->
-   plugin `migrateRobotConfig` -> defaults -> validation) and *enforces* the ownership rule by diffing everything except `plugins[id]` and the plugin's
-   own mechanisms; a violating plugin makes the load fail instead of corrupting the model. Plugin mechanism templates are registered through
+2. **The codec decodes the current schema only.** A `schemaVersion` other than the current one is refused; unknown fields are ignored (ADR 0013).
+3. **The coordinator is a class, not a convention.** `ConfigPipeline` implements ARCHITECTURE 4.4 once (decode -> defaults -> validation). Plugin mechanism templates are registered through
    `PluginRegistrar` (idempotent) so pipeline, session builder and editor cannot double-register.
 4. **The validator knows no devices.** `IConfigValidator::validate` receives registries, not a device catalogue, so slot/device capability checks use an optional
    injected `DeviceCapabilityLookup` (unknown device => skipped, not an error) and drivetrain slots follow the naming convention `<wheel>.drive|steer`.
    Required-but-unmapped slots are Errors for mechanisms (template says required) and Warnings for the drivetrain (follower motors are not separate devices).
 5. **Persistence.** Atomic temp+rename with flush; per-user working copy keyed by a hash of the canonical project path, shareable export in
-   `<project>/.wpiemu/robot.json`; upgrading an older file backs the original up first and never overwrites a backup. App-data paths are computed from
+   `<project>/.wpiemu/robot.json`; an import backs the working copy up first and never overwrites a backup. App-data paths are computed from
    an injectable environment (no Qt) so all three OS layouts are unit-tested on one machine.
 6. **Hub = pure sim-thread object, mailbox for the IPC thread.** The SDK says hub calls are sim-thread only; thread safety is therefore a `MessageInbox`
    (multi-producer, single-consumer) in front of it, not locks inside it. All hub warnings are *derived* from state after every change, which makes

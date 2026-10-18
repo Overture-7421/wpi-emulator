@@ -26,21 +26,6 @@ struct Codecs {
     RobotConfigCodec codec;
 };
 
-// v0 -> v1 migrator so the store's upgrade path can be exercised (production chain is empty at v1).
-class V0ToV1 final : public IConfigMigrator {
-public:
-    int fromVersion() const override { return 0; }
-    int toVersion() const override { return 1; }
-    Status migrate(Value& d) const override {
-        d["schemaVersion"] = 1;
-        return okStatus();
-    }
-};
-RobotConfigCodec upgradingCodec() {
-    std::vector<std::unique_ptr<IConfigMigrator>> chain;
-    chain.push_back(std::make_unique<V0ToV1>());
-    return RobotConfigCodec(std::move(chain));
-}
 }  // namespace
 
 TEST_CASE("app data root per OS") {
@@ -125,7 +110,6 @@ TEST_CASE("file store: save/load round trip, NotFound, parse errors name the fil
     const auto loaded = store.load();
     REQUIRE(loaded.ok());
     CHECK(loaded.value().name == "Sample");
-    CHECK_FALSE(store.lastDecode().migrated);
 
     dir.write("broken.json", "{ not json");
     FileConfigStore broken(dir.path() / "broken.json", "test", c.json, c.codec);
@@ -138,38 +122,34 @@ TEST_CASE("file store: save/load round trip, NotFound, parse errors name the fil
     CHECK(FileConfigStore(dir.path() / "newer.json", "t", c.json, c.codec).load().error().code == ErrorCode::VersionMismatch);
 }
 
-TEST_CASE("file store: loading an older schema backs the original up before upgrading it on disk") {
+TEST_CASE("file store: a file with another schema version is refused and left untouched") {
     ScratchDir dir;
-    JsonValueCodec json;
-    const RobotConfigCodec codec = upgradingCodec();
+    Codecs c;
     const std::string original = "{\n  \"schemaVersion\": 0,\n  \"name\": \"Old\"\n}\n";
     const fs::path file = dir.write("robot.json", original);
-    FileConfigStore store(file, "test", json, codec);
+    FileConfigStore store(file, "test", c.json, c.codec);
 
     const auto loaded = store.load();
-    REQUIRE_MESSAGE(loaded.ok(), (loaded.ok() ? "" : loaded.error().message));
-    CHECK(loaded.value().name == "Old");
-    CHECK(store.lastDecode().migrated);
-    CHECK(store.lastDecode().persistedVersion == 0);
-
-    CHECK(ScratchDir::read(dir.path() / "robot.json.v0.bak") == original);          // backup is the untouched original
-    CHECK(ScratchDir::read(file).find("\"schemaVersion\": 1") != std::string::npos);  // file upgraded in place
-
-    // loading again does not migrate or create another backup
-    FileConfigStore again(file, "test", json, codec);
-    REQUIRE(again.load().ok());
-    CHECK_FALSE(again.lastDecode().migrated);
-    int backups = 0;
-    for (const auto& e : fs::directory_iterator(dir.path())) backups += e.path().extension() == ".bak" ? 1 : 0;
-    CHECK(backups == 1);
-
-    // backups never overwrite each other
-    const auto second = again.backup("v0");
-    REQUIRE(second.ok());
-    CHECK(second.value().filename() == "robot.json.v0-2.bak");
-    CHECK(store.backup("x").ok());
+    REQUIRE_FALSE(loaded.ok());
+    CHECK(loaded.error().code == ErrorCode::VersionMismatch);
+    CHECK(ScratchDir::read(file) == original);   // no upgrade write-back
+    int files = 0;
+    for ([[maybe_unused]] const auto& e : fs::directory_iterator(dir.path())) ++files;
+    CHECK(files == 1);                           // and no backup copy
 }
 
+TEST_CASE("file store: backups never overwrite each other") {
+    ScratchDir dir;
+    Codecs c;
+    FileConfigStore store(dir.path() / "robot.json", "test", c.json, c.codec);
+    REQUIRE(store.save(sampleConfig()).ok());
+    const auto first = store.backup("v0");
+    REQUIRE(first.ok());
+    CHECK(first.value().filename() == "robot.json.v0.bak");
+    const auto second = store.backup("v0");
+    REQUIRE(second.ok());
+    CHECK(second.value().filename() == "robot.json.v0-2.bak");
+}
 TEST_CASE("file store: backup of a missing file fails cleanly, unwritable save reports an error") {
     ScratchDir dir;
     Codecs c;

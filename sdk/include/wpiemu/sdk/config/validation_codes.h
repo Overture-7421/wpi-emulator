@@ -1,6 +1,6 @@
 #pragma once
 
-// Stable machine keys for Issue::code / HubWarning::code (SDK 1.1). Validators and hubs MUST use
+// Stable machine keys for Issue::code / HubWarning::code. Validators and hubs MUST use
 // these exact strings so the UI and tests can react without parsing messages.
 
 namespace wpiemu::sdk::validation_code {

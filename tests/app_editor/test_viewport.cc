@@ -121,7 +121,7 @@ TEST_CASE("scene builder: hull, wheels, COM, mechanism shapes and overlays are a
     CHECK(scene.find("mech:intake:0") != nullptr);
     CHECK(scene.find("overlay:intake:pickupZone") != nullptr);
     CHECK(scene.find("overlay::hopperVolume") != nullptr);
-    CHECK(scene.find("link:turret:top") != nullptr);
+    CHECK(scene.find("link:turret:mover") != nullptr);
     CHECK(scene.find("attach:shooter") != nullptr);   // line from the turret's top link to the shooter
 
     // Ids are unique (QML delegates and diffing rely on it).
@@ -144,9 +144,9 @@ TEST_CASE("scene builder: placement follows the display frame (floor at z = 0)")
     CHECK(approx(wheel->world.rotation.rotate({0.f, 0.f, 1.f}).y * wheel->world.rotation.rotate({0.f, 0.f, 1.f}).y, 1.f, 1e-3f));
     const auto* com = scene.find("com");
     CHECK(approx(com->world.position.z, c.chassis.comHeightM));
-    // The shooter hangs on the turret's "top" link.
+    // The shooter hangs on the turret's "mover" link.
     const auto* shooter = scene.find("mech:shooter:0");
-    const auto* turretLink = scene.find("link:turret:top");
+    const auto* turretLink = scene.find("link:turret:mover");
     REQUIRE((shooter && turretLink));
     CHECK(shooter->world.position.z > turretLink->world.position.z - 0.2f);
 }
@@ -302,7 +302,7 @@ TEST_CASE("viewport: picking prefers solid parts over volumes and drills down in
     CHECK(f.view.chooseItem({"i:hull"}) == SelectionRef::chassis());
     CHECK(f.view.chooseItem({"i:overlay:intake:pickupZone", "i:hull"}) == SelectionRef::chassis());
     CHECK(f.view.chooseItem({"i:overlay:intake:pickupZone"}) == SelectionRef::overlay("intake", "pickupZone"));
-    CHECK(f.view.chooseItem({"i:nose", "i:link:turret:top"}).isNone());
+    CHECK(f.view.chooseItem({"i:nose", "i:link:turret:mover"}).isNone());
     CHECK(f.view.chooseItem({"h:m:0"}).isNone());
 
     // First click on a mechanism's shape selects the mechanism; the next one drills into the shape.
@@ -442,6 +442,6 @@ TEST_CASE("viewport: hints guide an empty robot") {
     EditorController editor(backend);
     ViewportController view(editor);
     CHECK(view.hintText().contains("first mechanism"));
-    editor.addMechanism("roller", {});
+    editor.addMechanism("mechanism", {});
     CHECK(view.hintText().isEmpty());
 }

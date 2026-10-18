@@ -4,12 +4,9 @@
 // running inside the robot process. Plain structs: NO serialisation format is implied here
 // (the codec in ipc/ decides: flatbuffers, protobuf-lite, hand-rolled binary...).
 //
-// Versioning rules (frozen, see ADR 0005):
-//  * `kProtocolVersion` bumps on ANY change to message layout. Peers exchange it in Hello/HelloAck;
-//    a peer whose version is < the other's `kMinCompatibleProtocolVersion` is refused.
-//  * Evolution is ADDITIVE ONLY within a major version: append new fields at the END of a struct
-//    (codecs must tolerate absent trailing fields => default value) and add new MessageType values.
-//    Never reorder, repurpose or remove fields; never reuse a MessageType value.
+// Versioning: the SDK stays at version 1 until release (ADR 0013), so `kProtocolVersion` is 1. Peers exchange it in
+// Hello/HelloAck; a peer whose version is < the other's `kMinCompatibleProtocolVersion` is refused. Codecs
+// tolerate absent trailing fields (default value) and ignore bytes they do not know.
 //
 // Flow (ADR 0001 / 0002), emulator = clock master:
 //   ext -> app : Hello (+ proposed watchdog)
@@ -24,14 +21,14 @@
 //   ext -> app : Log*  (robot stdout is captured by the launcher, not here)
 //   either     : Goodbye
 //
-// Lock-step robustness (protocol v2, additive; see docs/ARCHITECTURE.md section 4):
+// Lock-step robustness (see docs/ARCHITECTURE.md section 4):
 //  * WINDOW: exactly ONE outstanding tick (kLockstepWindow). The emulator sends SensorFrame N only
 //    after the ActuatorFrame acknowledging N-1 arrived (or after a Reset/reconnect started a new
 //    run epoch). No pipelining, so a frame can never be matched to the wrong tick.
 //  * IDENTITY: every frame/command carries `sessionId` (one per accepted connection, assigned by
 //    the emulator in HelloAck) and `runEpoch` (monotonic, owned by the emulator, bumped on every
 //    Reset and on every reconnect). Receivers DROP frames whose epoch is older than the one in force
-//    (classifyFrame). 0 means "unspecified" (a v1 peer, or an in-process caller) and is always accepted.
+//    (classifyFrame). 0 means "unspecified" (a peer that does not send it, or an in-process caller) and is always accepted.
 //  * ACK: every ActuatorFrame states how the tick ended (TickResult) and which tick it answers
 //    (ackTick). Reset/Stop are explicit commands with a commandId that the extension acknowledges
 //    with SimControlAck.
@@ -59,13 +56,13 @@
 
 namespace wpiemu::sdk::proto {
 
-inline constexpr std::uint32_t kProtocolVersion = 3;  // v3: explicit optional Armed capability
+inline constexpr std::uint32_t kProtocolVersion = 1;
 inline constexpr std::uint32_t kMinCompatibleProtocolVersion = 1;
 
-// sessionId / runEpoch / commandId value meaning "not specified" (v1 peers, in-process callers).
+// sessionId / runEpoch / commandId value meaning "not specified" (peers that do not send it, in-process callers).
 inline constexpr std::uint64_t kUnspecified = 0;
 inline constexpr std::uint64_t kFirstRunEpoch = 1;
-// ActuatorFrame::ackTick value meaning "not set": the frame answers the tick in `tick` (v1 frames).
+// ActuatorFrame::ackTick value meaning "not set": the frame answers the tick in `tick` (frames that do not send it).
 inline constexpr std::uint64_t kNoAckTick = ~std::uint64_t{0};
 // Maximum number of SensorFrames in flight (sent, not yet acknowledged by an ActuatorFrame).
 inline constexpr std::uint32_t kLockstepWindow = 1;
@@ -114,7 +111,7 @@ enum class MessageType : std::uint16_t {
     SimControl = 8,
     Log = 9,
     Goodbye = 10,
-    SimControlAck = 11,  // protocol v2
+    SimControlAck = 11,
 };
 
 enum class RobotLanguage : std::uint8_t { Unknown = 0, Java = 1, Cpp = 2 };
@@ -138,9 +135,9 @@ struct Hello {
     std::int64_t pid = 0;                // robot process id, so the launcher can kill it (ADR 0001)
     std::string programName;
     std::vector<std::pair<std::string, std::int32_t>> halPortCounts;  // "pwm" -> 20, ...
-    std::uint32_t proposedWatchdogMs = 0;  // v2: extension's minimum acceptable watchdog; 0 = no preference
+    std::uint32_t proposedWatchdogMs = 0;  // extension's minimum acceptable watchdog; 0 = no preference
     bool supportsArmed =
-        false;  // v3: Begin/EndLockstep supported; absent => unsupported, even for v2
+        false;  // Begin/EndLockstep supported; absent => unsupported
 };
 
 struct HelloAck {
@@ -150,9 +147,9 @@ struct HelloAck {
     ClockMode clockMode = ClockMode::Lockstep;
     std::uint32_t stepUs = 5000;         // must divide the robot period (20 ms) evenly
     std::uint64_t sessionId = 0;
-    bool discoveryOnly = false;          // armed start: announce only, no physics, until BeginLockstep (SDK 1.3)
+    bool discoveryOnly = false;          // armed start: announce only, no physics, until BeginLockstep
     bool enableL3Hooks = false;          // opt-in CTRE hooks (ADR 0002 L3)
-    // ---- v2 (absent in a v1 HelloAck => these defaults) ----
+    // ---- absent in a HelloAck that does not send them => these defaults ----
     std::uint64_t runEpoch = kFirstRunEpoch;  // epoch in force for this connection (monotonic across reconnects)
     std::uint32_t watchdogTimeoutMs = kDefaultWatchdogTimeoutMs;  // negotiateWatchdogTimeoutMs(...)
     WatchdogPolicy watchdogPolicy = WatchdogPolicy::ResumeRealtime;
@@ -164,7 +161,7 @@ struct DeviceAnnounce {
     DeviceDescriptor descriptor;
     std::vector<SignalSpec> signalSpecs;     // SignalSample::signal indexes into this
     bool retired = false;                // robot freed the device (descriptor still identifies it)
-    // v2: CAN bus label OBSERVED at runtime (CTRE L3 hook, ADR 0006); empty = not observed. Never
+    // CAN bus label OBSERVED at runtime (CTRE L3 hook); empty = not observed. Never
     // derived from a static SimDeviceRule. A re-announce with a new value updates the hub's device.
     std::string observedBus;
 };
@@ -185,7 +182,7 @@ struct SensorFrame {
     double batteryCurrentA = 0.0;        // informational (roboRIO current)
     bool full = false;                   // true: contains every Input signal; false: only changed ones
     std::vector<SignalSample> samples;
-    // v2: identity of the run this frame belongs to (see classifyFrame).
+    // identity of the run this frame belongs to (see classifyFrame).
     std::uint64_t sessionId = kUnspecified;
     std::uint64_t runEpoch = kUnspecified;
 };
@@ -205,7 +202,7 @@ struct ActuatorFrame {
     std::uint64_t robotLoopCount = 0;    // periodic iterations completed (diagnostics)
     bool full = false;                   // see SensorFrame::full
     std::vector<SignalSample> samples;
-    // ---- v2 (absent in a v1 frame => defaults: Completed, ack == tick, unspecified identity) ----
+    // ---- absent in a frame that does not send them => defaults: Completed, ack == tick, unspecified identity ----
     std::uint64_t sessionId = kUnspecified;   // echo of the SensorFrame being answered
     std::uint64_t runEpoch = kUnspecified;    // echo of the SensorFrame being answered
     std::uint64_t ackTick = kNoAckTick;       // tick of the SensorFrame this answers; unset => `tick`
@@ -240,7 +237,7 @@ struct DsState {
     // overlays IGameState::gameSpecificMessage() on top of whatever the UI requested.
     std::string gameSpecificMessage;
     std::array<JoystickState, 6> joysticks{};
-    // v2: identity of the run this state belongs to; a DsState queued before a Reset is dropped after it.
+    // identity of the run this state belongs to; a DsState queued before a Reset is dropped after it.
     std::uint64_t sessionId = kUnspecified;
     std::uint64_t runEpoch = kUnspecified;
 };
@@ -253,16 +250,16 @@ enum class SimCommand : std::uint8_t {
     Reset = 3,      // reset physics/game state; robot keeps running (bumps runEpoch, MUST be acked)
     Stop = 4,       // end the session (extension resumes timing and exits cleanly; MUST be acked)
     SetTimeScale = 5,
-    // SDK 1.3: one long-lived robot process. A session whose HelloAck said `discoveryOnly` is ARMED: devices are
+    // One long-lived robot process. A session whose HelloAck said `discoveryOnly` is ARMED: devices are
     // announced and HAL time runs free. BeginLockstep switches it to lock-step; EndLockstep returns it to armed.
     // Both follow the Reset rules (first message of a NEW epoch, MUST carry a commandId and be acked); the
     // extension answers ControlResult::Rejected when the transition is impossible (already there, program not
-    // started, real-time clock preference) and ::Unsupported when it predates SDK 1.3.
+    // started, real-time clock preference) and ::Unsupported when the peer does not support it.
     BeginLockstep = 6,
     EndLockstep = 7,
 };
 
-// Receiver rules (v2):
+// Receiver rules:
 //  * commandId != 0: the receiver answers with exactly one SimControlAck carrying the same
 //  commandId.
 //    Reset and Stop MUST carry a non-zero commandId. IDs increase within a connection, across
@@ -278,7 +275,7 @@ struct SimControl {
     SimCommand command = SimCommand::Pause;
     std::uint32_t stepCount = 1;
     double timeScale = 1.0;
-    // ---- v2 ----
+    // ----
     std::uint64_t commandId = kUnspecified;   // 0 = fire-and-forget (no ack); sender-unique, increasing
     std::uint64_t sessionId = kUnspecified;
     std::uint64_t runEpoch = kUnspecified;

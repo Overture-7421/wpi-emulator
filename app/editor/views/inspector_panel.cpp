@@ -1,8 +1,11 @@
 #include "views/inspector_panel.h"
 
 #include <QApplication>
+#include <QComboBox>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QLineEdit>
+#include <QPushButton>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -11,10 +14,10 @@
 #include <map>
 
 #include "model/config_ops.h"
+#include "model/motion_links.h"
 #include "model/property_groups.h"
 #include "model/tr.h"
-#include "views/motion_links_panel.h"
-#include "wpiemu/sdk/mechanisms/motion_config.h"
+#include "views/drive_card.h"
 
 namespace wpiemu::app::editor {
 
@@ -76,6 +79,7 @@ void InspectorPanel::clearContent() {
     forms_.clear();
     slotRows_.clear();
     title_ = nullptr;
+    nameEdit_ = nullptr;
     if (QWidget* old = scroll_->takeWidget()) old->deleteLater();
     content_ = nullptr;
     layout_ = nullptr;
@@ -91,40 +95,61 @@ QWidget* InspectorPanel::linkButton(const QString& text, const std::function<voi
     return b;
 }
 
-QWidget* InspectorPanel::addSection(const QString& title, QWidget* body, bool collapsed) {
-    auto* section = new QWidget(content_);
-    auto* v = new QVBoxLayout(section);
-    v->setContentsMargins(0, 0, 0, 0);
-    v->setSpacing(6);
-    auto* head = new QToolButton(section);
-    head->setText(title);
-    head->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    head->setArrowType(collapsed ? Qt::RightArrow : Qt::DownArrow);
-    head->setCheckable(true);
-    head->setChecked(!collapsed);
-    head->setAutoRaise(true);
-    QFont f = head->font();
-    f.setBold(true);
-    head->setFont(f);
-    head->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    head->setStyleSheet(QStringLiteral("QToolButton { text-align: left; padding: 2px 0; }"));
-    v->addWidget(head);
-    auto* line = new QFrame(section);
-    line->setFrameShape(QFrame::HLine);
-    line->setFrameShadow(QFrame::Plain);
-    line->setEnabled(false);
-    v->addWidget(line);
-    body->setParent(section);
-    v->addWidget(body);
-    body->setVisible(!collapsed);
-    connect(head, &QToolButton::toggled, section, [head, body](bool on) {
-        head->setArrowType(on ? Qt::DownArrow : Qt::RightArrow);
-        body->setVisible(on);
-    });
-    layout_->addWidget(section);
-    return section;
+QWidget* InspectorPanel::addSection(const QString& title, QWidget* body, bool collapsed, SectionRole role) {
+    auto* card = new SectionCard(title, role, body, collapsed, content_);
+    layout_->addWidget(card);
+    return card;
 }
 
+PropertyFormWidget* InspectorPanel::makeForm(const PropertyGroup& group, QWidget* parent) {
+    auto* f = new PropertyFormWidget(group, controller_.settings().units(), parent);
+    f->setFieldIssues(issues_);
+    connect(f, &PropertyFormWidget::valueEdited, this, [this](const QString& groupId, const QString& key, const sdk::Value& v) {
+        controller_.document().setProperty(controller_.selection().current(), groupId.toStdString(), key.toStdString(), v);
+    });
+    forms_.push_back(f);
+    return f;
+}
+
+DeviceRowWidget* InspectorPanel::makeRow(const SlotInfo& info, QWidget* parent) {
+    auto* row = new DeviceRowWidget(icons_, parent);
+    row->setInfo(info);
+    connect(row, &DeviceRowWidget::clearRequested, this, [this](const sdk::SlotAddress& slot) { controller_.clearSlot(slot); });
+    connect(row, &DeviceRowWidget::reversedToggled, this,
+            [this](const sdk::SlotAddress& slot, bool reversed) { controller_.setMotorReversed(slot, reversed); });
+    slotRows_.push_back(row);
+    return row;
+}
+
+QString InspectorPanel::editableName(const SelectionRef& target) const {
+    const sdk::RobotConfig& c = controller_.document().config();
+    switch (target.kind) {
+        case SelKind::Wheel: return qs(target.sub);
+        case SelKind::Primitive:
+            if (const auto* list = ops::primitivesOf(c, target.owner); list != nullptr && target.index >= 0 && target.index < static_cast<int>(list->size()))
+                return qs((*list)[static_cast<std::size_t>(target.index)].name);
+            return {};
+        default: return describeSelection(c, controller_.document().catalog(), target);
+    }
+}
+
+void InspectorPanel::commitName(const SelectionRef& target, const QString& text) {
+    const QString name = text.trimmed();
+    if (name.isEmpty() || name == editableName(target)) {
+        if (nameEdit_ != nullptr) nameEdit_->setText(editableName(target));
+        return;
+    }
+    const std::string value = name.toStdString();
+    switch (target.kind) {
+        case SelKind::Mechanism: controller_.document().setProperty(target, "mech.general", "label", sdk::Value(value)); break;
+        case SelKind::Primitive: controller_.document().setProperty(target, "primitive", "name", sdk::Value(value)); break;
+        case SelKind::Wheel:
+            controller_.document().setProperty(target, "wheel", "name", sdk::Value(value));
+            if (ops::findWheel(controller_.document().config(), value) != nullptr) controller_.selection().set(SelectionRef::wheel(value));
+            break;
+        default: break;
+    }
+}
 void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<PropertyGroup>& /*groups*/) {
     const sdk::RobotConfig& c = controller_.document().config();
     const EditorCatalog& cat = controller_.document().catalog();
@@ -143,7 +168,8 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
             break;
         case SelKind::Mechanism:
             if (const auto* m = c.findMechanism(target.owner))
-                if (const auto* info = cat.findTemplate(m->type)) subtitle = qs(info->displayName) + QStringLiteral(" \xC2\xB7 ") + qs(info->category);
+                // The Type (Rotary / Arm / Linear) is edited in Configure; only a plugin template needs naming here.
+                if (const auto* info = cat.findTemplate(m->type); info != nullptr && info->origin != "core") subtitle = qs(info->displayName);
             icon = NodeKind::Mechanism;
             break;
         case SelKind::Primitive: {
@@ -170,14 +196,27 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
     h->addWidget(iconLabel, 0, Qt::AlignTop);
     auto* texts = new QVBoxLayout;
     texts->setSpacing(0);
-    title_ = new QLabel(title, head);
-    QFont f = title_->font();
+    const bool editable = target.kind == SelKind::Mechanism || target.kind == SelKind::Wheel || target.kind == SelKind::Primitive;
+    QFont f = head->font();
     f.setPointSizeF(f.pointSizeF() * 1.25);
     f.setBold(true);
-    title_->setFont(f);
-    title_->setWordWrap(true);
-    texts->addWidget(title_);
-    texts->addWidget(mutedLabel(subtitle, head));
+    if (editable) {
+        nameEdit_ = new QLineEdit(editableName(target), head);
+        nameEdit_->setObjectName(QStringLiteral("inspector.name"));
+        nameEdit_->setFont(f);
+        nameEdit_->setToolTip(ETR("Name"));
+        nameEdit_->setPlaceholderText(ETR("Name"));
+        connect(nameEdit_, &QLineEdit::editingFinished, this, [this, target] {
+            if (nameEdit_ != nullptr) commitName(target, nameEdit_->text());
+        });
+        texts->addWidget(nameEdit_);
+    } else {
+        title_ = new QLabel(title, head);
+        title_->setFont(f);
+        title_->setWordWrap(true);
+        texts->addWidget(title_);
+    }
+    if (!subtitle.isEmpty()) texts->addWidget(mutedLabel(subtitle, head));
     if (target.kind == SelKind::Primitive && target.owner != ops::kChassisOwner && c.findMechanism(target.owner) != nullptr) {
         const std::string owner = target.owner;
         texts->addWidget(linkButton(ETR("\xE2\x86\x90 Back to mechanism"), [this, owner] { controller_.selection().set(SelectionRef::mechanism(owner)); }));
@@ -199,87 +238,6 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
     if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Wheel)
         addAction(ETR("Delete"), ETR("Delete (Del)"), [this] { controller_.deleteSelection(); });
     layout_->addWidget(head);
-}
-
-void InspectorPanel::addChecklist() {
-    const sdk::RobotConfig& c = controller_.document().config();
-    const EditorCatalog& cat = controller_.document().catalog();
-    int unfilled = 0;
-    for (const auto& owner : ops::slotOwners(c))
-        for (const auto& info : slotInfos(c, cat, controller_.devices(), owner))
-            if (info.state == SlotState::Unmapped) ++unfilled;
-    const bool hasMechanisms = !c.mechanisms.empty();
-    const bool hasDevices = !controller_.devices().empty();
-
-    auto* body = new QWidget(content_);
-    auto* v = new QVBoxLayout(body);
-    v->setContentsMargins(0, 0, 0, 0);
-    v->setSpacing(4);
-    auto step = [&](bool done, const QString& text, const QString& hint, QWidget* action = nullptr) {
-        auto* row = new QWidget(body);
-        auto* h = new QHBoxLayout(row);
-        h->setContentsMargins(0, 0, 0, 0);
-        auto* mark = new QLabel(done ? QStringLiteral("\xE2\x9C\x94") : QStringLiteral("\xE2\x97\x8B"), row);
-        mark->setStyleSheet(QStringLiteral("color: %1; font-weight: bold;").arg(done ? QStringLiteral("#3fb950") : QStringLiteral("#8b949e")));
-        mark->setFixedWidth(18);
-        h->addWidget(mark, 0, Qt::AlignTop);
-        auto* col = new QVBoxLayout;
-        col->setSpacing(0);
-        auto* t = new QLabel(text, row);
-        t->setWordWrap(true);
-        col->addWidget(t);
-        if (!hint.isEmpty() && !done) col->addWidget(mutedLabel(hint, row));
-        h->addLayout(col, 1);
-        if (action != nullptr) h->addWidget(action, 0, Qt::AlignTop);
-        v->addWidget(row);
-    };
-    step(true, ETR("Describe the chassis"), {}, linkButton(ETR("Edit"), [this] { controller_.selection().set(SelectionRef::chassis()); }));
-    step(hasMechanisms, ETR("Add your mechanisms"), ETR("Double-click a template in the palette (intake, shooter, elevator...), then place it with the gizmo."));
-    step(hasDevices, ETR("Detect devices"),
-         ETR("Click \"Detect devices\" and run your robot code: motors, encoders and sensors appear as the code creates them."),
-         hasDevices ? nullptr : linkButton(ETR("Detect"), [this] { controller_.toggleDetection(); }));
-    step(hasMechanisms && hasDevices && unfilled == 0, ETR("Map devices to slots"),
-         unfilled > 0 ? QCoreApplication::translate("Editor", "%n required slot(s) still empty. Drag a detected device onto it.", nullptr, unfilled)
-                      : ETR("Drag detected devices onto mechanism slots or wheel drive/steer slots."));
-    addSection(ETR("Getting started"), body);
-}
-
-void InspectorPanel::addSlots(const SelectionRef& target) {
-    const sdk::RobotConfig& c = controller_.document().config();
-    const EditorCatalog& cat = controller_.document().catalog();
-    std::string owner = target.owner;
-    std::string prefix;
-    if (target.kind == SelKind::Wheel) {
-        owner = sdk::slot_owner::kDrivetrain;
-        prefix = target.sub + ".";
-    }
-    const auto infos = slotInfos(c, cat, controller_.devices(), owner);
-    auto* body = new QWidget(content_);
-    auto* v = new QVBoxLayout(body);
-    v->setContentsMargins(0, 0, 0, 0);
-    v->setSpacing(2);
-    bool any = false;
-    for (const SlotInfo& info : infos) {
-        if (!prefix.empty() && info.spec.name.rfind(prefix, 0) != 0) continue;
-        any = true;
-        auto* row = new SlotRowWidget(icons_, body);
-        row->setInfo(info, controller_.devices());
-        connect(row, &SlotRowWidget::deviceChosen, this, [this](const sdk::SlotAddress& slot, const sdk::DeviceKey& key, quint32 caps) {
-            const QString err = controller_.mapDevice(SelectionRef::slot(slot.owner, slot.slot), key, sdk::CapabilitySet{caps});
-            if (!err.isEmpty()) Q_EMIT controller_.statusMessage(err, 1);
-        });
-        connect(row, &SlotRowWidget::clearRequested, this, [this](const sdk::SlotAddress& slot) { controller_.clearSlot(slot); });
-        v->addWidget(row);
-        slotRows_.push_back(row);
-    }
-    if (!any) v->addWidget(mutedLabel(ETR("This item has no device slots."), body));
-    else v->addWidget(mutedLabel(ETR("Drag a device from \"Detected devices\" onto a slot, or pick one from the list."), body));
-    addSection(ETR("Device slots"), body);
-    if (shown_.kind == SelKind::Slot || controller_.selection().current().kind == SelKind::Slot) {
-        const SelectionRef cur = controller_.selection().current();
-        for (auto* row : slotRows_)
-            if (row->address().owner == cur.owner && row->address().slot == cur.sub) QTimer::singleShot(0, row, [row] { row->flash(); });
-    }
 }
 
 void InspectorPanel::addShapes(const std::string& owner) {
@@ -312,29 +270,7 @@ void InspectorPanel::addShapes(const std::string& owner) {
     }
     row->addStretch();
     v->addLayout(row);
-    addSection(ETR("Shapes (%1)").arg(list->size()), body, list->empty() ? false : owner != ops::kChassisOwner);
-}
-
-void InspectorPanel::addWheelList() {
-    const sdk::RobotConfig& c = controller_.document().config();
-    auto* body = new QWidget(content_);
-    auto* v = new QVBoxLayout(body);
-    v->setContentsMargins(0, 0, 0, 0);
-    v->setSpacing(2);
-    for (const auto& w : c.drivetrain.spec.wheels) {
-        const std::string name = w.name;
-        v->addWidget(linkButton(QStringLiteral("%1  \xC2\xB7  %2").arg(qs(w.name), qs(w.driveMotor.name)),
-                                [this, name] { controller_.selection().set(SelectionRef::wheel(name)); }));
-    }
-    auto* add = new QToolButton(body);
-    add->setText(ETR("+ Add wheel"));
-    add->setAutoRaise(true);
-    connect(add, &QToolButton::clicked, this, [this] {
-        const QString name = controller_.document().addWheel();
-        if (!name.isEmpty()) controller_.selection().set(SelectionRef::wheel(name.toStdString()));
-    });
-    v->addWidget(add, 0, Qt::AlignLeft);
-    addSection(ETR("Wheels (%1)").arg(c.drivetrain.spec.wheels.size()), body);
+    addSection(ETR("Shapes (%1)").arg(list->size()), body, list->empty() ? false : owner != ops::kChassisOwner, SectionRole::Shapes);
 }
 
 void InspectorPanel::addChildren(const std::string& mechanismId) {
@@ -347,10 +283,10 @@ void InspectorPanel::addChildren(const std::string& mechanismId) {
     v->setSpacing(2);
     for (const auto& id : children) {
         const sdk::MechanismConfig* m = c.findMechanism(id);
-        v->addWidget(linkButton(qs(ops::displayNameFor(*m, controller_.document().catalog())) + QStringLiteral("  @ ") + qs(m->resolvedAttachment().parentLink),
+        v->addWidget(linkButton(qs(ops::displayNameFor(*m, controller_.document().catalog())) + QStringLiteral("  @ ") + qs(m->attachment.parentLink),
                                 [this, id] { controller_.selection().set(SelectionRef::mechanism(id)); }));
     }
-    addSection(ETR("Attached mechanisms (%1)").arg(children.size()), body);
+    addSection(ETR("Attached mechanisms (%1)").arg(children.size()), body, false, SectionRole::Shapes);
 }
 
 void InspectorPanel::addDeviceCard(const SelectionRef& sel) {
@@ -416,8 +352,8 @@ QString InspectorPanel::signature(const std::vector<PropertyGroup>& groups) cons
     switch (target.kind) {
         case SelKind::Wheel:
         case SelKind::Mechanism:
-            for (const auto& s : ops::slotSpecsFor(c, controller_.document().catalog(), target.kind == SelKind::Wheel ? std::string(sdk::slot_owner::kDrivetrain) : target.owner))
-                parts << qs(s.name);
+            for (const auto& s : slotInfos(c, controller_.document().catalog(), controller_.devices(), target.kind == SelKind::Wheel ? std::string(sdk::slot_owner::kDrivetrain) : target.owner))
+                parts << qs(s.spec.name);
             break;
         default: break;
     }
@@ -438,6 +374,64 @@ QString InspectorPanel::signature(const std::vector<PropertyGroup>& groups) cons
     return parts.join('\x1f');
 }
 
+void InspectorPanel::addPartCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups) {
+    const sdk::RobotConfig& c = controller_.document().config();
+    const EditorCatalog& cat = controller_.document().catalog();
+    const bool wheel = target.kind == SelKind::Wheel;
+    const std::string owner = wheel ? std::string(sdk::slot_owner::kDrivetrain) : target.owner;
+
+    // 1. Drive: how it is actuated.
+    if (DriveCard::applicable(controller_, target)) {
+        DriveCard::Registrar registrar;
+        registrar.form = [this](PropertyFormWidget* f) {
+            f->setFieldIssues(issues_);
+            forms_.push_back(f);
+        };
+        registrar.row = [this](DeviceRowWidget* r) { slotRows_.push_back(r); };
+        addSection(ETR("Drive"), new DriveCard(controller_, icons_, target, registrar, content_), false, SectionRole::Drive);
+    }
+
+    // 2. Configure: what it is and how it is simulated, then its sensors.
+    auto* configure = new QWidget(content_);
+    auto* cv = new QVBoxLayout(configure);
+    cv->setContentsMargins(0, 0, 0, 0);
+    cv->setSpacing(8);
+    for (const PropertyGroup& g : groups)
+        if (g.id == "mech.props" || g.id == "wheel") cv->addWidget(makeForm(g, configure));
+    // A swerve module steers: its steer controller sits with the rest of what makes the wheel a swerve module.
+    if (wheel)
+        if (const auto* w = ops::findWheel(c, target.sub); w != nullptr && w->steered)
+            for (const SlotInfo& info : slotInfos(c, cat, controller_.devices(), owner))
+                if (info.address.slot == target.sub + ".steer") {
+                    auto* row = makeRow(info, configure);
+                    row->setLabel(ETR("Steer motor"));
+                    cv->addWidget(row);
+                }
+    std::vector<SlotInfo> sensors;
+    for (const SlotInfo& info : slotInfos(c, cat, controller_.devices(), owner))
+        if (info.spec.type != sdk::SlotType::Motor && (!wheel || info.spec.name.rfind(target.sub + ".", 0) == 0)) sensors.push_back(info);
+    if (!sensors.empty()) {
+        auto* heading = new QLabel(ETR("SENSORS"), configure);
+        QFont hf = heading->font();
+        hf.setBold(true);
+        hf.setPointSizeF(hf.pointSizeF() * 0.8);
+        heading->setFont(hf);
+        heading->setEnabled(false);
+        cv->addWidget(heading);
+        for (const SlotInfo& info : sensors) cv->addWidget(makeRow(info, configure));
+    }
+    for (const PropertyGroup& g : groups)
+        if (g.id.rfind("panel:", 0) == 0) {
+            auto* heading = new QLabel(QStringLiteral("<b>%1</b>").arg(g.title.toHtmlEscaped()), configure);
+            cv->addWidget(heading);
+            cv->addWidget(makeForm(g, configure));
+        }
+    addSection(ETR("Configure"), configure, false, SectionRole::Configure);
+
+    // 3. Placement.
+    for (const PropertyGroup& g : groups)
+        if (g.section == sdk::PropertySection::Placement) addSection(ETR("Placement"), makeForm(g, content_), false, SectionRole::Placement);
+}
 void InspectorPanel::rebuild() {
     clearContent();
     const sdk::RobotConfig& c = controller_.document().config();
@@ -455,30 +449,19 @@ void InspectorPanel::rebuild() {
 
     addHeader(target, groups);
     switch (target.kind) {
-        case SelKind::None:
-        case SelKind::Robot: addChecklist(); break;
-        case SelKind::Wheel:
-        case SelKind::Mechanism: addSlots(target); break;
         case SelKind::Device: addDeviceCard(target); break;
-        case SelKind::Drivetrain: addWheelList(); break;
         default: break;
     }
-    const auto issues = issuesFor(target);
-    for (const PropertyGroup& g : groups) {
-        auto* f = new PropertyFormWidget(g, controller_.settings().units(), content_);
-        f->setFieldIssues(issues);
-        connect(f, &PropertyFormWidget::valueEdited, this, [this](const QString& groupId, const QString& key, const sdk::Value& v) {
-            controller_.document().setProperty(controller_.selection().current(), groupId.toStdString(), key.toStdString(), v);
-        });
-        forms_.push_back(f);
-        if (groups.size() == 1) layout_->addWidget(f);   // one group: the page header already names it
-        else addSection(g.title, f, g.collapsed);
+    issues_ = issuesFor(target);
+    if (target.kind == SelKind::Wheel || target.kind == SelKind::Mechanism) {
+        addPartCards(target, groups);
+    } else {
+        for (const PropertyGroup& g : groups) {
+            auto* f = makeForm(g, content_);
+            addSection(groups.size() == 1 ? ETR("Configure") : g.title, f, g.collapsed, SectionRole::Configure);
+        }
     }
     if (target.kind == SelKind::Chassis) addShapes(ops::kChassisOwner);
-    if (target.kind == SelKind::Robot || target.kind == SelKind::None ||
-        target.kind == SelKind::Drivetrain || target.kind == SelKind::Wheel ||
-        target.kind == SelKind::Mechanism)
-        addSection(ETR("Motion links"), new MotionLinksPanel(controller_, content_));
     if (target.kind == SelKind::Mechanism) {
         addShapes(target.owner);
         addChildren(target.owner);
@@ -487,6 +470,9 @@ void InspectorPanel::rebuild() {
     scroll_->setWidget(content_);
     signature_ = signature(groups);
     ++rebuilds_;
+    if (sel.kind == SelKind::Slot)
+        for (auto* row : slotRows_)
+            if (row->address().owner == sel.owner && row->address().slot == sel.sub) QTimer::singleShot(0, row, [row] { row->flash(); });
     if (!pendingFocus_.isEmpty()) {
         const QString key = pendingFocus_;
         pendingFocus_.clear();
@@ -512,21 +498,26 @@ void InspectorPanel::refresh(bool authoritative) {
             f->setFieldIssues(issues);
         }
     std::map<std::string, std::vector<SlotInfo>> byOwner;
-    for (SlotRowWidget* row : slotRows_) {
+    for (DeviceRowWidget* row : slotRows_) {
         const std::string owner = row->address().owner;
         if (!byOwner.count(owner)) byOwner[owner] = slotInfos(c, cat, controller_.devices(), owner);
         for (const SlotInfo& info : byOwner[owner])
-            if (info.address == row->address()) row->setInfo(info, controller_.devices());
+            if (info.address == row->address()) row->setInfo(info);
     }
     if (title_ != nullptr && target.kind != SelKind::Device) title_->setText(describeSelection(c, cat, target));
+    if (nameEdit_ != nullptr && !nameEdit_->hasFocus()) nameEdit_->setText(editableName(target));
 }
 
 void InspectorPanel::focusField(const QString& key) {
-    if (key == QStringLiteral("motionLinks")) {
-        if (auto* field = content_->findChild<QWidget*>(QStringLiteral("motionLinks.source"))) {
-            scroll_->ensureWidgetVisible(field);
-            field->setFocus();
-        }
+    if (key == QStringLiteral("drivenBy") || key == QStringLiteral("motionLinks")) {
+        for (auto* combo : content_->findChildren<QComboBox*>())
+            if (combo->objectName().startsWith(QStringLiteral("drivenBy.source"))) {
+                if (!combo->isVisible())
+                    if (auto* linked = content_->findChild<QToolButton*>(QStringLiteral("drive.linked:") + combo->objectName().mid(QStringLiteral("drivenBy.source:").size()))) linked->click();
+                scroll_->ensureWidgetVisible(combo);
+                combo->setFocus();
+                break;
+            }
         return;
     }
     for (auto* f : forms_)

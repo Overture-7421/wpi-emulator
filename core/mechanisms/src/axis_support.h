@@ -30,16 +30,13 @@ enum class Motion { Rotary, Arm, Linear };
 const char* motionKey(Motion m);
 
 struct AxisOptions {
-    std::string prefix;        // property/slot name prefix ("" none, "deploy", "roller"...)
-    std::string title;         // UI prefix for labels and inspector groups ("Deploy ")
     Motion motion = Motion::Rotary;
-    bool selectableMotion = false;   // expose a `<prefix>Motion` enum property
+    bool selectableMotion = false;   // expose a `motion` enum property
     const char* rotaryModel = plant_model::kFlywheel;  // plant key used when motion == Rotary
     bool limits = false;             // min/max/start properties
     bool limitSwitchSlots = false;   // forward/reverse limit switch slots (need limits)
     bool encoderSlots = true;        // position + velocity sensor slots
     bool motorRequired = true;       // primary motor slot is `required`
-    int maxMotors = 4;               // motor slots: primary + (maxMotors - 1) followers
 
     // defaults
     std::string motorModel = "kraken_x60";
@@ -62,9 +59,6 @@ struct AxisOptions {
     double startPosition = 0.0;
 };
 
-// "motorModel" -> "motorModel" (empty prefix) or "deployMotorModel".
-std::string propKey(std::string_view prefix, std::string_view base);
-
 struct AxisSlotNames {
     std::vector<std::string> motors;   // primary first
     std::string encoder;
@@ -72,7 +66,7 @@ struct AxisSlotNames {
     std::string reverseLimit;          // lower stop
     std::string forwardLimit;          // upper stop
 };
-AxisSlotNames axisSlotNames(const AxisOptions& options);
+AxisSlotNames axisSlotNames();
 std::vector<sdk::SlotSpec> axisSlots(const AxisOptions& options);
 sdk::MotionAxisSpec axisMotionSpec(const AxisOptions& options);
 std::vector<sdk::PropertySpec> axisProperties(const AxisOptions& options, const MotorCatalog& motors);
@@ -82,7 +76,6 @@ struct AxisSettings {
     sdk::PlantSpec plant;
     double statorCurrentLimitA = 0.0;
     NeutralMode neutral = NeutralMode::Coast;
-    bool motorInverted = false;
     bool reportMotorLimits = false;
     EncoderModel encoder;
     bool limited = false;

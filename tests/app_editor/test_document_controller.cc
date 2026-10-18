@@ -4,6 +4,7 @@
 
 #include "test_support.h"
 #include "model/editor_document.h"
+#include "model/motion_links.h"
 #include "model/property_groups.h"
 #include "viewmodel/detected_devices_model.h"
 #include "viewmodel/editor_controller.h"
@@ -34,8 +35,8 @@ struct DocFixture {
 TEST_CASE("document: every edit is undoable and redoable") {
     DocFixture f;
     const auto before = f.doc.config().mechanisms.size();
-    const QString id = f.doc.addMechanism("roller", {});
-    CHECK(id == "roller");
+    const QString id = f.doc.addMechanism("mechanism", {});
+    CHECK(id == "mechanism");
     CHECK(f.doc.config().mechanisms.size() == before + 1);
     CHECK(f.doc.undoStack()->count() == 1);
     CHECK(f.modified == 1);
@@ -44,15 +45,14 @@ TEST_CASE("document: every edit is undoable and redoable") {
     CHECK(f.doc.config().mechanisms.size() == before);
     f.doc.undoStack()->redo();
     CHECK(f.doc.config().mechanisms.size() == before + 1);
-    CHECK(f.doc.undoStack()->undoText().contains("roller"));
+    CHECK(f.doc.undoStack()->undoText().contains("Mechanism"));
 }
 
 TEST_CASE(
-    "document: motion links follow rename and duplication and remain repairable after deletion") {
+    "document: motion links follow duplication and remain repairable after deletion") {
     DocFixture f;
     f.doc.edit("Link motion", [](sdk::RobotConfig& c) {
-        c.motionLinks = {{"follow", {"turret", "axis"}, {"intake", "roller"}, -2}};
-        c.motionLinksConfigured = true;
+        c.motionLinks = {{"follow", {"turret", "axis"}, {"intake", "axis"}, -2}};
         return true;
     });
     const auto copied = f.doc.duplicateMechanism("intake");
@@ -62,18 +62,15 @@ TEST_CASE(
     CHECK(f.doc.config().motionLinks[1].source.owner == "turret");
     f.doc.undoStack()->undo();
     CHECK(f.doc.config().motionLinks.size() == 1);
-    f.doc.edit("Rename source",
-               [](sdk::RobotConfig& c) { return ops::renameMechanism(c, "turret", "drive"); });
-    CHECK(f.doc.config().motionLinks[0].source.owner == "drive");
-    REQUIRE(f.doc.removeMechanism("drive"));
+    REQUIRE(f.doc.removeMechanism("turret"));
     CHECK(f.doc.config().motionLinks.size() == 1);
     f.doc.undoStack()->undo();
-    CHECK(f.doc.config().findMechanism("drive") != nullptr);
+    CHECK(f.doc.config().findMechanism("turret") != nullptr);
 }
 
 TEST_CASE("document: load clears history and does not count as a user edit") {
     DocFixture f;
-    f.doc.addMechanism("roller", {});
+    f.doc.addMechanism("mechanism", {});
     f.modified = 0;
     f.doc.load(robot());
     CHECK(f.doc.undoStack()->count() == 0);
@@ -126,7 +123,7 @@ TEST_CASE("document: slot mapping, structure edits and shapes go through the und
     CHECK_FALSE(f.doc.clearSlot({"shooter", "feeder"}));    // nothing to clear: no empty undo entry
     CHECK(f.doc.undoStack()->count() == 2);
 
-    CHECK(f.doc.reparentMechanism("climber", "turret", "top"));
+    CHECK(f.doc.reparentMechanism("climber", "turret", "mover"));
     CHECK(f.doc.duplicateMechanism("indexer") == "indexer_2");
     CHECK(f.doc.removeMechanism("indexer_2"));
     CHECK(f.doc.addPrimitive("chassis", sdk::PrimitiveKind::Box) >= 0);
@@ -159,9 +156,9 @@ TEST_CASE("controller: edits are pushed to the backend and autosaved after the d
     QObject::connect(&c, &EditorController::autosaveRequested, &c, [&] { ++autosaves; });
 
     CHECK(backend.submitCount() == 0);
-    c.addMechanism("roller", {});
+    c.addMechanism("mechanism", {});
     CHECK(backend.submitCount() == 1);
-    CHECK(backend.lastSubmitted().findMechanism("roller") != nullptr);
+    CHECK(backend.lastSubmitted().findMechanism("mechanism") != nullptr);
     CHECK(c.hasPendingChanges());
     CHECK(c.saveStatusText().contains("Unsaved"));
 
@@ -171,7 +168,7 @@ TEST_CASE("controller: edits are pushed to the backend and autosaved after the d
     CHECK_FALSE(c.hasPendingChanges());
     CHECK(c.document().isModified() == false);
 
-    c.addMechanism("roller", {});
+    c.addMechanism("mechanism", {});
     CHECK(c.flushSave().ok());   // Ctrl+S does not wait for the timer
     CHECK(backend.saveCount() == 2);
 }
@@ -180,11 +177,11 @@ TEST_CASE("controller: undo and redo also reach the backend") {
     FakeEditorBackend backend;
     EditorController c(backend);
     c.setAutosaveDelayMs(0);
-    c.addMechanism("roller", {});
+    c.addMechanism("mechanism", {});
     c.document().undoStack()->undo();
-    CHECK(backend.lastSubmitted().findMechanism("roller") == nullptr);
+    CHECK(backend.lastSubmitted().findMechanism("mechanism") == nullptr);
     c.document().undoStack()->redo();
-    CHECK(backend.lastSubmitted().findMechanism("roller") != nullptr);
+    CHECK(backend.lastSubmitted().findMechanism("mechanism") != nullptr);
 }
 
 TEST_CASE("controller: failed autosave stays dirty until a successful explicit retry") {
@@ -194,7 +191,7 @@ TEST_CASE("controller: failed autosave stays dirty until a successful explicit r
     backend.setSaveError(QStringLiteral("disk full"));
     int saved = 0;
     QObject::connect(&c, &EditorController::autosaveRequested, &c, [&] { ++saved; });
-    c.addMechanism("roller", {});
+    c.addMechanism("mechanism", {});
     pumpEvents(120);
     CHECK(c.hasPendingChanges());
     CHECK(c.document().isModified());
@@ -213,7 +210,7 @@ TEST_CASE("controller: failed autosave stays dirty until a successful explicit r
 TEST_CASE("controller: a replaced model reloads without echoing it back and resets the history") {
     FakeEditorBackend backend;
     EditorController c(backend);
-    c.addMechanism("roller", {});
+    c.addMechanism("mechanism", {});
     const int submits = backend.submitCount();
     auto other = robot();
     other.name = "Other robot";
@@ -244,7 +241,7 @@ TEST_CASE("controller: mapping a device onto a slot, a mechanism or a wheel") {
     const QString imuError = c.mapDevice(SelectionRef::slot("indexer", "motor"), {"phoenix6", "pigeon2", 99, "", -1}, sdk::Capability::Imu);
     CHECK(imuError.contains("cannot act as"));
     CHECK(c.mapDevice(SelectionRef::chassis(), key, caps).contains("Drop a device"));
-    CHECK(c.mapDevice(SelectionRef::mechanism("turret"), {"hal", "dio", 4, "rio", -1}, sdk::Capability::DigitalInput).contains("No free slot"));
+    CHECK(c.mapDevice(SelectionRef::mechanism("shooter"), {"hal", "dio", 4, "rio", -1}, sdk::Capability::DigitalInput).contains("No free slot"));
 
     // A wheel only considers its own slots; the sample has all of them mapped, so free one first.
     c.document().clearSlot({"drivetrain", "fr.steer"});
@@ -252,6 +249,29 @@ TEST_CASE("controller: mapping a device onto a slot, a mechanism or a wheel") {
     CHECK(ops::findMapping(c.document().config(), {"drivetrain", "fr.steer"}) != nullptr);
 }
 
+TEST_CASE("controller: driving a part from another axis is one undoable edit and frees its motor") {
+    FakeEditorBackend backend;
+    EditorController c(backend);
+    REQUIRE(ops::findMapping(c.document().config(), {"intake", "motor"}) != nullptr);
+    CHECK(c.setDrivenBy({"intake", "axis"}, {"drivetrain", "fl.drive"}, 2.0).isEmpty());
+    REQUIRE(c.document().config().motionLinks.size() == 1);
+    CHECK(c.document().config().motionLinks[0].ratio == doctest::Approx(2.0));
+    CHECK(ops::findMapping(c.document().config(), {"intake", "motor"}) == nullptr);
+    CHECK(c.document().undoStack()->count() == 1);
+
+    CHECK(c.mapDevice(SelectionRef::slot("intake", "motor"), {"phoenix6", "talonfx", 40, "", -1}, sdk::Capability::MotorOutput).contains("motion link"));
+    CHECK_FALSE(c.setDrivenBy({"drivetrain", "fl.drive"}, {"intake", "axis"}, 1.0).isEmpty());   // would close a loop
+    CHECK_FALSE(c.setDrivenBy({"intake", "axis"}, {"intake", "axis"}, 1.0).isEmpty());          // itself
+    CHECK_FALSE(c.setDrivenBy({"intake", "axis"}, {"drivetrain", "fl.drive"}, 0.0).isEmpty());    // zero ratio
+    CHECK(c.document().config().motionLinks.size() == 1);
+
+    CHECK(c.clearDrivenBy({"intake", "axis"}));
+    CHECK(c.document().config().motionLinks.empty());
+    c.document().undoStack()->undo();
+    c.document().undoStack()->undo();
+    CHECK(c.document().config().motionLinks.empty());
+    CHECK(ops::findMapping(c.document().config(), {"intake", "motor"}) != nullptr);
+}
 TEST_CASE("controller: mapping through a different bus label never creates an alias conflict") {
     FakeEditorBackend backend;
     EditorController c(backend);
@@ -331,14 +351,14 @@ TEST_CASE("controller: adding with a mechanism selected attaches to it") {
     FakeEditorBackend backend;
     EditorController c(backend);
     c.selection().set(SelectionRef::mechanism("turret"));
-    const QString id = c.addMechanismToSelection("hood");
-    REQUIRE(id == "hood");
-    CHECK(c.document().config().findMechanism("hood")->resolvedAttachment().parentMechanismId == "turret");
-    CHECK(c.selection().current() == SelectionRef::mechanism("hood"));
+    const QString id = c.addMechanismToSelection("mechanism");
+    REQUIRE(id == "mechanism");
+    CHECK(c.document().config().findMechanism("mechanism")->attachment.parentMechanismId == "turret");
+    CHECK(c.selection().current() == SelectionRef::mechanism("mechanism"));
 
     c.selection().set(SelectionRef::chassis());
-    const QString free = c.addMechanismToSelection("roller");
-    CHECK(c.document().config().findMechanism(free.toStdString())->resolvedAttachment().onChassis());
+    const QString free = c.addMechanismToSelection("mechanism");
+    CHECK(c.document().config().findMechanism(free.toStdString())->attachment.onChassis());
 }
 
 TEST_CASE("controller: clicking an issue selects its target and asks the inspector to focus the field") {
@@ -382,7 +402,7 @@ TEST_CASE("project tree: structure, slot rows and selection lookup") {
     REQUIRE(turret.isValid());
     const QModelIndex shooter = tree.indexFor(SelectionRef::mechanism("shooter"));
     CHECK(tree.parent(shooter) == turret);                         // children nest under their parent mechanism
-    CHECK(tree.data(shooter, ProjectTreeModel::DetailRole).toString().contains("turret.top"));
+    CHECK(tree.data(shooter, ProjectTreeModel::DetailRole).toString().contains("turret.mover"));
 
     const QModelIndex slot = tree.indexFor(SelectionRef::slot("shooter", "feeder"));
     REQUIRE(slot.isValid());
@@ -399,6 +419,83 @@ TEST_CASE("project tree: structure, slot rows and selection lookup") {
     CHECK(tree.indexFor(SelectionRef::slot("robot", "imu")).isValid());
 }
 
+TEST_CASE("project tree: followers nest under the part that drives them and are read-only") {
+    DocFixture f;
+    auto config = robot();
+    config.drivetrain.spec.kind = sdk::drivetrain_kind::kTank;
+    for (auto& w : config.drivetrain.spec.wheels) w.steered = false;
+    config.drivetrain.mappings = {{{"drivetrain", "fl.drive"}, {"phoenix6", "talonfx", 1, "canivore", -1}},
+                                  {{"drivetrain", "fr.drive"}, {"phoenix6", "talonfx", 2, "canivore", -1}}};
+    config.motionLinks.clear();
+    config.motionLinks = sdk::tankMotionLinks(config).value();
+    f.doc.load(config);
+    DeviceDirectory devices;
+    ProjectTreeModel tree(f.doc, devices);
+
+    const QModelIndex fl = tree.indexFor(SelectionRef::wheel("fl"));
+    const QModelIndex bl = tree.indexFor(SelectionRef::wheel("bl"));
+    const QModelIndex fr = tree.indexFor(SelectionRef::wheel("fr"));
+    const QModelIndex br = tree.indexFor(SelectionRef::wheel("br"));
+    REQUIRE(bl.isValid());
+    CHECK(tree.parent(fl) == tree.indexFor(SelectionRef::drivetrain()));
+    CHECK(tree.parent(bl) == fl);
+    CHECK(tree.parent(br) == fr);
+    CHECK(tree.rowCount(bl) == 0);   // no motor slot on a follower
+    CHECK(tree.data(bl, ProjectTreeModel::FollowerRole).toBool());
+    CHECK_FALSE(tree.data(fl, ProjectTreeModel::FollowerRole).toBool());
+    CHECK(tree.data(bl, ProjectTreeModel::DetailRole).toString().contains("follows fl"));
+    CHECK(tree.data(fl, ProjectTreeModel::DetailRole).toString().contains("drives 1"));
+
+    // A powered wheel shows its only motor on its own row.
+    CHECK_FALSE(tree.indexFor(SelectionRef::slot("drivetrain", "fl.drive")).isValid());
+    CHECK_FALSE(tree.indexFor(SelectionRef::slot("drivetrain", "bl.drive")).isValid());
+    CHECK(tree.data(fl, ProjectTreeModel::DetailRole).toString().contains("TalonFX 1"));
+    CHECK(tree.data(fl, ProjectTreeModel::StateRole).toInt() == static_cast<int>(SlotState::Mapped));
+
+    sdk::DeviceDescriptor d;
+    d.family = "phoenix6";
+    d.type = "talonfx";
+    d.id = 50;
+    d.capabilities = sdk::Capability::MotorOutput;
+    sdk::DiscoveredDevice dev;
+    dev.descriptor = d;
+    QMimeData motor;
+    motor.setData(kDeviceMime, encodeDevice(dev));
+    CHECK_FALSE(tree.canDropMimeData(&motor, Qt::CopyAction, -1, 0, bl));   // a follower takes no motor
+}
+
+TEST_CASE("project tree: a mechanism driven by a wheel nests under it, and link loops cannot hide parts") {
+    DocFixture f;
+    REQUIRE(f.doc.edit("link", [&](sdk::RobotConfig& c) {
+        return applyDrivenBy(c, f.doc.catalog(), {"indexer", "axis"}, {"drivetrain", "fl.drive"}, 1.0).empty();
+    }));
+    {
+        DeviceDirectory devices;
+        ProjectTreeModel tree(f.doc, devices);
+        const QModelIndex indexer = tree.indexFor(SelectionRef::mechanism("indexer"));
+        REQUIRE(indexer.isValid());
+        CHECK(tree.parent(indexer) == tree.indexFor(SelectionRef::wheel("fl")));
+        CHECK(tree.data(indexer, ProjectTreeModel::FollowerRole).toBool());
+        const QString detail = tree.data(indexer, ProjectTreeModel::DetailRole).toString();
+        CHECK(detail.contains("follows fl"));
+        CHECK(detail.contains("@ chassis"));   // where it is attached is still visible
+        CHECK_FALSE(tree.flags(indexer).testFlag(Qt::ItemIsDragEnabled));
+        CHECK(tree.flags(tree.indexFor(SelectionRef::mechanism("turret"))).testFlag(Qt::ItemIsDragEnabled));
+        CHECK_FALSE(tree.indexFor(SelectionRef::slot("indexer", "motor")).isValid());
+    }
+    f.doc.edit("loop", [](sdk::RobotConfig& c) {
+        c.motionLinks = {{"a", {"drivetrain", "fl.drive"}, {"indexer", "axis"}, 1.0}, {"b", {"indexer", "axis"}, {"drivetrain", "fl.drive"}, 1.0}};
+        return true;
+    });
+    DeviceDirectory devices;
+    ProjectTreeModel tree(f.doc, devices);
+    const QModelIndex fl = tree.indexFor(SelectionRef::wheel("fl"));
+    const QModelIndex indexer = tree.indexFor(SelectionRef::mechanism("indexer"));
+    REQUIRE(fl.isValid());
+    REQUIRE(indexer.isValid());
+    CHECK(tree.parent(fl) == tree.indexFor(SelectionRef::drivetrain()));   // the loop is broken at the wheel
+    CHECK(tree.parent(indexer) == fl);
+}
 TEST_CASE("project tree: refresh keeps the model stable when only contents change") {
     DocFixture f;
     DeviceDirectory devices;
@@ -413,10 +510,10 @@ TEST_CASE("project tree: refresh keeps the model stable when only contents chang
     CHECK(dataChanges > 0);
     CHECK(tree.data(tree.indexFor(SelectionRef::slot("shooter", "feeder")), ProjectTreeModel::DetailRole).toString() == "TalonFX 12");
 
-    f.doc.addMechanism("roller", {});   // the shape changes: full reset
+    f.doc.addMechanism("mechanism", {});   // the shape changes: full reset
     tree.refresh();
     CHECK(resets == 1);
-    CHECK(tree.indexFor(SelectionRef::mechanism("roller")).isValid());
+    CHECK(tree.indexFor(SelectionRef::mechanism("mechanism")).isValid());
 }
 
 TEST_CASE("project tree: device drops are only accepted where they fit") {
@@ -459,35 +556,21 @@ TEST_CASE("project tree: device drops are only accepted where they fit") {
     CHECK(dropped.id == 50);
 }
 
-TEST_CASE("project tree: templates and mechanisms can be dropped to attach") {
+TEST_CASE("project tree: mechanisms can be dropped to re-attach, templates cannot be dropped") {
     DocFixture f;
     DeviceDirectory devices;
     ProjectTreeModel tree(f.doc, devices);
-    QMimeData tmpl;
-    tmpl.setData(kTemplateMime, QByteArray("roller"));
     QMimeData mech;
     mech.setData(kMechanismMime, QByteArray("climber"));
     QMimeData self;
     self.setData(kMechanismMime, QByteArray("turret"));
 
     const QModelIndex turret = tree.indexFor(SelectionRef::mechanism("turret"));
-    CHECK(tree.canDropMimeData(&tmpl, Qt::CopyAction, -1, 0, turret));
-    CHECK(tree.canDropMimeData(&tmpl, Qt::CopyAction, -1, 0, {}));
-    CHECK_FALSE(tree.canDropMimeData(&tmpl, Qt::CopyAction, -1, 0, tree.indexFor(SelectionRef::slot("shooter", "feeder"))));
     CHECK(tree.canDropMimeData(&mech, Qt::CopyAction, -1, 0, turret));
     CHECK_FALSE(tree.canDropMimeData(&self, Qt::CopyAction, -1, 0, turret));                                     // onto itself
     CHECK_FALSE(tree.canDropMimeData(&self, Qt::CopyAction, -1, 0, tree.indexFor(SelectionRef::mechanism("shooter"))));   // onto its own child
-
-    QString droppedType;
-    std::string parent;
-    QObject::connect(&tree, &ProjectTreeModel::templateDropped, &tree, [&](const QString& t, const sdk::MechanismAttachment& a) {
-        droppedType = t;
-        parent = a.parentMechanismId;
-    });
-    CHECK(tree.dropMimeData(&tmpl, Qt::CopyAction, -1, 0, turret));
-    CHECK(droppedType == "roller");
-    CHECK(parent == "turret");
 }
+
 
 TEST_CASE("detected devices model: rows, status text and drag payload") {
     DocFixture f;
@@ -543,3 +626,47 @@ TEST_CASE("issue model: counts, summary and rows") {
     CHECK(model.issueAt(model.index(2, 0))->path == "c");
     CHECK(model.issueAt(model.index(9, 0)) == nullptr);
 }
+
+TEST_CASE("controller: dropping more controllers on a mechanism adds motors, one undo step each") {
+    FakeEditorBackend backend;
+    EditorController c(backend);
+    const sdk::CapabilitySet motor(sdk::Capability::MotorOutput);
+    const auto target = SelectionRef::mechanism("climber");
+    auto motors = [&] { return ops::motorGroups(c.document().config(), c.document().catalog(), "climber").front().count; };
+    CHECK(motors() == 1);
+    CHECK(c.mapDevice(target, {"phoenix6", "talonfx", 41, "rio", -1}, motor).isEmpty());   // fills the free motor row
+    CHECK(motors() == 1);
+    CHECK(c.mapDevice(target, {"phoenix6", "talonfx", 42, "rio", -1}, motor).isEmpty());   // grows to motor 2
+    CHECK(motors() == 2);
+    CHECK(ops::findMapping(c.document().config(), {"climber", "motor2"})->device.id == 42);
+    CHECK(c.mapDevice(target, {"phoenix6", "talonfx", 43, "rio", -1}, motor).isEmpty());
+    CHECK(motors() == 3);
+    CHECK_FALSE(c.mapDevice(target, {"phoenix6", "talonfx", 44, "rio", -1}, motor).isEmpty());   // template maximum reached
+
+    c.document().undoStack()->undo();   // the third motor goes away together with its mapping
+    CHECK(motors() == 2);
+    CHECK(ops::findMapping(c.document().config(), {"climber", "motor3"}) == nullptr);
+
+    // A tank/swerve wheel grows the same way.
+    const auto wheel = SelectionRef::wheel("fl");
+    CHECK(c.mapDevice(wheel, {"phoenix6", "talonfx", 45, "rio", -1}, motor).isEmpty());
+    CHECK(ops::findWheel(c.document().config(), "fl")->driveMotorCount == 2);
+    CHECK(ops::findMapping(c.document().config(), {"drivetrain", "fl.drive2"}) != nullptr);
+}
+
+TEST_CASE("controller: the reversed flag and the motor count are undoable edits") {
+    FakeEditorBackend backend;
+    EditorController c(backend);
+    REQUIRE(c.addMotor("climber", "motorCount"));
+    REQUIRE(ops::motorGroups(c.document().config(), c.document().catalog(), "climber").front().count == 2);
+    c.document().mapSlot({"climber", "motor2"}, {"phoenix6", "talonfx", 46, "rio", -1});
+    REQUIRE(c.setMotorReversed({"climber", "motor2"}, true));
+    CHECK(ops::findMapping(c.document().config(), {"climber", "motor2"})->reversed);
+    c.document().undoStack()->undo();
+    CHECK_FALSE(ops::findMapping(c.document().config(), {"climber", "motor2"})->reversed);
+    c.document().undoStack()->undo();   // the mapping
+    c.document().undoStack()->undo();   // the added motor
+    CHECK(ops::motorGroups(c.document().config(), c.document().catalog(), "climber").front().count == 1);
+    CHECK_FALSE(c.removeMotor("climber", "motorCount"));   // never below one motor
+}
+

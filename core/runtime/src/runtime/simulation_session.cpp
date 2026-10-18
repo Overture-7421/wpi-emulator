@@ -297,12 +297,7 @@ void SimulationSession::stepDrivetrain(double dt, double& currentA) {
     currentA = 0.0;
     if (!drivetrain_) return;
     const auto& wheels = drivetrain_->spec().wheels;
-    for (std::size_t i = 0; i < wheels.size(); ++i) {
-        const MotorOutput drive = hub_.motorOutput({slot_owner::kDrivetrain, wheels[i].name + ".drive"});
-        const MotorOutput steer = hub_.motorOutput({slot_owner::kDrivetrain, wheels[i].name + ".steer"});
-        wheelCommands_[i].driveVoltageV = drive.valid ? drive.voltageV : 0.0;
-        wheelCommands_[i].steerVoltageV = steer.valid ? steer.voltageV : 0.0;
-    }
+    for (std::size_t i = 0; i < wheels.size(); ++i) wheelCommands_[i] = wheelCommandFromHub(hub_, wheels[i]);
     if (!motionDrivetrain_) drivetrain_->step(wheelCommands_, static_cast<float>(dt));
 
     const auto states = drivetrain_->wheelStates();
@@ -314,7 +309,8 @@ void SimulationSession::stepDrivetrain(double dt, double& currentA) {
         MotorFeedback drive;
         drive.rotorPositionRot = radToRot(st.driveWheelAngleRad) * w.driveGearRatio;
         drive.rotorVelocityRps = radToRot(st.driveWheelOmegaRadPerSec) * w.driveGearRatio;
-        hub_.writeMotorFeedback({slot_owner::kDrivetrain, w.name + ".drive"}, drive);
+        for (int m = 0; m < std::clamp(w.driveMotorCount, 1, kMaxMotorsPerAxis); ++m)
+            hub_.writeMotorFeedback({slot_owner::kDrivetrain, driveSlotName(w.name, m)}, drive);
         if (w.steered || w.kind == WheelKind::Swerve) {
             MotorFeedback steer;
             steer.rotorPositionRot = radToRot(st.steerAngleRad) * w.steerGearRatio;

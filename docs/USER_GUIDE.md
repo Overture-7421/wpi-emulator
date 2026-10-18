@@ -107,27 +107,29 @@ game settings.
 
 ### Linking wheels and mechanisms
 
-The inspector's **Motion links** section connects a **Source** axis to a **Follower**.
-Set the signed **Ratio**, then **Add / update link**. Ratio 2 turns a rotary follower twice
-per source revolution; -1 reverses it. Mixed rotary/linear links show explicit **m / rev**
-or **rev / m** units. Select a link to update/remove it, or choose **New link** to add another.
-Changes support Undo/Redo.
+Parts that are mechanically linked share one motor: a tank drive with three wheels per side
+needs one motor per side, not six. Select the wheel or mechanism that should **follow** and use
+the **Drive** card of its inspector: choose **Linked to another part**, pick the source (a wheel or a mechanism
+axis) and set the signed **Ratio**. Ratio 2 turns a rotary follower twice per source revolution;
+-1 reverses it. Mixed rotary/linear links show explicit **m / rev** or **rev / m** units.
+Choose **Own motors** to unlink. Linking a part drops its motor mapping in the same step;
+everything supports Undo/Redo.
 
-New tank setups link all wheels on a side to one powered wheel. **Link tank wheels by side**
-prefers the wheel already mapped to that side's controller. Map only the two source wheels:
-one controller can then move all three wheels on its side. Existing ordinary tank files upgrade
-automatically, preserving mappings; save the upgraded configuration. **Use independent wheels**
-opts out. Ambiguous layouts or several mapped wheels per side need correction before conversion.
+In the project tree a follower is nested **under the part that drives it**, dimmed and read-only:
+it shows `follows <source> ×ratio`, has no motor slot and cannot take a dropped device. The
+source shows `drives n`. A mechanism keeps its attachment (shown as `@ parent` on its row and
+editable in its inspector), even though the tree places it under its source. Encoders and limit
+sensors of a follower can still be mapped.
 
-Links also work between supported mechanism axes: `axis` for ordinary mechanisms, and
-`deploy`/`roller` for intakes. Followers need no motor mapping; encoders and limit sensors
-can still be mapped. Remove a follower's independent motor mapping before linking it.
-One source can drive several followers, including chains, but cycles are not allowed.
+Link a tank side wheel by wheel: select each follower, choose **Linked to another part** and pick the powered
+wheel of its side; then map controllers only to the source wheels. Wizard-made tank robots start linked.
+
+Links also work between supported mechanism axes: `axis` of a mechanism (or of the plugin's own wrappers). One source can drive several followers, including chains, but
+cycles are not allowed.
 
 This is deliberately simple motion following. Followers retain their starting positions,
 stop at their own travel limits, and update visuals/sensors, but do not load or stop the source.
 It is not an accurate gearbox, torque-sharing, or energy-conservation simulation.
-
 ### Editor layout
 
 The **Editor** and **Run** tabs centred in the menu bar row (`Ctrl+1` / `Ctrl+2`) switch between the editing page and the run page.
@@ -135,8 +137,8 @@ The **Editor** and **Run** tabs centred in the menu bar row (`Ctrl+1` / `Ctrl+2`
 ```
 +---------------------+-----------------------------------+------------------+
 | Project tree        |  3D viewport                      | Inspector        |
-| Mechanism palette   |  (Front / Side / Top / 3D)        | (properties,     |
-| Detected devices    |-----------------------------------|  device slots)   |
+| Detected devices    |  (Front / Side / Top / 3D)        | (Name, Drive,    |
+|                     |-----------------------------------|  Configure ...)  |
 |                     |  Console | Validation | Telemetry |                  |
 +---------------------+-----------------------------------+------------------+
 ```
@@ -162,32 +164,39 @@ component of a pose. Ordinary typing keeps its cursor position.
 
 ### Chassis
 The project tree has a **Chassis** node (hull, centre of mass, drivetrain, wheels and collision shapes). Select it to
-get the **Robot overview** in the inspector:
-
-* *Frame, mass, centre of mass*: dimensions, mass, COM position.
-* *Type and traction model*: drivetrain kind and its parameters.
-* **Wheels (n)**: each wheel has a position, radius and a **drive** (and for swerve **steer**) motor slot; **+ Add
-  wheel** / **Delete wheel**.
+get the chassis page in the inspector (dimensions, mass, centre of mass). **Drivetrain** has its type, tire model and load-transfer
+filter. Wheels are listed under Drivetrain in the tree: select one to edit it (see *Linking wheels and mechanisms* for
+followers), right-click Drivetrain or a wheel for **Add wheel**, a wheel for **Delete wheel**. The **Robot** node has the
+robot-level settings.
 * **Shapes (n)**: boxes and cylinders (**+ Box**, **+ Cylinder**) that model the visible, colliding parts.
 
 ### Mechanisms
-The **mechanism palette** lists the templates. Double-click one to add it (to the robot, or to the selected mechanism);
-or drag it onto a tree row to attach it there. Core templates (game independent):
+**Right-click** the robot, the chassis or a mechanism in the tree and choose **Add mechanism** and then **Rotary**, **Arm** or **Linear** (on a mechanism:
+**Add attached mechanism**, which hangs the new one on its link). There is no catalog panel. Core has one
+template, **Mechanism**: a single motor-driven degree of freedom whose **Type** you choose in Configure:
 
-| Template | Use |
+| Type | Use |
 |---|---|
-| Generic roller | spinning roller / conveyor wheel |
-| Generic 1-DOF | any single axis (rotary, arm or linear) with stops, limit switches and a beam break |
-| Intake | deploy arm (optional) + roller |
-| Shooter (flywheel) | flywheel with encoder |
-| Hood / pivot / Arm | gravity-loaded arm with stops |
-| Turret | yaw axis |
-| Elevator / climber | linear axis with gravity |
-| Indexer / conveyor | belt with entry/exit beam breaks |
+| Rotary | flywheel, roller, indexer belt, turret (stops optional; equal stops = continuous) |
+| Arm | hood, pivot, wrist, deploying intake (gravity-loaded, stops) |
+| Linear | elevator, climber, slide (gravity along Z, stops) |
 
-Each template exposes **device slots** (motor, encoder, limit switches, beam breaks...) and properties (motor model
-and count, gearing, mass/inertia, stops, friction...) generated from its metadata, so the inspector changes with the
-template. **Add attached mechanism** hangs one on another mechanism's named link (for example a roller on an arm);
+An intake is a rotary mechanism (plus an Arm if it deploys); the 2026 plugin adds **Fuel Intake** / **Fuel Shooter**
+wrappers that bind mechanisms to the game (section 4); they are not in the mechanism menus: right-click the game node (for example *REBUILT (2026)*) in the tree to add them.
+
+The template exposes **device slots** (motors, encoder, limit switches) and properties (motor model and count,
+gearing, mass/inertia, stops, friction...) generated from its metadata.
+
+Selecting a wheel or a mechanism shows its **Name** (editable) and then colour-coded cards:
+
+| Card | Contents |
+|---|---|
+| **Drive** (orange) | How it is actuated, the same for every part. Per axis: **Own motors** (motor model, motor count, gear ratio, efficiency, current limit, neutral mode, and one row per controller, **Motor 1..N**, with **Reversed** and unmap) or **Linked to another part** (source and ratio). |
+| **Configure** (blue) | What it is and how it is simulated: the **Type** (a wheel's type, or a mechanism's Rotary / Arm / Linear), then the properties of that type: dynamics, limits, steering of a swerve module (with its steer motor), game-specific settings, and the read-only list of its sensors. |
+| **Placement** (green) | Attach to, attachment link, mount pose (wheels: hub position). |
+| **Shapes** (purple) | Visible and colliding shapes, attached mechanisms. |
+
+The chassis, drivetrain and shapes use the same card look with a single Configure card. **Add attached mechanism** hangs one on another mechanism's named link (for example a roller on an arm);
 use **Attach to** / **Attachment link** and **Mount pose** to place it. Mechanisms move with the part they are
 attached to. Plant models are documented in [mechanisms.md](mechanisms.md).
 
@@ -201,10 +210,18 @@ know which mechanism slot each one drives:
    as your code creates them.
 2. The **Detected devices** table lists **Device**, **Type**, **ID**, **Bus** and **Status**
    (`unmapped (loopback)`, `gone`, alias warnings).
-3. **Drag a detected device** from the table onto a slot row in the inspector (mechanism slots or a wheel's
-   drive/steer slots). Slot rows highlight when the device is compatible; incompatible drops are refused
-   (*"Cannot map the device"*). Slot rows can also pick a device from a list, and **Unmap** clears a slot.
-4. Slot rows show their state: required and unmapped, optional, mapped, *not detected* (mapped to a device the last
+3. **Drag a detected device** from the table onto a part or one of its slots **in the project tree**. Compatible
+   targets highlight; incompatible drops are refused (*"Cannot map the device"*). The inspector only shows what is
+   mapped; the **x** on a controller or sensor row unmaps it.
+4. **Several motors on one gearbox.** A shooter with five motors or a tank side with three has one controller per
+   motor in your robot code. Select the mechanism (or wheel): the **Drive** card has one controller row per motor. Drop the
+   next controller on the part in the tree and a new motor row appears (or raise **Motor count**; lowering it unmaps
+   the last rows). Tick **Reversed** on a motor that spins against the mechanism's positive direction (mounted mirrored, or inverted
+   in robot code such as `setInverted(true)` / `Opposed`): the simulator flips its command and feedback, so two equal
+   motors with opposite signs cancel and a wrongly inverted motor visibly fights the others. A motor row you leave
+   unmapped mirrors motor 1. A wheel that follows another wheel (see *Linking wheels and mechanisms*) has no motor
+   rows; give the **source** wheel the controllers of its side.
+5. Controller and sensor rows show their state: required and unmapped, optional, mapped, *not detected* (mapped to a device the last
    discovery did not see), *gone*, or a type mismatch.
 
 Restarting robot code invalidates the old live inventory. Devices absent from subsequent complete
@@ -231,11 +248,11 @@ simplifications: [game_2026.md](game_2026.md).
 | Field staging | neutral-zone fuel (default 360), fuel per depot (24), outpost chute stock (24), human player off / timed and its period |
 | Match rules | enforce hub shifts, which hub is inactive first (`auto`/`red`/`blue`), hub processing delay, recycle scored fuel |
 
-**Your own intake and shooter** are built from the normal templates (roller, intake, shooter, indexer, hood, turret)
-with their devices mapped as above. Two extra palette entries bind them to the game:
+**Your own intake and shooter** are built from normal Mechanisms (rotary roller / flywheel / indexer, arm hood, rotary
+turret) with their devices mapped as above. Two plugin templates (right-click, Add mechanism) bind them to the game:
 
 * **Fuel Intake** (category Intake): add it, set the **Pickup zone** (a box shown in green in the viewport; drag its
-  handles or edit the numbers), and say which roller/deploy mechanism must be active (`activation`: roller, deployed,
+  handles or edit the numbers), and say which roller mechanism (and optional deploy arm) must be active (`activation`: roller, deployed,
   both, either, always). Fuel inside the zone is absorbed while active and the meter is not full.
 * **Fuel Shooter** (category Shooter, link `muzzle`): set the **Muzzle** offset (orange marker), the flywheel mechanism
   (exit speed = angular speed x radius x efficiency), optional hood and turret mechanisms (or attach it to the turret
@@ -300,7 +317,6 @@ currently only true after that),
 |---|---|
 | Robot setup (working copy) | `%APPDATA%\WpiEmulator\projects\<folder>-<hash>\robot.json`; macOS `~/Library/Application Support/WpiEmulator`; Linux `$XDG_DATA_HOME/wpi-emulator` or `~/.local/share/wpi-emulator` |
 | Shareable copy | `<project>\.wpiemu\robot.json` (commit it for your team if you want; add `.wpiemu/` to `.gitignore` if not) |
-| Older-format backups | `robot.json.v<N>.bak` next to the file, made before migrating |
 | Window and UI preferences | Qt settings of the app (registry on Windows) |
 
 Environment variables for advanced use: `WPIEMU_LAUNCH_MODE=direct` (run the project's `simulateExternal*` task and start

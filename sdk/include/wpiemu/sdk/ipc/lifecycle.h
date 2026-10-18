@@ -1,6 +1,6 @@
 #pragma once
 
-// Extension lifecycle signals that travel as plain `Log` messages (SDK 1.1 additive, no new
+// Extension lifecycle signals that travel as plain `Log` messages (no new
 // MessageType, so every codec carries them unchanged).
 //
 // Why: the extension only starts stepping HAL time once the robot program called

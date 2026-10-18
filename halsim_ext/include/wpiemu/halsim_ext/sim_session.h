@@ -41,7 +41,7 @@ struct SessionServices {
 
 // One connection to the emulator, from the accepted HelloAck to the transport going away. Runs the
 // per-tick protocol of ARCHITECTURE section 4 on the extension's clock thread, plus a watchdog
-// thread that unblocks the robot by itself (SDK 1.1) when the emulator or the robot stops answering.
+// thread that unblocks the robot by itself when the emulator or the robot stops answering.
 class SimSession {
 public:
     SimSession(SessionServices services, std::unique_ptr<IpcLink> link, const sdk::proto::HelloAck& ack);

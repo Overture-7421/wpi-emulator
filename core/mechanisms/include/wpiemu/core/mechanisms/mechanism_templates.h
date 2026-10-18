@@ -1,19 +1,14 @@
 #pragma once
 
-// Generic, game-agnostic mechanism templates (registered into a MechanismFactory):
+// The generic, game-agnostic mechanism template (registered into a MechanismFactory):
 //
-//   type           display            axes                                   notable named values
-//   roller         Generic roller     1 rotary                               surfaceSpeed
-//   generic_1dof   Generic 1-DOF      1 rotary / arm / linear                position, velocity
-//   intake         Intake             deploy (arm/linear) + roller           deployed, rollerSurfaceSpeed
-//   shooter        Shooter / flywheel 1 rotary flywheel                      surfaceSpeed
-//   pivot          Hood / pivot       1 arm (gravity optional)               position (rad from horizontal)
-//   turret         Turret             1 rotary with optional stops           position (rad, yaw)
-//   elevator       Elevator / climber 1 linear (gravity on by default)       position (m)
-//   indexer        Indexer / conveyor 1 rotary belt                          surfaceSpeed
+//   type        display     axis                                         published values
+//   mechanism   Mechanism   ONE motor-driven degree of freedom:          position, velocity, voltage, current,
+//                           Motion = rotary | arm | linear               atLowerLimit, atUpperLimit
 //
-// See docs/mechanisms.md for slots, properties and published state. Templates know no season: a
-// game plugin composes them through the same factory or reads their MechanismState.
+// Flywheels, rollers, belts, turrets (rotary), hoods and pivots (arm), elevators and climbers (linear) are all this one
+// template with different properties; intakes and other season constructs belong to the game plugin, which composes
+// mechanisms by id. See docs/mechanisms.md for slots, properties and published state.
 
 #include <memory>
 
@@ -24,14 +19,7 @@
 namespace wpiemu::core::mechanisms {
 
 namespace mechanism_type {
-inline constexpr const char* kRoller = "roller";
-inline constexpr const char* kGeneric1Dof = "generic_1dof";
-inline constexpr const char* kIntake = "intake";
-inline constexpr const char* kShooter = "shooter";
-inline constexpr const char* kPivot = "pivot";
-inline constexpr const char* kTurret = "turret";
-inline constexpr const char* kElevator = "elevator";
-inline constexpr const char* kIndexer = "indexer";
+inline constexpr const char* kMechanism = "mechanism";
 }  // namespace mechanism_type
 
 // Collaborators shared by all templates. Null members are replaced by the builtin motor catalog /
@@ -42,7 +30,7 @@ struct MechanismTemplateServices {
     std::shared_ptr<const sdk::PlantFactory> plants;
 };
 
-// Registers the eight templates above. Stops at and returns the first registration error
+// Registers the template above. Stops at and returns the first registration error
 // (e.g. AlreadyExists when called twice).
 sdk::Status registerGenericMechanisms(sdk::MechanismFactory& factory, MechanismTemplateServices services = {});
 

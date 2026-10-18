@@ -1,5 +1,5 @@
 // Proof that a new season is "copy the template, register one line": a complete year plugin (field, game state,
-// mechanism template, config schema with a migration, HUD) written exactly like plugins/_template, registered next to
+// mechanism template, config schema, HUD) written exactly like plugins/_template, registered next to
 // the built-in 2026 plugin, and driven by the REAL core config pipeline and simulation session. Neither core nor
 // any other plugin is touched. (tools/check_boundaries.py, run by CTest, separately proves core contains no
 // season-specific code and plugins link only the SDK.)
@@ -76,20 +76,6 @@ public:
     int steps = 0;
 };
 
-class RenameCapMigrator final : public IConfigMigrator {
-public:
-    int fromVersion() const override { return 1; }
-    int toVersion() const override { return 2; }
-    Status migrate(Value& data) const override {
-        if (const Value* old = data.find("limit")) {
-            const Value moved = *old;
-            data.object().erase("limit");
-            data["capacity"] = moved;
-        }
-        return okStatus();
-    }
-};
-
 class Module final : public IGameModule {
 public:
     GameMetadata metadata() const override {
@@ -115,7 +101,7 @@ public:
     }
     PluginConfigSchema contributeConfigSchema() const override {
         PluginConfigSchema s;
-        s.schemaVersion = 2;
+        s.schemaVersion = 1;
         PropertySpec p;
         p.key = "capacity";
         p.label = "Capacity";
@@ -125,11 +111,6 @@ public:
         p.max = 99;
         s.properties.properties.push_back(p);
         return s;
-    }
-    std::vector<std::unique_ptr<IConfigMigrator>> configMigrators() const override {
-        std::vector<std::unique_ptr<IConfigMigrator>> m;
-        m.push_back(std::make_unique<RenameCapMigrator>());
-        return m;
     }
     std::vector<HudWidgetDescriptor> contributeHud() const override {
         HudWidgetDescriptor w;
@@ -171,18 +152,17 @@ TEST_CASE("a new season registers beside the built-ins without touching either")
     CHECK(wpiemu::tests::new_year_plugin::registerPlugin(w.reg.plugins).error().code == ErrorCode::AlreadyExists);
 }
 
-TEST_CASE("the core config pipeline selects the new plugin by year and migrates its section") {
+TEST_CASE("the core config pipeline selects the new plugin by year and applies its defaults") {
     World w;
     RobotConfig c = sampleConfig();
     c.project.wpilibYear = 2998;
     c.plugins["game_2998"] = PluginSection{1, Value::makeObject()};
-    c.plugins["game_2998"].data["limit"] = 12;  // v1 key
+    c.plugins["game_2998"].data["capacity"] = 12;
 
     const auto loaded = w.pipeline.load(w.codec.toValue(c));
     REQUIRE_MESSAGE(loaded.ok(), (loaded.ok() ? "" : loaded.error().message));
     CHECK(loaded.value().pluginId == "game_2998");
-    CHECK(loaded.value().pluginMigrated);
-    CHECK(loaded.value().config.findPlugin("game_2998")->schemaVersion == 2);
+    CHECK(loaded.value().config.findPlugin("game_2998")->schemaVersion == 1);
     CHECK(loaded.value().config.findPlugin("game_2998")->data.find("capacity")->asInt() == 12);
     CHECK(loaded.value().valid());
     CHECK(w.reg.mechanisms.contains("game_2998.counter"));
@@ -193,7 +173,7 @@ TEST_CASE("the core config pipeline selects the new plugin by year and migrates 
     const auto loaded26 = w.pipeline.load(w.codec.toValue(c26));
     REQUIRE(loaded26.ok());
     CHECK(loaded26.value().pluginId == "game_2026");
-    CHECK(loaded26.value().config.findPlugin("game_2026")->schemaVersion >= 2);
+    CHECK(loaded26.value().config.findPlugin("game_2026")->schemaVersion == 1);
     CHECK(loaded26.value().valid());
 }
 

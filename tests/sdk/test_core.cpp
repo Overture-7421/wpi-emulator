@@ -165,20 +165,3 @@ TEST_CASE("PropertySchema: defaults and validation") {
     CHECK_FALSE(validateProperties(schema, Value(3)).empty());
 }
 
-TEST_CASE("config migrations chain one version at a time") {
-    testing::FakeGameModule module;
-    const auto migrators = module.configMigrators();
-
-    Value data = Value::makeObject();
-    data["cap"] = 4;
-    int version = 1;
-    CHECK(migrateToVersion(data, version, 2, migrators).ok());
-    CHECK(version == 2);
-    CHECK(data.find("capacity")->asInt() == 4);
-    CHECK(data.find("cap") == nullptr);
-
-    int newer = 3;
-    CHECK(migrateToVersion(data, newer, 2, migrators).error().code == ErrorCode::VersionMismatch);
-    int gap = 2;
-    CHECK(migrateToVersion(data, gap, 5, migrators).error().code == ErrorCode::VersionMismatch);
-}

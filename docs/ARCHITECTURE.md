@@ -1,16 +1,15 @@
 # Architecture
 
-Status: SDK **1.5**, IPC protocol **v3** = the 1.0 freeze ([ADR 0005](decisions/0005-sdk-freeze.md)) plus the additive
-amendments of [ADR 0006](decisions/0006-sdk-1-1-amendments.md) (1.1, IPC protocol v2) and the two defaulted 1.2 additions
-documented in `sdk/version.h` (`IGameState::gameSpecificMessage`, `PrimitiveSpec::link`), the Armed lifecycle
-of [ADR 0011](decisions/0011-single-robot-instance.md) (1.3), and its explicit capability/reset-history
-amendment (1.4, protocol v3). All modules below are implemented;
+Status: SDK **1.0**, IPC protocol **1**. Until release the SDK stays at version 1 and no compatibility is kept
+([ADR 0013](decisions/0013-pre-release-single-sdk-version.md)); the interfaces were first laid out in
+[ADR 0005](decisions/0005-sdk-freeze.md) and extended by [ADR 0006](decisions/0006-sdk-1-1-amendments.md) and
+[ADR 0011](decisions/0011-single-robot-instance.md). All modules below are implemented;
 this document describes the code as built. Background and rationale: ADRs
 [0001](decisions/0001-halsim-extension-injection.md) (HALSim injection),
 [0002](decisions/0002-phoenix6-interception.md) (Phoenix 6 via SimDevices),
 [0003](decisions/0003-box3d-chassis-physics.md) (Box3D chassis physics),
 [0004](decisions/0004-modular-boundaries.md) (module boundaries),
-[0005](decisions/0005-sdk-freeze.md) (SDK freeze), [0006](decisions/0006-sdk-1-1-amendments.md) (SDK 1.1),
+[0005](decisions/0005-sdk-freeze.md) (SDK freeze), [0006](decisions/0006-sdk-1-1-amendments.md) (SDK amendments),
 [0007](decisions/0007-ipc-transport.md) (IPC transport), [0008](decisions/0008-physics-implementation.md) (physics),
 [0009](decisions/0009-mechanisms-impl.md) (mechanisms), [0010](decisions/0010-runtime.md) (runtime / config / launcher).
 Full index: [decisions/README.md](decisions/README.md). How to build and contribute:
@@ -86,7 +85,7 @@ backends used by `halsim_ext`, not SDK dependencies or alternative bridge aggreg
 | `devices/` | `device_descriptor.h` `device_identity.h` `signal.h` `signals.h` `slot.h` `frames.h` `discovered_device.h` `device_hub.h` `device_bridge.h` `sim_device_bridge.h` `channel_family_bridge.h` `builtin_bridges.h` | Device model (declared address vs physical identity), hub, bridges, the `registerBuiltinBridges` aggregation seam |
 | `mechanisms/` | `mechanism.h` `mechanism_state.h` `physics_coupling.h` `attachment.h` | `IMechanism`, `MechanismFactory`, template metadata, chassis coupling, link attachment |
 | `game/` | `game_module.h` `game_state.h` `field.h` `ui_descriptors.h` `plugin_registry.h` `builtin_plugins.h` `null_objects.h` | Year-plugin contract |
-| `config/` | `robot_config.h` `property_schema.h` `plugin_config.h` `value_codec.h` `config_io.h` `validation_codes.h` | Persisted model, schemas, migrations, stable issue codes |
+| `config/` | `robot_config.h` `property_schema.h` `plugin_config.h` `value_codec.h` `config_io.h` `validation_codes.h` | Persisted model, schemas, stable issue codes |
 | `ipc/` | `messages.h` `transport.h` `lockstep.h` `lifecycle.h` | Protocol structs, `ITransport`, `IMessageCodec`, `MessageChannel`, lock-step state machines, lifecycle signals carried as `Log` messages (e.g. robot program started) |
 | `telemetry/` | `snapshot.h` `sim_controller.h` | `ISimSnapshot` view-model, `ISimController` |
 | `testing/` | `fake_physics_world.h` `fake_device_hub.h` `fake_game_module.h` `fake_sim_environment.h` `fake_clock_logger.h` `in_memory_transport.h` `fake_mechanism_physics_coupling.h` `fake_mechanism_directory.h` | Header-only fakes for isolated tests |
@@ -110,7 +109,7 @@ created by the composition root (app or test).
 
 ## 3. Processes, threads, and ownership
 
-SDK 1.5 adds optional one-way motion links ([ADR 0012](decisions/0012-motion-links.md)).
+The SDK has optional one-way motion links ([ADR 0012](decisions/0012-motion-links.md)).
 Linked sessions evaluate advertised wheel/mechanism axes in dependency order before publishing
 mechanism state and stepping the world. Followers use prescribed motion without motors or
 back-propagated load; independent sessions keep the original tick pipeline.
@@ -155,7 +154,7 @@ One tick `N` (sim thread unless noted):
 1. **Ingest** the newest `ActuatorFrame` from tick N-1 into `IDeviceHubIngress` (frames whose `runEpoch`
    is stale are dropped, §4.1); apply queued UI commands (`DsState`, `SimControl`, mapping changes).
 2. **Mechanisms** in config order: `IMechanism::tick` reads `MotorOutput` per slot from the hub,
-   steps its `IPlant`, writes encoder/limit/beam-break feedback back to the hub (absolute truth).
+   steps its `IPlant`, writes encoder/limit feedback back to the hub (absolute truth).
    Mechanisms also **submit** to `ctx.coupling()` (chassis wrench, anchored constraints, payload mass)
    and may **read** `constraintLoad()` = the load of the previous physics step (§4.2).
 3. **Drivetrain** `IDrivetrain::step(WheelCommand[])` -> `ITireModel` -> `applyForce` on the chassis.
@@ -174,7 +173,7 @@ names/units are in `devices/signals.h` (bridges normalise vendor names; `SimDevi
 Phoenix 6 devices are read/written through HAL SimDevice values (`SimDeviceBridge`, ADR 0002); the
 emulator drives the **rotor** (Phoenix firmware sim applies gearing/offsets).
 
-### 4.1 Lock-step robustness (protocol v3, SDK 1.4; introduced in v2 / SDK 1.1)
+### 4.1 Lock-step robustness
 Reference code: `ipc/messages.h` (types, `classifyFrame`, `negotiateWatchdogTimeoutMs`) and
 `ipc/lockstep.h` (`LockstepWindow` emulator side, `LockstepFollower` extension side).
 
@@ -182,12 +181,12 @@ Reference code: `ipc/messages.h` (types, `classifyFrame`, `negotiateWatchdogTime
   `ActuatorFrame` acknowledging N, or after a Reset/reconnect opened a new epoch. No pipelining.
 * **Identity.** `sessionId` (one per accepted connection, assigned in `HelloAck`) and `runEpoch` (monotonic, owned by
   the emulator, bumped on every Reset and every reconnect; first value `kFirstRunEpoch` = 1) are carried by
-  `SensorFrame`, `ActuatorFrame`, `DsState` and `SimControl`. `0` = unspecified (v1 peer / in-process caller) and is
+  `SensorFrame`, `ActuatorFrame`, `DsState` and `SimControl`. `0` = unspecified (a peer that does not send it / in-process caller) and is
   accepted. **Receivers drop frames with a stale epoch** (and foreign sessions); `classifyFrame` returns
   `Accept | DropStaleEpoch | DropForeignSession | NewerEpoch`. A newer epoch is adopted by the extension and is a
   protocol error for the emulator. Tick numbering restarts per epoch; never assume monotonic ticks across epochs.
 * **Tick ack.** `ActuatorFrame::result` (`Completed | RobotStalled | Stopped | ProtocolError`) says how the tick ended and
-  `ackTick` which `SensorFrame::tick` it answers (`ackedTick()` falls back to `tick` for v1 frames). `RobotStalled`,
+  `ackTick` which `SensorFrame::tick` it answers (`ackedTick()` falls back to `tick` for frames that do not send it). `RobotStalled`,
   `Stopped` and `ProtocolError` end lock-step until a Reset/reconnect (`LockstepWindow::stalled()`).
 * **Commands.** `SimControl::commandId != 0` is answered by exactly one `SimControlAck{commandId, result, runEpoch, tick}`.
   `Reset` and `Stop` MUST carry a command id. Reset is the first message of the new epoch (its `runEpoch` is already
@@ -200,11 +199,11 @@ Reference code: `ipc/messages.h` (types, `classifyFrame`, `negotiateWatchdogTime
   unblock the robot**: `HALSIM_ResumeTiming` (`WatchdogPolicy::ResumeRealtime`, default) or terminate (`WatchdogPolicy::Terminate`).
   It never waits for the emulator to do so. The emulator reports `RobotStalled`, stops sending frames and never blocks the
   sim thread past the watchdog. The wall-clock itself is the transport/loop's business (no clock in the SDK state machines).
-* Compatibility: all new fields are appended with defaults; `kProtocolVersion` is 3, `kMinCompatibleProtocolVersion` stays 1,
-  new message `SimControlAck` (type 11) is appended to the `proto::Message` variant.
-* **Armed capability.** `Hello::supportsArmed` defaults to false, independently of the protocol number.
+* Versioning: `kProtocolVersion` is 1 and `kMinCompatibleProtocolVersion` is 1; codecs default absent trailing fields. Message
+  `SimControlAck` (type 11) is part of the `proto::Message` variant.
+* **Armed capability.** `Hello::supportsArmed` defaults to false.
   Only peers explicitly advertising it receive `BeginLockstep` / `EndLockstep`. An Armed
-  (`discoveryOnly`) handshake requires it; legacy peers can still use normal lock-step.
+  (`discoveryOnly`) handshake requires it; other peers can still use normal lock-step.
   Armed keeps the one robot process alive with announcements/loopback and free-running HAL time;
   Begin starts a new epoch at t = 0, End returns to Armed, and Stop ends the connection.
 * **Input history.** The optional default-no-op `IDeviceBridge::resetInputHistory()` clears bridge
@@ -239,18 +238,16 @@ part in the match. `DiscoveredDevice` gains `observedBus`, `aliasState` (`None |
   all its slots read neutral data and ignore writes, `HubWarning{Error, device_alias_conflict}` is raised; mappings are kept so
   fixing the config re-enables it. `Aliased` (several declared addresses, one mapping) is only a `device_aliased` warning.
 
-### 4.4 Config load pipeline and plugin migration
-Coordinator order (core/app): **core migration** (`IRobotConfigCodec::fromValue`) -> **selected plugin migration**
-(`IGameModule::configMigrators()` section chain, then `IGameModule::migrateRobotConfig(config, persistedPluginVersion)` on the
-whole `RobotConfig`) -> **defaults** -> **validation** (`IConfigValidator`) -> **construction**. `persistedPluginVersion` is the
-section version read from storage, before the chain; the hook runs only when the section exists and is older than
-`contributeConfigSchema().schemaVersion`. **Ownership rule:** a plugin may only touch `config.plugins[its id]` and mechanisms
+### 4.4 Config load pipeline
+Coordinator order (core/app): **decode** (`IRobotConfigCodec::fromValue`, current schema only: a core or plugin-section
+`schemaVersion` other than the supported one is refused, there is no migration) -> **defaults** -> **validation**
+(`IConfigValidator`) -> **construction**. **Ownership rule:** a plugin owns `config.plugins[its id]` and mechanisms
 for which `ownsMechanismType(id, type)` holds (type prefixed `"<id>."`) incl. their mappings/attachment; nothing else (core
 fields, other plugins). `Issue::code` carries stable machine keys (`config/validation_codes.h`).
 
 ### 4.5 Mechanism attachment
-`MechanismConfig::attachment` (`{parentMechanismId = "chassis", parentLink = "root"}`) augments the legacy `parent` string
-(kept source-compatible; the structured form wins, writers keep both in sync via `attachTo()`). Every mechanism (and the chassis)
+`MechanismConfig::attachment` (`{parentMechanismId = "chassis", parentLink = "root"}`) is the only attachment form
+(`attachTo()` sets it). Every mechanism (and the chassis)
 has the stable link **`root`**; templates declare more in `MechanismTemplateInfo::links` (`LinkSpec`, rest pose) and publish
 live poses in `MechanismState::links` (`IMechanism::linkPose`). `IMechanismDirectory::linkPoseInChassis(id, link)` returns the
 resolved transform (`resolveLinkPoseInChassis`). `mount` is relative to the parent **link** frame. Validation contract
@@ -280,7 +277,7 @@ size-prefixed `extern "C"` POD entry descriptor (sdk major/minor, id/year/versio
 
 ### Add a year plugin
 1. `copy plugins/_template plugins/game_<year>`; rename ids, namespaces (`wpiemu::plugins::game_<year>`) and CMake targets (`wpiemu_plugin_game_<year>`). The target links **only** `wpiemu_sdk`.
-2. Implement `IGameModule` in `src/game_module.cpp`: `metadata()` (id `game_<year>`, season year, `minSdkMinor` if it needs 1.1/1.2 features), `registerMechanisms`, `createField(IPhysicsWorld&)`, `createGameState(SimContext&)`, `contributeConfigSchema()` (bump `schemaVersion` + add an `IConfigMigrator` for every incompatible change; whole-config changes go in `migrateRobotConfig`, touching only your own section/mechanisms), optional `contributeEditorPanels/Hud`, `onTick`. End the file with `WPIEMU_REGISTER_GAME_PLUGIN(YourModule)` inside your namespace and declare `registerPlugin` in your `plugin.h`.
+2. Implement `IGameModule` in `src/game_module.cpp`: `metadata()` (id `game_<year>`, season year, `minSdkMinor` if it needs a newer SDK minor), `registerMechanisms`, `createField(IPhysicsWorld&)`, `createGameState(SimContext&)`, `contributeConfigSchema()` (`schemaVersion` stays 1 until release, ADR 0013), optional `contributeEditorPanels/Hud`, `onTick`. End the file with `WPIEMU_REGISTER_GAME_PLUGIN(YourModule)` inside your namespace and declare `registerPlugin` in your `plugin.h`.
 3. Add `add_subdirectory(game_<year>)` and the link line to `plugins/CMakeLists.txt`, and one `registerPlugin(registry)` call in `plugins/builtin_plugins.cpp`. Nothing else changes.
 4. Tests under `tests/plugins/` using `sdk/testing/fake_sim_environment.h`; run `python tools/check_boundaries.py`.
 5. Never include Qt or another plugin; keep per-session state inside `IGameState`/`IField`, never in the module.
@@ -294,7 +291,7 @@ size-prefixed `extern "C"` POD entry descriptor (sdk major/minor, id/year/versio
 ### Add a mechanism template
 1. Implement `IMechanism` (constructor receives `MechanismBuildContext{config, sim}`); declare `MechanismTemplateInfo` (`type`, `slotSpecs`, `PropertySchema`, default primitives, optional attachable `links`; "root" is implicit). Slots are the **only** way to talk to devices (`ctx.devices()`), plants the only way to integrate motion, `ctx.coupling()` the only way to push on the chassis; publish moving links in `state().links`.
 2. Register via `MechanismFactory::registerTemplate` (core: generic set; plugin: in `registerMechanisms` with keys prefixed by the plugin id).
-3. The editor renders the palette, inspector and slot panel from the metadata; no UI change.
+3. The editor renders the inspector and slot panel from the metadata; no UI change.
 4. Unit-test with `FakeSimEnvironment` + `FakeDeviceHub::autoBind`.
 
 ## 7. Directory ownership (how the work was split)

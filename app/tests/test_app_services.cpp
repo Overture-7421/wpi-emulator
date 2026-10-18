@@ -17,7 +17,7 @@ TEST_CASE("services register the built-in content") {
     CHECK(s.drivetrains().contains(sdk::drivetrain_kind::kSwerve));
     CHECK(s.drivetrains().contains(sdk::drivetrain_kind::kTank));
     CHECK(s.drivetrains().contains(sdk::drivetrain_kind::kMecanum));
-    CHECK(s.mechanisms().size() >= 8);
+    CHECK(s.mechanisms().size() >= 1);
     CHECK(!s.demo());
 }
 

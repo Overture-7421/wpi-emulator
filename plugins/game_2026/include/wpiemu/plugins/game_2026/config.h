@@ -12,9 +12,8 @@
 
 namespace wpiemu::plugins::game_2026 {
 
-// Section schema version. v1 was the pre-release draft layout (kept only as the worked migration
-// example, see migration.h); v2 is the first documented layout.
-inline constexpr int kConfigSchemaVersion = 2;
+// Section schema version (the SDK stays at version 1 until release, ADR 0013: no migration).
+inline constexpr int kConfigSchemaVersion = 1;
 
 enum class FirstInactiveMode { FromAutoResult, Red, Blue };
 enum class HumanPlayerMode { Off, Timed };

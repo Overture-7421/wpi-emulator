@@ -23,7 +23,12 @@ struct PropertyGroup {
     sdk::PropertySchema schema;
     sdk::Value values;              // object keyed by PropertySpec::key, defaults applied
     bool collapsed = false;         // start collapsed
+    sdk::PropertySection section = sdk::PropertySection::Configure;   // which inspector card shows it
+    std::string axis;               // Drive groups: the motion axis ("axis", "deploy", "roller", "" = wheel drive)
 };
+
+// Ids of the groups the inspector places in the Drive card: "mech.drive:<axis>" (mechanisms) and "wheel.drive".
+inline bool isDriveGroup(const std::string& id) { return id.rfind("mech.drive:", 0) == 0 || id == "wheel.drive"; }
 
 // The selection the inspector actually edits: a slot edits its owner, an overlay its owner/plugin.
 SelectionRef formTargetOf(const sdk::RobotConfig& c, const SelectionRef& sel);
@@ -33,6 +38,10 @@ std::vector<PropertyGroup> propertyGroupsFor(const sdk::RobotConfig& c, const Ed
 // Applies one edit made in group `groupId`. Returns false when nothing could be applied.
 bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const SelectionRef& sel, const std::string& groupId,
                    const std::string& key, const sdk::Value& value);
+
+// What kind of mechanism this is: the label of its `motion` choice (Rotary / Arm / Linear) for a template that has one,
+// otherwise the template's display name.
+QString mechanismKindLabel(const sdk::MechanismConfig& m, const sdk::MechanismTemplateInfo& info);
 
 // Short human description of the selection ("Intake (roller)", "Wheel fl", ...).
 QString describeSelection(const sdk::RobotConfig& c, const EditorCatalog& catalog, const SelectionRef& sel);

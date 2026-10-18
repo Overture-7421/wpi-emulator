@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "editor_backend.h"
+#include "model/config_ops.h"
 #include "model/device_directory.h"
 #include "model/selection.h"
 #include "wpiemu/sdk/config/robot_config.h"
@@ -32,14 +33,19 @@ struct SlotInfo {
     sdk::SlotAddress address;
     sdk::SlotSpec spec;
     std::optional<sdk::DeviceKey> mapped;
+    bool reversed = false;        // mapped motor spins against the mechanism's positive direction
     SlotState state = SlotState::OptionalEmpty;
     QString detail;               // human text for tooltips
 };
 
+// Device label of the mapped slot, with a "(reversed)" suffix for reversed motors.
+QString mappedLabel(const SlotInfo& info);
+
 const char* slotTypeName(sdk::SlotType type);
 QString slotTypeLabel(sdk::SlotType type);
 
-// Slots of one owner (mechanism id, "drivetrain", "robot"), in spec order, with their state.
+// Slots of one owner (mechanism id, "drivetrain", "robot"), in spec order, with their state. The motor slot
+// of an axis that follows a motion link is left out: followers take no motor of their own.
 std::vector<SlotInfo> slotInfos(const sdk::RobotConfig& c, const EditorCatalog& catalog, const DeviceDirectory& devices,
                                 std::string_view owner);
 
@@ -47,6 +53,15 @@ std::vector<SlotInfo> slotInfos(const sdk::RobotConfig& c, const EditorCatalog& 
 // `slotPrefix` restricts the search (drivetrain wheels: "fl.").
 std::optional<sdk::SlotAddress> bestSlotFor(const sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view owner,
                                             sdk::CapabilitySet caps, std::string_view slotPrefix = {});
+
+// Where a motor controller dropped on a part goes when no motor row is free: the motor group (mechanism axis,
+// or one wheel when `slotPrefix` is "<wheel>.") that can take one more motor. Nullopt when the part has none
+// (full, driven by a motion link) or the device is not a motor controller.
+std::optional<ops::MotorGroup> growableMotorGroup(const sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view owner,
+                                                  sdk::CapabilitySet caps, std::string_view slotPrefix = {});
+// bestSlotFor() plus growth: what dropping `caps` on the part can do (an existing free slot, or a new motor).
+bool canAcceptDevice(const sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view owner, sdk::CapabilitySet caps,
+                     std::string_view slotPrefix = {});
 
 struct DeviceStatus {
     std::vector<sdk::SlotAddress> usedBy;          // slots the physical device is mapped to

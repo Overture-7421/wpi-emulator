@@ -6,6 +6,7 @@
 // checklist for the robot.
 
 #include <QLabel>
+#include <QLineEdit>
 #include <QScrollArea>
 #include <QWidget>
 
@@ -15,7 +16,8 @@
 #include "viewmodel/editor_controller.h"
 #include "views/icon_factory.h"
 #include "views/property_form.h"
-#include "views/slot_row.h"
+#include "views/device_row.h"
+#include "views/section_card.h"
 
 namespace wpiemu::app::editor {
 
@@ -26,8 +28,11 @@ public:
 
     // ---- introspection for tests ----
     PropertyFormWidget* form(const QString& groupId) const;
-    std::vector<SlotRowWidget*> slotRows() const { return slotRows_; }
-    QString titleText() const { return title_ != nullptr ? title_->text() : QString(); }
+    std::vector<DeviceRowWidget*> slotRows() const { return slotRows_; }
+    QString titleText() const {
+        return nameEdit_ != nullptr ? nameEdit_->text() : title_ != nullptr ? title_->text() : QString();
+    }
+    QLineEdit* nameEdit() const { return nameEdit_; }
     int rebuildCount() const { return rebuilds_; }
 
 private:
@@ -37,12 +42,14 @@ private:
     void clearContent();
     void focusField(const QString& key);
 
-    QWidget* addSection(const QString& title, QWidget* body, bool collapsed = false);
+    QWidget* addSection(const QString& title, QWidget* body, bool collapsed = false, SectionRole role = SectionRole::Info);
+    PropertyFormWidget* makeForm(const PropertyGroup& group, QWidget* parent);
+    DeviceRowWidget* makeRow(const SlotInfo& info, QWidget* parent);
+    void commitName(const SelectionRef& target, const QString& text);
+    QString editableName(const SelectionRef& target) const;
+    void addPartCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
     void addHeader(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
-    void addChecklist();
-    void addSlots(const SelectionRef& target);
     void addShapes(const std::string& owner);
-    void addWheelList();
     void addChildren(const std::string& mechanismId);
     void addDeviceCard(const SelectionRef& sel);
     QWidget* linkButton(const QString& text, const std::function<void()>& action);
@@ -54,8 +61,10 @@ private:
     QWidget* content_ = nullptr;
     QVBoxLayout* layout_ = nullptr;
     QLabel* title_ = nullptr;
+    QLineEdit* nameEdit_ = nullptr;
+    QMap<QString, QPair<int, QString>> issues_;
     std::vector<PropertyFormWidget*> forms_;
-    std::vector<SlotRowWidget*> slotRows_;
+    std::vector<DeviceRowWidget*> slotRows_;
     QString signature_;
     SelectionRef shown_;
     int rebuilds_ = 0;

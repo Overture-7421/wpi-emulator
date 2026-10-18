@@ -30,7 +30,7 @@ public:
     virtual void publish(SnapshotBuilder& out) const = 0;
     // FMS "game data" the real field sends to the robot (DriverStation.getGameSpecificMessage()), if the game has
     // produced one yet; nullopt = nothing to send. The runtime forwards it in DsState::gameSpecificMessage and
-    // re-reads it after every tick and Reset. Additive (SDK 1.2): defaults to "none".
+    // re-reads it after every tick and Reset. Additive: defaults to "none".
     virtual std::optional<std::string> gameSpecificMessage() const { return std::nullopt; }
 };
 

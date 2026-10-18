@@ -291,7 +291,7 @@ void read(Reader& outer, JoystickState& j) {
     j.buttonCount = r.u8();
 }
 
-// ---- messages: v1 fields first, v2 fields in an optional tail ---------------------------------------------
+// ---- messages: base fields first, later fields in an optional tail ---------------------------------------------
 
 void write(Writer& w, const Hello& m) {
     w.u32(m.protocolVersion);

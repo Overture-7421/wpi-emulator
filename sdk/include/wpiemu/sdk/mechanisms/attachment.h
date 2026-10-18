@@ -1,6 +1,6 @@
 #pragma once
 
-// Mechanism attachment contract (SDK 1.1, ADR 0006).
+// Mechanism attachment contract (ADR 0006).
 //
 // A mechanism's mount frame hangs on a named LINK of its parent: another mechanism or the chassis.
 //   pose_in_chassis(m.root) = pose_in_chassis(parent.link) * m.mount
@@ -46,7 +46,7 @@ inline std::optional<Pose3> resolveLinkPoseInChassis(const RobotConfig& config, 
         for (const MechanismConfig* seen : chain)
             if (seen == cur) return std::nullopt;  // cycle
         chain.push_back(cur);
-        const MechanismAttachment att = cur->resolvedAttachment();
+        const MechanismAttachment att = cur->attachment;
         if (att.onChassis()) {
             if (att.parentLink != kRootLink) return std::nullopt;
             break;
@@ -60,7 +60,7 @@ inline std::optional<Pose3> resolveLinkPoseInChassis(const RobotConfig& config, 
     for (std::size_t i = chain.size() - 1; i-- > 0;) {
         const MechanismConfig& parent = *chain[i + 1];
         const MechanismConfig& child = *chain[i];
-        const std::optional<Pose3> parentLink = linkPoseOf(parent.id, child.resolvedAttachment().parentLink);
+        const std::optional<Pose3> parentLink = linkPoseOf(parent.id, child.attachment.parentLink);
         if (!parentLink) return std::nullopt;
         rootInChassis = rootInChassis * *parentLink * child.mount;
     }
@@ -78,7 +78,7 @@ inline std::vector<Issue> validateMechanismAttachments(const RobotConfig& config
             out.push_back({Severity::Error, base + ".id", "'chassis' is reserved and cannot be a mechanism id",
                            validation_code::kMechanismIdReserved});
 
-        const MechanismAttachment att = m.resolvedAttachment();
+        const MechanismAttachment att = m.attachment;
         const std::string path = base + ".attachment";
         if (att.parentLink.empty()) {
             out.push_back({Severity::Error, path, "parent link must not be empty (use 'root')",
@@ -111,7 +111,7 @@ inline std::vector<Issue> validateMechanismAttachments(const RobotConfig& config
                                validation_code::kAttachmentCycle});
                 break;
             }
-            const MechanismAttachment next = walk->resolvedAttachment();
+            const MechanismAttachment next = walk->attachment;
             walk = next.onChassis() ? nullptr : config.findMechanism(next.parentMechanismId);
         }
     }

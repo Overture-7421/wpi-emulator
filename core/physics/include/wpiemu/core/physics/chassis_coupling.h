@@ -1,6 +1,6 @@
 #pragma once
 
-// Headless IMechanismPhysicsCoupling over a physics world (SDK 1.1, ADR 0006 / 0008).
+// Headless IMechanismPhysicsCoupling over a physics world (ADR 0006 / 0008).
 //
 //   applyWrench    supported: converted to a world force at the point plus a world torque (this step only)
 //   payload        supported: composeMassProperties(chassis, payloads) pushed to the body immediately

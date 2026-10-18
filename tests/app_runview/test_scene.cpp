@@ -46,6 +46,7 @@ TEST_CASE("primitive to link assignment uses the longest matching link name") {
     CHECK(linkForPrimitive("armor", links) == "root");   // not a separator boundary
     CHECK(linkForPrimitive("base", links) == "root");
     CHECK(linkForPrimitive("carriage_plate", links) == "carriage");
+    CHECK(linkForPrimitive("mover", {"mover"}) == "mover");   // the core mechanism's default shape
 }
 
 TEST_CASE("robot rig builds chassis, wheel and mechanism parts") {
@@ -172,7 +173,7 @@ TEST_CASE("zone overlays resolve through plugin sections and mechanism propertie
     sdk::EditorPanelDescriptor mech;
     mech.id = "demo_game.mech";
     mech.scope = sdk::PanelScope::Mechanism;
-    mech.mechanismTypes = {"roller"};
+    mech.mechanismTypes = {"mechanism"};
     mech.overlays.push_back({"zone", "Roller zone", "#ff0000", true});
     const auto mz = resolveZoneOverlays(*custom, {mech}, nullptr);
     REQUIRE(mz.size() == 1);
@@ -307,7 +308,7 @@ TEST_CASE("mechanism overlay model shows labels and human units") {
     sdk::SimSnapshotData d = baseSnapshot();
     sdk::MechanismState intake;
     intake.id = "intake";
-    intake.type = "roller";
+    intake.type = "mechanism";
     intake.active = true;
     intake.values = {{"angle", 3.14159265358979, "rad"}, {"speed", 62.8318530718, "rad/s"}, {"height", 0.5, "m"}};
     d.mechanisms.push_back(intake);

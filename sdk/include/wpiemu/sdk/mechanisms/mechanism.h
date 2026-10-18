@@ -19,7 +19,7 @@ namespace wpiemu::sdk {
 
 class SimContext;
 
-// A named attachment frame a mechanism exposes to children (SDK 1.1), e.g. an elevator's "carriage" or an
+// A named attachment frame a mechanism exposes to children, e.g. an elevator's "carriage" or an
 // arm's "tip". EVERY mechanism has the implicit, stable link kRootLink ("root") = its own origin
 // (identity pose); it is never listed here and must not be redeclared. Other links are optional.
 struct LinkSpec {
@@ -40,7 +40,7 @@ struct MechanismTemplateInfo {
     std::vector<SlotSpec> slotSpecs;
     PropertySchema properties;
     std::vector<PrimitiveSpec> defaultGeometry;
-    std::vector<LinkSpec> links;   // SDK 1.1: attachable links besides the implicit "root"
+    std::vector<LinkSpec> links;   // attachable links besides the implicit "root"
     std::vector<MotionAxisSpec> motionAxes;
 };
 
@@ -87,7 +87,7 @@ struct MechanismBuildContext {
 //   1. read commands from the mapped slots (ctx.devices().motorOutput({id, "motor"}) ...),
 //   2. advance its IPlant(s) by dt (mechanism-local physics only: NO rigid-body forces except
 //      via ctx.physics() when the template documents it, e.g. a shooter spawning a ball, or via
-//      ctx.coupling() (SDK 1.1: chassis wrenches, anchored constraints, payload mass): submit before
+//      ctx.coupling() (chassis wrenches, anchored constraints, payload mass): submit before
 //      the physics step, read the PREVIOUS step's constraint loads),
 //   3. write sensor feedback to the slots (encoders, limit switches, beam breaks),
 //   4. update internal state() for display.
@@ -105,7 +105,7 @@ public:
     virtual std::vector<MotionAxisBinding> motionAxes() { return {}; }
     // Called instead of tick after the runtime advanced the advertised axes exactly once.
     virtual void finishMotionTick(SimContext& ctx, double dtSeconds) { tick(ctx, dtSeconds); }
-    // SDK 1.1. Pose of `link` relative to this mechanism's ROOT frame (the mount), as of the last tick.
+    // Pose of `link` relative to this mechanism's ROOT frame (the mount), as of the last tick.
     // "root" is always the identity. Default: looks `link` up in state().links; mechanisms SHOULD publish
     // every link their template declares there (moving links update each tick). nullopt = unknown link.
     virtual std::optional<Pose3> linkPose(std::string_view link) const {
@@ -122,7 +122,7 @@ class IMechanismDirectory {
 public:
     virtual IMechanism* find(std::string_view id) = 0;
     virtual std::vector<IMechanism*> all() = 0;
-    // SDK 1.1. Read-only RESOLVED transform: pose of `link` of mechanism `mechanismId` in the CHASSIS frame,
+    // Read-only RESOLVED transform: pose of `link` of mechanism `mechanismId` in the CHASSIS frame,
     // composed through the whole attachment chain (mount of each mechanism * the parent link's current
     // pose, see mechanisms/attachment.h resolveLinkPoseInChassis). Reflects the mechanisms' poses as of
     // the moment of the call: mechanisms ticked earlier in the same pass show this tick, later ones the

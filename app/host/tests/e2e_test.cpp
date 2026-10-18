@@ -118,7 +118,7 @@ sdk::RobotConfig mappedConfig(const fs::path& project) {
 
     sdk::MechanismConfig roller;
     roller.id = "intake_roller";
-    roller.type = "roller";
+    roller.type = "mechanism";
     roller.label = "Intake roller";
     roller.mount.position = {0.45f, 0.f, 0.15f};
     roller.mappings.push_back({{roller.id, "motor"}, phoenixKey("talonfx", kIntakeRollerId)});
@@ -128,7 +128,8 @@ sdk::RobotConfig mappedConfig(const fs::path& project) {
     // the emulator (Phoenix firmware sim -> rotor feedback from the pivot plant -> CANcoder position).
     sdk::MechanismConfig pivot;
     pivot.id = "intake_pivot";
-    pivot.type = "pivot";
+    pivot.type = "mechanism";
+    pivot.properties["motion"] = "arm";
     pivot.label = "Intake pivot";
     pivot.mount.position = {0.35f, 0.f, 0.20f};
     pivot.properties["gearRatio"] = 40.0;
@@ -438,7 +439,7 @@ TEST_CASE("e2e: saved tank robot keeps its two mappings and drives six linked wh
     REQUIRE_MESSAGE(original.ok(), (original.ok() ? "" : original.error().message));
     REQUIRE(original.value().drivetrain.spec.kind == sdk::drivetrain_kind::kTank);
     const auto mappings = original.value().drivetrain.mappings;
-    auto loaded = registries.pipeline.process(original.value(), store.lastDecode());
+    auto loaded = registries.pipeline.process(original.value());
     REQUIRE(loaded.ok());
     for (const auto& issue : loaded.value().issues) INFO(issue.code << ": " << issue.message);
     REQUIRE(loaded.value().valid());
@@ -451,9 +452,9 @@ TEST_CASE("e2e: saved tank robot keeps its two mappings and drives six linked wh
     REQUIRE(store.save(config).ok());
     auto persisted = store.load();
     REQUIRE(persisted.ok());
-    auto again = registries.pipeline.process(persisted.value(), store.lastDecode());
+    auto again = registries.pipeline.process(persisted.value());
     REQUIRE(again.ok());
-    CHECK_FALSE(again.value().migrated());
+    CHECK(again.value().config.motionLinks.size() == 4);
 
     app::host::Options options;
     options.projectDir = project;

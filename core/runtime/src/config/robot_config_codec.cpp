@@ -2,7 +2,6 @@
 
 #include <cmath>
 #include <limits>
-#include <set>
 #include <string>
 #include <string_view>
 
@@ -43,7 +42,7 @@ bool readInteger(const Value& value, T& out) {
     return true;
 }
 
-// Typed access to one JSON object; remembers which keys were consumed so the rest can be preserved.
+// Typed access to one JSON object. Keys nobody asks for are ignored.
 class ObjReader {
 public:
     ObjReader(const Value& v, std::string path, Ctx& ctx) : path_(std::move(path)), ctx_(ctx) {
@@ -53,8 +52,7 @@ public:
     bool valid() const { return obj_ != nullptr; }
     const std::string& path() const { return path_; }
 
-    const Value* get(std::string_view key) {
-        known_.emplace(key);
+    const Value* get(std::string_view key) const {
         return obj_ != nullptr ? obj_->find(key) : nullptr;
     }
 
@@ -142,17 +140,6 @@ public:
         return true;
     }
 
-    // Keys nobody asked for, as an object (empty when none).
-    Value unknown() const {
-        Value out = Value::makeObject();
-        if (obj_ == nullptr) return out;
-        for (std::size_t i = 0; i < obj_->object().size(); ++i) {
-            const std::string& k = obj_->object().keyAt(i);
-            if (known_.find(k) == known_.end()) out.object().set(k, obj_->object().valueAt(i));
-        }
-        return out;
-    }
-
 private:
     bool typeErr(std::string_view key, const char* expected) {
         ctx_.err(join(path_, key), std::string("expected ") + expected);
@@ -162,13 +149,7 @@ private:
     const Value* obj_ = nullptr;
     std::string path_;
     Ctx& ctx_;
-    std::set<std::string, std::less<>> known_;
 };
-
-void keepUnknown(RobotConfig& cfg, const std::string& ownerPath, const ObjReader& r) {
-    Value u = r.unknown();
-    if (!u.object().empty()) cfg.unknownFields.object().set(ownerPath, std::move(u));
-}
 
 bool wheelKindFrom(const std::string& s, WheelKind& out) {
     if (s == "standard") out = WheelKind::Standard;
@@ -265,6 +246,7 @@ std::vector<SlotMapping> readMappings(const Value* v, const std::string& path, C
         SlotMapping m;
         r.str("owner", m.slot.owner);
         r.str("slot", m.slot.slot);
+        r.boolean("reversed", m.reversed);
         if (const Value* d = r.get("device")) {
             ObjReader dr(*d, join(p, "device"), ctx);
             dr.str("family", m.device.family);
@@ -281,7 +263,7 @@ std::vector<SlotMapping> readMappings(const Value* v, const std::string& path, C
     return out;
 }
 
-void readWheel(const Value& v, const std::string& path, Ctx& ctx, RobotConfig& cfg, WheelSpec& w) {
+void readWheel(const Value& v, const std::string& path, Ctx& ctx, WheelSpec& w) {
     ObjReader r(v, path, ctx);
     r.str("name", w.name);
     std::string kind;
@@ -301,7 +283,6 @@ void readWheel(const Value& v, const std::string& path, Ctx& ctx, RobotConfig& c
     readMotor(r.get("steerMotor"), join(path, "steerMotor"), ctx, w.steerMotor);
     r.flt("steerGearRatio", w.steerGearRatio);
     r.flt("steerInertiaKgM2", w.steerInertiaKgM2);
-    keepUnknown(cfg, "drivetrain/wheels/" + w.name, r);
 }
 
 void readChassis(const Value& v, Ctx& ctx, RobotConfig& cfg) {
@@ -315,7 +296,6 @@ void readChassis(const Value& v, Ctx& ctx, RobotConfig& cfg) {
     r.vec3("inertiaDiagKgM2", c.inertiaDiagKgM2);
     readMaterial(r.get("material"), "chassis.material", ctx, c.material);
     c.primitives = readPrimitives(r.get("primitives"), "chassis.primitives", ctx);
-    keepUnknown(cfg, "chassis", r);
 }
 
 void readDrivetrain(const Value& v, Ctx& ctx, RobotConfig& cfg) {
@@ -330,13 +310,12 @@ void readDrivetrain(const Value& v, Ctx& ctx, RobotConfig& cfg) {
         } else {
             for (std::size_t i = 0; i < wheels->array().size(); ++i) {
                 WheelSpec w;
-                readWheel(wheels->array()[i], "drivetrain.wheels[" + std::to_string(i) + "]", ctx, cfg, w);
+                readWheel(wheels->array()[i], "drivetrain.wheels[" + std::to_string(i) + "]", ctx, w);
                 d.spec.wheels.push_back(std::move(w));
             }
         }
     }
     d.mappings = readMappings(r.get("mappings"), "drivetrain.mappings", ctx);
-    keepUnknown(cfg, "drivetrain", r);
 }
 
 void readMechanism(const Value& v, const std::string& path, Ctx& ctx, RobotConfig& cfg) {
@@ -345,14 +324,10 @@ void readMechanism(const Value& v, const std::string& path, Ctx& ctx, RobotConfi
     r.str("id", m.id);
     r.str("type", m.type);
     r.str("label", m.label);
-    r.str("parent", m.parent);
     if (const Value* a = r.get("attachment")) {
         ObjReader ar(*a, join(path, "attachment"), ctx);
-        MechanismAttachment att;
-        ar.str("parentMechanismId", att.parentMechanismId);
-        ar.str("parentLink", att.parentLink);
-        m.attachment = att;
-        m.parent = att.parentMechanismId.empty() ? std::string(kChassisParent) : att.parentMechanismId;
+        ar.str("parentMechanismId", m.attachment.parentMechanismId);
+        ar.str("parentLink", m.attachment.parentLink);
     }
     r.pose("mount", m.mount);
     m.geometry = readPrimitives(r.get("geometry"), join(path, "geometry"), ctx);
@@ -361,7 +336,6 @@ void readMechanism(const Value& v, const std::string& path, Ctx& ctx, RobotConfi
         else ctx.err(join(path, "properties"), "expected an object");
     }
     m.mappings = readMappings(r.get("mappings"), join(path, "mappings"), ctx);
-    keepUnknown(cfg, "mechanisms/" + m.id, r);
     cfg.mechanisms.push_back(std::move(m));
 }
 
@@ -389,14 +363,6 @@ Value poseValue(const Pose3& p) {
     o["position"] = vec3Value(p.position);
     o["rotation"] = quatValue(p.rotation);
     return o;
-}
-
-void mergeUnknown(Value& target, const RobotConfig& cfg, const std::string& ownerPath) {
-    const Value* extra = cfg.unknownFields.find(ownerPath);
-    if (extra == nullptr || !extra->isObject()) return;
-    for (std::size_t i = 0; i < extra->object().size(); ++i)
-        if (!target.object().contains(extra->object().keyAt(i)))
-            target.object().set(extra->object().keyAt(i), extra->object().valueAt(i));
 }
 
 Value materialValue(const Material& m) {
@@ -457,6 +423,7 @@ Value mappingsValue(const std::vector<SlotMapping>& ms) {
         Value o = Value::makeObject();
         o["owner"] = m.slot.owner;
         o["slot"] = m.slot.slot;
+        if (m.reversed) o["reversed"] = true;
         Value d = Value::makeObject();
         d["family"] = m.device.family;
         d["type"] = m.device.type;
@@ -469,7 +436,7 @@ Value mappingsValue(const std::vector<SlotMapping>& ms) {
     return a;
 }
 
-Value wheelValue(const WheelSpec& w, const RobotConfig& cfg) {
+Value wheelValue(const WheelSpec& w) {
     Value o = Value::makeObject();
     o["name"] = w.name;
     o["kind"] = wheelKindName(w.kind);
@@ -487,69 +454,44 @@ Value wheelValue(const WheelSpec& w, const RobotConfig& cfg) {
     o["steerMotor"] = motorValue(w.steerMotor);
     o["steerGearRatio"] = fv(w.steerGearRatio);
     o["steerInertiaKgM2"] = fv(w.steerInertiaKgM2);
-    mergeUnknown(o, cfg, "drivetrain/wheels/" + w.name);
     return o;
 }
 
-Value mechanismValue(const MechanismConfig& m, const RobotConfig& cfg) {
+Value mechanismValue(const MechanismConfig& m) {
     Value o = Value::makeObject();
     o["id"] = m.id;
     o["type"] = m.type;
     o["label"] = m.label;
-    const MechanismAttachment att = m.resolvedAttachment();
-    const std::string parentId = att.onChassis() ? std::string(kChassisParent) : att.parentMechanismId;
-    o["parent"] = parentId;
     Value a = Value::makeObject();
-    a["parentMechanismId"] = parentId;
-    a["parentLink"] = att.parentLink;
+    a["parentMechanismId"] = m.attachment.onChassis() ? std::string(kChassisParent) : m.attachment.parentMechanismId;
+    a["parentLink"] = m.attachment.parentLink;
     o["attachment"] = std::move(a);
     o["mount"] = poseValue(m.mount);
     o["geometry"] = primitivesValue(m.geometry);
     o["properties"] = m.properties.isObject() ? m.properties : Value::makeObject();
     o["mappings"] = mappingsValue(m.mappings);
-    mergeUnknown(o, cfg, "mechanisms/" + m.id);
     return o;
 }
 
 }  // namespace
 
-RobotConfigCodec::RobotConfigCodec(std::vector<std::unique_ptr<IConfigMigrator>> coreMigrators)
-    : migrators_(std::move(coreMigrators)) {}
-
-int RobotConfigCodec::storedVersion(const Value& value) {
-    if (!value.isObject()) return 0;
-    const Value* v = value.find("schemaVersion");
-    if (v == nullptr) return 1;
-    int version = 0;
-    return readInteger(*v, version) ? version : 0;
-}
-
-Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value) const { return fromValue(value, nullptr); }
-
-Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value, DecodeInfo* info) const {
+Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value) const {
     if (!value.isObject()) return makeError(ErrorCode::ParseError, "robot config must be a JSON object");
     if (const Value* sv = value.find("schemaVersion"); sv != nullptr) {
         int version = 0;
         if (!readInteger(*sv, version))
             return makeError(ErrorCode::ParseError,
                              "schemaVersion: expected an integer in the int range");
+        if (version != kRobotConfigSchemaVersion)
+            return makeError(ErrorCode::VersionMismatch,
+                             "robot config schemaVersion " + std::to_string(version) + " is not supported (expected " +
+                                 std::to_string(kRobotConfigSchemaVersion) + ")");
     }
 
-    Value work = value;
-    int version = storedVersion(work);
-    const int persisted = version;
-    const bool needsMigration = version != kRobotConfigSchemaVersion;
-    if (Status s = migrateToVersion(work, version, kRobotConfigSchemaVersion, migrators_); !s) return s.error();
-    if (info != nullptr) {
-        info->persistedVersion = persisted;
-        info->migrated = needsMigration;
-    }
-
-    Ctx ctx;
+    const Value& work = value;    Ctx ctx;
     RobotConfig cfg;
     cfg.schemaVersion = kRobotConfigSchemaVersion;
     ObjReader root(work, "", ctx);
-    root.get("schemaVersion");
     root.str("name", cfg.name);
     root.str("gamePluginId", cfg.gamePluginId);
 
@@ -559,7 +501,6 @@ Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value, DecodeInfo* 
         r.str("language", cfg.project.language);
         r.i32("wpilibYear", cfg.project.wpilibYear);
         r.str("gradleRioVersion", cfg.project.gradleRioVersion);
-        keepUnknown(cfg, "project", r);
     }
     if (const Value* c = root.get("chassis")) readChassis(*c, ctx, cfg);
     if (const Value* d = root.get("drivetrain")) readDrivetrain(*d, ctx, cfg);
@@ -572,7 +513,6 @@ Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value, DecodeInfo* 
         }
     }
     cfg.robotMappings = readMappings(root.get("robotMappings"), "robotMappings", ctx);
-    root.boolean("motionLinksConfigured", cfg.motionLinksConfigured);
     if (const Value* links = root.get("motionLinks")) {
         if (!links->isArray()) {
             ctx.err("motionLinks", "expected an array");
@@ -592,11 +532,9 @@ Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value, DecodeInfo* 
                     ObjReader e(*v, path + "." + key, ctx);
                     e.str("owner", address.owner);
                     e.str("axis", address.slot);
-                    keepUnknown(cfg, "motionLinks/" + link.id + "/" + key, e);
                 };
                 endpoint("source", link.source);
                 endpoint("target", link.target);
-                keepUnknown(cfg, "motionLinks/" + link.id, r);
                 cfg.motionLinks.push_back(std::move(link));
             }
         }
@@ -606,7 +544,6 @@ Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value, DecodeInfo* 
         r.dbl("nominalVoltageV", cfg.battery.nominalVoltageV);
         r.dbl("internalResistanceOhm", cfg.battery.internalResistanceOhm);
         r.dbl("brownoutVoltageV", cfg.battery.brownoutVoltageV);
-        keepUnknown(cfg, "battery", r);
     }
     if (const Value* s = root.get("sim")) {
         ObjReader r(*s, "sim", ctx);
@@ -619,7 +556,6 @@ Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value, DecodeInfo* 
             pr.boolean("sleeping", cfg.sim.physics.sleeping);
             pr.vec3("gravity", cfg.sim.physics.gravity);
         }
-        keepUnknown(cfg, "sim", r);
     }
     if (const Value* ps = root.get("plugins")) {
         if (!ps->isObject()) {
@@ -634,12 +570,10 @@ Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value, DecodeInfo* 
                     if (data->isObject()) section.data = *data;
                     else ctx.err("plugins." + id + ".data", "expected an object");
                 }
-                keepUnknown(cfg, "plugins/" + id, r);
                 cfg.plugins[id] = std::move(section);
             }
         }
     }
-    keepUnknown(cfg, "", root);
 
     if (!ctx.errors.empty()) {
         std::string msg = "invalid robot config: " + ctx.errors.front();
@@ -660,7 +594,6 @@ Value RobotConfigCodec::toValue(const RobotConfig& cfg) const {
     project["language"] = cfg.project.language;
     project["wpilibYear"] = cfg.project.wpilibYear;
     project["gradleRioVersion"] = cfg.project.gradleRioVersion;
-    mergeUnknown(project, cfg, "project");
     root["project"] = std::move(project);
     root["gamePluginId"] = cfg.gamePluginId;
 
@@ -673,7 +606,6 @@ Value RobotConfigCodec::toValue(const RobotConfig& cfg) const {
     chassis["inertiaDiagKgM2"] = vec3Value(cfg.chassis.inertiaDiagKgM2);
     chassis["material"] = materialValue(cfg.chassis.material);
     chassis["primitives"] = primitivesValue(cfg.chassis.primitives);
-    mergeUnknown(chassis, cfg, "chassis");
     root["chassis"] = std::move(chassis);
 
     Value dt = Value::makeObject();
@@ -681,32 +613,28 @@ Value RobotConfigCodec::toValue(const RobotConfig& cfg) const {
     dt["tireModel"] = cfg.drivetrain.spec.tireModel;
     dt["loadTransferTauS"] = fv(cfg.drivetrain.spec.loadTransferTauS);
     Value wheels = Value::makeArray();
-    for (const WheelSpec& w : cfg.drivetrain.spec.wheels) wheels.push_back(wheelValue(w, cfg));
+    for (const WheelSpec& w : cfg.drivetrain.spec.wheels) wheels.push_back(wheelValue(w));
     dt["wheels"] = std::move(wheels);
     dt["mappings"] = mappingsValue(cfg.drivetrain.mappings);
-    mergeUnknown(dt, cfg, "drivetrain");
     root["drivetrain"] = std::move(dt);
 
     Value mechs = Value::makeArray();
-    for (const MechanismConfig& m : cfg.mechanisms) mechs.push_back(mechanismValue(m, cfg));
+    for (const MechanismConfig& m : cfg.mechanisms) mechs.push_back(mechanismValue(m));
     root["mechanisms"] = std::move(mechs);
     root["robotMappings"] = mappingsValue(cfg.robotMappings);
-    root["motionLinksConfigured"] = cfg.motionLinksConfigured;
     Value links = Value::makeArray();
     for (const auto& link : cfg.motionLinks) {
         Value item = Value::makeObject();
         item["id"] = link.id;
         item["ratio"] = link.ratio;
-        const auto endpoint = [&](const SlotAddress& address, const char* key) {
+        const auto endpoint = [&](const SlotAddress& address) {
             Value v = Value::makeObject();
             v["owner"] = address.owner;
             v["axis"] = address.slot;
-            mergeUnknown(v, cfg, "motionLinks/" + link.id + "/" + key);
             return v;
         };
-        item["source"] = endpoint(link.source, "source");
-        item["target"] = endpoint(link.target, "target");
-        mergeUnknown(item, cfg, "motionLinks/" + link.id);
+        item["source"] = endpoint(link.source);
+        item["target"] = endpoint(link.target);
         links.push_back(std::move(item));
     }
     root["motionLinks"] = std::move(links);
@@ -715,7 +643,6 @@ Value RobotConfigCodec::toValue(const RobotConfig& cfg) const {
     battery["nominalVoltageV"] = cfg.battery.nominalVoltageV;
     battery["internalResistanceOhm"] = cfg.battery.internalResistanceOhm;
     battery["brownoutVoltageV"] = cfg.battery.brownoutVoltageV;
-    mergeUnknown(battery, cfg, "battery");
     root["battery"] = std::move(battery);
 
     Value sim = Value::makeObject();
@@ -727,7 +654,6 @@ Value RobotConfigCodec::toValue(const RobotConfig& cfg) const {
     physics["sleeping"] = cfg.sim.physics.sleeping;
     physics["gravity"] = vec3Value(cfg.sim.physics.gravity);
     sim["physics"] = std::move(physics);
-    mergeUnknown(sim, cfg, "sim");
     root["sim"] = std::move(sim);
 
     Value plugins = Value::makeObject();
@@ -735,12 +661,10 @@ Value RobotConfigCodec::toValue(const RobotConfig& cfg) const {
         Value s = Value::makeObject();
         s["schemaVersion"] = section.schemaVersion;
         s["data"] = section.data.isObject() ? section.data : Value::makeObject();
-        mergeUnknown(s, cfg, "plugins/" + id);
         plugins.object().set(id, std::move(s));
     }
     root["plugins"] = std::move(plugins);
 
-    mergeUnknown(root, cfg, "");
     return root;
 }
 

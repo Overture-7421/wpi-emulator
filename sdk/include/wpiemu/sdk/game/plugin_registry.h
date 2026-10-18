@@ -19,7 +19,7 @@ namespace wpiemu::sdk {
 // A future dynamic loader (shared-library plugins) would resolve the same entry point
 // `Status registerPlugin(GamePluginRegistry&)` from the library and call it identically.
 //
-// ABI CAVEAT (SDK 1.1, ADR 0006): v1 supports STATIC BUILT-IN plugins only (one binary, one compiler,
+// ABI CAVEAT (ADR 0006): v1 supports STATIC BUILT-IN plugins only (one binary, one compiler,
 // one CRT). The SDK is C++ with virtual interfaces, std::string/std::vector/std::variant/std::function
 // in signatures and header-only helpers; none of that is a stable ABI across separately built shared
 // libraries. Shared-library plugins would therefore need a dedicated entry descriptor: an

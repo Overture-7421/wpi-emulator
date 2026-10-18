@@ -22,7 +22,7 @@ TEST_CASE("module metadata identifies REBUILT and registers through the aggregat
     CHECK(m.year == 2026);
     CHECK(m.displayName.find("REBUILT") != std::string::npos);
     CHECK(m.minSdkMajor == 1);
-    CHECK(m.minSdkMinor == 1);
+    CHECK(m.minSdkMinor == 0);
     CHECK(module->contributeConfigSchema().schemaVersion == kConfigSchemaVersion);
 }
 

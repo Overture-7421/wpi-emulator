@@ -1,18 +1,21 @@
 #pragma once
 
-// The project tree: robot > chassis (COM, shapes), drivetrain > wheels > slots, mechanisms (nested by
-// attachment) > slots / shapes / volumes, sensors, game plugin. Each row carries a SelectionRef, a
-// kind and (for slots) the mapping state; the delegate paints them. Accepts device / template /
-// mechanism drops and reports them as signals, never edits the document itself.
+// The project tree: robot > chassis (COM, shapes), drivetrain > wheels, mechanisms (nested by
+// attachment) > slots / shapes / volumes, sensors, game plugin. A wheel or mechanism driven by a motion
+// link (ADR 0012) is nested under the owner that drives it, read-only, and takes no motor slot. Each row
+// carries a SelectionRef, a kind and (for slots) the mapping state; the delegate paints them. Accepts
+// device / template / mechanism drops and reports them as signals, never edits the document itself.
 
 #include <QAbstractItemModel>
 #include <QString>
 
+#include <functional>
 #include <memory>
 #include <vector>
 
 #include "model/device_directory.h"
 #include "model/editor_document.h"
+#include "model/motion_links.h"
 #include "model/selection.h"
 #include "model/slot_status.h"
 
@@ -30,6 +33,7 @@ public:
         KeyRole,                       // stable node key (expansion state)
         WarningRole,                   // bool: a mechanism / wheel with unfilled required slots below it
         RefKeyRole,                    // SelectionRef::key()
+        FollowerRole,                  // bool: a wheel / mechanism driven entirely by a motion link (read-only)
     };
 
     ProjectTreeModel(EditorDocument& document, const DeviceDirectory& devices, QObject* parent = nullptr);
@@ -57,7 +61,6 @@ public:
 
 Q_SIGNALS:
     void deviceDropped(const wpiemu::app::editor::SelectionRef& target, const wpiemu::sdk::DeviceKey& device, quint32 capabilityBits);
-    void templateDropped(const QString& type, const wpiemu::sdk::MechanismAttachment& attachment);
     void mechanismDropped(const QString& id, const wpiemu::sdk::MechanismAttachment& attachment);
 
 private:
@@ -70,12 +73,17 @@ private:
         QString tooltip;
         int state = -1;
         bool warning = false;
+        bool follower = false;        // takes no motor of its own: every motor axis follows a motion link
+        bool nestedByLink = false;    // placed under the owner that drives it instead of its structural parent
         Node* parent = nullptr;
         std::vector<std::unique_ptr<Node>> children;
     };
 
     std::unique_ptr<Node> build() const;
-    void addMechanismNode(Node& parentNode, const sdk::RobotConfig& c, const sdk::MechanismConfig& m) const;
+    std::unique_ptr<Node> makeWheelNode(const sdk::RobotConfig& c, const sdk::WheelSpec& w, const MotionIndex& motion) const;
+    std::unique_ptr<Node> makeMechanismNode(const sdk::RobotConfig& c, const sdk::MechanismConfig& m, const MotionIndex& motion) const;
+    static QString linkKeyFor(const MotionIndex& motion, const SelectionRef& owner, const std::function<QString(const SelectionRef&)>& key);
+    static QString motionDetail(const sdk::RobotConfig& c, const EditorCatalog& cat, const MotionIndex& motion, const OwnerMotion& om);
     static void flatten(const Node& n, std::vector<const Node*>& out);
     static bool sameShape(const Node& a, const Node& b);
     static void copyContents(Node& dst, const Node& src);

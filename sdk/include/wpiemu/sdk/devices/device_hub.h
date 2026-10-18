@@ -57,7 +57,7 @@ public:
     // bus label does not take part in the match (device_identity.h). Several declared addresses can
     // therefore resolve to one device (see DiscoveredDevice::aliasState).
     virtual const DiscoveredDevice* find(const DeviceKey& key) const = 0;
-    // SDK 1.1. Exact physical-identity lookup. The default scans discovered(); cores may override.
+    // Exact physical-identity lookup. The default scans discovered(); cores may override.
     virtual const DiscoveredDevice* findPhysical(const PhysicalDeviceId& physical) const {
         for (const DiscoveredDevice& d : discovered())
             if (d.physicalId() == physical) return &d;
@@ -102,7 +102,7 @@ public:
     virtual proto::LoopbackSet loopbackSet() const = 0;
     // Session ended / robot disconnected: forget devices, keep bindings.
     virtual void clearDevices() = 0;
-    // SDK 1.1. A runtime observation (L3 hook) of the bus a device lives on. Updates
+    // A runtime observation (L3 hook) of the bus a device lives on. Updates
     // DiscoveredDevice::observedBus; raises HubWarning{kDeviceBusMismatch} when it contradicts a declared
     // address. Also fed by onAnnounce when DeviceAnnounce::observedBus is non-empty. Default: ignored.
     virtual void observeBus(DeviceId /*device*/, std::string_view /*busLabel*/) {}

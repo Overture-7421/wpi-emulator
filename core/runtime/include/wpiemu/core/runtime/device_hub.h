@@ -43,6 +43,9 @@ public:
     // Binds every mapping; the first failure is returned but the remaining ones are still applied.
     sdk::Status loadMappings(std::span<const sdk::SlotMapping> mappings);
     std::vector<sdk::SlotMapping> exportMappings() const;
+    // A reversed motor slot reads its command and receives its rotor feedback negated (mechanism frame).
+    void setReversed(const sdk::SlotAddress& slot, bool reversed);
+    bool isReversed(const sdk::SlotAddress& slot) const { return reversed_.count(slot) != 0; }
     // Increments whenever loopbackSet() content may have changed: tells the session to resend it.
     std::uint64_t mappingRevision() const { return revision_; }
     // After the robot program started (first actuator frame): bound-but-undiscovered slots raise `slot_missing_device`.
@@ -112,6 +115,7 @@ private:
     std::vector<Extra> extras_;
     std::unordered_map<sdk::DeviceId, std::size_t> byId_;
     std::map<sdk::SlotAddress, sdk::DeviceKey> bindings_;
+    std::set<sdk::SlotAddress> reversed_;
     std::map<sdk::SlotAddress, sdk::SlotSpec> slotSpecs_;
     std::set<sdk::PhysicalDeviceId> conflicted_;
     std::vector<sdk::HubWarning> warnings_;

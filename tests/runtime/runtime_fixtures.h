@@ -70,7 +70,16 @@ inline MechanismTemplateInfo rollerInfo() {
     MechanismTemplateInfo info;
     info.type = "roller";
     info.displayName = "Roller";
-    info.slotSpecs = {{"motor", "Motor", SlotType::Motor, true, ""}, {"encoder", "Encoder", SlotType::PositionSensor, false, ""}};
+    info.slotSpecs = {{"motor", "Motor", SlotType::Motor, true, "", "motorCount", 1},
+                      {"motor2", "Motor 2", SlotType::Motor, false, "", "motorCount", 2},
+                      {"encoder", "Encoder", SlotType::PositionSensor, false, ""}};
+    PropertySpec motors;
+    motors.key = "motorCount";
+    motors.type = PropertyType::Int;
+    motors.defaultValue = 1;
+    motors.min = 1;
+    motors.max = 2;
+    info.properties.properties.push_back(motors);
     PropertySpec gear;
     gear.key = "gearRatio";
     gear.type = PropertyType::Double;

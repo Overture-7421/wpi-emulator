@@ -59,8 +59,8 @@ The imported WPILib targets are robot-process backends available to the extensio
 * **UI (`app/`)**: MVVM (widgets talk to view-models; only view-models touch the config repository or the runtime),
   user-visible strings through `tr()` (`ETR()` in the editor model code), colours from `ThemeTokens`, display units
   through `UnitFormatter`. No Qt in `sdk`, `core`, `ipc`, bridges or plugins.
-* **Wire protocol / SDK**: additive changes only (new fields appended with defaults, new enum values appended, new
-  message types appended to the `proto::Message` variant).
+* **Wire protocol / SDK**: the SDK stays at version 1 until release (ADR 0013): no compatibility shims, migrations or
+  version bumps; keep the protocol layout and its tests consistent when you change it.
 * Comment only what needs clarifying. Prefer small header/source pairs per concern.
 
 ## Tests
@@ -92,7 +92,7 @@ The checklist with method-by-method contract is [new-year-plugin.md](new-year-pl
    `wpiemu::plugins::game_<year>`, target `wpiemu_plugin_game_<year>`, `pluginId()` and `gameYear()`. The target links
    only `wpiemu_sdk`.
 2. Implement `IGameModule` (`metadata`, `registerMechanisms` with keys `"game_<year>.<name>"`, `createField`,
-   `createGameState`, `contributeConfigSchema` + migrators, optional panels/HUD) and end the file with
+   `createGameState`, `contributeConfigSchema`, optional panels/HUD) and end the file with
    `WPIEMU_REGISTER_GAME_PLUGIN(...)`.
 3. Register: `add_subdirectory(game_<year>)` and the link line in `plugins/CMakeLists.txt`; one `registerPlugin(registry)`
    call in `plugins/builtin_plugins.cpp`. Nothing else in the repository changes.
@@ -130,7 +130,7 @@ vendor firmware integrates, create the bridge in `SharedSetup` and add one `regi
 2. Register with `MechanismFactory::registerTemplate`: generic templates in `core/mechanisms`
    (`registerGenericMechanisms`, see [mechanisms.md](mechanisms.md)); season-specific ones in the plugin's
    `registerMechanisms`, keys prefixed with the plugin id.
-3. The editor builds its palette, inspector and slot panel from that metadata: no UI change.
+3. The editor builds its context-menu entry, inspector and slot panel from that metadata: no UI change.
 4. Test with `FakeSimEnvironment` + `FakeDeviceHub::autoBind` (`tests/mechanisms`).
 
 ### Other extension points
@@ -138,12 +138,9 @@ Drivetrain (`IDrivetrain`, `DrivetrainRegistry`), tire model (`ITireModel`), pla
 transport/codec (`ITransport`, `IMessageCodec`): see the table in ARCHITECTURE section 5.
 
 ## Changing the SDK
-The SDK is versioned (1.4 today, IPC protocol v3: `sdk/version.h` lists what each minor added;
-[ADR 0005](decisions/0005-sdk-freeze.md), [ADR 0006](decisions/0006-sdk-1-1-amendments.md) and
-[ADR 0011](decisions/0011-single-robot-instance.md) record the process/amendments). Additive changes (new header, new trailing field with a default, new
-non-pure virtual, appended enum value, new canonical signal, new appended message type) go through a normal PR with a
-`kSdkVersionMinor` bump (and `kProtocolVersion` for wire changes). Anything else (remove, rename, change a signature,
-unit or default) needs a new ADR and a major bump. Add or update a test in `tests/sdk`.
+Until the first release the SDK is version 1.0 and the IPC protocol is 1 ([ADR 0013](decisions/0013-pre-release-single-sdk-version.md)):
+change it freely (including removals and renames) without version bumps, migrations or compatibility fields, and update the
+callers, tests and docs in the same PR. Add or update a test in `tests/sdk`. Versioned evolution rules return with the first release.
 
 ## Documentation
 Update the doc next to the code you change (`docs/` per module, ADRs for decisions, the README of `app/`, `app/editor`,

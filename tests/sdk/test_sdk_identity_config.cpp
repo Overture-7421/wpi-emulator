@@ -203,7 +203,7 @@ TEST_CASE("DeviceAnnounce can carry an observed bus and DeviceDescriptor.bus can
     CHECK(a.descriptor.key().bus.empty());
 }
 
-// ---- 2. config migration hook ---------------------------------------------------------------------
+// ---- 2. plugin ownership --------------------------------------------------------------------------
 
 TEST_CASE("a plugin owns only its section and its own mechanism types") {
     CHECK(ownsMechanismType("game_2026", "game_2026.shooter"));
@@ -215,47 +215,9 @@ TEST_CASE("a plugin owns only its section and its own mechanism types") {
     CHECK_FALSE(ownsMechanismType("", ".x"));
 }
 
-TEST_CASE("migrateRobotConfig is defaulted, whole-config, and limited to what the plugin owns") {
-    // a module that does not override it: no-op success
-    class Plain final : public IGameModule {
-    public:
-        GameMetadata metadata() const override {
-            GameMetadata m;
-            m.id = "plain";
-            m.displayName = "Plain";
-            m.year = 2999;
-            return m;
-        }
-        Status registerMechanisms(MechanismFactory&) override { return okStatus(); }
-        Result<std::unique_ptr<IField>> createField(IPhysicsWorld&) override {
-            return std::unique_ptr<IField>(std::make_unique<EmptyField>());
-        }
-        Result<std::unique_ptr<IGameState>> createGameState(SimContext&) override {
-            return std::unique_ptr<IGameState>(std::make_unique<NullGameState>("plain"));
-        }
-        PluginConfigSchema contributeConfigSchema() const override { return {}; }
-    } plain;
-    RobotConfig untouched;
-    untouched.name = "keep";
-    CHECK(plain.migrateRobotConfig(untouched, 1).ok());
-    CHECK(untouched.name == "keep");
-
-    testing::FakeGameModule fake("game_fake", 2998);
-    const auto counters = fake.counters();
-    RobotConfig config;
-    config.mechanisms = {mechanism("own", "game_fake.legacy_mechanism"), mechanism("core", "roller"),
-                         mechanism("foreign", "game_other.legacy_mechanism")};
-    REQUIRE(fake.migrateRobotConfig(config, 1).ok());
-    CHECK(counters->migrateRobotConfigCalls == 1);
-    CHECK(counters->lastPersistedVersion == 1);
-    CHECK(config.mechanisms[0].type == "game_fake.fake_mechanism");     // owned: migrated
-    CHECK(config.mechanisms[1].type == "roller");                       // core: untouched
-    CHECK(config.mechanisms[2].type == "game_other.legacy_mechanism");  // another plugin's: untouched
-}
-
-TEST_CASE("plugins can require an SDK minor, and the SDK is 1.1") {
+TEST_CASE("plugins can require an SDK minor, and the SDK stays at 1.0 until release") {
     CHECK(kSdkVersionMajor == 1);
-    CHECK(kSdkVersionMinor >= 1);
+    CHECK(kSdkVersionMinor == 0);
 
     class NeedsFuture final : public testing::FakeGameModule {
     public:
@@ -273,25 +235,19 @@ TEST_CASE("plugins can require an SDK minor, and the SDK is 1.1") {
 
 // ---- 3. mechanism attachment -----------------------------------------------------------------------
 
-TEST_CASE("legacy parent stays source-compatible and the structured attachment wins when present") {
+TEST_CASE("attachTo sets the structured attachment and a mechanism starts on the chassis root") {
     MechanismConfig m = mechanism("arm");
-    CHECK(m.parent == "chassis");
-    CHECK(m.resolvedAttachment().onChassis());
-    CHECK(m.resolvedAttachment().parentLink == kRootLink);
-
-    m.parent = "elevator";  // a 1.0 robot.json
-    CHECK(m.resolvedAttachment().parentMechanismId == "elevator");
-    CHECK(m.resolvedAttachment().parentLink == "root");
+    CHECK(m.attachment.onChassis());
+    CHECK(m.attachment.parentLink == kRootLink);
 
     m.attachTo("elevator", "carriage");
-    CHECK(m.parent == "elevator");  // mirrored for old readers
-    CHECK(m.resolvedAttachment().parentLink == "carriage");
+    CHECK(m.attachment.parentMechanismId == "elevator");
+    CHECK(m.attachment.parentLink == "carriage");
 
     m.attachTo("");  // back to the chassis
-    CHECK(m.resolvedAttachment().onChassis());
-    CHECK(m.parent == "chassis");
+    CHECK(m.attachment.onChassis());
+    CHECK(m.attachment.parentMechanismId == "chassis");
 }
-
 TEST_CASE("every template has the implicit root link and cannot redeclare it") {
     MechanismTemplateInfo info;
     info.type = "x";

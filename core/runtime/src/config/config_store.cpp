@@ -218,23 +218,10 @@ Result<RobotConfig> FileConfigStore::load() {
     if (!text) return text.error();
     Result<Value> parsed = text_.parse(text.value());
     if (!parsed) return makeError(parsed.error().code, file_.string() + ": " + parsed.error().message);
-    lastDecode_ = {};
-    Result<RobotConfig> config = codec_.fromValue(parsed.value(), &lastDecode_);
+    Result<RobotConfig> config = codec_.fromValue(parsed.value());
     if (!config) return makeError(config.error().code, file_.string() + ": " + config.error().message);
-
-    if (lastDecode_.migrated) {
-        const Result<fs::path> saved = backup("v" + std::to_string(lastDecode_.persistedVersion));
-        if (!saved) {
-            if (logger_ != nullptr) logger_->warn("config", "not upgrading " + file_.string() + " on disk: " + saved.error().message);
-        } else {
-            if (logger_ != nullptr) logger_->info("config", "upgraded " + file_.string() + " (backup: " + saved.value().string() + ")");
-            if (Status s = save(config.value()); !s && logger_ != nullptr)
-                logger_->warn("config", "could not write upgraded config: " + s.error().message);
-        }
-    }
     return config;
 }
-
 Status FileConfigStore::save(const RobotConfig& config) {
     return atomicWriteFile(file_, text_.dump(codec_.toValue(config), true));
 }
@@ -249,13 +236,12 @@ FileConfigStore ProjectConfigRepository::projectStore(const fs::path& projectDir
     return FileConfigStore(projectConfigPath(projectDir), "project export", text_, codec_, logger_);
 }
 
-Result<RobotConfig> ProjectConfigRepository::open(const fs::path& projectDir, ConfigSource* usedSource, DecodeInfo* decode) const {
+Result<RobotConfig> ProjectConfigRepository::open(const fs::path& projectDir, ConfigSource* usedSource) const {
     FileConfigStore local = appDataStore(projectDir);
     if (local.exists()) {
         Result<RobotConfig> cfg = local.load();
         if (cfg) {
             if (usedSource != nullptr) *usedSource = ConfigSource::AppData;
-            if (decode != nullptr) *decode = local.lastDecode();
         }
         return cfg;
     }
@@ -264,7 +250,6 @@ Result<RobotConfig> ProjectConfigRepository::open(const fs::path& projectDir, Co
     Result<RobotConfig> cfg = shared.load();
     if (!cfg) return cfg;
     if (usedSource != nullptr) *usedSource = ConfigSource::Project;
-    if (decode != nullptr) *decode = shared.lastDecode();
     if (Status s = local.save(cfg.value()); !s && logger_ != nullptr)
         logger_->warn("config", "imported project config but could not cache it in app data: " + s.error().message);
     return cfg;

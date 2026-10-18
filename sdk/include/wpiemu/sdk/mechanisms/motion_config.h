@@ -14,8 +14,11 @@ inline std::vector<MotionAxisInfo> motionAxisInfos(const RobotConfig& config,
                                                    const MotionTemplateLookup& lookup) {
     std::vector<MotionAxisInfo> out;
     for (const auto& wheel : config.drivetrain.spec.wheels) {
-        const SlotAddress address{slot_owner::kDrivetrain, wheel.name + ".drive"};
-        out.push_back({address, PlantKind::Angular, {address}});
+        const SlotAddress address{slot_owner::kDrivetrain, driveSlotName(wheel.name, 0)};
+        MotionAxisInfo item{address, PlantKind::Angular, {}};
+        for (int i = 0; i < std::clamp(wheel.driveMotorCount, 1, kMaxMotorsPerAxis); ++i)
+            item.motorSlots.push_back({slot_owner::kDrivetrain, driveSlotName(wheel.name, i)});
+        out.push_back(std::move(item));
     }
     for (const auto& mechanism : config.mechanisms) {
         const auto* info = lookup(mechanism.type);
@@ -110,15 +113,20 @@ inline Result<std::vector<MotionLink>> tankMotionLinks(const RobotConfig& config
                                  "Tank motion links need wheels clearly on the left or right.");
             if ((wheel.positionM.y > 0.f ? 1 : -1) != side) continue;
             wheels.push_back(&wheel);
-            for (const auto& mapping : config.drivetrain.mappings)
-                if (mapping.slot == SlotAddress{slot_owner::kDrivetrain, wheel.name + ".drive"}) {
-                    if (source != nullptr)
+            for (const auto& mapping : config.drivetrain.mappings) {
+                bool ownMotor = false;
+                for (int i = 0; i < kMaxMotorsPerAxis && !ownMotor; ++i)
+                    ownMotor = mapping.slot == SlotAddress{slot_owner::kDrivetrain,
+                                                           driveSlotName(wheel.name, i)};
+                if (ownMotor) {
+                    if (source != nullptr && source != &wheel)
                         return makeError(
                             ErrorCode::InvalidArgument,
                             "Several wheels on one tank side have motor mappings. Choose a source "
                             "and remove conflicting mappings before linking.");
                     source = &wheel;
                 }
+            }
         }
         if (wheels.empty())
             return makeError(ErrorCode::InvalidArgument,

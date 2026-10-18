@@ -217,7 +217,6 @@ sdk::RobotConfig buildRobotConfig(const RobotBasics& b, const RobotBuildContext&
     if (b.isSwerve()) addSwerveWheels(b, spec.wheels);
     else if (b.isMecanum()) addMecanumWheels(b, spec.wheels);
     else addTankWheels(b, spec.wheels);
-    config.motionLinksConfigured = true;
     if (b.isTank()) {
         auto links = sdk::tankMotionLinks(config);
         if (links) config.motionLinks = std::move(links).value();
@@ -250,6 +249,14 @@ sdk::RobotConfig updateRobotConfig(const sdk::RobotConfig* existing, const Robot
     for (const auto& p : fresh.chassis.primitives) primitives.push_back(p);
     out.chassis.primitives = std::move(primitives);
 
+    const bool layoutChanged = [&] {
+        const auto& before = existing->drivetrain.spec;
+        const auto& after = fresh.drivetrain.spec;
+        if (before.kind != after.kind || before.wheels.size() != after.wheels.size()) return true;
+        for (std::size_t i = 0; i < before.wheels.size(); ++i)
+            if (before.wheels[i].name != after.wheels[i].name) return true;
+        return false;
+    }();
     out.drivetrain.spec.kind = fresh.drivetrain.spec.kind;
     out.drivetrain.spec.wheels = fresh.drivetrain.spec.wheels;
     std::vector<sdk::SlotMapping> kept;
@@ -263,17 +270,19 @@ sdk::RobotConfig updateRobotConfig(const sdk::RobotConfig* existing, const Robot
         }
     }
     out.drivetrain.mappings = std::move(kept);
-    // Keep invalidated linked endpoints visible for correction instead of losing real mappings.
-    if (!existing->motionLinks.empty()) out.drivetrain.mappings = existing->drivetrain.mappings;
-    if (existing->drivetrain.spec.kind != basics.drivetrain && existing->motionLinks.empty()) {
-        out.motionLinks = fresh.motionLinks;
-        out.motionLinksConfigured = true;
-    }
-    if (!existing->motionLinksConfigured && existing->motionLinks.empty() && basics.isTank()) {
-        auto links = sdk::tankMotionLinks(out);
-        if (links) {
-            out.motionLinks = std::move(links).value();
-            out.motionLinksConfigured = true;
+    if (layoutChanged) {
+        // New wheels: wheel links are generated again (tank: one powered wheel per side).
+        std::erase_if(out.motionLinks, [](const sdk::MotionLink& l) {
+            return l.source.owner == sdk::slot_owner::kDrivetrain || l.target.owner == sdk::slot_owner::kDrivetrain;
+        });
+        if (basics.isTank()) {
+            auto links = sdk::tankMotionLinks(out);
+            if (!links) {
+                out.drivetrain.mappings.clear();   // several mapped wheels on one side: start the mappings over
+                links = sdk::tankMotionLinks(out);
+            }
+            if (links)
+                for (auto& link : links.value()) out.motionLinks.push_back(std::move(link));
         }
     }
 

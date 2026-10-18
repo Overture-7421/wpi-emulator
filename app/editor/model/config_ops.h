@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "editor_backend.h"
@@ -44,7 +45,11 @@ sdk::Pose3 mechanismParentWorld(const sdk::RobotConfig& c, const EditorCatalog& 
 sdk::MechanismConfig makeMechanism(const sdk::RobotConfig& c, const sdk::MechanismTemplateInfo& info,
                                    const sdk::MechanismAttachment& attachment);
 // Returns the new instance id. The template must exist.
-std::string addMechanism(sdk::RobotConfig& c, const sdk::MechanismTemplateInfo& info, const sdk::MechanismAttachment& attachment);
+// `variant` = {property key, option value} (e.g. {"motion", "arm"}): the new mechanism starts with that property set, and its
+// id / label follow the option ("arm", "Arm"). Empty key = the template's defaults.
+using MechanismVariant = std::pair<std::string, std::string>;
+std::string addMechanism(sdk::RobotConfig& c, const sdk::MechanismTemplateInfo& info, const sdk::MechanismAttachment& attachment,
+                         const MechanismVariant& variant = {});
 std::vector<std::string> childrenOf(const sdk::RobotConfig& c, std::string_view id);
 std::vector<std::string> descendantsOf(const sdk::RobotConfig& c, std::string_view id);
 bool canReparent(const sdk::RobotConfig& c, std::string_view id, std::string_view newParent);
@@ -55,8 +60,6 @@ bool reparentMechanism(sdk::RobotConfig& c, const EditorCatalog& catalog, std::s
 bool removeMechanism(sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view id);
 // Copies the mechanism and its sub-tree; mappings are NOT copied (a device drives one thing).
 std::string duplicateMechanism(sdk::RobotConfig& c, std::string_view id);
-// Updates attachments and slot owners. false when `newId` is empty/reserved/taken.
-bool renameMechanism(sdk::RobotConfig& c, std::string_view id, const std::string& newId);
 // Parents before children (stable). Broken chains keep their relative order at the end.
 void normalizeOrder(sdk::RobotConfig& c);
 
@@ -68,6 +71,8 @@ const sdk::SlotMapping* findMapping(const sdk::RobotConfig& c, const sdk::SlotAd
 sdk::DeviceKey declaredKeyFor(const sdk::RobotConfig& c, const sdk::DeviceKey& proposed);
 bool setMapping(sdk::RobotConfig& c, const sdk::SlotAddress& slot, const sdk::DeviceKey& device);
 bool clearMapping(sdk::RobotConfig& c, const sdk::SlotAddress& slot);
+// Marks a mapped motor slot as spinning against the mechanism's positive direction. false when unmapped.
+bool setMappingReversed(sdk::RobotConfig& c, const sdk::SlotAddress& slot, bool reversed);
 std::vector<sdk::SlotAddress> slotsUsing(const sdk::RobotConfig& c, const sdk::PhysicalDeviceId& device);
 
 // ---- slots ------------------------------------------------------------------------------------
@@ -76,6 +81,21 @@ std::vector<sdk::SlotSpec> drivetrainSlotSpecs(const sdk::DrivetrainSpec& spec);
 // Owners in tree order: robot, drivetrain, then mechanisms.
 std::vector<sdk::SlotSpec> slotSpecsFor(const sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view owner);
 std::vector<std::string> slotOwners(const sdk::RobotConfig& c);
+// A gearbox with several motors: one row per motor, the count lives in a mechanism property (`countKey`) or in
+// WheelSpec::driveMotorCount (`countKey` = "<wheel>.driveMotorCount").
+struct MotorGroup {
+    std::string countKey;
+    int count = 1;                      // active motors
+    int maxCount = 1;
+    std::vector<std::string> slotNames; // active motor slots, motor 1 first
+};
+std::vector<MotorGroup> motorGroups(const sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view owner);
+// Sets the motor count (clamped) and unmaps the motors that no longer exist. false when unknown/unchanged.
+bool setMotorCount(sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view owner, const std::string& countKey, int count);
+// Drops mappings of motor slots beyond the current motor count (after a property / wheel edit).
+void pruneInactiveMappings(sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view owner);
+// "fl.drive" / "fl.drive3" / "fl.steer" -> "fl"; empty for anything else.
+std::string wheelOfSlot(std::string_view slotName);
 // "Intake > motor", "Wheel fl > drive"
 std::string slotDisplayName(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::SlotAddress& slot);
 

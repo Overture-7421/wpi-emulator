@@ -1,5 +1,6 @@
 #include "wpiemu/core/config/config_validator.h"
 
+#include <algorithm>
 #include <cmath>
 #include <map>
 #include <set>
@@ -86,7 +87,9 @@ void validateDrivetrain(const RobotConfig& c, const DrivetrainRegistry& drivetra
             add(out, Severity::Error, base + ".name", "duplicate wheel name '" + w.name + "'", issue_code::kWheelDuplicate);
         if (!finitePositive(w.radiusM)) add(out, Severity::Error, base + ".radiusM", "wheel radius must be positive", issue_code::kWheelInvalid);
         if (!finite(w.positionM)) add(out, Severity::Error, base + ".positionM", "wheel position must be finite", issue_code::kWheelInvalid);
-        if (w.driveMotorCount < 1) add(out, Severity::Error, base + ".driveMotorCount", "at least one drive motor", issue_code::kWheelInvalid);
+        if (w.driveMotorCount < 1 || w.driveMotorCount > kMaxMotorsPerAxis)
+            add(out, Severity::Error, base + ".driveMotorCount",
+                "drive motors per wheel must be in [1, " + std::to_string(kMaxMotorsPerAxis) + "]", issue_code::kWheelInvalid);
         if (!finitePositive(w.driveGearRatio)) add(out, Severity::Error, base + ".driveGearRatio", "gear ratio must be positive", issue_code::kWheelInvalid);
         if (!finitePositive(w.tire.mu)) add(out, Severity::Error, base + ".tire.mu", "friction coefficient must be positive", issue_code::kWheelInvalid);
         validateTire(w.tire, base + ".tire", out);
@@ -125,7 +128,9 @@ const SlotSpec* findSpec(const std::vector<SlotSpec>& specs, const std::string& 
 std::vector<SlotSpec> drivetrainSlotSpecs(const DrivetrainSpec& spec) {
     std::vector<SlotSpec> out;
     for (const WheelSpec& w : spec.wheels) {
-        out.push_back({w.name + ".drive", w.name + " drive motor", SlotType::Motor, false, {}});
+        for (int i = 0; i < std::clamp(w.driveMotorCount, 1, kMaxMotorsPerAxis); ++i)
+            out.push_back({driveSlotName(w.name, i), w.name + " drive motor" + (i > 0 ? " " + std::to_string(i + 1) : std::string()),
+                           SlotType::Motor, false, {}});
         if (w.steered || w.kind == WheelKind::Swerve)
             out.push_back({w.name + ".steer", w.name + " steer motor", SlotType::Motor, false, {}});
     }
@@ -193,7 +198,7 @@ std::vector<Issue> ConfigValidator::validate(const RobotConfig& config, const Me
     slotSpecsByOwner[slot_owner::kDrivetrain] = drivetrainSlotSpecs(config.drivetrain.spec);
     slotSpecsByOwner[slot_owner::kRobot] = robotSlotSpecs();
 
-    // ---- attachments (SDK 1.1 contract) and aliases ----
+    // ---- attachments and aliases ----
     for (Issue& issue : validateMechanismAttachments(config, mechanisms)) out.push_back(std::move(issue));
     const std::vector<SlotMapping> all = config.allMappings();
     for (Issue& issue : validateDeviceAliases(all)) out.push_back(std::move(issue));
@@ -211,10 +216,28 @@ std::vector<Issue> ConfigValidator::validate(const RobotConfig& config, const Me
             const auto specs = slotSpecsByOwner.find(map.slot.owner);
             if (specs == slotSpecsByOwner.end()) continue;  // unknown template: already reported
             const SlotSpec* spec = findSpec(specs->second, map.slot.slot);
+            const MechanismConfig* owner = nullptr;
+            for (const MechanismConfig& m : config.mechanisms)
+                if (m.id == map.slot.owner) owner = &m;
             if (spec == nullptr) {
                 const Severity sev = map.slot.owner == slot_owner::kRobot ? Severity::Warning : Severity::Error;
                 add(out, sev, p, "unknown slot '" + map.slot.toString() + "'", issue_code::kSlotUnknown);
                 continue;
+            }
+            if (map.reversed && spec->type != SlotType::Motor)
+                add(out, Severity::Warning, p, "only motor slots can be reversed ('" + map.slot.toString() + "')",
+                    issue_code::kSlotReversedInvalid);
+            if (!spec->countKey.empty() && owner != nullptr) {
+                std::int64_t active = spec->ordinal;
+                if (const Value* count = owner->properties.find(spec->countKey))
+                    active = count->asInt(active);
+                else if (const MechanismTemplateInfo* info = mechanisms.templateInfo(owner->type))
+                    if (const PropertySpec* countSpec = info->properties.find(spec->countKey)) active = countSpec->defaultValue.asInt(active);
+                if (active < spec->ordinal)
+                    add(out, Severity::Warning, p,
+                        "motor " + std::to_string(spec->ordinal) + " of '" + map.slot.owner + "' is not active (motor count is " +
+                            std::to_string(active) + ")",
+                        issue_code::kSlotMotorInactive);
             }
             if (capabilities_) {
                 if (const std::optional<CapabilitySet> caps = capabilities_(map.device);
@@ -282,14 +305,10 @@ std::vector<Issue> ConfigValidator::validate(const RobotConfig& config, const Me
         }
         if (selected != module) continue;  // another registered plugin's section: not ours to judge
         const PluginConfigSchema schema = module->contributeConfigSchema();
-        if (section.schemaVersion > schema.schemaVersion)
+        if (section.schemaVersion != schema.schemaVersion)
             add(out, Severity::Error, path + ".schemaVersion",
-                "section version " + std::to_string(section.schemaVersion) + " is newer than the plugin supports (" +
-                    std::to_string(schema.schemaVersion) + ")",
-                issue_code::kPluginSectionNewer);
-        else if (section.schemaVersion < schema.schemaVersion)
-            add(out, Severity::Error, path + ".schemaVersion", "section version " + std::to_string(section.schemaVersion) + " was not migrated",
-                issue_code::kPluginSectionOutdated);
+                "section version " + std::to_string(section.schemaVersion) + " is not the supported " + std::to_string(schema.schemaVersion),
+                issue_code::kPluginSectionVersion);
         for (Issue& issue : validateProperties(schema.properties, section.data, path + ".data")) {
             if (issue.code.empty()) issue.code = issue_code::kPluginPropertyInvalid;
             out.push_back(std::move(issue));

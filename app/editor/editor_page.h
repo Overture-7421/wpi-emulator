@@ -24,7 +24,6 @@ class EditorController;
 class ViewportWidget;
 class InspectorPanel;
 class DevicePanel;
-class PalettePanel;
 class BottomPanel;
 class ProjectTreeView;
 class ToastOverlay;
@@ -52,7 +51,6 @@ public:
     ViewportWidget* viewport() const;
     InspectorPanel* inspector() const;
     DevicePanel* devicePanel() const;
-    PalettePanel* palette() const;
     BottomPanel* bottomPanel() const;
     ProjectTreeView* tree() const;
     ToastOverlay* toasts() const;

@@ -18,7 +18,7 @@ guide is [docs/new-year-plugin.md](../../docs/new-year-plugin.md); the finished 
    * `plugins/builtin_plugins.cpp`: `#include "wpiemu/plugins/game_2027/plugin.h"` and
      `keepFirstError(plugins::game_2027::registerPlugin(registry));`
 3. **Fill in `src/game_module.cpp`**, numbered like the contract: `metadata`, `registerMechanisms`, `createField`,
-   `createGameState`, `contributeConfigSchema` (+ migrators), optional editor panels / HUD, `onTick`.
+   `createGameState`, `contributeConfigSchema`, optional editor panels / HUD, `onTick`.
 4. **Test it** under `tests/game_2027/` (doctest; they are globbed into `wpiemu_tests`). Use
    `sdk/testing/fake_sim_environment.h` + `fake_physics_world.h`; `tests/game_2026/test_support.h` has a ready-made
    session helper. Run `python tools/check_boundaries.py`.
@@ -48,4 +48,4 @@ src/game_module.cpp                                 IGameModule facade + placeho
 ```
 
 Grow the plugin the way `plugins/game_2026` did: one header + source pair per concern (field layout, game state,
-config, UI descriptors, migration, mechanisms) and keep `game_module.cpp` a thin facade.
+config, UI descriptors, mechanisms) and keep `game_module.cpp` a thin facade.
