@@ -2,7 +2,7 @@ name: Release
 
 # Builds the three distributables and attaches them to a GitHub release:
 #   Windows  wpi-emulator-<ver>-windows-x64.exe (NSIS installer) + .zip (portable)
-#   macOS    wpi-emulator-<ver>-macos-arm64.dmg (signed + notarized when the Apple secrets exist)
+#   macOS    wpi-emulator-<ver>-macos-arm64-x64.dmg (universal; signed + notarized when the Apple secrets exist)
 #   Linux    wpi-emulator-<ver>-linux-x86_64.AppImage
 # See docs/packaging.md for the design, the secrets, and how to run each step locally.
 
@@ -117,7 +117,8 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then
             gen=(-G "Visual Studio 17 2022" -A x64)
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            gen=(--preset macos)
+            # Universal binary: arm64 + x86_64 slices; WPILib's osxuniversal libraries and the official Qt kit are universal.
+            gen=(--preset macos -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64")
           else
             gen=(-G "Ninja Multi-Config")
           fi
@@ -208,6 +209,17 @@ jobs:
           app="$mount/wpiemu_app.app"
           python packaging/macos/check_minimum_os.py "$app"
           env -i PATH=/usr/bin:/bin "$app/Contents/MacOS/wpiemu_app" --version
+          # Both slices must be present in the app, the extension and every bundled framework/dylib that has any slice.
+          for f in "$app/Contents/MacOS/wpiemu_app" "$app/Contents/PlugIns/wpiemu/libhalsim_wpiemu.dylib"; do
+            archs="$(lipo -archs "$f")"
+            echo "$f: $archs"
+            case "$archs" in *arm64*x86_64*|*x86_64*arm64*) ;; *) echo "::error::$f is not universal ($archs)"; exit 1 ;; esac
+          done
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            env -i PATH=/usr/bin:/bin arch -x86_64 "$app/Contents/MacOS/wpiemu_app" --version
+          else
+            echo "::notice::Rosetta is not available on this runner; the x86_64 slice was not executed"
+          fi
           test -f "$app/Contents/PlugIns/wpiemu/libhalsim_wpiemu.dylib"
           find "$app/Contents/Resources/qml/QtQuick3D" -iname '*quick3dplugin*' -print -quit | grep -q .
           exe="$app/Contents/MacOS/wpiemu_app"
