@@ -164,6 +164,75 @@ SimControlAck sampleControlAck() {
     return a;
 }
 
+TagDetection sampleTag(int id) {
+    TagDetection t;
+    t.id = id;
+    t.cameraToTag = Pose3({2.5f + static_cast<float>(id), -0.25f, 0.5f}, {0.f, 0.f, 0.70710678f, 0.70710678f});
+    t.yawDeg = -12.5 + id;
+    t.pitchDeg = 3.25;
+    t.areaPercent = 0.0625;
+    t.ambiguity = 0.0;
+    for (std::size_t i = 0; i < t.cornersPx.size(); ++i) t.cornersPx[i] = 100.5 + 10.0 * static_cast<double>(i) + id;
+    t.distanceM = 2.75 + id;
+    return t;
+}
+
+CameraFrame sampleCameraFrame(std::uint32_t index, std::size_t tags, bool hasPose) {
+    CameraFrame f;
+    f.cameraIndex = index;
+    f.sequence = 0x100000001ULL + index;
+    f.captureTimeUs = 1000000 + index;
+    f.publishTimeUs = 1040000 + index;
+    f.robotToCamera = Pose3({0.3f, -0.1f, 0.6f}, {0.f, 0.258819f, 0.f, 0.965926f});
+    for (std::size_t i = 0; i < tags; ++i) f.tags.push_back(sampleTag(static_cast<int>(i) + 1));
+    f.hasRobotPose = hasPose;
+    if (hasPose) f.robotPoseField = Pose3({8.25f, 4.0f, 0.f}, {0.f, 0.f, 0.382683f, 0.92388f});
+    f.avgTagDistM = tags > 0 ? 3.5 : 0.0;
+    f.avgTagAreaPercent = tags > 0 ? 0.125 : 0.0;
+    f.tagSpanM = tags > 1 ? 1.625 : 0.0;
+    return f;
+}
+
+CameraConfig sampleCameraConfig(int n) {
+    CameraConfig c;
+    c.id = "camera-" + std::to_string(n);
+    c.label = "Front \xC3\xA9 cam";
+    c.name = n == 0 ? "" : "cam" + std::to_string(n);
+    c.kind = n % 2 == 0 ? CameraKind::Limelight : CameraKind::PhotonVision;
+    c.attachment.parentMechanismId = n == 0 ? std::string(kChassisParent) : "turret";
+    c.attachment.parentLink = n == 0 ? std::string(kRootLink) : "pitch_link";
+    c.local = Pose3({0.25f, -0.125f, 0.5f}, {0.f, 0.f, 0.382683f, 0.92388f});
+    c.hFovDeg = 62.5;
+    c.vFovDeg = 48.75;
+    c.maxRangeM = 7.5;
+    c.maxIncidenceDeg = 70.0;
+    c.fps = 45.0;
+    c.latencyMs = 33.5;
+    c.widthPx = 960 + n;
+    c.heightPx = 720 + n;
+    c.positionNoiseM = 0.015;
+    c.yawNoiseDeg = 0.75;
+    return c;
+}
+
+VisionSetup sampleVisionSetup() {
+    VisionSetup v;
+    for (int i = 0; i < 3; ++i) v.cameras.push_back(CameraSetup{sampleCameraConfig(i)});
+    v.photonVersion = "v2026.3.4";
+    v.layoutName = "2026 Rebuilt (welded)";
+    return v;
+}
+
+std::vector<CameraFrame> sampleVision() {
+    return {sampleCameraFrame(0, 3, true), sampleCameraFrame(1, 0, false), sampleCameraFrame(2, 1, true)};
+}
+
+SensorFrame sensorWithVision() {
+    SensorFrame f = sampleSensor();
+    f.vision = sampleVision();
+    return f;
+}
+
 std::vector<Message> allSamples() {
     Log log;
     log.simTimeUs = 42;
@@ -175,7 +244,8 @@ std::vector<Message> allSamples() {
     Goodbye bye;
     bye.reason = "done";
     return {sampleHello(),   sampleHelloAck(), sampleAnnounce(), lb,  sampleSensor(), sampleActuator(),
-            sampleDs(),      sampleControl(),  sampleControlAck(), log, bye};
+            sampleDs(),      sampleControl(),  sampleControlAck(), log, bye, sampleVisionSetup(),
+            sensorWithVision()};
 }
 
 bool sameSamples(const std::vector<SignalSample>& a, const std::vector<SignalSample>& b) { return a == b; }
@@ -396,7 +466,7 @@ TEST_CASE("codec: protocol v1 peers (frames without the appended fields) decode 
 
     // SensorFrame / DsState / SimControl v1.
     std::vector<std::byte> sf = encodeOk(sampleSensor());
-    sf.resize(sf.size() - 16);
+    sf.resize(sf.size() - 17);
     CHECK(std::get<SensorFrame>(decodeOk(sf)).runEpoch == kUnspecified);
     std::vector<std::byte> ds = encodeOk(sampleDs());
     ds.resize(ds.size() - 16);
@@ -442,7 +512,7 @@ TEST_CASE("codec: a newer peer's extra fields inside length-prefixed records are
 
 TEST_CASE("codec: unknown message types are skippable, not fatal") {
     BinaryMessageCodec codec;
-    for (int type : {0, 12, 200, 65535}) {
+    for (int type : {0, 13, 200, 65535}) {
         const auto r = codec.decode(bytesOf({kWireFormatVersion, type & 0xFF, (type >> 8) & 0xFF, 1, 2, 3}));
         REQUIRE_FALSE(r.ok());
         CHECK(r.error().code == ErrorCode::Unsupported);
@@ -591,9 +661,180 @@ TEST_CASE("codec: a large SensorFrame round trips") {
 TEST_CASE("codec: sizes are compact") {
     SensorFrame f;
     f.samples = sampleSignals(10);
-    CHECK(encodeOk(f).size() <= 3 + 8 + 8 + 4 + 8 + 8 + 1 + 1 + 10 * 14 + 16);
+    CHECK(encodeOk(f).size() <= 3 + 8 + 8 + 4 + 8 + 8 + 1 + 1 + 10 * 14 + 16 + 1);
     ActuatorFrame a;
     CHECK(encodeOk(a).size() < 64);
+}
+
+TEST_CASE("codec: VisionSetup round trips with every camera field") {
+    const VisionSetup in = sampleVisionSetup();
+    const auto bytes = encodeOk(in);
+    CHECK(bytes[1] == std::byte{12});  // MessageType::VisionSetup
+    CHECK(bytes[2] == std::byte{0});
+    const Message decoded = decodeOk(bytes);
+    CHECK(typeOf(decoded) == MessageType::VisionSetup);
+    const auto& out = std::get<VisionSetup>(decoded);
+    REQUIRE(out.cameras.size() == in.cameras.size());
+    for (std::size_t i = 0; i < in.cameras.size(); ++i) CHECK(out.cameras[i].config == in.cameras[i].config);
+    CHECK(out.cameras[1].config.kind == CameraKind::PhotonVision);
+    CHECK(out.cameras[1].config.attachment.parentMechanismId == "turret");
+    CHECK(out.cameras[1].config.attachment.parentLink == "pitch_link");
+    CHECK(out.cameras[2].config.local == in.cameras[2].config.local);
+    CHECK(out.photonVersion == "v2026.3.4");
+    CHECK(out.layoutName == "2026 Rebuilt (welded)");
+
+    const auto empty = std::get<VisionSetup>(decodeOk(encodeOk(VisionSetup{})));
+    CHECK(empty.cameras.empty());
+    CHECK(empty.photonVersion.empty());
+    CHECK(empty.layoutName.empty());
+}
+
+TEST_CASE("codec: VisionSetup without the trailing strings decodes with empty strings") {
+    VisionSetup in = sampleVisionSetup();
+    in.photonVersion.clear();
+    in.layoutName.clear();
+    std::vector<std::byte> bytes = encodeOk(in);
+    bytes.resize(bytes.size() - 2);  // both empty strings are one length byte each
+    const auto out = std::get<VisionSetup>(decodeOk(bytes));
+    CHECK(out.cameras.size() == 3);
+    CHECK(out.photonVersion.empty());
+    CHECK(out.layoutName.empty());
+}
+
+TEST_CASE("codec: SensorFrame carries camera frames with tags, empty frames and optional robot poses") {
+    const SensorFrame in = sensorWithVision();
+    const auto out = std::get<SensorFrame>(decodeOk(encodeOk(in)));
+    CHECK(out.tick == in.tick);
+    CHECK(out.runEpoch == in.runEpoch);
+    CHECK(sameSamples(out.samples, in.samples));
+    REQUIRE(out.vision.size() == 3);
+    for (std::size_t i = 0; i < in.vision.size(); ++i) {
+        const CameraFrame& a = in.vision[i];
+        const CameraFrame& b = out.vision[i];
+        CHECK(b.cameraIndex == a.cameraIndex);
+        CHECK(b.sequence == a.sequence);
+        CHECK(b.captureTimeUs == a.captureTimeUs);
+        CHECK(b.publishTimeUs == a.publishTimeUs);
+        CHECK(b.robotToCamera == a.robotToCamera);
+        CHECK(b.hasRobotPose == a.hasRobotPose);
+        CHECK(b.robotPoseField == a.robotPoseField);
+        CHECK(b.avgTagDistM == a.avgTagDistM);
+        CHECK(b.avgTagAreaPercent == a.avgTagAreaPercent);
+        CHECK(b.tagSpanM == a.tagSpanM);
+        REQUIRE(b.tags.size() == a.tags.size());
+        for (std::size_t t = 0; t < a.tags.size(); ++t) {
+            CHECK(b.tags[t].id == a.tags[t].id);
+            CHECK(b.tags[t].cameraToTag == a.tags[t].cameraToTag);
+            CHECK(b.tags[t].yawDeg == a.tags[t].yawDeg);
+            CHECK(b.tags[t].pitchDeg == a.tags[t].pitchDeg);
+            CHECK(b.tags[t].areaPercent == a.tags[t].areaPercent);
+            CHECK(b.tags[t].ambiguity == a.tags[t].ambiguity);
+            CHECK(b.tags[t].cornersPx == a.tags[t].cornersPx);
+            CHECK(b.tags[t].distanceM == a.tags[t].distanceM);
+        }
+    }
+    CHECK(out.vision[0].tags.size() == 3);
+    CHECK(out.vision[1].tags.empty());
+    CHECK_FALSE(out.vision[1].hasRobotPose);
+    CHECK(out.vision[2].hasRobotPose);
+}
+
+TEST_CASE("codec: a SensorFrame without the vision tail decodes with no camera frames") {
+    std::vector<std::byte> bytes = encodeOk(sampleSensor());
+    bytes.resize(bytes.size() - 1);  // the empty vision count
+    const auto out = std::get<SensorFrame>(decodeOk(bytes));
+    CHECK(out.vision.empty());
+    CHECK(out.sessionId == 3);
+    CHECK(out.runEpoch == 4);
+    CHECK(out.samples.size() == 40);
+
+    // A frame that also lacks the identity tail still decodes.
+    bytes.resize(bytes.size() - 16);
+    CHECK(std::get<SensorFrame>(decodeOk(bytes)).vision.empty());
+}
+
+TEST_CASE("codec: truncated vision data in a SensorFrame is rejected") {
+    BinaryMessageCodec codec;
+    const std::size_t withoutVision = encodeOk(sampleSensor()).size() - 1;
+    const std::vector<std::byte> full = encodeOk(sensorWithVision());
+    REQUIRE(full.size() > withoutVision + 1);
+    for (std::size_t len = withoutVision + 1; len < full.size(); ++len) {
+        const auto r = codec.decode(std::span<const std::byte>(full.data(), len));
+        CHECK_FALSE(r.ok());
+        if (!r.ok()) CHECK(r.error().code == ErrorCode::ProtocolError);
+    }
+    CHECK(codec.decode(std::span<const std::byte>(full.data(), withoutVision)).ok());
+}
+
+TEST_CASE("codec: truncated VisionSetup cameras are rejected") {
+    BinaryMessageCodec codec;
+    const std::vector<std::byte> full = encodeOk(sampleVisionSetup());
+    const std::size_t tailBytes = 1 + 9 + 1 + 21;  // photonVersion + layoutName with their length prefixes
+    for (std::size_t len = 0; len < full.size() - tailBytes; ++len)
+        CHECK_FALSE(codec.decode(std::span<const std::byte>(full.data(), len)).ok());
+}
+
+TEST_CASE("codec: hostile vision counts and enums are rejected") {
+    BinaryMessageCodec codec;
+    // VisionSetup claiming 2^40 cameras / more cameras than bytes.
+    CHECK(codec.decode(bytesOf({kWireFormatVersion, 12, 0, 0x80, 0x80, 0x80, 0x80, 0x80, 0x20})).error().code ==
+          ErrorCode::ProtocolError);
+    CHECK(codec.decode(bytesOf({kWireFormatVersion, 12, 0, 200, 1, 2, 3})).error().code == ErrorCode::ProtocolError);
+
+    // SensorFrame claiming a huge camera-frame count with almost no bytes behind it.
+    std::vector<std::byte> sf = encodeOk(sampleSensor());
+    sf.pop_back();
+    for (int b : {0xFF, 0xFF, 0x7F, 1, 2, 3}) sf.push_back(static_cast<std::byte>(b));
+    CHECK(codec.decode(sf).error().code == ErrorCode::ProtocolError);
+
+    // A camera frame claiming more tags than the cap, and more than its bytes hold.
+    SensorFrame one;
+    one.vision.push_back(sampleCameraFrame(0, 0, false));
+    const std::vector<std::byte> base = encodeOk(one);
+    const std::size_t tagCountAt = base.size() - 1 - 28 - 3 * 8 - 1;
+    REQUIRE(base[tagCountAt] == std::byte{0});
+    for (std::initializer_list<int> count : {std::initializer_list<int>{0x88, 0x27}, std::initializer_list<int>{0xE8, 0x07}}) {
+        std::vector<std::byte> f(base.begin(), base.begin() + static_cast<std::ptrdiff_t>(tagCountAt));
+        for (int b : count) f.push_back(static_cast<std::byte>(b));
+        f.insert(f.end(), base.begin() + static_cast<std::ptrdiff_t>(tagCountAt) + 1, base.end());
+        CHECK(codec.decode(f).error().code == ErrorCode::ProtocolError);
+    }
+
+    // Out-of-range CameraKind: the byte after the three strings of the first camera.
+    VisionSetup v;
+    v.cameras.push_back(CameraSetup{sampleCameraConfig(0)});
+    std::vector<std::byte> setup = encodeOk(v);
+    const std::size_t kindAt = 3 + 1 + (1 + 8) + (1 + 12) + 1;
+    REQUIRE(setup[kindAt] == std::byte{0});
+    setup[kindAt] = std::byte{2};
+    CHECK(codec.decode(setup).error().code == ErrorCode::ProtocolError);
+}
+
+TEST_CASE("codec: vision frames beyond the wire caps fail to encode and leave the buffer untouched") {
+    std::vector<std::byte> out = {std::byte{7}};
+    SensorFrame f;
+    f.vision.push_back(sampleCameraFrame(0, 0, false));
+    f.vision.back().tags.resize(1025);
+    CHECK_FALSE(BinaryMessageCodec().encode(f, out).ok());
+    CHECK(out.size() == 1);
+
+    VisionSetup v;
+    v.cameras.resize(257);
+    CHECK_FALSE(BinaryMessageCodec().encode(v, out).ok());
+    CHECK(out.size() == 1);
+}
+
+TEST_CASE("codec: a large SensorFrame with many cameras and tags round trips") {
+    SensorFrame f = sampleSensor();
+    for (std::uint32_t c = 0; c < 8; ++c) f.vision.push_back(sampleCameraFrame(c, 1000, c % 2 == 0));
+    const std::vector<std::byte> bytes = encodeOk(f);
+    CHECK(bytes.size() > 1000000);
+    const auto back = std::get<SensorFrame>(decodeOk(bytes));
+    REQUIRE(back.vision.size() == 8);
+    CHECK(back.vision[7].tags.size() == 1000);
+    CHECK(back.vision[7].tags[999].id == 1000);
+    CHECK(back.vision[6].hasRobotPose);
+    CHECK(encodeOk(back) == bytes);
 }
 
 TEST_CASE("codec: has a stable name") { CHECK(BinaryMessageCodec().name() == "wpiemu-binary-1"); }
