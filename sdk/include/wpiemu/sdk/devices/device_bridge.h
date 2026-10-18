@@ -61,6 +61,11 @@ public:
     // reconnect), before the first SensorFrame of that connection is applied. A bridge that cached
     // visionSetup() polls it from poll() and rebuilds its cameras when it changes. Default: 0.
     virtual std::uint64_t visionSetupRevision() const { return 0; }
+    // True once the robot program signalled that its constructor finished (HALSIM_GetProgramStarted).
+    // A bridge that creates robot-visible state of its own (the vision bridge's NetworkTables topics)
+    // waits for it, so everything the robot constructor created is already visible to it. With
+    // WPIEMU_LIVE_DISCOVERY=1 bridges are polled earlier than that. Default: true.
+    virtual bool programStarted() const { return true; }
 };
 
 class IDeviceBridge {
