@@ -5,6 +5,7 @@
 #include <functional>
 #include <QWidget>
 
+#include "camera_hud.h"
 #include "hud_model.h"
 #include "mechanism_overlay_model.h"
 #include "run_control.h"
@@ -56,7 +57,7 @@ private:
 class RunViewport : public QWidget {
     Q_OBJECT
 public:
-    RunViewport(SceneModel& scene, HudModel& hud, MechanismOverlayModel& mechanisms, ViewportTheme& theme,
+    RunViewport(SceneModel& scene, HudModel& hud, MechanismOverlayModel& mechanisms, CameraHudModel& cameras, ViewportTheme& theme,
                 ViewportOptions& options, QWidget* parent = nullptr);
 
     StateOverlay* overlay() const { return overlay_; }

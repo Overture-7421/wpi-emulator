@@ -4,6 +4,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
+#include <string_view>
+
+#include "common/demo_vision.h"
+#include "wpiemu/sdk/config/validation_codes.h"
 
 namespace wpiemu::app {
 
@@ -77,6 +82,23 @@ void DemoRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<con
         scene_.gameName = QString::fromStdString(game->metadata().displayName);
     }
     plannedDevices_ = scene_.config ? demoDevicesFor(*scene_.config) : std::vector<sdk::DiscoveredDevice>{};
+    visionCameras_.clear();
+    layoutTags_.clear();
+    layoutMissing_ = false;
+    if (scene_.config) {
+        visionCameras_ = scene_.config->vision.cameras;
+        if (visionCameras_.empty()) visionCameras_.push_back(demo_vision::defaultFrontCamera(*scene_.config));
+        // The layout the project names, else the game's first one (a layout file is not read by this stand-in).
+        if (game != nullptr) {
+            const std::vector<sdk::FiducialLayout> layouts = game->contributeFiducialLayouts();
+            const std::string& wanted = scene_.config->vision.layoutId;
+            const auto chosen = std::find_if(layouts.begin(), layouts.end(), [&](const sdk::FiducialLayout& l) { return wanted.empty() || l.id == wanted; });
+            if (chosen != layouts.end())
+                for (const sdk::FiducialTag& tag : chosen->tags)
+                    layoutTags_.push_back({tag.id, tag.pose, static_cast<float>(tag.sizeM > 0.0 ? tag.sizeM : chosen->tagSizeM)});
+        }
+        layoutMissing_ = layoutTags_.empty();
+    }
     if (!sameProject) {
         announced_.clear();
         resetSimulation();
@@ -299,8 +321,56 @@ void DemoRuntimeHost::publish() {
     }
     const double load = std::min(1.0, std::hypot(vx_, vy_) / 3.0);
     data.batteryVoltageV = ds_.enabled ? 12.6 - 1.8 * load : 12.6;
+    publishVision(data);
     slot_.publish(std::make_shared<const sdk::SimSnapshot>(std::move(data)));
     emit snapshotPublished();
+}
+
+void DemoRuntimeHost::publishVision(sdk::SimSnapshotData& data) const {
+    namespace code = sdk::validation_code;
+    if (!scene_.config || visionCameras_.empty()) return;
+    if (layoutMissing_)
+        data.warnings.push_back({sdk::Severity::Error, {}, code::kVisionLayoutMissing, "The game provides no AprilTag layout, so no tags are drawn or detected."});
+    else
+        data.fiducials = layoutTags_;
+
+    // The stand-in has no mechanism poses: a camera on a mechanism hangs on its rest pose.
+    const sdk::LinkPoseSource rest = [this](std::string_view mechanism, std::string_view) -> std::optional<sdk::Pose3> {
+        if (scene_.config->findMechanism(mechanism) == nullptr) return std::nullopt;
+        return sdk::Pose3{};
+    };
+    const bool live = status_.simulating && status_.link == HostLinkState::Connected;
+    for (const sdk::CameraConfig& camera : visionCameras_) {
+        const sdk::Pose3 world = data.chassis.pose * demo_vision::cameraInChassis(*scene_.config, camera, rest);
+        sdk::CameraSample sample = demo_vision::makeSample(camera, world);
+        if (!camera.enabled) {
+            sample.status = "disabled";
+            data.cameras.push_back(std::move(sample));
+            continue;
+        }
+        sample.visibleTagIds = demo_vision::visibleTagIds(camera, world, layoutTags_);
+        sample.framesCaptured = demo_vision::framesCaptured(camera.frameRateHz, data.simTimeUs);
+        sample.framesPublished = demo_vision::framesPublished(camera.frameRateHz, camera.latencyUs, data.simTimeUs);
+        sample.lastLatencyMs = static_cast<double>(camera.latencyUs) / 1000.0;
+        sample.robotConnected = live;
+        data.cameras.push_back(std::move(sample));
+
+        if (!live) continue;
+        sdk::CameraRobotState robot;
+        robot.ntName = camera.networkName();
+        robot.vendor = camera.vendor;
+        robot.cameraId = camera.id;
+        robot.pipelineIndex = 0;
+        if (camera.vendor == sdk::CameraVendor::PhotonVision) {
+            robot.driverMode = false;
+            robot.ledMode = -1;
+        } else {
+            robot.ledMode = 0;
+        }
+        robot.publishing = true;
+        robot.framesPublished = data.cameras.back().framesPublished;
+        data.detectedCameras.push_back(std::move(robot));
+    }
 }
 
 }  // namespace wpiemu::app

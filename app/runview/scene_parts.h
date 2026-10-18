@@ -28,7 +28,8 @@ struct ScenePart {
     std::string color = "#808080";
     bool translucent = false;
     float opacity = 0.28f;      // alpha when translucent
-    bool highlighted = false;   // drawn brighter (an active zone)
+    bool highlighted = false;   // drawn brighter (an active zone, an AprilTag a camera sees)
+    bool visible = true;        // false: kept in the model but not drawn (an unused ray of a pool)
 };
 
 // The robot rig: chassis frame/primitives, wheels (with a rotation marker) and mechanism primitives. All primitives
