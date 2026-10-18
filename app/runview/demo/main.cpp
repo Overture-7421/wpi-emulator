@@ -3,8 +3,9 @@
 // Scenarios: idle, starting, running, crash, timeout, mismatch, failed.
 // Options: --light | --dark, --gamepad, --joysticks, --park (window out of sight), --still (do not drive the robot),
 //   --view robot|top (frame the start area), --pose x,y,yawDeg (put the robot there), --fault photon|foreign|disabled|disconnected|unused|unconfigured|layout (cameras),
-//   --crop x,y,w,h[,scale] (save just that part of the screenshot, enlarged).
+//   --hide cameras,aprilTags,... (uncheck View menu toggles by their label prefix), --crop x,y,w,h[,scale] (save just that part of the screenshot, enlarged).
 
+#include <QAction>
 #include <QApplication>
 #include <QDir>
 #include <QGuiApplication>
@@ -96,6 +97,9 @@ int main(int argc, char* argv[]) {
     //   --fault photon | foreign | disabled | disconnected | unused | unconfigured | layout
     const QString view = argValue(args, QStringLiteral("--view"), QStringLiteral("home"));
     QTimer::singleShot(1500, &app, [&] {
+        for (const QString& name : argValue(args, QStringLiteral("--hide")).split(QLatin1Char(','), Qt::SkipEmptyParts))
+            for (QAction* action : page.viewActions())
+                if (action->text().startsWith(name, Qt::CaseInsensitive)) action->setChecked(false);
         if (const QStringList pose = argValue(args, QStringLiteral("--pose")).split(QLatin1Char(',')); pose.size() == 3)
             backend.setRobotPose(wpiemu::sdk::toPose3(wpiemu::sdk::StartPose{pose[0].toFloat(), pose[1].toFloat(), pose[2].toFloat() * 3.14159265f / 180.f}, 0.2f));
         wpiemu::app::OrbitCamera& orbit = page.scene().camera();
