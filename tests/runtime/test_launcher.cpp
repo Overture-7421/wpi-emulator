@@ -188,6 +188,7 @@ TEST_CASE("PATH lookup: finds executables, honours PATHEXT on Windows, ignores d
     fs::create_directories(bin1);
     fs::create_directories(bin2);
     dir.write("bin2/tool.exe", "x");
+    if (!kWindows) dir.write("bin2/tool.EXE", "x");   // PATHEXT candidates are upper case; case-sensitive file systems need that exact name
     dir.write("bin1/script.cmd", "x");
     fs::create_directories(bin1 / "folder.exe");
     const std::string path = bin1.string() + ";" + bin2.string();

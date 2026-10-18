@@ -17,7 +17,7 @@ using sdk::Value;
 namespace {
 
 constexpr bool kHasFloatCharconv =
-#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L
+#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L && !defined(__APPLE__)
     true;
 #else
     false;

@@ -142,6 +142,7 @@ TEST_CASE("real host: Stop ends a starting robot and the process tree, restart s
     CHECK(f.controller.runtimeLabel() == QStringLiteral("Starting robot…"));
     CHECK(f.host().latestSnapshot() != nullptr);   // an idle model snapshot is available right away
 
+    REQUIRE(waitFor([&] { return f.logged("fake gradle started"); }, 15000));   // the script must have run before it is stopped
     QSignalSpy spy(&f.host(), &IRuntimeHost::statusChanged);
     f.host().stop();
     CHECK(f.host().status().process == HostProcessState::Stopping);
