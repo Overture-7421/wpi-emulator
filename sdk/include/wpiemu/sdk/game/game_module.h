@@ -14,6 +14,7 @@
 #include "wpiemu/sdk/game/zone_kind.h"
 #include "wpiemu/sdk/mechanisms/mechanism.h"
 #include "wpiemu/sdk/physics/physics_world.h"
+#include "wpiemu/sdk/vision/apriltag.h"
 
 namespace wpiemu::sdk {
 
@@ -66,6 +67,10 @@ public:
     // core rejects zones whose kind is not owned by the selected plugin and validates ZoneConfig::properties
     // against the kind's schema. The plugin runtime builds the actual intake/shooter behaviour from the zones.
     virtual std::vector<ZoneKindInfo> contributeZoneKinds() const { return {}; }
+
+    // The season's AprilTag layout (field frame), used by the simulated vision cameras. Empty = the season has none
+    // and cameras never see a tag.
+    virtual AprilTagLayout aprilTagLayout() const { return {}; }
 
     // Cross-cutting game logic hook after IGameState::step each tick (e.g. match timer phases).
     virtual void onTick(SimContext& /*ctx*/, double /*dtSeconds*/) {}

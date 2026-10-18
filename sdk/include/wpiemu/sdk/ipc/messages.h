@@ -53,6 +53,7 @@
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/devices/device_descriptor.h"
 #include "wpiemu/sdk/devices/signal.h"
+#include "wpiemu/sdk/vision/camera_frame.h"
 
 namespace wpiemu::sdk::proto {
 
@@ -182,6 +183,8 @@ struct SensorFrame {
     double batteryCurrentA = 0.0;        // informational (roboRIO current)
     bool full = false;                   // true: contains every Input signal; false: only changed ones
     std::vector<SignalSample> samples;
+    // Camera frames due this tick (CameraFrame::publishTimeUs <= simTimeUs), see vision/camera_frame.h.
+    std::vector<CameraFrame> vision;
     // identity of the run this frame belongs to (see classifyFrame).
     std::uint64_t sessionId = kUnspecified;
     std::uint64_t runEpoch = kUnspecified;

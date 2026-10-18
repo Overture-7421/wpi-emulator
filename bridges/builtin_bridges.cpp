@@ -13,6 +13,7 @@
 
 #include "wpiemu/sdk/devices/builtin_bridges.h"
 #include "wpiemu/sdk/devices/device_bridge.h"
+#include "wpiemu/sdk/vision/vision_bridge.h"
 
 #if defined(WPIEMU_BUILTIN_HAL_HALSIM)
 #include "wpiemu/bridges/hal/hal_sim_binding.h"
@@ -49,6 +50,12 @@ Status registerBuiltinBridges(DeviceBridgeRegistry& registry) {
     attempt(first, [&] { return bridges::vendor::WPIEMU_BUILTIN_VENDOR_REGISTER(registry); });
 #endif
 
+    return first;
+}
+
+Status registerBuiltinVisionBridges(VisionBridgeRegistry& registry) {
+    Status first = okStatus();
+    (void)registry;
     return first;
 }
 
