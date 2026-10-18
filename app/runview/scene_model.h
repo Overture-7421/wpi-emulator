@@ -73,6 +73,30 @@ private:
     QSet<QString> hidden_;
 };
 
+// One text label per AprilTag (SDK-frame position just above the plate); the QML layer projects it to the screen.
+class TagLabelModel : public QAbstractListModel {
+    Q_OBJECT
+public:
+    enum Role { TextRole = Qt::UserRole + 1, PositionRole, SeenRole };
+
+    explicit TagLabelModel(QObject* parent = nullptr);
+    int rowCount(const QModelIndex& parent = {}) const override;
+    QVariant data(const QModelIndex& index, int role) const override;
+    QHash<int, QByteArray> roleNames() const override;
+
+    void setTags(const std::vector<TagOverlay>& tags);
+    // `changed` flags the tags whose seen state flipped.
+    void updateSeen(const std::vector<TagOverlay>& tags, const std::vector<char>& changed);
+
+private:
+    struct Item {
+        QString text;
+        QVector3D position;
+        bool seen = false;
+    };
+    std::vector<Item> items_;
+};
+
 class EntityGroupModel : public QAbstractListModel {
     Q_OBJECT
 public:
@@ -160,6 +184,9 @@ class SceneModel : public QObject {
     Q_PROPERTY(QObject* fieldParts READ fieldParts CONSTANT)
     Q_PROPERTY(QObject* robotParts READ robotParts CONSTANT)
     Q_PROPERTY(QObject* zones READ zones CONSTANT)
+    Q_PROPERTY(QObject* simCameras READ simCameras CONSTANT)
+    Q_PROPERTY(QObject* tags READ tags CONSTANT)
+    Q_PROPERTY(QObject* tagLabels READ tagLabels CONSTANT)
     Q_PROPERTY(QObject* entityGroups READ entityGroups CONSTANT)
     Q_PROPERTY(QVector3D chassisPosition READ chassisPosition NOTIFY poseChanged)
     Q_PROPERTY(QQuaternion chassisRotation READ chassisRotation NOTIFY poseChanged)
@@ -171,6 +198,8 @@ class SceneModel : public QObject {
     Q_PROPERTY(float fieldWidth READ fieldWidth NOTIFY fieldChanged)
     Q_PROPERTY(QVector3D fieldCenter READ fieldCenter NOTIFY fieldChanged)
     Q_PROPERTY(bool zonesVisible READ zonesVisible WRITE setZonesVisible NOTIFY zonesVisibleChanged)
+    Q_PROPERTY(bool simCamerasVisible READ simCamerasVisible WRITE setSimCamerasVisible NOTIFY simCamerasVisibleChanged)
+    Q_PROPERTY(bool tagsVisible READ tagsVisible WRITE setTagsVisible NOTIFY tagsVisibleChanged)
 public:
     explicit SceneModel(QObject* parent = nullptr);
 
@@ -180,11 +209,16 @@ public:
     QObject* fieldParts() { return &field_; }
     QObject* robotParts() { return &robot_; }
     QObject* zones() { return &zones_; }
+    QObject* simCameras() { return &simCameras_; }
+    QObject* tags() { return &tags_; }
+    QObject* tagLabels() { return &tagLabels_; }
     QObject* entityGroups() { return &entities_; }
     PartListModel& robotModel() { return robot_; }
     EntityGroupModel& entityModel() { return entities_; }
     RobotRig& rig() { return rig_; }
     ZoneRig& zoneRig() { return zoneRig_; }
+    CameraRig& cameraRig() { return cameraRig_; }
+    TagRig& tagRig() { return tagRig_; }
     OrbitCamera& camera() { return camera_; }
 
     QVector3D chassisPosition() const { return chassisPosition_; }
@@ -199,6 +233,11 @@ public:
 
     bool zonesVisible() const { return zonesVisible_; }
     void setZonesVisible(bool v);
+    // Simulated cameras (body + frustum) and field AprilTags; the View menu's "Cameras" / "AprilTags".
+    bool simCamerasVisible() const { return simCamerasVisible_; }
+    void setSimCamerasVisible(bool v);
+    bool tagsVisible() const { return tagsVisible_; }
+    void setTagsVisible(bool v);
     QStringList zoneLabels() const { return zoneLabels_; }
     void setZoneLabelShown(const QString& label, bool shown) { zones_.setLabelShown(label, shown); }
     bool zoneLabelShown(const QString& label) const { return zones_.labelShown(label); }
@@ -215,21 +254,29 @@ signals:
     void cameraChanged();
     void fieldChanged();
     void zonesVisibleChanged();
+    void simCamerasVisibleChanged();
+    void tagsVisibleChanged();
     void zoneLabelsChanged();
 
 private:
     void refreshCamera();
     void updateZones(const sdk::ISimSnapshot* snapshot);
+    void updateVision(const sdk::ISimSnapshot* snapshot);
 
     PartListModel field_;
     PartListModel robot_;
     PartListModel zones_;
+    PartListModel simCameras_;
+    PartListModel tags_;
+    TagLabelModel tagLabels_;
     EntityGroupModel entities_;
     RobotRig rig_;
     OrbitCamera camera_;
     float viewHeightPx_ = 720.f;
     RunSceneInfo info_;
     ZoneRig zoneRig_;
+    CameraRig cameraRig_;
+    TagRig tagRig_;
     QStringList zoneLabels_;
 
     QVector3D chassisPosition_;
@@ -242,6 +289,8 @@ private:
     float fieldWidth_ = 8.23f;
     QVector3D fieldCenter_{8.2f, 4.1f, 0.f};
     bool zonesVisible_ = true;
+    bool simCamerasVisible_ = true;
+    bool tagsVisible_ = true;
 };
 
 }  // namespace wpiemu::app::runview

@@ -70,6 +70,21 @@ Item {
                         delegate: PartModel {}
                     }
                 }
+                Node {
+                    visible: scene.simCamerasVisible
+                    Repeater3D {
+                        model: scene.simCameras
+                        delegate: PartModel {}
+                    }
+                }
+            }
+
+            Node {
+                visible: scene.tagsVisible
+                Repeater3D {
+                    model: scene.tags
+                    delegate: PartModel {}
+                }
             }
 
             Repeater3D {
@@ -113,6 +128,32 @@ Item {
 
     onHeightChanged: scene.setViewHeight(height)
     Component.onCompleted: scene.setViewHeight(height)
+
+    // AprilTag ids, projected from the field-frame label positions (SDK coordinates, converted by the world node).
+    Repeater {
+        model: scene.tagLabels
+        delegate: Text {
+            id: tagLabel
+            required property string labelText
+            required property vector3d labelPosition
+            required property bool labelSeen
+
+            // The camera / view size are read so the binding re-evaluates whenever the projection changes.
+            readonly property vector3d screen: {
+                scene.cameraPosition; scene.cameraRotation; scene.cameraFov; view.width; view.height
+                return view.mapFrom3DScene(world.mapPositionToScene(labelPosition))
+            }
+            visible: scene.tagsVisible && screen.z > 0
+            x: screen.x - width / 2
+            y: screen.y - height / 2
+            text: labelText
+            font.pixelSize: 12
+            font.bold: true
+            color: labelSeen ? theme.success : theme.text
+            style: Text.Outline
+            styleColor: theme.background
+        }
+    }
 
     // Game-plugin HUD: generic renderer of HudWidgetDescriptors.
     Item {
