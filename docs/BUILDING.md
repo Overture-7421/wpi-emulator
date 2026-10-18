@@ -58,6 +58,28 @@ macOS defaults to deployment minimum 13.0 before compiler initialization in the 
 `CMakeLists.txt`; the bundle plist derives its minimum from the same configured value.
 An explicit `-DCMAKE_OSX_DEPLOYMENT_TARGET=<version>` overrides it. Newer-runner smoke tests
 do not prove runtime compatibility with the minimum supported OS.
+Apple's libc++ marks floating-point `std::from_chars` / `std::to_chars` unavailable below macOS 13.3/26.0, so
+`core/runtime/src/config/json_codec.cpp` uses its locale-independent stream fallback on Apple (do not use floating-point
+`charconv` in new code). CI and releases run on `macos-14`: Qt 6.8.3 links the AGL framework, which the macOS 26 SDK
+(`macos-latest`) no longer ships.
+
+### Linux in Docker from Windows or macOS (matches the release runner)
+`tools/docker/linux` builds an `ubuntu:22.04` image with the CI package set, CMake >= 3.25 and Qt 6.8.3, and runs the
+same steps as `.github/workflows/{ci,release}.yml` (boundary check, configure with WPILib download, build, ctest, install
+smoke test, AppImage). The checkout is mounted read-only and synced into the container (CRLF is stripped from shell and
+packaging files); build output stays in the `wpiemu-linux-build` volume, so reruns are incremental.
+```powershell
+.\tools\docker\linux\run.ps1 all                       # check_boundaries + configure + build + ctest + install + AppImage
+.\tools\docker\linux\run.ps1 test -CtestArgs '-R "^launcher"'
+.\tools\docker\linux\run.ps1 appimage                  # needs a previous build; artifacts: /build/release/pkg in the volume
+.\tools\docker\linux\run.ps1 shell                     # interactive shell (gdb is installed)
+```
+The container is headless (`QT_QPA_PLATFORM=offscreen`); it does not validate Quick 3D rendering. macOS cannot be
+virtualized on non-Apple hardware: iterate on it with the CI workflow, which can run a single platform:
+```sh
+gh workflow run ci.yml --ref <branch> -f platforms=macos -f macos_universal=true
+gh run watch
+```
 
 ## Useful options
 | Option | Default | Meaning |

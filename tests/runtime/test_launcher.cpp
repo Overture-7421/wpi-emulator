@@ -188,6 +188,7 @@ TEST_CASE("PATH lookup: finds executables, honours PATHEXT on Windows, ignores d
     fs::create_directories(bin1);
     fs::create_directories(bin2);
     dir.write("bin2/tool.exe", "x");
+    if (!kWindows) dir.write("bin2/tool.EXE", "x");   // PATHEXT candidates are upper case; case-sensitive file systems need that spelling
     dir.write("bin1/script.cmd", "x");
     fs::create_directories(bin1 / "folder.exe");
     const std::string path = bin1.string() + ";" + bin2.string();
@@ -1008,7 +1009,8 @@ TEST_CASE("launcher: ExternalDirect builds first, then runs the JVM from the des
     }
     REQUIRE(world.started.size() == 2);
     CHECK(world.started[0].args.back() == "simulateExternalJavaRelease");
-    CHECK(world.started[1].args.at(1) == "-jar");
+    const auto& jvmArgs = world.started[1].args;   // macOS adds -XstartOnFirstThread before -jar
+    CHECK(std::find(jvmArgs.begin(), jvmArgs.end(), "-jar") != jvmArgs.end());
     CHECK(world.started[1].env.at(env_var::kHalExtensions) == request.extensionLibrary.string());
 }
 

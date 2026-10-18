@@ -110,12 +110,18 @@ export APPIMAGE_EXTRACT_AND_RUN=1            # no FUSE in containers / CI
 export LINUXDEPLOY_OUTPUT_VERSION="$VERSION"
 export QML_SOURCES_PATHS="$ROOT/app"         # QML is compiled in as resources, so point the scanner at the sources
 export PATH="$TOOLS_DIR:$PATH"               # linuxdeploy finds linuxdeploy-plugin-qt next to itself / on PATH
+# libwpiHal.so is resolved at run time by the robot process that loads the extension, so it is never bundled
+# (--exclude-library below), but linuxdeploy fails unless it can locate the library while scanning the extension.
+wpihal="$(find "$BUILD_DIR/_wpilib" "${WPIEMU_WPILIB_ROOT:-/nonexistent}" -name 'libwpiHal.so' -print -quit 2>/dev/null || true)"
+[[ -z "$wpihal" ]] || export LD_LIBRARY_PATH="$(dirname "$wpihal")${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 rm -f "$OUT_DIR"/*.AppImage
 (
     cd "$OUT_DIR"
+    # (see the libwpiHal.so note above)
     "$TOOLS_DIR/linuxdeploy-x86_64.AppImage" \
         --appdir "$APPDIR" \
         --plugin qt \
+        --exclude-library 'libwpiHal.so*' \
         --executable "$APPDIR/usr/bin/wpiemu_app" \
         --desktop-file "$APPDIR/usr/share/applications/wpiemu.desktop" \
         --icon-file "$APPDIR/usr/share/icons/hicolor/256x256/apps/wpiemu.png" \

@@ -6,8 +6,8 @@ included at the end of the root `CMakeLists.txt`), plus one script per platform 
 | Platform | Artifact | Produced by | Status |
 |---|---|---|---|
 | Windows x64 | `wpi-emulator-<ver>-windows-x64.exe` (NSIS installer) and `.zip` (portable) | `cpack` (NSIS + ZIP generators) | **built and verified locally** (silent install, `--version` with only the system PATH, uninstall) |
-| macOS arm64 | `wpi-emulator-<ver>-macos-arm64.dmg` | `cpack -G DragNDrop` + `macdeployqt` (via Qt deploy API) + `packaging/macos/*` | scripts written, **not run** (no Mac available) |
-| Linux x86_64 | `wpi-emulator-<ver>-linux-x86_64.AppImage` | `packaging/linux/build-appimage.sh` (linuxdeploy + linuxdeploy-plugin-qt) | script written, syntax-checked, **not run** |
+| macOS universal (arm64 + x86_64) | `wpi-emulator-<ver>-macos-arm64-x64.dmg` | `cpack -G DragNDrop` + `macdeployqt` (via Qt deploy API) + `packaging/macos/*` | **built and verified in CI** (`macos-14`): both slices present, minimum OS 13.0, `--version` on arm64 and under Rosetta, no unbundled dependencies; unsigned unless the Apple secrets exist |
+| Linux x86_64 | `wpi-emulator-<ver>-linux-x86_64.AppImage` | `packaging/linux/build-appimage.sh` (linuxdeploy + linuxdeploy-plugin-qt) | **built and verified in CI** (`ubuntu-22.04`) and locally in the Docker image (`tools/docker/linux`): `--version` with an empty environment, extension present in the image |
 
 `.github/workflows/release.yml` builds all three on a `v*` tag (or manually) and attaches them to a **draft** GitHub release.
 `.github/workflows/ci.yml` additionally runs the boundary check, `ctest` (headless, `QT_QPA_PLATFORM=offscreen`) and an
@@ -117,13 +117,14 @@ host process is the robot's JVM). The executable carries the application icon an
 Azure Trusted Signing on the `.exe` from CI secrets, and sign `wpiemu_app.exe`/`halsim_wpiemu.dll` in an install-time step
 before CPack if SmartScreen reputation matters.
 
-### macOS (not run here)
+### macOS
 
 ```sh
 cmake --preset macos -B build/release -DCMAKE_PREFIX_PATH=$HOME/Qt/6.8.3/macos \
+      -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
       -DWPIEMU_WPILIB_DOWNLOAD=ON -DWPIEMU_RUNVIEW_FETCH_SDL2=ON
 cmake --build build/release --config Release
-(cd build/release && cpack -C Release -G DragNDrop -B pkg)       # pkg/wpi-emulator-<ver>-macos-arm64.dmg
+(cd build/release && cpack -C Release -G DragNDrop -B pkg)       # pkg/wpi-emulator-<ver>-macos-arm64-x64.dmg
 packaging/macos/notarize.sh build/release/pkg/wpi-emulator-*.dmg  # optional: sign dmg, notarize, staple
 python tools/package_checksums.py build/release/pkg --verify
 ```
@@ -146,21 +147,24 @@ python tools/package_checksums.py build/release/pkg --verify
   App Store Connect API key (`APPLE_API_KEY_PATH`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`). With no credentials it
   prints a notice and exits 0. Both signing-only and stapled paths refresh and verify the DMG's
   `.sha256` after their final mutation (CPack's earlier digest is no longer valid after signing).
-* **Architectures:** the default is the host architecture (`arm64` on `macos-14`). A universal binary needs
-  `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` (the official Qt 6.8 macOS kit and WPILib's `osxuniversal` libraries are
-  universal) but the FetchContent dependencies (Box3D, SDL2) have not been verified for it; the package name then contains
-  `arm64-x86_64`. The default deployment target is 13.0, set once before compiler initialization
+* **Architectures:** the release is universal (`-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`; the official Qt 6.8 macOS kit and
+  WPILib's `osxuniversal` libraries are universal, Box3D and the fetched SDL2 build for both slices). The package name then
+  contains `arm64-x64`. Without the option the build uses the host architecture. The verify step runs `lipo -archs` on the
+  app and the extension and, when Rosetta is available, runs the x86_64 slice. The default deployment target is 13.0, set once before compiler initialization
   in the root `CMakeLists.txt` for preset and manual/release builds. The plist's
   `LSMinimumSystemVersion` is generated from `CMAKE_OSX_DEPLOYMENT_TARGET`, including an explicit
   command-line override. Release verification inspects each app/extension Mach-O slice with
   `packaging/macos/check_minimum_os.py` and rejects a recorded minimum above the plist value.
   This inspection is not proof of runtime support on the minimum OS; that smoke run remains unverified.
 
-### Linux AppImage (not run here)
+### Linux AppImage
 
 ```sh
 QT_ROOT_DIR=$HOME/Qt/6.8.3/gcc_64 bash packaging/linux/build-appimage.sh      # -> build/appimage/dist/*.AppImage
 ```
+From Windows or macOS use the Docker environment instead: `.\tools\docker\linux\run.ps1 all` (see [BUILDING.md](BUILDING.md)).
+`libwpiHal.so` (needed by the extension, supplied by the robot process) is located through `LD_LIBRARY_PATH` while linuxdeploy
+scans the extension and excluded from the bundle with `--exclude-library`.
 The script configures + builds Release, installs into `build/appimage/AppDir/usr`, downloads **pinned and sha256-checked**
 `linuxdeploy` and `linuxdeploy-plugin-qt` (`1-alpha-20250213`) into `build/appimage/tools`, runs them with
 `--appimage-extract-and-run` (no FUSE needed), renames the result and verifies it (`--version` with a scrubbed environment,
@@ -221,8 +225,11 @@ metadata (`wpiemu.metainfo.xml`) has no `project_license` yet for the same reaso
 
 ## Known gaps / not verified
 
-* Linux and macOS packaging have not been executed (only the Windows path was run end to end); expect to iterate on the
-  first CI run (most likely spots: linuxdeploy plugin options, the macOS `qml` layout check, static SDL2 build dependencies).
+* Linux and macOS packages are built and smoke-tested in CI, but never executed against a real robot project, and the macOS
+  `@loader_path` resolution of `libwpiHal.dylib` from the robot process is still unverified.
+* Signing, notarization and the macOS minimum-OS (13.0) runtime smoke run are exercised only with real Apple credentials /
+  an older macOS; CI proves the Mach-O minimum-version metadata, not runtime support on 13.0.
+* macOS CI uses `macos-14`; `macos-latest` (macOS 26 SDK) fails to link Qt 6.8.3 (missing AGL framework).
 * The extension's behavior against the robot's own `libwpiHal` on Linux/macOS is still the open item of ADR 0001
   (`RTLD_LOCAL`), independent of packaging.
 * Authenticode signing, an MSI, `.deb`/`.rpm` and Linux arm64 AppImages are not provided.

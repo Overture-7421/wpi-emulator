@@ -1,4 +1,6 @@
 *.sh text eol=lf
+*.desktop text eol=lf
+*.metainfo.xml text eol=lf
 *.png binary
 *.ico binary
 *.icns binary

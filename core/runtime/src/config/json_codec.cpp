@@ -16,45 +16,47 @@ using sdk::Value;
 
 namespace {
 
-constexpr bool kHasFloatCharconv =
-#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L
-    true;
+// Apple's libc++ marks floating-point from_chars/to_chars as unavailable below macOS 13.3/26.0 and the deployment
+// target (13.0) is below that, so Apple builds use the locale-independent stream fallback. This has to be a
+// preprocessor switch: a discarded `if constexpr` branch outside a template is still compiled.
+#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L && !defined(__APPLE__) && !defined(WPIEMU_NO_FLOAT_CHARCONV)
+#define WPIEMU_FLOAT_CHARCONV 1
 #else
-    false;
+#define WPIEMU_FLOAT_CHARCONV 0
 #endif
 
 bool parseDouble(std::string_view text, double& out) {
-    if constexpr (kHasFloatCharconv) {
-        const auto [ptr, ec] = std::from_chars(text.data(), text.data() + text.size(), out);
-        return ec == std::errc{} && ptr == text.data() + text.size();
-    } else {
-        std::istringstream in{std::string(text)};
-        in.imbue(std::locale::classic());
-        in >> out;
-        return !in.fail() && in.eof();
-    }
+#if WPIEMU_FLOAT_CHARCONV
+    const auto [ptr, ec] = std::from_chars(text.data(), text.data() + text.size(), out);
+    return ec == std::errc{} && ptr == text.data() + text.size();
+#else
+    std::istringstream in{std::string(text)};
+    in.imbue(std::locale::classic());
+    in >> out;
+    return !in.fail() && in.eof();
+#endif
 }
 
 std::string formatShortest(double d) {
-    if constexpr (kHasFloatCharconv) {
-        char buf[64];
-        const auto res = std::to_chars(buf, buf + sizeof(buf), d);
-        return std::string(buf, res.ptr);
-    } else {
-        for (int precision = 1; precision <= 17; ++precision) {
-            std::ostringstream out;
-            out.imbue(std::locale::classic());
-            out.precision(precision);
-            out << d;
-            double back = 0.0;
-            if (parseDouble(out.str(), back) && back == d) return out.str();
-        }
+#if WPIEMU_FLOAT_CHARCONV
+    char buf[64];
+    const auto res = std::to_chars(buf, buf + sizeof(buf), d);
+    return std::string(buf, res.ptr);
+#else
+    for (int precision = 1; precision <= 17; ++precision) {
         std::ostringstream out;
         out.imbue(std::locale::classic());
-        out.precision(17);
+        out.precision(precision);
         out << d;
-        return out.str();
+        double back = 0.0;
+        if (parseDouble(out.str(), back) && back == d) return out.str();
     }
+    std::ostringstream out;
+    out.imbue(std::locale::classic());
+    out.precision(17);
+    out << d;
+    return out.str();
+#endif
 }
 
 class Parser {
@@ -435,23 +437,23 @@ std::string formatDouble(double d) {
 
 double floatToDouble(float f) {
     if (!std::isfinite(f)) return static_cast<double>(f);
-    if constexpr (kHasFloatCharconv) {
-        char buf[64];
-        const auto res = std::to_chars(buf, buf + sizeof(buf), f);
+#if WPIEMU_FLOAT_CHARCONV
+    char buf[64];
+    const auto res = std::to_chars(buf, buf + sizeof(buf), f);
+    double d = 0.0;
+    if (parseDouble(std::string_view(buf, static_cast<std::size_t>(res.ptr - buf)), d)) return d;
+    return static_cast<double>(f);
+#else
+    for (int precision = 1; precision <= 9; ++precision) {
+        std::ostringstream out;
+        out.imbue(std::locale::classic());
+        out.precision(precision);
+        out << f;
         double d = 0.0;
-        if (parseDouble(std::string_view(buf, static_cast<std::size_t>(res.ptr - buf)), d)) return d;
-        return static_cast<double>(f);
-    } else {
-        for (int precision = 1; precision <= 9; ++precision) {
-            std::ostringstream out;
-            out.imbue(std::locale::classic());
-            out.precision(precision);
-            out << f;
-            double d = 0.0;
-            if (parseDouble(out.str(), d) && static_cast<float>(d) == f) return d;
-        }
-        return static_cast<double>(f);
+        if (parseDouble(out.str(), d) && static_cast<float>(d) == f) return d;
     }
+    return static_cast<double>(f);
+#endif
 }
 
 sdk::Result<Value> JsonValueCodec::parse(std::string_view text) const {

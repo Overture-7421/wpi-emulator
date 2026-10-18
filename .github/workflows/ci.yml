@@ -4,6 +4,16 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Platforms to run (comma separated: windows,linux,macos)"
+        type: string
+        default: "windows,linux,macos"
+      macos_universal:
+        description: "Build macOS as a universal arm64 + x86_64 binary"
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -17,16 +27,32 @@ env:
   QT_QPA_PLATFORM: offscreen    # every Qt test / smoke run is headless
 
 jobs:
+  plan:
+    name: select platforms
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - id: select
+        env:
+          PLATFORMS: ${{ inputs.platforms || 'windows,linux,macos' }}
+        run: |
+          # macos-14 (Xcode 15, arm64) matches release.yml. macos-latest is macOS 26 whose SDK no longer ships the AGL
+          # framework that Qt 6.8.3 links against ("ld: framework 'AGL' not found").
+          all='[{"name":"windows","os":"windows-2022","preset":"windows-vs2022","qt_arch":"win64_msvc2022_64"},
+                {"name":"linux","os":"ubuntu-latest","preset":"linux","qt_arch":""},
+                {"name":"macos","os":"macos-14","preset":"macos","qt_arch":""}]'
+          matrix="$(echo "$all" | jq -c --arg p "$PLATFORMS" \
+            '{include: [.[] | select(.name as $n | ($p | gsub(" "; "") | split(",") | index($n)) != null)]}')"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   build:
     name: ${{ matrix.name }}
+    needs: plan
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { name: windows, os: windows-2022, preset: windows-vs2022, qt_arch: win64_msvc2022_64 }
-          - { name: linux, os: ubuntu-latest, preset: linux, qt_arch: "" }
-          - { name: macos, os: macos-latest, preset: macos, qt_arch: "" }
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -76,7 +102,13 @@ jobs:
           key: wpilib-${{ env.WPILIB_VERSION }}-${{ matrix.name }}
 
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }} -DWPIEMU_WPILIB_DOWNLOAD=ON -DWPIEMU_RUNVIEW_FETCH_SDL2=ON
+        shell: bash
+        run: |
+          extra=()
+          if [ "$RUNNER_OS" = "macOS" ] && [ "${{ inputs.macos_universal }}" = "true" ]; then
+            extra+=(-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64")
+          fi
+          cmake --preset ${{ matrix.preset }} -DWPIEMU_WPILIB_DOWNLOAD=ON -DWPIEMU_RUNVIEW_FETCH_SDL2=ON "${extra[@]}"
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}-release

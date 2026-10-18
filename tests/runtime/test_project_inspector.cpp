@@ -368,6 +368,7 @@ TEST_CASE("toolchain: JDK sources - JAVA_HOME, PATH, old versions") {
 
     // only java on PATH
     d.write("pathbin/" + std::string(java), "x");
+    fs::permissions(d.path() / "pathbin" / java, fs::perms::owner_exec, fs::perm_options::add);   // PATH lookup needs the exec bit on POSIX
     ctx.env = envOf({{"PATH", (d.path() / "pathbin").string()}});
     r = inspectToolchain(project, ctx);
     CHECK(r.find("jdk")->status == CheckStatus::Warning);
@@ -389,8 +390,10 @@ TEST_CASE("toolchain: C++ projects need a host compiler, vendordep years are com
     ctx.env = envOf({{"PATH", ""}, {"ProgramFiles", (d.path() / "nothing").string()}});
 
     ToolchainReport report = inspectToolchain(project, ctx);
-    CHECK(report.find("cpp_toolchain")->status == CheckStatus::Error);
-    CHECK_FALSE(report.ready());
+    if (currentPlatform() != Platform::MacOS) {   // macOS always has the /usr/bin/clang++ shim
+        CHECK(report.find("cpp_toolchain")->status == CheckStatus::Error);
+        CHECK_FALSE(report.ready());
+    }
     CHECK(report.find("vendordeps")->status == CheckStatus::Warning);
     CHECK(report.find("vendordeps")->detail.find("2023") != std::string::npos);
 
