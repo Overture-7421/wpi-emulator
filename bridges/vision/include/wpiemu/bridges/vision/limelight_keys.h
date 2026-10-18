@@ -3,7 +3,7 @@
 // THE Limelight NetworkTables contract, in one place (plan section 13, "one key table"). Every topic name, array layout
 // and index the Limelight publisher uses is a named constant below; no other file holds a topic string or an array
 // index literal. A Limelight OS or LimelightHelpers update is therefore an edit of this header plus its pin test
-// (tests/bridges_vision/test_limelight_keys.cpp), and a drift checker can parse it line by line.
+// (tests/bridges_vision/test_limelight_keys.cpp).
 //
 // Facts only, taken from the public contract (no vendor code or firmware is reproduced):
 //   [NT]  https://docs.limelightvision.io/docs/docs-limelight/apis/complete-networktables-api
