@@ -143,6 +143,7 @@ SelectionRef ViewportController::transformSelection() const {
         case SelKind::Primitive:
         case SelKind::Mechanism:
         case SelKind::Zone:
+        case SelKind::Camera:
         case SelKind::Overlay: return sel;
         default: return {};
     }

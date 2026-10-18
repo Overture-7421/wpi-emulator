@@ -48,6 +48,7 @@ editor::EditorCatalog EditorBackendAdapter::catalog() const {
         out.pluginSchema = module->contributeConfigSchema();
         out.pluginPanels = module->contributeEditorPanels();
         out.zoneKinds = module->contributeZoneKinds();
+        out.fiducialLayouts = module->contributeFiducialLayouts();
     }
     out.defaultStartPose = defaultStartPose(module);
     return out;
@@ -113,6 +114,10 @@ void EditorBackendAdapter::onSessionChanged() {
         lastIssues_.clear();
         emit devicesChanged();
         emit issuesChanged({});
+        if (!cameras_.empty()) {
+            cameras_.clear();
+            emit detectedCamerasChanged();
+        }
     }
     pending_.reset();
     emit catalogChanged();
@@ -152,6 +157,25 @@ void EditorBackendAdapter::onSnapshot() {
         emit devicesChanged();
     }
 
+    // The cameras the robot process reports (including ones the model does not list). Like devices, a camera that is no
+    // longer reported stays until the next robot launch; entries are told apart by vendor and NetworkTables name.
+    bool camerasChanged = false;
+    for (const sdk::CameraRobotState& seen : snapshot->detectedCameras()) {
+        const auto it = std::find_if(cameras_.begin(), cameras_.end(), [&seen](const sdk::CameraRobotState& known) {
+            return known.vendor == seen.vendor && known.ntName == seen.ntName;
+        });
+        if (it == cameras_.end()) {
+            cameras_.push_back(seen);
+            camerasChanged = true;
+            continue;
+        }
+        sdk::CameraRobotState previous = *it;
+        previous.framesPublished = seen.framesPublished;   // a counter that moves on every frame is not news for the editor
+        camerasChanged = camerasChanged || !(previous == seen);
+        *it = seen;
+    }
+    if (camerasChanged) emit detectedCamerasChanged();
+
     std::vector<sdk::Issue> issues;
     for (const sdk::HubWarning& w : snapshot->warnings()) {
         sdk::Issue issue;
@@ -180,6 +204,10 @@ void EditorBackendAdapter::onStatus() {
         lastIssues_.clear();
         emit devicesChanged();
         emit issuesChanged({});
+        if (!cameras_.empty()) {
+            cameras_.clear();
+            emit detectedCamerasChanged();
+        }
     }
     const bool now = detecting();
     if (now == lastDetecting_) return;

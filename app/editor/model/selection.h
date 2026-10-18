@@ -23,6 +23,8 @@ enum class SelKind {
     Zone,        // owner = zone id (RobotConfig::zones)
     Device,       // a detected device: owner = serialized DeviceKey (see device_mime.h)
     StartPose,   // the start pose marker on the floor (SimSettings::startPose)
+    Camera,      // owner = camera id (RobotConfig::vision.cameras)
+    Vision,      // the project's vision settings (AprilTag layout, PhotonLib UUID) and the Cameras group
 };
 
 struct SelectionRef {
@@ -45,6 +47,8 @@ struct SelectionRef {
     static SelectionRef overlay(std::string owner, std::string key) { return {SelKind::Overlay, std::move(owner), std::move(key), -1}; }
     static SelectionRef plugin() { return {SelKind::Plugin, {}, {}, -1}; }
     static SelectionRef zone(std::string id) { return {SelKind::Zone, std::move(id), {}, -1}; }
+    static SelectionRef camera(std::string id) { return {SelKind::Camera, std::move(id), {}, -1}; }
+    static SelectionRef vision() { return {SelKind::Vision, {}, {}, -1}; }
     static SelectionRef device(std::string key) { return {SelKind::Device, std::move(key), {}, -1}; }
     static SelectionRef startPose() { return {SelKind::StartPose, {}, {}, -1}; }
 

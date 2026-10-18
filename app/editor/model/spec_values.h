@@ -29,6 +29,16 @@ sdk::Value startPoseValues(const sdk::RobotConfig& c, const EditorCatalog& catal
 // Sets one component; the other two keep their effective values, so editing any field writes the whole pose.
 void applyStartPose(sdk::RobotConfig& c, const EditorCatalog& catalog, const std::string& key, const sdk::Value& v);
 
+// ---- attachment (zones and cameras): the part it hangs on, the link of that part and the pose relative to the link ----
+struct AttachmentTexts {
+    QString parentHelp;   // tooltip of "Attached to"
+    QString linkHelp;     // tooltip of "Attachment link"
+    QString poseHelp;     // tooltip of "Pose"
+};
+// Keys: "parent", "parentLink", "local". The parent list holds every mechanism (and the dangling one the attachment names).
+sdk::PropertySchema attachmentSchema(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::MechanismAttachment& attachment,
+                                     const AttachmentTexts& texts);
+
 // ---- chassis (hull, mass, COM, material) ----
 sdk::PropertySchema chassisSchema();
 sdk::Value chassisValues(const sdk::ChassisSpec& s);

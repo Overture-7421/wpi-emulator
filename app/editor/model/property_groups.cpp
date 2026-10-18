@@ -5,6 +5,7 @@
 #include "model/config_ops.h"
 #include "model/spec_values.h"
 #include "model/tr.h"
+#include "model/vision_specs.h"
 #include "wpiemu/sdk/config/value_codec.h"
 
 namespace wpiemu::app::editor {
@@ -145,45 +146,11 @@ sdk::PropertySchema zoneGeneralSchema() {
 }
 
 sdk::PropertySchema zonePlacementSchema(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::ZoneConfig& z, bool volume) {
-    sdk::PropertySchema s;
-    PropertySpec parent;
-    parent.key = "parent";
-    parent.label = ETR("Attached to").toStdString();
-    parent.description = ETR("A zone moves with the part it is attached to. The placement is kept when you change it.").toStdString();
-    parent.type = PropertyType::Enum;
-    parent.group = ETR("Placement").toStdString();
-    parent.defaultValue = std::string(sdk::kChassisParent);
-    parent.options.push_back({sdk::kChassisParent, ETR("Chassis").toStdString()});
-    for (const auto& m : c.mechanisms) parent.options.push_back({m.id, ops::displayNameFor(m, catalog)});
-    const sdk::MechanismAttachment att = z.attachment;
-    if (!att.onChassis() && c.findMechanism(att.parentMechanismId) == nullptr)
-        parent.options.push_back({att.parentMechanismId, att.parentMechanismId + " " + ETR("(missing)").toStdString()});
-    s.properties.push_back(parent);
-
-    PropertySpec link;
-    link.key = "parentLink";
-    link.label = ETR("Attachment link").toStdString();
-    link.description = ETR("Named frame of the parent the zone hangs on (e.g. a turret's moving part).").toStdString();
-    link.type = PropertyType::Enum;
-    link.group = parent.group;
-    link.defaultValue = std::string(sdk::kRootLink);
-    link.options.push_back({sdk::kRootLink, ETR("Origin").toStdString()});
-    if (!att.onChassis())
-        if (const sdk::MechanismConfig* pm = c.findMechanism(att.parentMechanismId))
-            if (const auto* info = catalog.findTemplate(pm->type))
-                for (const auto& l : info->links) link.options.push_back({l.name, l.label.empty() ? l.name : l.label});
-    s.properties.push_back(link);
-
-    PropertySpec local;
-    local.key = "local";
-    local.label = ETR("Pose").toStdString();
-    local.description = ETR("Relative to the attachment link: x forward, y left, z up.").toStdString();
-    local.type = PropertyType::Pose3;
-    local.unit = PropertyUnit::Meters;
-    local.group = parent.group;
-    local.defaultValue = sdk::toValue(sdk::Pose3{});
-    s.properties.push_back(local);
-
+    sdk::PropertySchema s = spec::attachmentSchema(
+        c, catalog, z.attachment,
+        {ETR("A zone moves with the part it is attached to. The placement is kept when you change it."),
+         ETR("Named frame of the parent the zone hangs on (e.g. a turret's moving part)."),
+         ETR("Relative to the attachment link: x forward, y left, z up.")});
     if (volume) {
         PropertySpec size;
         size.key = "sizeM";
@@ -191,7 +158,7 @@ sdk::PropertySchema zonePlacementSchema(const sdk::RobotConfig& c, const EditorC
         size.description = ETR("Full extents of the volume along its own axes.").toStdString();
         size.type = PropertyType::Vec3;
         size.unit = PropertyUnit::Meters;
-        size.group = parent.group;
+        size.group = ETR("Placement").toStdString();
         size.defaultValue = sdk::toValue(sdk::Vec3{0.3f, 0.3f, 0.3f});
         s.properties.push_back(size);
     }
@@ -226,10 +193,14 @@ std::vector<PropertyGroup> propertyGroupsFor(const sdk::RobotConfig& c, const Ed
             out.push_back(groupOf("robot", ETR("Robot"), spec::robotSchema(), spec::robotValues(c)));
             out.push_back(groupOf("robot.start", ETR("Start pose"), spec::startPoseSchema(), spec::startPoseValues(c, catalog)));
             out.back().section = sdk::PropertySection::Placement;
+            out.push_back(groupOf("robot.vision", ETR("Vision"), spec::visionSchema(catalog), spec::visionValues(c.vision)));
             break;
         case SelKind::StartPose:
             out.push_back(groupOf("robot.start", ETR("Start pose"), spec::startPoseSchema(), spec::startPoseValues(c, catalog)));
             out.back().section = sdk::PropertySection::Placement;
+            break;
+        case SelKind::Vision:
+            out.push_back(groupOf("robot.vision", ETR("Vision"), spec::visionSchema(catalog), spec::visionValues(c.vision)));
             break;
         case SelKind::Chassis:
             out.push_back(groupOf("chassis", ETR("Chassis"), spec::chassisSchema(), spec::chassisValues(c.chassis)));
@@ -314,6 +285,20 @@ std::vector<PropertyGroup> propertyGroupsFor(const sdk::RobotConfig& c, const Ed
                 out.push_back(groupOf("zone.props", QString::fromStdString(info->displayName), info->properties, withDefaults(info->properties, z->properties)));
             break;
         }
+        case SelKind::Camera: {
+            const sdk::CameraConfig* cam = c.findCamera(sel.owner);
+            if (cam == nullptr) break;
+            const Value values = spec::cameraValues(c, catalog, *cam);
+            out.push_back(groupOf("camera.general", ETR("General"), spec::cameraGeneralSchema(*cam), values));
+            out.push_back(groupOf("camera.placement", ETR("Placement"), spec::cameraPlacementSchema(c, catalog, *cam), values));
+            out.back().section = sdk::PropertySection::Placement;
+            out.push_back(groupOf("camera.optics", ETR("Optics"), spec::cameraOpticsSchema(*cam), values));
+            out.push_back(groupOf("camera.detection", ETR("Detection"), spec::cameraDetectionSchema(), values));
+            out.push_back(groupOf("camera.realism", ETR("Realism"), spec::cameraRealismSchema(), values));
+            if (cam->vendor == sdk::CameraVendor::Limelight)
+                out.push_back(groupOf("camera.assumed", ETR("Limelight pose"), spec::cameraAssumedSchema(), values));
+            break;
+        }
         case SelKind::Plugin: {
             if (!catalog.hasPlugin()) break;
             const sdk::PluginSection* section = c.findPlugin(catalog.pluginId);
@@ -334,6 +319,7 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
     const SelectionRef sel = formTargetOf(c, selIn);
     if (groupId == "robot") { spec::applyRobot(c, key, value); return true; }
     if (groupId == "robot.start") { spec::applyStartPose(c, catalog, key, value); return true; }
+    if (groupId == "robot.vision") return spec::applyVision(c, key, value);
     if (groupId == "chassis") { spec::applyChassis(c, catalog, key, value); return true; }
     if (groupId == "drivetrain") { spec::applyDrivetrain(c, key, value); return true; }
     if (groupId == "wheel" || groupId == "wheel.drive" || groupId == "wheel.placement") { spec::applyWheel(c, sel.sub, key, value); return true; }
@@ -360,6 +346,10 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
             return true;
         }
         return false;
+    }
+    if (sel.kind == SelKind::Camera) {
+        if (c.findCamera(sel.owner) == nullptr || groupId.rfind("camera.", 0) != 0) return false;
+        return spec::applyCamera(c, catalog, sel.owner, key, value);
     }
     if (sel.kind == SelKind::Mechanism) {
         sdk::MechanismConfig* m = nullptr;
@@ -431,6 +421,10 @@ QString describeSelection(const sdk::RobotConfig& c, const EditorCatalog& catalo
             return QString::fromStdString(sel.owner);
         case SelKind::Device: return QString::fromStdString(sel.owner);
         case SelKind::StartPose: return ETR("Start pose");
+        case SelKind::Camera:
+            if (const auto* cam = c.findCamera(sel.owner)) return QString::fromStdString(ops::cameraDisplayName(*cam));
+            return QString::fromStdString(sel.owner);
+        case SelKind::Vision: return ETR("Vision");
         case SelKind::None: break;
     }
     return {};

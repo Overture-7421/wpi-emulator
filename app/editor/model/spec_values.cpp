@@ -151,6 +151,49 @@ void applyStartPose(sdk::RobotConfig& c, const EditorCatalog& catalog, const std
     ops::setStartPose(c, p);
 }
 
+// ---- attachment ---------------------------------------------------------------------------------
+PropertySchema attachmentSchema(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::MechanismAttachment& att,
+                                const AttachmentTexts& texts) {
+    PropertySchema s;
+    PropertySpec parent;
+    parent.key = "parent";
+    parent.label = ETR("Attached to").toStdString();
+    parent.description = texts.parentHelp.toStdString();
+    parent.type = PropertyType::Enum;
+    parent.group = ETR("Placement").toStdString();
+    parent.defaultValue = std::string(sdk::kChassisParent);
+    parent.options.push_back({sdk::kChassisParent, ETR("Chassis").toStdString()});
+    for (const auto& m : c.mechanisms) parent.options.push_back({m.id, ops::displayNameFor(m, catalog)});
+    if (!att.onChassis() && c.findMechanism(att.parentMechanismId) == nullptr)
+        parent.options.push_back({att.parentMechanismId, att.parentMechanismId + " " + ETR("(missing)").toStdString()});
+    s.properties.push_back(parent);
+
+    PropertySpec link;
+    link.key = "parentLink";
+    link.label = ETR("Attachment link").toStdString();
+    link.description = texts.linkHelp.toStdString();
+    link.type = PropertyType::Enum;
+    link.group = parent.group;
+    link.defaultValue = std::string(sdk::kRootLink);
+    link.options.push_back({sdk::kRootLink, ETR("Origin").toStdString()});
+    if (!att.onChassis())
+        if (const sdk::MechanismConfig* pm = c.findMechanism(att.parentMechanismId))
+            if (const auto* info = catalog.findTemplate(pm->type))
+                for (const auto& l : info->links) link.options.push_back({l.name, l.label.empty() ? l.name : l.label});
+    s.properties.push_back(link);
+
+    PropertySpec local;
+    local.key = "local";
+    local.label = ETR("Pose").toStdString();
+    local.description = texts.poseHelp.toStdString();
+    local.type = PropertyType::Pose3;
+    local.unit = PropertyUnit::Meters;
+    local.group = parent.group;
+    local.defaultValue = sdk::toValue(sdk::Pose3{});
+    s.properties.push_back(local);
+    return s;
+}
+
 // ---- chassis ----------------------------------------------------------------------------------
 PropertySchema chassisSchema() {
     PropertySchema s;

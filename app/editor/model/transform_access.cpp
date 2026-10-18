@@ -89,6 +89,13 @@ std::optional<TransformTarget> readTransform(const sdk::RobotConfig& c, const Ed
             }
             return out;
         }
+        case SelKind::Camera: {
+            const sdk::CameraConfig* cam = c.findCamera(sel.owner);
+            if (cam == nullptr) return std::nullopt;
+            out.parentWorld = ops::cameraParentWorld(c, catalog, *cam);
+            t.local = cam->local;
+            return out;
+        }
         case SelKind::Overlay: {
             const auto volumes = ops::volumesFor(c, catalog, sel.owner);
             const ops::VolumeRef* vol = findVolume(volumes, sel.sub);
@@ -158,6 +165,12 @@ bool writeTransform(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sel
             if (z == nullptr) return false;
             z->local = Pose3{t.local.position, t.local.rotation.normalized()};
             if (old.canScale) z->sizeM = size;
+            return true;
+        }
+        case SelKind::Camera: {
+            sdk::CameraConfig* cam = ops::findCamera(c, sel.owner);
+            if (cam == nullptr) return false;
+            cam->local = Pose3{t.local.position, t.local.rotation.normalized()};
             return true;
         }
         case SelKind::Overlay: {

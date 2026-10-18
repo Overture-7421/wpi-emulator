@@ -32,6 +32,10 @@ EditorController::EditorController(IEditorBackend& backend, QObject* parent) : Q
         Q_EMIT devicesUpdated();
         scheduleValidation();
     });
+    connect(&backend_, &IEditorBackend::detectedCamerasChanged, this, [this] {
+        detectedCameras_ = backend_.detectedCameras();
+        Q_EMIT detectedCamerasUpdated();
+    });
     auto onDevice = [this](const sdk::DiscoveredDevice& d, bool announceNew) {
         const bool isNew = devices_.upsert(d);
         if (isNew && announceNew) {
@@ -59,6 +63,7 @@ EditorController::EditorController(IEditorBackend& backend, QObject* parent) : Q
 
     document_.setCatalog(backend_.catalog());
     devices_.setDevices(backend_.devices());
+    detectedCameras_ = backend_.detectedCameras();
     applyingBackend_ = true;
     document_.load(backend_.config());
     applyingBackend_ = false;
@@ -71,6 +76,8 @@ void EditorController::reloadFromBackend() {
     document_.setCatalog(backend_.catalog());
     document_.load(backend_.config());
     applyingBackend_ = false;
+    detectedCameras_ = backend_.detectedCameras();
+    Q_EMIT detectedCamerasUpdated();
     pendingSave_ = false;
     saveError_.clear();
     lastSaved_.clear();
@@ -137,6 +144,7 @@ bool EditorController::selectionExists(const SelectionRef& ref) const {
         }
         case SelKind::Mechanism: return c.findMechanism(ref.owner) != nullptr;
         case SelKind::Zone: return c.findZone(ref.owner) != nullptr;
+        case SelKind::Camera: return c.findCamera(ref.owner) != nullptr;
         case SelKind::Slot:
             for (const auto& s : ops::slotSpecsFor(c, document_.catalog(), ref.owner))
                 if (s.name == ref.sub) return true;
@@ -190,11 +198,31 @@ QString EditorController::addZone(const QString& kind, const sdk::MechanismAttac
     return id;
 }
 
+QString EditorController::addCamera(sdk::CameraVendor vendor, const sdk::MechanismAttachment& attachment) {
+    const QString id = document_.addCamera(vendor, attachment);
+    if (id.isEmpty()) return {};
+    selection_.set(SelectionRef::camera(id.toStdString()));
+    Q_EMIT statusMessage(ETR("Added camera %1. Drag it with the move gizmo and give it the NetworkTables name your robot code uses.").arg(id), 0);
+    return id;
+}
+
+QString EditorController::addCameraFromDetected(const sdk::CameraRobotState& detected) {
+    const QString id = document_.addCameraFromDetected(detected);
+    if (id.isEmpty()) {
+        Q_EMIT statusMessage(ETR("The robot model already has a camera named \"%1\".").arg(QString::fromStdString(detected.ntName)), 1);
+        return {};
+    }
+    selection_.set(SelectionRef::camera(id.toStdString()));
+    Q_EMIT statusMessage(ETR("Added camera %1 from the robot's NetworkTables. Move it to where the camera is mounted.").arg(id), 0);
+    return id;
+}
+
 bool EditorController::deleteSelection() {
     const SelectionRef sel = selection_.current();
     switch (sel.kind) {
         case SelKind::Mechanism: return document_.removeMechanism(QString::fromStdString(sel.owner));
         case SelKind::Zone: return document_.removeZone(QString::fromStdString(sel.owner));
+        case SelKind::Camera: return document_.removeCamera(QString::fromStdString(sel.owner));
         case SelKind::Primitive: return document_.removePrimitive(QString::fromStdString(sel.owner), sel.index);
         case SelKind::Wheel: return document_.removeWheel(QString::fromStdString(sel.sub));
         case SelKind::Slot: return clearSlot({sel.owner, sel.sub});
@@ -212,6 +240,11 @@ bool EditorController::duplicateSelection() {
     if (sel.kind == SelKind::Zone) {
         const QString id = document_.duplicateZone(QString::fromStdString(sel.owner));
         if (!id.isEmpty()) selection_.set(SelectionRef::zone(id.toStdString()));
+        return !id.isEmpty();
+    }
+    if (sel.kind == SelKind::Camera) {
+        const QString id = document_.duplicateCamera(QString::fromStdString(sel.owner));
+        if (!id.isEmpty()) selection_.set(SelectionRef::camera(id.toStdString()));
         return !id.isEmpty();
     }
     if (sel.kind == SelKind::Primitive) {

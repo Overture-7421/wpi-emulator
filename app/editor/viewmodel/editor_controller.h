@@ -28,6 +28,8 @@ public:
     SelectionState& selection() { return selection_; }
     EditorSettings& settings() { return settings_; }
     const DeviceDirectory& devices() const { return devices_; }
+    // The cameras the robot process reports using, as the backend last published them (live during a discovery or run session).
+    const std::vector<sdk::CameraRobotState>& detectedCameras() const { return detectedCameras_; }
     // Backend + local + runtime issues, errors first.
     const std::vector<sdk::Issue>& issues() const { return issues_; }
     bool detecting() const { return backend_.detecting(); }
@@ -40,6 +42,10 @@ public:
     QString addMechanismToSelection(const QString& type, const ops::MechanismVariant& variant = {});
     // Adds a zone of `kind` (a ZoneKindInfo::kind) on the chassis or a mechanism link and selects it.
     QString addZone(const QString& kind, const sdk::MechanismAttachment& attachment = {});
+    // Adds a PhotonVision / Limelight camera on the chassis or a mechanism link and selects it.
+    QString addCamera(sdk::CameraVendor vendor, const sdk::MechanismAttachment& attachment = {});
+    // Adds a camera for a name the robot code uses (see detectedCameras()) and selects it. Empty when the model already has it.
+    QString addCameraFromDetected(const sdk::CameraRobotState& detected);
     bool deleteSelection();
     bool duplicateSelection();
     // Maps a dropped / chosen device: onto a slot, or onto the best free compatible slot of a
@@ -67,6 +73,7 @@ public:
 Q_SIGNALS:
     void issuesUpdated();
     void devicesUpdated();
+    void detectedCamerasUpdated();
     void deviceToast(const QString& title, const QString& detail);
     void statusMessage(const QString& text, int severity);
     void logLine(wpiemu::sdk::Severity severity, const QString& text);
@@ -89,6 +96,7 @@ private:
     SelectionState selection_;
     EditorSettings settings_;
     DeviceDirectory devices_;
+    std::vector<sdk::CameraRobotState> detectedCameras_;
     std::vector<sdk::Issue> issues_;
     std::vector<sdk::Issue> pushedIssues_;
     QTimer validateTimer_;

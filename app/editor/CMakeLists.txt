@@ -19,6 +19,7 @@ set(WPIEMU_EDITOR_SOURCES
     model/slot_status.cpp
     model/spec_values.cpp
     model/transform_access.cpp
+    model/vision_specs.cpp
     viewmodel/detected_devices_model.cpp
     viewmodel/editor_controller.cpp
     viewmodel/issue_model.cpp

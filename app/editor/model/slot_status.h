@@ -72,7 +72,8 @@ DeviceStatus deviceStatus(const sdk::RobotConfig& c, const sdk::DiscoveredDevice
 
 // Checks that need the device list. Stable codes (see validation_codes.h for the SDK ones):
 //   slot_unfilled (Warning), slot_incompatible (Error), device_not_detected (Info),
-//   unmapped_loopback (Warning, path "device:<key>"), device_multi_mapped (Warning)
+//   unmapped_loopback (Warning, path "device:<key>"), device_multi_mapped (Warning),
+//   photon_uuid_malformed (Warning, path "vision.photonMessageUuid")
 std::vector<sdk::Issue> localIssues(const sdk::RobotConfig& c, const EditorCatalog& catalog, const DeviceDirectory& devices);
 
 // Order-preserving union; entries with the same (code, path, severity) collapse.
