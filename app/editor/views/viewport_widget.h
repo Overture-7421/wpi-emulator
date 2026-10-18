@@ -45,6 +45,7 @@ private:
     QLabel* info_;
     QToolButton* modeButtons_[3] = {};
     QToolButton* snapButton_ = nullptr;
+    QToolButton* tagsButton_ = nullptr;
     QLabel* fieldCaption_ = nullptr;
     std::array<QDoubleSpinBox*, 3> fields_{};
     QString failure_;

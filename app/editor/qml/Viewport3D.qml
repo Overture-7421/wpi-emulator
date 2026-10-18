@@ -124,6 +124,31 @@ Item {
     onHeightChanged: ctl.setViewSize(width, height)
     Component.onCompleted: ctl.setViewSize(width, height)
 
+    // AprilTag ids: the controller projects every tag plate to the screen, the renderer only writes the text.
+    Repeater {
+        model: root.ctl.tagLabels
+        delegate: Rectangle {
+            id: tagLabel
+            required property var modelData
+            x: modelData.x - width / 2
+            y: modelData.y - height / 2
+            width: tagText.implicitWidth + 8
+            height: tagText.implicitHeight + 2
+            radius: 3
+            color: Qt.rgba(root.ctl.backgroundColor.r, root.ctl.backgroundColor.g, root.ctl.backgroundColor.b, 0.72)
+            border.color: modelData.color
+            border.width: 1
+            Text {
+                id: tagText
+                anchors.centerIn: parent
+                text: tagLabel.modelData.text
+                color: tagLabel.modelData.color
+                font.pixelSize: 11
+                font.bold: true
+            }
+        }
+    }
+
     // Orientation widget: how the field axes (X forward, Y left, Z up) project onto the screen.
     Item {
         id: axes

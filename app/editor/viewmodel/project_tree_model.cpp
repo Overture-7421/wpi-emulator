@@ -76,6 +76,25 @@ std::unique_ptr<ProjectTreeModel::Node> ProjectTreeModel::build() const {
                       qs(c.drivetrain.spec.kind));
     Node& mechs = add(robot, NodeKind::Group, QStringLiteral("mechanisms"), SelectionRef{}, ETR("Mechanisms"),
                       QString::number(c.mechanisms.size()));
+    // The Cameras group selects the project's vision settings (AprilTag layout, PhotonLib UUID); its rows are the cameras.
+    Node& cameras = add(robot, NodeKind::Group, QStringLiteral("cameras"), SelectionRef::vision(), ETR("Cameras"),
+                        QString::number(c.vision.cameras.size()));
+    cameras.warning = visionHasIssues_ || !camerasWithIssues_.empty();
+    cameras.tooltip = ETR("PhotonVision and Limelight cameras. Select the group for the AprilTag layout.");
+    for (const auto& cam : c.vision.cameras) {
+        const auto att = cam.attachment;
+        const QString where = att.onChassis() ? QString()
+                                              : QStringLiteral(" @ ") + qs(att.parentMechanismId + (att.parentLink == sdk::kRootLink ? "" : "." + att.parentLink));
+        QString detail = qs(cam.networkName()) + QStringLiteral(" \xC2\xB7 ") + qs(ops::vendorDisplayName(cam.vendor)) + where;
+        if (!cam.enabled) detail = ETR("disabled \xC2\xB7 ") + detail;
+        Node& cn = add(cameras, NodeKind::Camera, QStringLiteral("camera:%1").arg(qs(cam.id)), SelectionRef::camera(cam.id),
+                       qs(ops::cameraDisplayName(cam)), detail);
+        cn.warning = camerasWithIssues_.count(cam.id) != 0;
+        cn.disabled = !cam.enabled;
+        cn.tooltip = qs(ops::vendorDisplayName(cam.vendor)) + QStringLiteral(" \xE2\x80\x94 ") + qs(cam.networkName()) +
+                     (att.onChassis() ? ETR(", on the chassis") : ETR(", on %1").arg(where.mid(3))) +
+                     (cam.enabled ? QString() : QStringLiteral("\n") + ETR("Disabled: not simulated, nothing is published."));
+    }
     Node& sensors = add(robot, NodeKind::Group, QStringLiteral("sensors"), SelectionRef{}, ETR("Robot sensors"));
     addSlots(sensors, sdk::slot_owner::kRobot);
 
@@ -287,20 +306,26 @@ void ProjectTreeModel::copyContents(Node& dst, const Node& src) {
     dst.tooltip = src.tooltip;
     dst.state = src.state;
     dst.warning = src.warning;
+    dst.disabled = src.disabled;
     dst.follower = src.follower;
     dst.nestedByLink = src.nestedByLink;
     for (std::size_t i = 0; i < dst.children.size(); ++i) copyContents(*dst.children[i], *src.children[i]);
 }
 
 void ProjectTreeModel::setIssues(const std::vector<sdk::Issue>& issues) {
-    std::set<std::string> zones;
+    std::set<std::string> zones, cameras;
+    bool vision = false;
     for (const sdk::Issue& issue : issues) {
         if (issue.severity == sdk::Severity::Info) continue;
         const IssueLocation loc = locateIssue(document_.config(), document_.catalog(), issue);
         if (loc.selection.kind == SelKind::Zone) zones.insert(loc.selection.owner);
+        else if (loc.selection.kind == SelKind::Camera) cameras.insert(loc.selection.owner);
+        else if (loc.selection.kind == SelKind::Vision) vision = true;
     }
-    if (zones == zonesWithIssues_) return;
+    if (zones == zonesWithIssues_ && cameras == camerasWithIssues_ && vision == visionHasIssues_) return;
     zonesWithIssues_ = std::move(zones);
+    camerasWithIssues_ = std::move(cameras);
+    visionHasIssues_ = vision;
     refresh();
 }
 
@@ -365,6 +390,7 @@ QVariant ProjectTreeModel::data(const QModelIndex& index, int role) const {
         case KeyRole: return n->key;
         case WarningRole: return n->warning;
         case FollowerRole: return n->follower;
+        case DisabledRole: return n->disabled;
         case RefKeyRole: return qs(n->ref.key());
         default: return {};
     }
@@ -415,14 +441,23 @@ Qt::ItemFlags ProjectTreeModel::flags(const QModelIndex& index) const {
     // Followers sit under their source, not under their attachment, so they cannot be re-attached by dragging.
     if (n->kind == NodeKind::Mechanism && !n->nestedByLink) f |= Qt::ItemIsDragEnabled;
     if (n->kind == NodeKind::Zone) f |= Qt::ItemIsDragEnabled;
+    if (n->kind == NodeKind::Camera) f |= Qt::ItemIsDragEnabled;
     return f;
 }
 
 QStringList ProjectTreeModel::mimeTypes() const {
-    return {QString::fromLatin1(kDeviceMime), QString::fromLatin1(kMechanismMime), QString::fromLatin1(kZoneMime)};
+    return {QString::fromLatin1(kDeviceMime), QString::fromLatin1(kMechanismMime), QString::fromLatin1(kZoneMime), QString::fromLatin1(kCameraMime)};
 }
 
 QMimeData* ProjectTreeModel::mimeData(const QModelIndexList& indexes) const {
+    for (const QModelIndex& i : indexes) {
+        const Node* n = nodeAt(i);
+        if (n != nullptr && n->kind == NodeKind::Camera) {
+            auto* mime = new QMimeData;
+            mime->setData(QString::fromLatin1(kCameraMime), QByteArray::fromStdString(n->ref.owner));
+            return mime;
+        }
+    }
     for (const QModelIndex& i : indexes) {
         const Node* n = nodeAt(i);
         if (n != nullptr && n->kind == NodeKind::Zone) {
@@ -464,6 +499,14 @@ bool ProjectTreeModel::canDropMimeData(const QMimeData* data, Qt::DropAction, in
 
     const bool attachTarget = target == nullptr || target->kind == NodeKind::Mechanism || target->kind == NodeKind::Chassis ||
                               target->kind == NodeKind::Robot || (target->kind == NodeKind::Group && target->key == QStringLiteral("mechanisms"));
+    if (data != nullptr && data->hasFormat(QString::fromLatin1(kCameraMime))) {
+        if (!attachTarget) return false;
+        const sdk::CameraConfig* camera = document_.config().findCamera(data->data(QString::fromLatin1(kCameraMime)).toStdString());
+        if (camera == nullptr) return false;
+        const std::string parent = target != nullptr && target->kind == NodeKind::Mechanism ? target->ref.owner : std::string(sdk::kChassisParent);
+        const sdk::MechanismAttachment current = camera->attachment;
+        return current.onChassis() ? parent != sdk::kChassisParent : current.parentMechanismId != parent || current.parentLink != sdk::kRootLink;
+    }
     if (data != nullptr && data->hasFormat(QString::fromLatin1(kZoneMime))) {
         if (!attachTarget) return false;
         const std::string id = data->data(QString::fromLatin1(kZoneMime)).toStdString();
@@ -493,6 +536,10 @@ bool ProjectTreeModel::dropMimeData(const QMimeData* data, Qt::DropAction action
     if (target != nullptr && target->kind == NodeKind::Mechanism) att.parentMechanismId = target->ref.owner;
     if (data->hasFormat(QString::fromLatin1(kZoneMime))) {
         Q_EMIT zoneDropped(QString::fromUtf8(data->data(QString::fromLatin1(kZoneMime))), att);
+        return true;
+    }
+    if (data->hasFormat(QString::fromLatin1(kCameraMime))) {
+        Q_EMIT cameraDropped(QString::fromUtf8(data->data(QString::fromLatin1(kCameraMime))), att);
         return true;
     }
     Q_EMIT mechanismDropped(QString::fromUtf8(data->data(QString::fromLatin1(kMechanismMime))), att);

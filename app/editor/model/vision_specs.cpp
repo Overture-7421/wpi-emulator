@@ -230,6 +230,10 @@ bool applyCamera(sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_
     return ops::setCameraProperty(c, catalog, id, key, v);
 }
 
+std::string cameraTablePath(const sdk::CameraConfig& cam) {
+    return cam.vendor == sdk::CameraVendor::Limelight ? "/" + cam.networkName() : "/photonvision/" + cam.networkName();
+}
+
 // ---- project-level settings -------------------------------------------------------------------
 PropertySchema visionSchema(const EditorCatalog& catalog) {
     PropertySchema s;
@@ -237,8 +241,8 @@ PropertySchema visionSchema(const EditorCatalog& catalog) {
     PropertySpec layout = makeSpec("layoutId", ETR("Layout"), PropertyType::Enum, PropertyUnit::None, std::string(), layoutGroup,
                                    ETR("Where the AprilTags are on the field. The cameras detect tags of this layout."));
     const sdk::FiducialLayout* first = catalog.fiducialLayouts.empty() ? nullptr : &catalog.fiducialLayouts.front();
-    layout.options.push_back({"", first == nullptr ? ETR("Game plugin default").toStdString()
-                                                   : ETR("Game plugin default (%1)").arg(QString::fromStdString(first->displayName.empty() ? first->id : first->displayName)).toStdString()});
+    layout.options.push_back({"", first == nullptr ? ETR("Plugin default").toStdString()
+                                                   : ETR("Default (%1)").arg(QString::fromStdString(first->displayName.empty() ? first->id : first->displayName)).toStdString()});
     for (const auto& l : catalog.fiducialLayouts) layout.options.push_back({l.id, l.displayName.empty() ? l.id : l.displayName});
     s.properties.push_back(std::move(layout));
     s.properties.push_back(makeSpec("layoutFile", ETR("Custom layout file"), PropertyType::String, PropertyUnit::None, std::string(), layoutGroup,

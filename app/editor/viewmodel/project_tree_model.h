@@ -1,7 +1,7 @@
 #pragma once
 
 // The project tree: robot > chassis (COM, shapes), drivetrain > wheels, mechanisms (nested by
-// attachment) > slots / shapes / volumes, sensors, game plugin (volumes and zones). A wheel or mechanism driven by a motion
+// attachment) > slots / shapes / volumes, cameras, sensors, game plugin (volumes and zones). A wheel or mechanism driven by a motion
 // link (ADR 0012) is nested under the owner that drives it, read-only, and takes no motor slot. Each row
 // carries a SelectionRef, a kind and (for slots) the mapping state; the delegate paints them. Accepts
 // device / template / mechanism drops and reports them as signals, never edits the document itself.
@@ -22,7 +22,7 @@
 
 namespace wpiemu::app::editor {
 
-enum class NodeKind { Robot, Chassis, Com, Drivetrain, Wheel, Slot, Shape, Mechanism, Group, Volume, Plugin, Zone };
+enum class NodeKind { Robot, Chassis, Com, Drivetrain, Wheel, Slot, Shape, Mechanism, Group, Volume, Plugin, Zone, Camera };
 
 class ProjectTreeModel : public QAbstractItemModel {
     Q_OBJECT
@@ -35,12 +35,13 @@ public:
         WarningRole,                   // bool: a mechanism / wheel with unfilled required slots below it
         RefKeyRole,                    // SelectionRef::key()
         FollowerRole,                  // bool: a wheel / mechanism driven entirely by a motion link (read-only)
+        DisabledRole,                  // bool: a camera that is switched off
     };
 
     ProjectTreeModel(EditorDocument& document, const DeviceDirectory& devices, QObject* parent = nullptr);
 
     void refresh();
-    // Validation issues (any path); zone nodes they point at show the warning state.
+    // Validation issues (any path); zone, camera and Cameras group nodes they point at show the warning state.
     void setIssues(const std::vector<sdk::Issue>& issues);
     SelectionRef refAt(const QModelIndex& index) const;
     QModelIndex indexFor(const SelectionRef& ref) const;
@@ -66,6 +67,7 @@ Q_SIGNALS:
     void deviceDropped(const wpiemu::app::editor::SelectionRef& target, const wpiemu::sdk::DeviceKey& device, quint32 capabilityBits);
     void mechanismDropped(const QString& id, const wpiemu::sdk::MechanismAttachment& attachment);
     void zoneDropped(const QString& id, const wpiemu::sdk::MechanismAttachment& attachment);
+    void cameraDropped(const QString& id, const wpiemu::sdk::MechanismAttachment& attachment);
 
 private:
     struct Node {
@@ -77,6 +79,7 @@ private:
         QString tooltip;
         int state = -1;
         bool warning = false;
+        bool disabled = false;        // a camera that is switched off
         bool follower = false;        // takes no motor of its own: every motor axis follows a motion link
         bool nestedByLink = false;    // placed under the owner that drives it instead of its structural parent
         Node* parent = nullptr;
@@ -101,6 +104,8 @@ private:
     const DeviceDirectory& devices_;
     std::unique_ptr<Node> root_;   // invisible root; first child is the robot
     std::set<std::string> zonesWithIssues_;
+    std::set<std::string> camerasWithIssues_;
+    bool visionHasIssues_ = false;   // an issue about the vision settings (layout, UUID)
 };
 
 }  // namespace wpiemu::app::editor

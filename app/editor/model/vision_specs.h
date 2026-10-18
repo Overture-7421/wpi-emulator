@@ -29,6 +29,8 @@ sdk::PropertySchema cameraAssumedSchema();                                      
 sdk::Value cameraValues(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& camera);
 // Applies one form edit to the camera `cameraId`; false when nothing changed.
 bool applyCamera(sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view cameraId, const std::string& key, const sdk::Value& value);
+// Where the robot finds the camera on NetworkTables: "/photonvision/<name>" for PhotonVision, "/<name>" (the table) for a Limelight.
+std::string cameraTablePath(const sdk::CameraConfig& camera);
 
 // ---- project-level settings (the Vision card) ----
 sdk::PropertySchema visionSchema(const EditorCatalog& catalog);

@@ -18,6 +18,7 @@
 #include "model/property_groups.h"
 #include "model/tr.h"
 #include "model/units.h"
+#include "model/vision_specs.h"
 #include "views/activation_card.h"
 #include "views/drive_card.h"
 
@@ -32,6 +33,54 @@ QLabel* mutedLabel(const QString& text, QWidget* parent, bool wrap = true) {
     l->setWordWrap(wrap);
     l->setEnabled(false);
     return l;
+}
+
+const PropertyGroup* findGroup(const std::vector<PropertyGroup>& groups, const char* id) {
+    for (const PropertyGroup& g : groups)
+        if (g.id == id) return &g;
+    return nullptr;
+}
+
+// What the robot process reported about `cam`, as one line for the General card.
+QString cameraRobotLine(const sdk::CameraConfig& cam, const std::vector<sdk::CameraRobotState>& seen) {
+    for (const sdk::CameraRobotState& s : seen) {
+        if (s.vendor != cam.vendor || s.ntName != cam.networkName()) continue;
+        if (s.status == "ntcore_unavailable") return ETR("Seen from the robot code, but NetworkTables is not available in the robot process, so nothing is published.");
+        if (s.status == "photon_uuid_unsupported")
+            return ETR("Seen from the robot code, but its PhotonLib message format is not supported: the camera is not published. Check the PhotonLib version of the project.");
+        if (s.status == "foreign_publisher")
+            return ETR("The robot code publishes this camera itself (for example with PhotonCameraSim), so the emulator leaves it alone.");
+        if (s.status == "disabled") return ETR("Seen from the robot code. The camera is disabled here, so nothing is published.");
+        if (!s.status.empty()) return ETR("Seen from the robot code. Status: %1.").arg(qs(s.status));
+        return s.publishing ? ETR("The robot code uses this camera (%1 frames published).").arg(static_cast<qulonglong>(s.framesPublished))
+                            : ETR("The robot code uses this camera.");
+    }
+    return ETR("Not seen from the robot code yet. \"Detect devices\" lists the cameras it uses.");
+}
+
+QString realismText(const sdk::CameraRealism& r) {
+    if (r.ideal()) return ETR("Ideal: exact geometry, nothing random.");
+    QStringList on;
+    if (r.cornerNoisePx > 0.0) on << ETR("corner noise");
+    if (r.latencyJitterUs > 0) on << ETR("latency jitter");
+    if (r.dropoutProbability > 0.0) on << ETR("dropped frames");
+    return ETR("Realistic: %1.").arg(on.join(QStringLiteral(", ")));
+}
+
+// The Vision card's summary of the layout the cameras will see.
+QString layoutText(const sdk::VisionConfig& vision, const EditorCatalog& catalog, UnitSystem units) {
+    if (!vision.layoutFile.empty())
+        return ETR("The layout comes from the file \"%1\". A relative path starts at the robot project folder. The editor does not draw the tags of a custom file.")
+            .arg(qs(vision.layoutFile));
+    if (!vision.layoutId.empty() && catalog.findFiducialLayout(vision.layoutId) == nullptr)
+        return ETR("The game plugin ships no layout called \"%1\": the cameras see no tags until you pick one.").arg(qs(vision.layoutId));
+    const sdk::FiducialLayout* layout = catalog.activeFiducialLayout(vision);
+    if (layout == nullptr) return ETR("The game plugin ships no AprilTag layouts. Use a custom layout file to give the cameras tags to see.");
+    const UnitDisplay size = unitDisplay(sdk::PropertyUnit::Meters, units);
+    return ETR("%1: %2 of %3.")
+        .arg(qs(layout->displayName.empty() ? layout->id : layout->displayName),
+             QCoreApplication::translate("Editor", "%n tag(s)", nullptr, static_cast<int>(layout->tags.size())),
+             QString::number(toDisplay(static_cast<double>(layout->tagSizeM), sdk::PropertyUnit::Meters, units), 'f', size.decimals) + QString::fromUtf8(size.suffix));
 }
 
 QString capabilityText(sdk::CapabilitySet caps) {
@@ -64,6 +113,7 @@ InspectorPanel::InspectorPanel(EditorController& controller, const IconFactory& 
     connect(&controller_.selection(), &SelectionState::fieldFocusRequested, this, [this](const QString& key) { focusField(key); });
     connect(&controller_.document(), &EditorDocument::changed, this, [this](bool authoritative) { refresh(authoritative); });
     connect(&controller_, &EditorController::devicesUpdated, this, [this] { refresh(); });
+    connect(&controller_, &EditorController::detectedCamerasUpdated, this, [this] { refreshCameraCards(); });
     connect(&controller_, &EditorController::issuesUpdated, this, [this] { refresh(); });
     connect(&controller_.settings(), &EditorSettings::changed, this, [this] {
         if (controller_.settings().units() != shownUnits_) rebuild();   // snapping etc. do not affect the forms
@@ -83,6 +133,10 @@ void InspectorPanel::clearContent() {
     activationCard_ = nullptr;
     startPoseHint_ = nullptr;
     startPoseReset_ = nullptr;
+    visionHint_ = nullptr;
+    cameraEndpoint_ = nullptr;
+    cameraRobotStatus_ = nullptr;
+    cameraRealismHint_ = nullptr;
     title_ = nullptr;
     nameEdit_ = nullptr;
     if (QWidget* old = scroll_->takeWidget()) old->deleteLater();
@@ -196,6 +250,11 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
             break;
         case SelKind::Device: title = ETR("Detected device"); icon = NodeKind::Robot; break;
         case SelKind::StartPose: subtitle = ETR("Where the robot starts and where Reset puts it back"); icon = NodeKind::Robot; break;
+        case SelKind::Camera:
+            if (const auto* cam = c.findCamera(target.owner)) subtitle = ETR("%1 camera").arg(qs(ops::vendorDisplayName(cam->vendor)));
+            icon = NodeKind::Camera;
+            break;
+        case SelKind::Vision: subtitle = ETR("AprilTag layout, PhotonLib and the cameras"); icon = NodeKind::Camera; break;
         default: break;
     }
 
@@ -247,9 +306,10 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
         connect(b, &QToolButton::clicked, this, [fn] { fn(); });
         h->addWidget(b, 0, Qt::AlignTop);
     };
-    if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Zone)
+    if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Zone || target.kind == SelKind::Camera)
         addAction(ETR("Duplicate"), ETR("Duplicate (Ctrl+D)"), [this] { controller_.duplicateSelection(); });
-    if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Wheel || target.kind == SelKind::Zone)
+    if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Wheel || target.kind == SelKind::Zone ||
+        target.kind == SelKind::Camera)
         addAction(ETR("Delete"), ETR("Delete (Del)"), [this] { controller_.deleteSelection(); });
     layout_->addWidget(head);
 }
@@ -369,7 +429,9 @@ QMap<QString, QPair<int, QString>> InspectorPanel::issuesFor(const SelectionRef&
     const sdk::RobotConfig& c = controller_.document().config();
     for (const auto& issue : controller_.issues()) {
         const IssueLocation loc = locateIssue(c, controller_.document().catalog(), issue);
-        if (loc.fieldKey.empty() || formTargetOf(c, loc.selection) != target) continue;
+        // The Vision card is on the Robot page as well as on its own page.
+        const bool onThisPage = formTargetOf(c, loc.selection) == target || (loc.selection.kind == SelKind::Vision && target.kind == SelKind::Robot);
+        if (loc.fieldKey.empty() || !onThisPage) continue;
         const QString key = qs(loc.fieldKey);
         const int sev = static_cast<int>(issue.severity);
         if (!out.contains(key) || out[key].first < sev) out[key] = {sev, qs(issue.message)};
@@ -421,6 +483,10 @@ QString InspectorPanel::signature(const std::vector<PropertyGroup>& groups) cons
     if (target.kind == SelKind::Device) parts << QString::number(controller_.devices().all().size());
     if (target.kind == SelKind::Zone)
         if (const auto* z = c.findZone(target.owner)) parts << qs(z->kind);
+    if (target.kind == SelKind::Camera)
+        if (const auto* cam = c.findCamera(target.owner)) parts << QString::number(static_cast<int>(cam->vendor));
+    if (target.kind == SelKind::Vision)
+        for (const auto& cam : c.vision.cameras) parts << qs(cam.id) << qs(ops::cameraDisplayName(cam)) << qs(cam.networkName());
     return parts.join('\x1f');
 }
 
@@ -482,6 +548,126 @@ void InspectorPanel::addPartCards(const SelectionRef& target, const std::vector<
     for (const PropertyGroup& g : groups)
         if (g.section == sdk::PropertySection::Placement) addSection(ETR("Placement"), makeForm(g, content_), false, SectionRole::Placement);
 }
+void InspectorPanel::addCameraCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups) {
+    const sdk::CameraConfig* cam = controller_.document().config().findCamera(target.owner);
+    if (cam == nullptr) return;
+    const auto formOf = [&](const char* id, QWidget* parent) -> PropertyFormWidget* {
+        const PropertyGroup* g = findGroup(groups, id);
+        return g != nullptr ? makeForm(*g, parent) : nullptr;
+    };
+
+    auto* general = new QWidget(content_);
+    auto* gv = new QVBoxLayout(general);
+    gv->setContentsMargins(0, 0, 0, 0);
+    gv->setSpacing(6);
+    if (auto* f = formOf("camera.general", general)) gv->addWidget(f);
+    auto* id = new QLabel(ETR("%1 camera \xC2\xB7 ID: %2").arg(qs(ops::vendorDisplayName(cam->vendor)), QStringLiteral("<b>%1</b>").arg(qs(cam->id).toHtmlEscaped())), general);
+    id->setObjectName(QStringLiteral("camera.id"));
+    id->setTextFormat(Qt::RichText);
+    id->setToolTip(ETR("The vendor and the ID are fixed when the camera is created. Add another camera for the other vendor."));
+    id->setEnabled(false);
+    gv->addWidget(id);
+    cameraEndpoint_ = mutedLabel(QString(), general);
+    cameraEndpoint_->setObjectName(QStringLiteral("camera.endpoint"));
+    gv->addWidget(cameraEndpoint_);
+    cameraRobotStatus_ = mutedLabel(QString(), general);
+    cameraRobotStatus_->setObjectName(QStringLiteral("camera.robot"));
+    gv->addWidget(cameraRobotStatus_);
+    addSection(ETR("General"), general, false, SectionRole::Info);
+
+    for (const PropertyGroup& g : groups)
+        if (g.section == sdk::PropertySection::Placement) addSection(ETR("Placement"), makeForm(g, content_), false, SectionRole::Placement);
+
+    if (auto* f = formOf("camera.optics", content_)) addSection(ETR("Optics"), f, false, SectionRole::Configure);
+    if (auto* f = formOf("camera.detection", content_)) addSection(ETR("Detection"), f, false, SectionRole::Configure);
+
+    auto* realism = new QWidget(content_);
+    auto* rv = new QVBoxLayout(realism);
+    rv->setContentsMargins(0, 0, 0, 0);
+    rv->setSpacing(6);
+    cameraRealismHint_ = mutedLabel(QString(), realism);
+    cameraRealismHint_->setObjectName(QStringLiteral("camera.realism.hint"));
+    rv->addWidget(cameraRealismHint_);
+    if (auto* f = formOf("camera.realism", realism)) rv->addWidget(f);
+    addSection(ETR("Realism"), realism, cam->realism.ideal(), SectionRole::Configure);
+
+    if (cam->vendor == sdk::CameraVendor::Limelight) {
+        auto* assumed = new QWidget(content_);
+        auto* av = new QVBoxLayout(assumed);
+        av->setContentsMargins(0, 0, 0, 0);
+        av->setSpacing(6);
+        auto* hint = mutedLabel(ETR("What the Limelight believes about where it is mounted. By default that is where the camera really is."), assumed);
+        hint->setObjectName(QStringLiteral("camera.assumed.hint"));
+        av->addWidget(hint);
+        if (auto* f = formOf("camera.assumed", assumed)) av->addWidget(f);
+        addSection(ETR("Limelight pose"), assumed, false, SectionRole::Configure);
+    }
+    refreshCameraCards();
+}
+
+void InspectorPanel::refreshCameraCards() {
+    if (shown_.kind != SelKind::Camera) return;
+    const sdk::CameraConfig* cam = controller_.document().config().findCamera(shown_.owner);
+    if (cam == nullptr) return;
+    if (cameraEndpoint_ != nullptr)
+        cameraEndpoint_->setText(ETR("On NetworkTables: %1").arg(qs(spec::cameraTablePath(*cam))));
+    if (cameraRobotStatus_ != nullptr) cameraRobotStatus_->setText(cameraRobotLine(*cam, controller_.detectedCameras()));
+    if (cameraRealismHint_ != nullptr) cameraRealismHint_->setText(realismText(cam->realism));
+}
+
+void InspectorPanel::addVisionCard(const PropertyGroup& group) {
+    auto* body = new QWidget(content_);
+    auto* v = new QVBoxLayout(body);
+    v->setContentsMargins(0, 0, 0, 0);
+    v->setSpacing(6);
+    v->addWidget(makeForm(group, body));
+    visionHint_ = mutedLabel(QString(), body);
+    visionHint_->setObjectName(QStringLiteral("vision.hint"));
+    v->addWidget(visionHint_);
+    auto* uuid = mutedLabel(ETR("The PhotonLib message UUID is normally derived from the PhotonLib version of the robot project: leave the override empty "
+                                "unless you need to force a specific message format."),
+                            body);
+    uuid->setObjectName(QStringLiteral("vision.uuidHint"));
+    v->addWidget(uuid);
+    addSection(ETR("Vision"), body, false, SectionRole::Configure);
+    refreshVisionCard();
+}
+
+void InspectorPanel::refreshVisionCard() {
+    if (visionHint_ == nullptr) return;
+    visionHint_->setText(layoutText(controller_.document().config().vision, controller_.document().catalog(), controller_.settings().units()));
+}
+
+// The Vision page: the cameras of the project and the buttons that add one.
+void InspectorPanel::addVisionCameras() {
+    const sdk::RobotConfig& c = controller_.document().config();
+    auto* body = new QWidget(content_);
+    auto* v = new QVBoxLayout(body);
+    v->setContentsMargins(0, 0, 0, 0);
+    v->setSpacing(2);
+    if (c.vision.cameras.empty())
+        v->addWidget(mutedLabel(ETR("No cameras yet. Add a PhotonVision camera or a Limelight, or run \"Detect devices\" to find the cameras your robot code uses."), body));
+    for (const auto& cam : c.vision.cameras) {
+        const std::string cameraId = cam.id;
+        auto* b = static_cast<QToolButton*>(linkButton(QStringLiteral("%1  \xC2\xB7  %2").arg(qs(ops::cameraDisplayName(cam)), qs(ops::vendorDisplayName(cam.vendor))),
+                                                       [this, cameraId] { controller_.selection().set(SelectionRef::camera(cameraId)); }));
+        b->setObjectName(QStringLiteral("vision.camera:") + qs(cameraId));
+        v->addWidget(b);
+    }
+    auto* row = new QHBoxLayout;
+    for (const auto vendor : {sdk::CameraVendor::PhotonVision, sdk::CameraVendor::Limelight}) {
+        auto* b = new QToolButton(body);
+        b->setObjectName(vendor == sdk::CameraVendor::PhotonVision ? QStringLiteral("vision.addPhoton") : QStringLiteral("vision.addLimelight"));
+        b->setText(vendor == sdk::CameraVendor::PhotonVision ? ETR("+ PhotonVision camera") : ETR("+ Limelight camera"));
+        b->setAutoRaise(true);
+        connect(b, &QToolButton::clicked, this, [this, vendor] { controller_.addCamera(vendor); });
+        row->addWidget(b);
+    }
+    row->addStretch();
+    v->addLayout(row);
+    addSection(ETR("Cameras (%1)").arg(c.vision.cameras.size()), body, false, SectionRole::Shapes);
+}
+
 void InspectorPanel::addZoneCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups) {
     auto* general = new QWidget(content_);
     auto* gv = new QVBoxLayout(general);
@@ -533,16 +719,23 @@ void InspectorPanel::rebuild() {
         addPartCards(target, groups);
     } else if (target.kind == SelKind::Zone) {
         addZoneCards(target, groups);
+    } else if (target.kind == SelKind::Camera) {
+        addCameraCards(target, groups);
     } else {
-        const auto formGroups = std::count_if(groups.begin(), groups.end(), [](const PropertyGroup& g) { return g.id != "robot.start"; });
+        const auto formGroups = std::count_if(groups.begin(), groups.end(), [](const PropertyGroup& g) { return g.id != "robot.start" && g.id != "robot.vision"; });
         for (const PropertyGroup& g : groups) {
             if (g.id == "robot.start") {
                 addStartPoseCard(g);
                 continue;
             }
+            if (g.id == "robot.vision") {
+                addVisionCard(g);
+                continue;
+            }
             auto* f = makeForm(g, content_);
             addSection(formGroups == 1 ? ETR("Configure") : g.title, f, g.collapsed, SectionRole::Configure);
         }
+        if (target.kind == SelKind::Vision) addVisionCameras();
     }
     if (target.kind == SelKind::Chassis) addShapes(ops::kChassisOwner);
     if (target.kind == SelKind::Mechanism) {
@@ -585,6 +778,8 @@ void InspectorPanel::refresh(bool authoritative) {
         activationCard_->refresh(authoritative);
     }
     refreshStartPoseCard();
+    refreshCameraCards();
+    refreshVisionCard();
     std::map<std::string, std::vector<SlotInfo>> byOwner;
     for (DeviceRowWidget* row : slotRows_) {
         const std::string owner = row->address().owner;
@@ -615,8 +810,16 @@ void InspectorPanel::focusField(const QString& key) {
             }
         return;
     }
-    for (auto* f : forms_)
+    for (auto* f : forms_) {
+        if (!f->hasField(key)) continue;
+        // A collapsed card would hide the field: open it first.
+        for (QWidget* w = f->parentWidget(); w != nullptr; w = w->parentWidget())
+            if (auto* card = qobject_cast<SectionCard*>(w)) {
+                if (!card->header()->isChecked()) card->header()->setChecked(true);
+                break;
+            }
         if (f->focusField(key)) return;
+    }
     pendingFocus_.clear();
 }
 

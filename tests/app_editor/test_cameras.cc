@@ -1,16 +1,34 @@
+#include <QAbstractButton>
+#include <QComboBox>
+#include <QFrame>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMimeData>
+#include <QToolButton>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
+#include <map>
+#include <memory>
 
 #include "editor_page.h"
 #include "model/editor_document.h"
 #include "model/property_groups.h"
+#include "model/scene_builder.h"
 #include "model/slot_status.h"
 #include "model/transform_access.h"
 #include "model/vision_specs.h"
 #include "test_support.h"
 #include "viewmodel/editor_controller.h"
+#include "viewmodel/project_tree_model.h"
+#include "viewmodel/scene_model.h"
+#include "viewmodel/viewport_controller.h"
+#include "views/inspector_panel.h"
+#include "views/project_tree_view.h"
+#include "views/property_form.h"
+#include "views/viewport_widget.h"
 #include "wpiemu/sdk/config/value_codec.h"
 
 using namespace wpiemu::app::editor;
@@ -22,6 +40,23 @@ namespace {
 constexpr sdk::CameraVendor kPhoton = sdk::CameraVendor::PhotonVision;
 constexpr sdk::CameraVendor kLimelight = sdk::CameraVendor::Limelight;
 
+struct CameraPage {
+    FakeEditorBackend backend;
+    EditorPage page{backend};
+    CameraPage() {
+        page.setAutosaveDelayMs(0);
+        page.resize(1400, 900);
+        page.show();
+        pumpEvents(60);
+    }
+    EditorController& c() { return page.controller(); }
+    const sdk::RobotConfig& config() { return c().document().config(); }
+    const sdk::CameraConfig& camera(const char* id) { return *config().findCamera(id); }
+    void select(const SelectionRef& ref) {
+        c().selection().set(ref);
+        pumpEvents(30);
+    }
+};
 sdk::Vec3 cameraWorldPos(const sdk::RobotConfig& c, const EditorCatalog& cat, const std::string& id) {
     return ops::cameraWorld(c, cat, *c.findCamera(id)).position;
 }
@@ -747,7 +782,7 @@ TEST_CASE("vision property group: the Robot page and the Vision selection offer 
     REQUIRE(layout != nullptr);
     REQUIRE(layout->options.size() == 3);   // the plugin default, then every layout the plugin ships
     CHECK(layout->options[0].value.empty());
-    CHECK(layout->options[0].label == "Game plugin default (REBUILT (welded))");
+    CHECK(layout->options[0].label == "Default (REBUILT (welded))");
     CHECK(layout->options[1].value == "game_2026.welded");
     CHECK(layout->options[2].label == "REBUILT (AndyMark)");
     CHECK(own[0].schema.find("layoutFile") != nullptr);
@@ -765,7 +800,7 @@ TEST_CASE("vision property group: the Robot page and the Vision selection offer 
     EditorCatalog noPlugin = cat;
     noPlugin.fiducialLayouts.clear();
     const auto bare = propertyGroupsFor(c, noPlugin, SelectionRef::vision());
-    CHECK(bare[0].schema.find("layoutId")->options.size() == 1);   // just "Game plugin default"
+    CHECK(bare[0].schema.find("layoutId")->options.size() == 1);   // just "Plugin default"
 }
 
 TEST_CASE("camera catalog: the active layout follows the vision settings, a custom file is not known to the editor") {
@@ -925,4 +960,775 @@ TEST_CASE("camera backend: the scripted detection run announces the cameras the 
     backend.startDetection();
     CHECK(backend.detectedCameras().empty());
     backend.stopDetection();
+}
+
+// ---- project tree ------------------------------------------------------------------------------------
+
+TEST_CASE("camera tree: the Cameras group lists every camera with its name, vendor and attachment and selects the vision settings") {
+    EditorDocument doc;
+    doc.setCatalog(catalog());
+    doc.load(robot());
+    DeviceDirectory devices;
+    ProjectTreeModel tree(doc, devices);
+
+    const QModelIndex group = tree.indexForKey("cameras");
+    REQUIRE(group.isValid());
+    CHECK(tree.parent(group) == tree.index(0, 0));   // under the robot
+    CHECK(tree.data(group).toString() == "Cameras");
+    CHECK(tree.data(group, ProjectTreeModel::DetailRole).toString() == "2");
+    CHECK(tree.refAt(group) == SelectionRef::vision());
+    CHECK(tree.indexFor(SelectionRef::vision()) == group);
+    CHECK((tree.flags(group) & Qt::ItemIsSelectable));
+    REQUIRE(tree.rowCount(group) == 2);
+
+    const QModelIndex photon = tree.indexFor(SelectionRef::camera("photon_front"));
+    const QModelIndex limelight = tree.indexFor(SelectionRef::camera("limelight_rear"));
+    REQUIRE((photon.isValid() && limelight.isValid()));
+    CHECK(tree.parent(photon) == group);
+    CHECK(tree.data(photon).toString() == "Front camera");
+    CHECK(tree.data(photon, ProjectTreeModel::KindRole).toInt() == static_cast<int>(NodeKind::Camera));
+    CHECK(tree.data(photon, ProjectTreeModel::DetailRole).toString() == QString::fromUtf8("photon-front \xC2\xB7 PhotonVision"));
+    CHECK(tree.data(limelight, ProjectTreeModel::DetailRole).toString() == QString::fromUtf8("limelight-rear \xC2\xB7 Limelight"));
+    CHECK_FALSE(tree.data(photon, ProjectTreeModel::DisabledRole).toBool());
+    CHECK(tree.data(photon, Qt::ToolTipRole).toString().contains("PhotonVision"));
+
+    REQUIRE(doc.reattachCamera("photon_front", "turret", "mover"));
+    tree.refresh();
+    CHECK(tree.data(tree.indexFor(SelectionRef::camera("photon_front")), ProjectTreeModel::DetailRole).toString().endsWith("@ turret.mover"));
+    REQUIRE(doc.setProperty(SelectionRef::camera("limelight_rear"), "camera.general", "enabled", sdk::Value(false)));
+    tree.refresh();
+    const QModelIndex disabled = tree.indexFor(SelectionRef::camera("limelight_rear"));
+    CHECK(tree.data(disabled, ProjectTreeModel::DisabledRole).toBool());
+    CHECK(tree.data(disabled, ProjectTreeModel::DetailRole).toString().startsWith("disabled"));
+
+    CHECK(doc.addCamera(kLimelight).size() > 0);
+    tree.refresh();
+    CHECK(tree.rowCount(tree.indexForKey("cameras")) == 3);
+    CHECK(tree.data(tree.indexForKey("cameras"), ProjectTreeModel::DetailRole).toString() == "3");
+
+    // A project without cameras keeps the (empty) group, so the menu and the vision settings stay reachable.
+    auto bare = robot();
+    bare.vision.cameras.clear();
+    doc.load(bare);
+    tree.refresh();
+    REQUIRE(tree.indexForKey("cameras").isValid());
+    CHECK(tree.rowCount(tree.indexForKey("cameras")) == 0);
+}
+
+TEST_CASE("camera tree: validator issues put a warning on the camera or the group they point at") {
+    EditorDocument doc;
+    doc.setCatalog(catalog());
+    doc.load(robot());
+    DeviceDirectory devices;
+    ProjectTreeModel tree(doc, devices);
+    const auto warning = [&](const SelectionRef& ref) { return tree.data(tree.indexFor(ref), ProjectTreeModel::WarningRole).toBool(); };
+    const auto groupWarning = [&] { return tree.data(tree.indexForKey("cameras"), ProjectTreeModel::WarningRole).toBool(); };
+    CHECK_FALSE(warning(SelectionRef::camera("photon_front")));
+    CHECK_FALSE(groupWarning());
+
+    tree.setIssues({{sdk::Severity::Error, "vision.cameras[1].frameRateHz", "bad rate", "camera_frame_rate_invalid"}});
+    CHECK(warning(SelectionRef::camera("limelight_rear")));
+    CHECK_FALSE(warning(SelectionRef::camera("photon_front")));
+    CHECK(groupWarning());   // visible while the group is collapsed too
+    tree.setIssues({{sdk::Severity::Info, "vision.cameras[0].id", "just so you know", {}}});
+    CHECK_FALSE(warning(SelectionRef::camera("photon_front")));   // information is not a warning
+    CHECK_FALSE(groupWarning());
+
+    tree.setIssues({{sdk::Severity::Warning, "vision.layoutId", "no such layout", "camera_layout_unknown"}});
+    CHECK(groupWarning());
+    CHECK_FALSE(warning(SelectionRef::camera("limelight_rear")));
+    tree.setIssues({});
+    CHECK_FALSE(groupWarning());
+}
+
+TEST_CASE("camera tree: dragging a camera onto a mechanism or the chassis offers re-attaching it") {
+    EditorDocument doc;
+    doc.setCatalog(catalog());
+    doc.load(robot());
+    DeviceDirectory devices;
+    ProjectTreeModel tree(doc, devices);
+
+    const QModelIndex photon = tree.indexFor(SelectionRef::camera("photon_front"));
+    CHECK((tree.flags(photon) & Qt::ItemIsDragEnabled));
+    std::unique_ptr<QMimeData> mime(tree.mimeData({photon}));
+    REQUIRE(mime != nullptr);
+    CHECK(mime->hasFormat(kCameraMime));
+
+    const QModelIndex turret = tree.indexFor(SelectionRef::mechanism("turret"));
+    const QModelIndex chassis = tree.indexFor(SelectionRef::chassis());
+    CHECK(tree.canDropMimeData(mime.get(), Qt::MoveAction, -1, -1, turret));
+    CHECK_FALSE(tree.canDropMimeData(mime.get(), Qt::MoveAction, -1, -1, chassis));   // already there
+    CHECK_FALSE(tree.canDropMimeData(mime.get(), Qt::MoveAction, -1, -1, tree.indexForKey("cameras")));
+    CHECK_FALSE(tree.canDropMimeData(mime.get(), Qt::MoveAction, -1, -1, tree.indexFor(SelectionRef::camera("limelight_rear"))));
+    CHECK_FALSE(tree.canDropMimeData(mime.get(), Qt::MoveAction, -1, -1, tree.indexFor(SelectionRef::slot("turret", "motor"))));
+
+    QString droppedId;
+    sdk::MechanismAttachment droppedOn;
+    QObject::connect(&tree, &ProjectTreeModel::cameraDropped, &tree, [&](const QString& id, const sdk::MechanismAttachment& att) {
+        droppedId = id;
+        droppedOn = att;
+    });
+    REQUIRE(tree.dropMimeData(mime.get(), Qt::MoveAction, -1, -1, turret));
+    CHECK(droppedId == "photon_front");
+    CHECK(droppedOn.parentMechanismId == "turret");
+
+    // Once it sits on the turret, the chassis is a valid target again.
+    REQUIRE(doc.reattachCamera("photon_front", "turret", "mover"));
+    tree.refresh();
+    std::unique_ptr<QMimeData> moved(tree.mimeData({tree.indexFor(SelectionRef::camera("photon_front"))}));
+    CHECK(tree.canDropMimeData(moved.get(), Qt::MoveAction, -1, -1, tree.indexFor(SelectionRef::chassis())));
+    CHECK(tree.canDropMimeData(moved.get(), Qt::MoveAction, -1, -1, tree.indexFor(SelectionRef::mechanism("turret"))));   // to its origin
+    REQUIRE(doc.reattachCamera("photon_front", "turret", "root"));
+    tree.refresh();
+    std::unique_ptr<QMimeData> atOrigin(tree.mimeData({tree.indexFor(SelectionRef::camera("photon_front"))}));
+    CHECK_FALSE(tree.canDropMimeData(atOrigin.get(), Qt::MoveAction, -1, -1, tree.indexFor(SelectionRef::mechanism("turret"))));   // already there
+}
+
+// ---- the inspector -----------------------------------------------------------------------------------
+
+TEST_CASE("camera inspector: a PhotonVision camera shows General, Placement, Optics, Detection and a collapsed Realism card") {
+    CameraPage f;
+    f.select(SelectionRef::camera("photon_front"));
+    auto* insp = f.page.inspector();
+    CHECK(insp->titleText() == "Front camera");
+    for (const char* group : {"camera.general", "camera.placement", "camera.optics", "camera.detection", "camera.realism"})
+        CHECK(insp->form(group) != nullptr);
+    CHECK(insp->form("camera.assumed") == nullptr);   // a Limelight-only card
+    CHECK(insp->form("camera.general")->hasField("label"));
+    CHECK(insp->form("camera.general")->hasField("ntName"));
+    CHECK(insp->form("camera.placement")->hasField("local"));
+    CHECK(insp->form("camera.optics")->hasField("hfovRad"));
+    CHECK_FALSE(insp->form("camera.optics")->hasField("captureLatencyMs"));
+    CHECK(insp->findChild<QFrame*>("card.info") != nullptr);
+    CHECK(insp->findChild<QFrame*>("card.placement") != nullptr);
+
+    CHECK(insp->findChild<QLabel*>("camera.id")->text().contains("photon_front"));
+    CHECK(insp->findChild<QLabel*>("camera.id")->text().contains("PhotonVision"));
+    CHECK(insp->findChild<QLabel*>("camera.endpoint")->text().contains("/photonvision/photon-front"));
+    CHECK(insp->cameraRobotStatus()->text().contains("Not seen"));
+    CHECK(insp->cameraRealismHint()->text().contains("Ideal"));
+    CHECK_FALSE(insp->form("camera.realism")->editorFor("cornerNoisePx")->isVisibleTo(insp));   // ideal: the card starts collapsed
+    CHECK(insp->form("camera.optics")->editorFor("hfovRad")->isVisibleTo(insp));
+
+    // Editing goes through the document: undoable, and the title follows the label.
+    emit insp->form("camera.general")->editorFor("label")->edited(sdk::Value("Arm camera"));
+    CHECK(f.camera("photon_front").label == "Arm camera");
+    pumpEvents(30);
+    CHECK(insp->titleText() == "Arm camera");
+    f.c().document().undoStack()->undo();
+    CHECK(f.camera("photon_front").label == "Front camera");
+    pumpEvents(30);
+    CHECK(insp->titleText() == "Front camera");
+
+    emit insp->form("camera.optics")->editorFor("latencyMs")->edited(sdk::Value(40.0));
+    CHECK(f.camera("photon_front").latencyUs == 40000);
+    emit insp->form("camera.realism")->editorFor("dropoutPercent")->edited(sdk::Value(20.0));
+    CHECK(f.camera("photon_front").realism.dropoutProbability == doctest::Approx(0.2));
+    CHECK(insp->cameraRealismHint()->text().contains("dropped frames"));
+    CHECK_FALSE(insp->cameraRealismHint()->text().contains("Ideal"));
+}
+
+TEST_CASE("camera inspector: the camera matrix replaces the field of view, a Limelight adds its capture share and the pose it believes") {
+    CameraPage f;
+    f.select(SelectionRef::camera("limelight_rear"));
+    auto* insp = f.page.inspector();
+    REQUIRE(insp->form("camera.assumed") != nullptr);
+    CHECK(insp->form("camera.optics")->hasField("captureLatencyMs"));
+    CHECK(insp->findChild<QLabel*>("camera.endpoint")->text().contains("/limelight-rear"));
+    CHECK_FALSE(insp->findChild<QLabel*>("camera.endpoint")->text().contains("photonvision"));
+
+    auto* optics = insp->form("camera.optics");
+    CHECK(optics->editorFor("hfovRad")->isVisibleTo(insp));
+    CHECK_FALSE(optics->editorFor("fxPx")->isVisibleTo(insp));
+    emit optics->editorFor("advancedIntrinsics")->edited(sdk::Value(true));
+    CHECK(ops::hasExplicitIntrinsics(f.camera("limelight_rear").intrinsics));
+    CHECK_FALSE(optics->editorFor("hfovRad")->isVisibleTo(insp));
+    CHECK(optics->editorFor("fxPx")->isVisibleTo(insp));
+    emit optics->editorFor("advancedIntrinsics")->edited(sdk::Value(false));
+    CHECK_FALSE(ops::hasExplicitIntrinsics(f.camera("limelight_rear").intrinsics));
+    CHECK(optics->editorFor("hfovRad")->isVisibleTo(insp));
+
+    auto* assumed = insp->form("camera.assumed");
+    CHECK_FALSE(assumed->editorFor("assumedPose")->isVisibleTo(insp));   // the pose only shows while the override is on
+    emit assumed->editorFor("assumedOverride")->edited(sdk::Value(true));
+    REQUIRE(f.camera("limelight_rear").assumedPose.has_value());
+    CHECK(assumed->editorFor("assumedPose")->isVisibleTo(insp));
+    f.c().document().undoStack()->undo();
+    CHECK_FALSE(f.camera("limelight_rear").assumedPose.has_value());
+    CHECK_FALSE(assumed->editorFor("assumedPose")->isVisibleTo(insp));
+}
+
+TEST_CASE("camera inspector: what the robot reported about the camera shows in the General card") {
+    CameraPage f;
+    f.select(SelectionRef::camera("photon_front"));
+    auto* status = f.page.inspector()->cameraRobotStatus();
+    CHECK(status->text().contains("Not seen"));
+
+    sdk::CameraRobotState seen = detection("photon-front", kPhoton);
+    seen.publishing = true;
+    seen.framesPublished = 42;
+    f.backend.announceCamera(seen);
+    CHECK(status->text().contains("uses this camera"));
+    CHECK(status->text().contains("42"));
+    seen.status = "photon_uuid_unsupported";
+    f.backend.announceCamera(seen);
+    CHECK(status->text().contains("not supported"));
+    seen.status = "foreign_publisher";
+    f.backend.announceCamera(seen);
+    CHECK(status->text().contains("PhotonCameraSim"));
+    seen.status = "ntcore_unavailable";
+    f.backend.announceCamera(seen);
+    CHECK(status->text().contains("NetworkTables is not available"));
+    f.backend.setDetectedCameras({});
+    CHECK(status->text().contains("Not seen"));
+
+    // A name change makes the detection stop matching.
+    f.backend.announceCamera(seen);
+    f.c().document().setProperty(SelectionRef::camera("photon_front"), "camera.general", "ntName", sdk::Value("other"));
+    pumpEvents(30);
+    CHECK(f.page.inspector()->cameraRobotStatus()->text().contains("Not seen"));
+}
+
+TEST_CASE("camera inspector: a field issue shows a badge and opens the collapsed card that holds the field") {
+    CameraPage f;
+    f.select(SelectionRef::camera("photon_front"));
+    REQUIRE(f.c().document().setProperty(SelectionRef::camera("photon_front"), "camera.optics", "frameRateHz", sdk::Value(500.0)));
+    pumpEvents(300);   // validation is debounced
+    auto* insp = f.page.inspector();
+    bool badge = false;
+    for (auto* l : insp->form("camera.optics")->findChildren<QLabel*>())
+        badge = badge || (l->toolTip().contains("frame rate") && l->isVisibleTo(insp->form("camera.optics")));
+    CHECK(badge);
+
+    // Focusing an issue of a field in the (collapsed) Realism card opens it.
+    CHECK_FALSE(insp->form("camera.realism")->editorFor("cornerNoisePx")->isVisibleTo(insp));
+    f.c().focusIssue({sdk::Severity::Error, "vision.cameras[0].realism.cornerNoisePx", "bad noise", "camera_realism_invalid"});
+    pumpEvents(60);
+    CHECK(f.c().selection().current() == SelectionRef::camera("photon_front"));
+    CHECK(f.page.inspector()->form("camera.realism")->editorFor("cornerNoisePx")->isVisibleTo(f.page.inspector()));
+}
+
+TEST_CASE("vision inspector: the Robot page carries the Vision card, the Cameras group has its own page with the camera list") {
+    CameraPage f;
+    f.select(SelectionRef::robot());
+    auto* insp = f.page.inspector();
+    REQUIRE(insp->form("robot.vision") != nullptr);
+    CHECK(insp->form("robot.vision")->hasField("layoutId"));
+    CHECK(insp->form("robot.vision")->hasField("layoutFile"));
+    CHECK(insp->form("robot.vision")->hasField("photonMessageUuid"));
+    CHECK(insp->form("robot")->hasField("name"));   // the other cards are still there
+    REQUIRE(insp->form("robot.start") != nullptr);
+    REQUIRE(insp->visionHint() != nullptr);
+    CHECK(insp->visionHint()->text().contains("REBUILT (welded)"));
+    CHECK(insp->visionHint()->text().contains("9 tag(s)"));
+    CHECK(insp->findChild<QLabel*>("vision.uuidHint")->text().contains("PhotonLib version"));
+
+    // Picking the other layout is an undoable edit, and the summary follows.
+    auto* layout = insp->form("robot.vision")->editorFor("layoutId");
+    auto* combo = layout->findChild<QComboBox*>();
+    REQUIRE(combo != nullptr);
+    CHECK(combo->count() == 3);
+    combo->setCurrentIndex(combo->findData("game_2026.andymark"));
+    emit layout->edited(sdk::Value("game_2026.andymark"));
+    CHECK(f.config().vision.layoutId == "game_2026.andymark");
+    pumpEvents(30);
+    CHECK(f.page.inspector()->visionHint()->text().contains("AndyMark"));
+    f.c().document().undoStack()->undo();
+    CHECK(f.config().vision.layoutId.empty());
+
+    emit insp->form("robot.vision")->editorFor("layoutFile")->edited(sdk::Value("tags/off_season.json"));
+    pumpEvents(30);
+    CHECK(f.page.inspector()->visionHint()->text().contains("tags/off_season.json"));
+    CHECK(f.page.inspector()->visionHint()->text().contains("project folder"));
+    emit f.page.inspector()->form("robot.vision")->editorFor("photonMessageUuid")->edited(sdk::Value("4B2FF16A964B5E2BF04BE0C1454D91C4"));
+    CHECK(f.config().vision.photonMessageUuid == "4b2ff16a964b5e2bf04be0c1454d91c4");
+
+    f.select(SelectionRef::vision());
+    insp = f.page.inspector();
+    CHECK(insp->titleText() == "Vision");
+    CHECK(insp->form("robot.vision") != nullptr);
+    CHECK(insp->form("robot.start") == nullptr);   // only the vision settings and the camera list
+    CHECK(insp->findChild<QToolButton*>("vision.camera:photon_front") != nullptr);
+    CHECK(insp->findChild<QToolButton*>("vision.camera:limelight_rear") != nullptr);
+    insp->findChild<QToolButton*>("vision.camera:limelight_rear")->click();
+    CHECK(f.c().selection().current() == SelectionRef::camera("limelight_rear"));
+
+    f.select(SelectionRef::vision());
+    f.page.inspector()->findChild<QToolButton*>("vision.addLimelight")->click();
+    REQUIRE(f.config().vision.cameras.size() == 3);
+    CHECK(f.c().selection().current() == SelectionRef::camera(f.config().vision.cameras.back().id));
+    CHECK(f.config().vision.cameras.back().vendor == kLimelight);
+    f.select(SelectionRef::vision());
+    f.page.inspector()->findChild<QToolButton*>("vision.addPhoton")->click();
+    CHECK(f.config().vision.cameras.size() == 4);
+    CHECK(f.config().vision.cameras.back().vendor == kPhoton);
+}
+
+TEST_CASE("vision inspector: an issue about the layout or the UUID is flagged on the Robot page and the Vision page") {
+    CameraPage f;
+    auto cfg = robot();
+    cfg.vision.layoutId = "game_2026.gone";
+    cfg.vision.photonMessageUuid = "not a uuid";
+    f.backend.setConfig(cfg);
+    pumpEvents(300);
+    const auto badges = [&](const SelectionRef& ref) {
+        f.select(ref);
+        pumpEvents(300);
+        QStringList tips;
+        auto* form = f.page.inspector()->form("robot.vision");
+        for (auto* l : form->findChildren<QLabel*>())
+            if (!l->toolTip().isEmpty() && l->isVisibleTo(form)) tips << l->toolTip();
+        return tips;
+    };
+    for (const SelectionRef& page : {SelectionRef::robot(), SelectionRef::vision()}) {
+        const QStringList tips = badges(page);
+        CHECK(std::any_of(tips.begin(), tips.end(), [](const QString& t) { return t.contains("fiducial layout"); }));
+        CHECK(std::any_of(tips.begin(), tips.end(), [](const QString& t) { return t.contains("32 hexadecimal"); }));
+    }
+    CHECK(f.page.inspector()->visionHint()->text().contains("game_2026.gone"));
+
+    // Clicking such an issue opens the Vision page with the field focused.
+    QString focused;
+    QObject::connect(&f.c().selection(), &SelectionState::fieldFocusRequested, &f.c(), [&](const QString& key) { focused = key; });
+    f.c().focusIssue({sdk::Severity::Warning, "vision.photonMessageUuid", "bad uuid", "photon_uuid_malformed"});
+    CHECK(f.c().selection().current() == SelectionRef::vision());
+    CHECK(focused == "photonMessageUuid");
+}
+
+TEST_CASE("camera page: dropping a camera onto the chassis or a mechanism without links re-attaches it and is undoable") {
+    CameraPage f;
+    REQUIRE(f.c().document().reattachCamera("photon_front", "turret", "mover"));
+    const sdk::Vec3 before = cameraWorldPos(f.config(), f.c().document().catalog(), "photon_front");
+    auto* tree = f.page.tree();
+    auto* model = static_cast<ProjectTreeModel*>(tree->model());
+    std::unique_ptr<QMimeData> mime(model->mimeData({model->indexFor(SelectionRef::camera("photon_front"))}));
+    REQUIRE(mime != nullptr);
+
+    REQUIRE(model->dropMimeData(mime.get(), Qt::MoveAction, -1, -1, model->indexFor(SelectionRef::chassis())));
+    CHECK(f.camera("photon_front").attachment.onChassis());
+    CHECK(approx(cameraWorldPos(f.config(), f.c().document().catalog(), "photon_front"), before));
+    f.c().document().undoStack()->undo();
+    CHECK(f.camera("photon_front").attachment.parentMechanismId == "turret");
+
+    // The intake has no named links: the drop attaches to its origin without asking.
+    REQUIRE(model->dropMimeData(mime.get(), Qt::MoveAction, -1, -1, model->indexFor(SelectionRef::mechanism("intake"))));
+    CHECK(f.camera("photon_front").attachment.parentMechanismId == "intake");
+    CHECK(f.camera("photon_front").attachment.parentLink == "root");
+    CHECK(approx(cameraWorldPos(f.config(), f.c().document().catalog(), "photon_front"), before));
+}
+
+TEST_CASE("camera page: the tree row selects the camera and Delete and Ctrl+D act on it") {
+    CameraPage f;
+    auto* tree = f.page.tree();
+    auto* model = static_cast<ProjectTreeModel*>(tree->model());
+    tree->setCurrentIndex(model->indexFor(SelectionRef::camera("limelight_rear")));
+    pumpEvents(30);
+    CHECK(f.c().selection().current() == SelectionRef::camera("limelight_rear"));
+    tree->setCurrentIndex(model->indexForKey("cameras"));
+    pumpEvents(30);
+    CHECK(f.c().selection().current() == SelectionRef::vision());
+
+    f.select(SelectionRef::camera("limelight_rear"));
+    f.page.duplicateAction()->trigger();
+    CHECK(f.config().vision.cameras.size() == 3);
+    CHECK(f.c().selection().current().kind == SelKind::Camera);
+    f.page.deleteAction()->trigger();
+    CHECK(f.config().vision.cameras.size() == 2);
+    CHECK(f.c().selection().current() == SelectionRef::robot());
+}
+
+// ---- the viewport scene ------------------------------------------------------------------------------
+
+TEST_CASE("camera scene: a camera is a body behind a lens with a view pyramid, and the body and the far plane select it") {
+    const auto cat = catalog();
+    const auto c = robot();
+    const SceneTheme theme = SceneTheme::dark();
+    const auto scene = buildScene(c, cat, theme);
+    const SelectionRef ref = SelectionRef::camera("photon_front");
+    const sdk::Pose3 world = ops::cameraWorld(c, cat, *c.findCamera("photon_front"));
+    const sdk::Vec3 axis = world.rotation.rotate({1.f, 0.f, 0.f});
+
+    const auto* body = scene.find("camera:photon_front");
+    const auto* lens = scene.find("camera:photon_front:lens");
+    const auto* plane = scene.find("camera:photon_front:view");
+    REQUIRE((body && lens && plane));
+    CHECK(body->ref == ref);
+    CHECK(body->group == ref);
+    CHECK(body->pickable);
+    CHECK(body->color == theme.camera);
+    CHECK(approx(body->world.position, world.position - axis * 0.025f, 1e-4f));   // the camera origin is the lens: the body sits behind it
+    CHECK(lens->shape == ItemShape::Cylinder);
+    CHECK(lens->pickable);
+    CHECK(approx(lens->world.rotation.rotate({0.f, 0.f, 1.f}), axis, 1e-4f));   // a cylinder's axis is its local Z: it looks along the camera
+
+    // The pyramid: the far plane is one depth away along the optical axis and as wide as the field of view says.
+    const float depth = cameraFrustumDepthM(c, cat);
+    CHECK(depth == doctest::Approx(1.0f));   // 10 % of the 6 m demo field, at least 1 m
+    CHECK(plane->role == ItemRole::Frustum);
+    CHECK(plane->pickable);
+    CHECK(plane->opacity < 0.2f);
+    CHECK(approx(plane->world.position, world.position + axis * depth, 1e-3f));
+    CHECK(plane->size.y == doctest::Approx(2.0 * depth * std::tan(c.findCamera("photon_front")->intrinsics.hfovRad / 2.0)).epsilon(1e-3));
+    CHECK(plane->size.z == doctest::Approx(2.0 * depth * std::tan(c.findCamera("photon_front")->intrinsics.vfovRad() / 2.0)).epsilon(1e-3));
+    for (int i = 0; i < 4; ++i) {
+        const auto* ray = scene.find("camera:photon_front:ray" + std::to_string(i));
+        const auto* rim = scene.find("camera:photon_front:rim" + std::to_string(i));
+        REQUIRE((ray && rim));
+        CHECK(ray->role == ItemRole::Frustum);
+        CHECK_FALSE(ray->pickable);
+        CHECK(ray->group == ref);
+        // A ray runs from the lens to a far corner: its centre is half way, its length the distance to the corner.
+        CHECK(sdk::length(ray->world.position - world.position) == doctest::Approx(0.5 * ray->size.x).epsilon(1e-3));
+        CHECK(sdk::dot(ray->world.position - world.position, axis) == doctest::Approx(0.5 * depth).epsilon(1e-3));
+    }
+
+    std::vector<std::string> ids;
+    for (const auto& i : scene.items) ids.push_back(i.id);
+    std::sort(ids.begin(), ids.end());
+    CHECK(std::adjacent_find(ids.begin(), ids.end()) == ids.end());
+    CHECK(scene.find("camera:limelight_rear:view") != nullptr);
+    CHECK(approx(scene.find("camera:limelight_rear:lens")->world.rotation.rotate({0.f, 0.f, 1.f}), cameraAxis(c, cat, "limelight_rear"), 1e-4f));
+
+    // The depth follows the layout: 1.5 m without one (no plugin, a custom file or an unknown id).
+    auto custom = c;
+    custom.vision.layoutFile = "tags.json";
+    CHECK(cameraFrustumDepthM(custom, cat) == doctest::Approx(1.5f));
+    EditorCatalog bare = cat;
+    bare.fiducialLayouts.clear();
+    CHECK(cameraFrustumDepthM(c, bare) == doctest::Approx(1.5f));
+    bare.fiducialLayouts = cat.fiducialLayouts;
+    bare.fiducialLayouts[0].fieldLengthM = 16.5f;
+    CHECK(cameraFrustumDepthM(c, bare) == doctest::Approx(1.65f));
+    bare.fiducialLayouts[0].fieldLengthM = 60.f;
+    CHECK(cameraFrustumDepthM(c, bare) == doctest::Approx(3.0f));   // clamped
+}
+
+TEST_CASE("camera scene: a camera that is switched off is dimmed, an unusable lens draws no pyramid, a camera on a mechanism rides with it") {
+    const auto cat = catalog();
+    auto c = robot();
+    const SceneTheme theme = SceneTheme::dark();
+    const auto before = buildScene(c, cat, theme);
+
+    ops::findCamera(c, "photon_front")->enabled = false;
+    const auto off = buildScene(c, cat, theme);
+    CHECK(off.find("camera:photon_front")->color == theme.cameraOff);
+    CHECK(off.find("camera:photon_front")->opacity < before.find("camera:photon_front")->opacity);
+    CHECK(off.find("camera:photon_front:ray0")->opacity < before.find("camera:photon_front:ray0")->opacity);
+    CHECK(off.find("camera:limelight_rear")->color == theme.camera);   // the other one is untouched
+
+    ops::findCamera(c, "photon_front")->enabled = true;
+    ops::findCamera(c, "photon_front")->intrinsics.hfovRad = 0.0;
+    const auto noLens = buildScene(c, cat, theme);
+    CHECK(noLens.find("camera:photon_front") != nullptr);
+    CHECK(noLens.find("camera:photon_front:lens") != nullptr);
+    CHECK(noLens.find("camera:photon_front:view") == nullptr);
+    CHECK(noLens.find("camera:photon_front:ray0") == nullptr);
+
+    ops::findCamera(c, "photon_front")->intrinsics.hfovRad = 1.5708;
+    ops::findCamera(c, "photon_front")->intrinsics.fxPx = 320.0;   // the camera matrix wins over the field of view: 2 atan(640 / 320)
+    const auto narrow = buildScene(c, cat, theme);
+    CHECK(narrow.find("camera:photon_front:view")->size.y == doctest::Approx(2.0 * 2.0 * 1.0).epsilon(1e-3));   // depth 1 m, half width = depth * 640 / 320
+
+    auto d = robot();
+    REQUIRE(ops::reattachCamera(d, cat, "limelight_rear", "turret", "mover"));
+    const auto start = buildScene(d, cat, theme);
+    auto moved = d;
+    for (auto& m : moved.mechanisms)
+        if (m.id == "turret") m.mount.position.x += 0.2f;
+    const auto after = buildScene(moved, cat, theme);
+    CHECK(approx(after.find("camera:limelight_rear")->world.position.x, start.find("camera:limelight_rear")->world.position.x + 0.2f, 1e-3f));
+    CHECK(approx(after.find("camera:limelight_rear:view")->world.position.x, start.find("camera:limelight_rear:view")->world.position.x + 0.2f, 1e-3f));
+}
+
+TEST_CASE("camera scene: the layout's tags are thin plates as the robot sees the field from its start pose, only while asked for") {
+    const auto cat = catalog();
+    auto c = robot();
+    const SceneTheme theme = SceneTheme::dark();
+    CHECK(buildScene(c, cat, theme).find("tag:4") == nullptr);   // not asked for
+    SceneOptions on;
+    on.showTags = true;
+    const auto scene = buildScene(c, cat, theme, on);
+    std::size_t plates = 0;
+    for (const auto& item : scene.items)
+        if (item.role == ItemRole::Tag) {
+            ++plates;
+            CHECK_FALSE(item.pickable);
+            CHECK(item.ref.isNone());
+            CHECK(item.color == theme.tag);
+            CHECK(item.text == QString::number(std::stoi(item.id.substr(4))));
+        }
+    CHECK(plates == 9);
+
+    // Tag 4 stands at (3.0, 0.8, 0.7) on the field facing -X; the robot starts at (1.4, 1.0) facing +X: 1.6 m ahead, 0.2 m to the right.
+    const auto* tag = scene.find("tag:4");
+    REQUIRE(tag != nullptr);
+    CHECK(tag->text == "4");
+    CHECK(approx(tag->size, {0.012f, 0.1651f, 0.1651f}, 1e-4f));
+    const sdk::Vec3 normal = tag->world.rotation.rotate({1.f, 0.f, 0.f});
+    CHECK(approx(normal, {-1.f, 0.f, 0.f}, 1e-4f));
+    CHECK(approx(tag->world.position + normal * 0.006f, {1.6f, -0.2f, 0.7f}, 1e-3f));   // the pose is the face, the plate is behind it
+
+    // Moving or turning the start pose moves the field around the robot.
+    c.sim.startPose = sdk::StartPose{2.4f, 1.0f, 0.f};
+    CHECK(approx(buildScene(c, cat, theme, on).find("tag:4")->world.position.x, 0.6f + 0.006f, 1e-3f));
+    c.sim.startPose = sdk::StartPose{1.4f, 2.0f, static_cast<float>(sdk::kPi) / 2.f};   // facing +Y: tag 5 (3.0, 1.6) is 0.4 m behind it, on its right
+    const auto turned = buildScene(c, cat, theme, on);
+    CHECK(approx(turned.find("tag:5")->world.position + turned.find("tag:5")->world.rotation.rotate({1.f, 0.f, 0.f}) * 0.006f, {-0.4f, -1.6f, 0.7f}, 1e-3f));
+
+    // Far from the robot the floor patch ends: nothing is drawn.
+    c.sim.startPose = sdk::StartPose{30.f, 0.f, 0.f};
+    std::size_t far = 0;
+    for (const auto& item : buildScene(c, cat, theme, on).items) far += item.role == ItemRole::Tag ? 1 : 0;
+    CHECK(far == 0);
+
+    // A custom layout file or an unknown layout id leaves nothing to draw (the editor does not read the file).
+    auto file = robot();
+    file.vision.layoutFile = "tags.json";
+    CHECK(buildScene(file, cat, theme, on).find("tag:4") == nullptr);
+    auto unknown = robot();
+    unknown.vision.layoutId = "game_2026.gone";
+    CHECK(buildScene(unknown, cat, theme, on).find("tag:4") == nullptr);
+    unknown.vision.layoutId = "game_2026.andymark";
+    CHECK(buildScene(unknown, cat, theme, on).find("tag:9")->world.position.x == doctest::Approx(4.5f + 0.006f).epsilon(1e-3));   // the AndyMark far wall is 5.9 m out
+}
+
+TEST_CASE("camera scene: the tags the selected camera would see are tinted, by the rules of the vision engine without occlusion") {
+    const auto cat = catalog();
+    const auto c = robot();
+    const SceneTheme theme = SceneTheme::dark();
+    SceneOptions options;
+    options.showTags = true;
+    options.cameraId = "photon_front";
+    const auto scene = buildScene(c, cat, theme, options);
+    std::vector<std::string> seen;
+    for (const auto& item : scene.items)
+        if (item.role == ItemRole::Tag && item.color == theme.tagSeen) seen.push_back(item.text.toStdString());
+    std::sort(seen.begin(), seen.end());
+    CHECK(seen == std::vector<std::string>{"4", "5", "8", "9"});   // ahead of the camera and facing it; the wall behind and the side walls are not
+
+    options.cameraId = "limelight_rear";   // looks back at the wall behind the robot
+    const auto rear = buildScene(c, cat, theme, options);
+    CHECK(rear.find("tag:1")->color == theme.tagSeen);
+    CHECK(rear.find("tag:4")->color == theme.tag);
+    options.cameraId = "ghost";
+    CHECK(buildScene(c, cat, theme, options).find("tag:4")->color == theme.tag);
+    options.cameraId.clear();
+    CHECK(buildScene(c, cat, theme, options).find("tag:4")->color == theme.tag);
+
+    // The rule itself: facing, the image, the minimum size and the distance.
+    const sdk::CameraConfig& photon = *c.findCamera("photon_front");
+    const sdk::Pose3 camera = ops::cameraWorld(c, cat, photon);
+    const auto ahead = [&](float distance, float yawRad) {   // a tag on the optical axis facing the camera (yaw 0 faces away)
+        const sdk::Vec3 axis = camera.rotation.rotate({1.f, 0.f, 0.f});
+        return sdk::Pose3(camera.position + axis * distance, camera.rotation * sdk::Quat::fromYaw(static_cast<float>(sdk::kPi) + yawRad));
+    };
+    CHECK(cameraSeesTag(photon, camera, ahead(2.f, 0.f), 0.1651));
+    CHECK_FALSE(cameraSeesTag(photon, camera, ahead(2.f, static_cast<float>(sdk::kPi)), 0.1651));        // faces away
+    CHECK_FALSE(cameraSeesTag(photon, camera, ahead(2.f, 1.45f), 0.1651));                                  // 83 degrees off the line of sight: past the 75 limit
+    CHECK(cameraSeesTag(photon, camera, ahead(2.f, 1.2f), 0.1651));                                         // 69 degrees: inside it
+    CHECK_FALSE(cameraSeesTag(photon, camera, ahead(15.f, 0.f), 0.1651));                                   // 640 * 0.1651 / 15 = 7 px < 12
+    CHECK(cameraSeesTag(photon, camera, ahead(15.f, 0.f), 0.5));                                            // a bigger tag is long enough
+    CHECK_FALSE(cameraSeesTag(photon, camera, ahead(0.0005f, 0.f), 0.1651));                                // not in front of the lens
+    CHECK_FALSE(cameraSeesTag(photon, camera, ahead(-2.f, 0.f), 0.1651));                                   // behind it
+    CHECK_FALSE(cameraSeesTag(photon, camera, ahead(0.1f, 0.f), 0.1651));                                   // so close that its corners leave the image
+    sdk::CameraConfig blind = photon;
+    blind.intrinsics.hfovRad = 0.0;
+    CHECK_FALSE(cameraSeesTag(blind, camera, ahead(2.f, 0.f), 0.1651));
+    sdk::CameraConfig picky = photon;
+    picky.minTagPixels = 200.0;
+    CHECK_FALSE(cameraSeesTag(picky, camera, ahead(2.f, 0.f), 0.1651));
+}
+
+// ---- the viewport controller -------------------------------------------------------------------------
+
+namespace {
+
+struct CameraViewFixture {
+    FakeEditorBackend backend;
+    EditorController editor{backend};
+    ViewportController view{editor};
+    CameraViewFixture() {
+        editor.setAutosaveDelayMs(0);
+        view.setViewSize(800, 600);
+        editor.settings().setSnapEnabled(false);
+    }
+    QPointF screen(const sdk::Vec3& world) {
+        const auto px = view.camera().project(world, 800.f, 600.f);
+        REQUIRE(px);
+        return {static_cast<qreal>(px->first), static_cast<qreal>(px->second)};
+    }
+    std::size_t plates() {
+        std::size_t n = 0;
+        for (const auto& item : view.scene().items()) n += item.role == ItemRole::Tag ? 1 : 0;
+        return n;
+    }
+};
+
+}  // namespace
+
+TEST_CASE("camera viewport: the tags follow the Tags toggle, a selected camera and the vision settings") {
+    CameraViewFixture f;
+    CHECK_FALSE(f.view.sceneOptions().showTags);
+    CHECK(f.plates() == 0);
+    CHECK(f.view.tagLabels().isEmpty());
+
+    f.editor.selection().set(SelectionRef::camera("photon_front"));
+    CHECK(f.view.sceneOptions().showTags);
+    CHECK(f.view.sceneOptions().cameraId == "photon_front");
+    CHECK(f.plates() == 9);
+    f.editor.selection().set(SelectionRef::camera("limelight_rear"));
+    CHECK(f.view.sceneOptions().cameraId == "limelight_rear");
+    CHECK(f.view.scene().itemById("tag:1")->color == f.view.theme().tagSeen);   // the other camera sees the wall behind the robot
+    f.editor.selection().set(SelectionRef::vision());
+    CHECK(f.view.sceneOptions().showTags);
+    CHECK(f.view.sceneOptions().cameraId.empty());
+    CHECK(f.plates() == 9);
+    f.editor.selection().set(SelectionRef::robot());
+    CHECK(f.plates() == 0);
+
+    f.editor.settings().setShowTags(true);
+    CHECK(f.plates() == 9);
+    f.editor.selection().set(SelectionRef::mechanism("turret"));
+    CHECK(f.plates() == 9);   // the toggle keeps them
+    f.editor.settings().setShowTags(false);
+    CHECK(f.plates() == 0);
+
+    // Editing the vision settings redraws them: another layout, or none.
+    f.editor.selection().set(SelectionRef::vision());
+    REQUIRE(f.editor.document().setProperty(SelectionRef::vision(), "robot.vision", "layoutFile", sdk::Value("tags.json")));
+    CHECK(f.plates() == 0);
+    REQUIRE(f.editor.document().setProperty(SelectionRef::vision(), "robot.vision", "layoutFile", sdk::Value("")));
+    CHECK(f.plates() == 9);
+}
+
+TEST_CASE("camera viewport: the ids of the tags in view are projected to the screen and follow the viewport camera") {
+    CameraViewFixture f;
+    f.editor.selection().set(SelectionRef::camera("photon_front"));
+    f.view.setView("top");
+    f.view.frameSelection();   // the camera and its pyramid fill the view
+
+    // A label per plate on screen, at the plate's screen position and in its colour; none for the plates outside the view.
+    const auto labelsByText = [&] {
+        std::map<QString, QVariantMap> byText;
+        for (const QVariant& v : f.view.tagLabels()) byText[v.toMap().value("text").toString()] = v.toMap();
+        return byText;
+    };
+    const auto check = [&] {
+        const auto byText = labelsByText();
+        std::size_t inView = 0;
+        for (const SceneItem& item : f.view.scene().items()) {
+            if (item.role != ItemRole::Tag) continue;
+            const auto px = f.view.camera().project(item.world.position, 800.f, 600.f);
+            const bool visible = px && px->first >= 0.f && px->first <= 800.f && px->second >= 0.f && px->second <= 600.f;
+            const auto it = byText.find(item.text);
+            if (!visible) {
+                CHECK(it == byText.end());
+                continue;
+            }
+            ++inView;
+            REQUIRE(it != byText.end());
+            CHECK(it->second.value("x").toDouble() == doctest::Approx(static_cast<double>(px->first)).epsilon(1e-3));
+            CHECK(it->second.value("y").toDouble() == doctest::Approx(static_cast<double>(px->second)).epsilon(1e-3));
+            CHECK(it->second.value("color").value<QColor>() == item.color);
+        }
+        return inView;
+    };
+    const std::size_t top = check();
+    CHECK(top >= 3);
+    CHECK(top == f.view.tagLabels().size());
+    CHECK(labelsByText().at("4").value("color").value<QColor>() == f.view.theme().tagSeen);   // a tag the camera sees
+
+    int changes = 0;
+    QObject::connect(&f.view, &ViewportController::tagLabelsChanged, &f.view, [&] { ++changes; });
+    f.view.setView("front");
+    CHECK(changes >= 1);   // the labels follow the viewport camera
+    check();
+    f.view.camera().target = {50.f, 50.f, 0.f};   // looking far away from the field: nothing is in view
+    f.view.wheel(0);
+    CHECK(f.view.tagLabels().isEmpty());
+
+    f.editor.selection().set(SelectionRef::robot());   // the tags are gone with the selection that asked for them
+    f.view.resetCamera();
+    CHECK(f.view.tagLabels().isEmpty());
+}
+
+TEST_CASE("camera viewport: picking, gizmo modes and a drag that is one undo step") {
+    CameraViewFixture f;
+    CHECK(f.view.chooseItem({"i:camera:photon_front", "i:hull"}) == SelectionRef::camera("photon_front"));   // the body is solid
+    CHECK(f.view.chooseItem({"i:camera:photon_front:lens"}) == SelectionRef::camera("photon_front"));
+    CHECK(f.view.chooseItem({"i:camera:photon_front:view"}) == SelectionRef::camera("photon_front"));        // the plane alone selects it
+    CHECK(f.view.chooseItem({"i:camera:photon_front:view", "i:hull"}) == SelectionRef::chassis());            // solid parts win over the plane
+
+    f.editor.selection().set(SelectionRef::camera("photon_front"));
+    REQUIRE(f.view.effectiveMode());
+    f.view.setGizmoMode(GizmoMode::Scale);
+    CHECK(*f.view.effectiveMode() == GizmoMode::Move);   // a camera has no size
+    f.view.setGizmoMode(GizmoMode::Rotate);
+    CHECK(*f.view.effectiveMode() == GizmoMode::Rotate);
+    CHECK(f.view.selectionEdges().size() == 24);   // the body and the lens are outlined, the pyramid is not
+    CHECK(f.view.transformFields().targetName == "Front camera");
+
+    // Highlighting the camera brightens its pyramid.
+    const auto opacityOf = [&](const char* id) {
+        const auto& items = f.view.scene().items();
+        for (std::size_t i = 0; i < items.size(); ++i)
+            if (items[i].id == id) return f.view.scene().data(f.view.scene().index(static_cast<int>(i)), SceneModel::OpacityRole).toDouble();
+        return -1.0;
+    };
+    const double selected = opacityOf("camera:photon_front:ray0");
+    CHECK(selected > opacityOf("camera:limelight_rear:ray0"));
+    f.editor.selection().set(SelectionRef::robot());
+    CHECK(opacityOf("camera:photon_front:ray0") < selected);
+    f.editor.selection().set(SelectionRef::camera("photon_front"));
+
+    f.view.setGizmoMode(GizmoMode::Move);
+    const auto start = readTransform(f.editor.document().config(), f.editor.document().catalog(), SelectionRef::camera("photon_front"));
+    REQUIRE(start);
+    const sdk::Vec3 origin = start->world().position;
+    const sdk::Vec3 axis = start->parentWorld.rotation.rotate({1.f, 0.f, 0.f});
+    const QPointF p0 = f.screen(origin + axis * 0.2f);
+    REQUIRE(f.view.beginGizmoDrag("h:m:0", p0.x(), p0.y()));
+    for (int i = 1; i <= 4; ++i) {
+        const QPointF p = f.screen(origin + axis * (0.2f + 0.05f * static_cast<float>(i)));
+        f.view.updateGizmoDrag(p.x(), p.y(), false);
+    }
+    f.view.endGizmoDrag();
+    CHECK(approx(f.editor.document().config().findCamera("photon_front")->local.position.x, start->transform.local.position.x + 0.2f, 2e-3f));
+    CHECK(f.editor.document().undoStack()->count() == 1);
+    f.editor.document().undoStack()->undo();
+    CHECK(approx(f.editor.document().config().findCamera("photon_front")->local.position.x, start->transform.local.position.x));
+
+    // The numeric entry of the toolbar edits the camera too (position in metres).
+    REQUIRE(f.view.setTransformComponent(1, 0.2));
+    CHECK(approx(f.editor.document().config().findCamera("photon_front")->local.position.y, 0.2f));
+}
+
+TEST_CASE("camera viewport: framing a camera includes its view, framing the robot does not") {
+    CameraViewFixture f;
+    f.editor.selection().set(SelectionRef::camera("photon_front"));
+    f.view.frameSelection();
+    CHECK(f.view.camera().distance > 2.0f);   // the pyramid reaches a metre ahead: farther than the body alone
+
+    f.editor.selection().set(SelectionRef::robot());
+    f.view.frameSelection();
+    const float withCameras = f.view.camera().distance;
+    auto bare = robot();
+    bare.vision.cameras.clear();
+    f.backend.setConfig(bare);
+    f.editor.selection().set(SelectionRef::robot());
+    f.view.frameSelection();
+    CHECK(f.view.camera().distance == doctest::Approx(withCameras).epsilon(0.1));   // the bodies sit inside the hull's reach, the pyramids are ignored
+}
+
+TEST_CASE("camera page: the Tags button toggles the AprilTags and the viewport shows them") {
+    CameraPage f;
+    auto* button = f.page.viewport()->findChild<QToolButton*>("viewport.tags");
+    REQUIRE(button != nullptr);
+    CHECK_FALSE(button->isChecked());
+    CHECK_FALSE(f.c().settings().showTags());
+    button->click();
+    CHECK(f.c().settings().showTags());
+    CHECK(button->isChecked());
+    f.c().settings().setShowTags(false);   // the button follows the setting
+    CHECK_FALSE(button->isChecked());
 }

@@ -98,6 +98,7 @@ QIcon IconFactory::node(NodeKind kind) const {
         case NodeKind::Volume: return glyph(QStringLiteral("V"), QColor("#44cc88"));
         case NodeKind::Plugin: return glyph(QStringLiteral("G"), QColor("#cc55bb"));
         case NodeKind::Zone: return glyph(QStringLiteral("Z"), QColor("#33b5c9"));
+        case NodeKind::Camera: return glyph(QStringLiteral("\xE2\x97\x89"), QColor("#e56bb0"));
         case NodeKind::Group: return {};
         case NodeKind::Slot: break;
     }

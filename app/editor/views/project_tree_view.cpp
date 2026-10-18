@@ -45,7 +45,8 @@ void ProjectTreeDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
     const bool group = kind == NodeKind::Group;
     if (group || kind == NodeKind::Robot) font.setBold(true);
     const bool follower = index.data(ProjectTreeModel::FollowerRole).toBool();
-    if (follower && !selected) painter->setOpacity(0.6);   // read-only: driven by a motion link
+    const bool disabled = index.data(ProjectTreeModel::DisabledRole).toBool();
+    if ((follower || disabled) && !selected) painter->setOpacity(0.6);   // read-only (driven by a motion link) or a camera that is switched off
     painter->setFont(font);
     const QColor fg = selected ? opt.palette.color(QPalette::HighlightedText) : opt.palette.color(QPalette::Text);
     QColor muted = selected ? opt.palette.color(QPalette::HighlightedText) : opt.palette.color(QPalette::PlaceholderText);

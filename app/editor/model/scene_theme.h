@@ -22,6 +22,10 @@ struct SceneTheme {
     QColor com{"#ff9f1c"};
     QColor link{"#2ec4b6"};
     QColor startPose{"#a78bfa"};   // footprint + heading arrow of the start pose
+    QColor camera{"#f778ba"};      // camera body, lens and view frustum
+    QColor cameraOff{"#7d8590"};   // the same of a camera that is switched off
+    QColor tag{"#e6e8eb"};         // AprilTag plates and their ids
+    QColor tagSeen{"#3fb950"};     // the tags the selected camera would see
     QColor axisX{"#e5484d"};
     QColor axisY{"#46a758"};
     QColor axisZ{"#3e63dd"};
@@ -43,6 +47,10 @@ struct SceneTheme {
         t.accent = QColor("#0a6cff");
         t.link = QColor("#12a595");
         t.startPose = QColor("#7c5cff");
+        t.camera = QColor("#d6409f");
+        t.cameraOff = QColor("#8b949e");
+        t.tag = QColor("#3a3f47");
+        t.tagSeen = QColor("#1a9a3a");
         t.text = QColor("#2a2f38");
         return t;
     }

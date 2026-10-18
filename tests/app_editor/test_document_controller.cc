@@ -425,11 +425,12 @@ TEST_CASE("project tree: the drivetrain is a child of the chassis, next to its c
     const QModelIndex robot = tree.index(0, 0);
     std::vector<QString> robotKids;
     for (int r = 0; r < tree.rowCount(robot); ++r) robotKids.push_back(tree.keyAt(tree.index(r, 0, robot)));
-    REQUIRE(robotKids.size() >= 3);
+    REQUIRE(robotKids.size() >= 4);
     CHECK(robotKids[0] == "chassis");
     CHECK(robotKids[1] == "mechanisms");
-    CHECK(robotKids[2] == "sensors");
-    for (std::size_t i = 3; i < robotKids.size(); ++i) CHECK(robotKids[i] == "plugin");
+    CHECK(robotKids[2] == "cameras");
+    CHECK(robotKids[3] == "sensors");
+    for (std::size_t i = 4; i < robotKids.size(); ++i) CHECK(robotKids[i] == "plugin");
     CHECK(tree.indexForKey("drivetrain").parent() != robot);
 
     const QModelIndex chassis = tree.indexFor(SelectionRef::chassis());
