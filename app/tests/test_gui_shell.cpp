@@ -301,6 +301,7 @@ public:
     void stepTicks(int) override {}
     void setTimeScale(double) override {}
     void setDriverStation(const sdk::proto::DsState&) override {}
+    void setRobotPose(const sdk::Pose3&) override {}
     void publish(std::vector<sdk::DiscoveredDevice> devices) {
         sdk::SimSnapshotData data;
         data.devices = std::move(devices);

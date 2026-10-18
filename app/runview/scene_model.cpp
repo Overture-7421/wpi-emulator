@@ -270,6 +270,7 @@ void SceneModel::updateZones(const sdk::ISimSnapshot* snapshot) {
 void SceneModel::update(const sdk::ISimSnapshot* snapshot) {
     if (snapshot != nullptr) {
         const sdk::Pose3& pose = snapshot->chassis().pose;
+        chassisPose_ = pose;
         const QVector3D pos = toQt(pose.position);
         const QQuaternion rot = toQt(pose.rotation);
         if (pos != chassisPosition_ || rot != chassisRotation_ || !robotVisible_) {
@@ -283,9 +284,81 @@ void SceneModel::update(const sdk::ISimSnapshot* snapshot) {
         updateZones(snapshot);
     } else if (robotVisible_) {
         robotVisible_ = false;
+        endRobotDrag();
         emit poseChanged();
         entities_.update({});
     }
+}
+
+// ---- placing the robot with the mouse ------------------------------------------------------------
+namespace {
+constexpr float kPickMarginM = 0.08f;                                       // forgiving: the bumpers and a little more
+constexpr float kWheelNotchRad = 5.f * static_cast<float>(sdk::kPi) / 180.f;   // turning while dragging
+constexpr float kSnapMoveM = 0.1f;
+constexpr float kSnapYawRad = 15.f * static_cast<float>(sdk::kPi) / 180.f;
+
+placement::Snap snapFor(int modifiers) {
+    return (modifiers & Qt::ControlModifier) != 0 ? placement::Snap{kSnapMoveM, kSnapYawRad} : placement::Snap{};
+}
+}  // namespace
+
+placement::LocalBox SceneModel::robotBounds() const {
+    placement::LocalBox box = placement::LocalBox::empty();
+    for (const ScenePart& part : rig_.parts()) {
+        const sdk::Vec3 half = part.size * 0.5f;   // boxes and cylinders (axis = local Z) alike
+        for (const float sx : {-1.f, 1.f})
+            for (const float sy : {-1.f, 1.f})
+                for (const float sz : {-1.f, 1.f}) box.include(part.pose.transformPoint({sx * half.x, sy * half.y, sz * half.z}));
+    }
+    return box.valid() ? box.grown(kPickMarginM) : box;
+}
+
+void SceneModel::setPlacementEnabled(bool enabled) {
+    if (enabled == placementEnabled_) return;
+    placementEnabled_ = enabled;
+    if (!enabled) endRobotDrag();
+}
+
+bool SceneModel::robotAt(float x, float y) const {
+    if (!placementEnabled_ || !robotVisible_) return false;
+    const Ray ray = camera_.rayAt(x, y, viewWidthPx_, viewHeightPx_);
+    return placement::rayHitDistance(ray, chassisPose_, robotBounds()).has_value();
+}
+
+bool SceneModel::beginRobotDrag(float x, float y) {
+    if (!placementEnabled_ || !robotVisible_ || dragging_) return false;
+    const Ray ray = camera_.rayAt(x, y, viewWidthPx_, viewHeightPx_);
+    const auto hit = placement::rayHitDistance(ray, chassisPose_, robotBounds());
+    if (!hit) return false;
+    drag_ = placement::FloorDrag::move(sdk::toStartPose(chassisPose_), ray.origin + ray.direction * *hit);
+    dragHeightM_ = chassisPose_.position.z;
+    lastRequested_.reset();
+    dragging_ = true;
+    emit robotDragChanged();
+    return true;
+}
+
+void SceneModel::dragRobot(float x, float y, int modifiers) {
+    if (!dragging_) return;
+    const auto pose = drag_.update(camera_.rayAt(x, y, viewWidthPx_, viewHeightPx_), snapFor(modifiers));
+    if (!pose || pose == lastRequested_) return;
+    lastRequested_ = pose;
+    emit robotPoseRequested(pose->xM, pose->yM, dragHeightM_, pose->yawRad);
+}
+
+bool SceneModel::turnRobotDrag(float wheelSteps, int modifiers) {
+    if (!dragging_) return false;
+    const sdk::StartPose pose = drag_.rotateBy(wheelSteps * kWheelNotchRad, snapFor(modifiers));
+    lastRequested_ = pose;
+    emit robotPoseRequested(pose.xM, pose.yM, dragHeightM_, pose.yawRad);
+    return true;
+}
+
+void SceneModel::endRobotDrag() {
+    if (!dragging_) return;
+    dragging_ = false;
+    lastRequested_.reset();
+    emit robotDragChanged();
 }
 
 }  // namespace wpiemu::app::runview

@@ -115,6 +115,8 @@ public slots:
     virtual void stepTicks(int ticks) = 0;
     virtual void setTimeScale(double scale) = 0;
     virtual void setDriverStation(const wpiemu::sdk::proto::DsState& state) = 0;
+    // Teleports the robot in the running simulation (ISimController::setRobotPose); ignored while no simulation exists.
+    virtual void setRobotPose(const wpiemu::sdk::Pose3& pose) = 0;
 
 signals:
     void statusChanged();

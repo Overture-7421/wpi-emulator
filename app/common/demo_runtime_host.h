@@ -40,6 +40,7 @@ public slots:
     void stepTicks(int ticks) override;
     void setTimeScale(double scale) override;
     void setDriverStation(const wpiemu::sdk::proto::DsState& state) override;
+    void setRobotPose(const wpiemu::sdk::Pose3& pose) override;
 
 private:
     void setStatus(HostProcessState process, HostLinkState link, const QString& detail = {});

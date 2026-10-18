@@ -38,6 +38,9 @@ public:
     bool paused() const { return paused_; }
     int startCount() const { return startCount_; }
     int resetCount() const { return resetCount_; }
+    // Number of setRobotPose() calls and the last pose handed in.
+    int poseCount() const { return poseCount_; }
+    const sdk::Pose3& lastRobotPose() const { return lastPose_; }
     void emitLog(sdk::LogLevel level, LogStream stream, const QString& source, const QString& text);
 
     void simulateCrash(int exitCode = 1, const QString& detail = {});
@@ -61,6 +64,7 @@ public slots:
     void stepTicks(int ticks) override;
     void setTimeScale(double scale) override;
     void setDriverStation(const wpiemu::sdk::proto::DsState& state) override;
+    void setRobotPose(const wpiemu::sdk::Pose3& pose) override;
 
 private:
     struct Ball {
@@ -112,6 +116,8 @@ private:
     double shotTimer_ = 0.0;
     double logTimer_ = 0.0;
     int startCount_ = 0, resetCount_ = 0;
+    int poseCount_ = 0;
+    sdk::Pose3 lastPose_;
 };
 
 }  // namespace wpiemu::app::runview

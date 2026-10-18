@@ -78,9 +78,9 @@ robot spawns there and `SimulationSession::reset()` (hence every Reset, Begin an
 right after the chassis was built, so every `ChassisBuilder` honours it; x, y and the yaw come from the config, the chassis
 keeps the builder's own height and stays upright. `RobotSession` also passes it to the builder as the placement. An explicit pose
 at the origin is a real value, not "unset"; a partial object defaults its missing parts to 0; non-finite or wrongly typed
-components are pathed `ParseError`s (`sim.startPose.yM`). The editor writes it (numeric fields, dragging the footprint marker),
-the run view's "Set start pose from here" too; the wizard keeps it when basics change (`updateRobotConfig` starts from the
-existing config).
+components are pathed `ParseError`s (`sim.startPose.yM`). The editor writes it (numeric fields, dragging the footprint marker); the
+run view's drag-to-place is a live teleport (`setRobotPose`) and never persists it. The wizard keeps it when basics change
+(`updateRobotConfig` starts from the existing config).
 
 ### Validation codes (`Issue::code`)
 
