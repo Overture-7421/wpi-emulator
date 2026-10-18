@@ -13,7 +13,7 @@ sync_source() {
     mkdir -p "$SRC"
     rsync -rt --delete --exclude=/build --exclude=/.git --exclude=/.vs --exclude=/.vscode --exclude=/.idea \
         /host-src/ "$SRC/"
-    find "$SRC" -name '*.sh' -not -path '*/build/*' -exec sed -i 's/\r$//' {} +
+    find "$SRC" \( -name '*.sh' -o -path "$SRC/packaging/linux/*" -type f \) -not -path '*/build/*' -exec sed -i 's/\r$//' {} +
 }
 configure() {
     cmake -S "$SRC" -B "$BUILD" -G "Ninja Multi-Config" \
