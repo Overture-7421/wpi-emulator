@@ -82,6 +82,7 @@ void InspectorPanel::clearContent() {
     activationCard_ = nullptr;
     title_ = nullptr;
     nameEdit_ = nullptr;
+    robotToCameraLabel_ = nullptr;
     if (QWidget* old = scroll_->takeWidget()) old->deleteLater();
     content_ = nullptr;
     layout_ = nullptr;
@@ -191,6 +192,13 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
             }
             icon = NodeKind::Zone;
             break;
+        case SelKind::Camera:
+            if (const auto* cam = c.findCamera(target.owner)) {
+                subtitle = qs(cam->kind == sdk::CameraKind::PhotonVision ? "PhotonVision" : "Limelight");
+                if (!cam->name.empty()) subtitle += QStringLiteral(" \xC2\xB7 \"%1\"").arg(qs(cam->name));
+            }
+            icon = NodeKind::Camera;
+            break;
         case SelKind::Device: title = ETR("Detected device"); icon = NodeKind::Robot; break;
         default: break;
     }
@@ -243,9 +251,10 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
         connect(b, &QToolButton::clicked, this, [fn] { fn(); });
         h->addWidget(b, 0, Qt::AlignTop);
     };
-    if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Zone)
+    if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Zone || target.kind == SelKind::Camera)
         addAction(ETR("Duplicate"), ETR("Duplicate (Ctrl+D)"), [this] { controller_.duplicateSelection(); });
-    if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Wheel || target.kind == SelKind::Zone)
+    if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Wheel || target.kind == SelKind::Zone ||
+        target.kind == SelKind::Camera)
         addAction(ETR("Delete"), ETR("Delete (Del)"), [this] { controller_.deleteSelection(); });
     layout_->addWidget(head);
 }
@@ -446,6 +455,63 @@ void InspectorPanel::addPartCards(const SelectionRef& target, const std::vector<
     for (const PropertyGroup& g : groups)
         if (g.section == sdk::PropertySection::Placement) addSection(ETR("Placement"), makeForm(g, content_), false, SectionRole::Placement);
 }
+void InspectorPanel::addCameraCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups) {
+    const sdk::RobotConfig& c = controller_.document().config();
+    const EditorCatalog& cat = controller_.document().catalog();
+
+    auto* general = new QWidget(content_);
+    auto* gv = new QVBoxLayout(general);
+    gv->setContentsMargins(0, 0, 0, 0);
+    gv->setSpacing(6);
+    for (const PropertyGroup& g : groups)
+        if (g.id == "camera.general") {
+            gv->addWidget(makeForm(g, general));
+            if (!g.hint.isEmpty()) {
+                auto* hint = mutedLabel(g.hint, general);
+                hint->setObjectName(QStringLiteral("camera.nameHint"));
+                gv->addWidget(hint);
+            }
+        }
+    auto* id = new QLabel(ETR("ID: %1").arg(QStringLiteral("<b>%1</b>").arg(qs(target.owner).toHtmlEscaped())), general);
+    id->setObjectName(QStringLiteral("camera.id"));
+    id->setTextFormat(Qt::RichText);
+    id->setToolTip(ETR("Used in robot.json; it cannot be changed."));
+    id->setEnabled(false);
+    gv->addWidget(id);
+    addSection(ETR("General"), general, false, SectionRole::Info);
+
+    for (const PropertyGroup& g : groups)
+        if (g.id == "camera.optics") addSection(ETR("Optics"), makeForm(g, content_), false, SectionRole::Configure);
+
+    for (const PropertyGroup& g : groups)
+        if (g.id == "camera.placement") {
+            auto* body = new QWidget(content_);
+            auto* bv = new QVBoxLayout(body);
+            bv->setContentsMargins(0, 0, 0, 0);
+            bv->setSpacing(6);
+            bv->addWidget(makeForm(g, body));
+            auto* caption = mutedLabel(ETR("Robot-to-camera (WPILib robot frame)"), body);
+            QFont f = caption->font();
+            f.setBold(true);
+            caption->setFont(f);
+            bv->addWidget(caption);
+            robotToCameraLabel_ = new QLabel(body);
+            robotToCameraLabel_->setObjectName(QStringLiteral("camera.robotToCamera"));
+            robotToCameraLabel_->setWordWrap(true);
+            robotToCameraLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+            bv->addWidget(robotToCameraLabel_);
+            if (const auto* cam = c.findCamera(target.owner)) updateRobotToCamera(*cam, c, cat);
+            addSection(ETR("Placement"), body, false, SectionRole::Placement);
+        }
+}
+
+void InspectorPanel::updateRobotToCamera(const sdk::CameraConfig& cam, const sdk::RobotConfig& c, const EditorCatalog& cat) {
+    if (robotToCameraLabel_ == nullptr) return;
+    QString tip;
+    robotToCameraLabel_->setText(robotToCameraText(c, cat, cam, controller_.settings().units(), &tip));
+    robotToCameraLabel_->setToolTip(tip);
+}
+
 void InspectorPanel::addZoneCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups) {
     auto* general = new QWidget(content_);
     auto* gv = new QVBoxLayout(general);
@@ -497,6 +563,8 @@ void InspectorPanel::rebuild() {
         addPartCards(target, groups);
     } else if (target.kind == SelKind::Zone) {
         addZoneCards(target, groups);
+    } else if (target.kind == SelKind::Camera) {
+        addCameraCards(target, groups);
     } else {
         for (const PropertyGroup& g : groups) {
             auto* f = makeForm(g, content_);
@@ -551,6 +619,8 @@ void InspectorPanel::refresh(bool authoritative) {
             if (info.address == row->address()) row->setInfo(info);
     }
     if (title_ != nullptr && target.kind != SelKind::Device && target.kind != SelKind::Zone) title_->setText(describeSelection(c, cat, target));
+    if (target.kind == SelKind::Camera)
+        if (const auto* cam = c.findCamera(target.owner)) updateRobotToCamera(*cam, c, cat);
     if (nameEdit_ != nullptr && !nameEdit_->hasFocus()) nameEdit_->setText(editableName(target));
 }
 

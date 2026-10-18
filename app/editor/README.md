@@ -82,6 +82,38 @@ selected plugin's `sdk::ZoneKindInfo` list (`EditorCatalog::zoneKinds`, `findZon
   (`SelKind::Zone`). `readTransform` / `writeTransform` edit pose and size (not size for Muzzle) so the gizmos, the numeric bar and undo
   merging work like for mechanisms. The editor shows no live "active" state; the run view does.
 
+## Cameras (ADR 0017)
+
+Cameras (`RobotConfig::cameras`, `sdk/config/camera.h`) are simulated Limelight / PhotonVision coprocessors. They are attached to the
+chassis or a mechanism link exactly like zones, but belong to no game plugin, so the editor offers them whatever the plugin is.
+
+* **Ops** (`model/config_ops.*`, `ops::` camera section, undoable through `EditorDocument` and `EditorController::addCamera`):
+  `uniqueCameraId` (distinct from camera, zone *and* mechanism ids; the mechanism and zone generators avoid camera ids too),
+  `cameraDisplayName`, `cameraParentWorld` / `cameraWorld`, `makeCamera` / `addCamera` (a forward-facing mount just behind the front of the
+  hull on the chassis, the link origin on a mechanism; `CameraConfig` optics defaults; id `limelight` / `photon`, label with a number from
+  the second camera of a kind on, robot-code `name` unique per kind: Limelight `""`, `cam2`, `cam3`..., PhotonVision `photon`, `photon2`...;
+  an unknown attachment falls back to the chassis), `removeCamera`, `duplicateCamera`, `reattachCamera` (keeps the world pose),
+  `findCamera`. `removeMechanism` moves its cameras to the mechanism's parent in place and `setCom` keeps chassis cameras where they are.
+  `cameraRobotPose` is the **robot-to-camera transform in the WPILib robot frame**: the display frame already has its origin on the floor
+  below the hull centre with +X forward, +Y left, yaw CCW, so it equals `cameraWorld` (the rest pose for a moving mechanism).
+* **Selection / tree**: `SelectionRef::camera(id)` (`SelKind::Camera`). A **Cameras** group under the robot node lists them
+  (`NodeKind::Camera`, detail `@ chassis` / `@ turret.mover`); `ProjectTreeModel::setIssues` gives a camera the warning state when an
+  issue path `cameras[i]...` (resolved by `locateIssue`, field keys = the inspector keys) targets it. Context menus (`editor_page.cpp`):
+  the chassis, every mechanism and the robot/group nodes offer **Add camera > Limelight / PhotonVision**; a camera offers Duplicate, Delete
+  and Attach to. Dragging a camera onto a mechanism or the chassis emits `ProjectTreeModel::cameraDropped` (`kCameraMime`).
+* **Inspector**: `camera.general` (label, type Limelight / PhotonVision, camera name with the hint *Limelight: empty = 'limelight', otherwise
+  'limelight-<name>'; PhotonVision: the PhotonCamera name*; the id is a read-only line), `camera.optics` (field of view, max range and
+  incidence, fps, latency, resolution, position / yaw noise) and `camera.placement` (attachment parent and link, pose through the unit
+  system) followed by a read-only **Robot-to-camera (WPILib robot frame)** line (`robotToCameraText`: x, y, z in the display units and
+  roll / pitch / yaw; the tooltip has metres / radians to copy into robot code). Changing the type re-derives the default name so it stays
+  unique. `applyProperty` accepts the three groups; validation issues surface through the field badges as for zones.
+* **Viewport**: `buildScene` draws a small body box plus the field of view at `cameraWorld`: eight `ItemRole::Link` edge lines and a
+  translucent `ItemRole::Overlay` far plane, in a colour per kind (`SceneTheme::limelight` / `photonVision`), all pickable as
+  `SelKind::Camera`. The pyramid comes from `app/common/camera_frustum.h` (`cameraFrustum`, Qt-free, camera frame, +X forward), shared with
+  the run view. `readTransform` / `writeTransform` allow move and rotate (not scale), so gizmos, the numeric bar and undo merging work.
+* **Demo**: the sample robot has a Limelight on the chassis and a PhotonVision camera on the turret;
+  `wpiemu_editor_demo --select camera:limelight`. `FakeEditorBackend::validate` mirrors the real camera checks.
+
 | Folder | Contents | May include |
 |---|---|---|
 | `model/` | `EditorDocument` (config + `QUndoStack`), pure edit operations (`config_ops`), property groups / schemas, slot status + local validation, scene builder, transform access | SDK, Qt Core/Gui |

@@ -33,8 +33,10 @@ TEST_CASE("camera frustum: display length clamps the range and absurd fields of 
 
     camera.hFovDeg = 400.0;
     camera.vFovDeg = -5.0;
+    camera.maxRangeM = 50.0;
     const FrustumGeometry g = cameraFrustum(camera);
     for (const auto& p : g.pts) CHECK(std::isfinite(p.x + p.y + p.z));
+    CHECK(std::fabs(g.pts[kFrustumTopLeft].y) <= kFrustumMaxHalfExtentM + 1e-3f);
 }
 
 TEST_CASE("camera frustum: triangles face outward") {

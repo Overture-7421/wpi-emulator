@@ -15,8 +15,9 @@
 
 namespace wpiemu::app {
 
-inline constexpr float kFrustumMaxDisplayLengthM = 3.0f;   // long ranges are not drawn to scale
+inline constexpr float kFrustumMaxDisplayLengthM = 2.0f;   // long ranges are not drawn to scale
 inline constexpr float kFrustumMinDisplayLengthM = 0.2f;
+inline constexpr float kFrustumMaxHalfExtentM = 2.0f;      // the far rectangle never extends farther than this from the axis
 
 // Indices into FrustumGeometry::pts.
 enum FrustumPoint : std::uint8_t { kFrustumApex = 0, kFrustumTopLeft, kFrustumTopRight, kFrustumBottomRight, kFrustumBottomLeft };
@@ -36,11 +37,15 @@ struct FrustumGeometry {
     float lengthM = 0.f;   // distance of the far rectangle along +X
 };
 
-// Length used to draw a camera's frustum: its max range, clamped to a readable size.
+// Length used to draw a camera's frustum: its max range, clamped to a readable size and short enough that a very
+// wide field of view does not produce a huge far rectangle.
 inline float frustumDisplayLengthM(const sdk::CameraConfig& camera) {
+    constexpr float kDegToRad = 3.14159265358979323846f / 180.f;
     const float range = static_cast<float>(camera.maxRangeM);
-    if (!(range > 0.f)) return kFrustumMinDisplayLengthM;
-    return std::clamp(range, kFrustumMinDisplayLengthM, kFrustumMaxDisplayLengthM);
+    float length = !(range > 0.f) ? kFrustumMinDisplayLengthM : std::clamp(range, kFrustumMinDisplayLengthM, kFrustumMaxDisplayLengthM);
+    const float widest = std::clamp(static_cast<float>(std::max(camera.hFovDeg, camera.vFovDeg)), 1.f, 179.f);
+    length = std::min(length, kFrustumMaxHalfExtentM / std::tan(widest * 0.5f * kDegToRad));
+    return std::max(length, 0.01f);
 }
 
 // Pyramid with its apex at the camera origin and the far rectangle `lengthM` along +X, spanning the

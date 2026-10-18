@@ -3,8 +3,10 @@
 #include <algorithm>
 
 #include "model/config_ops.h"
+#include "model/quat_utils.h"
 #include "model/spec_values.h"
 #include "model/tr.h"
+#include "model/units.h"
 #include "wpiemu/sdk/config/value_codec.h"
 
 namespace wpiemu::app::editor {
@@ -198,6 +200,183 @@ sdk::PropertySchema zonePlacementSchema(const sdk::RobotConfig& c, const EditorC
     return s;
 }
 
+sdk::PropertySchema cameraGeneralSchema() {
+    sdk::PropertySchema s;
+    PropertySpec label;
+    label.key = "label";
+    label.label = ETR("Label").toStdString();
+    label.description = ETR("Name shown in the project tree and the viewport.").toStdString();
+    label.type = PropertyType::String;
+    label.defaultValue = std::string();
+    s.properties.push_back(label);
+
+    PropertySpec kind;
+    kind.key = "kind";
+    kind.label = ETR("Type").toStdString();
+    kind.description = ETR("Which coprocessor the camera behaves like: it decides the NetworkTables data that is published.").toStdString();
+    kind.type = PropertyType::Enum;
+    kind.defaultValue = std::string(sdk::cameraKindKey(sdk::CameraKind::Limelight));
+    kind.options.push_back({sdk::cameraKindKey(sdk::CameraKind::Limelight), "Limelight"});
+    kind.options.push_back({sdk::cameraKindKey(sdk::CameraKind::PhotonVision), "PhotonVision"});
+    s.properties.push_back(kind);
+
+    PropertySpec name;
+    name.key = "name";
+    name.label = ETR("Camera name").toStdString();
+    name.description = ETR("The name the robot code uses. Unique among cameras of the same type.").toStdString();
+    name.type = PropertyType::String;
+    name.defaultValue = std::string();
+    s.properties.push_back(name);
+    return s;
+}
+
+PropertySpec cameraNumber(const char* key, const QString& label, const QString& description, double def, double min, double max,
+                          double step, PropertyUnit unit = PropertyUnit::None, PropertyType type = PropertyType::Double) {
+    PropertySpec p;
+    p.key = key;
+    p.label = label.toStdString();
+    p.description = description.toStdString();
+    p.type = type;
+    p.unit = unit;
+    p.defaultValue = type == PropertyType::Int ? Value(static_cast<std::int64_t>(def)) : Value(def);
+    p.min = min;
+    p.max = max;
+    p.step = step;
+    return p;
+}
+
+sdk::PropertySchema cameraOpticsSchema() {
+    sdk::PropertySchema s;
+    using T = PropertyType;
+    using U = PropertyUnit;
+    s.properties.push_back(cameraNumber("hFovDeg", ETR("Horizontal FOV (\xC2\xB0)"), ETR("Horizontal field of view in degrees."), 75.0, 1.0, 179.0, 1.0));
+    s.properties.push_back(cameraNumber("vFovDeg", ETR("Vertical FOV (\xC2\xB0)"), ETR("Vertical field of view in degrees."), 50.0, 1.0, 179.0, 1.0));
+    s.properties.push_back(cameraNumber("maxRangeM", ETR("Max range"), ETR("Tags farther than this are not seen."), 6.0, 0.1, 100.0, 0.5, U::Meters));
+    s.properties.push_back(cameraNumber("maxIncidenceDeg", ETR("Max incidence (\xC2\xB0)"),
+                                        ETR("Tags viewed more obliquely than this angle to their normal are not seen."), 75.0, 1.0, 90.0, 1.0));
+    s.properties.push_back(cameraNumber("fps", ETR("Frame rate (fps)"), ETR("Capture rate of the camera."), 30.0, 1.0, 240.0, 1.0));
+    s.properties.push_back(cameraNumber("latencyMs", ETR("Latency (ms)"), ETR("Delay between capture and the results reaching the robot."), 40.0, 0.0, 1000.0, 1.0));
+    s.properties.push_back(cameraNumber("widthPx", ETR("Resolution width (px)"), ETR("Image width used for corners and area."), 1280.0, 16.0, 8192.0, 16.0, U::Count, T::Int));
+    s.properties.push_back(cameraNumber("heightPx", ETR("Resolution height (px)"), ETR("Image height used for corners and area."), 800.0, 16.0, 8192.0, 16.0, U::Count, T::Int));
+    s.properties.push_back(cameraNumber("positionNoiseM", ETR("Position noise"), ETR("1-sigma noise on the estimated robot position (x, y)."), 0.0, 0.0, 5.0, 0.01, U::Meters));
+    s.properties.push_back(cameraNumber("yawNoiseDeg", ETR("Yaw noise (\xC2\xB0)"), ETR("1-sigma noise on the estimated robot yaw in degrees."), 0.0, 0.0, 90.0, 0.1));
+    return s;
+}
+
+sdk::PropertySchema cameraPlacementSchema(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam) {
+    sdk::PropertySchema s;
+    PropertySpec parent;
+    parent.key = "parent";
+    parent.label = ETR("Attached to").toStdString();
+    parent.description = ETR("A camera moves with the part it is attached to. The placement is kept when you change it.").toStdString();
+    parent.type = PropertyType::Enum;
+    parent.group = ETR("Placement").toStdString();
+    parent.defaultValue = std::string(sdk::kChassisParent);
+    parent.options.push_back({sdk::kChassisParent, ETR("Chassis").toStdString()});
+    for (const auto& m : c.mechanisms) parent.options.push_back({m.id, ops::displayNameFor(m, catalog)});
+    const sdk::MechanismAttachment att = cam.attachment;
+    if (!att.onChassis() && c.findMechanism(att.parentMechanismId) == nullptr)
+        parent.options.push_back({att.parentMechanismId, att.parentMechanismId + " " + ETR("(missing)").toStdString()});
+    s.properties.push_back(parent);
+
+    PropertySpec link;
+    link.key = "parentLink";
+    link.label = ETR("Attachment link").toStdString();
+    link.description = ETR("Named frame of the parent the camera hangs on (e.g. a turret's moving part).").toStdString();
+    link.type = PropertyType::Enum;
+    link.group = parent.group;
+    link.defaultValue = std::string(sdk::kRootLink);
+    link.options.push_back({sdk::kRootLink, ETR("Origin").toStdString()});
+    if (!att.onChassis())
+        if (const sdk::MechanismConfig* pm = c.findMechanism(att.parentMechanismId))
+            if (const auto* info = catalog.findTemplate(pm->type))
+                for (const auto& l : info->links) link.options.push_back({l.name, l.label.empty() ? l.name : l.label});
+    s.properties.push_back(link);
+
+    PropertySpec local;
+    local.key = "local";
+    local.label = ETR("Pose").toStdString();
+    local.description = ETR("Relative to the attachment link: x forward (optical axis), y left, z up.").toStdString();
+    local.type = PropertyType::Pose3;
+    local.unit = PropertyUnit::Meters;
+    local.group = parent.group;
+    local.defaultValue = sdk::toValue(sdk::Pose3{});
+    s.properties.push_back(local);
+    return s;
+}
+
+Value cameraGeneralValues(const sdk::CameraConfig& cam) {
+    Value o = Value::makeObject();
+    o["label"] = cam.label;
+    o["kind"] = std::string(sdk::cameraKindKey(cam.kind));
+    o["name"] = cam.name;
+    return o;
+}
+
+Value cameraOpticsValues(const sdk::CameraConfig& cam) {
+    Value o = Value::makeObject();
+    o["hFovDeg"] = cam.hFovDeg;
+    o["vFovDeg"] = cam.vFovDeg;
+    o["maxRangeM"] = cam.maxRangeM;
+    o["maxIncidenceDeg"] = cam.maxIncidenceDeg;
+    o["fps"] = cam.fps;
+    o["latencyMs"] = cam.latencyMs;
+    o["widthPx"] = static_cast<std::int64_t>(cam.widthPx);
+    o["heightPx"] = static_cast<std::int64_t>(cam.heightPx);
+    o["positionNoiseM"] = cam.positionNoiseM;
+    o["yawNoiseDeg"] = cam.yawNoiseDeg;
+    return o;
+}
+
+Value cameraPlacementValues(const sdk::CameraConfig& cam) {
+    Value o = Value::makeObject();
+    const sdk::MechanismAttachment att = cam.attachment;
+    o["parent"] = att.onChassis() ? std::string(sdk::kChassisParent) : att.parentMechanismId;
+    o["parentLink"] = att.parentLink;
+    o["local"] = sdk::toValue(cam.local);
+    return o;
+}
+
+bool applyCamera(sdk::RobotConfig& c, const EditorCatalog& catalog, sdk::CameraConfig& cam, const std::string& groupId,
+                 const std::string& key, const Value& value) {
+    if (groupId == "camera.general") {
+        if (key == "label") { cam.label = value.asString(cam.label); return true; }
+        if (key == "name") { cam.name = value.asString(cam.name); return true; }
+        if (key == "kind") {
+            const sdk::CameraKind kind = value.asString() == sdk::cameraKindKey(sdk::CameraKind::PhotonVision)
+                                             ? sdk::CameraKind::PhotonVision : sdk::CameraKind::Limelight;
+            if (kind == cam.kind) return false;
+            // Keep the default name of each type meaningful: Limelight's is empty, PhotonVision's "photon".
+            const std::string defaultFrom = cam.kind == sdk::CameraKind::PhotonVision ? "photon" : "";
+            cam.kind = kind;
+            if (cam.name == defaultFrom) cam.name = kind == sdk::CameraKind::PhotonVision ? "photon" : "";
+            cam.name = ops::uniqueCameraName(c, kind, cam.name, cam.id);
+            return true;
+        }
+        return false;
+    }
+    if (groupId == "camera.optics") {
+        if (key == "hFovDeg") { cam.hFovDeg = value.asDouble(cam.hFovDeg); return true; }
+        if (key == "vFovDeg") { cam.vFovDeg = value.asDouble(cam.vFovDeg); return true; }
+        if (key == "maxRangeM") { cam.maxRangeM = value.asDouble(cam.maxRangeM); return true; }
+        if (key == "maxIncidenceDeg") { cam.maxIncidenceDeg = value.asDouble(cam.maxIncidenceDeg); return true; }
+        if (key == "fps") { cam.fps = value.asDouble(cam.fps); return true; }
+        if (key == "latencyMs") { cam.latencyMs = value.asDouble(cam.latencyMs); return true; }
+        if (key == "widthPx") { cam.widthPx = static_cast<int>(value.asInt(cam.widthPx)); return true; }
+        if (key == "heightPx") { cam.heightPx = static_cast<int>(value.asInt(cam.heightPx)); return true; }
+        if (key == "positionNoiseM") { cam.positionNoiseM = value.asDouble(cam.positionNoiseM); return true; }
+        if (key == "yawNoiseDeg") { cam.yawNoiseDeg = value.asDouble(cam.yawNoiseDeg); return true; }
+        return false;
+    }
+    if (groupId == "camera.placement") {
+        if (key == "local") return sdk::fromValue(value, cam.local);
+        if (key == "parent") return ops::reattachCamera(c, catalog, cam.id, value.asString(sdk::kChassisParent), sdk::kRootLink);
+        if (key == "parentLink")
+            return ops::reattachCamera(c, catalog, cam.id, cam.attachment.parentMechanismId, value.asString(sdk::kRootLink));
+    }
+    return false;
+}
+
 }  // namespace
 
 SelectionRef formTargetOf(const sdk::RobotConfig& c, const SelectionRef& sel) {
@@ -308,6 +487,17 @@ std::vector<PropertyGroup> propertyGroupsFor(const sdk::RobotConfig& c, const Ed
                 out.push_back(groupOf("zone.props", QString::fromStdString(info->displayName), info->properties, withDefaults(info->properties, z->properties)));
             break;
         }
+        case SelKind::Camera: {
+            const sdk::CameraConfig* cam = c.findCamera(sel.owner);
+            if (cam == nullptr) break;
+            PropertyGroup general = groupOf("camera.general", ETR("General"), cameraGeneralSchema(), cameraGeneralValues(*cam));
+            general.hint = ETR("Limelight: empty = 'limelight', otherwise 'limelight-<name>'. PhotonVision: the PhotonCamera name.");
+            out.push_back(std::move(general));
+            out.push_back(groupOf("camera.optics", ETR("Optics"), cameraOpticsSchema(), cameraOpticsValues(*cam)));
+            out.push_back(groupOf("camera.placement", ETR("Placement"), cameraPlacementSchema(c, catalog, *cam), cameraPlacementValues(*cam)));
+            out.back().section = sdk::PropertySection::Placement;
+            break;
+        }
         case SelKind::Plugin: {
             if (!catalog.hasPlugin()) break;
             const sdk::PluginSection* section = c.findPlugin(catalog.pluginId);
@@ -353,6 +543,10 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
             return true;
         }
         return false;
+    }
+    if (sel.kind == SelKind::Camera) {
+        sdk::CameraConfig* cam = ops::findCamera(c, sel.owner);
+        return cam != nullptr && applyCamera(c, catalog, *cam, groupId, key, value);
     }
     if (sel.kind == SelKind::Mechanism) {
         sdk::MechanismConfig* m = nullptr;
@@ -400,6 +594,22 @@ QString mechanismKindLabel(const sdk::MechanismConfig& m, const sdk::MechanismTe
     return QString::fromStdString(info.displayName);
 }
 
+QString robotToCameraText(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam, UnitSystem units,
+                          QString* tooltip) {
+    const sdk::Pose3 p = ops::cameraRobotPose(c, catalog, cam);
+    const Euler e = toEuler(p.rotation);
+    const UnitDisplay ud = unitDisplay(PropertyUnit::Meters, units);
+    auto length = [&](float m) { return QString::number(static_cast<double>(m) * ud.factor, 'f', ud.decimals) + QString::fromUtf8(ud.suffix); };
+    auto degrees = [](float rad) { return QString::number(static_cast<double>(radToDegF(rad)), 'f', 1) + QStringLiteral("\xC2\xB0"); };
+    auto num = [](float v) { return QString::number(static_cast<double>(v), 'f', 4); };
+    if (tooltip != nullptr)
+        *tooltip = ETR("WPILib robot frame: origin on the floor below the hull centre, +X forward, +Y left, yaw counter-clockwise. "
+                       "For a moving mechanism this is its rest pose.\nMetres / radians: x %1, y %2, z %3 / roll %4, pitch %5, yaw %6")
+                       .arg(num(p.position.x), num(p.position.y), num(p.position.z), num(e.rollRad), num(e.pitchRad), num(e.yawRad));
+    return ETR("x %1, y %2, z %3  |  roll %4, pitch %5, yaw %6")
+        .arg(length(p.position.x), length(p.position.y), length(p.position.z), degrees(e.rollRad), degrees(e.pitchRad), degrees(e.yawRad));
+}
+
 QString describeSelection(const sdk::RobotConfig& c, const EditorCatalog& catalog, const SelectionRef& sel) {
     switch (sel.kind) {
         case SelKind::Robot: return QString::fromStdString(c.name);
@@ -421,6 +631,9 @@ QString describeSelection(const sdk::RobotConfig& c, const EditorCatalog& catalo
         case SelKind::Plugin: return QString::fromStdString(catalog.pluginDisplayName);
         case SelKind::Zone:
             if (const auto* z = c.findZone(sel.owner)) return QString::fromStdString(ops::zoneDisplayName(*z, catalog));
+            return QString::fromStdString(sel.owner);
+        case SelKind::Camera:
+            if (const auto* cam = c.findCamera(sel.owner)) return QString::fromStdString(ops::cameraDisplayName(*cam));
             return QString::fromStdString(sel.owner);
         case SelKind::Device: return QString::fromStdString(sel.owner);
         case SelKind::None: break;

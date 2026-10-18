@@ -265,6 +265,17 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
         }
         return loc;
     }
+    if (parseIndexed(path, "cameras", index, rest)) {
+        if (index >= 0 && index < static_cast<int>(c.cameras.size())) {
+            loc.selection = SelectionRef::camera(c.cameras[static_cast<std::size_t>(index)].id);
+            const std::string field = firstSegment(rest);
+            static const char* const kFields[] = {"id", "label", "name", "kind", "hFovDeg", "vFovDeg", "maxRangeM", "maxIncidenceDeg",
+                                                  "fps", "latencyMs", "widthPx", "heightPx", "positionNoiseM", "yawNoiseDeg", "local"};
+            if (field.rfind("attachment", 0) == 0) loc.fieldKey = "parent";
+            else if (std::find(std::begin(kFields), std::end(kFields), field) != std::end(kFields)) loc.fieldKey = field;
+        }
+        return loc;
+    }
     if (path == "chassis" || path.rfind("chassis.", 0) == 0) {
         loc.selection = SelectionRef::chassis();
         loc.fieldKey = path.size() > 8 ? firstSegment(path.substr(8)) : std::string();
