@@ -57,7 +57,8 @@ if(WPIEMU_BUILD_TESTS)
         tests/test_lockstep.cpp
         tests/test_robustness.cpp
         tests/test_reconnect.cpp
-        tests/test_vision_dispatch.cpp)
+        tests/test_vision_dispatch.cpp
+        tests/test_vision_scenario.cpp)
     target_include_directories(wpiemu_halsim_ext_tests PRIVATE tests)
     target_link_libraries(wpiemu_halsim_ext_tests PRIVATE doctest::doctest wpiemu_halsim_core wpiemu_ipc wpiemu_sdk)
     target_compile_definitions(wpiemu_halsim_ext_tests PRIVATE DOCTEST_CONFIG_USE_STD_HEADERS)

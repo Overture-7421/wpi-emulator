@@ -210,9 +210,9 @@ normal `DT_NEEDED`/install-name dependency on `libwpiHal` so the loader binds th
 
 | Where | What | Runs |
 |---|---|---|
-| `halsim_ext/tests/*.cpp` → `wpiemu_halsim_ext_tests` | 100+ doctest cases with fakes: config, device table, delta filter, IPC link, handshake, lock-step protocol, watchdog / stall / disconnect, reconnect, vision dispatch (call order, acceptance, setup revision, stats, shutdown) | ctest `halsim_ext.*`, no WPILib needed |
+| `halsim_ext/tests/*.cpp` → `wpiemu_halsim_ext_tests` | 100+ doctest cases with fakes: config, device table, delta filter, IPC link, handshake, lock-step protocol, watchdog / stall / disconnect, reconnect, vision dispatch (call order, acceptance, setup revision, stats, shutdown) and the synthetic camera scenario of the fake emulator | ctest `halsim_ext.*`, no WPILib needed |
 | `halsim_ext/tests/hal/` → `wpiemu_halsim_ext_hal_tests` | real sim HAL in-process: exact `StepTiming`, 25 loops per 500 ms, DS/battery/joystick, device I/O, camera hooks at the HAL times T(N-1) / T(N), unfreeze on disconnect; the real `halsim_wpiemu` library loaded through `HAL_LoadOneExtension` over a real named pipe with the binary codec and the real built-in bridges | ctest `halsim_ext.hal_integration` (when WPILib was found) |
-| `halsim_ext/tests/manual/run_robot_project.ps1` | a real Gradle robot project (`gradlew -I wpiemu-init.gradle simulateJava`) against `wpiemu_halsim_fake_emulator` | manual only |
+| `halsim_ext/tests/manual/run_robot_project.ps1` | a real Gradle robot project (`gradlew -I wpiemu-init.gradle simulateJava`) against `wpiemu_halsim_fake_emulator`; `-Vision` adds the synthetic cameras | manual only |
 
 The tests live under `halsim_ext/tests/` (not `tests/`) because `tests/CMakeLists.txt` globs every `*.cpp` into the one
 `wpiemu_tests` executable, which cannot link the extension library or WPILib.
@@ -222,5 +222,10 @@ Manual run (the project is copied to `%TEMP%`, never modified):
 cmake --build build\windows-ninja --config Release --target halsim_wpiemu wpiemu_halsim_fake_emulator
 .\halsim_ext\tests\manual\run_robot_project.ps1 -Project C:\path\to\robot -BuildDir build\windows-ninja -Config Release
 ```
+Add `-Vision` (or pass `--vision` to `wpiemu_halsim_fake_emulator`) to give the fake emulator two synthetic cameras, a
+PhotonVision `photon-front` and a Limelight `limelight-rear`, that see 2026 welded tags from a robot standing at (2, 4):
+their setup rides the `HelloAck`, their frames the `SensorFrame`s, and every camera state coming back is printed as a
+`CAMERA` line (`halsim_ext/tests/manual/README.md`).
+
 Reference result (FRC-Shelby-2026OS, Java, 28 CAN devices): 1000 ticks of 5 ms = exactly 5.000 s of sim time,
 250 robot loops, 29 devices announced, ~1.8 s of wall time.

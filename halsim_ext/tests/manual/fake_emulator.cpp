@@ -6,16 +6,27 @@
 //
 //   wpiemu_halsim_fake_emulator [--endpoint-file F] [--seconds S] [--step-us N] [--no-enable]
 //                               [--accept-timeout-s N] [--start-timeout-s N] [--dump-outputs]
+//                               [--vision]
 //
-// Prints `WPIEMU_IPC_ENDPOINT=<address>` (and writes it to --endpoint-file) before it blocks in accept().
+// --vision adds two synthetic cameras (a PhotonVision "photon-front" and a Limelight
+// "limelight-rear", vision_scenario.h): their setup rides the HelloAck, camera frames ride the
+// SensorFrames and the camera states the robot process sends back are printed (`CAMERA ...` lines).
+//
+// Prints `WPIEMU_IPC_ENDPOINT=<address>` (and writes it to --endpoint-file) before it blocks in
+// accept().
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <map>
+#include <optional>
 #include <string>
+#include <variant>
 
+#include "vision_scenario.h"
 #include "wpiemu/ipc/binary_codec.h"
 #include "wpiemu/ipc/endpoint.h"
 #include "wpiemu/ipc/handshake.h"
@@ -37,6 +48,7 @@ struct Options {
     int acceptTimeoutS = 600;
     int startTimeoutS = 180;
     bool dumpOutputs = false;
+    bool vision = false;
 };
 
 bool parse(int argc, char** argv, Options& o) {
@@ -62,6 +74,8 @@ bool parse(int argc, char** argv, Options& o) {
             o.enable = false;
         } else if (a == "--dump-outputs") {
             o.dumpOutputs = true;
+        } else if (a == "--vision") {
+            o.vision = true;
         } else {
             return false;
         }
@@ -69,14 +83,84 @@ bool parse(int argc, char** argv, Options& o) {
     return o.stepUs > 0 && o.seconds > 0;
 }
 
+// performServerHandshake cannot attach a camera setup to the HelloAck, so --vision answers the
+// Hello itself (what that function does, plus HelloAck::vision).
+sdk::Result<ipc::ServerHandshakeResult> handshakeWithVision(
+    proto::MessageChannel& channel, const ipc::ServerHandshakeConfig& config,
+    const sdk::VisionSetup& vision, std::chrono::milliseconds timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    proto::Message first;
+    for (;;) {
+        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now());
+        if (left.count() <= 0) return sdk::makeError(sdk::ErrorCode::Timeout, "no Hello received");
+        const sdk::Result<bool> got = channel.receive(first, std::min(left, 200ms));
+        if (!got) {
+            if (got.error().code == sdk::ErrorCode::Unsupported) continue;  // unknown message type
+            return got.error();
+        }
+        if (got.value()) break;
+    }
+    const proto::Hello* hello = std::get_if<proto::Hello>(&first);
+    if (hello == nullptr)
+        return sdk::makeError(sdk::ErrorCode::ProtocolError, "the first message must be Hello");
+
+    proto::HelloAck ack;
+    ack.sessionId = config.sessionId;
+    ack.runEpoch = config.runEpoch;
+    ack.clockMode = config.clockMode;
+    ack.stepUs = config.stepUs;
+    ack.discoveryOnly = config.discoveryOnly;
+    ack.enableL3Hooks = config.enableL3Hooks;
+    ack.watchdogPolicy = config.watchdogPolicy;
+    ack.watchdogTimeoutMs =
+        proto::negotiateWatchdogTimeoutMs(hello->proposedWatchdogMs, config.preferredWatchdogMs);
+    ack.vision = vision;
+    if (sdk::Status sent = channel.send(proto::Message(ack)); !sent) return sent.error();
+    return ipc::ServerHandshakeResult{*hello, std::move(ack)};
+}
+
+const char* vendorName(sdk::CameraVendor vendor) {
+    return vendor == sdk::CameraVendor::Limelight ? "limelight" : "photonvision";
+}
+
+// One line per camera state the robot process reported (informational ActuatorFrame::vision).
+void printCameraState(std::uint64_t tick, const sdk::CameraRobotState& s) {
+    std::printf(
+        "CAMERA tick=%llu name='%s' vendor=%s id='%s' present=%d publishing=%d status='%s' "
+        "frames=%llu",
+        static_cast<unsigned long long>(tick), s.ntName.c_str(), vendorName(s.vendor),
+        s.cameraId.c_str(), s.present ? 1 : 0, s.publishing ? 1 : 0, s.status.c_str(),
+        static_cast<unsigned long long>(s.framesPublished));
+    if (s.pipelineIndex) std::printf(" pipeline=%d", *s.pipelineIndex);
+    if (s.ledMode) std::printf(" led=%d", *s.ledMode);
+    if (s.imuMode) std::printf(" imu=%d", *s.imuMode);
+    if (s.driverMode) std::printf(" driver=%d", *s.driverMode ? 1 : 0);
+    if (s.throttle) std::printf(" throttle=%g", *s.throttle);
+    if (s.fpsLimit) std::printf(" fpsLimit=%g", *s.fpsLimit);
+    const auto array = [](const char* label, const std::optional<std::array<double, 6>>& values) {
+        if (!values) return;
+        std::printf(" %s=[%g,%g,%g,%g,%g,%g]", label, (*values)[0], (*values)[1], (*values)[2],
+                    (*values)[3], (*values)[4], (*values)[5]);
+    };
+    array("orientation", s.robotOrientationDeg);
+    array("poseOverride", s.cameraPoseOverride);
+    std::printf("\n");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     Options opt;
     if (!parse(argc, argv, opt)) {
-        std::fprintf(stderr, "usage: %s [--endpoint-file F] [--seconds S] [--step-us N] [--no-enable] [--dump-outputs]\n", argv[0]);
+        std::fprintf(stderr,
+                     "usage: %s [--endpoint-file F] [--seconds S] [--step-us N] [--no-enable] "
+                     "[--dump-outputs] [--vision]\n",
+                     argv[0]);
         return 64;
     }
+    std::optional<halsim::manual::VisionScenario> scenario;
+    if (opt.vision) scenario.emplace(opt.stepUs);
 
     const ipc::ConnectionEndpoint endpoint = ipc::ConnectionEndpoint::generate();
     auto server = ipc::makeLocalServer(endpoint);
@@ -102,7 +186,8 @@ int main(int argc, char** argv) {
     hs.stepUs = opt.stepUs;
     hs.sessionId = 1;
     hs.runEpoch = proto::kFirstRunEpoch;
-    auto hello = ipc::performServerHandshake(channel, hs, 30s);
+    auto hello = scenario ? handshakeWithVision(channel, hs, scenario->setup(), 30s)
+                          : ipc::performServerHandshake(channel, hs, 30s);
     if (!hello) {
         std::fprintf(stderr, "handshake failed: %s\n", hello.error().message.c_str());
         return 3;
@@ -111,9 +196,14 @@ int main(int argc, char** argv) {
     std::printf("HELLO pid=%lld lang=%d wpilib=%s program=%s watchdog=%ums\n", static_cast<long long>(h.pid),
                 static_cast<int>(h.language), h.wpilibVersion.c_str(), h.programName.c_str(),
                 hello.value().ack.watchdogTimeoutMs);
+    for (const sdk::CameraSetup& c : hello.value().ack.vision.cameras)
+        std::printf("VISION_SETUP camera='%s' vendor=%s size=%dx%d rate=%gHz latency=%lldus\n",
+                    c.cameraId.c_str(), vendorName(c.vendor), c.widthPx, c.heightPx, c.frameRateHz,
+                    static_cast<long long>(c.latencyUs));
 
     std::map<std::uint32_t, proto::DeviceAnnounce> devices;
     std::map<std::uint64_t, double> lastOutput;  // (device << 16 | signal) -> value
+    std::uint64_t cameraStates = 0;              // CameraRobotState entries received (--vision)
     proto::LockstepWindow window;
     window.begin(hs.sessionId, hs.runEpoch);
 
@@ -131,6 +221,10 @@ int main(int argc, char** argv) {
                 std::printf("LOG [%s] %s\n", l->source.c_str(), l->message.c_str());
         } else if (const auto* f = std::get_if<proto::ActuatorFrame>(&m)) {
             if (ackOut != nullptr) *ackOut = *f;
+            for (const sdk::CameraRobotState& s : f->vision) {
+                ++cameraStates;
+                printCameraState(f->tick, s);
+            }
             if (opt.dumpOutputs) {
                 for (const auto& s : f->samples) {
                     const std::uint64_t key = (static_cast<std::uint64_t>(s.device.value) << 16) | s.signal;
@@ -180,6 +274,7 @@ int main(int argc, char** argv) {
     const std::uint64_t ticks = static_cast<std::uint64_t>(opt.seconds * 1e6 / opt.stepUs);
     std::uint64_t completed = 0;
     std::uint64_t lastLoops = 0;
+    std::uint64_t visionFramesSent = 0;
     const auto t0 = std::chrono::steady_clock::now();
     for (std::uint64_t t = 1; t <= ticks; ++t) {
         proto::SensorFrame f;
@@ -188,6 +283,8 @@ int main(int argc, char** argv) {
         f.stepUs = opt.stepUs;
         f.sessionId = hs.sessionId;
         f.runEpoch = hs.runEpoch;
+        if (scenario) f.vision = scenario->framesFor(t);
+        visionFramesSent += f.vision.size();
         if (!window.onSent(f) || !channel.send(proto::Message(f))) {
             std::fprintf(stderr, "send failed at tick %llu\n", static_cast<unsigned long long>(t));
             return 6;
@@ -238,5 +335,10 @@ int main(int argc, char** argv) {
                 static_cast<unsigned long long>(completed), static_cast<unsigned long long>(ticks),
                 static_cast<double>(completed * opt.stepUs) * 1e-6, wallMs,
                 static_cast<unsigned long long>(lastLoops), devices.size());
+    if (opt.vision)
+        std::printf("VISION_SUMMARY cameras=%zu framesSent=%llu cameraStates=%llu\n",
+                    hello.value().ack.vision.cameras.size(),
+                    static_cast<unsigned long long>(visionFramesSent),
+                    static_cast<unsigned long long>(cameraStates));
     return completed == ticks ? 0 : 10;
 }
