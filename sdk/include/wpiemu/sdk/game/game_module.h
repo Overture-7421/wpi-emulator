@@ -14,6 +14,7 @@
 #include "wpiemu/sdk/game/zone_kind.h"
 #include "wpiemu/sdk/mechanisms/mechanism.h"
 #include "wpiemu/sdk/physics/physics_world.h"
+#include "wpiemu/sdk/vision/fiducial_layout.h"
 
 namespace wpiemu::sdk {
 
@@ -66,6 +67,12 @@ public:
     // core rejects zones whose kind is not owned by the selected plugin and validates ZoneConfig::properties
     // against the kind's schema. The plugin runtime builds the actual intake/shooter behaviour from the zones.
     virtual std::vector<ZoneKindInfo> contributeZoneKinds() const { return {}; }
+
+    // AprilTag layouts of this season's field, by convention with ids "<metadata().id>.<name>"
+    // ("game_2026.welded"). The first one is the plugin default, used when VisionConfig::layoutId
+    // is empty. Core never interprets them: the vision runtime resolves VisionConfig::layoutId (or
+    // a layoutFile) against this list.
+    virtual std::vector<FiducialLayout> contributeFiducialLayouts() const { return {}; }
 
     // Cross-cutting game logic hook after IGameState::step each tick (e.g. match timer phases).
     virtual void onTick(SimContext& /*ctx*/, double /*dtSeconds*/) {}

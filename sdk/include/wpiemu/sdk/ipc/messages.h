@@ -53,6 +53,7 @@
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/devices/device_descriptor.h"
 #include "wpiemu/sdk/devices/signal.h"
+#include "wpiemu/sdk/vision/vision_types.h"
 
 namespace wpiemu::sdk::proto {
 
@@ -153,6 +154,7 @@ struct HelloAck {
     std::uint64_t runEpoch = kFirstRunEpoch;  // epoch in force for this connection (monotonic across reconnects)
     std::uint32_t watchdogTimeoutMs = kDefaultWatchdogTimeoutMs;  // negotiateWatchdogTimeoutMs(...)
     WatchdogPolicy watchdogPolicy = WatchdogPolicy::ResumeRealtime;
+    VisionSetup vision;  // the enabled cameras of the session; absent => none
 };
 
 // ---- discovery ----------------------------------------------------------------------------------
@@ -185,6 +187,8 @@ struct SensorFrame {
     // identity of the run this frame belongs to (see classifyFrame).
     std::uint64_t sessionId = kUnspecified;
     std::uint64_t runEpoch = kUnspecified;
+    // Processed camera frames due this tick (vision/vision_types.h); absent => none.
+    std::vector<VisionFrame> vision;
 };
 
 // How a tick ended, reported by the extension in ActuatorFrame::result. Appended values need a `default` path.
@@ -207,6 +211,9 @@ struct ActuatorFrame {
     std::uint64_t runEpoch = kUnspecified;    // echo of the SensorFrame being answered
     std::uint64_t ackTick = kNoAckTick;       // tick of the SensorFrame this answers; unset => `tick`
     TickResult result = TickResult::Completed;
+    // What the robot process observed about each camera (informational): the full list on the first
+    // frame of an epoch or connection, afterwards only the entries that changed. Absent => none.
+    std::vector<CameraRobotState> vision;
 
     std::uint64_t ackedTick() const { return ackTick != kNoAckTick ? ackTick : tick; }
 };

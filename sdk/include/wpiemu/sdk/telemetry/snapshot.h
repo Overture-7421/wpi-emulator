@@ -24,6 +24,8 @@
 #include "wpiemu/sdk/ipc/messages.h"
 #include "wpiemu/sdk/mechanisms/mechanism_state.h"
 #include "wpiemu/sdk/physics/physics_types.h"
+#include "wpiemu/sdk/vision/camera_config.h"
+#include "wpiemu/sdk/vision/vision_types.h"
 
 namespace wpiemu::sdk {
 
@@ -66,6 +68,32 @@ struct ZoneState {
     bool active = false;
 };
 
+// One AprilTag of the active layout in the world frame (for the editor and run view to draw).
+struct FiducialSample {
+    int id = 0;
+    Pose3 pose;         // tag frame in the world frame (+X = outward normal)
+    float sizeM = 0.f;  // edge length of the black square
+};
+
+// Runtime state of one configured camera (RobotConfig::vision): where it is and what it last did.
+struct CameraSample {
+    std::string id;  // CameraConfig::id
+    std::string label;
+    CameraVendor vendor = CameraVendor::PhotonVision;
+    bool enabled = true;
+    Pose3 pose;  // camera frame in the world frame (+X = optical axis)
+    double hfovRad = 0.0;
+    double vfovRad = 0.0;
+    int widthPx = 0;
+    int heightPx = 0;
+    std::vector<int> visibleTagIds;  // tags seen by the latest capture
+    std::uint64_t framesCaptured = 0;
+    std::uint64_t framesPublished = 0;
+    double lastLatencyMs = 0.0;   // capture-to-publish latency of the latest frame
+    bool robotConnected = false;  // the robot process is publishing this camera
+    std::string status;  // "" = ok; else why it is not (CameraRobotState::status, "disabled", ...)
+};
+
 class ISimSnapshot {
     WPIEMU_INTERFACE(ISimSnapshot)
 public:
@@ -82,6 +110,12 @@ public:
     virtual std::span<const HudValue> hud() const = 0;
     // Activation state of the robot's zones (empty when the game defines none).
     virtual std::span<const ZoneState> zones() const { return {}; }
+    // Vision: the configured cameras, the active layout's tags and what the robot process reports
+    // about each camera (CameraRobotState, including cameras the config does not know). Empty when
+    // the project has no cameras.
+    virtual std::span<const CameraSample> cameras() const { return {}; }
+    virtual std::span<const FiducialSample> fiducials() const { return {}; }
+    virtual std::span<const CameraRobotState> detectedCameras() const { return {}; }
     virtual std::span<const DiscoveredDevice> devices() const = 0;
     virtual std::span<const HubWarning> warnings() const = 0;
 
@@ -110,6 +144,9 @@ struct SimSnapshotData {
     std::vector<MechanismState> mechanisms;
     std::vector<HudValue> hud;
     std::vector<ZoneState> zones;
+    std::vector<CameraSample> cameras;
+    std::vector<FiducialSample> fiducials;
+    std::vector<CameraRobotState> detectedCameras;
     std::vector<DiscoveredDevice> devices;
     std::vector<HubWarning> warnings;
     double batteryVoltageV = 12.6;
@@ -132,6 +169,11 @@ public:
     std::span<const MechanismState> mechanisms() const override { return d_.mechanisms; }
     std::span<const HudValue> hud() const override { return d_.hud; }
     std::span<const ZoneState> zones() const override { return d_.zones; }
+    std::span<const CameraSample> cameras() const override { return d_.cameras; }
+    std::span<const FiducialSample> fiducials() const override { return d_.fiducials; }
+    std::span<const CameraRobotState> detectedCameras() const override {
+        return d_.detectedCameras;
+    }
     std::span<const DiscoveredDevice> devices() const override { return d_.devices; }
     std::span<const HubWarning> warnings() const override { return d_.warnings; }
     double batteryVoltageV() const override { return d_.batteryVoltageV; }
@@ -150,6 +192,9 @@ public:
     void addBody(BodySample b) { data_.bodies.push_back(std::move(b)); }
     void addMechanism(MechanismState m) { data_.mechanisms.push_back(std::move(m)); }
     void addZone(ZoneState z) { data_.zones.push_back(std::move(z)); }
+    void addCamera(CameraSample c) { data_.cameras.push_back(std::move(c)); }
+    void addFiducial(FiducialSample f) { data_.fiducials.push_back(std::move(f)); }
+    void addDetectedCamera(CameraRobotState s) { data_.detectedCameras.push_back(std::move(s)); }
     EntityGroupSample& addEntityGroup(EntityGroupSample g) {
         data_.entityGroups.push_back(std::move(g));
         return data_.entityGroups.back();

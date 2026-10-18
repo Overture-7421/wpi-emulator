@@ -11,9 +11,10 @@
 //
 // Threading: callbacks from HAL arrive on ROBOT threads inside HAL init calls, so a bridge MUST
 // NOT block, call HALSIM_StepTiming, or do I/O there (ADR 0001). It records the event and
-// announces it later from poll(). `poll`, `collectOutputs`, `applyInputs`, `applyLoopback` are
-// called on the extension's single CLOCK THREAD while the robot is quiescent (between
-// HALSIM_StepTiming calls), so they need no extra locking against the robot loop.
+// announces it later from poll(). `poll`, `collectOutputs`, `applyInputs`, `applyLoopback` (and the
+// vision hooks `applyVision` / `collectVision`) are called on the extension's single CLOCK THREAD
+// while the robot is quiescent (between HALSIM_StepTiming calls), so they need no extra locking
+// against the robot loop.
 //
 // Error handling: no exceptions; failures are logged via IBridgeHost::logger() and the affected
 // device is skipped.
@@ -30,6 +31,7 @@
 #include "wpiemu/sdk/core/result.h"
 #include "wpiemu/sdk/devices/device_descriptor.h"
 #include "wpiemu/sdk/devices/signal.h"
+#include "wpiemu/sdk/vision/vision_types.h"
 
 namespace wpiemu::sdk {
 
@@ -48,6 +50,12 @@ public:
     // on (e.g. the CTRE constructor hook saw `new TalonFX(4, "canivore")`). The host forwards it to the
     // emulator (re-announce with DeviceAnnounce::observedBus). Never call it from static tables. Default: ignored.
     virtual void observeBus(DeviceId /*id*/, std::string_view /*busLabel*/) {}
+    // Vision cameras the emulator configured for this session (HelloAck::vision), valid for the
+    // whole session. Only the vision bridge reads it. Default: none.
+    virtual const VisionSetup& visionSetup() const {
+        static const VisionSetup kNone;
+        return kNone;
+    }
 };
 
 class IDeviceBridge {
@@ -79,6 +87,15 @@ public:
     // Clock thread, between steps, before the new epoch's inputs. Preserve discovered devices and
     // robot-requested firmware offsets/configuration. Bridges without history need do nothing.
     virtual void resetInputHistory() {}
+
+    // Emulator -> robot: the processed camera frames due this tick (SensorFrame::vision, already
+    // filtered to this epoch). Clock thread, robot quiescent, after applyInputs and BEFORE
+    // HALSIM_StepTiming. Only the vision bridge implements it; the default ignores the frames.
+    virtual void applyVision(std::span<const VisionFrame> /*frames*/) {}
+    // Robot -> emulator: appends what the robot did with each camera (informational): every camera
+    // when `full` (the first frame of an epoch or connection), otherwise only the entries that
+    // changed since the last call. Clock thread, after the step. The default appends nothing.
+    virtual void collectVision(std::vector<CameraRobotState>& /*out*/, bool /*full*/) {}
 };
 
 struct BridgeInfo {
