@@ -356,7 +356,7 @@ TEST_CASE("vision setup: the PhotonVision message UUID is the config override, e
     CHECK(rig.system->setup("").cameras[0].photonMessageUuid == "from-config");
 }
 
-TEST_CASE("vision snapshot: cameras, tags and robot states are contributed from the live world") {
+TEST_CASE("vision snapshot: cameras and tags are contributed from the live world") {
     sdk::CameraConfig cam = frontCamera("front");
     cam.label = "Front camera";
     cam.frameRateHz = 30.0;
@@ -417,7 +417,7 @@ TEST_CASE("vision snapshot: cameras, tags and robot states are contributed from 
     CHECK(data.cameras[0].lastLatencyMs == Approx(25.0));
 }
 
-TEST_CASE("vision snapshot: robot-reported camera state is merged into the camera, never used for measuring") {
+TEST_CASE("vision snapshot: what the robot reported is shown next to the camera, never used for measuring") {
     sdk::CameraConfig cam = frontCamera("front");
     cam.ntName = "photon-front";
     cam.frameRateHz = 200.0;
@@ -446,27 +446,24 @@ TEST_CASE("vision snapshot: robot-reported camera state is merged into the camer
     offState.cameraId = "off";
     offState.publishing = true;
     const sdk::CameraRobotState states[] = {state, stray, offState};
-    rig.system->onRobotStates(states);
+    rig.robotStates.upsert(states);
 
     sdk::SimSnapshotData data = rig.snapshot();
     REQUIRE(data.cameras.size() == 2);
     CHECK(data.cameras[0].robotConnected);
     CHECK(data.cameras[0].status.empty());
     CHECK(data.cameras[1].status == "disabled");  // the configuration wins over the robot's report
-    REQUIRE(data.detectedCameras.size() == 3);
-    CHECK(data.detectedCameras[0] == state);
-    CHECK(data.detectedCameras[1] == stray);
+    // the detected cameras are the session's to list: they exist without an engine
+    CHECK(data.detectedCameras.empty());
 
     // a changed entry replaces its predecessor (matched by vendor and NT name)
     sdk::CameraRobotState refused = state;
     refused.publishing = false;
     refused.status = "photon_uuid_unsupported";
-    rig.system->onRobotStates(std::span<const sdk::CameraRobotState>(&refused, 1));
+    rig.robotStates.upsert(std::span<const sdk::CameraRobotState>(&refused, 1));
     data = rig.snapshot();
-    CHECK(data.detectedCameras.size() == 3);
     CHECK_FALSE(data.cameras[0].robotConnected);
     CHECK(data.cameras[0].status == "photon_uuid_unsupported");
-    CHECK(rig.system->robotStates().size() == 3);
 
     // the measurements are exactly those of a run that never heard from the robot
     Rig reference(visionOf({cam, off}));
@@ -477,91 +474,9 @@ TEST_CASE("vision snapshot: robot-reported camera state is merged into the camer
     for (std::size_t i = 0; i < after.size(); ++i) CHECK(after[i].frame == expected[i].frame);
     CHECK(before.size() == 3);  // 4 ticks at 200 Hz, zero latency: the captures of ticks 1..3
 
-    // what the robot reported describes its process, not the simulation: a reset keeps it, only a
-    // lost connection forgets it
-    rig.system->reset();
-    CHECK(rig.system->robotStates().size() == 3);
-    CHECK(rig.snapshot().detectedCameras.size() == 3);
+    // a lost connection: nothing of what the robot reported is shown any more
     CHECK(rig.cameras()[0].status == "photon_uuid_unsupported");
-    rig.system->clearRobotStates();
-    CHECK(rig.system->robotStates().empty());
-    CHECK(rig.snapshot().detectedCameras.empty());
+    rig.robotStates.clear();
     CHECK(rig.cameras()[0].status.empty());
-}
-
-TEST_CASE("vision warnings: what the robot reports becomes issue-list entries") {
-    sdk::CameraConfig front = frontCamera("front");
-    front.ntName = "photon-front";
-    sdk::CameraConfig spare = frontCamera("spare");
-    spare.ntName = "photon-spare";
-    spare.enabled = false;
-    Rig rig(visionOf({front, spare}));
-    CHECK(rig.system->warnings().empty());
-
-    auto report = [&](sdk::CameraRobotState state) {
-        rig.system->onRobotStates(std::span<const sdk::CameraRobotState>(&state, 1));
-    };
-    sdk::CameraRobotState healthy;
-    healthy.ntName = "photon-front";
-    healthy.cameraId = "front";
-    healthy.publishing = true;
-    report(healthy);
-    CHECK(rig.system->warnings().empty());  // a working camera is not an issue
-
-    // the robot uses a camera nobody simulates
-    sdk::CameraRobotState stray;
-    stray.ntName = "mystery";
-    stray.vendor = sdk::CameraVendor::Limelight;
-    report(stray);
-    {
-        const auto w = rig.system->warnings();
-        REQUIRE(w.size() == 1);
-        CHECK(w[0].code == "vision_camera_unconfigured");
-        CHECK(w[0].severity == sdk::Severity::Warning);
-        CHECK_FALSE(w[0].device.valid());
-        CHECK(w[0].message.find("Limelight") != std::string::npos);
-        CHECK(w[0].message.find("'mystery'") != std::string::npos);
-        CHECK(w[0].message.find("not in the vision configuration") != std::string::npos);
-    }
-    // ... which is a configured but disabled camera: the same code, a more precise reason
-    sdk::CameraRobotState unmatchedSpare;
-    unmatchedSpare.ntName = "photon-spare";
-    report(unmatchedSpare);
-    {
-        const auto w = rig.system->warnings();
-        REQUIRE(w.size() == 2);
-        CHECK(w[1].code == "vision_camera_unconfigured");
-        CHECK(w[1].message.find("'photon-spare'") != std::string::npos);
-        CHECK(w[1].message.find("disabled in the vision configuration") != std::string::npos);
-    }
-    // a camera the robot does not use needs no warning, and the entry is replaced, not duplicated
-    stray.present = false;
-    unmatchedSpare.present = false;
-    report(stray);
-    report(unmatchedSpare);
-    CHECK(rig.system->warnings().empty());
-
-    struct Case {
-        const char* status;
-        sdk::Severity severity;
-    };
-    const Case cases[] = {{"ntcore_unavailable", sdk::Severity::Error},
-                          {"photon_uuid_unsupported", sdk::Severity::Error},
-                          {"foreign_publisher", sdk::Severity::Warning},
-                          {"disabled", sdk::Severity::Warning},
-                          {"something_new", sdk::Severity::Warning}};
-    for (const Case& c : cases) {
-        INFO(c.status);
-        sdk::CameraRobotState bad = healthy;
-        bad.publishing = false;
-        bad.status = c.status;
-        report(bad);
-        const auto w = rig.system->warnings();
-        REQUIRE(w.size() == 1);
-        CHECK(w[0].code == "vision_camera_status");
-        CHECK(w[0].severity == c.severity);
-        CHECK(w[0].message.find("camera 'front' (photon-front)") != std::string::npos);
-    }
-    report(healthy);  // the camera recovers: the entry disappears by itself
-    CHECK(rig.system->warnings().empty());
+    CHECK_FALSE(rig.cameras()[0].robotConnected);
 }

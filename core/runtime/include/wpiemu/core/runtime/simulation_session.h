@@ -9,6 +9,7 @@
 
 #include "wpiemu/core/runtime/device_hub.h"
 #include "wpiemu/core/runtime/sim_clock.h"
+#include "wpiemu/core/vision/robot_camera_states.h"
 #include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/core/rng.h"
@@ -98,9 +99,9 @@ public:
     // project has cameras, the vision frames due in this frame (SensorFrame::vision); the runner stamps identity.
     void tick(sdk::proto::SensorFrame& out, bool fullFrame);
     // Back to t = 0: chassis pose/velocity, drivetrain, mechanisms, game state, clock, RNG, battery, and the vision
-    // schedule (queued frames dropped, sequence numbers continue; what the robot reported about its cameras stays).
-    // Bindings and discovered devices stay, but cached actuation/feedback is neutralized. Starts a new epoch of tick
-    // numbering; the next sensor frame is full even if the caller requests a delta.
+    // schedule (queued frames dropped, sequence numbers continue; what the robot reported about its cameras stays,
+    // see robotCameras()). Bindings and discovered devices stay, but cached actuation/feedback is neutralized. Starts a
+    // new epoch of tick numbering; the next sensor frame is full even if the caller requests a delta.
     void reset();
     // Teleports the chassis to `pose` (world frame, body origin = COM) and starts it from rest: linear and angular velocity
     // are zeroed, the drivetrain's wheel state is reset and the IMU's velocity history restarts, so the robot code sees a
@@ -135,9 +136,15 @@ public:
     // (then vision_layout_missing is among sessionWarnings() and the session runs without cameras).
     vision::VisionSystem* vision() { return vision_.get(); }
     const vision::VisionSystem* vision() const { return vision_.get(); }
+    // What the robot process reports about the cameras it uses (ActuatorFrame::vision and VisionReport). It exists whether
+    // or not an engine does: snapshots list it as detectedCameras() and raise the vision_camera_* warnings from it, so a
+    // project without cameras still learns which cameras its robot uses. reset() keeps it (it describes the robot process,
+    // not the simulation); the runner clears it when the connection is lost or replaced.
+    vision::RobotCameraStates& robotCameras() { return robotCameras_; }
+    const vision::RobotCameraStates& robotCameras() const { return robotCameras_; }
 
     // Immutable view for the UI (what the runner hands to the snapshot sink). Its warnings are the hub's, the
-    // session's (sessionWarnings()), those the robot-reported camera states imply (vision_camera_*) and the caller's.
+    // session's (sessionWarnings()), those the robot's camera reports imply (vision_camera_*) and the caller's.
     std::shared_ptr<const sdk::ISimSnapshot> buildSnapshot(bool paused, bool robotConnected,
                                                            std::span<const sdk::HubWarning> extraWarnings = {}) const;
 
@@ -175,6 +182,7 @@ private:
     std::unique_ptr<Directory> directory_;
     std::unique_ptr<sdk::SimContext> ctx_;
     std::unique_ptr<sdk::IGameState> gameState_;
+    vision::RobotCameraStates robotCameras_;
     std::unique_ptr<vision::VisionSystem> vision_;
 
     std::vector<sdk::WheelCommand> wheelCommands_;

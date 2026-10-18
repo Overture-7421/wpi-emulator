@@ -199,6 +199,13 @@ struct Rig {
         for (const auto& w : snap->warnings()) n += w.code == code ? 1u : 0u;
         return n;
     }
+    std::optional<HubWarning> warning(const char* code) const {
+        const auto snap = slot.latest();
+        for (const auto& w : snap->warnings())
+            if (w.code == code) return w;
+        return std::nullopt;
+    }
+    std::size_t detectedCameras() const { return slot.latest()->detectedCameras().size(); }
 };
 
 // One enabled PhotonVision camera that sees the two tags of the wall layout (a file in `dir`).
@@ -807,6 +814,246 @@ TEST_CASE("runner: the robot's camera report reaches snapshots as detected camer
     CHECK(rig.warnings("vision_camera_unconfigured") == 0);
     REQUIRE(rig.slot.latest()->cameras().size() == 1);
     CHECK_FALSE(rig.slot.latest()->cameras()[0].robotConnected);
+}
+
+TEST_CASE("runner: a project without cameras still learns which cameras its robot uses") {
+    Rig rig;  // no camera configured: no engine and nothing announced, but the robot may use cameras all the same
+    REQUIRE(rig.session->vision() == nullptr);
+    rig.connect();
+    rig.ext->hello();
+    rig.ext->announceAll();
+    CameraRobotState used;  // the full list rides the first answer of the connection
+    used.ntName = "photon-front";
+    rig.ext->visionStates = {used};
+    REQUIRE(rig.run([&] { return rig.detectedCameras() == 1; }));
+    CHECK(rig.ext->helloAck->vision.empty());
+    CHECK(rig.slot.latest()->detectedCameras()[0] == used);
+    CHECK(rig.slot.latest()->cameras().empty());
+    const std::optional<HubWarning> hint = rig.warning("vision_camera_unconfigured");
+    REQUIRE(hint.has_value());
+    CHECK(hint->severity == Severity::Warning);
+    CHECK(hint->message.find("'photon-front'") != std::string::npos);
+    CHECK(hint->message.find("not in the vision configuration") != std::string::npos);
+
+    // the robot process outlives a Reset, so what it reported stays
+    proto::SimControl reset;
+    reset.command = proto::SimCommand::Reset;
+    rig.runner->control(reset);
+    REQUIRE(rig.run([&] { return rig.runner->runEpoch() == 2 && rig.session->clock().tickIndex() >= 3; }));
+    CHECK(rig.detectedCameras() == 1);
+    CHECK(rig.warnings("vision_camera_unconfigured") == 1);
+
+    // a lost connection forgets it
+    rig.ext->ch.close();
+    REQUIRE(rig.run([&] { return rig.runner->state() == RunnerState::WaitingForRobot; }));
+    CHECK(rig.detectedCameras() == 0);
+    CHECK(rig.warnings("vision_camera_unconfigured") == 0);
+}
+
+TEST_CASE("runner: a VisionReport in a discovery-only run is accepted, listed and upserted") {
+    RunnerOptions options = Rig::fast();
+    options.discoveryOnly = true;
+    Rig rig(options);
+    rig.connect();
+    rig.ext->hello();
+    rig.ext->announceAll();
+    REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value() && rig.session->hub().discovered().size() == 7; }));
+    REQUIRE(rig.runner->armed());
+
+    CameraRobotState front;
+    front.ntName = "front";
+    CameraRobotState left;
+    left.ntName = "limelight-left";
+    left.vendor = CameraVendor::Limelight;
+    proto::VisionReport first;  // the first report of a connection lists every camera
+    first.cameras = {front, left};
+    rig.ext->send(first);
+    REQUIRE(rig.run([&] { return rig.detectedCameras() == 2; }));
+    CHECK(rig.warnings("vision_camera_unconfigured") == 2);
+
+    // nothing stepped, nothing broke: a report is no tick answer and no protocol error
+    CHECK(rig.runner->armed());
+    CHECK(rig.runner->ticksSent() == 0);
+    CHECK(rig.runner->state() == RunnerState::Running);
+    CHECK(rig.logger.count(LogLevel::Error) == 0);
+    CHECK_FALSE(rig.ext->disconnected);
+
+    // later reports carry only what changed and replace the entry of the same vendor and name
+    CameraRobotState publishing = front;
+    publishing.publishing = true;
+    proto::VisionReport change;
+    change.cameras = {publishing};
+    rig.ext->send(change);
+    REQUIRE(rig.run([&] {
+        const auto snap = rig.slot.latest();
+        return snap->detectedCameras().size() == 2 && snap->detectedCameras()[0].publishing;
+    }));
+    CHECK(rig.slot.latest()->detectedCameras()[1] == left);
+    CHECK(rig.warnings("vision_camera_unconfigured") == 2);
+    CHECK(rig.logger.count(LogLevel::Error) == 0);
+    CHECK(rig.runner->ticksSent() == 0);
+}
+
+TEST_CASE("runner: a VisionReport is accepted whatever lock-step is doing and is never mistaken for an acknowledgement") {
+    Rig rig;
+    rig.handshake();
+    CameraRobotState cam;
+    cam.ntName = "front";
+    auto report = [&] {
+        proto::VisionReport r;
+        r.cameras = {cam};
+        rig.ext->send(r);
+    };
+    auto detectedFramesPublished = [&](std::uint64_t n) {
+        const auto snap = rig.slot.latest();
+        return snap->detectedCameras().size() == 1 && snap->detectedCameras()[0].framesPublished == n;
+    };
+
+    // a tick in flight: the report is not its answer, the window stays closed until the real one arrives
+    rig.ext->autoAck = false;
+    rig.ext->pending.reset();
+    REQUIRE(rig.run([&] { return rig.ext->pending.has_value(); }));
+    const proto::SensorFrame inFlight = *rig.ext->pending;
+    const std::uint64_t sent = rig.runner->ticksSent();
+    cam.framesPublished = 1;
+    report();
+    REQUIRE(rig.run([&] { return detectedFramesPublished(1); }));
+    for (int i = 0; i < 10; ++i) {
+        rig.runner->poll(2ms);
+        rig.ext->pump();
+    }
+    CHECK(rig.runner->ticksSent() == sent);
+    CHECK(rig.runner->state() == RunnerState::Running);
+    rig.ext->pending.reset();
+    rig.ext->autoAck = true;
+    rig.ext->answer(inFlight);
+    REQUIRE(rig.run([&] { return rig.runner->ticksSent() > sent; }));  // lock-step went on as if nothing happened
+
+    // paused
+    proto::SimControl pause;
+    pause.command = proto::SimCommand::Pause;
+    rig.runner->control(pause);
+    REQUIRE(rig.run([&] { return rig.ext->remotePaused; }));
+    cam.framesPublished = 2;
+    report();
+    REQUIRE(rig.run([&] { return detectedFramesPublished(2); }));
+    CHECK(rig.runner->state() == RunnerState::Paused);
+
+    // waiting for the acknowledgement of a Reset
+    rig.ext->ackControls = false;
+    proto::SimControl reset;
+    reset.command = proto::SimCommand::Reset;
+    rig.runner->control(reset);
+    REQUIRE(rig.run([&] { return !rig.ext->controls.empty() && rig.ext->controls.back().command == proto::SimCommand::Reset; }));
+    cam.framesPublished = 3;
+    report();
+    REQUIRE(rig.run([&] { return detectedFramesPublished(3); }));
+
+    CHECK(rig.logger.count(LogLevel::Error) == 0);
+    CHECK_FALSE(rig.ext->disconnected);
+}
+
+TEST_CASE("runner: a VisionReport before the handshake or from a replaced link is ignored with a debug log only") {
+    auto debugLogged = [](const Rig& rig, const char* text) {
+        const auto entries = rig.logger.entries();
+        return std::any_of(entries.begin(), entries.end(), [&](const auto& e) {
+            return e.level == LogLevel::Debug && e.message.find(text) != std::string::npos;
+        });
+    };
+    Rig rig;
+    rig.connect();
+    CameraRobotState early;
+    early.ntName = "front";
+    proto::VisionReport report;
+    report.cameras = {early};
+    rig.ext->send(report);  // the extension speaks before it has the HelloAck
+    for (int i = 0; i < 10; ++i) {
+        rig.runner->poll(2ms);
+        rig.ext->pump();
+    }
+    CHECK(debugLogged(rig, "before the handshake"));
+    CHECK(rig.detectedCameras() == 0);
+    CHECK(rig.logger.count(LogLevel::Warn) == 0);
+    CHECK(rig.logger.count(LogLevel::Error) == 0);
+
+    rig.ext->hello();  // the connection is fine, and the ignored report left nothing behind
+    rig.ext->announceAll();
+    REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value() && rig.session->hub().discovered().size() == 7; }));
+    CHECK(rig.detectedCameras() == 0);
+    CHECK_FALSE(rig.ext->disconnected);
+
+    // a late report of a link the runner no longer knows
+    const std::uint64_t dropped = rig.runner->droppedFrames();
+    InboundEvent stale;
+    stale.kind = InboundEvent::Kind::Message;
+    stale.linkId = rig.link->id() + 100;
+    stale.message = report;
+    rig.inbox.push(std::move(stale));
+    for (int i = 0; i < 10; ++i) {
+        rig.runner->poll(2ms);
+        rig.ext->pump();
+    }
+    CHECK(rig.runner->droppedFrames() == dropped + 1);
+    CHECK(debugLogged(rig, "closed or replaced link"));
+    CHECK(rig.detectedCameras() == 0);
+    CHECK(rig.logger.count(LogLevel::Error) == 0);
+}
+
+TEST_CASE("runner: what a robot reported is forgotten when another robot connection replaces it") {
+    Rig rig;
+    rig.connect();
+    rig.ext->hello();
+    rig.ext->announceAll();
+    CameraRobotState first;
+    first.ntName = "front";
+    rig.ext->visionStates = {first};
+    REQUIRE(rig.run([&] { return rig.detectedCameras() == 1; }));
+
+    auto previous = std::move(rig.ext);
+    rig.link.reset();
+    rig.connect();  // the first process never said goodbye
+    rig.ext->autoAck = false;  // hold the new process's first answer: it has reported nothing yet
+    rig.ext->hello();
+    REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value() && rig.ext->pending.has_value(); }));
+    for (int i = 0; i < 100 && !previous->disconnected; ++i) {
+        previous->pump();
+        std::this_thread::sleep_for(5ms);
+    }
+    CHECK(previous->disconnected);  // the runner closed the replaced link
+    CHECK(rig.detectedCameras() == 0);
+    CHECK(rig.warnings("vision_camera_unconfigured") == 0);
+
+    CameraRobotState second;  // the new process lists its own cameras with its first answer
+    second.ntName = "limelight-left";
+    second.vendor = CameraVendor::Limelight;
+    rig.ext->visionStates = {second};
+    const proto::SensorFrame frame = *rig.ext->pending;
+    rig.ext->pending.reset();
+    rig.ext->answer(frame);
+    REQUIRE(rig.run([&] { return rig.detectedCameras() == 1; }));
+    CHECK(rig.slot.latest()->detectedCameras()[0] == second);
+}
+
+TEST_CASE("runner: a configured camera the robot already publishes itself is a warning, not an error") {
+    ScratchDir dir;
+    Rig rig(Rig::fast(), visionConfig(dir));
+    rig.handshake();
+    CameraRobotState foreign;  // a robot-side PhotonCameraSim got to the topics first
+    foreign.ntName = "front";
+    foreign.cameraId = "front";
+    foreign.status = "foreign_publisher";
+    proto::VisionReport report;
+    report.cameras = {foreign};
+    rig.ext->send(report);
+    REQUIRE(rig.run([&] { return rig.warnings("vision_camera_status") == 1; }));
+    const std::optional<HubWarning> w = rig.warning("vision_camera_status");
+    REQUIRE(w.has_value());
+    CHECK(w->severity == Severity::Warning);
+    CHECK(w->message.find("camera 'front' (front)") != std::string::npos);
+    CHECK(w->message.find("already publishes") != std::string::npos);
+    CHECK(rig.warnings("vision_camera_unconfigured") == 0);  // it is a configured camera
+    REQUIRE(rig.slot.latest()->cameras().size() == 1);
+    CHECK(rig.slot.latest()->cameras()[0].status == "foreign_publisher");
 }
 
 TEST_CASE("runner: Stop is acknowledged by the extension and finishes the session") {

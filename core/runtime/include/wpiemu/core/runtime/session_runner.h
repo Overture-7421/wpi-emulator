@@ -68,6 +68,8 @@ enum class RunnerState {
 //    (teleport of the chassis, applied at the start of the next poll even while paused);
 //  * stall watchdog: tick outstanding longer than the negotiated timeout -> RobotStalled, no more frames;
 //  * brownout: the DS state sent to the robot is forced disabled while the battery is browned out;
+//  * camera reports: ActuatorFrame::vision and, in any connected state once the handshake is done, VisionReport (outside the
+//    tick window: no identity, no ack) are stored in the session's robotCameras(), cleared when the connection is lost;
 //  * snapshot publishing to the ISnapshotSink (every N ticks and on state changes).
 // poll() performs one bounded iteration (tests drive it deterministically); start() runs it on a thread.
 class SessionRunner final : public sdk::ISimController {
