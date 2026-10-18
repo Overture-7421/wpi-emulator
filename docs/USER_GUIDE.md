@@ -267,8 +267,8 @@ Technical details: [vision.md](vision.md).
     a camera at `(0.30, 0.0, 0.50)` in the code is entered as `(0.35, 0.0, 0.30)`. Rotation is entered as is (a camera pitched up 20
     degrees has pitch -20 degrees in WPILib's convention). For a camera on a mechanism the line shows the rest pose; in the
     simulation the transform follows the mechanism's motion.
-  - Optics: copy the field of view, resolution, fps and latency from your Limelight or PhotonVision settings (a Limelight 3 is about
-    63.3 x 49.7 degrees; PhotonVision uses the calibrated camera's lens).
+  - Optics: copy the field of view, resolution, fps and latency from your Limelight or PhotonVision settings (the defaults are a
+    generic 75 x 50 degree camera at 30 fps and 40 ms).
 * **Pose reporting**: Limelight `botpose*` and PhotonVision multi-tag results report the robot pose in the field frame computed from the
   simulation's true pose (plus the pose noise you configured). Use noise > 0 to test your filter's rejection thresholds.
 * **PhotonLib version.** PhotonVision's data format depends on the PhotonLib version. The emulator reads the `photonlib` version
