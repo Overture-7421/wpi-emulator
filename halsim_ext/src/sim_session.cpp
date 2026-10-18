@@ -186,6 +186,8 @@ std::optional<SessionEnd> SimSession::dispatch(proto::Message&& message) {
     } else if (auto* set = std::get_if<proto::LoopbackSet>(&message)) {
         loopback_ = std::move(set->loopback);
         std::sort(loopback_.begin(), loopback_.end());
+    } else if (auto* setup = std::get_if<sdk::VisionSetup>(&message)) {
+        s_.bridges.configureVision(*setup);
     } else if (auto* control = std::get_if<proto::SimControl>(&message)) {
         return onControl(*control);
     } else if (std::holds_alternative<proto::Goodbye>(message)) {
@@ -236,6 +238,8 @@ void SimSession::onSensorFrame(proto::SensorFrame&& frame) {
         s_.ports.power.setBattery(lastBatteryV_, lastBatteryA_);
     }
     s_.bridges.applyInputs(frame.samples);
+    s_.bridges.pollVision(frame.simTimeUs);
+    s_.bridges.applyVision(frame.vision, frame.simTimeUs);
 
     if (lockstep_) {
         const std::uint64_t stepUs = frame.stepUs != 0 ? frame.stepUs : ack_.stepUs;

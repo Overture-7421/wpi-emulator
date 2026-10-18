@@ -17,6 +17,7 @@
 #include "wpiemu/halsim_ext/os_process.h"
 #include "wpiemu/sdk/devices/builtin_bridges.h"
 #include "wpiemu/sdk/devices/device_bridge.h"
+#include "wpiemu/sdk/vision/vision_bridge.h"
 
 #if defined(_WIN32)
 #define WPIEMU_EXPORT __declspec(dllexport)
@@ -75,13 +76,24 @@ public:
             dropDisabledBridges(bridges);
         }
 
+        std::vector<std::unique_ptr<sdk::IVisionBridge>> visionBridges;
+        sdk::VisionBridgeRegistry visionRegistry;
+        if (const sdk::Status s = sdk::registerBuiltinVisionBridges(visionRegistry); !s)
+            std::fprintf(stderr, "[wpiemu] WARN extension: vision bridge registration problem: %s\n", s.error().message.c_str());
+        if (!visionRegistry.empty()) {
+            sdk::Result<std::vector<std::unique_ptr<sdk::IVisionBridge>>> createdVision = visionRegistry.createAll();
+            if (createdVision) visionBridges = std::move(createdVision).value();
+            else std::fprintf(stderr, "[wpiemu] WARN extension: vision bridges unavailable: %s\n", createdVision.error().message.c_str());
+        }
+
         halsim::RuntimeDeps deps{config_,
                                  halsim::HalSimPlatform::describeRobot(config_),
                                  halsim::HalPorts{platform_.clock(), platform_.driverStation(), platform_.power(), process_},
                                  *bindings_.client,
                                  bindings_.codec,
                                  std::move(bridges),
-                                 {}};
+                                 {},
+                                 std::move(visionBridges)};
         runtime_ = std::make_unique<halsim::ExtensionRuntime>(std::move(deps));
         return runtime_->start();
     }

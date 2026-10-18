@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
@@ -11,6 +12,7 @@
 #include "wpiemu/halsim_ext/device_table.h"
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/devices/device_bridge.h"
+#include "wpiemu/sdk/vision/vision_bridge.h"
 
 namespace wpiemu::halsim {
 
@@ -59,16 +61,33 @@ public:
 
     std::size_t activeCount() const;
 
+    // ---- vision bridges (simulated Limelight / PhotonVision cameras, ADR 0017) -----------------------------------
+    // Call before `start`; they are started by it (a failing one is logged and dropped) and stopped by `stop`.
+    void setVisionBridges(std::vector<std::unique_ptr<sdk::IVisionBridge>> bridges);
+    // The emulator's current camera list (VisionSetup message). Remembered so bridges created later see it.
+    void configureVision(const sdk::VisionSetup& setup);
+    // Clock thread, before `applyVision`: mirrors robot-written camera settings and heartbeats.
+    void pollVision(sdk::SimTimeUs simTimeUs);
+    // Publishes the camera frames due this tick.
+    void applyVision(std::span<const sdk::CameraFrame> frames, sdk::SimTimeUs simTimeUs);
+    std::size_t activeVisionCount() const;
+
 private:
     struct Slot {
         std::unique_ptr<sdk::IDeviceBridge> bridge;
         std::unique_ptr<BridgeHost> host;
         bool active = false;
     };
+    struct VisionSlot {
+        std::unique_ptr<sdk::IVisionBridge> bridge;
+        bool active = false;
+    };
 
     DeviceTable* table_;
     sdk::ILogger* logger_;
     std::vector<Slot> slots_;
+    std::vector<VisionSlot> vision_;
+    std::optional<sdk::VisionSetup> visionSetup_;
     std::vector<std::vector<sdk::SignalSample>> routed_;  // per-bridge scratch, reused each tick
 };
 

@@ -38,6 +38,51 @@ void BridgeSet::start(const std::atomic<bool>& optionalHooks) {
         }
         slot.active = true;
     }
+    for (VisionSlot& slot : vision_) {
+        if (!slot.bridge) continue;
+        const sdk::Status status = slot.bridge->start(*logger_);
+        if (!status) {
+            logger_->error(kLog, "vision bridge '" + std::string(slot.bridge->name()) + "' failed to start: " +
+                                     status.error().message + " (skipped)");
+            slot.bridge->stop();
+            continue;
+        }
+        if (visionSetup_) slot.bridge->configure(*visionSetup_);
+        slot.active = true;
+    }
+}
+
+void BridgeSet::setVisionBridges(std::vector<std::unique_ptr<sdk::IVisionBridge>> bridges) {
+    vision_.clear();
+    vision_.reserve(bridges.size());
+    for (auto& b : bridges) {
+        VisionSlot slot;
+        slot.bridge = std::move(b);
+        vision_.push_back(std::move(slot));
+    }
+}
+
+void BridgeSet::configureVision(const sdk::VisionSetup& setup) {
+    visionSetup_ = setup;
+    for (VisionSlot& slot : vision_)
+        if (slot.active) slot.bridge->configure(setup);
+}
+
+void BridgeSet::pollVision(sdk::SimTimeUs simTimeUs) {
+    for (VisionSlot& slot : vision_)
+        if (slot.active) slot.bridge->poll(simTimeUs);
+}
+
+void BridgeSet::applyVision(std::span<const sdk::CameraFrame> frames, sdk::SimTimeUs simTimeUs) {
+    for (VisionSlot& slot : vision_)
+        if (slot.active) slot.bridge->apply(frames, simTimeUs);
+}
+
+std::size_t BridgeSet::activeVisionCount() const {
+    std::size_t n = 0;
+    for (const VisionSlot& slot : vision_)
+        if (slot.active) ++n;
+    return n;
 }
 
 void BridgeSet::poll() {
@@ -48,6 +93,8 @@ void BridgeSet::poll() {
 void BridgeSet::resetInputHistory() {
     for (Slot& slot : slots_)
         if (slot.active) slot.bridge->resetInputHistory();
+    for (VisionSlot& slot : vision_)
+        if (slot.active) slot.bridge->reset();
 }
 
 void BridgeSet::applyInputs(std::span<const sdk::SignalSample> samples) {
@@ -74,6 +121,10 @@ void BridgeSet::applyLoopback(std::span<const sdk::DeviceId> ids) {
 }
 
 void BridgeSet::stop() noexcept {
+    for (auto it = vision_.rbegin(); it != vision_.rend(); ++it) {
+        if (it->bridge) it->bridge->stop();
+        it->active = false;
+    }
     for (auto it = slots_.rbegin(); it != slots_.rend(); ++it) {
         if (it->bridge) it->bridge->stop();
         it->active = false;
