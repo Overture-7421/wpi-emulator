@@ -21,6 +21,10 @@
 #if defined(WPIEMU_BUILTIN_VENDOR_REGISTER)
 #include "wpiemu/bridges/vendor/vendor_bridges.h"
 #endif
+#include "wpiemu/bridges/vision/vision_bridges.h"
+#if defined(WPIEMU_BUILTIN_VISION_NT)
+#include "wpiemu/bridges/vision/nt_binding.h"
+#endif
 
 namespace wpiemu::sdk {
 
@@ -55,7 +59,14 @@ Status registerBuiltinBridges(DeviceBridgeRegistry& registry) {
 
 Status registerBuiltinVisionBridges(VisionBridgeRegistry& registry) {
     Status first = okStatus();
-    (void)registry;
+
+#if defined(WPIEMU_BUILTIN_VISION_NT)
+    attempt(first, [&] { return bridges::vision::registerNtVisionBridges(registry); });
+#else
+    // Without the ntcore binding the bridges are registered but never publish.
+    attempt(first, [&] { return bridges::vision::registerVisionBridges(registry); });
+#endif
+
     return first;
 }
 

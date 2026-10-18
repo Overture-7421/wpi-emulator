@@ -38,9 +38,10 @@ ALLOWED: dict[str, set[str]] = {
     "core": {"sdk"},
     "ipc": {"sdk"},
     "halsim_ext": {"sdk", "ipc", "bridges"},
-    "bridges": {"sdk", "bridges/hal", "bridges/vendor"},
+    "bridges": {"sdk", "bridges/hal", "bridges/vendor", "bridges/vision"},
     "bridges/hal": {"sdk"},
     "bridges/vendor": {"sdk"},
+    "bridges/vision": {"sdk"},
     "app": {"sdk", "core", "ipc", "plugins"},
 }
 # Any plugin ("plugins/<name>") may reference only these (plus itself).
@@ -51,7 +52,7 @@ PLUGIN_ALLOWED = {"sdk"}
 AGGREGATOR = "plugins"
 AGGREGATOR_ALLOWED = {"sdk", AGGREGATOR, "plugins/*"}
 
-MODULE_OWNERS = ["sdk", "core", "ipc", "halsim_ext", "bridges", "bridges/hal", "bridges/vendor", "app"]
+MODULE_OWNERS = ["sdk", "core", "ipc", "halsim_ext", "bridges", "bridges/hal", "bridges/vendor", "bridges/vision", "app"]
 
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]', re.MULTILINE)
 QT_KEYWORD_RE = re.compile(r"\b(signals|slots|emit|foreach|Q_SIGNALS|Q_SLOTS|Q_EMIT|Q_FOREACH)\b")
@@ -84,10 +85,14 @@ TARGET_OWNERS = {
     # Imported third-party targets, not extension-owned interfaces.
     "wpiemu_wpilib_hal": "wpilib",
     "wpiemu_wpilib_wpiutil": "wpilib",
+    "wpiemu_wpilib_wpinet": "wpilib",
+    "wpiemu_wpilib_ntcore": "wpilib",
     "wpiemu_bridges_builtin": "bridges",
     "wpiemu_bridges_hal": "bridges/hal",
     "wpiemu_bridges_hal_halsim": "bridges/hal",
     "wpiemu_bridges_vendor": "bridges/vendor",
+    "wpiemu_bridges_vision": "bridges/vision",
+    "wpiemu_bridges_vision_nt": "bridges/vision",
     "wpiemu_app": "app",
     "wpiemu_app_common": "app",
     "wpiemu_app_host": "app",
@@ -106,6 +111,11 @@ TARGET_OWNERS = {
     "wpiemu_runview_tests": "tests",
     "wpiemu_plugins_builtin": AGGREGATOR,
 }
+
+# Imported third-party WPILib targets (declared by halsim_ext/cmake/WpiEmuWpilib.cmake).
+WPILIB_TARGETS = {"wpiemu_wpilib_hal", "wpiemu_wpilib_wpiutil", "wpiemu_wpilib_wpinet", "wpiemu_wpilib_ntcore"}
+# Owners allowed to link them: the extension and the optional ntcore binding of the vision bridges.
+WPILIB_USERS = {"halsim_ext", "bridges/vision"}
 
 
 def owner_of_path(rel: str) -> str | None:
@@ -226,8 +236,7 @@ def target_mapping_errors(rel: str, text: str) -> list[str]:
             continue
         normalized = name.replace("wpiemu::", "wpiemu_")
         mapped = owner_of_target(normalized)
-        expected = ("wpilib" if owner == "halsim_ext" and normalized in
-                    ("wpiemu_wpilib_hal", "wpiemu_wpilib_wpiutil") else owner)
+        expected = "wpilib" if owner == "halsim_ext" and normalized in WPILIB_TARGETS else owner
         if mapped is None or mapped != expected:
             errors.append(f"{rel}: target '{name}' has unmapped or incorrect owner "
                           f"'{mapped}' (expected '{expected}')")
@@ -252,7 +261,7 @@ def scan_cmake(rel: str, text: str) -> list[str]:
                 errors.append(f"{rel}:{line}: first-party dependency '{name}' has no mapped owner")
                 continue
             # WPILib is a private robot-process backend, not a general module dependency.
-            if test_only or permits(allowed, dep) or (owner == "halsim_ext" and dep == "wpilib"):
+            if test_only or permits(allowed, dep) or (owner in WPILIB_USERS and dep == "wpilib"):
                 continue
             errors.append(
                 f"{rel}:{line}: '{owner}' must not link '{name}' (belongs to '{dep}'); "
@@ -358,6 +367,12 @@ def self_test() -> int:
         ("halsim_ext/src/a.cpp", '#include "../../bridges/builtin_bridges.cpp"\n', 1),
         ("halsim_ext/src/a.cpp", '#include <wpiemu/bridges/hal/a.h>\n', 1),
         ("bridges/vendor/src/a.cpp", '#include <wpiemu/bridges/hal/a.h>\n', 1),
+        ("bridges/vision/src/a.cpp", '#include "wpiemu/bridges/vision/a.h"\n#include <wpiemu/sdk/a.h>\n#include <ntcore_c.h>\n', 0),
+        ("bridges/vision/src/a.cpp", '#include <wpiemu/bridges/hal/a.h>\n', 1),
+        ("bridges/vision/src/a.cpp", '#include <wpiemu/bridges/vendor/a.h>\n', 1),
+        ("bridges/vision/src/a.cpp", '#include "wpiemu/core/c.h"\n#include "wpiemu/halsim_ext/x.h"\n', 2),
+        ("bridges/hal/src/a.cpp", '#include <wpiemu/bridges/vision/a.h>\n', 1),
+        ("bridges/builtin_bridges.cpp", '#include <wpiemu/bridges/vision/a.h>\n#include <wpiemu/bridges/vision/nt_binding.h>\n', 0),
     ]
     failures = 0
     for rel, text, expected in cases:
@@ -422,6 +437,24 @@ def self_test() -> int:
          "target_link_libraries(wpiemu_plugin_game_2026 PRIVATE wpiemu_core_physics wpiemu_app_common wpiemu_halsim_core wpiemu_bridges_hal_halsim wpiemu_bridges_builtin)\n", 5),
         ("bridges/vendor/CMakeLists.txt",
          "target_link_libraries(wpiemu_bridges_vendor PRIVATE wpiemu_bridges_hal_halsim)\n", 1),
+        ("bridges/vision/CMakeLists.txt",
+         "add_library(wpiemu_bridges_vision STATIC a.cpp)\ntarget_link_libraries(wpiemu_bridges_vision PUBLIC wpiemu_sdk)\n", 0),
+        ("bridges/vision/CMakeLists.txt",
+         "add_library(wpiemu_bridges_vision_nt STATIC b.cpp)\ntarget_link_libraries(wpiemu_bridges_vision_nt PUBLIC wpiemu_bridges_vision wpiemu_wpilib_ntcore wpiemu_wpilib_hal)\n", 0),
+        ("bridges/vision/CMakeLists.txt",
+         "target_link_libraries(wpiemu_bridges_vision PUBLIC wpiemu_bridges_hal wpiemu_bridges_vendor)\n", 2),
+        ("bridges/vision/CMakeLists.txt",
+         "target_link_libraries(wpiemu_bridges_vision PUBLIC wpiemu_core wpiemu_halsim_core)\n", 2),
+        ("bridges/hal/CMakeLists.txt",
+         "target_link_libraries(wpiemu_bridges_hal_halsim PUBLIC wpiemu_wpilib_ntcore)\n", 1),
+        ("core/CMakeLists.txt",
+         "target_link_libraries(wpiemu_core PRIVATE wpiemu_wpilib_ntcore)\n", 1),
+        ("bridges/CMakeLists.txt",
+         "target_link_libraries(wpiemu_bridges_builtin PRIVATE wpiemu_bridges_vision wpiemu_bridges_vision_nt)\n", 0),
+        ("halsim_ext/cmake/WpiEmuWpilib.cmake",
+         "add_library(wpiemu_wpilib_ntcore SHARED IMPORTED GLOBAL)\nadd_library(wpiemu_wpilib_wpinet SHARED IMPORTED GLOBAL)\n", 0),
+        ("bridges/vision/CMakeLists.txt",
+         "add_library(wpiemu_wpilib_ntcore SHARED IMPORTED GLOBAL)\n", 1),
         ("core/CMakeLists.txt",
          "target_link_libraries(wpiemu_core PRIVATE wpiemu_unknown wpiemu::unknown)\n", 2),
         ("core/CMakeLists.txt",
