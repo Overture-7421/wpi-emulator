@@ -236,6 +236,9 @@ if(WPIEMU_WPILIB_FOUND)
     elseif(WPIEMU_WPILIB_NTCORE_FOUND)
         message(STATUS "WPILib ${WPIEMU_WPILIB_VERSION}: ntcore headers found, shared libraries (ntcore, wpinet) missing; "
                        "the real-ntcore tests are skipped")
+    elseif(WPIEMU_WPILIB_NTCORE_RUNTIME_DIRS)
+        message(STATUS "WPILib ${WPIEMU_WPILIB_VERSION}: ntcore shared libraries found, headers missing; the vision bridge's "
+                       "NetworkTables binding is built inert and the real-ntcore tests are skipped")
     else()
         message(STATUS "WPILib ${WPIEMU_WPILIB_VERSION}: ntcore NOT found (ntcore-cpp / wpinet-cpp artifacts or "
                        "-DWPIEMU_WPILIB_DOWNLOAD=ON); the vision bridge's NetworkTables binding is built inert")
