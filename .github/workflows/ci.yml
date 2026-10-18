@@ -37,9 +37,11 @@ jobs:
         env:
           PLATFORMS: ${{ inputs.platforms || 'windows,linux,macos' }}
         run: |
+          # macos-14 (Xcode 15, arm64) matches release.yml. macos-latest is macOS 26 whose SDK no longer ships the AGL
+          # framework that Qt 6.8.3 links against ("ld: framework 'AGL' not found").
           all='[{"name":"windows","os":"windows-2022","preset":"windows-vs2022","qt_arch":"win64_msvc2022_64"},
                 {"name":"linux","os":"ubuntu-latest","preset":"linux","qt_arch":""},
-                {"name":"macos","os":"macos-latest","preset":"macos","qt_arch":""}]'
+                {"name":"macos","os":"macos-14","preset":"macos","qt_arch":""}]'
           matrix="$(echo "$all" | jq -c --arg p "$PLATFORMS" \
             '{include: [.[] | select(.name as $n | ($p | gsub(" "; "") | split(",") | index($n)) != null)]}')"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
