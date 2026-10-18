@@ -34,6 +34,7 @@ The app selects the plugin from the project's GradleRIO year (`RobotConfig::proj
 | `contributeConfigSchema()` | `PluginConfigSchema{schemaVersion, PropertySchema, groupOrder}` | persisted under `RobotConfig::plugins["game_<year>"]`; rendered by the generic inspector; core validates it |
 | `contributeEditorPanels()` / `contributeHud()` | Qt-free descriptors | `PanelScope::PluginConfig` or `Mechanism` (with viewport overlays); HUD widgets bind to `SnapshotBuilder::setHud` keys |
 | `contributeZoneKinds()` | `std::vector<ZoneKindInfo>` | optional; kinds are `"<id>.<name>"`, persisted as `RobotConfig::zones` (ADR 0016); core validates ownership, attachment and properties |
+| `contributeFiducialLayouts()` | `std::vector<FiducialLayout>` | optional; the season's AprilTag layouts (ids `"<id>.<name>"`, poses in the world frame, WPILib tag frame); the first one is the default for `VisionConfig::layoutId`, core never interprets them (ADR 0017) |
 | `onTick(ctx, dt)` | rarely needed | per-tick hook after `IGameState::step`; keep logic in the game state |
 
 Per-tick order (docs/ARCHITECTURE.md §4): hub ingest -> mechanisms -> drivetrain -> physics step -> `IGameState::step`

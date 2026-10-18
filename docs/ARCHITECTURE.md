@@ -86,6 +86,7 @@ backends used by `halsim_ext`, not SDK dependencies or alternative bridge aggreg
 | `mechanisms/` | `mechanism.h` `mechanism_state.h` `physics_coupling.h` `attachment.h` | `IMechanism`, `MechanismFactory`, template metadata, chassis coupling, link attachment |
 | `game/` | `game_module.h` `game_state.h` `field.h` `ui_descriptors.h` `zone_kind.h` `zone_activation.h` `plugin_registry.h` `builtin_plugins.h` `null_objects.h` | Year-plugin contract, zone kinds and activation evaluation |
 | `config/` | `robot_config.h` `mechanism_attachment.h` `zone.h` `property_schema.h` `plugin_config.h` `value_codec.h` `config_io.h` `validation_codes.h` | Persisted model (incl. zones), schemas, stable issue codes |
+| `vision/` | `camera_config.h` `fiducial_layout.h` `photon_profiles.h` `vision_types.h` | Cameras (`RobotConfig::vision`: name-keyed, attachable, ideal by default), AprilTag layouts, PhotonVision wire-profile lookup, vendor-neutral `VisionFrame` / `CameraSetup` / `CameraRobotState` |
 | `ipc/` | `messages.h` `transport.h` `lockstep.h` `lifecycle.h` | Protocol structs, `ITransport`, `IMessageCodec`, `MessageChannel`, lock-step state machines, lifecycle signals carried as `Log` messages (e.g. robot program started) |
 | `telemetry/` | `snapshot.h` `sim_controller.h` | `ISimSnapshot` view-model, `ISimController` |
 | `testing/` | `fake_physics_world.h` `fake_device_hub.h` `fake_game_module.h` `fake_sim_environment.h` `fake_clock_logger.h` `in_memory_transport.h` `fake_mechanism_physics_coupling.h` `fake_mechanism_directory.h` | Header-only fakes for isolated tests |
@@ -267,6 +268,16 @@ v1 supports **static built-in plugins only** (one toolchain/CRT/flags). The SDK 
 size-prefixed `extern "C"` POD entry descriptor (sdk major/minor, id/year/version, create/destroy pair) in addition to
 `registerPlugin`; until then do not export C++ types across a DLL boundary (see `game/plugin_registry.h`).
 
+### 4.8 Vision cameras
+`RobotConfig::vision` ([ADR 0017](decisions/0017-vision-virtual-coprocessors.md), `vision/camera_config.h`) configures virtual
+PhotonVision / Limelight cameras. They are **name-keyed** (`CameraConfig::id`), not `DeviceKey` / slot based, so they do not use the
+hub; like zones they hang on the chassis or a mechanism link (`MechanismAttachment`). Camera setup rides `HelloAck::vision`,
+processed camera frames ride `SensorFrame::vision` (due on that tick, `VisionFrame`: vendor-neutral observations in the camera
+frame X forward / Y left / Z up) and what the robot did with each camera returns in `ActuatorFrame::vision` (`CameraRobotState`,
+informational only). All three are trailing optional fields: absent decodes as none, the protocol stays 1. Bridges receive them
+through the defaulted `IDeviceBridge::applyVision` / `collectVision` and `IBridgeHost::visionSetup`; game plugins supply AprilTag
+layouts through `IGameModule::contributeFiducialLayouts()`. The engine and the vendor publishers are described with their modules.
+
 ## 5. Extension points
 
 | To add... | Implement | Register with | Touches |
@@ -280,6 +291,7 @@ size-prefixed `extern "C"` POD entry descriptor (sdk major/minor, id/year/versio
 | A transport / wire codec | `ITransport` / `IMessageCodec` | composition root | `ipc/` |
 | Config fields / HUD / panels | `PropertySchema`, `HudWidgetDescriptor`, `EditorPanelDescriptor` | returned by `IGameModule::contribute*` | the plugin only |
 | A game zone kind (intake volume, muzzle) | `ZoneKindInfo` | `IGameModule::contributeZoneKinds()` | the plugin only (kind prefix = plugin id) |
+| A season's AprilTag layouts | `FiducialLayout` | `IGameModule::contributeFiducialLayouts()` | the plugin only (first layout = default) |
 
 ## 6. Checklists
 

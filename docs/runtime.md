@@ -52,6 +52,16 @@ tests/runtime/                    doctest suite (fixtures in runtime_fixtures.h,
                "activation": { "mode": "all",
                                "conditions": [ { "mechanism": "flywheel", "value": "velocity", "op": "above",
                                                  "threshold": 100, "tolerance": 0.1, "absolute": true } ] } } ],
+  "vision": { "layoutId": "", "layoutFile": "", "photonMessageUuid": "",
+              "cameras": [ { "id": "front", "label": "", "vendor": "photonvision", "ntName": "", "enabled": true,
+                             "attachment": { "parentMechanismId": "chassis", "parentLink": "root" },
+                             "local": { "position": {..}, "rotation": {x,y,z,w} },
+                             "intrinsics": { "widthPx": 1280, "heightPx": 800, "hfovRad": 1.5708, "fxPx": 0, "fyPx": 0,
+                                             "cxPx": 0, "cyPx": 0, "distortion": [0, 0, 0, 0, 0] },
+                             "frameRateHz": 30, "latencyUs": 25000, "captureLatencyUs": 10000, "tagSizeM": 0.1651,
+                             "minTagPixels": 12, "maxViewAngleRad": 1.309, "occlusion": true, "multiTag": true,
+                             "realism": { "cornerNoisePx": 0, "latencyJitterUs": 0, "dropoutProbability": 0 },
+                             "assumedPose": { "position": {..}, "rotation": {x,y,z,w} } } ] },
   "battery": { "nominalVoltageV": 12.6, "internalResistanceOhm": 0.015, "brownoutVoltageV": 6.8 },
   "sim": { "stepUs": 5000, "seed": 1, "physics": { "workerCount": 1, "subSteps": 4, "sleeping": true, "gravity": {..} } },
   "plugins": { "game_2026": { "schemaVersion": 1, "data": { ... } } }
@@ -84,8 +94,8 @@ SDK codes (`device_alias_conflict`, `attachment_*`, `mechanism_id_reserved`) plu
 `slot_unknown` (W for the `robot` owner), `slot_required_unmapped` (Error for mechanisms, Warning for drivetrain slots),
 `slot_duplicate_mapping`, `device_duplicate_mapping`, `slot_device_incompatible` (needs a capability lookup, unknown
 devices are skipped), `battery_invalid`, `sim_invalid` (step must divide 20 ms), `plugin_not_found` (W),
-`plugin_section_unknown` (W), `plugin_section_version_unsupported`, `plugin_property_invalid`, and the zone codes of
-"Zones" below.
+`plugin_section_unknown` (W), `plugin_section_version_unsupported`, `plugin_property_invalid`, and the zone and camera codes of
+"Zones" and "Vision" below.
 Drivetrain slot names follow the convention `"<wheel>.drive"`, `"<wheel>.drive2"`.. (one per `driveMotorCount`, up to 8) / `"<wheel>.steer"` (steer for swerve/steered wheels), robot slot `"imu"`.
 A mapping may carry `"reversed": true` (Motor slots only, omitted when false): the controller spins against the mechanism's positive direction, and the hub negates its command and rotor feedback ([ADR 0014](decisions/0014-multi-motor-gearboxes.md)). New codes: `slot_motor_inactive` (W, a mapped motor above the motor count), `slot_reversed_invalid` (W, `reversed` on a non-motor slot).
 
@@ -107,6 +117,34 @@ Validator codes: `zone_id_invalid` (empty id), `zone_id_duplicate` (also an id e
 (non-finite pose, or a Volume size <= 0), `zone_condition_invalid` (empty value name, non-finite threshold, negative
 tolerance), `zone_condition_mechanism_unknown` (W). Attachment problems reuse `attachment_parent_missing` /
 `attachment_link_missing` with the path `zones[i].attachment`.
+
+### Vision (`RobotConfig::vision`)
+
+`vision` ([ADR 0017](decisions/0017-vision-virtual-coprocessors.md), `sdk/vision/camera_config.h`) lists the virtual
+PhotonVision / Limelight cameras and the AprilTag layout they see. It is read as empty when absent (a project without cameras
+needs nothing) and is always written. Cameras are name-keyed, not devices: `id` is unique and shares the namespace of
+mechanism and zone ids (and may not be `chassis` or `root`); `vendor` is `"photonvision"` or `"limelight"` (anything else is a
+`ParseError` naming `vision.cameras[i].vendor`); `ntName` is the NetworkTables name (PhotonVision nickname, or the Limelight
+table such as `limelight-left`) and falls back to `limelight` for a Limelight and to the `id` otherwise. A camera hangs on the
+chassis or a mechanism link through `attachment` (the same shape and link rules as a zone) at `local`, the pose of the camera
+frame (X forward, Y left, Z up) in that link frame. `intrinsics` give the image size and either `hfovRad` (focal length derived)
+or explicit `fxPx` / `fyPx` / `cxPx` / `cyPx` (0 = derive: `fy` = `fx`, the centre of the image); `distortion` is exactly five
+numbers (k1 k2 p1 p2 k3), published to PhotonVision and not applied. `frameRateHz` (0, 240], `latencyUs` and
+`captureLatencyUs` (the Limelight `cl` share) are device behaviour and always apply; `tagSizeM` 0 means the layout's size,
+`minTagPixels` / `maxViewAngleRad` / `occlusion` / `multiTag` shape detection. `realism` (`cornerNoisePx`, `latencyJitterUs`,
+`dropoutProbability`) is all zero = ideal, the default. `assumedPose` (chassis frame) is what a Limelight believes its mount is;
+absent means the physical pose. `layoutId` picks one of the selected plugin's layouts (empty = its first), `layoutFile` a WPILib
+`AprilTagFieldLayout` JSON that overrides it, and `photonMessageUuid` forces a PhotonVision message UUID (empty = derived from
+the project's photonlib version).
+
+Validator codes (`sdk/config/validation_codes.h`): `camera_id_reserved` (empty, `chassis` or `root`), `camera_id_duplicate`
+(also an id equal to a mechanism or zone id), `camera_name_duplicate` (two *enabled* cameras of one vendor with the same network
+name), `camera_intrinsics_invalid` (size outside 1..16384 px, negative or non-finite parameters, `hfovRad` outside (0, pi) while
+`fxPx` is unset), `camera_frame_rate_invalid`, `camera_latency_invalid` (outside 0..1 s), `camera_tag_params_invalid`,
+`camera_realism_invalid` (negative noise, jitter outside 0..latency, dropout outside 0..1) and `camera_layout_unknown` (W, the
+selected plugin provides layouts but not `layoutId`; not checked with a `layoutFile`). Attachment problems reuse
+`attachment_parent_missing` / `attachment_link_missing` with the path `vision.cameras[i].attachment`. Nothing is validated while
+there are no cameras.
 
 ### Load pipeline
 
