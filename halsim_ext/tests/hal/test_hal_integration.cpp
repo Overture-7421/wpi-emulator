@@ -1,6 +1,8 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <atomic>
+#include <set>
 #include <thread>
 
 #include "fakes.h"
@@ -312,13 +314,23 @@ TEST_CASE("real HAL: camera frames are applied before the step and the camera st
         CHECK(applied[i].frames == 1);
         CHECK(applied[i].fpgaUs == t0 + (tick - 1) * kStepUs);
     }
+    // collectVision also runs outside the ticks (the report at program start, after every idle
+    // poll): always on a tick boundary, and the step of every tick is followed by one.
     const auto collected = probe.collected();
-    REQUIRE(collected.size() == kTicks);
-    CHECK(collected.front().full);
-    for (std::size_t i = 0; i < collected.size(); ++i) {
-        CHECK(collected[i].fpgaUs == t0 + (i + 1) * kStepUs);
-        if (i > 0) CHECK_FALSE(collected[i].full);
+    std::set<std::uint64_t> times;
+    for (const auto& c : collected) {
+        CHECK(c.fpgaUs >= t0);
+        CHECK(c.fpgaUs <= t0 + kTicks * kStepUs);
+        CHECK((c.fpgaUs - t0) % kStepUs == 0);
+        times.insert(c.fpgaUs);
     }
+    for (std::uint64_t tick = 1; tick <= kTicks; ++tick)
+        CHECK(times.count(t0 + tick * kStepUs) == 1);
+    REQUIRE_FALSE(collected.empty());
+    CHECK(collected.front().full);  // the first call of the connection
+    // ... and the first tick lists every camera again: no other call is a full one.
+    CHECK(std::count_if(collected.begin(), collected.end(), [](const auto& c) { return c.full; }) ==
+          2);
 
     rig.runtime->stop();
     CHECK_FALSE(HALSIM_IsTimingPaused());

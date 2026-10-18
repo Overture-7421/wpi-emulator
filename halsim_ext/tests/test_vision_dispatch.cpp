@@ -173,9 +173,14 @@ public:
         }
     }
     void collectVision(std::vector<sdk::CameraRobotState>& out, bool full) override {
-        note("collectVision");
+        // Right after a poll the call is a report outside the tick path (program start, idle
+        // polls); in a tick it follows collectOutputs. The report path only hands out cameras when
+        // asked to.
+        const bool report = lastHook() == "poll";
+        note(report ? "reportVision" : "collectVision");
         std::lock_guard lock(mutex_);
-        fullFlags_.push_back(full);
+        (report ? reportFlags_ : fullFlags_).push_back(full);
+        if (report && !reportOutsideTicks) return;
         for (std::size_t i = 0; i < cameras_.size(); ++i)
             if (full || dirty_[i]) out.push_back(cameras_[i]);
         std::fill(dirty_.begin(), dirty_.end(), false);
@@ -192,6 +197,10 @@ public:
         std::lock_guard lock(mutex_);
         events_.push_back({std::move(eventName), host != nullptr ? host->visionSetupRevision() : 0,
                            std::this_thread::get_id(), started});
+    }
+    std::string lastHook() const {
+        std::lock_guard lock(mutex_);
+        return events_.empty() ? std::string() : events_.back().name;
     }
     // The next applyVision blocks after recording itself until releaseApply(): a clock thread that
     // is stuck inside a bridge call.
@@ -251,6 +260,11 @@ public:
         std::lock_guard lock(mutex_);
         return fullFlags_;
     }
+    // The `full` flag of every collectVision outside a tick (program start, idle polls).
+    std::vector<bool> reportFlags() const {
+        std::lock_guard lock(mutex_);
+        return reportFlags_;
+    }
     std::uint64_t startRevision() const {
         std::lock_guard lock(mutex_);
         return startRevision_;
@@ -265,6 +279,9 @@ public:
     bool logInApply = false;
     std::chrono::milliseconds applyDelay{0};
     std::size_t flood = 0;  // extra, never-changing camera states appended by every collectVision
+    // false: a collectVision right after a poll (not in a tick) returns nothing and keeps the
+    // pending changes for the tick; true: it reports like the vision bridge does.
+    std::atomic<bool> reportOutsideTicks{false};
     std::atomic<int> stops{0};
 
 private:
@@ -276,6 +293,7 @@ private:
     std::vector<std::vector<sdk::VisionFrame>> applied_;
     std::vector<sdk::VisionSetup> appliedSetups_;
     std::vector<bool> fullFlags_;
+    std::vector<bool> reportFlags_;
     std::vector<sdk::CameraRobotState> cameras_;
     std::vector<bool> dirty_;
     std::uint64_t startRevision_ = 0;
@@ -369,6 +387,19 @@ proto::SimControl resetTo(std::uint64_t epoch, std::uint64_t commandId) {
     reset.sessionId = 7;
     reset.runEpoch = epoch;
     return reset;
+}
+
+// A discovery-only (Armed) session: devices are announced, nothing is stepped, no ActuatorFrame.
+proto::HelloAck armedAck() {
+    proto::HelloAck ack = defaultAck();
+    ack.discoveryOnly = true;
+    return ack;
+}
+
+// Position of the first VisionReport / program_started signal in the emulator's message history.
+std::ptrdiff_t historyIndex(const std::vector<int>& history, int type) {
+    const auto it = std::find(history.begin(), history.end(), type);
+    return it == history.end() ? -1 : it - history.begin();
 }
 
 }  // namespace
@@ -793,6 +824,229 @@ TEST_CASE("vision dispatch: a HelloAck without cameras is an empty setup and sti
     Started t;
     CHECK(t.probe.startSetup().empty());
     CHECK(t.probe.startRevision() == 1);
+}
+
+// ---- VisionReport: the camera state outside the tick path ----------------------------------
+
+TEST_CASE("vision report: an armed session reports what the bridge found, before program_started") {
+    Rig rig(armedAck());
+    VisionProbe& probe = addProbe(rig);
+    probe.reportOutsideTicks = true;
+    probe.setCamera(makeState("photon-front"));
+    probe.setCamera(makeState("limelight-rear", 2));
+    REQUIRE(rig.start());
+    rig.clock.started = true;
+    REQUIRE(rig.emulator->waitForLifecycle(2000ms));
+
+    const auto report = rig.emulator->take<proto::VisionReport>(1000ms);
+    REQUIRE(report);
+    REQUIRE(report->cameras.size() == 2);
+    CHECK(report->cameras[0].ntName == "photon-front");
+    CHECK(report->cameras[1].ntName == "limelight-rear");
+    CHECK(report->cameras[1].pipelineIndex == 2);
+    // Reported like the devices: before the program_started signal.
+    const std::vector<int> history = rig.emulator->history();
+    const std::ptrdiff_t reported =
+        historyIndex(history, static_cast<int>(proto::MessageType::VisionReport));
+    const std::ptrdiff_t started = historyIndex(history, FakeEmulator::kHistoryLifecycle);
+    CHECK(reported >= 0);
+    CHECK(reported < started);
+
+    // Once: the bridge is asked again after every poll, but nothing changed since.
+    REQUIRE(waitUntil([&] { return probe.reportFlags().size() >= 5; }));
+    const std::vector<bool> flags = probe.reportFlags();
+    CHECK(flags.front());  // the first call of the connection lists every camera
+    CHECK(std::count(flags.begin(), flags.end(), true) == 1);
+    CHECK(rig.emulator->count<proto::VisionReport>() == 0);
+    CHECK(rig.emulator->count<proto::ActuatorFrame>() == 0);
+}
+
+TEST_CASE("vision report: nothing is sent while no camera was found") {
+    Rig rig(armedAck());
+    VisionProbe& probe = addProbe(rig);
+    probe.reportOutsideTicks = true;
+    REQUIRE(rig.start());
+    rig.clock.started = true;
+    REQUIRE(rig.emulator->waitForLifecycle(2000ms));
+
+    REQUIRE(waitUntil([&] { return probe.reportFlags().size() >= 5; }));  // asked, but empty-handed
+    CHECK(rig.emulator->count<proto::VisionReport>() == 0);
+}
+
+TEST_CASE("vision report: a camera that appears or changes later is reported on its own") {
+    Rig rig(armedAck());
+    VisionProbe& probe = addProbe(rig);
+    probe.reportOutsideTicks = true;
+    probe.setCamera(makeState("photon-front"));
+    REQUIRE(rig.start());
+    rig.clock.started = true;
+    REQUIRE(rig.emulator->waitForLifecycle(2000ms));
+    REQUIRE(rig.emulator->take<proto::VisionReport>(1000ms));  // the full one
+
+    probe.setCamera(makeState("photon-front", 3));
+    const auto changed = rig.emulator->take<proto::VisionReport>(2000ms);
+    REQUIRE(changed);
+    REQUIRE(changed->cameras.size() == 1);
+    CHECK(changed->cameras[0].ntName == "photon-front");
+    CHECK(changed->cameras[0].pipelineIndex == 3);
+
+    probe.setCamera(makeState("limelight-rear"));  // a camera the robot code started to use
+    const auto added = rig.emulator->take<proto::VisionReport>(2000ms);
+    REQUIRE(added);
+    REQUIRE(added->cameras.size() == 1);
+    CHECK(added->cameras[0].ntName == "limelight-rear");
+
+    const std::vector<bool> flags = probe.reportFlags();
+    CHECK(std::count(flags.begin(), flags.end(), true) == 1);  // only the first call was full
+    std::this_thread::sleep_for(100ms);
+    CHECK(rig.emulator->count<proto::VisionReport>() == 0);
+}
+
+TEST_CASE("vision report: nothing is reported while the robot constructor runs") {
+    ExtensionConfig cfg = Rig::defaultConfig();
+    cfg.pollWhileConstructing = true;  // WPIEMU_LIVE_DISCOVERY=1
+    Rig rig(armedAck(), cfg);
+    VisionProbe& probe = addProbe(rig);
+    probe.reportOutsideTicks = true;
+    probe.setCamera(makeState("photon-front"));
+    REQUIRE(rig.start());
+    REQUIRE(waitUntil([&] { return probe.count("poll") >= 3; }));
+    CHECK(probe.count("reportVision") == 0);
+    CHECK(rig.emulator->count<proto::VisionReport>() == 0);
+
+    rig.clock.started = true;
+    REQUIRE(rig.emulator->waitForLifecycle(2000ms));
+    const auto report = rig.emulator->take<proto::VisionReport>(1000ms);
+    REQUIRE(report);
+    CHECK(report->cameras.size() == 1);
+}
+
+TEST_CASE("vision report: lock-step ticks carry the camera state in the ActuatorFrame") {
+    Rig rig;
+    VisionProbe& probe = addProbe(rig);
+    probe.reportOutsideTicks = true;
+    probe.setCamera(makeState("photon-front"));
+    REQUIRE(rig.start());
+    rig.clock.started = true;
+    REQUIRE(rig.emulator->waitForLifecycle(2000ms));
+    REQUIRE(rig.emulator->take<proto::VisionReport>(1000ms));  // program start, as in any session
+
+    // The first ActuatorFrame lists every camera again, whatever was reported before.
+    const auto first = rig.emulator->tick();
+    REQUIRE(first);
+    CHECK(first->vision.size() == 1);
+
+    // A change made by the robot during the step rides that tick's ActuatorFrame ...
+    rig.clock.onStep = [&](std::uint64_t) { probe.setCamera(makeState("photon-front", 3)); };
+    const auto changed = rig.emulator->tick();
+    rig.clock.onStep = nullptr;
+    REQUIRE(changed);
+    REQUIRE(changed->vision.size() == 1);
+    CHECK(changed->vision[0].pipelineIndex == 3);
+    const auto quiet = rig.emulator->tick();
+    REQUIRE(quiet);
+    CHECK(quiet->vision.empty());
+
+    // ... and is not reported a second time: no VisionReport came out of the ticks.
+    CHECK(rig.emulator->count<proto::VisionReport>() == 0);
+}
+
+TEST_CASE("vision report: the first ActuatorFrame after BeginLockstep lists every camera again") {
+    Rig rig(armedAck());
+    VisionProbe& probe = addProbe(rig);
+    probe.reportOutsideTicks = true;
+    probe.setCamera(makeState("photon-front"));
+    probe.setCamera(makeState("limelight-rear"));
+    REQUIRE(rig.start());
+    rig.clock.started = true;
+    REQUIRE(rig.emulator->waitForLifecycle(2000ms));
+    const auto report = rig.emulator->take<proto::VisionReport>(1000ms);
+    REQUIRE(report);
+    CHECK(report->cameras.size() == 2);
+
+    rig.emulator->epoch = 2;
+    REQUIRE(rig.emulator->sendControl(proto::SimCommand::BeginLockstep, 1));
+    const auto begin = rig.emulator->take<proto::SimControlAck>(1000ms);
+    REQUIRE(begin);
+    CHECK(begin->result == proto::ControlResult::Applied);
+
+    const auto first = rig.emulator->tick();
+    REQUIRE(first);
+    CHECK(first->full);
+    CHECK(first->vision.size() == 2);
+    const auto quiet = rig.emulator->tick();
+    REQUIRE(quiet);
+    CHECK(quiet->vision.empty());
+    CHECK(rig.emulator->count<proto::VisionReport>() == 0);
+}
+
+TEST_CASE("vision report: a reconnect starts with a full report again") {
+    ExtensionConfig cfg = Rig::defaultConfig();
+    cfg.reconnect = true;
+    Rig rig(armedAck(), cfg);
+    VisionProbe& probe = addProbe(rig);
+    probe.reportOutsideTicks = true;
+    probe.setCamera(makeState("photon-front"));
+    REQUIRE(rig.start());
+    rig.clock.started = true;
+    REQUIRE(rig.emulator->waitForLifecycle(2000ms));
+    REQUIRE(rig.emulator->take<proto::VisionReport>(1000ms));
+
+    proto::HelloAck second = armedAck();
+    second.sessionId = 8;
+    second.runEpoch = 5;
+    std::unique_ptr<FakeEmulator> old = std::move(rig.emulator);
+    rig.connectNext(second);
+    old->disconnect();
+    REQUIRE(waitUntil([&] { return rig.runtime->stats().sessions == 2; }, 3000ms));
+    REQUIRE(rig.emulator->waitForLifecycle(2000ms));
+
+    const auto again = rig.emulator->take<proto::VisionReport>(1000ms);
+    REQUIRE(again);
+    CHECK(again->cameras.size() == 1);  // everything again, although nothing changed
+    const std::vector<bool> flags = probe.reportFlags();
+    CHECK(std::count(flags.begin(), flags.end(), true) == 2);  // the first call of each connection
+}
+
+TEST_CASE("vision report: a stalled lock-step session keeps reporting") {
+    Rig rig;
+    VisionProbe& probe = addProbe(rig);
+    probe.reportOutsideTicks = true;
+    REQUIRE(rig.start());
+    rig.clock.started = true;
+    REQUIRE(rig.emulator->waitForLifecycle(2000ms));
+    REQUIRE(rig.emulator->tick());
+
+    // 400 ms watchdog: the robot is unfrozen and no ActuatorFrame follows.
+    rig.clock.blockNextStep = true;
+    const auto stalled = rig.emulator->tick({}, 5000, 12.0, 3000ms);
+    REQUIRE(stalled);
+    CHECK(stalled->result == proto::TickResult::RobotStalled);
+
+    // The robot, now running free, starts to use a camera.
+    probe.setCamera(makeState("photon-front"));
+    const auto report = rig.emulator->take<proto::VisionReport>(2000ms);
+    REQUIRE(report);
+    CHECK(report->cameras.size() == 1);
+}
+
+TEST_CASE("vision report: more camera states than the wire allows are cut and reported once") {
+    Rig rig(armedAck());
+    VisionProbe& probe = addProbe(rig);
+    probe.reportOutsideTicks = true;
+    probe.flood = SimSession::kMaxVisionStates + 44;
+    REQUIRE(rig.start());
+    rig.clock.started = true;
+    REQUIRE(rig.emulator->waitForLifecycle(2000ms));
+
+    const auto report = rig.emulator->take<proto::VisionReport>(1000ms);
+    REQUIRE(report);
+    CHECK(report->cameras.size() == SimSession::kMaxVisionStates);
+    const auto isWarning = [](const proto::Log& l) {
+        return l.message.find("camera states") != std::string::npos;
+    };
+    REQUIRE(rig.emulator->take<proto::Log>(1000ms, isWarning));
+    CHECK_FALSE(rig.emulator->take<proto::Log>(100ms, isWarning).has_value());  // only once
 }
 
 // ---- cost without vision ------------------------------------------------------------------

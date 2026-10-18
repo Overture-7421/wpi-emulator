@@ -10,7 +10,8 @@
 //
 // --vision adds two synthetic cameras (a PhotonVision "photon-front" and a Limelight
 // "limelight-rear", vision_scenario.h): their setup rides the HelloAck, camera frames ride the
-// SensorFrames and the camera states the robot process sends back are printed (`CAMERA ...` lines).
+// SensorFrames and the camera states the robot process sends back are printed: `CAMERA tick=N ...`
+// for an ActuatorFrame, `CAMERA_REPORT ...` for a VisionReport (program start, outside the ticks).
 //
 // Prints `WPIEMU_IPC_ENDPOINT=<address>` (and writes it to --endpoint-file) before it blocks in
 // accept().
@@ -124,13 +125,13 @@ const char* vendorName(sdk::CameraVendor vendor) {
     return vendor == sdk::CameraVendor::Limelight ? "limelight" : "photonvision";
 }
 
-// One line per camera state the robot process reported (informational ActuatorFrame::vision).
-void printCameraState(std::uint64_t tick, const sdk::CameraRobotState& s) {
+// One line per camera state the robot process reported (informational): in an ActuatorFrame
+// (`prefix` "CAMERA tick=N") or in a VisionReport outside the tick path ("CAMERA_REPORT").
+void printCameraState(const std::string& prefix, const sdk::CameraRobotState& s) {
     std::printf(
-        "CAMERA tick=%llu name='%s' vendor=%s id='%s' present=%d publishing=%d status='%s' "
-        "frames=%llu",
-        static_cast<unsigned long long>(tick), s.ntName.c_str(), vendorName(s.vendor),
-        s.cameraId.c_str(), s.present ? 1 : 0, s.publishing ? 1 : 0, s.status.c_str(),
+        "%s name='%s' vendor=%s id='%s' present=%d publishing=%d status='%s' frames=%llu",
+        prefix.c_str(), s.ntName.c_str(), vendorName(s.vendor), s.cameraId.c_str(),
+        s.present ? 1 : 0, s.publishing ? 1 : 0, s.status.c_str(),
         static_cast<unsigned long long>(s.framesPublished));
     if (s.pipelineIndex) std::printf(" pipeline=%d", *s.pipelineIndex);
     if (s.ledMode) std::printf(" led=%d", *s.ledMode);
@@ -203,7 +204,8 @@ int main(int argc, char** argv) {
 
     std::map<std::uint32_t, proto::DeviceAnnounce> devices;
     std::map<std::uint64_t, double> lastOutput;  // (device << 16 | signal) -> value
-    std::uint64_t cameraStates = 0;              // CameraRobotState entries received (--vision)
+    std::uint64_t cameraStates = 0;   // CameraRobotState entries in ActuatorFrames (--vision)
+    std::uint64_t cameraReports = 0;  // VisionReport messages (--vision)
     proto::LockstepWindow window;
     window.begin(hs.sessionId, hs.runEpoch);
 
@@ -219,11 +221,15 @@ int main(int argc, char** argv) {
         } else if (const auto* l = std::get_if<proto::Log>(&m)) {
             if (!proto::isLifecycleLog(*l, proto::kLifecycleProgramStarted))
                 std::printf("LOG [%s] %s\n", l->source.c_str(), l->message.c_str());
+        } else if (const auto* report = std::get_if<proto::VisionReport>(&m)) {
+            ++cameraReports;
+            for (const sdk::CameraRobotState& s : report->cameras)
+                printCameraState("CAMERA_REPORT", s);
         } else if (const auto* f = std::get_if<proto::ActuatorFrame>(&m)) {
             if (ackOut != nullptr) *ackOut = *f;
             for (const sdk::CameraRobotState& s : f->vision) {
                 ++cameraStates;
-                printCameraState(f->tick, s);
+                printCameraState("CAMERA tick=" + std::to_string(f->tick), s);
             }
             if (opt.dumpOutputs) {
                 for (const auto& s : f->samples) {
@@ -336,9 +342,10 @@ int main(int argc, char** argv) {
                 static_cast<double>(completed * opt.stepUs) * 1e-6, wallMs,
                 static_cast<unsigned long long>(lastLoops), devices.size());
     if (opt.vision)
-        std::printf("VISION_SUMMARY cameras=%zu framesSent=%llu cameraStates=%llu\n",
+        std::printf("VISION_SUMMARY cameras=%zu framesSent=%llu cameraStates=%llu reports=%llu\n",
                     hello.value().ack.vision.cameras.size(),
                     static_cast<unsigned long long>(visionFramesSent),
-                    static_cast<unsigned long long>(cameraStates));
+                    static_cast<unsigned long long>(cameraStates),
+                    static_cast<unsigned long long>(cameraReports));
     return completed == ticks ? 0 : 10;
 }

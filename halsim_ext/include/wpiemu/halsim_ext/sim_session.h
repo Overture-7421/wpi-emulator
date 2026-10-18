@@ -78,6 +78,8 @@ private:
     std::optional<SessionEnd> dispatch(sdk::proto::Message&& message);
     void onSensorFrame(sdk::proto::SensorFrame&& frame);
     void applyVision(const std::vector<sdk::VisionFrame>& frames);
+    void reportVision();
+    void clampVisionStates();
     void onDsState(sdk::proto::DsState&& state);
     std::optional<SessionEnd> onControl(const sdk::proto::SimControl& control);
     void applyPendingDriverStation();
@@ -104,8 +106,9 @@ private:
     std::vector<sdk::DeviceId> loopback_;
     std::vector<sdk::SignalSample> outputs_;
     std::vector<sdk::CameraRobotState> visionOut_;  // collectVision scratch, swapped into the ack
-    bool visionFull_ = true;      // the next ack lists every camera (connection, Reset, new epoch)
-    bool visionClamped_ = false;  // the "too many camera states" warning was logged
+    bool visionFull_ = true;        // next ack lists every camera (connection, Reset, new epoch)
+    bool visionReportFull_ = true;  // next VisionReport lists every camera (connection start)
+    bool visionClamped_ = false;    // the "too many camera states" warning was logged
     std::optional<sdk::proto::DsState> pendingDs_;
     std::optional<sdk::proto::SensorFrame> deferredFrame_;
     std::uint64_t ticksSinceFull_ = 0;

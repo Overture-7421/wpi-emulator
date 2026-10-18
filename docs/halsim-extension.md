@@ -59,8 +59,8 @@ Environment (all optional except the endpoint; the emulator's launcher sets them
 3. **Clock thread** (the only thread that touches bridges and `HALSIM_StepTiming`): waits for
    `HALSIM_GetProgramStarted()` (polled, so the wait is interruptible; equivalent to `HALSIM_WaitForProgramStart`),
    then until a robot notifier is armed (TimedRobot arms it *after* it observed program start; stepping earlier would
-   shift the loop phase), polls the bridges **once** (every device the constructor created is announced) and sends
-   `Log{source="extension.lifecycle", message="program_started"}` (`sdk/ipc/lifecycle.h`).
+   shift the loop phase), polls the bridges **once** (every device the constructor created is announced), reports the
+   cameras the robot uses (`VisionReport`, see *Vision*) and sends `Log{source="extension.lifecycle", message="program_started"}` (`sdk/ipc/lifecycle.h`).
    **A `SensorFrame` that arrives earlier is held, not stepped.** The emulator must wait for that Log before it
    starts counting the watchdog / advancing physics.
 4. **Per tick** (`SensorFrame` N): apply the latest `DsState` (HALSIM_SetDriverStation*, joysticks, game message,
@@ -162,6 +162,20 @@ applyInputs -> applyVision -> HALSIM_StepTiming -> poll -> collectOutputs -> col
   connection, after an applied `Reset` / `BeginLockstep`, when a frame adopts a newer epoch, and on every full signal
   frame (`fullFrameInterval`). The wire format caps the list at 256 states (`ipc::kMaxVisionCameras`): the surplus is
   cut and one warning is logged, so that an oversized list cannot drop the connection.
+
+**Outside the tick path (`VisionReport`).** Where no `ActuatorFrame` answers a tick, the camera state travels in a
+`proto::VisionReport` (message type 12, no ack, no identity, not part of the tick window): in an Armed
+(`discoveryOnly`) session, before `BeginLockstep` and after `EndLockstep`, in free-running phases, in a stalled or lost
+session, and for projects without configured cameras. The extension calls `collectVision(out, full)` once right after the
+bridge poll at program start (before the `program_started` log, so the emulator learns the cameras the robot uses at the
+moment it learns its devices) and after every later idle poll, and posts ONE report only when `out` is not empty: `full`
+on the first call of a connection (a reconnect starts again), deltas afterwards. Nothing is asked or reported before the
+program started, not even by the live-discovery polls of the constructor phase, and never from a HAL callback or the
+watchdog thread. Lock-step ticks keep using `ActuatorFrame::vision` and send no report. Both paths ask the same bridge,
+which tracks what changed since its previous call, so a change is reported once, by whichever path comes first; the
+first `ActuatorFrame` after `BeginLockstep`, a `Reset`, a new epoch and a reconnect lists every camera again. In
+free-running phases the robot runs concurrently with these calls, which the bridge has to tolerate as it does for
+`poll()`.
 
 **Setup and reconnect.** `HelloAck::vision` (empty when absent) is what `IBridgeHost::visionSetup()` returns for that
 connection. `visionSetupRevision()` is incremented every time a `HelloAck` is adopted, also for an identical setup: on the

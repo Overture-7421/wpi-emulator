@@ -31,23 +31,26 @@ The robot stands still at (2.0, 4.0) facing +X. Both cameras use a 25 ms latency
   corners, yaw/pitch/area and the multi-tag solution of its two tags. The geometry is plain pinhole math
   (`vision_scenario.h`, unit-tested by `test_vision_scenario.cpp`); there is no noise, no alternate solution and no
   occlusion.
-* What comes back in `ActuatorFrame::vision` is printed, one line per camera state (the first ack lists every camera,
-  later acks only what changed), followed by a summary at the end:
+* What comes back is printed, one line per camera state: `CAMERA tick=N ...` for an `ActuatorFrame` (the first ack lists
+  every camera, later acks only what changed) and `CAMERA_REPORT ...` for a `VisionReport` (sent outside the ticks: once
+  right after program start, later only when a camera shows up or changes), followed by a summary at the end:
 
   ```
   VISION_SETUP camera='photon-front' vendor=photonvision size=1280x800 rate=30Hz latency=25000us
   VISION_SETUP camera='limelight-rear' vendor=limelight size=1280x800 rate=90Hz latency=25000us
+  CAMERA_REPORT name='photon-front' vendor=photonvision id='photon-front' present=1 publishing=1 status='' frames=0 pipeline=0
+  CAMERA_REPORT name='limelight-rear' vendor=limelight id='limelight-rear' present=1 publishing=1 status='' frames=0 pipeline=0
   CAMERA tick=1 name='photon-front' vendor=photonvision id='photon-front' present=1 publishing=1 status='' frames=0 pipeline=0
   CAMERA tick=1 name='limelight-rear' vendor=limelight id='limelight-rear' present=1 publishing=1 status='' frames=0 pipeline=0
   ...
-  VISION_SUMMARY cameras=2 framesSent=596 cameraStates=34
+  VISION_SUMMARY cameras=2 framesSent=596 cameraStates=34 reports=1
   ```
   (a 5 s run: 149 PhotonVision and 447 Limelight frames; the captures of the last 30 ms are still in the latency queue).
 
-Without the vision bridge in the extension nothing comes back (`cameraStates=0`): the hooks are no-ops and the run
-still has to finish with all ticks acknowledged. With a robot that uses the cameras (`samples/vision_robot`) expect the
-`CAMERA` lines of both cameras (`status=''` when the camera is fine) and the robot's own `VISION|...` telemetry on its
-stdout (`ph.connected=1`, `ph.targets=2`, `ll.tv=1`, ...).
+Without the vision bridge in the extension nothing comes back (`cameraStates=0 reports=0`): the hooks are no-ops and the
+run still has to finish with all ticks acknowledged. With a robot that uses the cameras (`samples/vision_robot`) expect
+the `CAMERA` lines of both cameras (`status=''` when the camera is fine) and the robot's own `VISION|...` telemetry on
+its stdout (`ph.connected=1`, `ph.targets=2`, `ll.tv=1`, ...).
 
 ```powershell
 cmake --build build\windows-ninja --config Release --target halsim_wpiemu wpiemu_halsim_fake_emulator
