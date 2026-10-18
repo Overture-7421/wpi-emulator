@@ -3,4 +3,5 @@
 target_sources(wpiemu_bridges_vision PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/limelight_math.cpp
     ${CMAKE_CURRENT_LIST_DIR}/limelight_orientation.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/limelight_result.cpp
     ${CMAKE_CURRENT_LIST_DIR}/limelight_vendor.cpp)
