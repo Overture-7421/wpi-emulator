@@ -174,8 +174,15 @@ std::vector<Message> allSamples() {
     lb.loopback = {DeviceId{1}, DeviceId{9}, DeviceId{4000000000u}};
     Goodbye bye;
     bye.reason = "done";
+    VisionReport report;
+    report.cameras.emplace_back();
+    report.cameras[0].ntName = "photon-front";
+    report.cameras[0].cameraId = "front";
+    report.cameras[0].pipelineIndex = 2;
+    report.cameras[0].publishing = true;
+    report.cameras[0].framesPublished = 7;
     return {sampleHello(),   sampleHelloAck(), sampleAnnounce(), lb,  sampleSensor(), sampleActuator(),
-            sampleDs(),      sampleControl(),  sampleControlAck(), log, bye};
+            sampleDs(),      sampleControl(),  sampleControlAck(), log, bye, report};
 }
 
 bool sameSamples(const std::vector<SignalSample>& a, const std::vector<SignalSample>& b) { return a == b; }
@@ -442,7 +449,7 @@ TEST_CASE("codec: a newer peer's extra fields inside length-prefixed records are
 
 TEST_CASE("codec: unknown message types are skippable, not fatal") {
     BinaryMessageCodec codec;
-    for (int type : {0, 12, 200, 65535}) {
+    for (int type : {0, 13, 200, 65535}) {
         const auto r = codec.decode(bytesOf({kWireFormatVersion, type & 0xFF, (type >> 8) & 0xFF, 1, 2, 3}));
         REQUIRE_FALSE(r.ok());
         CHECK(r.error().code == ErrorCode::Unsupported);

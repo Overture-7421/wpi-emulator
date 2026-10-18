@@ -801,6 +801,9 @@ void read(Reader& r, Log& m) {
 void write(Writer& w, const Goodbye& m) { w.str(m.reason); }
 void read(Reader& r, Goodbye& m) { m.reason = r.str(); }
 
+void write(Writer& w, const VisionReport& m) { write(w, m.cameras); }
+void read(Reader& r, VisionReport& m) { read(r, m.cameras); }
+
 template <class T>
 Result<Message> decodeBody(std::span<const std::byte> body) {
     ReadState state;
@@ -857,6 +860,7 @@ Result<Message> BinaryMessageCodec::decode(std::span<const std::byte> frame) con
             case MessageType::Log: return decodeBody<Log>(body);
             case MessageType::Goodbye: return decodeBody<Goodbye>(body);
             case MessageType::SimControlAck: return decodeBody<SimControlAck>(body);
+            case MessageType::VisionReport: return decodeBody<VisionReport>(body);
         }
     } catch (const std::bad_alloc&) {
         return makeError(ErrorCode::Internal, "out of memory while decoding");
