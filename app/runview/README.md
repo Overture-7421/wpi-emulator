@@ -60,21 +60,14 @@ The keyboard joystick (slot 0 by default) uses `W A S D` (left stick), arrow key
   `ZoneRig::update()` recomputes poses and active flags per snapshot without allocating and reports changed
   parts, so `SceneModel` only emits `dataChanged` for zones that moved or switched state.
   `resolveRobotZones()` / `resolveZoneOverlays()` are the plain, testable equivalents.
-* Simulated cameras (`RobotConfig::cameras`, ADR 0017) are drawn by `CameraRig` (`scene_parts.*`), the camera
-  analogue of `ZoneRig`; the View menu's "Cameras" toggle controls them. The pose in the chassis frame is the pose of
-  the attachment link (chassis = identity, a mechanism link = the same link-pose logic as zones, from
-  `MechanismState::links`) times `CameraConfig::local`, so a turret camera turns with the turret. Each camera is a
-  body marker plus the 8 edges of its frustum (thin translucent boxes; geometry from the shared
-  `common/camera_frustum.h`, also used by the editor; length = `maxRangeM` clamped to a readable size), coloured per
-  `CameraKind` (Limelight orange, PhotonVision blue). `ISimSnapshot::cameras()` (matched by camera id; unlisted =
-  inactive) drives the look: while `CameraState::tagsVisible` the frustum is brighter, more opaque and green, the
-  body is lightened; otherwise it is dim. `CameraRig::update()` reports changed parts like `ZoneRig`.
-  `resolveRobotCameras()` is the plain equivalent.
+* Simulated cameras (RobotConfig::cameras, ADR 0017) are not drawn in the run view (the editor shows them); the run view only highlights the field tags a camera sees.
 * AprilTags come from `RunSceneInfo::tags` (the game module's `IGameModule::aprilTagLayout()`, copied by the runtime
   hosts into `HostScene::tags` and by `RunBackendAdapter` into the scene info). `TagRig` draws each tag in the field
-  frame as thin plates (grey border, white plate, black square; +X is the face normal) and its id as a 2D label
-  projected in `RunScene.qml` (`SceneModel::tagLabels`). A tag listed in `CameraState::visibleTagIds` of **any**
-  camera (the union) gets a green border and label. The View menu's "AprilTags" toggle controls plates and labels.
+  frame as a thin backing panel (10.5 in proportions, grey; +X is the face normal) plus a `TagDecal` quad that
+  `TagMarkerModel` / `qml/TagMarker.qml` texture with the official AprilTag 36h11 image from
+  `assets/apriltags/36h11/tag36_11_NNNNN.png` (ids 1-32, Qt resources; ids without an image show only the panel; drop
+  more files in that folder to extend). The run view shows no id labels. A tag listed in `CameraState::visibleTagIds` of **any**
+  camera (the union) gets a green panel and label. The View menu's "AprilTags" toggle controls panels, images and labels.
   Neither toggle is persisted (like Zones).
 * Game HUD: `HudWidgetDescriptor` + `ISimSnapshot::hud()`; nothing game specific lives in this directory.
 

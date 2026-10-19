@@ -1,6 +1,7 @@
 #include "scene_model.h"
 
 #include <QCoreApplication>
+#include <QFile>
 
 #include <algorithm>
 #include <cmath>
@@ -121,48 +122,41 @@ void PartListModel::setLabelShown(const QString& label, bool shown) {
         }
 }
 
-// ---- TagLabelModel -----------------------------------------------------------------------------
-TagLabelModel::TagLabelModel(QObject* parent) : QAbstractListModel(parent) {}
+// ---- TagMarkerModel ----------------------------------------------------------------------------
+TagMarkerModel::TagMarkerModel(QObject* parent) : QAbstractListModel(parent) {}
 
-int TagLabelModel::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : static_cast<int>(items_.size()); }
+int TagMarkerModel::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : static_cast<int>(items_.size()); }
 
-QVariant TagLabelModel::data(const QModelIndex& index, int role) const {
+QVariant TagMarkerModel::data(const QModelIndex& index, int role) const {
     if (!index.isValid() || index.row() < 0 || index.row() >= rowCount()) return {};
     const Item& it = items_[static_cast<std::size_t>(index.row())];
     switch (role) {
-        case TextRole: return it.text;
         case PositionRole: return it.position;
-        case SeenRole: return it.seen;
+        case RotationRole: return it.rotation;
+        case SizeRole: return it.size;
+        case ImageRole: return it.image;
         default: return {};
     }
 }
 
-QHash<int, QByteArray> TagLabelModel::roleNames() const {
-    return {{TextRole, "labelText"}, {PositionRole, "labelPosition"}, {SeenRole, "labelSeen"}};
+QHash<int, QByteArray> TagMarkerModel::roleNames() const {
+    return {{PositionRole, "markerPosition"}, {RotationRole, "markerRotation"}, {SizeRole, "markerSize"}, {ImageRole, "markerImage"}};
 }
 
-void TagLabelModel::setTags(const std::vector<TagOverlay>& tags) {
+void TagMarkerModel::setDecals(const std::vector<TagDecal>& decals) {
     beginResetModel();
     items_.clear();
-    items_.reserve(tags.size());
-    for (const auto& t : tags) {
+    for (const auto& d : decals) {
+        const QString path = QStringLiteral("/wpiemu/runview/assets/apriltags/36h11/tag36_11_%1.png").arg(d.id, 5, 10, QLatin1Char('0'));
+        if (!QFile::exists(QLatin1Char(':') + path)) continue;
         Item it;
-        it.text = QString::number(t.id);
-        it.position = toQt(t.pose.position + sdk::Vec3{0.f, 0.f, t.sizeM * 0.9f});
-        it.seen = t.seen;
+        it.position = toQt(d.pose.position);
+        it.rotation = toQt(d.pose.rotation);
+        it.size = d.sizeM;
+        it.image = QUrl(QStringLiteral("qrc:") + path);
         items_.push_back(std::move(it));
     }
     endResetModel();
-}
-
-void TagLabelModel::updateSeen(const std::vector<TagOverlay>& tags, const std::vector<char>& changed) {
-    const std::size_t n = std::min({tags.size(), items_.size(), changed.size()});
-    for (std::size_t i = 0; i < n; ++i) {
-        if (!changed[i]) continue;
-        items_[i].seen = tags[i].seen;
-        const QModelIndex idx = index(static_cast<int>(i));
-        emit dataChanged(idx, idx, {SeenRole});
-    }
 }
 
 // ---- EntityGroupModel --------------------------------------------------------------------------
@@ -250,7 +244,7 @@ void ViewportTheme::setPalette(const QPalette& p) {
 
 // ---- SceneModel --------------------------------------------------------------------------------
 SceneModel::SceneModel(QObject* parent)
-    : QObject(parent), field_(this), robot_(this), zones_(this), simCameras_(this), tags_(this), tagLabels_(this), entities_(this) {
+    : QObject(parent), field_(this), robot_(this), zones_(this), tags_(this), tagMarkers_(this), entities_(this) {
     resetCamera();
 }
 
@@ -291,23 +285,15 @@ void SceneModel::setSceneInfo(const RunSceneInfo& info) {
         emit zoneLabelsChanged();
     }
 
-    cameraRig_.setScene(info_.config);
-    simCameras_.setParts(cameraRig_.parts(), cameraRig_.labels());
     tagRig_.setLayout(info_.tags);
     tags_.setParts(tagRig_.parts());
-    tagLabels_.setTags(tagRig_.tags());
+    tagMarkers_.setDecals(tagRig_.decals());
 }
 
 void SceneModel::setZonesVisible(bool v) {
     if (v == zonesVisible_) return;
     zonesVisible_ = v;
     emit zonesVisibleChanged();
-}
-
-void SceneModel::setSimCamerasVisible(bool v) {
-    if (v == simCamerasVisible_) return;
-    simCamerasVisible_ = v;
-    emit simCamerasVisibleChanged();
 }
 
 void SceneModel::setTagsVisible(bool v) {
@@ -331,10 +317,8 @@ void SceneModel::updateZones(const sdk::ISimSnapshot* snapshot) {
 }
 
 void SceneModel::updateVision(const sdk::ISimSnapshot* snapshot) {
-    if (cameraRig_.update(snapshot)) simCameras_.updatePoses(cameraRig_.parts(), cameraRig_.changed());
     if (tagRig_.update(snapshot)) {
         tags_.updatePoses(tagRig_.parts(), tagRig_.changed());
-        tagLabels_.updateSeen(tagRig_.tags(), tagRig_.tagChanged());
     }
 }
 

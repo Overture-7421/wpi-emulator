@@ -66,7 +66,7 @@ TEST_CASE("run page: the 3D scene loads and the idle state invites the user to s
     CHECK_FALSE(f.page.speedCombo()->isEnabled());
     CHECK_FALSE(f.page.driverStationPanel()->enableButton()->isEnabled());   // no robot to enable
     CHECK(f.page.driverStationPanel()->modeButton(DsMode::Teleop)->isChecked());   // Teleop is selected from the start
-    CHECK(f.page.viewActions().size() == 7);   // overlays and console live in the shell's View menu
+    CHECK(f.page.viewActions().size() == 6);   // overlays and console live in the shell's View menu
 }
 
 TEST_CASE("run page: start connects, drives the view models and enables the DS") {

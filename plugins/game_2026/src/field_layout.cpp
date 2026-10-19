@@ -116,7 +116,7 @@ void addBumpsAndTrenches(FieldLayout& l, const Frame& f, Alliance a) {
     // Trench: arm from the guardrail to the bump, post next to the bump; the opening under the arm is free.
     const float armLen = cy - d::kHubSizeM / 2 - d::kBumpWidthM;  // the low-Y bump starts here
     const float postY = d::kTrenchOpeningM + d::kTrenchPostWidthM / 2;
-    const float armBottom = d::kTrenchClearanceM, armTop = d::kTrenchHeightM;
+    const float armBottom = d::kTrenchClearanceM, armTop = d::kTrenchArmTopM;
     const std::string n = std::string("trench_") + allianceName(a);
     for (const bool high : {false, true}) {
         const std::string tag = n + (high ? "_high_y" : "_low_y");

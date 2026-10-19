@@ -117,53 +117,6 @@ private:
     std::vector<char> changed_;
 };
 
-// A simulated camera (RobotConfig::cameras) in the chassis frame: body marker plus a translucent frustum.
-struct CameraOverlay {
-    std::string id;
-    std::string label;
-    sdk::CameraKind kind = sdk::CameraKind::Limelight;
-    sdk::Pose3 pose;               // camera frame (+X forward) in the chassis frame
-    float hFovDeg = 75.f;
-    float vFovDeg = 50.f;
-    float frustumLengthM = 1.f;    // min(maxRangeM, display length)
-    bool active = false;           // ISimSnapshot::cameras(): the last frame saw tags; false when not listed
-};
-
-// Resolves every RobotConfig::cameras entry: pose = pose of the attachment link * camera.local (chassis/root =
-// identity, a mechanism link = the same link-pose logic as zones), `active` from the snapshot by camera id.
-std::vector<CameraOverlay> resolveRobotCameras(const sdk::RobotConfig& config, const sdk::ISimSnapshot* snapshot);
-
-// Drawable parts of every camera: per camera one body marker followed by the 8 frustum edges (thin boxes), all
-// in the chassis frame. Mirrors ZoneRig: build once per scene, update() per snapshot without allocating.
-class CameraRig {
-public:
-    static constexpr std::size_t kPartsPerCamera = 9;   // body + 4 edges apex->far corner + 4 far-plane edges
-
-    void setScene(std::shared_ptr<const sdk::RobotConfig> config);
-    // Returns true if any part changed. nullptr = rest pose, every camera inactive.
-    bool update(const sdk::ISimSnapshot* snapshot);
-
-    const std::vector<ScenePart>& parts() const { return parts_; }
-    const std::vector<std::string>& labels() const { return labels_; }
-    const std::vector<char>& changed() const { return changed_; }
-    // One entry per camera, as of the last update().
-    const std::vector<CameraOverlay>& cameras() const { return cameras_; }
-
-private:
-    struct Binding {
-        std::string mechanism;   // empty = chassis frame
-        std::string link = sdk::kRootLink;
-        sdk::Pose3 local;
-        std::vector<sdk::Pose3> edges;   // frustum edge poses in the camera frame
-    };
-    std::shared_ptr<const sdk::RobotConfig> config_;
-    std::vector<CameraOverlay> cameras_;
-    std::vector<Binding> bindings_;
-    std::vector<ScenePart> parts_;
-    std::vector<std::string> labels_;
-    std::vector<char> changed_;
-};
-
 // A field AprilTag; `seen` = some camera listed its id in the latest snapshot.
 struct TagOverlay {
     int id = 0;
@@ -172,26 +125,32 @@ struct TagOverlay {
     bool seen = false;
 };
 
-// Field-frame plates for the AprilTag layout: per tag a border (grey, green while any camera lists the tag's id in
-// the snapshot: the union of CameraState::visibleTagIds), a white plate and the black square.
+// The printed tag: a quad on the tag's face plane that the view textures with the 36h11 image for `id` (10x10 cells =
+// 1 white margin cell + the 8x8 black square). Quad frame: +Z = face normal (tag +X), +X = image right (tag +Y),
+// +Y = image up (tag +Z).
+struct TagDecal {
+    int id = 0;
+    sdk::Pose3 pose;
+    float sizeM = 0.f;   // side of the whole image
+};
+
+// Field-frame drawing of the AprilTag layout: one backing panel per tag (parts(), same order as tags(); grey, green
+// while any camera lists the tag's id in the snapshot: the union of CameraState::visibleTagIds) plus the decals.
 class TagRig {
 public:
-    static constexpr std::size_t kPartsPerTag = 3;
-
     void setLayout(const sdk::AprilTagLayout& layout);
     bool update(const sdk::ISimSnapshot* snapshot);
 
     const std::vector<ScenePart>& parts() const { return parts_; }
     const std::vector<char>& changed() const { return changed_; }
     const std::vector<TagOverlay>& tags() const { return tags_; }
-    // Tags whose `seen` flag flipped in the last update().
-    const std::vector<char>& tagChanged() const { return tagChanged_; }
+    const std::vector<TagDecal>& decals() const { return decals_; }
 
 private:
     std::vector<TagOverlay> tags_;
+    std::vector<TagDecal> decals_;
     std::vector<ScenePart> parts_;
     std::vector<char> changed_;
-    std::vector<char> tagChanged_;
 };
 
 // Static field parts (floor + visuals) and the XY centre of the playing area.

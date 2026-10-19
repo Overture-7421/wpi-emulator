@@ -275,9 +275,8 @@ Technical details: [vision.md](vision.md).
   from your project's `vendordeps` and supports the versions whose result definition it verified (**v2025.3.2, v2026.1.1 to v2026.3.4
   and v2026.7**, see [vision.md](vision.md)). With another version the Console shows one error and **no PhotonVision camera is
   published** (`PhotonCamera` then reports *not connected*); Limelight cameras are unaffected and need no version setting.
-* **In the run view** (the **Cameras** and **AprilTags** items of the **View** menu toggle them): each camera's view pyramid follows the
-  robot (and the turret for a turret camera) and turns **brighter and green while the camera sees at least one tag**; the field shows
-  the season's AprilTags with their ids, and a tag seen by any camera gets a green border. The simulated result is also on
+* **In the run view** (the **AprilTags** item of the **View** menu toggles the tags): the field shows
+  the season's AprilTags as the real 36h11 markers on their panels, and the panel of a tag seen by any camera turns green. The simulated result is also on
   NetworkTables, so AdvantageScope or Shuffleboard connected to the robot see it like on the real robot.
 * **Cameras need a game module**: the tag layout belongs to the season's plugin (2026 in v1). Without one the cameras exist but
   never see a tag.
@@ -423,7 +422,7 @@ extension inert).
 | **Phoenix 6 notes** | Devices are seen through WPILib's SimDevice layer; the emulator drives the **rotor**, so Phoenix applies its own `SensorToMechanismRatio` and offsets (set your real gear ratios in the robot code, not in the emulator's slot). TalonFX/TalonFXS, CANcoder, Pigeon 2, CANdle, CANrange and CANdi are supported; temperature and faults are not simulated; Pigeon 2 has no acceleration input in CTRE's simulation. Phoenix 5 is included but derived from documentation, not tested against the real library. Do not drive a Phoenix device's sim state from your own robot code at the same time as the emulator (two writers); see [bridges-vendor.md](bridges-vendor.md) for the details. |
 | **CANivore bus labels** | Phoenix simulation keys devices by type and CAN ID only, so the **Bus** column in the detected-devices table is blank/unknown: the app cannot tell a CANivore from the roboRIO bus (and never invents a label). The same type + ID on two buses is the same simulated device; mapping it twice shows an *alias conflict*, and the conflicting device runs unmapped until fixed. |
 | **Mechanism does not move** | Check the Validation tab (required motor slot unmapped?) and that the mapped device is the one your code drives. A mechanism only moves when its motor slot is mapped. |
-| **Camera sees no tags / `tv` is 0 / PhotonCamera not connected** | Check that the camera **name** and **type** match your robot code, that the camera is at the pose your code assumes (a camera facing the floor or behind the robot sees nothing), the field of view and range, and that the season has a game module (tags come from it). The view pyramid in the run view lights up when a tag is seen. For PhotonVision also check the console for a PhotonLib version error ([Cameras](#cameras-limelight--photonvision)). Remember there is a latency: results appear `latency` ms after the camera sees the tag. |
+| **Camera sees no tags / `tv` is 0 / PhotonCamera not connected** | Check that the camera **name** and **type** match your robot code, that the camera is at the pose your code assumes (a camera facing the floor or behind the robot sees nothing), the field of view and range, and that the season has a game module (tags come from it). A tag seen by a camera gets a green panel in the run view. For PhotonVision also check the console for a PhotonLib version error ([Cameras](#cameras-limelight--photonvision)). Remember there is a latency: results appear `latency` ms after the camera sees the tag. |
 | **Config file could not be read** | *"The saved robot setup could not be read... set the robot up again"*: rerun the wizard. |
 | **Nothing shows in the 3D view** | Update the graphics driver; Qt Quick 3D needs a working OpenGL/Direct3D device. The app also runs headless for tests only. |
 

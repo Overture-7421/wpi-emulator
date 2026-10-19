@@ -303,7 +303,7 @@ Example: a Limelight-like or Photon-like coprocessor from another vendor (a Luxo
 | `bridges/vision/tests/ntcore_smoke_tests.cpp` (`bridges_vision.ntcore_smoke`) | the ntcore binding against the real ntcore in-process (only when ntcore was found) |
 | `halsim_ext/tests/test_vision_fanout.cpp` | `BridgeSet` fan-out: configure on setup, poll / apply per frame, reset on epoch change |
 | `tests/app_editor/test_cameras.cc`, `test_camera_frustum.cc` | camera config ops, undo, tree, inspector, viewport |
-| `tests/app_runview/test_cameras.cpp` | `CameraRig` (frustum, highlight from the snapshot), AprilTag markers |
+| `tests/app_runview/test_cameras.cpp` | `TagRig` (panel, decals, highlight from the snapshot), AprilTag markers and images |
 | `app/host/tests/e2e_vision_test.cpp` (`e2e.vision_sample`) | opt-in end-to-end on the vision sample robots (below) |
 
 **End-to-end** (opt-in, `WPIEMU_E2E=1`, target `wpiemu_e2e_vision_tests`, CTest `e2e.vision_sample`, label `e2e`; see

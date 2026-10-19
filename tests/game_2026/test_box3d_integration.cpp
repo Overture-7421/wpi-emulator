@@ -93,15 +93,17 @@ TEST_CASE("Box3D: the field's surfaces are where the manual says they are") {
     CHECK(std::fabs(hit.normal.x) == doctest::Approx(std::sin(15.f * 3.14159265f / 180.f)).epsilon(0.02));
     CHECK(hit.normal.z == doctest::Approx(std::cos(15.f * 3.14159265f / 180.f)).epsilon(0.01));
 
-    // trench: free below 22.25 in, solid above; the arm top is 40.25 in
+    // trench: free below 22.25 in, solid up to the 29.75 in arm top, free again in the tag band above it
     hit = rig.world->rayCastClosest({hubX - 2.f, 0.6f, 0.3f}, {1.f, 0.f, 0.f}, 4.f, field);
     CHECK_FALSE(hit.hit);
-    hit = rig.world->rayCastClosest({hubX - 2.f, 0.6f, 0.8f}, {1.f, 0.f, 0.f}, 4.f, field);
+    hit = rig.world->rayCastClosest({hubX - 2.f, 0.6f, 0.65f}, {1.f, 0.f, 0.f}, 4.f, field);
     REQUIRE(hit.hit);
     CHECK(hit.point.x == doctest::Approx(hubX - dim::kTrenchDepthM / 2).epsilon(0.01));
+    hit = rig.world->rayCastClosest({hubX - 2.f, 0.6f, 0.8f}, {1.f, 0.f, 0.f}, 4.f, field);
+    CHECK_FALSE(hit.hit);
     hit = rig.world->rayCastClosest({hubX, 0.6f, 2.f}, {0.f, 0.f, -1.f}, 3.f, field);
     REQUIRE(hit.hit);
-    CHECK(hit.point.z == doctest::Approx(dim::kTrenchHeightM).epsilon(0.01));
+    CHECK(hit.point.z == doctest::Approx(dim::kTrenchArmTopM).epsilon(0.01));
 
     // hub: solid 47 in faces up to the 72 in rim, open on top
     hit = rig.world->rayCastClosest({hubX - 2.f, midY, 1.f}, {1.f, 0.f, 0.f}, 4.f, field);

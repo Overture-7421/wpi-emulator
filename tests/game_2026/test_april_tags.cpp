@@ -24,7 +24,7 @@ sdk::AprilTagLayout moduleLayout() {
     return module->aprilTagLayout();
 }
 
-// Hub faces (the trench tags 1, 6, 7, 12, 17, 22, 23, 28 sit on the trench posts, 13-16 / 29-32 on the walls).
+// Hub faces (the trench tags 1, 6, 7, 12, 17, 22, 23, 28 stand on the trench arms, 13-16 / 29-32 on the walls).
 constexpr int kHubTagIds[] = {2, 3, 4, 5, 8, 9, 10, 11, 18, 19, 20, 21, 24, 25, 26, 27};
 
 }  // namespace
@@ -124,4 +124,21 @@ TEST_CASE("april tags: wall tags face into the field") {
     // The plugin's tower centre line is tag 31's y; the red wall tags are the 180 degree rotated copies.
     CHECK(layout.find(31)->pose.position.y == doctest::Approx(dim::kTowerCenterYM).epsilon(1e-3));
     CHECK(layout.find(15)->pose.position.y == doctest::Approx(dim::kFieldWidthM - dim::kTowerCenterYM).epsilon(1e-3));
+}
+TEST_CASE("april tags: no tag face is buried in a field box") {
+    const sdk::AprilTagLayout layout = game2026AprilTagLayout();
+    const FieldLayout field = buildFieldLayout();
+    for (const sdk::AprilTag& tag : layout.tags) {
+        const float h = static_cast<float>(tag.sizeM) * 0.5f;
+        for (const auto& [u, v] : {std::pair{0.f, 0.f}, {h, h}, {h, -h}, {-h, h}, {-h, -h}}) {
+            const sdk::Vec3 p = tag.pose.transformPoint({0.002f, u, v});  // 2 mm in front of the face
+            for (const FieldBox& b : field.boxes) {
+                const bool inside = std::abs(p.x - b.pose.position.x) < b.sizeM.x / 2 &&
+                                    std::abs(p.y - b.pose.position.y) < b.sizeM.y / 2 &&
+                                    std::abs(p.z - b.pose.position.z) < b.sizeM.z / 2;
+                INFO("tag " << tag.id << " inside " << b.name);
+                CHECK_FALSE(inside);
+            }
+        }
+    }
 }

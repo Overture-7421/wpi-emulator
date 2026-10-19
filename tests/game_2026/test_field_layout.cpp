@@ -67,11 +67,12 @@ TEST_CASE("field layout uses the official REBUILT dimensions") {
     const BumpSpec& b0 = l.bumps.front();
     CHECK(b0.edgeHeightM + b0.depthM / 2 * std::tan(15.f * 3.14159265f / 180.f) == doctest::Approx(b0.ridgeHeightM).epsilon(0.001));
 
-    // trench: arm underside 22.25 in, top 40.25 in, 47 in deep; four arms
+    // trench: arm underside 22.25 in, top 29.75 in (the tag panels stand on it up to 40.25 in), 47 in deep; four arms
     const FieldBox* arm = findBox(l, "trench_blue_low_y_arm");
     REQUIRE(arm != nullptr);
     CHECK(arm->pose.position.z - arm->sizeM.z / 2 == doctest::Approx(0.56515f));
-    CHECK(arm->pose.position.z + arm->sizeM.z / 2 == doctest::Approx(1.02235f));
+    CHECK(arm->pose.position.z + arm->sizeM.z / 2 == doctest::Approx(0.75565f));
+    CHECK(dim::kTrenchArmTopM + dim::inch(10.5) == doctest::Approx(dim::kTrenchHeightM));
     CHECK(arm->sizeM.x == doctest::Approx(1.1938f));
     int arms = 0;
     for (const FieldBox& b : l.boxes) arms += b.name.find("_arm") != std::string::npos ? 1 : 0;

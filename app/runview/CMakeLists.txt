@@ -44,9 +44,17 @@ qt_add_resources(wpiemu_app_runview runview_qml
     FILES
         qml/RunScene.qml
         qml/PartModel.qml
+        qml/TagMarker.qml
         qml/HudStack.qml
         qml/HudWidget.qml
         qml/MechanismPanel.qml)
+
+# Official AprilTag 36h11 images (ids 1-32, 10x10 px) textured onto the field tags.
+file(GLOB WPIEMU_RUNVIEW_TAG_IMAGES CONFIGURE_DEPENDS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/apriltags/36h11/*.png")
+qt_add_resources(wpiemu_app_runview runview_apriltags
+    PREFIX "/wpiemu/runview"
+    FILES ${WPIEMU_RUNVIEW_TAG_IMAGES})
 
 # ---- optional gamepad backend (SDL2) --------------------------------------------------------
 if(WPIEMU_RUNVIEW_SDL2)

@@ -49,8 +49,11 @@ inline constexpr float kBumpEdgeHeightM = kBumpHeightM - kBumpDepthM * 0.5f * kB
 
 // ---- trench ---------------------------------------------------------------------------------
 inline constexpr float kTrenchDepthM = inch(47.0);       // [GM] 5.6 (along X)
-inline constexpr float kTrenchHeightM = inch(40.25);     // [GM] 5.6 top of the arm
+inline constexpr float kTrenchHeightM = inch(40.25);     // [GM] 5.6 overall height = top of the AprilTag panels
 inline constexpr float kTrenchClearanceM = inch(22.25);  // [GM] 5.6 underside of the arm
+// [GM] 5.11: trench tags sit on 10.5 in panels centred 35 in off the floor, standing on the arm, so the arm ends at
+// 35 - 5.25 = 29.75 in and the panels reach the stated 40.25 in (derived).
+inline constexpr float kTrenchArmTopM = inch(29.75);
 inline constexpr float kTrenchOpeningM = inch(50.34);    // [GM] 5.6 free width under the arm (from the guardrail)
 inline constexpr float kTrenchPostWidthM = inch(12.0);   // [MS] 12 in support next to the bump
 
