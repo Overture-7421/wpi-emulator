@@ -123,6 +123,8 @@ const MotorChoice* findMotorBySpec(const sdk::MotorSpec& spec) {
 
 int RobotBasics::wheelCount() const { return isTank() ? 2 * std::max(2, wheelsPerSide) : 4; }
 
+const char* bumperColorFor(sdk::Alliance alliance) { return alliance == sdk::Alliance::Red ? kRedBumper : kBlueBumper; }
+
 RobotBasics defaultBasicsFor(const std::string& kind) {
     RobotBasics b;
     b.drivetrain = kind;
@@ -202,7 +204,7 @@ sdk::RobotConfig buildRobotConfig(const RobotBasics& b, const RobotBuildContext&
         const float len = static_cast<float>(b.frameLengthM);
         const float wid = static_cast<float>(b.frameWidthM);
         const float z = kBumperCentreAboveFloorM - kComHeightM;   // chassis frame origin is the COM
-        const char* color = b.alliance == Alliance::Red ? kRedBumper : kBlueBumper;
+        const char* color = bumperColorFor(b.alliance);
         chassis.primitives.push_back(bumper("bumper_front", {len / 2.f + t / 2.f, 0.f, z}, {t, wid + 2.f * t, kBumperHeightM}, color));
         chassis.primitives.push_back(bumper("bumper_back", {-(len / 2.f + t / 2.f), 0.f, z}, {t, wid + 2.f * t, kBumperHeightM}, color));
         chassis.primitives.push_back(bumper("bumper_left", {0.f, wid / 2.f + t / 2.f, z}, {len, t, kBumperHeightM}, color));
@@ -300,7 +302,7 @@ RobotBasics basicsFromConfig(const sdk::RobotConfig& config) {
     for (const auto& p : config.chassis.primitives) {
         if (p.name == "bumper_front") {
             b.bumperThicknessM = p.sizeM.x;
-            b.alliance = p.color == kBlueBumper ? Alliance::Blue : Alliance::Red;
+            b.alliance = p.color == kBlueBumper ? sdk::Alliance::Blue : sdk::Alliance::Red;
         }
     }
 

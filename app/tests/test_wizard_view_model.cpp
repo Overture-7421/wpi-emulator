@@ -135,14 +135,14 @@ TEST_CASE("switching the drivetrain loads its defaults but keeps the robot name 
     WizardViewModel vm(*env.services);
     RobotBasics b = vm.basics();
     b.name = QStringLiteral("Bessie");
-    b.alliance = Alliance::Blue;
+    b.alliance = sdk::Alliance::Blue;
     b.station = 3;
     vm.setBasics(b);
     vm.setDrivetrainKind(sdk::drivetrain_kind::kTank);
     CHECK(vm.basics().drivetrain == sdk::drivetrain_kind::kTank);
     CHECK(vm.basics().wheelsPerSide == 3);
     CHECK(vm.basics().name == QStringLiteral("Bessie"));
-    CHECK(vm.basics().alliance == Alliance::Blue);
+    CHECK(vm.basics().alliance == sdk::Alliance::Blue);
     CHECK(vm.basics().station == 3);
 }
 
@@ -156,7 +156,7 @@ TEST_CASE("finish saves the model, remembers the alliance and opens the project"
     REQUIRE(waitFor([&] { return vm.toolchainChecked(); }));
     RobotBasics b = vm.basics();
     b.name = QStringLiteral("Wizard bot");
-    b.alliance = Alliance::Blue;
+    b.alliance = sdk::Alliance::Blue;
     b.station = 1;
     b.massKg = 50.0;
     vm.setBasics(b);
@@ -172,7 +172,7 @@ TEST_CASE("finish saves the model, remembers the alliance and opens the project"
     CHECK(s.session().config()->name == "Wizard bot");
     CHECK(s.session().config()->chassis.massKg == doctest::Approx(50.0));
     CHECK(s.session().config()->plugins.count("game_2026") == 1);
-    CHECK(s.session().prefs().alliance == Alliance::Blue);
+    CHECK(s.session().prefs().alliance == sdk::Alliance::Blue);
     CHECK(s.session().prefs().station == 1);
     CHECK(s.recentProjects().lastProject() == project.path());
 }

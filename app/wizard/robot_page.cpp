@@ -250,7 +250,7 @@ void RobotPage::loadFromModel() {
     setIfDifferent(steerRatio_, b.steerGearRatio);
     if (const int i = driveMotor_->findData(b.driveMotor); i >= 0 && driveMotor_->currentIndex() != i) driveMotor_->setCurrentIndex(i);
     if (const int i = steerMotor_->findData(b.steerMotor); i >= 0 && steerMotor_->currentIndex() != i) steerMotor_->setCurrentIndex(i);
-    (b.alliance == Alliance::Red ? redButton_ : blueButton_)->setChecked(true);
+    (b.alliance == sdk::Alliance::Red ? redButton_ : blueButton_)->setChecked(true);
     if (const int i = station_->findData(b.station); i >= 0 && station_->currentIndex() != i) station_->setCurrentIndex(i);
     wheelCountLabel_->setText(tr("%1 wheels").arg(b.wheelCount()));
     updateVisibility();
@@ -298,7 +298,7 @@ void RobotPage::pushToModel() {
     b.steerGearRatio = steerRatio_->value();
     b.driveMotor = driveMotor_->currentData().toString();
     b.steerMotor = steerMotor_->currentData().toString();
-    b.alliance = blueButton_->isChecked() ? Alliance::Blue : Alliance::Red;
+    b.alliance = blueButton_->isChecked() ? sdk::Alliance::Blue : sdk::Alliance::Red;
     b.station = station_->currentData().toInt();
     model_.setBasics(b);
 }

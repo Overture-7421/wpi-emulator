@@ -59,7 +59,7 @@ TEST_CASE("commit writes the app-data copy and the project export, and reopening
 
     sdk::RobotConfig config = sampleConfig(*env.services, session.inspection());
     config.name = "Saved robot";
-    const SaveOutcome outcome = session.commit(config, ProjectPrefs{Alliance::Blue, 1});
+    const SaveOutcome outcome = session.commit(config, ProjectPrefs{sdk::Alliance::Blue, 1});
     CHECK(outcome.ok());
     CHECK(outcome.exportSaved);
     CHECK(QFileInfo::exists(outcome.appDataPath));
@@ -72,7 +72,7 @@ TEST_CASE("commit writes the app-data copy and the project export, and reopening
     REQUIRE(session.open(project.path()).ok());
     REQUIRE(session.hasConfig());
     CHECK(session.config()->name == "Saved robot");
-    CHECK(session.prefs().alliance == Alliance::Blue);
+    CHECK(session.prefs().alliance == sdk::Alliance::Blue);
     CHECK(session.prefs().station == 1);
 }
 

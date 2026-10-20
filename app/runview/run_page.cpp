@@ -281,7 +281,7 @@ void RunPage::selectStartPosition(const QString& id) {
         if (QString::fromStdString(p.id) == id) position = &p;
     backend_.setStartPosition(position != nullptr ? id : QString());
     if (position != nullptr) {
-        ds_.setAlliance(position->alliance == sdk::Alliance::Blue ? DriverStationModel::Alliance::Blue : DriverStationModel::Alliance::Red);
+        ds_.setAlliance(position->alliance);
         console_->append({QDateTime::currentMSecsSinceEpoch(), sdk::LogLevel::Info, LogStream::Emulator, tr("start position"),
                           tr("%1: x %2 m, y %3 m, heading %4°")
                               .arg(position->label.empty() ? id : QString::fromStdString(position->label))

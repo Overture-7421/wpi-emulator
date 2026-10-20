@@ -97,7 +97,7 @@ TEST_CASE("mecanum basics use opposing roller angles on diagonals") {
 
 TEST_CASE("bumpers follow thickness and alliance colour") {
     RobotBasics b;
-    b.alliance = Alliance::Blue;
+    b.alliance = sdk::Alliance::Blue;
     b.bumperThicknessM = 0.08;
     sdk::RobotConfig c = buildRobotConfig(b, {});
     REQUIRE(c.chassis.primitives.size() == 4);
@@ -145,7 +145,7 @@ TEST_CASE("basics round-trip through the config") {
     b.motorsPerWheel = 2;
     b.driveGearRatio = 10.71;
     b.bumperThicknessM = 0.07;
-    b.alliance = Alliance::Blue;
+    b.alliance = sdk::Alliance::Blue;
     const RobotBasics back = basicsFromConfig(buildRobotConfig(b, {}));
     CHECK(back.name == b.name);
     CHECK(back.drivetrain == b.drivetrain);
@@ -156,7 +156,7 @@ TEST_CASE("basics round-trip through the config") {
     CHECK(back.motorsPerWheel == 2);
     CHECK(back.driveGearRatio == doctest::Approx(10.71));
     CHECK(back.bumperThicknessM == doctest::Approx(0.07));
-    CHECK(back.alliance == Alliance::Blue);
+    CHECK(back.alliance == sdk::Alliance::Blue);
     CHECK(back.wheelDiameterM == doctest::Approx(b.wheelDiameterM));
 
     RobotBasics swerve = defaultBasicsFor(sdk::drivetrain_kind::kSwerve);

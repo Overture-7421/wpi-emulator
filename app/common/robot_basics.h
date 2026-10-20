@@ -13,8 +13,6 @@
 
 namespace wpiemu::app {
 
-enum class Alliance { Red, Blue };
-
 struct MotorChoice {
     QString key;     // the SDK motor table key
     QString label;   // shown in the UI
@@ -42,7 +40,7 @@ struct RobotBasics {
     double driveGearRatio = 6.75;       // motor : wheel
     double steerGearRatio = 12.8;       // swerve only
     double bumperThicknessM = 0.0826;   // 3.25 in
-    Alliance alliance = Alliance::Red;
+    sdk::Alliance alliance = sdk::Alliance::Red;
     int station = 2;                    // driver station 1..3
 
     int wheelCount() const;
@@ -55,6 +53,9 @@ struct RobotBasics {
 
 // Sensible starting values when the user switches the drivetrain type.
 RobotBasics defaultBasicsFor(const std::string& drivetrainKind);
+
+// Colour of the bumper primitives of a robot on this alliance; basicsFromConfig() reads the alliance back from it.
+const char* bumperColorFor(sdk::Alliance alliance);
 
 // Range checks with plain-language messages. Errors block the wizard, warnings do not.
 std::vector<sdk::Issue> validateBasics(const RobotBasics& basics);

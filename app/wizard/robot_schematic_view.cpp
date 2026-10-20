@@ -56,7 +56,7 @@ void RobotSchematicView::paintEvent(QPaintEvent*) {
     }
 
     // bumpers (ring) then frame
-    const QColor bumperColor = basics_.alliance == Alliance::Red ? QColor("#c0392b") : QColor("#2b5fd0");
+    const QColor bumperColor(bumperColorFor(basics_.alliance));
     if (bump > 0.0) {
         QPainterPath ring;
         ring.addRoundedRect(rectFor(-outerL / 2, -outerW / 2, outerL / 2, outerW / 2), 7, 7);

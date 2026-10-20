@@ -81,8 +81,7 @@ void RunBackendAdapter::startSimulation() {
         // Until the DS panel says otherwise the emulated DS sits at the station chosen in the wizard.
         const ProjectPrefs& prefs = services_.session().prefs();
         sdk::proto::DsState ds;
-        const int offset = prefs.alliance == Alliance::Red ? 0 : 3;
-        ds.station = static_cast<sdk::proto::AllianceStation>(offset + prefs.station - 1);
+        ds.station = sdk::proto::stationOf(prefs.alliance, prefs.station);
         services_.runtime().setDriverStation(ds);
     }
     services_.runtime().startSimulation();

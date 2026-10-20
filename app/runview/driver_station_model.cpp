@@ -68,7 +68,7 @@ DriverStationModel::DriverStationModel(QSettings* settings, QObject* parent) : Q
 
 void DriverStationModel::load() {
     if (settings_ == nullptr) return;
-    alliance_ = settings_->value(QStringLiteral("runview/ds/alliance"), 0).toInt() == 1 ? Alliance::Blue : Alliance::Red;
+    alliance_ = settings_->value(QStringLiteral("runview/ds/alliance"), 0).toInt() == 1 ? sdk::Alliance::Blue : sdk::Alliance::Red;
     station_ = std::clamp(settings_->value(QStringLiteral("runview/ds/station"), 1).toInt(), 1, 3);
     gameMessage_ = settings_->value(QStringLiteral("runview/ds/gameMessage")).toString();
     matchSettings_.autoSeconds = std::clamp(settings_->value(QStringLiteral("runview/ds/autoSeconds"), 20.0).toDouble(), 1.0, 600.0);
@@ -78,7 +78,7 @@ void DriverStationModel::load() {
 
 void DriverStationModel::save() const {
     if (settings_ == nullptr) return;
-    settings_->setValue(QStringLiteral("runview/ds/alliance"), alliance_ == Alliance::Blue ? 1 : 0);
+    settings_->setValue(QStringLiteral("runview/ds/alliance"), alliance_ == sdk::Alliance::Blue ? 1 : 0);
     settings_->setValue(QStringLiteral("runview/ds/station"), station_);
     settings_->setValue(QStringLiteral("runview/ds/gameMessage"), gameMessage_);
     settings_->setValue(QStringLiteral("runview/ds/autoSeconds"), matchSettings_.autoSeconds);
@@ -115,7 +115,7 @@ sdk::proto::DsState DriverStationModel::state() const {
     s.enabled = enabled_ && !eStopped_;
     s.eStop = eStopped_;
     s.mode = mode();
-    s.station = static_cast<sdk::proto::AllianceStation>((alliance_ == Alliance::Blue ? 3 : 0) + station_ - 1);
+    s.station = sdk::proto::stationOf(alliance_, station_);
     s.matchTimeS = match_.running() ? match_.remainingS() : -1.0;
     s.gameSpecificMessage = gameMessage_.toStdString();
     return s;
@@ -175,7 +175,7 @@ void DriverStationModel::setDsMode(DsMode mode) {
     emit changed();
 }
 
-void DriverStationModel::setAlliance(Alliance alliance) {
+void DriverStationModel::setAlliance(sdk::Alliance alliance) {
     if (alliance == alliance_) return;
     alliance_ = alliance;
     save();

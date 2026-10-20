@@ -19,13 +19,15 @@ QString ProjectPrefsStore::keyFor(const QString& projectPath, const char* field)
 
 ProjectPrefs ProjectPrefsStore::load(const QString& projectPath) const {
     ProjectPrefs prefs;
-    prefs.alliance = store_.value(keyFor(projectPath, "alliance")).toString() == QLatin1String("blue") ? Alliance::Blue : Alliance::Red;
+    prefs.alliance = store_.value(keyFor(projectPath, "alliance")).toString() == QLatin1String(sdk::allianceKey(sdk::Alliance::Blue))
+                         ? sdk::Alliance::Blue
+                         : sdk::Alliance::Red;
     prefs.station = std::clamp(store_.value(keyFor(projectPath, "station"), 2).toInt(), 1, 3);
     return prefs;
 }
 
 void ProjectPrefsStore::save(const QString& projectPath, const ProjectPrefs& prefs) {
-    store_.setValue(keyFor(projectPath, "alliance"), prefs.alliance == Alliance::Blue ? QStringLiteral("blue") : QStringLiteral("red"));
+    store_.setValue(keyFor(projectPath, "alliance"), QString::fromLatin1(sdk::allianceKey(prefs.alliance)));
     store_.setValue(keyFor(projectPath, "station"), std::clamp(prefs.station, 1, 3));
     store_.sync();
 }

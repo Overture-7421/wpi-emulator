@@ -247,10 +247,10 @@ TEST_CASE("driver station: mode change disables, alliance maps to a station") {
     CHECK_FALSE(ds.enabled());
     CHECK(ds.state().mode == sdk::proto::RobotMode::Autonomous);
 
-    ds.setAlliance(DriverStationModel::Alliance::Blue);
+    ds.setAlliance(sdk::Alliance::Blue);
     ds.setStation(3);
     CHECK(ds.state().station == sdk::proto::AllianceStation::Blue3);
-    ds.setAlliance(DriverStationModel::Alliance::Red);
+    ds.setAlliance(sdk::Alliance::Red);
     ds.setStation(2);
     CHECK(ds.state().station == sdk::proto::AllianceStation::Red2);
     ds.setStation(9);
@@ -377,7 +377,7 @@ TEST_CASE("driver station settings persist alliance, station, message and match 
     {
         QSettings s = ts.make();
         DriverStationModel ds(&s);
-        ds.setAlliance(DriverStationModel::Alliance::Blue);
+        ds.setAlliance(sdk::Alliance::Blue);
         ds.setStation(2);
         ds.setGameMessage(QStringLiteral("ABC"));
         MatchSettings m = ds.matchSettings();
@@ -387,7 +387,7 @@ TEST_CASE("driver station settings persist alliance, station, message and match 
     }
     QSettings s = ts.make();
     DriverStationModel again(&s);
-    CHECK(again.alliance() == DriverStationModel::Alliance::Blue);
+    CHECK(again.alliance() == sdk::Alliance::Blue);
     CHECK(again.station() == 2);
     CHECK(again.gameMessage() == QStringLiteral("ABC"));
     CHECK(again.matchSettings().autoSeconds == doctest::Approx(15.0));

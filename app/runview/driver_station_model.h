@@ -59,8 +59,6 @@ bool equalDsState(const sdk::proto::DsState& a, const sdk::proto::DsState& b);
 class DriverStationModel : public QObject {
     Q_OBJECT
 public:
-    enum class Alliance { Red, Blue };
-
     explicit DriverStationModel(QSettings* settings = nullptr, QObject* parent = nullptr);
 
     bool enabled() const { return enabled_; }
@@ -69,7 +67,7 @@ public:
     sdk::proto::RobotMode mode() const;
     DsMode dsMode() const;
     bool practice() const { return practice_; }
-    Alliance alliance() const { return alliance_; }
+    sdk::Alliance alliance() const { return alliance_; }
     int station() const { return station_; }
     const QString& gameMessage() const { return gameMessage_; }
     bool robotAvailable() const { return robotAvailable_; }
@@ -91,7 +89,7 @@ public:
     void clearEStop();
     void setMode(sdk::proto::RobotMode mode);   // selects Auto / Teleop / Test (leaves Practice)
     void setDsMode(DsMode mode);
-    void setAlliance(Alliance alliance);
+    void setAlliance(sdk::Alliance alliance);
     void setStation(int station);   // 1..3
     void setGameMessage(const QString& message);
     void setMatchSettings(const MatchSettings& settings);
@@ -123,7 +121,7 @@ private:
     bool robotAvailable_ = false;
     sdk::proto::RobotMode mode_ = sdk::proto::RobotMode::Teleop;
     bool practice_ = false;
-    Alliance alliance_ = Alliance::Red;
+    sdk::Alliance alliance_ = sdk::Alliance::Red;
     int station_ = 1;
     QString gameMessage_;
     MatchSettings matchSettings_;

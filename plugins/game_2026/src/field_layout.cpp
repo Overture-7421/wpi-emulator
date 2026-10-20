@@ -50,7 +50,7 @@ void addBox(FieldLayout& l, const Frame& f, std::string name, const Pose3& pose,
 
 void addAllianceWall(FieldLayout& l, const Frame& f, Alliance a) {
     namespace d = dim;
-    const std::string n = std::string("wall_") + allianceName(a);
+    const std::string n = std::string("wall_") + sdk::allianceKey(a);
     const float t = d::kAllianceWallThicknessM, h = d::kAllianceWallHeightM, w = d::kFieldWidthM;
     const float lo = d::kOutpostCenterYM - d::kCorralOpeningWidthM * 0.5f;
     const float hi = d::kOutpostCenterYM + d::kCorralOpeningWidthM * 0.5f;
@@ -67,7 +67,7 @@ void addAllianceWall(FieldLayout& l, const Frame& f, Alliance a) {
 
 void addHub(FieldLayout& l, const Frame& f, Alliance a) {
     namespace d = dim;
-    const std::string n = std::string("hub_") + allianceName(a);
+    const std::string n = std::string("hub_") + sdk::allianceKey(a);
     const float s = d::kHubSizeM, t = d::kHubWallThicknessM, top = d::kHubTopZM;
     const float cx = d::kHubCenterXM, cy = d::kHubCenterYM;
     const char* color = allianceColor(a);
@@ -103,7 +103,7 @@ void addBumpsAndTrenches(FieldLayout& l, const Frame& f, Alliance a) {
     const char* color = allianceColor(a);
     for (const float side : {-1.f, 1.f}) {
         BumpSpec b;
-        b.name = std::string("bump_") + allianceName(a) + (side < 0 ? "_low_y" : "_high_y");
+        b.name = std::string("bump_") + sdk::allianceKey(a) + (side < 0 ? "_low_y" : "_high_y");
         b.center = f.point({cx, cy + side * bumpOffsetY, 0.f});
         b.widthM = d::kBumpWidthM;
         b.depthM = d::kBumpDepthM;
@@ -117,7 +117,7 @@ void addBumpsAndTrenches(FieldLayout& l, const Frame& f, Alliance a) {
     const float armLen = cy - d::kHubSizeM / 2 - d::kBumpWidthM;  // the low-Y bump starts here
     const float postY = d::kTrenchOpeningM + d::kTrenchPostWidthM / 2;
     const float armBottom = d::kTrenchClearanceM, armTop = d::kTrenchArmTopM;
-    const std::string n = std::string("trench_") + allianceName(a);
+    const std::string n = std::string("trench_") + sdk::allianceKey(a);
     for (const bool high : {false, true}) {
         const std::string tag = n + (high ? "_high_y" : "_low_y");
         auto yOf = [&](float y) { return high ? d::kFieldWidthM - y : y; };
@@ -130,7 +130,7 @@ void addBumpsAndTrenches(FieldLayout& l, const Frame& f, Alliance a) {
 
 void addTower(FieldLayout& l, const Frame& f, Alliance a) {
     namespace d = dim;
-    const std::string n = std::string("tower_") + allianceName(a);
+    const std::string n = std::string("tower_") + sdk::allianceKey(a);
     const char* color = allianceColor(a);
     const float cy = d::kTowerCenterYM;
     addBox(l, f, n + "_base", at(d::kTowerBaseDepthM / 2, cy, d::kTowerBaseHeightM / 2),
@@ -155,7 +155,7 @@ void addTower(FieldLayout& l, const Frame& f, Alliance a) {
 
 void addDepot(FieldLayout& l, const Frame& f, Alliance a) {
     namespace d = dim;
-    const std::string n = std::string("depot_") + allianceName(a);
+    const std::string n = std::string("depot_") + sdk::allianceKey(a);
     const float cy = d::kDepotCenterYM, bw = d::kDepotBarrierWidthM, h = d::kDepotBarrierHeightM;
     const float half = d::kDepotWidthM / 2;
     addBox(l, f, n + "_front", at(d::kDepotDepthM - bw / 2, cy, h / 2), {bw, d::kDepotWidthM, h}, kSteelColor);
@@ -171,7 +171,7 @@ void addDepot(FieldLayout& l, const Frame& f, Alliance a) {
 
 void addOutpost(FieldLayout& l, const Frame& f, Alliance a) {
     namespace d = dim;
-    const std::string n = std::string("outpost_") + allianceName(a);
+    const std::string n = std::string("outpost_") + sdk::allianceKey(a);
     const float y = d::kOutpostCenterYM;
     // The corral is the region behind the alliance wall where robots push fuel through the base opening.
     const float depth = d::kCorralDepthM, halfW = d::kCorralWidthM / 2;

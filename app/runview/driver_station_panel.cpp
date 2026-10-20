@@ -284,10 +284,10 @@ DriverStationPanel::DriverStationPanel(DriverStationModel& model, JoystickManage
         refresh();
     });
     connect(redAlliance_, &QRadioButton::toggled, this, [this](bool on) {
-        if (on && !updating_) model_.setAlliance(DriverStationModel::Alliance::Red);
+        if (on && !updating_) model_.setAlliance(sdk::Alliance::Red);
     });
     connect(blueAlliance_, &QRadioButton::toggled, this, [this](bool on) {
-        if (on && !updating_) model_.setAlliance(DriverStationModel::Alliance::Blue);
+        if (on && !updating_) model_.setAlliance(sdk::Alliance::Blue);
     });
     connect(station_, &QComboBox::activated, this, [this](int i) { model_.setStation(station_->itemData(i).toInt()); });
     connect(message_, &QLineEdit::textEdited, this, [this](const QString& t) { model_.setGameMessage(t); });
@@ -351,8 +351,8 @@ void DriverStationPanel::refresh() {
     eStop_->setEnabled(model_.robotAvailable() || model_.eStopped());
 
     modeButtons_[std::clamp(static_cast<int>(model_.dsMode()), 0, 3)]->setChecked(true);
-    redAlliance_->setChecked(model_.alliance() == DriverStationModel::Alliance::Red);
-    blueAlliance_->setChecked(model_.alliance() == DriverStationModel::Alliance::Blue);
+    redAlliance_->setChecked(model_.alliance() == sdk::Alliance::Red);
+    blueAlliance_->setChecked(model_.alliance() == sdk::Alliance::Blue);
     station_->setCurrentIndex(model_.station() - 1);
     if (!message_->hasFocus()) message_->setText(model_.gameMessage());
     const MatchSettings& ms = model_.matchSettings();

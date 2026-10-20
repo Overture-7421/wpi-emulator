@@ -44,6 +44,7 @@
 // Threading: transports deliver messages on their own IO thread; consumers hand them to the
 // sim thread via a queue. Messages are value types and thread-safe to move between threads.
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <string>
@@ -56,6 +57,7 @@
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/devices/device_descriptor.h"
 #include "wpiemu/sdk/devices/signal.h"
+#include "wpiemu/sdk/game/alliance.h"
 #include "wpiemu/sdk/vision/camera_frame.h"
 
 namespace wpiemu::sdk::proto {
@@ -221,6 +223,12 @@ struct ActuatorFrame {
 // ---- driver station -------------------------------------------------------------------------------
 enum class RobotMode : std::uint8_t { Teleop = 0, Autonomous = 1, Test = 2 };
 enum class AllianceStation : std::uint8_t { Red1 = 0, Red2, Red3, Blue1, Blue2, Blue3 };
+
+constexpr Alliance allianceOf(AllianceStation s) { return s <= AllianceStation::Red3 ? Alliance::Red : Alliance::Blue; }
+// Station `number` (1..3, clamped) of an alliance.
+constexpr AllianceStation stationOf(Alliance a, int number) {
+    return static_cast<AllianceStation>((a == Alliance::Red ? 0 : 3) + std::clamp(number, 1, 3) - 1);
+}
 
 struct JoystickState {
     bool present = false;

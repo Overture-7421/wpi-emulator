@@ -41,7 +41,8 @@ Scratch experiments go in the git-ignored `spikes/`; never commit them.
 - For device changes, preserve the [identity and feedback contracts](reference/bridges.md);
   a declared CAN address is not necessarily a distinguishable physical simulator device.
 - Define anything several modules need once in the SDK and derive from it, as the
-  [motor table](../sdk/include/wpiemu/sdk/dynamics/motor_model.h) does for core, wizard and editor;
+  [motor table](../sdk/include/wpiemu/sdk/dynamics/motor_model.h) does for core, wizard and editor and
+  [`Alliance`](../sdk/include/wpiemu/sdk/game/alliance.h) does for config, plugins and the UI;
   do not copy tables, validation rules or helpers between modules.
 
 ## Tests

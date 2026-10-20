@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <memory>
+#include <string>
 #include <thread>
 
 #include "wpiemu/sdk/ipc/messages.h"
@@ -27,6 +28,26 @@ TEST_CASE("message type tags follow the variant order (frozen wire ids)") {
     CHECK(proto::typeOf(proto::Message{proto::SimControlAck{}}) == proto::MessageType::SimControlAck);
     CHECK(proto::typeOf(proto::Message{VisionSetup{}}) == proto::MessageType::VisionSetup);
     CHECK(proto::kMinCompatibleProtocolVersion <= proto::kProtocolVersion);
+}
+
+TEST_CASE("driver station numbers map to an alliance and back") {
+    CHECK(proto::allianceOf(proto::AllianceStation::Red1) == Alliance::Red);
+    CHECK(proto::allianceOf(proto::AllianceStation::Red3) == Alliance::Red);
+    CHECK(proto::allianceOf(proto::AllianceStation::Blue1) == Alliance::Blue);
+    CHECK(proto::allianceOf(proto::AllianceStation::Blue3) == Alliance::Blue);
+    for (const Alliance a : {Alliance::Red, Alliance::Blue})
+        for (int number = 1; number <= 3; ++number) {
+            const proto::AllianceStation station = proto::stationOf(a, number);
+            CHECK(proto::allianceOf(station) == a);
+            CHECK(static_cast<int>(station) % 3 + 1 == number);
+        }
+    CHECK(proto::stationOf(Alliance::Red, 1) == proto::AllianceStation::Red1);
+    CHECK(proto::stationOf(Alliance::Blue, 3) == proto::AllianceStation::Blue3);
+    CHECK(proto::stationOf(Alliance::Blue, 0) == proto::AllianceStation::Blue1);   // out of range is clamped
+    CHECK(proto::stationOf(Alliance::Red, 9) == proto::AllianceStation::Red3);
+    CHECK(otherAlliance(Alliance::Red) == Alliance::Blue);
+    CHECK(std::string(allianceKey(Alliance::Blue)) == "blue");
+    CHECK(std::string(allianceKey(Alliance::Red)) == "red");
 }
 
 TEST_CASE("handshake + per-tick exchange across an in-memory channel") {
