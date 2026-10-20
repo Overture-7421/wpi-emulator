@@ -26,9 +26,18 @@ using SimTimeUs = std::int64_t;
 // must divide the robot's kRobotPeriodUs (20 ms) evenly.
 inline constexpr SimTimeUs kDefaultStepUs = 5000;
 inline constexpr SimTimeUs kRobotPeriodUs = 20000;
+inline constexpr double kDefaultStepSeconds = 0.005;   // kDefaultStepUs in seconds
+inline constexpr double kDefaultWheelRadiusM = 0.0508;  // a 4 in wheel
 
 constexpr double usToSeconds(SimTimeUs us) { return static_cast<double>(us) * 1e-6; }
 constexpr SimTimeUs secondsToUs(double s) { return static_cast<SimTimeUs>(s * 1e6 + (s >= 0 ? 0.5 : -0.5)); }
+static_assert(secondsToUs(kDefaultStepSeconds) == kDefaultStepUs);
+
+// Milliseconds and rates <-> integer microseconds. msToUs and frequencyToUs round to the nearest microsecond;
+// frequencyToUs needs a positive rate.
+constexpr double usToMs(SimTimeUs us) { return static_cast<double>(us) / 1000.0; }
+inline SimTimeUs msToUs(double ms) { return static_cast<SimTimeUs>(std::llround(ms * 1000.0)); }
+inline SimTimeUs frequencyToUs(double hz) { return static_cast<SimTimeUs>(std::llround(1e6 / hz)); }
 
 constexpr double degToRad(double deg) { return deg * kDegToRad; }
 constexpr double radToDeg(double rad) { return rad * kRadToDeg; }

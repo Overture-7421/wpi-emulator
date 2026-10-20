@@ -8,6 +8,9 @@
 
 namespace wpiemu::core::mechanisms {
 
+// Default trigger band of a limit switch, in position units (m or rad).
+inline constexpr double kDefaultLimitMargin = 1e-6;
+
 // Position/velocity sensor on a shaft that turns `sensorRatio` times per mechanism-output rotation
 // (a CANcoder on the output = 1, an integrated encoder behind a gearbox = gear ratio).
 struct EncoderModel {
@@ -44,7 +47,7 @@ struct LimitSwitchModel {
 
     double position = 0.0;
     Side side = Side::AtOrAbove;
-    double margin = 1e-6;          // trigger band in position units (m or rad)
+    double margin = kDefaultLimitMargin;   // trigger band in position units (m or rad)
     bool pressedValue = true;
 
     bool pressed(double p) const {

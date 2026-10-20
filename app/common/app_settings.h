@@ -6,6 +6,7 @@
 
 #include "common/key_value_store.h"
 #include "common/unit_system.h"
+#include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::app {
 
@@ -41,7 +42,7 @@ public:
     const AppSettingsData& data() const { return data_; }
     void update(const AppSettingsData& next);
 
-    std::int64_t stepUs() const { return 1000000 / data_.physicsRateHz; }
+    std::int64_t stepUs() const { return sdk::frequencyToUs(data_.physicsRateHz); }
 
 signals:
     void changed(const wpiemu::app::AppSettingsData& data);

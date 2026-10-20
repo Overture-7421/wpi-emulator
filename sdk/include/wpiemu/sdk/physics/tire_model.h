@@ -5,6 +5,7 @@
 #include <utility>
 #include "wpiemu/sdk/core/interface.h"
 #include "wpiemu/sdk/core/registry.h"
+#include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::sdk {
 
@@ -26,8 +27,8 @@ struct TireInput {
     float vLongMps = 0.f;           // contact velocity along the traction axis
     float vLatMps = 0.f;            // contact velocity along the free axis
     float chassisShareMassKg = 1.f; // M / nWheels, used for the implicit lateral damping
-    float wheelRadiusM = 0.0508f;
-    float dt = 0.005f;
+    float wheelRadiusM = static_cast<float>(kDefaultWheelRadiusM);
+    float dt = static_cast<float>(kDefaultStepSeconds);
     bool prescribedMotion = false; // evaluate contact without integrating wheel spin
 };
 

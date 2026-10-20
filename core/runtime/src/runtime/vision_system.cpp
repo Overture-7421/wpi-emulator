@@ -19,7 +19,7 @@ double gaussian(Rng& rng) {
     return std::sqrt(-2.0 * std::log(u1)) * std::cos(kTwoPi * u2);
 }
 
-SimTimeUs periodUs(double fps) { return std::max<SimTimeUs>(1, static_cast<SimTimeUs>(std::llround(1e6 / fps))); }
+SimTimeUs periodUs(double fps) { return std::max<SimTimeUs>(1, frequencyToUs(fps)); }
 
 double distance(const Vec3& a, const Vec3& b) { return static_cast<double>(length(a - b)); }
 
@@ -33,7 +33,7 @@ VisionSystem::VisionSystem(const RobotConfig& config, AprilTagLayout layout)
         CameraRuntime cam;
         cam.config = cfg;
         cam.periodUs = periodUs(cfg.fps);
-        cam.latencyUs = std::max<SimTimeUs>(0, static_cast<SimTimeUs>(std::llround(cfg.latencyMs * 1000.0)));
+        cam.latencyUs = std::max<SimTimeUs>(0, msToUs(cfg.latencyMs));
         cameras_.push_back(std::move(cam));
     }
 }

@@ -12,7 +12,7 @@
 namespace wpiemu::app::runview {
 namespace {
 
-constexpr double kDt = 0.005;
+constexpr double kDt = sdk::kDefaultStepSeconds;
 constexpr float kFieldL = 16.46f;
 constexpr float kFieldW = 8.23f;
 constexpr int kCapacity = 30;
@@ -492,7 +492,7 @@ void FakeRunBackend::tickOnce() {
 void FakeRunBackend::stepWorld() {
     const float dt = static_cast<float>(kDt);
     ++tick_;
-    simUs_ += 5000;
+    simUs_ += sdk::kDefaultStepUs;
 
     const auto& js = ds_.joysticks[0];
     const bool enabled = ds_.enabled && !ds_.eStop;
@@ -528,7 +528,7 @@ void FakeRunBackend::stepWorld() {
         const float wy = vel_.y + omega_ * kWx[i];
         const float speed = std::hypot(wx, wy);
         if (speed > 0.05f) steer_[i] = std::atan2(wy, wx);
-        spin_[i] += (speed * (std::cos(steer_[i]) * wx + std::sin(steer_[i]) * wy >= 0.f ? 1.f : -1.f)) / 0.0508f * dt;
+        spin_[i] += (speed * (std::cos(steer_[i]) * wx + std::sin(steer_[i]) * wy >= 0.f ? 1.f : -1.f)) / static_cast<float>(sdk::kDefaultWheelRadiusM) * dt;
     }
 
     armAngle_ = approach(armAngle_, buttonA ? 1.45f : 0.f, 3.f * dt);

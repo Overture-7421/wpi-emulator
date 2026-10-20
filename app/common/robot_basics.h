@@ -33,7 +33,7 @@ struct RobotBasics {
     double frameWidthM = 0.6858;        // along +Y
     double massKg = 54.0;               // robot with battery and bumpers (~119 lb)
     int wheelsPerSide = 3;              // tank only; swerve and mecanum always have 4 wheels
-    double wheelDiameterM = 0.1016;     // 4 in
+    double wheelDiameterM = 2.0 * sdk::kDefaultWheelRadiusM;     // 4 in
     QString driveMotor = QStringLiteral("kraken_x60");
     int motorsPerWheel = 1;
     QString steerMotor = QStringLiteral("neo_550");  // swerve only

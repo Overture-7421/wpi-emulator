@@ -171,7 +171,7 @@ std::vector<sdk::PropertySpec> axisProperties(const AxisOptions& o, const MotorC
         out.push_back(props::real(k("startPosition"), "Start position", gLim, o.startPosition, -1e4, 1e4, u,
                                   "Position after reset (inside the stops)."));
         if (o.limitSwitchSlots) {
-            out.push_back(props::real(k("limitMargin"), "Limit switch margin", gLim, 1e-6, 0.0, 1.0, u,
+            out.push_back(props::real(k("limitMargin"), "Limit switch margin", gLim, kDefaultLimitMargin, 0.0, 1.0, u,
                                       "Trigger band before the stop."));
             out.push_back(props::flag(k("limitPressedValue"), "Limit reads true when pressed", gLim, true,
                                       "Off for normally-closed wiring (reads false when pressed)."));
@@ -256,7 +256,7 @@ sdk::Result<AxisSettings> readAxisSettings(const AxisOptions& o, const sdk::Valu
             return invalidProp(k("maxPosition"), "must not be below the minimum position");
         if (s.limited && (s.startPosition < p.minPosition || s.startPosition > p.maxPosition))
             return invalidProp(k("startPosition"), "must lie within the stops");
-        s.limitMargin = getDouble(props, k("limitMargin"), 1e-6);
+        s.limitMargin = getDouble(props, k("limitMargin"), kDefaultLimitMargin);
         s.limitPressedValue = getBool(props, k("limitPressedValue"), true);
     }
 

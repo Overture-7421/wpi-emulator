@@ -236,7 +236,7 @@ void DemoRuntimeHost::setPaused(bool paused) {
 
 void DemoRuntimeHost::stepTicks(int ticks) {
     if (!paused_) return;
-    for (int i = 0; i < std::max(1, ticks); ++i) integrate(0.005);
+    for (int i = 0; i < std::max(1, ticks); ++i) integrate(sdk::kDefaultStepSeconds);
     publish();
 }
 
@@ -285,7 +285,7 @@ void DemoRuntimeHost::integrate(double dt) {
 void DemoRuntimeHost::publish() {
     sdk::SimSnapshotData data;
     data.tick = tick_;
-    data.simTimeUs = static_cast<sdk::SimTimeUs>(tick_) * 5000;
+    data.simTimeUs = static_cast<sdk::SimTimeUs>(tick_) * sdk::kDefaultStepUs;
     data.paused = paused_;
     data.robotConnected = status_.link == HostLinkState::Connected;
     data.driverStation = ds_;

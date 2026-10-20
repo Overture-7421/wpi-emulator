@@ -49,7 +49,7 @@ struct AxisOptions {
     double massKg = 2.0;             // Arm / Linear
     double lengthM = 0.3;            // Arm: pivot to tip
     double comFraction = 0.5;        // Arm: centre of mass as a fraction of lengthM
-    double drumRadiusM = 0.02;       // Linear
+    double drumRadiusM = sdk::kDefaultDrumRadiusM;       // Linear
     bool gravity = false;
     bool armGravityEnabled = true;
     bool linearGravityEnabled = true;
@@ -80,7 +80,7 @@ struct AxisSettings {
     bool reportMotorLimits = false;
     EncoderModel encoder;
     bool limited = false;
-    double limitMargin = 1e-6;
+    double limitMargin = kDefaultLimitMargin;
     bool limitPressedValue = true;
     double startPosition = 0.0;
 };

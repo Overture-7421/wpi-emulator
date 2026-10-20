@@ -76,6 +76,12 @@ TEST_CASE("units convert to SI") {
     CHECK(rpmToRadPerSec(60.0) == doctest::Approx(kTwoPi));
     CHECK(secondsToUs(0.005) == 5000);
     CHECK(usToSeconds(5000) == doctest::Approx(0.005));
+    CHECK(msToUs(40.0) == 40000);
+    CHECK(msToUs(0.0006) == 1);                 // rounds to the nearest microsecond
+    CHECK(usToMs(1500) == doctest::Approx(1.5));
+    CHECK(frequencyToUs(200.0) == kDefaultStepUs);
+    CHECK(frequencyToUs(30.0) == 33333);
+    CHECK(kDefaultWheelRadiusM == doctest::Approx(inchesToMeters(2.0)));   // a 4 in wheel
 }
 
 TEST_CASE("angles wrap to the half-open range around zero and convert in float") {

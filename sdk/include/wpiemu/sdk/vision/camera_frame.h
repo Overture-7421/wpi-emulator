@@ -46,7 +46,7 @@ struct CameraFrame {
 
     // How long the result took to be published (publish - capture); never negative.
     SimTimeUs latencyUs() const { return std::max<SimTimeUs>(0, publishTimeUs - captureTimeUs); }
-    double latencyMs() const { return static_cast<double>(latencyUs()) / 1000.0; }
+    double latencyMs() const { return usToMs(latencyUs()); }
 };
 
 // What the extension needs to create the NetworkTables topics of one camera before the first frame.

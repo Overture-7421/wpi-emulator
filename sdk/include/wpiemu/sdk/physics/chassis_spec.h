@@ -51,7 +51,7 @@ struct WheelSpec {
     std::string name;                // unique within the drivetrain: "fl", "fr", "left0", ...
     WheelKind kind = WheelKind::Standard;
     Vec3 positionM;                  // wheel hub in the chassis frame (z = hub height above the floor in the rest pose)
-    float radiusM = 0.0508f;         // 4 in
+    float radiusM = static_cast<float>(kDefaultWheelRadiusM);   // 4 in
     float widthM = 0.038f;
     float inertiaKgM2 = 1.5e-3f;     // wheel + rotating hardware
     TireParams tire;
