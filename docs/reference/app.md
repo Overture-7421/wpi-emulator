@@ -11,7 +11,10 @@ Build and test commands belong to [Building](../BUILDING.md); controls belong to
 [`AppServices`](../../app/common/app_services.h) is the application composition root.
 It owns the registries, persistence/model services, project session, and injected runtime host;
 `main()` passes it to the shell by reference. Built-in games enter through the plugin
-aggregator, not direct season dependencies.
+aggregator, not direct season dependencies. Inside `app/` the boundary checker also enforces the
+layering: the host contract and the page libraries (editor, run view) include and link only the
+SDK (and, for the run view, the contract) plus two shared Qt-free headers; `common`, `host`, `wizard`
+and `shell` compose them.
 
 [`IRuntimeHost`](../../app/contract/runtime_host.h) is the UI-thread seam for robot-process and
 link status, scene descriptions, immutable snapshots, logs, and run commands. It lives in the

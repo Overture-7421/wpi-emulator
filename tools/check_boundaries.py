@@ -11,6 +11,8 @@ Rules (see docs/ARCHITECTURE.md):
   * The distinct bridges/ seam may see bridge modules; only halsim_ext may link it.
     Unknown first-party targets fail closed, including implementation subtargets.
   * Non-app headers must not use identifiers that Qt turns into macros (signals, slots, emit, foreach).
+  * Inside app/, the host contract and the page libraries (editor, run view) see only the SDK, the contract
+    and the shared Qt-free headers; the shell, wizard and common layers sit above them.
 
 Owners are directories; ALLOWED maps an owner to the owners it may depend on.
 Run:  check_boundaries.py [--root DIR]     |     check_boundaries.py --self-test
@@ -32,6 +34,15 @@ CMAKE_EXTS = {".cmake"}
 IGNORED_TOP = {"docs", "spikes", "packaging", "tools", "cmake", "build", "out", "node_modules"}
 IGNORED_PARTS = {"_deps", ".fetchcontent-cache", ".git", ".github", ".vs", ".idea"}
 
+# app/ is split by directory so its internal layering is enforced too (see docs/reference/app.md): the host contract and
+# the page libraries link only the SDK (plus Qt), common/host/wizard/shell compose them.
+APP_DIRS = ("common", "host", "shell", "wizard", "editor", "runview", "contract")
+APP_ALL = {f"app/{d}" for d in APP_DIRS}
+# Qt-free header-only helpers that live in app/common but are shared with the page libraries; they are checked as
+# their own owner (SDK only) and every app layer may include them.
+SHARED_APP_HEADERS = {"app/common/orbit_camera.h", "app/common/camera_frustum.h"}
+SHARED_APP = "app/shared"
+
 # owner -> owners it may reference (itself is always allowed).
 ALLOWED: dict[str, set[str]] = {
     "sdk": set(),
@@ -42,7 +53,16 @@ ALLOWED: dict[str, set[str]] = {
     "bridges/hal": {"sdk"},
     "bridges/vendor": {"sdk"},
     "bridges/vision": {"sdk"},
-    "app": {"sdk", "core", "ipc", "plugins"},
+    # Top-level app files (main.cpp, app/tests): the composition root and its tests may see every app layer.
+    "app": {"sdk", "core", "ipc", "plugins", SHARED_APP} | APP_ALL,
+    SHARED_APP: {"sdk"},
+    "app/contract": {"sdk"},
+    "app/editor": {"sdk", SHARED_APP},
+    "app/runview": {"sdk", "app/contract", SHARED_APP},
+    "app/host": {"sdk", "core", "ipc", "plugins"},
+    "app/common": {"sdk", "core", "ipc", "plugins", "app/host", "app/contract", SHARED_APP},
+    "app/wizard": {"sdk", "core", "ipc", "app/common", "app/contract", SHARED_APP},
+    "app/shell": {"sdk", "core", "ipc", "app/common", "app/contract", "app/editor", "app/runview", "app/wizard", SHARED_APP},
 }
 # Any plugin ("plugins/<name>") may reference only these (plus itself).
 PLUGIN_ALLOWED = {"sdk"}
@@ -52,7 +72,8 @@ PLUGIN_ALLOWED = {"sdk"}
 AGGREGATOR = "plugins"
 AGGREGATOR_ALLOWED = {"sdk", AGGREGATOR, "plugins/*"}
 
-MODULE_OWNERS = ["sdk", "core", "ipc", "halsim_ext", "bridges", "bridges/hal", "bridges/vendor", "bridges/vision", "app"]
+MODULE_OWNERS = ["sdk", "core", "ipc", "halsim_ext", "bridges", "bridges/hal", "bridges/vendor", "bridges/vision", "app",
+                 SHARED_APP, *sorted(APP_ALL)]
 
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]', re.MULTILINE)
 QT_KEYWORD_RE = re.compile(r"\b(signals|slots|emit|foreach|Q_SIGNALS|Q_SLOTS|Q_EMIT|Q_FOREACH)\b")
@@ -93,19 +114,19 @@ TARGET_OWNERS = {
     "wpiemu_bridges_vision_nt": "bridges/vision",
     "wpiemu_bridges_vision_nt_tests": "bridges/vision",
     "wpiemu_app": "app",
-    "wpiemu_app_common": "app",
-    "wpiemu_app_contract": "app",
-    "wpiemu_app_host": "app",
-    "wpiemu_app_shell": "app",
-    "wpiemu_app_editor": "app",
-    "wpiemu_app_runview": "app",
+    "wpiemu_app_common": "app/common",
+    "wpiemu_app_contract": "app/contract",
+    "wpiemu_app_host": "app/host",
+    "wpiemu_app_shell": "app/shell",
+    "wpiemu_app_editor": "app/editor",
+    "wpiemu_app_runview": "app/runview",
     "wpiemu_app_tests": "app",
-    "wpiemu_host_tests": "app",
-    "wpiemu_e2e_tests": "app",
-    "wpiemu_e2e_vision_tests": "app",
-    "wpiemu_app_editor_tests": "app",
-    "wpiemu_editor_demo": "app",
-    "wpiemu_runview_demo": "app",
+    "wpiemu_host_tests": "app/host",
+    "wpiemu_e2e_tests": "app/host",
+    "wpiemu_e2e_vision_tests": "app/host",
+    "wpiemu_app_editor_tests": "app/editor",
+    "wpiemu_editor_demo": "app/editor",
+    "wpiemu_runview_demo": "app/runview",
     "wpiemu_tests": "tests",
     "wpiemu_sdk_header_check": "tests",
     "wpiemu_runview_tests": "tests",
@@ -129,7 +150,13 @@ def owner_of_path(rel: str) -> str | None:
         return f"bridges/{parts[1]}"
     if parts[0] == "bridges" and len(parts) == 2:
         return "bridges"
-    if parts[0] in ("sdk", "core", "ipc", "halsim_ext", "app"):
+    if parts[0] == "app":
+        if rel in SHARED_APP_HEADERS:
+            return SHARED_APP
+        if len(parts) >= 3 and parts[1] in APP_DIRS:
+            return f"app/{parts[1]}"
+        return "app"
+    if parts[0] in ("sdk", "core", "ipc", "halsim_ext"):
         return parts[0]
     return None
 
@@ -184,6 +211,12 @@ def classify_include(src_rel: str, target: str, quoted: bool, known: set[str]) -
                 idx = k.find(marker)
                 if idx >= 0 and k[idx + len(marker):] == posixpath.normpath(t):
                     return owner_of_path(k)
+        # app/ includes are rooted at their own directory ("views/x.h") or at app/ ("common/x.h", "contract/runtime_host.h").
+        if src_rel.startswith("app/"):
+            for base in (src_rel.split("/")[1], ""):
+                app_cand = posixpath.normpath(posixpath.join("app", base, t))
+                if app_cand in known:
+                    return owner_of_path(app_cand)
 
     m = NAMESPACED_RE.match(t)
     if m:
@@ -202,6 +235,9 @@ def classify_include(src_rel: str, target: str, quoted: bool, known: set[str]) -
         if len(parts) >= 3 and parts[0] == "bridges":
             return f"bridges/{parts[1]}"
         if len(parts) >= 2 and quoted and parts[0] in ("core", "app", "ipc", "sdk", "halsim_ext"):
+            # An include inside app/ that matched nothing above is generated or third-party, not another module.
+            if parts[0] == "app" and src_rel.startswith("app/"):
+                continue
             return parts[0]
     return None
 
@@ -286,7 +322,7 @@ def scan_qt_keywords(rel: str, text: str) -> list[str]:
     """Headers shared with the Qt app must not use identifiers Qt turns into macros
     (`signals`, `slots`, `emit`, `foreach`, ...): they break when included after a Qt header."""
     owner = owner_of_path(rel)
-    if owner is None or owner == "app" or not rel.endswith((".h", ".hh", ".hpp", ".hxx", ".inl")):
+    if owner is None or (owner.startswith("app") and owner != SHARED_APP) or not rel.endswith((".h", ".hh", ".hpp", ".hxx", ".inl")):
         return []
     stripped = re.sub(r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"', lambda m: re.sub(r"[^\n]", " ", m.group(0)), text, flags=re.DOTALL)
     errors = []
@@ -341,6 +377,16 @@ def self_test() -> int:
         "plugins/game_2027/include/wpiemu/plugins/game_2027/q.h",
         "plugins/builtin_plugins.cpp",
         "bridges/builtin_bridges.cpp",
+        "app/contract/runtime_host.h",
+        "app/common/app_services.h",
+        "app/common/orbit_camera.h",
+        "app/common/camera_frustum.h",
+        "app/host/robot_session.h",
+        "app/shell/page_factory.h",
+        "app/editor/editor_page.h",
+        "app/editor/model/config_ops.h",
+        "app/runview/run_page.h",
+        "app/wizard/wizard_dialog.h",
     }
     cases = [
         # (rel, text, expected_error_count)
@@ -373,6 +419,27 @@ def self_test() -> int:
         ("bridges/vision/src/a.cpp", '#include "wpiemu/core/c.h"\n#include "wpiemu/halsim_ext/x.h"\n', 2),
         ("bridges/hal/src/a.cpp", '#include <wpiemu/bridges/vision/a.h>\n', 1),
         ("bridges/builtin_bridges.cpp", '#include <wpiemu/bridges/vision/a.h>\n#include <wpiemu/bridges/vision/nt_binding.h>\n', 0),
+        # app/ layering: the contract and the page libraries see the SDK, the contract and the shared headers only
+        ("app/runview/run_page.cpp", '#include "contract/runtime_host.h"\n#include "run_page.h"\n#include <wpiemu/sdk/a.h>\n', 0),
+        ("app/runview/run_page.cpp", '#include "common/app_services.h"\n', 1),
+        ("app/runview/run_page.cpp", '#include "common/orbit_camera.h"\n', 0),
+        ("app/runview/run_page.cpp", '#include "wpiemu/core/c.h"\n', 1),
+        ("app/runview/run_page.cpp", '#include "shell/page_factory.h"\n#include "host/robot_session.h"\n', 2),
+        ("app/editor/views/page.cpp", '#include "common/camera_frustum.h"\n#include "model/config_ops.h"\n', 0),
+        ("app/editor/views/page.cpp", '#include "contract/runtime_host.h"\n', 1),
+        ("app/editor/views/page.cpp", '#include "common/app_services.h"\n', 1),
+        ("app/contract/runtime_host.cpp", '#include "contract/runtime_host.h"\n#include <wpiemu/sdk/a.h>\n', 0),
+        ("app/contract/runtime_host.cpp", '#include "common/app_services.h"\n', 1),
+        ("app/common/app_services.cpp", '#include "contract/runtime_host.h"\n#include "host/robot_session.h"\n#include "wpiemu/core/c.h"\n', 0),
+        ("app/common/app_services.cpp", '#include "shell/page_factory.h"\n#include "runview/run_page.h"\n', 2),
+        ("app/host/robot_session.cpp", '#include "host/robot_session.h"\n#include "wpiemu/core/c.h"\n', 0),
+        ("app/host/robot_session.cpp", '#include "common/app_services.h"\n#include "contract/runtime_host.h"\n', 2),
+        ("app/wizard/wizard_dialog.cpp", '#include "common/app_services.h"\n#include "contract/runtime_host.h"\n', 0),
+        ("app/wizard/wizard_dialog.cpp", '#include "shell/page_factory.h"\n', 1),
+        ("app/shell/page_factory.cpp", '#include "runview/run_page.h"\n#include "editor/editor_page.h"\n#include "wizard/wizard_dialog.h"\n#include "common/app_services.h"\n', 0),
+        ("app/main.cpp", '#include "shell/page_factory.h"\n#include "common/app_services.h"\n', 0),
+        ("app/common/orbit_camera.h", '#include "wpiemu/sdk/a.h"\n', 0),
+        ("app/common/orbit_camera.h", '#include "contract/runtime_host.h"\n', 1),
     ]
     failures = 0
     for rel, text, expected in cases:
@@ -469,6 +536,35 @@ def self_test() -> int:
          "add_executable(wpiemu_tests main.cpp)\ntarget_link_libraries(wpiemu_tests PRIVATE wpiemu_bridges_hal wpiemu_core)\n", 0),
         ("tests/CMakeLists.txt",
          "add_executable(wpiemu_unmapped_tests main.cpp)\ntarget_link_libraries(wpiemu_tests PRIVATE wpiemu_unknown)\n", 2),
+        # app/ layering
+        ("app/contract/CMakeLists.txt",
+         "qt_add_library(wpiemu_app_contract STATIC runtime_host.cpp)\ntarget_link_libraries(wpiemu_app_contract PUBLIC wpiemu_sdk Qt6::Core)\n", 0),
+        ("app/contract/CMakeLists.txt",
+         "target_link_libraries(wpiemu_app_contract PUBLIC wpiemu_sdk wpiemu_core)\n", 1),
+        ("app/runview/CMakeLists.txt",
+         "qt_add_library(wpiemu_app_runview STATIC a.cpp)\ntarget_link_libraries(wpiemu_app_runview PUBLIC wpiemu_sdk wpiemu_app_contract Qt6::Core)\n", 0),
+        ("app/runview/CMakeLists.txt",
+         "target_link_libraries(wpiemu_app_runview PUBLIC wpiemu_sdk wpiemu_core)\n", 1),
+        ("app/runview/CMakeLists.txt",
+         "target_link_libraries(wpiemu_app_runview PUBLIC wpiemu_app_common wpiemu_plugins_builtin)\n", 2),
+        ("app/runview/CMakeLists.txt",
+         "qt_add_executable(wpiemu_runview_demo demo/main.cpp)\ntarget_link_libraries(wpiemu_runview_demo PRIVATE wpiemu_app_runview)\n", 0),
+        ("app/editor/CMakeLists.txt",
+         "target_link_libraries(wpiemu_app_editor PUBLIC wpiemu_sdk Qt6::Core)\n", 0),
+        ("app/editor/CMakeLists.txt",
+         "target_link_libraries(wpiemu_app_editor PUBLIC wpiemu_sdk wpiemu_app_contract)\n", 1),
+        ("app/host/CMakeLists.txt",
+         "add_library(wpiemu_app_host STATIC robot_session.cpp)\ntarget_link_libraries(wpiemu_app_host PUBLIC wpiemu_core wpiemu_ipc wpiemu_sdk)\n", 0),
+        ("app/host/CMakeLists.txt",
+         "target_link_libraries(wpiemu_app_host PUBLIC wpiemu_app_common)\n", 1),
+        ("app/common/CMakeLists.txt",
+         "add_library(wpiemu_app_common STATIC a.cpp)\ntarget_link_libraries(wpiemu_app_common PUBLIC wpiemu_sdk wpiemu_core wpiemu_app_host wpiemu_app_contract PRIVATE wpiemu_plugins_builtin)\n", 0),
+        ("app/common/CMakeLists.txt",
+         "target_link_libraries(wpiemu_app_common PUBLIC wpiemu_app_runview wpiemu_app_shell)\n", 2),
+        ("app/shell/CMakeLists.txt",
+         "target_link_libraries(wpiemu_app_shell PUBLIC wpiemu_app_common wpiemu_app_editor wpiemu_app_runview)\n", 0),
+        ("app/runview/CMakeLists.txt",
+         "add_library(wpiemu_app_editor STATIC a.cpp)\n", 1),
     ]
     for rel, text, expected in cmake_cases:
         got = len(scan_cmake(rel, text))
@@ -494,6 +590,9 @@ def self_test() -> int:
         ("sdk/include/wpiemu/sdk/a.h", "// the slots and signals\nconst char* s = \"slots\";\n/* emit */ int ok;\n", 0),
         ("plugins/game_2026/include/wpiemu/plugins/game_2026/p.h", "int emit;\n", 1),
         ("app/src/main.cpp", "int signals;\n", 0),
+        ("app/contract/runtime_host.h", "signals:\n    void changed();\n", 0),
+        ("app/common/orbit_camera.h", "int emit;\n", 1),
+        ("app/common/app_services.h", "int emit;\n", 0),
         ("core/src/c.cpp", "int signals;\n", 0),
     ]
     for rel, text, expected in kw_cases:
