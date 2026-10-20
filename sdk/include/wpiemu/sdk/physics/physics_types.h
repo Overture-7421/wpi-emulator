@@ -106,11 +106,14 @@ struct ContactEvent {
     float approachSpeed = 0.f;
 };
 
+// Default gravity magnitude of the simulation (PhysicsConfig, the chassis IMU and the traction model all use it).
+inline constexpr float kDefaultGravityMps2 = 9.81f;
+
 struct PhysicsConfig {
     int workerCount = 1;  // 1 = deterministic default
     int subSteps = 4;     // at the 200 Hz fixed step (docs/reference/physics.md)
     bool sleeping = true;
-    Vec3 gravity{0.f, 0.f, -9.81f};
+    Vec3 gravity{0.f, 0.f, -kDefaultGravityMps2};
 };
 
 struct PhysicsStats {
