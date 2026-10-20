@@ -1,8 +1,7 @@
 # Game-agnostic simulation core. Knows nothing about any season.
-add_library(wpiemu_core STATIC src/core_info.cpp)
+add_library(wpiemu_core STATIC)
 add_library(wpiemu::core ALIAS wpiemu_core)
-target_include_directories(wpiemu_core PUBLIC include)
-target_link_libraries(wpiemu_core PUBLIC wpiemu_sdk PRIVATE box3d)
+target_link_libraries(wpiemu_core PUBLIC wpiemu_sdk)
 wpiemu_target_defaults(wpiemu_core)
 add_subdirectory(runtime)
 add_subdirectory(mechanisms)

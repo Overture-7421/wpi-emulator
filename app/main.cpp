@@ -13,7 +13,6 @@
 #include "shell/main_window.h"
 #include "shell/page_factory.h"
 #include "shell/shell_controller.h"
-#include "wpiemu/core/core_info.h"
 #include "wpiemu/ipc/protocol.h"
 #include "wpiemu/sdk/game/builtin_plugins.h"
 #include "wpiemu/sdk/game/plugin_registry.h"
@@ -32,7 +31,7 @@ int printVersion() {
         return 1;
     }
     std::cout << "wpiemu_app (sdk " << wpiemu::sdk::kSdkVersionMajor << '.' << wpiemu::sdk::kSdkVersionMinor
-              << ", ipc protocol " << wpiemu::ipc::protocolVersion() << ", " << wpiemu::core::coreName() << ", "
+              << ", ipc protocol " << wpiemu::ipc::protocolVersion() << ", wpiemu_core, "
               << plugins.size() << " game plugin(s))\n";
     return 0;
 }
