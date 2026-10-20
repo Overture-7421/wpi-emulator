@@ -554,9 +554,7 @@ std::vector<sdk::Issue> FakeEditorBackend::validateCameras(const sdk::RobotConfi
         } else if (att.parentLink != sdk::kRootLink) {
             out.push_back({sdk::Severity::Error, base + ".attachment", "the chassis only exposes the link 'root'", sdk::validation_code::kAttachmentLinkMissing});
         }
-        const sdk::Vec3 p = cam.local.position;
-        const sdk::Quat q = cam.local.rotation;
-        if (!(finite(p.x) && finite(p.y) && finite(p.z) && finite(q.x) && finite(q.y) && finite(q.z) && finite(q.w)))
+        if (!sdk::finite(cam.local))
             out.push_back({sdk::Severity::Error, base + ".local", "camera pose must be finite", "camera_geometry_invalid"});
         auto optics = [&](const char* key, bool ok, const char* what) {
             if (!ok) out.push_back({sdk::Severity::Error, base + "." + key, what, "camera_optics_invalid"});

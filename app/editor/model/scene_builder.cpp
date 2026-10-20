@@ -50,16 +50,6 @@ SceneItem lineBetween(std::string id, const Vec3& a, const Vec3& b, const QColor
 
 }  // namespace
 
-Quat rotationFromX(const Vec3& direction) {
-    const Vec3 d = sdk::normalized(direction);
-    if (sdk::length(d) < 0.5f) return Quat{};
-    const float cosA = std::clamp(d.x, -1.f, 1.f);
-    if (cosA > 0.99999f) return Quat{};
-    if (cosA < -0.99999f) return Quat::fromAxisAngle({0.f, 0.f, 1.f}, static_cast<float>(sdk::kPi));
-    const Vec3 axis = sdk::normalized(sdk::cross(Vec3{1.f, 0.f, 0.f}, d));
-    return Quat::fromAxisAngle(axis, std::acos(cosA));
-}
-
 SceneContent buildScene(const sdk::RobotConfig& c, const EditorCatalog& catalog, const SceneTheme& theme) {
     SceneContent out;
     const Pose3 chassisFrame = ops::chassisFrameWorld(c.chassis);

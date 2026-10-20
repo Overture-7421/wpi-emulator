@@ -110,10 +110,6 @@ public:
     std::size_t constraintCount() const { return constraints_.size(); }
 
 private:
-    static bool finite(const Vec3& value) {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-    }
-
     CouplingCapabilities capabilities_{true, true, true};
     std::uint64_t nextConstraint_ = 1;
     std::vector<PendingWrench> pending_;

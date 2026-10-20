@@ -74,6 +74,69 @@ TEST_CASE("units convert to SI") {
     CHECK(usToSeconds(5000) == doctest::Approx(0.005));
 }
 
+TEST_CASE("angles wrap to the half-open range around zero and convert in float") {
+    CHECK(wrapAngleRad(0.5) == doctest::Approx(0.5));
+    CHECK(wrapAngleRad(3.0 * kPi) == doctest::Approx(kPi));
+    CHECK(wrapAngleRad(-kPi) == doctest::Approx(kPi));
+    CHECK(wrapAngleRad(kPi + 0.1) == doctest::Approx(-kPi + 0.1));
+    CHECK(wrapAngleDeg(540.0) == doctest::Approx(180.0));
+    CHECK(wrapAngleDeg(-180.0) == doctest::Approx(180.0));
+    CHECK(wrapAngleDeg(190.0) == doctest::Approx(-170.0));
+    CHECK(wrapAngleDeg(-190.0) == doctest::Approx(170.0));
+    CHECK(degToRadF(180.f) == doctest::Approx(kPiF));
+    CHECK(radToDegF(kPiF) == doctest::Approx(180.f));
+}
+
+TEST_CASE("Euler extraction inverts fromEuler, ignores scale and stays finite at gimbal lock") {
+    for (float roll : {-0.7f, 0.f, 0.3f})
+        for (float pitch : {-0.9f, 0.f, 0.4f})
+            for (float yaw : {-3.0f, 0.f, 2.0f}) {
+                const Quat q = Quat::fromEuler(roll, pitch, yaw);
+                const Euler e = q.toEuler();
+                CHECK(e.rollRad == doctest::Approx(roll).epsilon(1e-4));
+                CHECK(e.pitchRad == doctest::Approx(pitch).epsilon(1e-4));
+                CHECK(e.yawRad == doctest::Approx(yaw).epsilon(1e-4));
+                CHECK(Quat{q.x * 3.f, q.y * 3.f, q.z * 3.f, q.w * 3.f}.toEuler().yawRad == doctest::Approx(yaw).epsilon(1e-4));
+            }
+    CHECK(Quat::fromEuler(Euler{0.1f, -0.2f, 0.3f}) == Quat::fromEuler(0.1f, -0.2f, 0.3f));
+    const Euler lock = Quat::fromEuler(0.1f, 0.5f * kPiF, 0.2f).toEuler();
+    CHECK(finite(lock.pitchRad));
+    CHECK(finite(lock.rollRad));
+    CHECK(lock.pitchRad == doctest::Approx(0.5f * kPiF).epsilon(1e-3));
+}
+
+TEST_CASE("rotationFromX takes +X onto any non-zero direction and defines the degenerate cases") {
+    const auto maps = [](const Vec3& direction, const Vec3& expected, float tolerance = 1e-5f) {
+        const Vec3 r = rotationFromX(direction).rotate({1.f, 0.f, 0.f});
+        return length(r - expected) < tolerance;
+    };
+    CHECK(maps({0.f, 1.f, 0.f}, {0.f, 1.f, 0.f}));
+    CHECK(maps({0.f, 0.f, 5.f}, {0.f, 0.f, 1.f}));                    // length does not matter
+    CHECK(maps(normalized({1.f, -2.f, 3.f}), normalized({1.f, -2.f, 3.f})));
+    CHECK(maps({1e-4f, 1e-4f, 0.f}, normalized({1e-4f, 1e-4f, 0.f})));  // tiny but non-zero
+    CHECK(rotationFromX({1.f, 0.f, 0.f}) == Quat{});
+    CHECK(maps({-1.f, 0.f, 0.f}, {-1.f, 0.f, 0.f}, 1e-3f));             // antiparallel: half turn about +Z
+    CHECK(maps({-1.f, 1e-6f, 0.f}, {-1.f, 0.f, 0.f}, 1e-3f));
+    CHECK(rotationFromX({0.f, 0.f, 0.f}) == Quat{});
+    CHECK(rotationFromX({std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f}) == Quat{});
+    CHECK(rotationFromX({std::numeric_limits<float>::infinity(), 0.f, 0.f}) == Quat{});
+}
+
+TEST_CASE("finite rejects NaN and infinity in any component of a vector, quaternion or pose") {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    CHECK(finite(1.f));
+    CHECK_FALSE(finite(inf));
+    CHECK(finite(Vec3{1.f, 2.f, 3.f}));
+    CHECK_FALSE(finite(Vec3{1.f, nan, 3.f}));
+    CHECK(finite(Quat{}));
+    CHECK_FALSE(finite(Quat{0.f, 0.f, inf, 1.f}));
+    CHECK_FALSE(finite(Quat{0.f, 0.f, 0.f, nan}));
+    CHECK(finite(Pose3{}));
+    CHECK_FALSE(finite(Pose3{{0.f, 0.f, inf}, Quat{}}));
+    CHECK_FALSE(finite(Pose3{{}, Quat{nan, 0.f, 0.f, 1.f}}));
+}
+
 TEST_CASE("DC motor model matches WPILib equations") {
     const DcMotorModel m(motors::neo());
     CHECK(m.torqueNm(12.0, 0.0) == doctest::Approx(2.6).epsilon(1e-9));          // stall torque

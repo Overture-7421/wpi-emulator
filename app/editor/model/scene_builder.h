@@ -42,7 +42,4 @@ struct SceneContent {
 
 SceneContent buildScene(const sdk::RobotConfig& config, const EditorCatalog& catalog, const SceneTheme& theme);
 
-// Rotation taking +X to `direction` (used for link lines).
-sdk::Quat rotationFromX(const sdk::Vec3& direction);
-
 }  // namespace wpiemu::app::editor

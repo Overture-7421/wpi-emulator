@@ -18,7 +18,6 @@ namespace {
 
 bool finitePositive(float v) { return std::isfinite(v) && v > 0.f; }
 bool finiteNonNegative(float v) { return std::isfinite(v) && v >= 0.f; }
-bool finite(const Vec3& v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); }
 
 void add(std::vector<Issue>& out, Severity sev, std::string path, std::string message, const char* code) {
     out.push_back({sev, std::move(path), std::move(message), code});
@@ -136,11 +135,6 @@ void validateAttachment(const RobotConfig& c, const MechanismFactory& mechanisms
         add(out, Severity::Error, attPath, "mechanism '" + parent->id + "' (" + parent->type + ") has no link '" + att.parentLink + "'",
             validation_code::kAttachmentLinkMissing);
     }
-}
-
-bool finite(const Pose3& p) {
-    return finite(p.position) && std::isfinite(p.rotation.x) && std::isfinite(p.rotation.y) && std::isfinite(p.rotation.z) &&
-           std::isfinite(p.rotation.w);
 }
 
 void validateZones(const RobotConfig& c, const MechanismFactory& mechanisms, const IGameModule* plugin, std::vector<Issue>& out) {

@@ -9,9 +9,9 @@
 
 #include <cmath>
 
-#include "model/quat_utils.h"
 #include "model/tr.h"
 #include "wpiemu/sdk/config/value_codec.h"
+#include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::app::editor {
 
@@ -183,10 +183,10 @@ void VectorEditor::setValue(const sdk::Value& value) {
         quat_ = sdk::Quat{};
         sdk::fromValue(value, quat_);
         rotDirty_ = false;
-        const Euler e = toEuler(quat_);
-        spins_[0]->setValue(radToDegF(e.rollRad));
-        spins_[1]->setValue(radToDegF(e.pitchRad));
-        spins_[2]->setValue(radToDegF(e.yawRad));
+        const sdk::Euler e = quat_.toEuler();
+        spins_[0]->setValue(sdk::radToDegF(e.rollRad));
+        spins_[1]->setValue(sdk::radToDegF(e.pitchRad));
+        spins_[2]->setValue(sdk::radToDegF(e.yawRad));
         return;
     }
     sdk::Vec3 v;
@@ -199,9 +199,9 @@ void VectorEditor::setValue(const sdk::Value& value) {
 sdk::Value VectorEditor::value() const {
     if (rotation_) {
         if (!rotDirty_) return sdk::toValue(quat_);
-        const Euler e{degToRadF(static_cast<float>(spins_[0]->value())), degToRadF(static_cast<float>(spins_[1]->value())),
-                      degToRadF(static_cast<float>(spins_[2]->value()))};
-        return sdk::toValue(fromEuler(e));
+        const sdk::Euler e{sdk::degToRadF(static_cast<float>(spins_[0]->value())), sdk::degToRadF(static_cast<float>(spins_[1]->value())),
+                           sdk::degToRadF(static_cast<float>(spins_[2]->value()))};
+        return sdk::toValue(sdk::Quat::fromEuler(e));
     }
     return sdk::toValue(sdk::Vec3{static_cast<float>(fromDisplay(spins_[0]->value(), unit_, units_)),
                                   static_cast<float>(fromDisplay(spins_[1]->value(), unit_, units_)),

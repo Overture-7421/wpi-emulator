@@ -313,9 +313,9 @@ TEST_CASE("run view camera uses the editor's orbit camera around a field-framed 
     CHECK(scene.camera().distance / home == doctest::Approx(editorLike.distance / 2.8f));   // same zoom step
 
     scene.orbit(0.f, 100000.f);   // pitch is clamped like the editor's, never flipped over the pole
-    CHECK(scene.camera().pitchRad <= wpiemu::app::OrbitCamera::degToRad(89.f) + 1e-4f);
+    CHECK(scene.camera().pitchRad <= wpiemu::sdk::degToRadF(89.f) + 1e-4f);
     scene.orbit(0.f, -100000.f);
-    CHECK(scene.camera().pitchRad >= wpiemu::app::OrbitCamera::degToRad(-89.f) - 1e-4f);
+    CHECK(scene.camera().pitchRad >= wpiemu::sdk::degToRadF(-89.f) - 1e-4f);
 
     const sdk::Vec3 target = scene.camera().target;
     scene.setViewHeight(600.f);

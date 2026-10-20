@@ -3,11 +3,11 @@
 #include <algorithm>
 
 #include "model/config_ops.h"
-#include "model/quat_utils.h"
 #include "model/spec_values.h"
 #include "model/tr.h"
 #include "model/units.h"
 #include "wpiemu/sdk/config/value_codec.h"
+#include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::app::editor {
 
@@ -692,10 +692,10 @@ QString mechanismKindLabel(const sdk::MechanismConfig& m, const sdk::MechanismTe
 QString robotToCameraText(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam, UnitSystem units,
                           QString* tooltip) {
     const sdk::Pose3 p = ops::cameraRobotPose(c, catalog, cam);
-    const Euler e = toEuler(p.rotation);
+    const sdk::Euler e = p.rotation.toEuler();
     const UnitDisplay ud = unitDisplay(PropertyUnit::Meters, units);
     auto length = [&](float m) { return QString::number(static_cast<double>(m) * ud.factor, 'f', ud.decimals) + QString::fromUtf8(ud.suffix); };
-    auto degrees = [](float rad) { return QString::number(static_cast<double>(radToDegF(rad)), 'f', 1) + QStringLiteral("\xC2\xB0"); };
+    auto degrees = [](float rad) { return QString::number(static_cast<double>(sdk::radToDegF(rad)), 'f', 1) + QStringLiteral("\xC2\xB0"); };
     auto num = [](float v) { return QString::number(static_cast<double>(v), 'f', 4); };
     if (tooltip != nullptr)
         *tooltip = ETR("WPILib robot frame: origin on the floor below the hull centre, +X forward, +Y left, yaw counter-clockwise. "

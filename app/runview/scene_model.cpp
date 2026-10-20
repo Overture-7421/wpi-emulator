@@ -253,7 +253,7 @@ void SceneModel::resetCamera() {
     const float span = std::max(fieldLength_, fieldWidth_);
     camera_ = OrbitCamera{};
     camera_.target = {fieldCenter_.x(), fieldCenter_.y(), fieldCenter_.z()};
-    camera_.yawRad = -OrbitCamera::degToRad(90.f);
+    camera_.yawRad = -sdk::degToRadF(90.f);
     camera_.pitchRad = 0.4f;
     camera_.distance = span * 1.05f;
     camera_.maxDistance = std::max(camera_.maxDistance, span * 6.f);

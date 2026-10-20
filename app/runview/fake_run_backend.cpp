@@ -513,7 +513,7 @@ void FakeRunBackend::stepWorld() {
     vel_.y = approach(vel_.y, targetVy, 9.f * dt);
     omega_ = approach(omega_, targetW, 20.f * dt);
 
-    yaw_ = static_cast<float>(std::remainder(static_cast<double>(yaw_ + omega_ * dt), sdk::kTwoPi));
+    yaw_ = static_cast<float>(sdk::wrapAngleRad(static_cast<double>(yaw_ + omega_ * dt)));
     const float c = std::cos(yaw_), s = std::sin(yaw_);
     pos_.x += (vel_.x * c - vel_.y * s) * dt;
     pos_.y += (vel_.x * s + vel_.y * c) * dt;

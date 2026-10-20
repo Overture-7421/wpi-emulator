@@ -42,11 +42,6 @@ sdk::Pose3 translationAlong(AxisName a, double distanceM) {
     return {unitVector(a) * static_cast<float>(distanceM), sdk::Quat{}};
 }
 
-double wrapAngle(double angleRad) {
-    const double wrapped = std::remainder(angleRad, sdk::kTwoPi);   // [-pi, pi]
-    return wrapped <= -sdk::kPi ? wrapped + sdk::kTwoPi : wrapped;
-}
-
 sdk::PropertySpec axisEnumProp(const std::string& key, const std::string& label, AxisName def,
                                const std::string& group) {
     return sdk::props::choice(key, label, group, axisKey(def), {{"x", "X"}, {"y", "Y"}, {"z", "Z"}},

@@ -30,7 +30,7 @@ protected:
         out.active = std::abs(a.velocity()) > kMovingSpeed;
         const double p = a.position();
         out.links.push_back({kMoverLink, linear ? translationAlong(axisName_, p)
-                                                : rotationAbout(axisName_, sign_ * (a.settings().limited ? p : wrapAngle(p)))});
+                                                : rotationAbout(axisName_, sign_ * (a.settings().limited ? p : sdk::wrapAngleRad(p)))});
         out.values.push_back(namedValue("position", p, posUnit));
         out.values.push_back(namedValue("velocity", a.velocity(), velUnit));
         out.values.push_back(namedValue("voltage", a.appliedVoltageV(), "V"));

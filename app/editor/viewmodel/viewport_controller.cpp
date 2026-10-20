@@ -7,8 +7,8 @@
 
 #include "model/config_ops.h"
 #include "model/property_groups.h"
-#include "model/quat_utils.h"
 #include "model/tr.h"
+#include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::app::editor {
 
@@ -435,8 +435,8 @@ void ViewportController::updateGizmoDrag(qreal x, qreal y, bool snapToggle) {
         if (!hit) return;
         const Vec3 v = *hit - drag_.origin;
         float angle = std::atan2(sdk::dot(drag_.axisWorld, sdk::cross(drag_.vec0, v)), sdk::dot(drag_.vec0, v));
-        if (snap) angle = degToRadF(snapValue(radToDegF(angle), static_cast<float>(editor_.settings().rotateStepDeg())));
-        t.local.rotation = rotatedAbout(drag_.initial.transform.local.rotation, drag_.axisLocal, angle);
+        if (snap) angle = sdk::degToRadF(snapValue(sdk::radToDegF(angle), static_cast<float>(editor_.settings().rotateStepDeg())));
+        t.local.rotation = (sdk::Quat::fromAxisAngle(drag_.axisLocal, angle) * drag_.initial.transform.local.rotation).normalized();
     } else {
         const auto param = closestParamOnAxis(ray, drag_.origin, drag_.axisWorld);
         if (!param) return;
@@ -475,8 +475,8 @@ TransformFields ViewportController::transformFields() const {
     if (*mode == GizmoMode::Move) f.value = target->transform.local.position;
     else if (*mode == GizmoMode::Scale) f.value = target->transform.size;
     else {
-        const Euler e = toEuler(target->transform.local.rotation);
-        f.value = Vec3{radToDegF(e.rollRad), radToDegF(e.pitchRad), radToDegF(e.yawRad)};
+        const sdk::Euler e = target->transform.local.rotation.toEuler();
+        f.value = Vec3{sdk::radToDegF(e.rollRad), sdk::radToDegF(e.pitchRad), sdk::radToDegF(e.yawRad)};
     }
     return f;
 }
@@ -491,11 +491,11 @@ bool ViewportController::setTransformComponent(int axis, double value) {
     if (*mode == GizmoMode::Move) setComponent(t.local.position, axis, v);
     else if (*mode == GizmoMode::Scale) setComponent(t.size, axis, std::max(v, 0.005f));
     else {
-        Euler e = toEuler(t.local.rotation);
-        if (axis == 0) e.rollRad = degToRadF(v);
-        else if (axis == 1) e.pitchRad = degToRadF(v);
-        else e.yawRad = degToRadF(v);
-        t.local.rotation = fromEuler(e);
+        sdk::Euler e = t.local.rotation.toEuler();
+        if (axis == 0) e.rollRad = sdk::degToRadF(v);
+        else if (axis == 1) e.pitchRad = sdk::degToRadF(v);
+        else e.yawRad = sdk::degToRadF(v);
+        t.local.rotation = sdk::Quat::fromEuler(e);
     }
     return editor_.document().setTransform(sel, t);
 }

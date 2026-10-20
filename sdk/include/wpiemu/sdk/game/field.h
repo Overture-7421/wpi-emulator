@@ -41,8 +41,7 @@ inline std::optional<RobotStartPose> flipToOtherAlliance(const RobotStartPose& p
             break;
         case FieldSymmetry::None: return std::nullopt;
     }
-    heading = std::remainder(heading, 2.0 * pi);   // (-pi, pi]
-    if (heading <= -pi) heading += 2.0 * pi;
+    heading = sdk::wrapAngleRad(heading);
     out.headingRad = static_cast<float>(heading);
     return out;
 }

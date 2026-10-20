@@ -124,12 +124,6 @@ bool flag(const std::map<std::string, std::string>& m, const char* key) {
     return it != m.end() && (it->second == "true" || it->second == "1");
 }
 
-double wrapDeg(double d) {
-    while (d > 180.0) d -= 360.0;
-    while (d < -180.0) d += 360.0;
-    return d;
-}
-
 using Fields = std::map<std::string, std::string>;
 
 struct Collected {
@@ -302,7 +296,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
                     num(*f, "botposeYawDeg"), truth.x, truth.y, truthYawDeg);
         CHECK(std::abs(num(*f, "botposeX") - truth.x) < 0.02);
         CHECK(std::abs(num(*f, "botposeY") - truth.y) < 0.02);
-        CHECK(std::abs(wrapDeg(num(*f, "botposeYawDeg") - truthYawDeg)) < 2.0);
+        CHECK(std::abs(sdk::wrapAngleDeg(num(*f, "botposeYawDeg") - truthYawDeg)) < 2.0);
     }
     if (const Fields* f = lastWithPose(got.photon, "hasTargets")) {
         std::printf("e2e:   photon pose (%.3f, %.3f) yaw %.1f vs truth (%.3f, %.3f) yaw %.1f\n", num(*f, "poseX"), num(*f, "poseY"),
@@ -311,7 +305,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
             // PhotonLib solves the pose from the true (pitched) camera pose, so a few cm of chassis pitch show up here.
             CHECK(std::abs(num(*f, "poseX") - truth.x) < 0.04);
             CHECK(std::abs(num(*f, "poseY") - truth.y) < 0.04);
-            CHECK(std::abs(wrapDeg(num(*f, "poseYawDeg") - truthYawDeg)) < 2.0);
+            CHECK(std::abs(sdk::wrapAngleDeg(num(*f, "poseYawDeg") - truthYawDeg)) < 2.0);
         }
     }
 

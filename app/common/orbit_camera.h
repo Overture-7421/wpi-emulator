@@ -29,14 +29,12 @@ struct CameraBasis {
 class OrbitCamera {
 public:
     sdk::Vec3 target{0.f, 0.f, 0.25f};
-    float yawRad = degToRad(-50.f);       // azimuth of the camera around the target (0 = on +X looking back)
-    float pitchRad = degToRad(26.f);      // elevation above the floor
+    float yawRad = sdk::degToRadF(-50.f);       // azimuth of the camera around the target (0 = on +X looking back)
+    float pitchRad = sdk::degToRadF(26.f);      // elevation above the floor
     float distance = 2.8f;
     float fovDeg = 45.f;
     float minDistance = 0.25f;            // zoom limits; viewports showing a larger scene raise maxDistance
     float maxDistance = 60.f;
-
-    static float degToRad(float d) { return d * static_cast<float>(sdk::kPi) / 180.f; }
 
     sdk::Vec3 position() const {
         const float cp = std::cos(pitchRad);
@@ -79,13 +77,13 @@ public:
     }
 
     void orbit(float dxPx, float dyPx) {
-        yawRad -= degToRad(dxPx * 0.45f);
-        pitchRad = std::clamp(pitchRad + degToRad(dyPx * 0.45f), degToRad(-89.f), degToRad(89.f));
+        yawRad -= sdk::degToRadF(dxPx * 0.45f);
+        pitchRad = std::clamp(pitchRad + sdk::degToRadF(dyPx * 0.45f), sdk::degToRadF(-89.f), sdk::degToRadF(89.f));
     }
 
     void pan(float dxPx, float dyPx, float viewHeightPx) {
         const CameraBasis b = basis();
-        const float unitsPerPx = 2.f * distance * std::tan(degToRad(fovDeg) * 0.5f) / std::max(viewHeightPx, 1.f);
+        const float unitsPerPx = 2.f * distance * std::tan(sdk::degToRadF(fovDeg) * 0.5f) / std::max(viewHeightPx, 1.f);
         target += (b.right * -dxPx + b.up * dyPx) * unitsPerPx;
     }
 
@@ -93,17 +91,17 @@ public:
 
     void frame(const sdk::Vec3& center, float radius) {
         target = center;
-        distance = std::clamp(radius / std::tan(degToRad(fovDeg) * 0.5f) * 1.15f, 0.6f, maxDistance);
+        distance = std::clamp(radius / std::tan(sdk::degToRadF(fovDeg) * 0.5f) * 1.15f, 0.6f, maxDistance);
     }
 
     // Standard views. "top" keeps +X pointing up on screen.
     void preset(const char* name) {
         const std::string n = name;
         if (n == "front") { yawRad = 0.f; pitchRad = 0.f; }
-        else if (n == "back") { yawRad = degToRad(180.f); pitchRad = 0.f; }
-        else if (n == "side") { yawRad = degToRad(-90.f); pitchRad = 0.f; }
-        else if (n == "top") { yawRad = degToRad(180.f); pitchRad = degToRad(89.f); }
-        else { yawRad = degToRad(-50.f); pitchRad = degToRad(26.f); }
+        else if (n == "back") { yawRad = sdk::degToRadF(180.f); pitchRad = 0.f; }
+        else if (n == "side") { yawRad = sdk::degToRadF(-90.f); pitchRad = 0.f; }
+        else if (n == "top") { yawRad = sdk::degToRadF(180.f); pitchRad = sdk::degToRadF(89.f); }
+        else { yawRad = sdk::degToRadF(-50.f); pitchRad = sdk::degToRadF(26.f); }
     }
 
     // Ray through a pixel of a `width` x `height` viewport (vertical field of view).
@@ -112,7 +110,7 @@ public:
         const float aspect = width / std::max(height, 1.f);
         const float ndcX = (2.f * x / std::max(width, 1.f)) - 1.f;
         const float ndcY = 1.f - (2.f * y / std::max(height, 1.f));
-        const float t = std::tan(degToRad(fovDeg) * 0.5f);
+        const float t = std::tan(sdk::degToRadF(fovDeg) * 0.5f);
         const sdk::Vec3 dir = sdk::normalized(b.forward + b.right * (ndcX * t * aspect) + b.up * (ndcY * t));
         return {position(), dir};
     }
@@ -123,7 +121,7 @@ public:
         const sdk::Vec3 d = p - position();
         const float depth = sdk::dot(d, b.forward);
         if (depth <= 1e-3f) return std::nullopt;
-        const float t = std::tan(degToRad(fovDeg) * 0.5f);
+        const float t = std::tan(sdk::degToRadF(fovDeg) * 0.5f);
         const float aspect = width / std::max(height, 1.f);
         const float ndcX = sdk::dot(d, b.right) / (depth * t * aspect);
         const float ndcY = sdk::dot(d, b.up) / (depth * t);

@@ -13,30 +13,11 @@
 
 namespace wpiemu::bridges::vision::detail {
 
-struct EulerDeg {
-    double rollDeg = 0, pitchDeg = 0, yawDeg = 0;
-};
-
-// Inverse of sdk::Quat::fromEuler (intrinsic Z-Y-X, WPILib Rotation3d roll/pitch/yaw).
-inline EulerDeg eulerDeg(const sdk::Quat& q) {
-    const double x = q.x, y = q.y, z = q.z, w = q.w;
-    const double roll = std::atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y));
-    const double pitch = std::asin(std::clamp(2.0 * (w * y - z * x), -1.0, 1.0));
-    const double yaw = std::atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z));
-    return {roll * sdk::kRadToDeg, pitch * sdk::kRadToDeg, yaw * sdk::kRadToDeg};
-}
-
-inline double wrapDeg(double deg) {
-    deg = std::fmod(deg, 360.0);
-    if (deg > 180.0) deg -= 360.0;
-    if (deg <= -180.0) deg += 360.0;
-    return deg;
-}
-
 // Limelight pose array: x, y, z [m], roll, pitch, yaw [deg].
 inline std::vector<double> pose6(const sdk::Pose3& p) {
-    const EulerDeg e = eulerDeg(p.rotation);
-    return {p.position.x, p.position.y, p.position.z, wrapDeg(e.rollDeg), wrapDeg(e.pitchDeg), wrapDeg(e.yawDeg)};
+    const sdk::Euler e = p.rotation.toEuler();
+    const auto deg = [](float rad) { return sdk::wrapAngleDeg(sdk::radToDeg(static_cast<double>(rad))); };
+    return {p.position.x, p.position.y, p.position.z, deg(e.rollRad), deg(e.pitchRad), deg(e.yawRad)};
 }
 
 enum class FieldOrigin { Blue, Red, Center };

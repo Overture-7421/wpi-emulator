@@ -519,11 +519,20 @@ TEST_CASE("camera scene: a body marker, eight frustum edges and a translucent fa
     CHECK(scene.find("camera:photon")->color == theme.photonVision);   // distinct per kind
     CHECK(theme.limelight != theme.photonVision);
 
-    for (int i = 0; i < 8; ++i) {
+    const auto& cam = *c.findCamera("limelight");
+    const wpiemu::app::FrustumGeometry g = wpiemu::app::cameraFrustum(cam);
+    const sdk::Pose3 camWorld = ops::cameraWorld(c, cat, cam);
+
+    for (std::size_t i = 0; i < wpiemu::app::kFrustumEdges.size(); ++i) {
         const auto* edge = scene.find("camera:limelight:edge:" + std::to_string(i));
         REQUIRE(edge != nullptr);
         CHECK(edge->group == SelectionRef::camera("limelight"));
         CHECK(edge->role == ItemRole::Link);
+        const auto [from, to] = wpiemu::app::kFrustumEdges[i];
+        const sdk::Vec3 a = camWorld.transformPoint(g.pts[from]);
+        const sdk::Vec3 b = camWorld.transformPoint(g.pts[to]);
+        CHECK(approx(edge->world.position, (a + b) * 0.5f, 1e-3f));                              // centred on the segment
+        CHECK(approx(edge->world.transformVector({edge->size.x, 0.f, 0.f}), b - a, 1e-3f));    // and runs from a to b
     }
     CHECK(scene.find("camera:limelight:edge:8") == nullptr);
 
@@ -532,10 +541,8 @@ TEST_CASE("camera scene: a body marker, eight frustum edges and a translucent fa
     CHECK(plane->role == ItemRole::Overlay);
     CHECK(plane->opacity < 0.5f);
     CHECK(plane->pickable);
-    const auto& cam = *c.findCamera("limelight");
-    const wpiemu::app::FrustumGeometry g = wpiemu::app::cameraFrustum(cam);
     // The far plane lies along the optical axis (+X of the camera) at the frustum length.
-    CHECK(approx(plane->world.position, ops::cameraWorld(c, cat, cam).transformPoint({g.lengthM, 0.f, 0.f})));
+    CHECK(approx(plane->world.position, camWorld.transformPoint({g.lengthM, 0.f, 0.f})));
     CHECK(approx(plane->size.y, 2.f * g.pts[wpiemu::app::kFrustumTopLeft].y, 1e-3f));
 
     // Moving the turret moves the camera that rides on it.

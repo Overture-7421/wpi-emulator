@@ -19,7 +19,6 @@ namespace wpiemu::app {
 inline constexpr float kFrustumMaxDisplayLengthM = 2.0f;   // long ranges are not drawn to scale
 inline constexpr float kFrustumMinDisplayLengthM = 0.2f;
 inline constexpr float kFrustumMaxHalfExtentM = 2.0f;      // the far rectangle never extends farther than this from the axis
-inline constexpr float kFrustumDegToRad = sdk::kPiF / 180.f;
 
 // Indices into FrustumGeometry::pts.
 enum FrustumPoint : std::uint8_t { kFrustumApex = 0, kFrustumTopLeft, kFrustumTopRight, kFrustumBottomRight, kFrustumBottomLeft };
@@ -45,15 +44,15 @@ inline float frustumDisplayLengthM(const sdk::CameraConfig& camera) {
     const float range = static_cast<float>(camera.maxRangeM);
     float length = !(range > 0.f) ? kFrustumMinDisplayLengthM : std::clamp(range, kFrustumMinDisplayLengthM, kFrustumMaxDisplayLengthM);
     const float widest = std::clamp(static_cast<float>(std::max(camera.hFovDeg, camera.vFovDeg)), 1.f, 179.f);
-    length = std::min(length, kFrustumMaxHalfExtentM / std::tan(widest * 0.5f * kFrustumDegToRad));
+    length = std::min(length, kFrustumMaxHalfExtentM / std::tan(sdk::degToRadF(widest * 0.5f)));
     return std::max(length, 0.01f);
 }
 
 // Pyramid with its apex at the camera origin and the far rectangle `lengthM` along +X, spanning the
 // horizontal / vertical field of view (clamped to a sane 1..179 degrees).
 inline FrustumGeometry cameraFrustum(const sdk::CameraConfig& camera, float lengthM) {
-    const float h = std::clamp(static_cast<float>(camera.hFovDeg), 1.f, 179.f) * kFrustumDegToRad;
-    const float v = std::clamp(static_cast<float>(camera.vFovDeg), 1.f, 179.f) * kFrustumDegToRad;
+    const float h = sdk::degToRadF(std::clamp(static_cast<float>(camera.hFovDeg), 1.f, 179.f));
+    const float v = sdk::degToRadF(std::clamp(static_cast<float>(camera.vFovDeg), 1.f, 179.f));
     const float halfY = lengthM * std::tan(h * 0.5f);
     const float halfZ = lengthM * std::tan(v * 0.5f);
     FrustumGeometry g;

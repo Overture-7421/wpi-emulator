@@ -7,21 +7,6 @@
 
 using namespace physics_test;
 
-TEST_CASE("imu: Euler extraction matches Quat::fromEuler and stays finite at gimbal lock") {
-    for (float roll : {-0.7f, 0.f, 0.3f})
-        for (float pitch : {-0.9f, 0.f, 0.4f})
-            for (float yaw : {-3.0f, 0.f, 2.0f}) {
-                const phys::EulerAngles e = phys::eulerZyx(Quat::fromEuler(roll, pitch, yaw));
-                CHECK(e.rollRad == doctest::Approx(roll).epsilon(1e-4));
-                CHECK(e.pitchRad == doctest::Approx(pitch).epsilon(1e-4));
-                CHECK(e.yawRad == doctest::Approx(yaw).epsilon(1e-4));
-            }
-    const phys::EulerAngles lock = phys::eulerZyx(Quat::fromEuler(0.1f, 0.5f * kPiF, 0.2f));
-    CHECK(std::isfinite(lock.pitchRad));
-    CHECK(std::isfinite(lock.rollRad));
-    CHECK(lock.pitchRad == doctest::Approx(0.5f * kPiF).epsilon(1e-3));
-}
-
 TEST_CASE("imu: at rest the accelerometer reads +g up in the chassis frame, in free fall it reads zero") {
     auto w = makeWorld();
     addFloor(*w);

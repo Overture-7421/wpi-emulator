@@ -14,14 +14,6 @@
 
 namespace wpiemu::core::physics {
 
-struct EulerAngles {
-    float yawRad = 0.f;
-    float pitchRad = 0.f;
-    float rollRad = 0.f;
-};
-
-EulerAngles eulerZyx(const sdk::Quat& q);
-
 class ChassisImuSensor {
 public:
     explicit ChassisImuSensor(sdk::Vec3 gravity = {0.f, 0.f, -sdk::kDefaultGravityMps2}) : gravity_(gravity) {}
