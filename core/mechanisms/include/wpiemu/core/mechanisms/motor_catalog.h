@@ -2,10 +2,9 @@
 
 // Motor data table + motor models.
 //
-// The catalog carries the same numbers as WPILib's `DCMotor` factory methods (allwpilib 2026,
-// wpimath `edu.wpi.first.math.system.plant.DCMotor`, ONE motor each); see docs/reference/mechanisms.md for
-// the per-motor source lines. Entries are looked up by a stable snake_case key that is also the
-// persisted value of the `motorModel` mechanism property.
+// The built-in rows are the SDK's motor table (sdk::motors::presets()): the same numbers as WPILib's `DCMotor`
+// factory methods (allwpilib 2026, ONE motor each), defined once for every module. Entries are looked up by a
+// stable snake_case key that is also the persisted value of the `motorModel` mechanism property.
 //
 // A catalog is a plain value (no global registry): the composition root owns one and hands it
 // (shared) to the mechanism templates; tests build their own.
@@ -20,18 +19,16 @@
 
 namespace wpiemu::core::mechanisms {
 
-struct MotorCatalogEntry {
-    std::string key;     // stable id, e.g. "kraken_x60"
-    std::string label;   // UI text, e.g. "Kraken X60"
-    sdk::MotorSpec spec; // one motor
-};
+// key, UI label and the one-motor spec.
+using MotorCatalogEntry = sdk::MotorPreset;
 
 class MotorCatalog {
 public:
-    // Every motor of WPILib's DCMotor factory (see motor_catalog.cpp for the source of each row).
+    // The SDK motor table, in its order.
     static MotorCatalog builtin();
 
-    // AlreadyExists for a duplicate key, InvalidArgument for an empty key / non-physical spec.
+    // AlreadyExists for a duplicate key, InvalidArgument for an empty key / non-physical spec
+    // (sdk::isValidMotorSpec).
     sdk::Status add(MotorCatalogEntry entry);
 
     const MotorCatalogEntry* find(std::string_view key) const;
@@ -46,10 +43,6 @@ public:
 private:
     std::vector<MotorCatalogEntry> entries_;
 };
-
-// True when every field is finite and physical (positive current/torque/speed/voltage, free current
-// below stall current).
-bool isValidMotorSpec(const sdk::MotorSpec& spec);
 
 // Decorator: a stator-current limit on any IMotorModel, the way a smart motor controller limits
 // current: |I| <= limitA, the torque follows I (tau = Kt I). limitA <= 0 disables the limit.

@@ -240,3 +240,21 @@ TEST_CASE("motor catalog lookup") {
     custom.name = "Homebrew";
     CHECK(findMotorBySpec(custom) == nullptr);
 }
+
+TEST_CASE("every motor of the SDK table is a wizard choice and survives the config round trip") {
+    REQUIRE(motorCatalog().size() == sdk::motors::presets().size());
+    for (const sdk::MotorPreset& p : sdk::motors::presets()) {
+        INFO(p.key);
+        const QString key = QString::fromStdString(p.key);
+        RobotBasics b = defaultBasicsFor(sdk::drivetrain_kind::kSwerve);
+        b.driveMotor = key;
+        b.steerMotor = key;
+        const sdk::RobotConfig c = buildRobotConfig(b, {});
+        REQUIRE_FALSE(c.drivetrain.spec.wheels.empty());
+        CHECK(c.drivetrain.spec.wheels[0].driveMotor.name == p.spec.name);
+        CHECK(c.drivetrain.spec.wheels[0].steerMotor.name == p.spec.name);
+        const RobotBasics back = basicsFromConfig(c);
+        CHECK(back.driveMotor == key);
+        CHECK(back.steerMotor == key);
+    }
+}

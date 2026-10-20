@@ -14,6 +14,8 @@ cannot prevent these dependencies from creeping back in.
 ## Decision
 Make the standard-library-only, header-only SDK the shared boundary. Keep simulation
 game-agnostic and Qt-free; contain Qt and HAL/vendor backends at their respective edges.
+Whatever several modules need (data tables, validation rules, helpers, test fakes) is defined
+once in the SDK and derived from there, never copied between modules.
 The dependency graph in Architecture is authoritative rather than a collection of
 per-module exceptions.
 

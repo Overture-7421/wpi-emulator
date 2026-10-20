@@ -4,6 +4,7 @@
 
 #include "model/config_ops.h"
 #include "wpiemu/sdk/config/value_codec.h"
+#include "wpiemu/sdk/dynamics/motor_model.h"
 
 namespace wpiemu::app::editor::spec {
 
@@ -63,25 +64,16 @@ sdk::WheelKind wheelKindFrom(const std::string& s, sdk::WheelKind fallback) {
 }
 
 void motorOptions(PropertySpec& spec, const sdk::MotorSpec& current) {
-    bool found = false;
-    for (const auto& m : motorPresets()) {
-        spec.options.push_back({m.name, m.name});
-        found = found || m.name == current.name;
-    }
-    if (!found) spec.options.push_back({current.name, current.name + " (custom)"});
+    for (const sdk::MotorPreset& m : sdk::motors::presets()) spec.options.push_back({m.spec.name, m.label});
+    if (sdk::motors::findPresetByName(current.name) == nullptr)
+        spec.options.push_back({current.name, current.name + " (custom)"});
 }
 
 }  // namespace
 
-std::vector<sdk::MotorSpec> motorPresets() {
-    return {sdk::motors::krakenX60(), sdk::motors::falcon500(), sdk::motors::neo(), sdk::motors::neo550(),
-            sdk::motors::vortex(),    sdk::motors::cim(),       sdk::motors::miniCim()};
-}
-
 sdk::MotorSpec motorByName(const std::string& name, const sdk::MotorSpec& fallback) {
-    for (const auto& m : motorPresets())
-        if (m.name == name) return m;
-    return fallback;
+    const sdk::MotorPreset* m = sdk::motors::findPresetByName(name);
+    return m != nullptr ? m->spec : fallback;
 }
 
 // ---- robot ------------------------------------------------------------------------------------

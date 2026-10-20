@@ -100,15 +100,12 @@ sdk::PrimitiveSpec bumper(const char* name, sdk::Vec3 centre, sdk::Vec3 size, co
 }  // namespace
 
 const std::vector<MotorChoice>& motorCatalog() {
-    static const std::vector<MotorChoice> catalog = {
-        {QStringLiteral("kraken_x60"), QStringLiteral("Kraken X60"), sdk::motors::krakenX60()},
-        {QStringLiteral("falcon_500"), QStringLiteral("Falcon 500"), sdk::motors::falcon500()},
-        {QStringLiteral("neo"), QStringLiteral("NEO"), sdk::motors::neo()},
-        {QStringLiteral("vortex"), QStringLiteral("NEO Vortex"), sdk::motors::vortex()},
-        {QStringLiteral("neo550"), QStringLiteral("NEO 550"), sdk::motors::neo550()},
-        {QStringLiteral("cim"), QStringLiteral("CIM"), sdk::motors::cim()},
-        {QStringLiteral("mini_cim"), QStringLiteral("MiniCIM"), sdk::motors::miniCim()},
-    };
+    static const std::vector<MotorChoice> catalog = [] {
+        std::vector<MotorChoice> choices;
+        for (const sdk::MotorPreset& p : sdk::motors::presets())
+            choices.push_back({QString::fromStdString(p.key), QString::fromStdString(p.label), p.spec});
+        return choices;
+    }();
     return catalog;
 }
 

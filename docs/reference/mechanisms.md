@@ -64,7 +64,9 @@ Euler step is not equivalent. Stops clamp position and zero velocity, with no bo
 Flywheel plants ignore stops but still integrate position for encoders.
 Arm/elevator gravity uses 9.8 m/s² independently of the rigid-body world's gravity.
 
-[MotorCatalog](../../core/mechanisms/src/motor_catalog.cpp) stores one-motor specifications;
+[MotorCatalog](../../core/mechanisms/src/motor_catalog.cpp) indexes the SDK's one
+[motor table](../../sdk/include/wpiemu/sdk/dynamics/motor_model.h) (WPILib `DCMotor` rows, also listed
+by the wizard and editor wheel selectors) and stores one-motor specifications;
 the plant's motor count aggregates identical motors. `IPlant::motorCurrentA()` is signed
 stator current, not supply draw. Runtime battery accounting uses
 `IMechanism::batteryCurrentA()` instead. There is no motor thermal model.

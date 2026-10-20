@@ -301,7 +301,7 @@ sdk::Status validatePlantSpec(const sdk::PlantSpec& spec) {
     const bool known = m == plant_model::kDcMotor || m == plant_model::kTurret || m == plant_model::kFlywheel ||
                        m == plant_model::kArm || m == plant_model::kElevator;
     if (!known) return sdk::makeError(sdk::ErrorCode::NotFound, "unknown plant model: " + m);
-    if (!isValidMotorSpec(spec.motor)) return invalid("motor", "is not a physical motor");
+    if (!sdk::isValidMotorSpec(spec.motor)) return invalid("motor", "is not a physical motor");
     if (spec.motorCount < 1 || spec.motorCount > 64) return invalid("motorCount", "must be in [1, 64]");
     if (!positive(spec.gearRatio)) return invalid("gearRatio", "must be > 0");
     if (!(std::isfinite(spec.efficiency) && spec.efficiency > 0.0 && spec.efficiency <= 1.0))

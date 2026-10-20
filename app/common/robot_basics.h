@@ -16,12 +16,12 @@ namespace wpiemu::app {
 enum class Alliance { Red, Blue };
 
 struct MotorChoice {
-    QString key;     // stable id persisted in the wizard state
+    QString key;     // the SDK motor table key
     QString label;   // shown in the UI
     sdk::MotorSpec spec;
 };
 
-// Motors offered in the wizard (same data as WPILib's DCMotor catalog).
+// Every motor of the SDK table (sdk::motors::presets()), in table order.
 const std::vector<MotorChoice>& motorCatalog();
 const MotorChoice* findMotor(const QString& key);
 // Best catalog match for a spec (by name), nullptr when the spec is custom.
@@ -38,7 +38,7 @@ struct RobotBasics {
     double wheelDiameterM = 0.1016;     // 4 in
     QString driveMotor = QStringLiteral("kraken_x60");
     int motorsPerWheel = 1;
-    QString steerMotor = QStringLiteral("neo550");   // swerve only
+    QString steerMotor = QStringLiteral("neo_550");  // swerve only
     double driveGearRatio = 6.75;       // motor : wheel
     double steerGearRatio = 12.8;       // swerve only
     double bumperThicknessM = 0.0826;   // 3.25 in
