@@ -40,9 +40,7 @@ Result<bool> FramedTransport::receive(std::vector<std::byte>& frame, std::chrono
         if (complete.value()) return true;
         if (hasError_) return lastError_;
 
-        auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
-        if (left.count() < 0) left = std::chrono::milliseconds{0};
-        Result<std::size_t> got = stream_->read(rxChunk_, left);
+        Result<std::size_t> got = stream_->read(rxChunk_, proto::timeLeft(deadline));
         if (!got) {
             broken_ = true;
             lastError_ = got.error();

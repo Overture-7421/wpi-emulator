@@ -50,9 +50,7 @@ Error ioError(const char* op, DWORD e) {
 }
 
 DWORD waitMs(std::chrono::steady_clock::time_point deadline) {
-    const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
-    if (left <= 0) return 0;
-    return static_cast<DWORD>(std::min<long long>(left, 0x7FFFFFFF));
+    return static_cast<DWORD>(std::min<long long>(proto::timeLeft(deadline).count(), 0x7FFFFFFF));
 }
 
 HANDLE makeEvent() { return CreateEventW(nullptr, TRUE, FALSE, nullptr); }

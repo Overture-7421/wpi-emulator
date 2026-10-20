@@ -50,6 +50,15 @@ TEST_CASE("driver station numbers map to an alliance and back") {
     CHECK(std::string(allianceKey(Alliance::Red)) == "red");
 }
 
+TEST_CASE("timeLeft counts down to a deadline and never goes negative") {
+    const auto now = std::chrono::steady_clock::now();
+    CHECK(proto::timeLeft(now - 5s).count() == 0);
+    CHECK(proto::timeLeft(now).count() == 0);
+    const auto left = proto::timeLeft(now + 10s);
+    CHECK(left > 9s);
+    CHECK(left <= 10s);
+}
+
 TEST_CASE("handshake + per-tick exchange across an in-memory channel") {
     auto pair = testing::makeInMemoryTransportPair();
     auto codec = std::make_shared<testing::MemoryMessageCodec>();

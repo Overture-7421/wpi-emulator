@@ -747,8 +747,7 @@ Result<bool> receiveSkippingUnknown(MessageChannel& channel, Message& out, std::
                                     std::size_t* skipped) {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     for (;;) {
-        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
-        Result<bool> got = channel.receive(out, left.count() > 0 ? left : std::chrono::milliseconds{0});
+        Result<bool> got = channel.receive(out, proto::timeLeft(deadline));
         if (got || !isSkippableDecodeError(got.error())) return got;
         if (skipped != nullptr) ++*skipped;
     }

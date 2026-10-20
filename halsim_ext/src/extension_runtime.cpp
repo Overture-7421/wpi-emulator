@@ -36,10 +36,8 @@ sdk::Result<proto::HelloAck> performHandshake(proto::MessageChannel& channel, co
 
     const auto deadline = std::chrono::steady_clock::now() + config.handshakeTimeout;
     for (;;) {
-        const auto now = std::chrono::steady_clock::now();
-        if (now >= deadline) return sdk::makeError(ErrorCode::Timeout, "no HelloAck from the emulator");
-        const auto slice = std::min(std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now),
-                                    std::chrono::milliseconds(100));
+        if (std::chrono::steady_clock::now() >= deadline) return sdk::makeError(ErrorCode::Timeout, "no HelloAck from the emulator");
+        const auto slice = std::min(proto::timeLeft(deadline), std::chrono::milliseconds(100));
         proto::Message message;
         const sdk::Result<bool> got = channel.receive(message, slice);
         if (!got) {
