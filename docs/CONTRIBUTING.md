@@ -45,6 +45,19 @@ Scratch experiments go in the git-ignored `spikes/`; never commit them.
   [`Alliance`](../sdk/include/wpiemu/sdk/game/alliance.h) does for config, plugins and the UI;
   do not copy tables, validation rules or helpers between modules.
 
+## Look-alikes kept on purpose
+
+The simplification audit found these differ in behavior, precision, threading or dependency direction.
+Merge one only with proof that it removes complexity without changing behavior or adding a module edge:
+
+- Formatters and parsers: the run-view HUD, state and stats formatters; extension versus IPC environment parsing.
+- Layers: IPC framing, framed transport, codec and channel; core versus extension link types; the vendor backend
+  chain; the wizard's checks versus core validation; the config codec versus the SDK value codec.
+- Math: motor, tire and mechanism dynamics; the vision bridges' double-precision vendor math versus SDK float poses.
+- Hosts and shells: demo versus real runtime host, editor versus run-view 3D shell, POSIX versus Windows processes.
+- Targets and tests: `wpiemu_halsim_hal`, the physics library, per-boundary test harnesses, and the shared
+  `PluginRegistrar` and init-script seams.
+
 ## Tests
 
 Add a focused regression test for changed behavior, next to the tests for that module. Prefer public
@@ -78,7 +91,7 @@ One fact has one home; link instead of copying:
 - [User guide](USER_GUIDE.md): user-visible behavior; [releasing](releasing.md): artifacts/deployment.
 - [Decision index](decisions/README.md): design rationale, not subsystem manuals.
 
-Keep page ceilings: Architecture 200 lines, Building 120, this page 100, Extending 220.
+Keep page ceilings: Architecture 200 lines, Building 120, this page 110, Extending 220.
 Reference pages stay within their topic budgets; decision records are at most 45 lines each.
 Remove duplication rather than hiding it in oversized lines or creating forwarding stubs.
 
