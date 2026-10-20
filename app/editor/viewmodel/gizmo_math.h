@@ -1,7 +1,6 @@
 #pragma once
 
-// Gizmo/picking math for the editor viewport. The orbit camera itself is shared with the run view
-// (common/orbit_camera.h) and re-exported here for the editor namespace.
+// Gizmo/picking math for the editor viewport: ray/axis and ray/plane intersection, grid snapping.
 
 #include <cmath>
 #include <optional>
@@ -10,10 +9,6 @@
 #include "wpiemu/sdk/core/math.h"
 
 namespace wpiemu::app::editor {
-
-using app::CameraBasis;
-using app::OrbitCamera;
-using app::Ray;
 
 // ---- gizmo math ---------------------------------------------------------------------------------
 #ifdef _MSC_VER
