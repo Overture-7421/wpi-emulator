@@ -18,6 +18,10 @@ using namespace wpiemu;
 using namespace wpiemu::app::host;
 using namespace wpiemu::app::host::testing;
 using namespace std::chrono_literals;
+using sdk::LinkState;
+using sdk::ProcessState;
+using sdk::SessionMode;
+using sdk::SessionStatus;
 using Clock = std::chrono::steady_clock;
 
 TEST_CASE("start placement uses the configured field pose without changing the default") {
@@ -71,7 +75,7 @@ struct SyntheticProject {
     fs::path dir() const { return root / "project"; }
     void signalStop() const { std::ofstream(dir() / "stop.flag").put('x'); }
 
-    Options options(Mode mode = Mode::Run) const {
+    Options options(SessionMode mode = SessionMode::Run) const {
         Options o;
         o.mode = mode;
         o.projectDir = dir();
@@ -147,11 +151,11 @@ TEST_CASE("an invalid model refuses a run but not device discovery") {
     SyntheticProject p(kWaitScript);
     sdk::RobotConfig c = p.config();
     c.chassis.massKg = -1.f;   // chassis_invalid (Error)
-    auto run = RobotSession::start(reg.view(), c, p.options(Mode::Run));
+    auto run = RobotSession::start(reg.view(), c, p.options(SessionMode::Run));
     REQUIRE_FALSE(run.ok());
     CHECK(run.error().message.find("errors") != std::string::npos);
 
-    auto discovery = RobotSession::start(reg.view(), c, p.options(Mode::Armed));
+    auto discovery = RobotSession::start(reg.view(), c, p.options(SessionMode::Armed));
     REQUIRE_MESSAGE(discovery.ok(), (discovery.ok() ? "" : discovery.error().message));   // falls back to the bare model
     discovery.value()->requestStop();
     discovery.value()->waitUntilFinished();

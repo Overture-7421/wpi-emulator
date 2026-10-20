@@ -57,7 +57,7 @@ std::vector<sdk::Issue> EditorBackendAdapter::validate(const sdk::RobotConfig& c
 
 bool EditorBackendAdapter::detecting() const {
     const HostStatus s = services_.runtime().status();
-    return s.process == HostProcessState::Starting || (s.process == HostProcessState::Running && !s.programStarted);
+    return s.process == sdk::ProcessState::Starting || (s.process == sdk::ProcessState::Running && !s.programStarted);
 }
 
 void EditorBackendAdapter::submitConfig(const sdk::RobotConfig& config) {

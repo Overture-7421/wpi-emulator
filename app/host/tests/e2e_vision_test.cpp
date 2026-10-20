@@ -133,8 +133,8 @@ struct Collected {
 };
 
 void drain(app::host::RobotSession& s, Collected& out, bool verbose) {
-    for (const app::host::LogEntry& e : s.takeLogs(5000)) {
-        const std::string line = (e.stream == app::host::LogStream::Emulator ? "[emu " + e.source + "] " : "[robot] ") + e.text;
+    for (const sdk::SessionLogEntry& e : s.takeLogs(5000)) {
+        const std::string line = (e.stream == sdk::LogStream::Emulator ? "[emu " + e.source + "] " : "[robot] ") + e.text;
         out.console.push_back(line);
         if (verbose) std::printf("%s\n", line.c_str());
         if (const auto f = parseVision(e.text)) {
@@ -170,7 +170,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     o.scratchDir = scratch.root / "scratch";
     o.launchMode = core::launcher::LaunchMode::GradleInitScript;
     o.handshakeTimeout = 10min;
-    o.mode = app::host::Mode::Run;
+    o.mode = sdk::SessionMode::Run;
     o.timeScale = 1.0;
     o.extraEnv[sdk::env_names::kLogLevel] = "info";
     sdk::proto::DsState& ds = o.driverStation;
@@ -202,7 +202,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
                     for (int id : cams[i].visibleTagIds) everVisible[slot].insert(id);
                 }
             }
-            const app::host::SessionStatus st = session.status();
+            const sdk::SessionStatus st = session.status();
             if (done(st)) return true;
             if (!st.active()) return false;
             std::this_thread::sleep_for(20ms);
@@ -210,7 +210,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
         return false;
     };
 
-    bool ok = pump(600s, [](const app::host::SessionStatus& s) { return s.programStarted; });
+    bool ok = pump(600s, [](const sdk::SessionStatus& s) { return s.programStarted; });
     if (!ok) {
         std::printf("e2e: robot did not start: %s\n", session.status().detail.c_str());
         dumpConsole(got.console);
@@ -223,7 +223,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     fast.command = sdk::proto::SimCommand::SetTimeScale;
     fast.timeScale = 0.0;
     session.controller().control(fast);
-    ok = pump(240s, [&](const app::host::SessionStatus&) { return simSeconds() >= 6.0; });
+    ok = pump(240s, [&](const sdk::SessionStatus&) { return simSeconds() >= 6.0; });
     if (!ok) dumpConsole(got.console);
     REQUIRE(ok);
 
@@ -231,13 +231,13 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     ds.enabled = false;
     session.controller().setDriverStation(ds);
     const double stopAt = simSeconds();
-    ok = pump(240s, [&](const app::host::SessionStatus&) { return simSeconds() >= stopAt + 3.0; });
+    ok = pump(240s, [&](const sdk::SessionStatus&) { return simSeconds() >= stopAt + 3.0; });
     if (!ok) dumpConsole(got.console);
     REQUIRE(ok);
     sdk::proto::SimControl pause;
     pause.command = sdk::proto::SimCommand::Pause;
     session.controller().control(pause);
-    pump(2s, [](const app::host::SessionStatus&) { return false; });
+    pump(2s, [](const sdk::SessionStatus&) { return false; });
     drain(session, got, verbose);
 
     const auto snap = session.latestSnapshot();

@@ -35,18 +35,18 @@ QString ShellController::gameLabel() const {
 QString ShellController::runtimeLabel() const {
     const HostStatus s = services_.runtime().status();
     switch (s.process) {
-        case HostProcessState::Idle: return tr("Robot not running");
-        case HostProcessState::Starting: return tr("Starting robot…");
-        case HostProcessState::Running:
-            if (s.link == HostLinkState::Connected) {
+        case sdk::ProcessState::Idle: return tr("Robot not running");
+        case sdk::ProcessState::Starting: return tr("Starting robot…");
+        case sdk::ProcessState::Running:
+            if (s.link == sdk::LinkState::Connected) {
                 if (s.simulating) return tr("Simulating");
                 return s.programStarted ? tr("Robot ready") : tr("Starting robot program…");
             }
             return tr("Waiting for the robot to connect…");
-        case HostProcessState::Stopping: return tr("Stopping robot…");
-        case HostProcessState::Exited: return tr("Robot stopped");
-        case HostProcessState::Crashed: return tr("Robot crashed");
-        case HostProcessState::FailedToStart: return tr("Robot failed to start");
+        case sdk::ProcessState::Stopping: return tr("Stopping robot…");
+        case sdk::ProcessState::Exited: return tr("Robot stopped");
+        case sdk::ProcessState::Crashed: return tr("Robot crashed");
+        case sdk::ProcessState::FailedToStart: return tr("Robot failed to start");
     }
     return {};
 }

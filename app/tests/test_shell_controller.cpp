@@ -120,7 +120,7 @@ TEST_CASE("opening a project launches the robot, which detects the demo devices 
         const auto snap = env.demo->latestSnapshot();
         return snap && snap->devices().size() == expected;
     }));
-    CHECK(env.demo->status().link == HostLinkState::Connected);
+    CHECK(env.demo->status().link == sdk::LinkState::Connected);
     CHECK(env.demo->status().programStarted);
     CHECK(controller.runtimeLabel().contains(QStringLiteral("ready")));
 

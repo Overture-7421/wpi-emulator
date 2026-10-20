@@ -4,36 +4,36 @@ namespace wpiemu::app {
 
 namespace {
 
-runview::RobotProcessState mapProcess(HostProcessState s) {
+runview::RobotProcessState mapProcess(sdk::ProcessState s) {
     switch (s) {
-        case HostProcessState::Idle: return runview::RobotProcessState::Idle;
-        case HostProcessState::Starting: return runview::RobotProcessState::Starting;
-        case HostProcessState::Running: return runview::RobotProcessState::Running;
-        case HostProcessState::Stopping: return runview::RobotProcessState::Stopping;
-        case HostProcessState::Exited: return runview::RobotProcessState::Exited;
-        case HostProcessState::Crashed: return runview::RobotProcessState::Crashed;
-        case HostProcessState::FailedToStart: return runview::RobotProcessState::FailedToStart;
+        case sdk::ProcessState::Idle: return runview::RobotProcessState::Idle;
+        case sdk::ProcessState::Starting: return runview::RobotProcessState::Starting;
+        case sdk::ProcessState::Running: return runview::RobotProcessState::Running;
+        case sdk::ProcessState::Stopping: return runview::RobotProcessState::Stopping;
+        case sdk::ProcessState::Exited: return runview::RobotProcessState::Exited;
+        case sdk::ProcessState::Crashed: return runview::RobotProcessState::Crashed;
+        case sdk::ProcessState::FailedToStart: return runview::RobotProcessState::FailedToStart;
     }
     return runview::RobotProcessState::Idle;
 }
 
-runview::LinkState mapLink(HostLinkState s) {
+runview::LinkState mapLink(sdk::LinkState s) {
     switch (s) {
-        case HostLinkState::Disconnected: return runview::LinkState::Disconnected;
-        case HostLinkState::Connecting: return runview::LinkState::Connecting;
-        case HostLinkState::Connected: return runview::LinkState::Connected;
-        case HostLinkState::HandshakeTimeout: return runview::LinkState::HandshakeTimeout;
-        case HostLinkState::ProtocolMismatch: return runview::LinkState::ProtocolMismatch;
-        case HostLinkState::Stalled: return runview::LinkState::Stalled;
+        case sdk::LinkState::Disconnected: return runview::LinkState::Disconnected;
+        case sdk::LinkState::Connecting: return runview::LinkState::Connecting;
+        case sdk::LinkState::Connected: return runview::LinkState::Connected;
+        case sdk::LinkState::HandshakeTimeout: return runview::LinkState::HandshakeTimeout;
+        case sdk::LinkState::ProtocolMismatch: return runview::LinkState::ProtocolMismatch;
+        case sdk::LinkState::Stalled: return runview::LinkState::Stalled;
     }
     return runview::LinkState::Disconnected;
 }
 
-runview::LogStream mapStream(HostLogStream s) {
+runview::LogStream mapStream(sdk::LogStream s) {
     switch (s) {
-        case HostLogStream::Stdout: return runview::LogStream::Stdout;
-        case HostLogStream::Stderr: return runview::LogStream::Stderr;
-        case HostLogStream::Emulator: break;
+        case sdk::LogStream::Stdout: return runview::LogStream::Stdout;
+        case sdk::LogStream::Stderr: return runview::LogStream::Stderr;
+        case sdk::LogStream::Emulator: break;
     }
     return runview::LogStream::Emulator;
 }

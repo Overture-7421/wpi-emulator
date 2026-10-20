@@ -70,7 +70,6 @@ private:
     void emitLog(sdk::LogLevel level, const QString& source, const QString& text);
     void releaseSession();
     std::optional<sdk::RobotStartPose> resolveStartPlacement() const;
-    static HostStatus map(const host::SessionStatus& s);
 
     host::Registries registries_;
     RealRuntimeOptions options_;

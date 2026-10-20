@@ -22,6 +22,9 @@ Normal startup constructs `RealRuntimeHost`, which delegates process/session wor
 Qt-free [`RobotSession`](../../app/host/robot_session.h). That host builds the configured
 simulation, serves IPC through the runner, launches unmodified robot code through Gradle, and
 owns teardown. Keep Qt event-loop adaptation in `RealRuntimeHost`, not in `RobotSession`.
+Process and link state, session mode and console entries use one vocabulary,
+[`session_status.h`](../../sdk/include/wpiemu/sdk/telemetry/session_status.h), from session to
+UI; `HostStatus`/`HostLogLine` only add Qt strings through `toHostStatus`/`toHostLogLine`.
 Session construction belongs to [runtime](runtime.md); injection and robot-process behavior
 belong to [extension/IPC](extension-ipc.md).
 

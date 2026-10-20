@@ -92,7 +92,7 @@ void DemoRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<con
     emit sceneChanged();
 }
 
-void DemoRuntimeHost::setStatus(HostProcessState process, HostLinkState link, const QString& detail) {
+void DemoRuntimeHost::setStatus(sdk::ProcessState process, sdk::LinkState link, const QString& detail) {
     HostStatus next = status_;
     next.process = process;
     next.link = link;
@@ -103,19 +103,13 @@ void DemoRuntimeHost::setStatus(HostProcessState process, HostLinkState link, co
 }
 
 void DemoRuntimeHost::log(sdk::LogLevel level, const QString& source, const QString& text) {
-    HostLogLine line;
-    line.timestampMs = QDateTime::currentMSecsSinceEpoch();
-    line.level = level;
-    line.stream = HostLogStream::Emulator;
-    line.source = source;
-    line.text = text;
-    emit logLine(line);
+    emit logLine(emulatorLogLine(level, source, text));
 }
 
 void DemoRuntimeHost::launch() {
     if (status_.active()) return;
     if (!scene_.config) {
-        setStatus(HostProcessState::FailedToStart, HostLinkState::Disconnected, tr("No robot configuration loaded."));
+        setStatus(sdk::ProcessState::FailedToStart, sdk::LinkState::Disconnected, tr("No robot configuration loaded."));
         return;
     }
     status_.exitCode = 0;
@@ -124,7 +118,7 @@ void DemoRuntimeHost::launch() {
     startupStage_ = 0;
     announced_.clear();
     ++status_.runGeneration;
-    setStatus(HostProcessState::Starting, HostLinkState::Disconnected);
+    setStatus(sdk::ProcessState::Starting, sdk::LinkState::Disconnected);
     log(sdk::LogLevel::Info, QStringLiteral("demo"), tr("Demo: launching robot"));
     startupTimer_.start(startupMs_);
 }
@@ -155,12 +149,12 @@ void DemoRuntimeHost::stopSimulation() {
 void DemoRuntimeHost::advanceStartup() {
     switch (startupStage_++) {
         case 0:
-            setStatus(HostProcessState::Running, HostLinkState::Connecting);
+            setStatus(sdk::ProcessState::Running, sdk::LinkState::Connecting);
             startupTimer_.start(startupMs_);
             break;
         case 1:
             status_.programStarted = true;
-            setStatus(HostProcessState::Running, HostLinkState::Connected);
+            setStatus(sdk::ProcessState::Running, sdk::LinkState::Connected);
             log(sdk::LogLevel::Info, QStringLiteral("extension"), tr("Demo: HALSim extension connected"));
             simTimer_.start();
             startupTimer_.start(announceMs_);
@@ -195,7 +189,7 @@ void DemoRuntimeHost::stop() {
     simTimer_.stop();
     status_.simulating = false;
     status_.programStarted = false;
-    setStatus(HostProcessState::Exited, HostLinkState::Disconnected);
+    setStatus(sdk::ProcessState::Exited, sdk::LinkState::Disconnected);
     log(sdk::LogLevel::Info, QStringLiteral("demo"), tr("Demo: robot stopped"));
     publish();
 }
@@ -287,7 +281,7 @@ void DemoRuntimeHost::publish() {
     data.tick = tick_;
     data.simTimeUs = static_cast<sdk::SimTimeUs>(tick_) * sdk::kDefaultStepUs;
     data.paused = paused_;
-    data.robotConnected = status_.link == HostLinkState::Connected;
+    data.robotConnected = status_.link == sdk::LinkState::Connected;
     data.driverStation = ds_;
     data.devices = announced_;
 

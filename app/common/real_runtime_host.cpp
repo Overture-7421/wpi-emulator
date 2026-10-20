@@ -24,15 +24,6 @@ bool envFlag(const char* name) { return sdk::parseBool(envString(name)).value_or
 
 QString fromStd(const std::string& s) { return QString::fromStdString(s); }
 
-HostLogStream mapStream(host::LogStream s) {
-    switch (s) {
-        case host::LogStream::Stdout: return HostLogStream::Stdout;
-        case host::LogStream::Stderr: return HostLogStream::Stderr;
-        case host::LogStream::Emulator: break;
-    }
-    return HostLogStream::Emulator;
-}
-
 }  // namespace
 
 RealRuntimeHost::RealRuntimeHost(host::Registries registries, RealRuntimeOptions options, QObject* parent)
@@ -63,32 +54,6 @@ std::shared_ptr<const sdk::ISimSnapshot> RealRuntimeHost::latestSnapshot() const
     return lastSnapshot_;
 }
 
-HostStatus RealRuntimeHost::map(const host::SessionStatus& s) {
-    HostStatus out;
-    out.programStarted = s.programStarted;
-    out.simulating = s.simulating;
-    out.exitCode = s.exitCode;
-    out.detail = fromStd(s.detail);
-    switch (s.process) {
-        case host::ProcessState::Idle: out.process = HostProcessState::Idle; break;
-        case host::ProcessState::Starting: out.process = HostProcessState::Starting; break;
-        case host::ProcessState::Running: out.process = HostProcessState::Running; break;
-        case host::ProcessState::Stopping: out.process = HostProcessState::Stopping; break;
-        case host::ProcessState::Exited: out.process = HostProcessState::Exited; break;
-        case host::ProcessState::Crashed: out.process = HostProcessState::Crashed; break;
-        case host::ProcessState::FailedToStart: out.process = HostProcessState::FailedToStart; break;
-    }
-    switch (s.link) {
-        case host::LinkState::Disconnected: out.link = HostLinkState::Disconnected; break;
-        case host::LinkState::Connecting: out.link = HostLinkState::Connecting; break;
-        case host::LinkState::Connected: out.link = HostLinkState::Connected; break;
-        case host::LinkState::HandshakeTimeout: out.link = HostLinkState::HandshakeTimeout; break;
-        case host::LinkState::ProtocolMismatch: out.link = HostLinkState::ProtocolMismatch; break;
-        case host::LinkState::Stalled: out.link = HostLinkState::Stalled; break;
-    }
-    return out;
-}
-
 void RealRuntimeHost::setStatus(const HostStatus& status) {
     HostStatus next = status;
     next.runGeneration = runGeneration_;
@@ -98,19 +63,13 @@ void RealRuntimeHost::setStatus(const HostStatus& status) {
 }
 
 void RealRuntimeHost::emitLog(sdk::LogLevel level, const QString& source, const QString& text) {
-    HostLogLine line;
-    line.timestampMs = QDateTime::currentMSecsSinceEpoch();
-    line.level = level;
-    line.stream = HostLogStream::Emulator;
-    line.source = source;
-    line.text = text;
-    emit logLine(line);
+    emit logLine(emulatorLogLine(level, source, text));
 }
 
 void RealRuntimeHost::failToStart(const QString& detail) {
     HostStatus s;
-    s.process = HostProcessState::FailedToStart;
-    s.link = HostLinkState::Disconnected;
+    s.process = sdk::ProcessState::FailedToStart;
+    s.link = sdk::LinkState::Disconnected;
     s.detail = detail;
     emitLog(sdk::LogLevel::Error, QStringLiteral("runtime"), detail);
     setStatus(s);
@@ -121,16 +80,8 @@ void RealRuntimeHost::releaseSession() {
     timer_.stop();
     session_->requestStop();
     session_->waitUntilFinished();
-    setStatus(map(session_->status()));   // terminal: Exited, or what ended the run (Crashed, FailedToStart)
-    for (const host::LogEntry& e : session_->takeLogs(5000)) {
-        HostLogLine line;
-        line.timestampMs = e.timestampMs;
-        line.level = e.level;
-        line.stream = mapStream(e.stream);
-        line.source = fromStd(e.source);
-        line.text = fromStd(e.text);
-        emit logLine(line);
-    }
+    setStatus(toHostStatus(session_->status()));   // terminal: Exited, or what ended the run (Crashed, FailedToStart)
+    for (const sdk::SessionLogEntry& e : session_->takeLogs(5000)) emit logLine(toHostLogLine(e));
     lastSnapshot_ = session_->latestSnapshot();
     session_.reset();
 }
@@ -182,7 +133,7 @@ void RealRuntimeHost::launch() {
     }
 
     host::Options o;
-    o.mode = host::Mode::Armed;
+    o.mode = sdk::SessionMode::Armed;
     o.projectDir = std::filesystem::path(projectPath_.toStdU16String());
     o.extensionLibrary = extensionPath();
     if (o.extensionLibrary.empty()) {
@@ -214,7 +165,7 @@ void RealRuntimeHost::launch() {
     session_ = std::move(started).value();
     launchedConfig_ = config_;
     lastSnapshot_.reset();
-    setStatus(map(session_->status()));
+    setStatus(toHostStatus(session_->status()));
     emit snapshotPublished();
     timer_.start();
 }
@@ -314,17 +265,9 @@ void RealRuntimeHost::pump() {
         timer_.stop();
         return;
     }
-    for (const host::LogEntry& e : session_->takeLogs(500)) {
-        HostLogLine line;
-        line.timestampMs = e.timestampMs;
-        line.level = e.level;
-        line.stream = mapStream(e.stream);
-        line.source = fromStd(e.source);
-        line.text = fromStd(e.text);
-        emit logLine(line);
-    }
-    const host::SessionStatus s = session_->status();
-    setStatus(map(s));
+    for (const sdk::SessionLogEntry& e : session_->takeLogs(500)) emit logLine(toHostLogLine(e));
+    const sdk::SessionStatus s = session_->status();
+    setStatus(toHostStatus(s));
     sendBeginIfReady();
     if (auto snapshot = session_->latestSnapshot(); snapshot && snapshot != lastSnapshot_) {
         lastSnapshot_ = std::move(snapshot);

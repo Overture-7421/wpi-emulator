@@ -44,7 +44,7 @@ public slots:
     void setDriverStation(const wpiemu::sdk::proto::DsState& state) override;
 
 private:
-    void setStatus(HostProcessState process, HostLinkState link, const QString& detail = {});
+    void setStatus(sdk::ProcessState process, sdk::LinkState link, const QString& detail = {});
     void log(sdk::LogLevel level, const QString& source, const QString& text);
     void advanceStartup();
     void announceNextDevice();
