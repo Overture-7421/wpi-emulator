@@ -4,7 +4,7 @@ if(WPIEMU_BUILD_PLUGIN_TEMPLATE)
     add_subdirectory(_template)
 endif()
 
-# Aggregation seam (ADR 0004/0005): the single target that links every built-in plugin and
+# Aggregation seam (docs/ARCHITECTURE.md): the single target that links every built-in plugin and
 # defines wpiemu::sdk::registerBuiltinGamePlugins(). The app links only this target, never a
 # wpiemu_plugin_* target. The template plugin is deliberately NOT included.
 add_library(wpiemu_plugins_builtin STATIC builtin_plugins.cpp)

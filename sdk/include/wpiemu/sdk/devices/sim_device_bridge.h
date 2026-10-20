@@ -1,6 +1,6 @@
 #pragma once
 
-// Generic, table-driven bridge for devices exposed as HAL SimDevices (ADR 0002 L1): Phoenix 6 /
+// Generic, table-driven bridge for devices exposed as HAL SimDevices (docs/reference/bridges.md): Phoenix 6 /
 // Phoenix 5 wrapper classes, NavX, ADIS, ... A vendor bridge is just a TABLE of SimDeviceRule on
 // top of this class; no HAL/vendor headers are needed here. The only HAL-touching piece is the
 // ISimDeviceBackend the extension (or a vendor bridge) implements over HAL_*/HALSIM_* SimDevice calls.
@@ -77,7 +77,7 @@ struct SimDeviceRule {
     // true: `bus` is a FACT of the family (e.g. rio-only HAL devices) and is copied to the descriptor.
     // false: the SimDevice name carries no bus (Phoenix 6 / CAN vendors): the descriptor's bus stays
     // kBusUnknown and may only be filled later by an observation (SimDeviceBridge::observeBus, L3).
-    // CAN-vendor rules SHOULD set this to false so no per-device bus is fabricated (ADR 0006).
+    // CAN-vendor rules SHOULD set this to false so no per-device bus is fabricated (docs/ARCHITECTURE.md).
     bool busIsStatic = true;
 };
 

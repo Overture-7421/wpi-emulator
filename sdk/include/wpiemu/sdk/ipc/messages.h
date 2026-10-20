@@ -4,11 +4,11 @@
 // running inside the robot process. Plain structs: NO serialisation format is implied here
 // (the codec in ipc/ decides: flatbuffers, protobuf-lite, hand-rolled binary...).
 //
-// Versioning: the SDK stays at version 1 until release (ADR 0013), so `kProtocolVersion` is 1. Peers exchange it in
+// Versioning: the SDK stays at version 1 until release (docs/CONTRIBUTING.md), so `kProtocolVersion` is 1. Peers exchange it in
 // Hello/HelloAck; a peer whose version is < the other's `kMinCompatibleProtocolVersion` is refused. Codecs
 // tolerate absent trailing fields (default value) and ignore bytes they do not know.
 //
-// Flow (ADR 0001 / 0002), emulator = clock master:
+// Flow (docs/reference/extension-ipc.md), emulator = clock master:
 //   ext -> app : Hello (+ proposed watchdog)
 //   app -> ext : HelloAck (clock mode, step size, sessionId, runEpoch, negotiated watchdog)
 //   ext -> app : DeviceAnnounce*  (any time; re-announce on reconnect)
@@ -137,7 +137,7 @@ struct Hello {
     std::int32_t wpilibYear = 0;         // e.g. 2026 (from the HAL/WPILib version the robot runs)
     std::string wpilibVersion;           // free-form, e.g. "2026.2.1"
     std::string extensionVersion;
-    std::int64_t pid = 0;                // robot process id, so the launcher can kill it (ADR 0001)
+    std::int64_t pid = 0;                // robot process id, so the launcher can kill it (docs/reference/extension-ipc.md)
     std::string programName;
     std::vector<std::pair<std::string, std::int32_t>> halPortCounts;  // "pwm" -> 20, ...
     std::uint32_t proposedWatchdogMs = 0;  // extension's minimum acceptable watchdog; 0 = no preference
@@ -153,7 +153,7 @@ struct HelloAck {
     std::uint32_t stepUs = 5000;         // must divide the robot period (20 ms) evenly
     std::uint64_t sessionId = 0;
     bool discoveryOnly = false;          // armed start: announce only, no physics, until BeginLockstep
-    bool enableL3Hooks = false;          // opt-in CTRE hooks (ADR 0002 L3)
+    bool enableL3Hooks = false;          // opt-in CTRE hooks (docs/reference/bridges.md)
     // ---- absent in a HelloAck that does not send them => these defaults ----
     std::uint64_t runEpoch = kFirstRunEpoch;  // epoch in force for this connection (monotonic across reconnects)
     std::uint32_t watchdogTimeoutMs = kDefaultWatchdogTimeoutMs;  // negotiateWatchdogTimeoutMs(...)

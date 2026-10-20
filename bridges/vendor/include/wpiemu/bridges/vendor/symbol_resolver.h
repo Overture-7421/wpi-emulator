@@ -20,7 +20,7 @@ public:
 
 enum class ModuleLoadMode {
     // Only attach to a module the process already loaded (GetModuleHandle / dlopen(RTLD_NOLOAD)). Required for
-    // CTRE (ADR 0002): we must talk to the very module instance the robot uses, never to a private copy.
+    // CTRE (docs/reference/bridges.md): we must talk to the very module instance the robot uses, never to a private copy.
     AttachOnly,
     // Load the module if it is absent. Intended for tools and tests, never for the robot process.
     LoadIfAbsent,

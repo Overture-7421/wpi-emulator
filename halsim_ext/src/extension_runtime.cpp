@@ -179,7 +179,7 @@ sdk::Status ExtensionRuntime::start() {
     if (!session) return fail(session.error());
     std::unique_ptr<SimSession> active = std::move(session).value();
     active->begin();
-    // HAL time is paused before the robot code exists (ADR 0001); the bridges' initialNotify flood
+    // HAL time is paused before the robot code exists (docs/reference/extension-ipc.md); the bridges' initialNotify flood
     // then lands in the outbound queue in order.
     if (active->lockstep()) s.deps.ports.clock.pauseTiming();
     s.bridges.start(s.optionalHooks);

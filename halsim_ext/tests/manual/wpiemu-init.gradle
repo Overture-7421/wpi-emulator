@@ -1,5 +1,5 @@
 // Command-line init script (gradlew -I wpiemu-init.gradle simulateJava|simulateNative): makes GradleRIO's
-// simulation tasks load halsim_wpiemu without touching the robot project (ADR 0001). The emulator's launcher
+// simulation tasks load halsim_wpiemu without touching the robot project (docs/reference/extension-ipc.md). The emulator's launcher
 // generates the production equivalent; this copy exists for the manual end-to-end test.
 //
 // GradleRIO overwrites HALSIM_EXTENSIONS when a default-enabled extension (the stock Sim GUI) exists, so the

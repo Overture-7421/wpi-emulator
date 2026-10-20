@@ -1,8 +1,7 @@
 // Manual-test fake emulator for halsim_wpiemu (NOT run by ctest). It plays the emulator side of the
 // protocol over the real local transport: accepts the extension, answers Hello, waits for the robot
 // program to start, enables the robot, then single-steps lock-step ticks and prints what the robot
-// created (devices) and did (outputs). See halsim_ext/tests/manual/README.md for how to point a
-// real WPILib project at it.
+// created (devices) and did (outputs).
 //
 //   wpiemu_halsim_fake_emulator [--endpoint-file F] [--seconds S] [--step-us N] [--no-enable]
 //                               [--accept-timeout-s N] [--start-timeout-s N] [--dump-outputs]

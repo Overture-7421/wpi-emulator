@@ -1,7 +1,7 @@
 #pragma once
 
 // Start positions: named field poses the user can put the robot back on from the run view
-// (RobotConfig::startPositions, ADR 0020). Stored in SI units, field frame (Z-up NWU).
+// (RobotConfig::startPositions, docs/reference/runtime.md). Stored in SI units, field frame (Z-up NWU).
 
 #include <string>
 #include <string_view>

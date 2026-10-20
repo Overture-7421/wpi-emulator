@@ -9,7 +9,7 @@
 //     angle-unwrapped when requested, skipped when unchanged, and verified by read-back.
 //  2. Disturbance handling: if the value read back at the next tick differs from what we wrote (Phoenix's own
 //     periodic mirror, or another writer such as a robot-side simulation), it is counted, re-asserted
-//     (reassertAfterMirror) and, when persistent, reported once as a foreign write (ADR 0002 R4/R9).
+//     (reassertAfterMirror) and, when persistent, reported once as a foreign write (docs/reference/bridges.md).
 //  3. Robot-initiated resets (`setYaw`, `setPosition`) are NOT fought: the firmware keeps them as an offset on
 //     top of the integrated raw value, we only ever write absolute continuous physical truth.
 //

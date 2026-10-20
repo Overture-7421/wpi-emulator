@@ -4,7 +4,7 @@
 // MessageType, so every codec carries them unchanged).
 //
 // Why: the extension only starts stepping HAL time once the robot program called
-// HAL_ObserveUserProgramStarting (ADR 0001); until then it holds the first SensorFrame unanswered.
+// HAL_ObserveUserProgramStarting (docs/reference/extension-ipc.md); until then it holds the first SensorFrame unanswered.
 // The emulator needs to know why it is not being acknowledged, so that it neither fires its
 // watchdog nor starts physics before the robot exists. `kLifecycleProgramStarted` is that signal:
 // every device the robot constructs in its constructor has been announced BEFORE it is sent.

@@ -3,7 +3,7 @@
 // Motor data table + motor models.
 //
 // The catalog carries the same numbers as WPILib's `DCMotor` factory methods (allwpilib 2026,
-// wpimath `edu.wpi.first.math.system.plant.DCMotor`, ONE motor each); see docs/mechanisms.md for
+// wpimath `edu.wpi.first.math.system.plant.DCMotor`, ONE motor each); see docs/reference/mechanisms.md for
 // the per-motor source lines. Entries are looked up by a stable snake_case key that is also the
 // persisted value of the `motorModel` mechanism property.
 //

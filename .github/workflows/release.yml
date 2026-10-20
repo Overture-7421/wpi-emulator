@@ -4,7 +4,7 @@ name: Release
 #   Windows  wpi-emulator-<ver>-windows-x64.exe (NSIS installer) + .zip (portable)
 #   macOS    wpi-emulator-<ver>-macos-arm64-x64.dmg (universal; signed + notarized when the Apple secrets exist)
 #   Linux    wpi-emulator-<ver>-linux-x86_64.AppImage
-# See docs/packaging.md for the design, the secrets, and how to run each step locally.
+# See docs/releasing.md for the design, the secrets, and how to run each step locally.
 
 on:
   push:
@@ -54,7 +54,7 @@ jobs:
         include:
           - { name: windows, os: windows-2022, qt_arch: win64_msvc2022_64 }
           - { name: linux, os: ubuntu-22.04, qt_arch: "" }   # oldest supported glibc for the AppImage and the extension
-          - { name: macos, os: macos-14, qt_arch: "" }       # Apple Silicon; see docs/packaging.md for universal builds
+          - { name: macos, os: macos-14, qt_arch: "" }       # Apple Silicon; see docs/releasing.md for universal builds
     env:
       MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}                       # base64 of the Developer ID .p12
       MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}

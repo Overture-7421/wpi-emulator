@@ -8,7 +8,7 @@
 //
 // Flywheels, rollers, belts, turrets (rotary), hoods and pivots (arm), elevators and climbers (linear) are all this one
 // template with different properties; intakes and other season constructs belong to the game plugin, which composes
-// mechanisms by id. See docs/mechanisms.md for slots, properties and published state.
+// mechanisms by id. See docs/reference/mechanisms.md for slots, properties and published state.
 
 #include <memory>
 

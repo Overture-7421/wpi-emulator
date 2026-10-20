@@ -2,7 +2,7 @@
 
 // The project tree: robot > chassis (COM, shapes), drivetrain > wheels, mechanisms (nested by
 // attachment) > slots / shapes / volumes, sensors, game plugin (volumes and zones). A wheel or mechanism driven by a motion
-// link (ADR 0012) is nested under the owner that drives it, read-only, and takes no motor slot. Each row
+// link (docs/reference/mechanisms.md) is nested under the owner that drives it, read-only, and takes no motor slot. Each row
 // carries a SelectionRef, a kind and (for slots) the mapping state; the delegate paints them. Accepts
 // device / template / mechanism drops and reports them as signals, never edits the document itself.
 

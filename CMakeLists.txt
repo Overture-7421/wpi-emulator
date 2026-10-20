@@ -54,4 +54,4 @@ if(WPIEMU_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-include(WpiEmuInstall)   # install() + CPack rules (docs/packaging.md)
+include(WpiEmuInstall)   # install() + CPack rules (docs/releasing.md)

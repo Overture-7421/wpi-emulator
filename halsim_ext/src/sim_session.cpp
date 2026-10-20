@@ -201,7 +201,7 @@ std::optional<SessionEnd> SimSession::dispatch(proto::Message&& message) {
 
 void SimSession::onSensorFrame(proto::SensorFrame&& frame) {
     if (!programStarted_) {
-        // Hold it: stepping before the robot program exists would desynchronise sim time (ADR 0001).
+        // Hold it: stepping before the robot program exists would desynchronise sim time (docs/reference/extension-ipc.md).
         if (deferredFrame_) {
             s_.stats.protocolErrors.fetch_add(1, std::memory_order_relaxed);
             post(proto::Message(follower_.makeAck(frame, proto::TickResult::ProtocolError)));

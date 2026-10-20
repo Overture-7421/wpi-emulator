@@ -4,7 +4,7 @@
 // AnalogIn, Relay, Encoder, PCM/PH solenoids...). The derived class only answers "is channel N
 // initialised?", describes it, and reads/writes its signals through HALSIM_* calls; the base
 // handles live-flag diffing (announce on init, retire on free), DeviceId bookkeeping and sample
-// (de)multiplexing. (ADR 0001: poll the per-index Initialized flag; HAL callbacks only set a dirty flag.)
+// (de)multiplexing. (docs/reference/extension-ipc.md: poll the per-index Initialized flag; HAL callbacks only set a dirty flag.)
 
 #include <cstddef>
 #include <cstdint>

@@ -1,6 +1,6 @@
 #pragma once
 
-// Data tables: how CTRE SimDevices map onto canonical signals (ADR 0002 table, re-verified for Phoenix 6 26.3.0
+// Data tables: how CTRE SimDevices map onto canonical signals (docs/reference/bridges.md table, re-verified for Phoenix 6 26.3.0
 // against the vendor wrapper classes). A vendor bridge is only a table; adding a device = adding a rule.
 //
 // Units: Phoenix publishes rotations / rotations-per-second for rotary values and DEGREES / degrees-per-second

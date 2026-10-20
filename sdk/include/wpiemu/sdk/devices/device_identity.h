@@ -1,6 +1,6 @@
 #pragma once
 
-// Device identity model (ADR 0006).
+// Device identity model (docs/ARCHITECTURE.md).
 //
 //  * DeviceKey            robot-DECLARED address: family/type/id/bus[/channel]. What robot.json and the
 //                         robot program say. The bus is a label the user/robot asserted.

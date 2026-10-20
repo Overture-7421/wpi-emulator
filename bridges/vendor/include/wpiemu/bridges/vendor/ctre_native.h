@@ -1,13 +1,13 @@
 #pragma once
 
-// CTRE native supplement (ADR 0002 L2 + L3 extension seam). Everything here is OPTIONAL:
+// CTRE native supplement (docs/reference/bridges.md extension seam). Everything here is OPTIONAL:
 //  * L2: CTRE's public C sim ABI exported by CTRE_PhoenixTools_Sim (`c_ctre_phoenix6_platform_sim_*`,
 //    `c_ctre_phoenix6_get_configs_no_malloc`, `c_ctre_phoenix6_encode_device`). Bound lazily through an
 //    ISymbolResolver (attach-only: the module instance the robot already loaded). Every symbol may be absent;
 //    all calls then fail soft. Only READ-ONLY config read-back is used by default; the physics get/set calls
 //    are exposed for opt-in features but are never invoked by the shipped bridge.
 //  * L3: inline hooks on CTRE binaries (bus names, SimCreate for non-SimDevice classes, control requests) are
-//    NOT implemented here (CTRE license forbids modifying their binaries; ADR 0002 R7). ICtreHookProvider is
+//    NOT implemented here (CTRE license forbids modifying their binaries; docs/reference/bridges.md). ICtreHookProvider is
 //    only the extension interface an out-of-tree/opt-in module can implement to feed observations.
 
 #include <cstdint>

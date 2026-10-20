@@ -55,7 +55,7 @@ struct ChassisInfo {
 };
 using ChassisBuilder = std::function<sdk::Result<ChassisInfo>(sdk::IPhysicsWorld&, const sdk::ChassisSpec&, const sdk::DrivetrainSpec&)>;
 
-// Reference builder used when none is injected (ADR 0003 chassis model): one dynamic body whose origin is the COM, a
+// Reference builder used when none is injected (docs/reference/physics.md chassis model): one dynamic body whose origin is the COM, a
 // hull box, collidable primitives, one frictionless pad sphere per wheel, explicit mass properties.
 // WheelSpec::positionM.z is the hub height above the floor (<= 0 means one radius).
 sdk::Result<ChassisInfo> buildReferenceChassis(sdk::IPhysicsWorld& world, const sdk::ChassisSpec& chassis, const sdk::DrivetrainSpec& drivetrain);

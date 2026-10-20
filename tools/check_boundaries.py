@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Architecture boundary check for wpi-emulator.
 
-Rules (see docs/decisions/0004-modular-boundaries.md and 0005-sdk-freeze.md):
+Rules (see docs/ARCHITECTURE.md):
   * core/, app/, sdk/ (and every non-plugin module) never include anything from plugins/.
   * plugins/<name>/ may include only wpiemu/sdk/** and its own files; never core, app,
     ipc, bridges, halsim_ext, or another plugin.
@@ -47,7 +47,7 @@ ALLOWED: dict[str, set[str]] = {
 # Any plugin ("plugins/<name>") may reference only these (plus itself).
 PLUGIN_ALLOWED = {"sdk"}
 # The plugins/ aggregation seam (files directly in plugins/, target wpiemu_plugins_builtin) is the one
-# place that may see every plugin (ADR 0005). app may link it (never include it); nobody else may
+# place that may see every plugin (docs/CONTRIBUTING.md). app may link it (never include it); nobody else may
 # reference it, and plugins may not reference it.
 AGGREGATOR = "plugins"
 AGGREGATOR_ALLOWED = {"sdk", AGGREGATOR, "plugins/*"}

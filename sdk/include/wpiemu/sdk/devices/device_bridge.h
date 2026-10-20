@@ -10,7 +10,7 @@
 // Bridges depend only on the SDK (+ the HAL / vendor headers they wrap, which the SDK never sees).
 //
 // Threading: callbacks from HAL arrive on ROBOT threads inside HAL init calls, so a bridge MUST
-// NOT block, call HALSIM_StepTiming, or do I/O there (ADR 0001). It records the event and
+// NOT block, call HALSIM_StepTiming, or do I/O there (docs/reference/extension-ipc.md). It records the event and
 // announces it later from poll(). `poll`, `collectOutputs`, `applyInputs`, `applyLoopback` are
 // called on the extension's single CLOCK THREAD while the robot is quiescent (between
 // HALSIM_StepTiming calls), so they need no extra locking against the robot loop.

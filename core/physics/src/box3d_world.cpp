@@ -1,4 +1,4 @@
-// Box3D adapter for sdk::IPhysicsWorld (ADR 0003, ADR 0008). The only translation unit that sees Box3D.
+// Box3D adapter for sdk::IPhysicsWorld (docs/reference/physics.md). The only translation unit that sees Box3D.
 
 #include "wpiemu/core/physics/box3d_world.h"
 

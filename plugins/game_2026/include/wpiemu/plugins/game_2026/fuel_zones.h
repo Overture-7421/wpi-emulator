@@ -1,6 +1,6 @@
 #pragma once
 
-// The two zone kinds this plugin owns (RobotConfig::zones, see docs/decisions/0016-zones.md) and their
+// The two zone kinds this plugin owns (RobotConfig::zones, see docs/reference/game-plugin.md) and their
 // per-session runtimes:
 //   "game_2026.pickup"  a volume on the robot that absorbs fuel into the meter while its activation holds
 //   "game_2026.shooter" a muzzle that launches fuel bodies while its activation holds and the flywheel is up to speed

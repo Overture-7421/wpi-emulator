@@ -1,6 +1,6 @@
 #pragma once
 
-// Traction drivetrains (ADR 0003): ground contact by ray, quasi-static normal loads, one ITireModel solve per
+// Traction drivetrains (docs/reference/physics.md): ground contact by ray, quasi-static normal loads, one ITireModel solve per
 // wheel, forces applied to the chassis at the ground contact points. No suspension.
 //
 //   SwerveDrivetrain   per-wheel azimuth (steer motor dynamics) + drive

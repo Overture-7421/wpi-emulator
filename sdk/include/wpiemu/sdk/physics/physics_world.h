@@ -11,7 +11,7 @@
 
 namespace wpiemu::sdk {
 
-// Engine-agnostic rigid-body world (implemented by core over Box3D, ADR 0003; fakes in sdk/testing).
+// Engine-agnostic rigid-body world (implemented by core over Box3D, docs/reference/physics.md; fakes in sdk/testing).
 //
 // Threading: the world is owned by the SIM THREAD. Only that thread may call any method. Other
 // threads (UI) never touch it; they read ISimSnapshot copies instead.
@@ -21,7 +21,7 @@ namespace wpiemu::sdk {
 // Lifetime & ids: BodyId/ShapeId are opaque; invalid (default) ids are tolerated by getters
 // (neutral value returned: identity pose, zero vector, false) and ignored by setters. Destroying
 // a body destroys its shapes. Do NOT create/destroy bodies while iterating the event spans:
-// copy what you need, then mutate (see ADR 0003 notes).
+// copy what you need, then mutate (see docs/reference/physics.md notes).
 //
 // Forces: applyForce*/applyTorque are consumed by the NEXT step() only; re-apply every step.
 //

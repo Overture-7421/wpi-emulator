@@ -96,7 +96,7 @@ Result<ChassisInfo> buildReferenceChassis(IPhysicsWorld& world, const ChassisSpe
         pad.geometry = SphereShape{w.radiusM};
         const float hubZ = w.positionM.z > 0.f ? w.positionM.z : w.radiusM;
         pad.local.position = Vec3{w.positionM.x, w.positionM.y, hubZ - chassis.comHeightM};
-        pad.material = Material{0.f, 0.f, 0.f};  // zero friction: traction comes from the tire model (ADR 0003)
+        pad.material = Material{0.f, 0.f, 0.f};  // zero friction: traction comes from the tire model (docs/reference/physics.md)
         pad.category = layer::Robot;
         pad.mask = kPadMask;
         (void)world.addShape(id, pad);

@@ -35,7 +35,7 @@ public:
     virtual std::uint64_t robotLoopCount() const = 0;
 };
 
-// The extension plays the Driver Station (no halsim_gui is loaded, ADR 0001).
+// The extension plays the Driver Station (no halsim_gui is loaded, docs/reference/extension-ipc.md).
 class IDriverStationSink {
     WPIEMU_INTERFACE(IDriverStationSink)
 public:

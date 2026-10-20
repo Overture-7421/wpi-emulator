@@ -1,6 +1,6 @@
 // Windows transport: overlapped named pipes (byte mode; framing is FramedTransport's job).
 //
-// Why a named pipe and not TCP loopback (ADR 0007): it is never reachable from the network (the
+// Why a named pipe and not TCP loopback (docs/reference/extension-ipc.md): it is never reachable from the network (the
 // server rejects remote clients), the name is unguessable and the first instance is created with
 // FILE_FLAG_FIRST_PIPE_INSTANCE (no squatting), the DACL admits only the current user, there are no
 // ports to collide or firewall prompts, and a ping-pong costs ~20-40 us.

@@ -24,7 +24,7 @@ namespace wpiemu::core::launcher {
 // core may not include them).
 namespace env_var {
 inline constexpr const char* kExtension = "WPIEMU_EXT";             // consumed by the generated init script
-inline constexpr const char* kEndpoint = "WPIEMU_IPC_ENDPOINT";      // authoritative (ADR 0007)
+inline constexpr const char* kEndpoint = "WPIEMU_IPC_ENDPOINT";      // authoritative (docs/reference/extension-ipc.md)
 inline constexpr const char* kEndpointAlias = "WPIEMU_ENDPOINT";
 inline constexpr const char* kClock = "WPIEMU_CLOCK";                // "master" (lock-step) | "realtime"
 inline constexpr const char* kProgramName = "WPIEMU_PROGRAM_NAME";

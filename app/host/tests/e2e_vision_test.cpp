@@ -295,7 +295,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     CHECK(flag(got.photon.back(), "connected"));
     CHECK(snap->cameras().size() == 2);
 
-    // The Java sample drives forward in autonomous (the Phoenix 6 C++ drive path is unverified, ADR 0002 R8: only vision is checked there).
+    // The Java sample drives forward in autonomous (the Phoenix 6 C++ drive path is unverified, docs/reference/bridges.md: only vision is checked there).
     if (language != "cpp") CHECK(truth.x > 2.0 + 0.5);
     // ---- tags were seen by the robot code wherever the emulator says a camera saw them ------------------------
     const bool llSaw = std::any_of(got.limelight.begin(), got.limelight.end(), [](const Fields& f) { return flag(f, "tv") && num(f, "tags") >= 1; });

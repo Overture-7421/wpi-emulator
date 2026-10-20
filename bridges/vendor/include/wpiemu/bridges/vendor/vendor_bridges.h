@@ -1,10 +1,10 @@
 #pragma once
 
-// Entry point of the vendor bridge module (ADR 0002): registers one IDeviceBridge per vendor family into the
+// Entry point of the vendor bridge module (docs/reference/bridges.md): registers one IDeviceBridge per vendor family into the
 // extension's DeviceBridgeRegistry:
 //   "ctre.phoenix6"  Talon FX/FXS (Kraken, Falcon), CANcoder, Pigeon 2, CANdle, CANrange, CANdi
 //   "ctre.phoenix5"  Talon SRX, Victor SPX, legacy Pigeon IMU (discover-only)
-// Adding a vendor (REV, NavX, ...) = a rule table + one more registration here; see docs/bridges-vendor.md.
+// Adding a vendor (REV, NavX, ...) = a rule table + one more registration here; see docs/reference/bridges.md.
 
 #include <functional>
 #include <memory>

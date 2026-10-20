@@ -1,7 +1,7 @@
 #pragma once
 
 // Anchored joints between a dynamic body and a point of the (static) field, used by the mechanism coupling
-// (ADR 0008). Engine-agnostic: the Box3D world implements it, no Box3D type appears here. Not part of the
+// (docs/reference/physics.md). Engine-agnostic: the Box3D world implements it, no Box3D type appears here. Not part of the
 // SDK interface IPhysicsWorld because only the chassis coupling needs it; reach it with
 // dynamic_cast<IPhysicsJointHost*>(&world).
 

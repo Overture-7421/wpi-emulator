@@ -1,6 +1,6 @@
 #pragma once
 
-// Mechanism <-> chassis physics coupling (ADR 0006).
+// Mechanism <-> chassis physics coupling (docs/ARCHITECTURE.md).
 //
 // Mechanisms own their local plants (IPlant) but some of them push on, or are pushed by, the robot
 // chassis: a climber hooking a field point, an elevator whose carriage load shifts the COM, an

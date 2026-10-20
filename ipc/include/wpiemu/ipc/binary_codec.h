@@ -1,7 +1,7 @@
 #pragma once
 
 // Concrete IMessageCodec: compact, little-endian, versioned binary serialisation of every
-// sdk proto:: message (see ipc/README.md for the byte layout).
+// sdk proto:: message (see docs/reference/extension-ipc.md for the byte layout).
 //
 //   frame = u8 wireFormat | u16 messageType | body
 //

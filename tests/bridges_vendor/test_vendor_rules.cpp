@@ -75,7 +75,7 @@ TEST_CASE("vendor rules: TalonFX: tree grouped into one device with canonical si
     CHECK(ann.descriptor.type == "talonfx");
     CHECK(ann.descriptor.vendor == "ctre");
     CHECK(ann.descriptor.id == 4);
-    CHECK(ann.descriptor.bus == wpiemu::sdk::kBusUnknown);  // never fabricated (ADR 0006)
+    CHECK(ann.descriptor.bus == wpiemu::sdk::kBusUnknown);  // never fabricated (docs/ARCHITECTURE.md)
     CHECK(ann.descriptor.nativeName == "CANMotor:Talon FX (v6)[4]");
     CHECK(ann.descriptor.capabilities.has(Capability::MotorOutput));
     CHECK(ann.descriptor.capabilities.has(Capability::RotorFeedback));

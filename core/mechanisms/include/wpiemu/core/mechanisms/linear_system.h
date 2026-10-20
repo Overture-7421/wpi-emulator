@@ -4,7 +4,7 @@
 // plants need: LinearSystemId (elevator / flywheel / DC motor / single-jointed arm) and the matrix
 // exponential discretization (frc::DiscretizeAB). No external dependency; double precision.
 //
-// Equations are those of allwpilib 2026 `LinearSystemId.java` (see docs/mechanisms.md):
+// Equations are those of allwpilib 2026 `LinearSystemId.java` (see docs/reference/mechanisms.md):
 //   elevator   A = [[0,1],[0,-G^2 Kt/(R r^2 m Kv)]]   B = [0, G Kt/(R r m)]
 //   flywheel   A = [-G^2 Kt/(Kv R J)]                 B = [G Kt/(R J)]
 //   dc motor / single-jointed arm

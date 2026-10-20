@@ -21,7 +21,7 @@ struct EncoderModel {
     }
 };
 
-// Integrated motor sensor: the ROTOR side of the gearbox (ADR 0002: the emulator drives the rotor,
+// Integrated motor sensor: the ROTOR side of the gearbox (docs/reference/bridges.md: the emulator drives the rotor,
 // the device firmware applies its SensorToMechanismRatio). `inverted` mirrors the motor direction.
 struct RotorSensorModel {
     double gearRatio = 1.0;   // motor : output

@@ -3,7 +3,7 @@
 // REBUILT (2026) field and game-piece dimensions, SI units, field frame = SDK frame (Z-up NWU:
 // +X from the blue alliance wall toward the red one, +Y left, origin at the blue/low-Y corner).
 //
-// Source tags (full citations and the simplifications live in docs/game_2026.md):
+// Source tags (full citations and the simplifications live in docs/reference/game-plugin.md):
 //   [GM]  2026 Game Manual TU22, section 5 (ARENA) and 6 (Game Details)
 //   [AT]  WPILib 2026 AprilTag layout "2026-rebuilt-welded.json" (field size, element centres)
 //   [MS]  MapleSim REBUILT arena (community sim): hub centre, trench post, tower uprights, depot, hub exits
@@ -31,7 +31,7 @@ inline constexpr float kHubOpeningM = inch(41.7);        // [GM] 5.4: 41.7 in he
 inline constexpr float kHubWallThicknessM = 0.05f;       // approx; makes the funnel tube hollow
 inline constexpr float kHubBaseHeightM = 0.60f;          // approx: solid lower block so nothing falls out of the tube
 inline constexpr float kHubSensorHalfXYM = 0.42f;        // approx: inside the opening
-inline constexpr float kHubSensorHalfZM = 0.20f;         // >= 0.3 m deep (ADR 0003: sensors have no CCD)
+inline constexpr float kHubSensorHalfZM = 0.20f;         // >= 0.3 m deep (docs/reference/physics.md: sensors have no CCD)
 inline constexpr float kHubSensorCenterZM = 1.55f;       // sensor top 1.75 m < rim 1.83 m
 inline constexpr float kHubExitZM = 0.60f;               // [GM] 5.4 "exits at the base"; height approx
 inline constexpr float kHubExitSpeedMps = 2.0f;          // [MS]
@@ -95,9 +95,9 @@ inline constexpr float kChuteExitSpeedMps = 1.5f;        // approx: roll-out spe
 // ---- fuel -----------------------------------------------------------------------------------
 inline constexpr float kFuelRadiusM = 0.075f;            // [GM] 5.10.1: 5.91 in (15.0 cm) diameter
 inline constexpr float kFuelMassKg = 0.215f;             // [GM] 5.10.1: 0.448 - 0.500 lb (0.203 - 0.227 kg), mid value
-inline constexpr float kFuelFriction = 0.6f;             // ADR 0003 fuel parameters
-inline constexpr float kFuelRestitution = 0.55f;         // ADR 0003 (MapleSim uses 0.8: treat as upper bound)
-inline constexpr float kFuelRollingResistance = 0.02f;   // ADR 0003
+inline constexpr float kFuelFriction = 0.6f;
+inline constexpr float kFuelRestitution = 0.55f;         // MapleSim uses 0.8: treat as upper bound
+inline constexpr float kFuelRollingResistance = 0.02f;
 inline constexpr int kNeutralColumns = 12;               // [GM] 6.3.4.1 / [MS]: 12 columns x up to 34 rows = 408
 inline constexpr float kNeutralSpacingXM = 0.1522f;      // [MS] 5.991 in
 inline constexpr float kNeutralSpacingYM = 0.1511f;      // [MS] 5.95 in

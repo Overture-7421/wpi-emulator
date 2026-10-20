@@ -5,11 +5,11 @@
 
 namespace wpiemu::core::config {
 
-// RobotConfig <-> sdk::Value (the robot.json layout, docs/runtime.md "robot.json").
+// RobotConfig <-> sdk::Value (the robot.json layout, docs/reference/runtime.md).
 //
 //  * fromValue: a lenient decode of the current schema: absent fields keep their defaults, unknown fields are
 //    ignored, wrongly typed fields are a ParseError naming the path. A `schemaVersion` other than
-//    kRobotConfigSchemaVersion is refused with VersionMismatch (no migration, ADR 0013). Plugin sections are
+//    kRobotConfigSchemaVersion is refused with VersionMismatch (no migration, docs/CONTRIBUTING.md). Plugin sections are
 //    kept verbatim.
 //  * toValue writes the structured `attachment` of every mechanism.
 //  * Floats are written as the shortest decimal that round-trips (0.7 stays 0.7).

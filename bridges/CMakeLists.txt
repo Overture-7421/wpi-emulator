@@ -7,7 +7,7 @@ add_subdirectory(hal)
 add_subdirectory(vendor)
 add_subdirectory(vision)
 
-# Aggregation seam (ADR 0004 addendum, mirrors plugins/): the single target that links every built-in
+# Aggregation seam (docs/ARCHITECTURE.md addendum, mirrors plugins/): the single target that links every built-in
 # bridge module and defines wpiemu::sdk::registerBuiltinBridges() (sdk/devices/builtin_bridges.h). The
 # HALSim extension links only this target. Owned by the halsim_ext stream.
 add_library(wpiemu_bridges_builtin STATIC builtin_bridges.cpp)

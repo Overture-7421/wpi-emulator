@@ -1,7 +1,7 @@
 #pragma once
 
 // The vendor SimDevice bridge: the SDK's table-driven SimDeviceBridge (rules in ctre_rules.h) wrapped with the
-// vendor policies documented in docs/bridges-vendor.md:
+// vendor policies documented in docs/reference/bridges.md:
 //  * input write policy (GuardedSimDeviceBackend): one continuous write per tick for integrated raw inputs,
 //    read-back verification, re-assert after the vendor mirror, foreign-writer detection;
 //  * "emulator owns device" switch per device (robot-side simulations keep control when disabled);

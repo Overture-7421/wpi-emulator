@@ -1,7 +1,7 @@
 #pragma once
 
 // Body of the inspector's Drive card for a wheel or a mechanism. For each motion axis: what actuates it
-// (its own motors, or another part through a ratio, ADR 0012) and, for own motors, the motor model /
+// (its own motors, or another part through a ratio, docs/reference/mechanisms.md) and, for own motors, the motor model /
 // count / gearing form plus one compact row per controller (device-agnostic: Motor 1..N) (Reversed, unmap).
 // Controllers are never picked here, they are dragged onto the project tree.
 

@@ -49,7 +49,7 @@ public:
 };
 
 // Emulator-side acceptor (the app listens, the extension connects; endpoint is passed to the
-// robot via WPIEMU_ENDPOINT env, ADR 0001).
+// robot via WPIEMU_ENDPOINT env, docs/reference/extension-ipc.md).
 class ITransportServer {
     WPIEMU_INTERFACE(ITransportServer)
 public:

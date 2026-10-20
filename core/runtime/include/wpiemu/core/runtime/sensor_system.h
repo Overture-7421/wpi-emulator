@@ -10,7 +10,7 @@
 
 namespace wpiemu::core::runtime {
 
-// Reading a sensor produces from the value of its source (docs/runtime.md "Sensors"). Pure; `properties` are the
+// Reading a sensor produces from the value of its source (docs/reference/runtime.md). Pure; `properties` are the
 // sensor's response properties (sdk::sensorResponseSchema), missing keys fall back to the schema defaults.
 double distanceReadingM(const sdk::Value& properties, double input);
 bool beamBreakReading(const sdk::Value& properties, double input);
@@ -18,7 +18,7 @@ bool beamBreakReading(const sdk::Value& properties, double input);
 double idleDistanceM(const sdk::Value& properties);
 bool idleBeamBreakReading(const sdk::Value& properties);
 
-// Game-fed sensors (ADR 0019). Owned by SimulationSession and stepped once per tick right after the game state, so the
+// Game-fed sensors (docs/reference/game-plugin.md). Owned by SimulationSession and stepped once per tick right after the game state, so the
 // robot sees the reading of the tick that just ran. Core never knows what a source means: it reads
 // IGameState::gameValue(source) and writes the resulting reading to the sensor's slot.
 // Threading: sim thread only.

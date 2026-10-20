@@ -13,7 +13,7 @@
 // mechanisms (their MechanismState::values, e.g. "flywheel velocity > 300 rad/s"), combined with AND/OR.
 // Evaluate it with evaluateActivation (game/zone_activation.h). An empty condition list is always active.
 //
-// Stored in SI units. There is no migration (ADR 0013); see ADR 0016.
+// Stored in SI units. There is no migration (docs/CONTRIBUTING.md); see docs/reference/game-plugin.md.
 
 #include <string>
 #include <vector>

@@ -13,7 +13,7 @@
 
 namespace wpiemu::core::runtime {
 
-// Simulated vision coprocessors (docs/runtime.md "Vision"). Owned by SimulationSession; stepped once per tick after the
+// Simulated vision coprocessors (docs/reference/runtime.md). Owned by SimulationSession; stepped once per tick after the
 // physics step. Each camera captures at its own frame rate (first capture on the first step, then every round(1e6/fps)
 // us, always at a step boundary), decides which AprilTags it sees with a simple model (in front, inside the FOV, within
 // range, facing the camera, incidence limit; no occlusion or distortion), and delivers the frame `latencyMs` after
@@ -22,7 +22,7 @@ namespace wpiemu::core::runtime {
 class VisionSystem {
 public:
     // The robot frame reported to robot code is the WPILib one: origin on the floor below the hull centre, yaw = chassis
-    // yaw. It is derived from the chassis spec (body origin == COM, ADR 0003).
+    // yaw. It is derived from the chassis spec (body origin == COM, docs/reference/physics.md).
     VisionSystem(const sdk::RobotConfig& config, sdk::AprilTagLayout layout);
 
     bool empty() const { return cameras_.empty(); }

@@ -11,7 +11,7 @@
 namespace wpiemu::bridges::hal {
 
 // Binds every family to the process-wide HALSIM data (the robot's wpiHal instance). Stateless: all
-// instances see the same HAL. Written against WPILib/GradleRIO 2026.2.1 (ADR 0001).
+// instances see the same HAL. Written against WPILib/GradleRIO 2026.2.1 (docs/reference/extension-ipc.md).
 std::shared_ptr<IHalApi> makeHalSimApi();
 
 // Convenience for the extension's composition root: registerHalBridges(registry, makeHalSimApi(), options).

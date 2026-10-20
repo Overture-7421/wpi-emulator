@@ -837,7 +837,7 @@ TEST_CASE("fuel pool: spawn, despawn, id reuse, cap, ghosts and RAII cleanup") {
         CHECK(sd.density * volume == doctest::Approx(0.215f).epsilon(0.001));
         CHECK(sd.sensorEvents);
         CHECK(tagKind(sd.userTag) == EntityKind::Fuel);
-        CHECK((sd.mask & sdk::layer::Sensor) != 0);  // ADR 0003: fuel must include the sensor bit
+        CHECK((sd.mask & sdk::layer::Sensor) != 0);  // docs/reference/physics.md: fuel must include the sensor bit
         CHECK(sd.category == sdk::layer::Fuel);
         CHECK((sd.mask & kShotFuelLayer) != 0);  // settled fuel collides with ghosts
 

@@ -1,5 +1,5 @@
 // SKELETON year plugin. To start a new season, copy plugins/_template to plugins/game_<year>/, rename ids /
-// namespaces / targets (see README.md and docs/new-year-plugin.md), then replace the placeholder bodies below.
+// namespaces / targets (see README.md and docs/extending.md), then replace the placeholder bodies below.
 // Everything marked TODO(new season) is a decision you must make; the rest is wiring that already works:
 // the skeleton registers, builds a field, steps a game state, publishes a HUD value and passes the contract tests.
 //

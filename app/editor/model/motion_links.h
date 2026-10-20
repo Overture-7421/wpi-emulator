@@ -1,6 +1,6 @@
 #pragma once
 
-// Editor-side view of the robot's motion links (ADR 0012): which axes follow which, and what that means for
+// Editor-side view of the robot's motion links (docs/reference/mechanisms.md): which axes follow which, and what that means for
 // the wheels and mechanisms the project tree and inspector show. Everything is keyed by axis address, so
 // wheels (`<wheel>.drive`) and mechanism axes (`axis`, `deploy`, `roller`) are treated identically.
 
