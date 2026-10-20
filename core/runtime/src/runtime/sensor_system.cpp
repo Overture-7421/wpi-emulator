@@ -9,11 +9,6 @@ using namespace wpiemu::sdk;
 
 namespace {
 
-double number(const Value& props, const char* key, double fallback) {
-    const Value* v = props.find(key);
-    return v != nullptr && v->isNumber() ? v->asDouble() : fallback;
-}
-
 bool isLinear(const Value& props) {
     const Value* mode = props.find(sensor_prop::kMode);
     return mode != nullptr && mode->isString() && mode->asString() == sensor_prop::kModeLinear;
@@ -22,22 +17,22 @@ bool isLinear(const Value& props) {
 }  // namespace
 
 double idleDistanceM(const Value& props) {
-    if (isLinear(props)) return number(props, sensor_prop::kDistanceAtMinM, 1.0);
-    return number(props, sensor_prop::kFarM, 1.0);
+    if (isLinear(props)) return getDouble(props, sensor_prop::kDistanceAtMinM, 1.0);
+    return getDouble(props, sensor_prop::kFarM, 1.0);
 }
 
 double distanceReadingM(const Value& props, double input) {
     if (isLinear(props)) {
-        const double lo = number(props, sensor_prop::kInputMin, 0.0);
-        const double hi = number(props, sensor_prop::kInputMax, 1.0);
-        const double d0 = number(props, sensor_prop::kDistanceAtMinM, 1.0);
-        const double d1 = number(props, sensor_prop::kDistanceAtMaxM, 0.1);
+        const double lo = getDouble(props, sensor_prop::kInputMin, 0.0);
+        const double hi = getDouble(props, sensor_prop::kInputMax, 1.0);
+        const double d0 = getDouble(props, sensor_prop::kDistanceAtMinM, 1.0);
+        const double d1 = getDouble(props, sensor_prop::kDistanceAtMaxM, 0.1);
         if (hi == lo) return d0;
         const double t = std::clamp((input - lo) / (hi - lo), 0.0, 1.0);
         return d0 + t * (d1 - d0);
     }
-    return input >= number(props, sensor_prop::kThreshold, 1.0) ? number(props, sensor_prop::kNearM, 0.1)
-                                                                : number(props, sensor_prop::kFarM, 1.0);
+    return input >= getDouble(props, sensor_prop::kThreshold, 1.0) ? getDouble(props, sensor_prop::kNearM, 0.1)
+                                                                   : getDouble(props, sensor_prop::kFarM, 1.0);
 }
 
 bool idleBeamBreakReading(const Value& props) {
@@ -48,7 +43,7 @@ bool idleBeamBreakReading(const Value& props) {
 bool beamBreakReading(const Value& props, double input) {
     const Value* brokenValue = props.find(sensor_prop::kBrokenValue);
     const bool whenBroken = brokenValue == nullptr || brokenValue->asBool(true);
-    const bool broken = input >= number(props, sensor_prop::kThreshold, 1.0);
+    const bool broken = input >= getDouble(props, sensor_prop::kThreshold, 1.0);
     return broken ? whenBroken : !whenBroken;
 }
 

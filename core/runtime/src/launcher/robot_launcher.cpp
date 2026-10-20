@@ -196,11 +196,6 @@ std::optional<fs::path> pickJar(const fs::path& libsDir) {
     return best;
 }
 
-std::string stringField(const Value& v, std::string_view key) {
-    const Value* f = v.find(key);
-    return f != nullptr && f->isString() ? f->asString() : std::string();
-}
-
 }  // namespace
 
 Result<ProcessSpec> planExternalLaunch(const LaunchRequest& r, std::string_view descriptorJson, const IValueTextCodec& json,
@@ -216,7 +211,7 @@ Result<ProcessSpec> planExternalLaunch(const LaunchRequest& r, std::string_view 
         for (const Value& entry : parsed.value().array()) {
             if (!entry.isObject()) continue;
             if (selected == nullptr) selected = &entry;
-            if (stringField(entry, "type") == wanted) {
+            if (getString(entry, "type") == wanted) {
                 selected = &entry;
                 break;
             }
@@ -234,7 +229,7 @@ Result<ProcessSpec> planExternalLaunch(const LaunchRequest& r, std::string_view 
 
     std::vector<std::string> libDirs;
     if (isJava(r)) {
-        const std::string libraryDir = stringField(d, "libraryDir");
+        const std::string libraryDir = getString(d, "libraryDir");
         if (libraryDir.empty()) return makeError(ErrorCode::InvalidArgument, "descriptor has no libraryDir");
         const auto jar = pickJar(r.projectDir / "build" / "libs");
         if (!jar) return makeError(ErrorCode::NotFound, "no robot jar in " + (r.projectDir / "build" / "libs").string() + " (did the build run?)");
@@ -248,7 +243,7 @@ Result<ProcessSpec> planExternalLaunch(const LaunchRequest& r, std::string_view 
         libDirs.push_back(libraryDir);
         spec.label = "java -jar " + jar->filename().string();
     } else {
-        const std::string launchfile = stringField(d, "launchfile");
+        const std::string launchfile = getString(d, "launchfile");
         if (launchfile.empty()) return makeError(ErrorCode::InvalidArgument, "descriptor has no launchfile");
         fs::path exe = fs::path(launchfile);
         if (exe.is_relative()) exe = r.projectDir / exe;

@@ -163,6 +163,9 @@ Plugins are built in with the host toolchain, not independently loaded shared li
    [PropertySchema](../sdk/include/wpiemu/sdk/config/property_schema.h). Set a stable key, type,
    label/description, default, unit, ranges/options and grouping. Use `section`/`axis` for Drive
    placement and visibility metadata for dependent controls. Generic forms need no new widget.
+   Build entries with the [`props::` builders](../sdk/include/wpiemu/sdk/config/property_builders.h)
+   and read stored values with `getDouble/getBool/getString/getFiniteDouble` from the SDK
+   [`Value`](../sdk/include/wpiemu/sdk/core/value.h); do not write a per-module builder or reader.
 2. Implement consumption and validation in the owning module. Test defaults, an invalid value and
    persistence round-trip; use Qt-free editor/HUD descriptors for plugin presentation.
 3. For a new structural robot field, update the SDK model, codec/defaults and validator together.

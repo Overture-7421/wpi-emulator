@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "wpiemu/sdk/config/property_builders.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/devices/device_identity.h"
@@ -18,76 +19,14 @@ using sdk::PropertyUnit;
 
 namespace {
 
-PropertySpec num(const char* key, const char* label, const char* group, PropertyUnit unit, double def, double min, double max,
-                 double step = 0.0, const char* description = "") {
-    PropertySpec s;
-    s.key = key;
-    s.label = label;
-    s.group = group;
-    s.unit = unit;
-    s.type = PropertyType::Double;
-    s.defaultValue = def;
-    s.min = min;
-    s.max = max;
-    s.step = step;
-    s.description = description;
-    return s;
-}
-
-PropertySpec integer(const char* key, const char* label, const char* group, int def, int min, int max, const char* description = "") {
-    PropertySpec s;
-    s.key = key;
-    s.label = label;
-    s.group = group;
-    s.unit = PropertyUnit::Count;
-    s.type = PropertyType::Int;
-    s.defaultValue = def;
-    s.min = min;
-    s.max = max;
-    s.description = description;
-    return s;
-}
-
-PropertySpec flag(const char* key, const char* label, const char* group, bool def, const char* description = "") {
-    PropertySpec s;
-    s.key = key;
-    s.label = label;
-    s.group = group;
-    s.type = PropertyType::Bool;
-    s.defaultValue = def;
-    s.description = description;
-    return s;
-}
-
-PropertySpec choice(const char* key, const char* label, const char* group, const char* def,
-                    std::vector<sdk::EnumOption> options, const char* description = "") {
-    PropertySpec s;
-    s.key = key;
-    s.label = label;
-    s.group = group;
-    s.type = PropertyType::Enum;
-    s.defaultValue = def;
-    s.options = std::move(options);
-    s.description = description;
-    return s;
-}
-
-PropertySpec volume(const char* key, const char* label, const char* group, const sdk::Box3& def, const char* description = "") {
-    PropertySpec s;
-    s.key = key;
-    s.label = label;
-    s.group = group;
-    s.type = PropertyType::Box3;
-    s.unit = PropertyUnit::Meters;
-    s.defaultValue = sdk::toValue(def);
-    s.description = description;
-    return s;
-}
+using sdk::props::box;
+using sdk::props::choice;
+using sdk::props::integer;
+using sdk::props::real;
 
 PropertySpec intCount(const char* key, const char* label, const char* group, int def, int max) {
-    PropertySpec p = num(key, label, group, PropertyUnit::Count, def, 1.0, max, 1.0);
-    p.type = PropertyType::Int;
-    p.defaultValue = def;
+    PropertySpec p = integer(key, label, group, def, 1, max);
+    p.step = 1.0;
     return p;
 }
 
@@ -207,11 +146,11 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
         {choice("motion", "Type", kMech, "rotary", {{"rotary", "Rotary"}, {"arm", "Arm"}, {"linear", "Linear"}}),
          intCount("motorCount", "Motor count", kMotor, 1, 3),
          choice("motorType", "Motor model", kMotor, "Kraken X60", motorChoices()),
-         num("gearRatio", "Gear ratio", kMotor, PropertyUnit::Ratio, 10.0, 0.1, 500.0, 0.5),
-         num("inertiaKgM2", "Moment of inertia", kMech, PropertyUnit::KgM2, 0.01, 0.0001, 10.0, 0.001),
-         num("massKg", "Mass", kMech, PropertyUnit::Kilograms, 2.0, 0.01, 100.0, 0.1),
-         num("minPosition", "Minimum position", kMech, PropertyUnit::None, 0.0, -10.0, 10.0, 0.01),
-         num("maxPosition", "Maximum position", kMech, PropertyUnit::None, 0.0, -10.0, 10.0, 0.01)},
+         real("gearRatio", "Gear ratio", kMotor, 10.0, 0.1, 500.0, PropertyUnit::Ratio, {}, 0.5),
+         real("inertiaKgM2", "Moment of inertia", kMech, 0.01, 0.0001, 10.0, PropertyUnit::KgM2, {}, 0.001),
+         real("massKg", "Mass", kMech, 2.0, 0.01, 100.0, PropertyUnit::Kilograms, {}, 0.1),
+         real("minPosition", "Minimum position", kMech, 0.0, -10.0, 10.0, PropertyUnit::None, {}, 0.01),
+         real("maxPosition", "Maximum position", kMech, 0.0, -10.0, 10.0, PropertyUnit::None, {}, 0.01)},
         {prim("mover", sdk::PrimitiveKind::Box, {0.10f, 0.f, 0.f}, {0.20f, 0.05f, 0.05f}, "#9b59b6")},
         {link("mover", "Moving part", {0.f, 0.f, 0.05f})}));
     // ---- sample mechanisms with a plugin-scope volume (a mechanism property of type Box3) ----
@@ -222,10 +161,11 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
         "sample.intake", "Roller intake", "Intake", "Roller with a deploy arm and a reach volume.",
         {slot("motor", "Roller motor", sdk::SlotType::Motor, true), slot("deploy", "Deploy motor", sdk::SlotType::Motor, false),
          slot("deployEncoder", "Deploy encoder", sdk::SlotType::PositionSensor, false)},
-        {volume("pickupZone", "Pickup zone", "Reach", zone, "Where the roller reaches (a Box3 property: gizmo-editable)."),
-         integer("capacity", "Capacity", "Reach", 30, 1, 100), num("gearRatio", "Gear ratio", kMotor, PropertyUnit::Ratio, 3.0, 0.5, 60.0, 0.1),
+        {box("pickupZone", "Pickup zone", "Reach", zone, "Where the roller reaches (a Box3 property: gizmo-editable)."),
+         integer("capacity", "Capacity", "Reach", 30, 1, 100),
+         real("gearRatio", "Gear ratio", kMotor, 3.0, 0.5, 60.0, PropertyUnit::Ratio, {}, 0.1),
          choice("motorType", "Motor", kMotor, "NEO", motorChoices()),
-         num("activeThresholdRpm", "Active above", "Reach", PropertyUnit::RadiansPerSecond, 20.0, 0.0, 600.0, 1.0)},
+         real("activeThresholdRpm", "Active above", "Reach", 20.0, 0.0, 600.0, PropertyUnit::RadiansPerSecond, {}, 1.0)},
         {prim("roller", sdk::PrimitiveKind::Cylinder, {0.f, 0.f, 0.f}, {}, "#ffb347", 0.03f, 0.55f, true),
          prim("frame", sdk::PrimitiveKind::Box, {-0.06f, 0.f, 0.02f}, {0.1f, 0.55f, 0.05f}, "#9aa5b1")}));
 
@@ -233,10 +173,10 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
         "sample.shooter", "Flywheel shooter", "Shooter", "Flywheel with a feeder and an exit link.",
         {slot("flywheel", "Flywheel motor", sdk::SlotType::Motor, true), slot("feeder", "Feeder motor", sdk::SlotType::Motor, true),
          slot("encoder", "Flywheel encoder", sdk::SlotType::VelocitySensor, false)},
-        {num("wheelDiameterM", "Wheel diameter", "Flywheel", PropertyUnit::Meters, 0.1016, 0.03, 0.3, 0.005),
-         num("efficiency", "Launch efficiency", "Flywheel", PropertyUnit::Ratio, 0.8, 0.1, 1.0, 0.01),
-         num("fireRateHz", "Fire rate", "Feeding", PropertyUnit::Hertz, 8.0, 0.5, 30.0, 0.5),
-         num("feedThresholdRpm", "Feeding above", "Feeding", PropertyUnit::RadiansPerSecond, 30.0, 0.0, 600.0, 1.0),
+        {real("wheelDiameterM", "Wheel diameter", "Flywheel", 0.1016, 0.03, 0.3, PropertyUnit::Meters, {}, 0.005),
+         real("efficiency", "Launch efficiency", "Flywheel", 0.8, 0.1, 1.0, PropertyUnit::Ratio, {}, 0.01),
+         real("fireRateHz", "Fire rate", "Feeding", 8.0, 0.5, 30.0, PropertyUnit::Hertz, {}, 0.5),
+         real("feedThresholdRpm", "Feeding above", "Feeding", 30.0, 0.0, 600.0, PropertyUnit::RadiansPerSecond, {}, 1.0),
          choice("motorType", "Motor", kMotor, "Kraken X60", motorChoices())},
         {prim("flywheel", sdk::PrimitiveKind::Cylinder, {0.f, 0.f, 0.f}, {}, "#d1495b", 0.05f, 0.12f, true),
          prim("housing", sdk::PrimitiveKind::Box, {-0.06f, 0.f, 0.f}, {0.14f, 0.2f, 0.12f}, "#9aa5b1")},
@@ -252,7 +192,7 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
     cat.pluginSchema.schemaVersion = 1;
     cat.pluginSchema.properties.properties = {
         integer("preloadFuel", "Preloaded fuel", "Robot", 8, 0, 100, "Fuel the robot starts a match with."),
-        num("fuelDiameterM", "Fuel diameter", "Fuel", PropertyUnit::Meters, 0.15, 0.05, 0.4, 0.005)};
+        real("fuelDiameterM", "Fuel diameter", "Fuel", 0.15, 0.05, 0.4, PropertyUnit::Meters, {}, 0.005)};
 
     // ---- zone kinds the plugin owns ----
     sdk::ZoneKindInfo pickup;
@@ -261,7 +201,7 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
     pickup.description = "Absorbs field fuel inside its volume while it is active.";
     pickup.shape = sdk::ZoneShape::Volume;
     pickup.properties.properties = {integer("capacity", "Capacity (fuel)", "Pickup", 30, 1, 100),
-                                    num("absorbRateHz", "Absorb rate", "Pickup", PropertyUnit::Hertz, 10.0, 0.5, 60.0, 0.5)};
+                                    real("absorbRateHz", "Absorb rate", "Pickup", 10.0, 0.5, 60.0, PropertyUnit::Hertz, {}, 0.5)};
     pickup.defaultSizeM = {0.4f, 0.6f, 0.25f};
     pickup.defaultLocal.position = {0.3f, 0.f, 0.f};
     pickup.color = "#ff9944";
@@ -272,9 +212,9 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
     shooter.displayName = "Shooter";
     shooter.description = "Launches fuel from its muzzle along +X while it is active.";
     shooter.shape = sdk::ZoneShape::Muzzle;
-    shooter.properties.properties = {num("fireRateHz", "Fire rate", "Shooter", PropertyUnit::Hertz, 8.0, 0.5, 30.0, 0.5),
-                                     num("exitSpeedMps", "Exit speed", "Shooter", PropertyUnit::MetersPerSecond, 10.0, 1.0, 30.0, 0.5),
-                                     num("spreadRad", "Spread", "Shooter", PropertyUnit::Radians, 0.05, 0.0, 0.5, 0.01)};
+    shooter.properties.properties = {real("fireRateHz", "Fire rate", "Shooter", 8.0, 0.5, 30.0, PropertyUnit::Hertz, {}, 0.5),
+                                     real("exitSpeedMps", "Exit speed", "Shooter", 10.0, 1.0, 30.0, PropertyUnit::MetersPerSecond, {}, 0.5),
+                                     real("spreadRad", "Spread", "Shooter", 0.05, 0.0, 0.5, PropertyUnit::Radians, {}, 0.01)};
     shooter.defaultLocal.position = {0.1f, 0.f, 0.f};
     shooter.color = "#d1495b";
     cat.zoneKinds.push_back(shooter);
@@ -292,7 +232,7 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
     hopperPanel.title = "Fuel hopper";
     hopperPanel.scope = sdk::PanelScope::PluginConfig;
     hopperPanel.properties.properties = {integer("capacity", "Fuel capacity", "Hopper", 40, 1, 200, "The fuel meter shows this as 100%."),
-                                         volume("hopperVolume", "Hopper volume", "Hopper", hopper, "Where stored fuel is drawn (chassis frame).")};
+                                         box("hopperVolume", "Hopper volume", "Hopper", hopper, "Where stored fuel is drawn (chassis frame).")};
     hopperPanel.overlays.push_back({"hopperVolume", "Hopper", "#44cc88", true});
     hopperPanel.order = 1;
     cat.pluginPanels.push_back(hopperPanel);
@@ -303,7 +243,7 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
     aiming.title = "Aiming";
     aiming.scope = sdk::PanelScope::Mechanism;
     aiming.mechanismTypes = {"sample.shooter"};
-    aiming.properties.properties = {num("hoodAngleRad", "Hood angle", "Aiming", PropertyUnit::Radians, 0.7, 0.0, 1.5, 0.01)};
+    aiming.properties.properties = {real("hoodAngleRad", "Hood angle", "Aiming", 0.7, 0.0, 1.5, PropertyUnit::Radians, {}, 0.01)};
     aiming.order = 2;
     cat.pluginPanels.push_back(aiming);
     return cat;

@@ -38,59 +38,6 @@ const char* motionKey(Motion m) {
     return "rotary";
 }
 
-
-double getDouble(const sdk::Value& props, const std::string& key, double fallback) {
-    const sdk::Value* v = props.find(key);
-    return v != nullptr && v->isNumber() ? v->asDouble() : fallback;
-}
-bool getBool(const sdk::Value& props, const std::string& key, bool fallback) {
-    const sdk::Value* v = props.find(key);
-    return v != nullptr && v->isBool() ? v->asBool() : fallback;
-}
-std::string getString(const sdk::Value& props, const std::string& key, const std::string& fallback) {
-    const sdk::Value* v = props.find(key);
-    return v != nullptr && v->isString() ? v->asString() : fallback;
-}
-
-sdk::PropertySpec doubleProp(std::string key, std::string label, std::string description, sdk::PropertyUnit unit,
-                             double def, std::string group, double min, double max) {
-    sdk::PropertySpec p;
-    p.key = std::move(key);
-    p.label = std::move(label);
-    p.description = std::move(description);
-    p.type = sdk::PropertyType::Double;
-    p.unit = unit;
-    p.defaultValue = def;
-    p.min = min;
-    p.max = max;
-    p.group = std::move(group);
-    return p;
-}
-
-sdk::PropertySpec boolProp(std::string key, std::string label, std::string description, bool def, std::string group) {
-    sdk::PropertySpec p;
-    p.key = std::move(key);
-    p.label = std::move(label);
-    p.description = std::move(description);
-    p.type = sdk::PropertyType::Bool;
-    p.defaultValue = def;
-    p.group = std::move(group);
-    return p;
-}
-
-sdk::PropertySpec enumProp(std::string key, std::string label, std::string description, std::string def,
-                           std::vector<sdk::EnumOption> options, std::string group) {
-    sdk::PropertySpec p;
-    p.key = std::move(key);
-    p.label = std::move(label);
-    p.description = std::move(description);
-    p.type = sdk::PropertyType::Enum;
-    p.defaultValue = std::move(def);
-    p.options = std::move(options);
-    p.group = std::move(group);
-    return p;
-}
-
 AxisSlotNames axisSlotNames() {
     AxisSlotNames n;
     for (int i = 0; i < sdk::kMaxMotorsPerAxis; ++i) n.motors.push_back(i == 0 ? "motor" : "motor" + std::to_string(i + 1));
@@ -141,6 +88,7 @@ sdk::MotionAxisSpec axisMotionSpec(const AxisOptions& o) {
 
 std::vector<sdk::PropertySpec> axisProperties(const AxisOptions& o, const MotorCatalog& motors) {
     using sdk::PropertyUnit;
+    namespace props = sdk::props;
     std::vector<sdk::PropertySpec> out;
     const auto k = [](std::string_view base) { return std::string(base); };
     const std::string gMotor = "Motor";
@@ -150,56 +98,46 @@ std::vector<sdk::PropertySpec> axisProperties(const AxisOptions& o, const MotorC
 
     std::vector<sdk::EnumOption> motorOptions;
     for (const MotorCatalogEntry& e : motors.entries()) motorOptions.push_back({e.key, e.label});
-    out.push_back(enumProp(k("motorModel"), "Motor model", "WPILib DCMotor data of one motor.", o.motorModel,
-                           std::move(motorOptions), gMotor));
-    sdk::PropertySpec count;
-    count.key = k("motorCount");
-    count.label = "Motor count";
-    count.description = "Identical motors on the gearbox. Map a controller to each one (use Reversed for a motor that "
-                        "spins against the mechanism), or leave extra ones unmapped to mirror the first motor.";
-    count.type = sdk::PropertyType::Int;
-    count.unit = PropertyUnit::Count;
-    count.defaultValue = o.motorCount;
-    count.min = 1;
-    count.max = sdk::kMaxMotorsPerAxis;
-    count.group = gMotor;
-    out.push_back(std::move(count));
-    out.push_back(doubleProp(k("gearRatio"), "Gear ratio", "Motor : mechanism output (> 1 reduces speed).",
-                             PropertyUnit::Ratio, o.gearRatio, gMotor, 0.01, 10000.0));
-    out.push_back(enumProp(k("neutralMode"), "Neutral mode", "Behaviour at zero output: brake shorts the motor, coast frees it.",
-                           o.brake ? "brake" : "coast", {{"coast", "Coast"}, {"brake", "Brake"}}, gMotor));
-    out.push_back(doubleProp(k("statorCurrentLimitA"), "Current limit",
-                             "Per-motor current limit, 0 = unlimited.", PropertyUnit::Amps, 0.0, gMotor, 0.0, 500.0));
-    out.push_back(doubleProp(k("efficiency"), "Efficiency", "Fraction of motor torque delivered to the output.",
-                             PropertyUnit::Ratio, o.efficiency, gMotor, 0.05, 1.0));
-    out.push_back(boolProp(k("reportMotorLimits"), "Report limits on motor controller",
-                           "Also set the motor controller's forward/reverse limit signals at the stops.", false, gMotor));
+    out.push_back(props::choice(k("motorModel"), "Motor model", gMotor, o.motorModel, std::move(motorOptions),
+                                "WPILib DCMotor data of one motor."));
+    out.push_back(props::integer(k("motorCount"), "Motor count", gMotor, o.motorCount, 1, sdk::kMaxMotorsPerAxis,
+                                 "Identical motors on the gearbox. Map a controller to each one (use Reversed for a motor that "
+                                 "spins against the mechanism), or leave extra ones unmapped to mirror the first motor."));
+    out.push_back(props::real(k("gearRatio"), "Gear ratio", gMotor, o.gearRatio, 0.01, 10000.0, PropertyUnit::Ratio,
+                              "Motor : mechanism output (> 1 reduces speed)."));
+    out.push_back(props::choice(k("neutralMode"), "Neutral mode", gMotor, o.brake ? "brake" : "coast",
+                                {{"coast", "Coast"}, {"brake", "Brake"}},
+                                "Behaviour at zero output: brake shorts the motor, coast frees it."));
+    out.push_back(props::real(k("statorCurrentLimitA"), "Current limit", gMotor, 0.0, 0.0, 500.0, PropertyUnit::Amps,
+                              "Per-motor current limit, 0 = unlimited."));
+    out.push_back(props::real(k("efficiency"), "Efficiency", gMotor, o.efficiency, 0.05, 1.0, PropertyUnit::Ratio,
+                              "Fraction of motor torque delivered to the output."));
+    out.push_back(props::flag(k("reportMotorLimits"), "Report limits on motor controller", gMotor, false,
+                              "Also set the motor controller's forward/reverse limit signals at the stops."));
 
     const bool rotaryJ = o.selectableMotion || o.motion != Motion::Linear;
     const bool massy = o.selectableMotion || o.motion != Motion::Rotary;
     const bool arm = o.selectableMotion || o.motion == Motion::Arm;
     const bool linear = o.selectableMotion || o.motion == Motion::Linear;
     if (o.selectableMotion)
-        out.push_back(enumProp(k("motion"), "Type", "Rotary spinner, gravity-loaded arm, or linear slide.",
-                               motionKey(o.motion),
-                               {{"rotary", "Rotary"}, {"arm", "Arm"}, {"linear", "Linear"}}, gDyn));
+        out.push_back(props::choice(k("motion"), "Type", gDyn, motionKey(o.motion),
+                                    {{"rotary", "Rotary"}, {"arm", "Arm"}, {"linear", "Linear"}},
+                                    "Rotary spinner, gravity-loaded arm, or linear slide."));
     if (rotaryJ)
-        out.push_back(doubleProp(k("momentOfInertiaKgM2"), "Moment of inertia",
-                                 o.motion == Motion::Arm || o.selectableMotion
-                                     ? "About the rotation axis. Arm: 0 = uniform rod about its end, 1/3 m L^2."
-                                     : "About the rotation axis.",
-                                 PropertyUnit::KgM2, o.inertiaKgM2, gDyn, o.motion == Motion::Rotary && !o.selectableMotion ? 1e-6 : 0.0,
-                                 100.0));
+        out.push_back(props::real(k("momentOfInertiaKgM2"), "Moment of inertia", gDyn, o.inertiaKgM2,
+                                  o.motion == Motion::Rotary && !o.selectableMotion ? 1e-6 : 0.0, 100.0, PropertyUnit::KgM2,
+                                  o.motion == Motion::Arm || o.selectableMotion
+                                      ? "About the rotation axis. Arm: 0 = uniform rod about its end, 1/3 m L^2."
+                                      : "About the rotation axis."));
     if (massy)
-        out.push_back(doubleProp(k("massKg"), "Mass", "Arm mass, or carriage + payload mass for a linear axis.",
-                                 PropertyUnit::Kilograms, o.massKg, gDyn, 0.001, 2000.0));
+        out.push_back(props::real(k("massKg"), "Mass", gDyn, o.massKg, 0.001, 2000.0, PropertyUnit::Kilograms,
+                                  "Arm mass, or carriage + payload mass for a linear axis."));
     std::optional<sdk::PropertySpec> com;
     if (arm) {
-        sdk::PropertySpec len = doubleProp(k("lengthM"), "Arm length", "Pivot to tip.", PropertyUnit::Meters, o.lengthM,
-                                           gDyn, 0.001, 10.0);
-        com = doubleProp(k("comFraction"), "Centre of mass",
-                         "Position of the centre of mass along the arm, 0 = pivot, 1 = tip.", PropertyUnit::Ratio,
-                         o.comFraction, gDyn, 0.0, 1.0);
+        sdk::PropertySpec len = props::real(k("lengthM"), "Arm length", gDyn, o.lengthM, 0.001, 10.0, PropertyUnit::Meters,
+                                            "Pivot to tip.");
+        com = props::real(k("comFraction"), "Centre of mass", gDyn, o.comFraction, 0.0, 1.0, PropertyUnit::Ratio,
+                          "Position of the centre of mass along the arm, 0 = pivot, 1 = tip.");
         if (o.selectableMotion) {
             len.visibleWhenKey = com->visibleWhenKey = k("motion");
             len.visibleWhenEquals = com->visibleWhenEquals = "arm";
@@ -207,8 +145,8 @@ std::vector<sdk::PropertySpec> axisProperties(const AxisOptions& o, const MotorC
         out.push_back(std::move(len));
     }
     if (linear) {
-        sdk::PropertySpec drum = doubleProp(k("drumRadiusM"), "Drum radius", "Converts shaft rotation to travel.",
-                                            PropertyUnit::Meters, o.drumRadiusM, gDyn, 1e-4, 1.0);
+        sdk::PropertySpec drum = props::real(k("drumRadiusM"), "Drum radius", gDyn, o.drumRadiusM, 1e-4, 1.0,
+                                             PropertyUnit::Meters, "Converts shaft rotation to travel.");
         if (o.selectableMotion) {
             drum.visibleWhenKey = k("motion");
             drum.visibleWhenEquals = "linear";
@@ -216,40 +154,37 @@ std::vector<sdk::PropertySpec> axisProperties(const AxisOptions& o, const MotorC
         out.push_back(std::move(drum));
     }
     if (massy)
-        out.push_back(boolProp(k("simulateGravity"), "Simulate gravity",
-                               "Arm: torque m g L_cm cos(angle) with 0 rad = horizontal. Linear: constant -g (vertical).",
-                               o.gravity, gDyn));
+        out.push_back(props::flag(k("simulateGravity"), "Simulate gravity", gDyn, o.gravity,
+                                  "Arm: torque m g L_cm cos(angle) with 0 rad = horizontal. Linear: constant -g (vertical)."));
     if (com) out.push_back(std::move(*com));
-    out.push_back(doubleProp(k("viscousFrictionNmS"), "Viscous friction",
-                             "Output-side damping: N*m*s/rad (rotary/arm) or N*s/m (linear).", PropertyUnit::None,
-                             o.viscousFrictionNmS, gDyn, 0.0, 1000.0));
-    out.push_back(doubleProp(k("coulombFrictionNm"), "Coulomb friction",
-                             "Output-side dry friction: N*m (rotary/arm) or N (linear); also holds at rest.",
-                             PropertyUnit::None, 0.0, gDyn, 0.0, 1000.0));
+    out.push_back(props::real(k("viscousFrictionNmS"), "Viscous friction", gDyn, o.viscousFrictionNmS, 0.0, 1000.0,
+                              PropertyUnit::None, "Output-side damping: N*m*s/rad (rotary/arm) or N*s/m (linear)."));
+    out.push_back(props::real(k("coulombFrictionNm"), "Coulomb friction", gDyn, 0.0, 0.0, 1000.0, PropertyUnit::None,
+                              "Output-side dry friction: N*m (rotary/arm) or N (linear); also holds at rest."));
 
     if (o.limits) {
         const PropertyUnit u = positionUnit(o);
-        out.push_back(doubleProp(k("minPosition"), "Minimum position", "Hard stop; equal to the maximum = no stops.", u,
-                                 o.minPosition, gLim, -1e4, 1e4));
-        out.push_back(doubleProp(k("maxPosition"), "Maximum position", "Hard stop; equal to the minimum = no stops.", u,
-                                 o.maxPosition, gLim, -1e4, 1e4));
-        out.push_back(doubleProp(k("startPosition"), "Start position", "Position after reset (inside the stops).", u,
-                                 o.startPosition, gLim, -1e4, 1e4));
+        out.push_back(props::real(k("minPosition"), "Minimum position", gLim, o.minPosition, -1e4, 1e4, u,
+                                  "Hard stop; equal to the maximum = no stops."));
+        out.push_back(props::real(k("maxPosition"), "Maximum position", gLim, o.maxPosition, -1e4, 1e4, u,
+                                  "Hard stop; equal to the minimum = no stops."));
+        out.push_back(props::real(k("startPosition"), "Start position", gLim, o.startPosition, -1e4, 1e4, u,
+                                  "Position after reset (inside the stops)."));
         if (o.limitSwitchSlots) {
-            out.push_back(doubleProp(k("limitMargin"), "Limit switch margin", "Trigger band before the stop.", u, 1e-6,
-                                     gLim, 0.0, 1.0));
-            out.push_back(boolProp(k("limitPressedValue"), "Limit reads true when pressed",
-                                   "Off for normally-closed wiring (reads false when pressed).", true, gLim));
+            out.push_back(props::real(k("limitMargin"), "Limit switch margin", gLim, 1e-6, 0.0, 1.0, u,
+                                      "Trigger band before the stop."));
+            out.push_back(props::flag(k("limitPressedValue"), "Limit reads true when pressed", gLim, true,
+                                      "Off for normally-closed wiring (reads false when pressed)."));
         }
     }
 
     if (o.encoderSlots) {
-        out.push_back(doubleProp(k("sensorRatio"), "Sensor ratio",
-                                 "Sensor rotations per mechanism-output rotation (linear: per drum rotation).",
-                                 PropertyUnit::Ratio, 1.0, gSen, 0.001, 10000.0));
-        out.push_back(boolProp(k("sensorInverted"), "Sensor inverted", "Negate the position/velocity sensors.", false, gSen));
-        out.push_back(doubleProp(k("sensorOffsetRot"), "Sensor offset", "Added to the sensor position, in rotations.",
-                                 PropertyUnit::None, 0.0, gSen, -1e6, 1e6));
+        out.push_back(props::real(k("sensorRatio"), "Sensor ratio", gSen, 1.0, 0.001, 10000.0, PropertyUnit::Ratio,
+                                  "Sensor rotations per mechanism-output rotation (linear: per drum rotation)."));
+        out.push_back(props::flag(k("sensorInverted"), "Sensor inverted", gSen, false,
+                                  "Negate the position/velocity sensors."));
+        out.push_back(props::real(k("sensorOffsetRot"), "Sensor offset", gSen, 0.0, -1e6, 1e6, PropertyUnit::None,
+                                  "Added to the sensor position, in rotations."));
     }
     // The actuation properties form the Drive card of this axis in the editor.
     for (const char* base : {"motorModel", "motorCount", "gearRatio", "efficiency", "neutralMode", "statorCurrentLimitA", "reportMotorLimits"})

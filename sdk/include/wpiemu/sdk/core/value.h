@@ -11,6 +11,7 @@
 //  * Numbers: int64 and double are distinct types, but isNumber()/asDouble() treat both uniformly
 //    and operator== treats 1 and 1.0 as equal.
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -179,6 +180,25 @@ inline bool ValueObject::operator==(const ValueObject& o) const {
         if (other == nullptr || !(*other == values_[i])) return false;
     }
     return true;
+}
+
+// Lenient reads of one key of an object Value: `fallback` when the key is absent or holds another type.
+inline double getDouble(const Value& props, std::string_view key, double fallback) {
+    const Value* v = props.find(key);
+    return v != nullptr && v->isNumber() ? v->asDouble() : fallback;
+}
+inline bool getBool(const Value& props, std::string_view key, bool fallback) {
+    const Value* v = props.find(key);
+    return v != nullptr && v->isBool() ? v->asBool() : fallback;
+}
+inline std::string getString(const Value& props, std::string_view key, std::string_view fallback = {}) {
+    const Value* v = props.find(key);
+    return v != nullptr && v->isString() ? v->asString() : std::string(fallback);
+}
+// As getDouble, but a NaN/infinite number also yields `fallback`.
+inline double getFiniteDouble(const Value& props, std::string_view key, double fallback) {
+    const double x = getDouble(props, key, fallback);
+    return std::isfinite(x) ? x : fallback;
 }
 
 }  // namespace wpiemu::sdk

@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "model/config_ops.h"
+#include "wpiemu/sdk/config/property_builders.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/dynamics/motor_model.h"
 
@@ -13,31 +14,12 @@ using sdk::PropertySpec;
 using sdk::PropertyType;
 using sdk::PropertyUnit;
 using sdk::Value;
+using sdk::props::makeSpec;
+using sdk::props::withRange;
 
 namespace {
 
-PropertySpec makeSpec(std::string key, std::string label, PropertyType type, PropertyUnit unit, Value def,
-                      std::string group, std::string description = {}) {
-    PropertySpec s;
-    s.key = std::move(key);
-    s.label = std::move(label);
-    s.type = type;
-    s.unit = unit;
-    s.defaultValue = std::move(def);
-    s.group = std::move(group);
-    s.description = std::move(description);
-    return s;
-}
-
-PropertySpec& withRange(PropertySpec& s, double min, double max, double step = 0.0) {
-    s.min = min;
-    s.max = max;
-    s.step = step;
-    return s;
-}
-
-double num(const Value& v, double fallback) { return v.isNumber() ? v.asDouble() : fallback; }
-float numF(const Value& v, float fallback) { return static_cast<float>(num(v, static_cast<double>(fallback))); }
+float numF(const Value& v, float fallback) { return static_cast<float>(v.asDouble(static_cast<double>(fallback))); }
 
 sdk::Vec3 vec(const Value& v, const sdk::Vec3& fallback) {
     sdk::Vec3 out = fallback;
@@ -121,10 +103,10 @@ Value robotValues(const sdk::RobotConfig& c) {
 
 void applyRobot(sdk::RobotConfig& c, const std::string& key, const Value& v) {
     if (key == "name") c.name = v.asString(c.name);
-    else if (key == "batteryNominalV") c.battery.nominalVoltageV = num(v, c.battery.nominalVoltageV);
+    else if (key == "batteryNominalV") c.battery.nominalVoltageV = v.asDouble(c.battery.nominalVoltageV);
     else if (key == "batteryResistanceMilliOhm")
-        c.battery.internalResistanceOhm = num(v, c.battery.internalResistanceOhm * 1000.0) / 1000.0;
-    else if (key == "brownoutV") c.battery.brownoutVoltageV = num(v, c.battery.brownoutVoltageV);
+        c.battery.internalResistanceOhm = v.asDouble(c.battery.internalResistanceOhm * 1000.0) / 1000.0;
+    else if (key == "brownoutV") c.battery.brownoutVoltageV = v.asDouble(c.battery.brownoutVoltageV);
     else if (key == "customStartPose") {
         if (v.asBool())
             c.startPose = c.startPose.value_or(sdk::RobotStartPose{});

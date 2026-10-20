@@ -4,12 +4,14 @@
 #include <cmath>
 #include <limits>
 
-#include "wpiemu/plugins/game_2026/property_helpers.h"
+#include "wpiemu/sdk/config/property_builders.h"
 #include "wpiemu/sdk/game/zone_activation.h"
 
 namespace wpiemu::plugins::game_2026 {
 
 namespace {
+
+namespace props = sdk::props;
 
 constexpr const char* kGroupLimits = "Limits";
 constexpr const char* kGroupFlywheel = "Flywheel";
@@ -78,18 +80,13 @@ sdk::PropertySchema shooterSchema() {
     return s;
 }
 
-double finiteOr(const sdk::Value& v, const char* key, double fallback) {
-    const double x = v.get(key).asDouble(fallback);
-    return std::isfinite(x) ? x : fallback;
-}
-
 }  // namespace
 
 PickupParams parsePickupParams(const sdk::Value& properties) {
     sdk::Value v = properties;
     sdk::applyDefaults(pickupSchema(), v);
     PickupParams p;
-    p.intakeRateHz = std::max(0.0, finiteOr(v, "intakeRateHz", p.intakeRateHz));
+    p.intakeRateHz = std::max(0.0, sdk::getFiniteDouble(v, "intakeRateHz", p.intakeRateHz));
     return p;
 }
 
@@ -97,8 +94,8 @@ ShooterParams parseShooterParams(const sdk::Value& properties) {
     sdk::Value v = properties;
     sdk::applyDefaults(shooterSchema(), v);
     ShooterParams p;
-    auto text = [&](const char* key, const std::string& fallback) { return v.get(key).asString(fallback); };
-    auto num = [&](const char* key, double fallback) { return finiteOr(v, key, fallback); };
+    auto text = [&](const char* key, const std::string& fallback) { return sdk::getString(v, key, fallback); };
+    auto num = [&](const char* key, double fallback) { return sdk::getFiniteDouble(v, key, fallback); };
     p.flywheelMechanism = text("flywheelMechanism", "");
     p.flywheelValue = text("flywheelValue", p.flywheelValue);
     p.flywheelRadiusM = std::max(1e-3, num("flywheelRadiusM", p.flywheelRadiusM));

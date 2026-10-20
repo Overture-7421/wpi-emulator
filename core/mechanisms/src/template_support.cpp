@@ -49,8 +49,8 @@ double wrapAngle(double angleRad) {
 
 sdk::PropertySpec axisEnumProp(const std::string& key, const std::string& label, AxisName def,
                                const std::string& group) {
-    return enumProp(key, label, "Axis in the mechanism frame (+X forward, +Y left, +Z up).", axisKey(def),
-                    {{"x", "X"}, {"y", "Y"}, {"z", "Z"}}, group);
+    return sdk::props::choice(key, label, group, axisKey(def), {{"x", "X"}, {"y", "Y"}, {"z", "Z"}},
+                              "Axis in the mechanism frame (+X forward, +Y left, +Z up).");
 }
 
 sdk::Result<std::unique_ptr<MechanismAxis>> buildAxis(const std::string& owner, const AxisOptions& options,

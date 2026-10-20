@@ -6,13 +6,14 @@
 #include <utility>
 
 #include "wpiemu/plugins/game_2026/field_dimensions.h"
-#include "wpiemu/plugins/game_2026/property_helpers.h"
+#include "wpiemu/sdk/config/property_builders.h"
 
 namespace wpiemu::plugins::game_2026 {
 
 namespace {
 
 using sdk::PropertyUnit;
+namespace props = sdk::props;
 
 constexpr const char* kGroupMeter = "Fuel meter";
 constexpr const char* kGroupStaging = "Field staging";

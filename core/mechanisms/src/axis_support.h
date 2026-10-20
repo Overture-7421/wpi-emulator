@@ -17,6 +17,7 @@
 #include "wpiemu/core/mechanisms/motor_drive.h"
 #include "wpiemu/core/mechanisms/plants.h"
 #include "wpiemu/core/mechanisms/sensor_models.h"
+#include "wpiemu/sdk/config/property_builders.h"
 #include "wpiemu/sdk/config/property_schema.h"
 #include "wpiemu/sdk/core/sim_context.h"
 #include "wpiemu/sdk/devices/device_hub.h"
@@ -87,18 +88,6 @@ struct AxisSettings {
 // Reads (and defaults) the properties of one axis; InvalidArgument names the offending property.
 sdk::Result<AxisSettings> readAxisSettings(const AxisOptions& options, const sdk::Value& props,
                                            const MotorCatalog& motors);
-
-// Reading helpers shared with the templates (missing / wrongly typed keys fall back).
-double getDouble(const sdk::Value& props, const std::string& key, double fallback);
-bool getBool(const sdk::Value& props, const std::string& key, bool fallback);
-std::string getString(const sdk::Value& props, const std::string& key, const std::string& fallback);
-
-// PropertySpec builders.
-sdk::PropertySpec doubleProp(std::string key, std::string label, std::string description, sdk::PropertyUnit unit,
-                             double def, std::string group, double min, double max);
-sdk::PropertySpec boolProp(std::string key, std::string label, std::string description, bool def, std::string group);
-sdk::PropertySpec enumProp(std::string key, std::string label, std::string description, std::string def,
-                           std::vector<sdk::EnumOption> options, std::string group);
 
 // One DOF at runtime. Owns its plant; reads the motor slots of `owner`, writes the sensor slots.
 class MechanismAxis {
