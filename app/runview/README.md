@@ -11,7 +11,7 @@ implementation used by the tests, the demo and screenshots.
 
 | Area | Files | Notes |
 |---|---|---|
-| Backend seam | `run_backend.h/.cpp` | `IRunBackend` (QObject): start/stop/restart/reset/pause/step/time scale, `latestSnapshot()` (polled at ~60 Hz), DS state, `status()` (process + link state), `sceneInfo()` (config, field, HUD + overlay descriptors), `logEntry` signal |
+| Backend seam | `run_backend.h/.cpp` | `IRunBackend` (QObject): start/stop/restart/reset/pause/step/time scale, `latestSnapshot()` (polled at ~144 Hz, the UI frame cap), DS state, `status()` (process + link state), `sceneInfo()` (config, field, HUD + overlay descriptors), `logEntry` signal |
 | Fake backend | `fake_run_backend.*` | synthetic swerve robot, 3 mechanisms with moving links, a pickup and a muzzle zone that light up while the intake is deployed / the flywheel runs, a chassis-mounted Limelight and a turret-mounted PhotonVision camera that see eight wall AprilTags (the visible set changes as the robot and turret move; autonomous mode drives a loop), 200 instanced "fuel" balls, HUD values, failure injection (`simulateCrash`, `simulateHandshakeTimeout`, ...) |
 | Presentation logic (Qt-light, unit tested) | `run_control.*`, `hud_model.*`, `sim_stats.*`, `scene_parts.*`, `console_model.*` | enable states, status chips/overlay text, HUD descriptor evaluation, SDK -> render parts |
 | Qt Quick bridge | `scene_model.*`, `qml/*.qml` | models for the QML scene (instancing for fuel); the camera is the editor's `OrbitCamera` (`common/orbit_camera.h`) with a field-framed home view, same orbit/pan/zoom controls as the editor viewport; SDK Z-up is converted to Qt's Y-up in exactly one place (`RunScene.qml`, node `world`) |

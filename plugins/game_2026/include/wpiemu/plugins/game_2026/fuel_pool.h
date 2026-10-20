@@ -24,7 +24,7 @@ public:
     struct SpawnOptions {
         sdk::Vec3 velocity;
         bool fast = false;                // continuous collision for fast shots
-        sdk::SimTimeUs ghostUntilUs = 0;  // ignore the robot until then (shots only)
+        sdk::SimTimeUs ghostUntilUs = 0;  // ignore the robot and other ghosts until then (shots only)
     };
 
     // 0 = refused (body cap reached or the world refused the body).

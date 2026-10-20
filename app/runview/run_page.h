@@ -62,7 +62,7 @@ public:
     QList<QAction*> viewActions() const;
     QComboBox* speedCombo() const { return speedCombo_; }
 
-    // Polls the backend once (normally driven by a ~60 Hz timer): snapshot -> view models.
+    // Polls the backend once (normally driven by a ~144 Hz timer): snapshot -> view models.
     void pollNow();
     // Samples joysticks and publishes the DS state once (normally a 50 Hz timer).
     void publishDriverStation();

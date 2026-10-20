@@ -351,7 +351,9 @@ game node's right-click menu:
   deploy arm, and give it an **Activation** such as *roller velocity above 20 rad/s*. Fuel inside the volume is absorbed while the
   zone is active and the meter is not full.
 * **Shooter** (a muzzle marker with an arrow along +X): place it at the exit, attach it to the turret link, and give it an
-  **Activation** such as *flywheel velocity above 30 rad/s* and *feeder running*. Shots are real physics bodies.
+  **Activation** such as *flywheel velocity above 30 rad/s* and *feeder running*. Shots are real physics bodies. Set
+  **Parallel balls** to launch several balls side by side per volley (the fire rate stays the total fuel/s). Just-shot fuel
+  ignores the robot and other just-shot fuel for the *Shot ghost time*.
 
 A condition that names a mechanism that does not exist leaves that zone inactive and the Validation tab warns. The settings
 tables are in [game_2026.md](game_2026.md).

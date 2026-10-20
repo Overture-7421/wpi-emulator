@@ -64,7 +64,10 @@ sdk::PropertySchema shooterSchema() {
                             "Fixed yaw added to the turret value."));
 
     p.push_back(props::real("fireRateHz", "Fire rate", kGroupFire, d.fireRateHz, 0.1, 200.0, PropertyUnit::Hertz,
-                            "Fuel launched per second while the shooter is active."));
+                            "Fuel launched per second while the shooter is active (total across all parallel balls)."));
+    p.push_back(props::integer("parallelBalls", "Parallel balls", kGroupFire, 1, 1, 8,
+                               "Balls launched side by side per volley. Fire rate stays total fuel/s, so a volley "
+                               "leaves every parallelBalls / fireRateHz seconds."));
 
     p.push_back(props::real("exitSpeedJitter", "Exit speed jitter", kGroupDispersion, 0.0, 0.0, 0.5, PropertyUnit::Ratio,
                             "Uniform +- fraction applied to each shot's exit speed (seeded RNG)."));
@@ -111,6 +114,7 @@ ShooterParams parseShooterParams(const sdk::Value& properties) {
     p.turretGain = num("turretGain", p.turretGain);
     p.turretYawOffsetRad = num("turretYawOffsetRad", 0.0);
     p.fireRateHz = std::max(0.1, num("fireRateHz", p.fireRateHz));
+    p.parallelBalls = std::clamp(static_cast<int>(std::lround(num("parallelBalls", 1.0))), 1, 8);
     p.exitSpeedJitter = std::clamp(num("exitSpeedJitter", 0.0), 0.0, 0.5);
     p.aimJitterRad = std::clamp(num("aimJitterRad", 0.0), 0.0, 0.5);
     p.inheritRobotVelocity = v.get("inheritRobotVelocity", true).asBool(true);
@@ -185,7 +189,9 @@ sdk::Box3 PickupZoneRuntime::zoneInChassis() const {
 }
 
 ShooterZoneRuntime::ShooterZoneRuntime(sdk::ZoneConfig config)
-    : FuelZoneRuntime(std::move(config)), params_(parseShooterParams(config_.properties)) {}
+    : FuelZoneRuntime(std::move(config)),
+      params_(parseShooterParams(config_.properties)),
+      budget_(static_cast<double>(params_.parallelBalls)) {}
 
 void ShooterZoneRuntime::update(sdk::SimContext& ctx, const sdk::Pose3& poseInChassis, bool activationHeld, double dt) {
     poseInChassis_ = poseInChassis;
@@ -226,12 +232,17 @@ void ShooterZoneRuntime::update(sdk::SimContext& ctx, const sdk::Pose3& poseInCh
 
     feeding_ = referencesValid && activationHeld && exitSpeedMps_ >= params_.minExitSpeedMps && exitSpeedMps_ > 0.0;
 
-    // Token bucket: primed while idle so the first shot leaves as soon as the shooter starts firing.
-    if (!feeding_) budget_ = 1.0;
-    else budget_ = std::min(2.0, budget_ + params_.fireRateHz * dt);
+    // Token bucket: primed while idle so the first volley leaves as soon as the shooter starts firing.
+    const double n = static_cast<double>(params_.parallelBalls);
+    if (!feeding_) budget_ = n;
+    else budget_ = std::min(n + 1.0, budget_ + params_.fireRateHz * dt);
 }
 
-int ShooterZoneRuntime::shotBudget() const { return feeding_ ? static_cast<int>(std::floor(budget_)) : 0; }
+int ShooterZoneRuntime::shotBudget() const {
+    if (!feeding_) return 0;
+    const int n = params_.parallelBalls;
+    return static_cast<int>(std::floor(budget_ / n)) * n;
+}
 
 void ShooterZoneRuntime::consumeShots(int count) { budget_ = std::max(0.0, budget_ - static_cast<double>(count)); }
 
@@ -242,6 +253,9 @@ ShotSolution ShooterZoneRuntime::solution() const {
                           static_cast<float>(std::sin(elevationRad_))};
     s.directionInChassis = sdk::normalized(poseInChassis_.rotation.rotate(local));
     s.muzzleInChassis = poseInChassis_.position;
+    s.lateralInChassis = sdk::normalized(poseInChassis_.rotation.rotate(
+        {static_cast<float>(-std::sin(yawRad_)), static_cast<float>(std::cos(yawRad_)), 0.f}));
+    s.parallelBalls = params_.parallelBalls;
     s.exitSpeedMps = exitSpeedMps_;
     s.speedJitter = params_.exitSpeedJitter;
     s.aimJitterRad = params_.aimJitterRad;

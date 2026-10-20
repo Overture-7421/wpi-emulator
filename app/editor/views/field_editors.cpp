@@ -98,6 +98,10 @@ ChoiceEditor::ChoiceEditor(const sdk::PropertySpec& spec, QWidget* parent) : Fie
     l->setContentsMargins(0, 0, 0, 0);
     l->addWidget(combo_);
     combo_->setFocusPolicy(Qt::StrongFocus);
+    // Long option labels must not widen the inspector; the box clips instead.
+    combo_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    combo_->setMinimumContentsLength(8);
+    combo_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     for (const auto& o : spec.options) combo_->addItem(QString::fromStdString(o.label.empty() ? o.value : o.label), QString::fromStdString(o.value));
     connect(combo_, &QComboBox::activated, this, [this](int) { Q_EMIT edited(value()); });
 }

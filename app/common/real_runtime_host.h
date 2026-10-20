@@ -15,7 +15,7 @@ struct RealRuntimeOptions {
     std::filesystem::path extensionPath;   // empty = locate (WPIEMU_EXTENSION / WPIEMU_EXTENSION_DIR, install layout, build tree)
     std::filesystem::path scratchDir;      // generated init script; empty = <temp>/wpiemu
     std::filesystem::path appDir;          // empty = QCoreApplication::applicationDirPath()
-    int pollIntervalMs = 30;
+    int pollIntervalMs = 7;
     std::chrono::milliseconds handshakeTimeout{std::chrono::minutes(5)};
     // Test / advanced hook: adjusts the options of every run just before it starts.
     std::function<void(host::Options&)> tweak;

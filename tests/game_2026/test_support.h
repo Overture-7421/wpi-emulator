@@ -106,6 +106,7 @@ public:
     int filterCalls = 0;
     int bodyAttempts = 0;
     std::uint64_t lastMask = 0;
+    std::uint64_t lastCategory = 0;
     std::vector<sdk::ShapeDesc> shapeLog;
     sdk::testing::FakePhysicsWorld inner;
 
@@ -125,6 +126,7 @@ public:
     void setShapeFilter(sdk::ShapeId s, std::uint64_t c, std::uint64_t m) override {
         ++filterCalls;
         lastMask = m;
+        lastCategory = c;
         inner.setShapeFilter(s, c, m);
     }
     void setShapeMaterial(sdk::ShapeId s, const sdk::Material& m) override { inner.setShapeMaterial(s, m); }

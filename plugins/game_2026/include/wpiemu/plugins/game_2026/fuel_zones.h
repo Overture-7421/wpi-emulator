@@ -43,6 +43,7 @@ struct ShooterParams {
     double turretGain = 1.0;
     double turretYawOffsetRad = 0.0;
     double fireRateHz = 10.0;
+    int parallelBalls = 1;
     double exitSpeedJitter = 0.0;
     double aimJitterRad = 0.0;
     bool inheritRobotVelocity = true;

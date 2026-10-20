@@ -24,7 +24,7 @@
 namespace wpiemu::app::runview {
 namespace {
 
-constexpr int kPollMs = 16;         // ~60 Hz
+constexpr int kPollMs = 7;          // ~144 Hz cap
 constexpr int kDsPublishMs = 20;   // like a real DS: 50 Hz
 constexpr int kRobotLoopUs = 20000;
 

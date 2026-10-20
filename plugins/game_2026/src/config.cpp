@@ -67,7 +67,7 @@ sdk::PropertySchema configPropertySchema() {
     p.push_back(props::flag("fuelSleeping", "Fuel sleeping", kGroupPhysics, true,
                             "Let resting fuel sleep (large performance win; disable only for debugging)."));
     p.push_back(props::real("shotGhostS", "Shot ghost time", kGroupPhysics, 0.15, 0.0, 1.0, PropertyUnit::Seconds,
-                            "Shot fuel ignores the robot's collision shapes for this long after leaving the shooter."));
+                            "Shot fuel ignores the robot and other just-shot fuel for this long after leaving the shooter."));
 
     p.push_back(props::flag("enforceHubShifts", "Enforce hub shifts", kGroupRules, true,
                             "Apply the active/inactive hub schedule (manual 6.4.1). Off: both hubs score whenever the "

@@ -4,7 +4,13 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "wpiemu/sdk/physics/physics_types.h"
+
 namespace wpiemu::plugins::game_2026 {
+
+// Category of just-shot fuel while its ghost time runs: it ignores the robot and other
+// just-shot fuel, but still collides with the field and settled fuel and triggers sensors.
+inline constexpr std::uint64_t kShotFuelLayer = sdk::layer::kPluginBase;
 
 enum class Alliance : std::uint8_t { Red = 0, Blue = 1 };
 

@@ -24,6 +24,8 @@ public:
 struct ShotSolution {
     sdk::Vec3 muzzleInChassis;
     sdk::Vec3 directionInChassis;  // unit
+    sdk::Vec3 lateralInChassis{0.f, 1.f, 0.f};  // unit, horizontal, left of the aim; lanes spread along it
+    int parallelBalls = 1;         // lanes per volley
     double exitSpeedMps = 0.0;
     double speedJitter = 0.0;      // +- fraction of exitSpeedMps
     double aimJitterRad = 0.0;     // +- per axis

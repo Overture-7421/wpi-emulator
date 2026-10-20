@@ -65,9 +65,9 @@ TEST_CASE("zone kinds describe themselves for the editor and the plugin register
     for (const char* key : {"flywheelMechanism", "flywheelValue", "flywheelRadiusM", "efficiency", "fixedExitSpeedMps",
                             "minExitSpeedMps", "hoodAngleRad", "hoodMechanism", "hoodValue", "hoodGain", "turretMechanism",
                             "turretValue", "turretGain", "turretYawOffsetRad", "fireRateHz", "exitSpeedJitter",
-                            "aimJitterRad", "inheritRobotVelocity"})
+                            "aimJitterRad", "inheritRobotVelocity", "parallelBalls"})
         CHECK_MESSAGE(shooter->properties.find(key) != nullptr, key);
-    CHECK(shooter->properties.properties.size() == 18);  // no muzzleOffset (the zone pose) and no feed*
+    CHECK(shooter->properties.properties.size() == 19);  // no muzzleOffset (the zone pose) and no feed*
 }
 
 TEST_CASE("game values: the plugin declares what its game state publishes, and the fuel meter follows shots and reset") {
@@ -140,25 +140,6 @@ TEST_CASE("HUD widgets are namespaced, unique, and well-formed") {
     }
     CHECK(hasMeter);
     CHECK(hasBadge);
-}
-
-TEST_CASE("editor panels only configure the plugin section and reference properties that exist") {
-    g26test::Session s;
-    const sdk::PluginConfigSchema config = s.module().contributeConfigSchema();
-    const auto panels = s.module().contributeEditorPanels();
-    CHECK(panels.size() >= 3);
-    for (const sdk::EditorPanelDescriptor& panel : panels) {
-        CHECK(panel.id.rfind("game_2026.", 0) == 0);
-        CHECK_FALSE(panel.properties.properties.empty());
-        CHECK(panel.scope == sdk::PanelScope::PluginConfig);  // pickup / muzzle editing is the zones' job
-        for (const sdk::PropertySpec& p : panel.properties.properties)
-            CHECK_MESSAGE(config.properties.find(p.key) != nullptr, p.key);
-        for (const sdk::ViewportOverlayDescriptor& o : panel.overlays) {
-            const sdk::PropertySpec* spec = panel.properties.find(o.propertyKey);
-            REQUIRE(spec != nullptr);
-            CHECK((spec->type == sdk::PropertyType::Box3 || spec->type == sdk::PropertyType::Vec3));
-        }
-    }
 }
 
 TEST_CASE("module hooks are safe with default contexts and an absent plugin section") {

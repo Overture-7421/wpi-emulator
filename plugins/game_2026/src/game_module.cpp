@@ -53,7 +53,6 @@ public:
 
     sdk::PluginConfigSchema contributeConfigSchema() const override { return configSchema(); }
 
-    std::vector<sdk::EditorPanelDescriptor> contributeEditorPanels() const override { return editorPanels(); }
     std::vector<sdk::HudWidgetDescriptor> contributeHud() const override { return hudWidgets(); }
     std::vector<sdk::ZoneKindInfo> contributeZoneKinds() const override { return zoneKinds(); }
     std::vector<sdk::GameValueInfo> contributeGameValues() const override { return gameValueInfos(); }

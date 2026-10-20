@@ -631,6 +631,116 @@ TEST_CASE("an empty activation, empty aim references and a bypassed fixed-speed 
     }
 }
 
+namespace {
+
+// Spawned fuel positions, sorted by (x, y) so lanes come out in a stable order.
+std::vector<sdk::Vec3> fuelPositions(Session& s) {
+    std::vector<sdk::Vec3> out;
+    s.game->pool().forEach([&](std::uint32_t id, const sdk::Vec3&) {
+        out.push_back(s.env.physics.pose(s.game->pool().bodyOf(id)).position);
+    });
+    std::sort(out.begin(), out.end(), [](const sdk::Vec3& a, const sdk::Vec3& b) {
+        return a.x != b.x ? a.x < b.x : a.y < b.y;
+    });
+    return out;
+}
+
+Session& parallelShooter(Session& s, int lanes, int preload = 8) {
+    emptyField(s, 30, preload);
+    s.addScripted("flywheel").set("velocity", 400.0, "rad/s");
+    s.addScripted("indexer").set("velocity", 20.0, "rad/s");
+    auto p = shooterProps();
+    p["hoodAngleRad"] = 0.0;
+    p["parallelBalls"] = lanes;
+    s.addZone(shooterZone("shooter", p));
+    return s;
+}
+
+}  // namespace
+
+TEST_CASE("parallel shooter launches a volley side by side across the barrel") {
+    Session s;
+    parallelShooter(s, 3);
+    s.start();
+    s.setChassis({4.f, 3.f, 0.f});
+    s.tick(1);
+    CHECK(s.game->shotsFired() == 3);
+    CHECK(s.game->fuelInRobot() == 5);
+    const std::vector<sdk::Vec3> p = fuelPositions(s);
+    REQUIRE(p.size() == 3);
+    CHECK(p[0].x == doctest::Approx(4.25f).epsilon(0.01));
+    CHECK(p[0].y == doctest::Approx(3.f - 0.16f).epsilon(0.01));
+    CHECK(p[1].y == doctest::Approx(3.f).epsilon(0.01));
+    CHECK(p[2].y == doctest::Approx(3.f + 0.16f).epsilon(0.01));
+}
+
+TEST_CASE("parallel lanes follow the robot heading") {
+    Session s;
+    parallelShooter(s, 3);
+    s.start();
+    s.setChassis({4.f, 3.f, 0.f}, kYawQuarterTurn);  // facing +Y: lanes spread along X
+    s.tick(1);
+    const std::vector<sdk::Vec3> p = fuelPositions(s);
+    REQUIRE(p.size() == 3);
+    CHECK(p[0].x == doctest::Approx(4.f - 0.16f).epsilon(0.01));
+    CHECK(p[2].x == doctest::Approx(4.f + 0.16f).epsilon(0.01));
+    for (const sdk::Vec3& v : p) CHECK(v.y == doctest::Approx(3.25f).epsilon(0.01));
+}
+
+TEST_CASE("parallel volleys keep the total fire rate and only fire whole volleys") {
+    Session s;
+    parallelShooter(s, 2);
+    s.start();
+    s.setChassis({4.f, 3.f, 0.f});
+    s.tick(1);
+    CHECK(s.game->shotsFired() == 2);
+    s.tick(30);  // 10 Hz total: the next pair is due 0.2 s after the first
+    CHECK(s.game->shotsFired() == 2);
+    s.tick(20);
+    CHECK(s.game->shotsFired() == 4);
+}
+
+TEST_CASE("a partial volley fires what the meter holds, centred") {
+    Session s;
+    parallelShooter(s, 3, 2);
+    s.start();
+    s.setChassis({4.f, 3.f, 0.f});
+    s.tick(1);
+    CHECK(s.game->shotsFired() == 2);
+    CHECK(s.game->fuelInRobot() == 0);
+    const std::vector<sdk::Vec3> p = fuelPositions(s);
+    REQUIRE(p.size() == 2);
+    CHECK(p[0].y == doctest::Approx(3.f - 0.08f).epsilon(0.01));
+    CHECK(p[1].y == doctest::Approx(3.f + 0.08f).epsilon(0.01));
+}
+
+TEST_CASE("each parallel lane inherits the velocity of its own spawn point") {
+    Session s;
+    parallelShooter(s, 2);
+    s.start();
+    s.setChassis({4.f, 3.f, 0.f});
+    s.env.physics.setAngularVelocity(s.chassis, {0.f, 0.f, 2.f});
+    s.tick(1);
+    std::vector<float> vx;
+    s.game->pool().forEach([&](std::uint32_t id, const sdk::Vec3&) {
+        vx.push_back(s.env.physics.linearVelocity(s.game->pool().bodyOf(id)).x);
+    });
+    REQUIRE(vx.size() == 2);
+    CHECK(std::fabs(vx[0] - vx[1]) == doctest::Approx(2.f * 0.16f).epsilon(0.05));
+}
+
+TEST_CASE("parallelBalls is clamped to 1..8") {
+    auto parse = [](double v) {
+        sdk::Value p = sdk::Value::makeObject();
+        p["parallelBalls"] = v;
+        return parseShooterParams(p).parallelBalls;
+    };
+    CHECK(parseShooterParams(sdk::Value::makeObject()).parallelBalls == 1);
+    CHECK(parse(0.0) == 1);
+    CHECK(parse(99.0) == 8);
+    CHECK(parse(3.0) == 3);
+}
+
 TEST_CASE("shooter without a flywheel reference can use a fixed exit speed, otherwise it stays quiet") {
     Session s;
     emptyField(s);
@@ -728,19 +838,29 @@ TEST_CASE("fuel pool: spawn, despawn, id reuse, cap, ghosts and RAII cleanup") {
         CHECK(sd.sensorEvents);
         CHECK(tagKind(sd.userTag) == EntityKind::Fuel);
         CHECK((sd.mask & sdk::layer::Sensor) != 0);  // ADR 0003: fuel must include the sensor bit
+        CHECK(sd.category == sdk::layer::Fuel);
+        CHECK((sd.mask & kShotFuelLayer) != 0);  // settled fuel collides with ghosts
 
-        // ghost fuel ignores the robot until its time has come
+        // ghost fuel ignores the robot and other ghosts until its time has come
         FuelPool::SpawnOptions ghost;
         ghost.ghostUntilUs = 1000;
         pool.despawn(a);
         const std::uint32_t g = pool.spawn({0.f, 0.f, 2.f}, ghost);
         REQUIRE(g != 0);
-        CHECK((world.shapeLog.back().mask & sdk::layer::Robot) == 0);
+        const sdk::ShapeDesc& gd = world.shapeLog.back();
+        CHECK(gd.category == kShotFuelLayer);
+        CHECK((gd.mask & sdk::layer::Robot) == 0);
+        CHECK((gd.mask & kShotFuelLayer) == 0);
+        CHECK((gd.mask & sdk::layer::Fuel) != 0);
+        CHECK((gd.mask & sdk::layer::Field) != 0);
+        CHECK((gd.mask & sdk::layer::Sensor) != 0);
         pool.updateGhosts(999);
         CHECK(world.filterCalls == 0);
         pool.updateGhosts(1000);
         CHECK(world.filterCalls == 1);
         CHECK((world.lastMask & sdk::layer::Robot) != 0);
+        CHECK((world.lastMask & kShotFuelLayer) != 0);
+        CHECK(world.lastCategory == sdk::layer::Fuel);
         pool.updateGhosts(2000);
         CHECK(world.filterCalls == 1);  // restored once
     }

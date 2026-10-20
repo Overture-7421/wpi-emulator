@@ -203,6 +203,7 @@ TEST_CASE("field is built from the layout and removed again by RAII") {
 }
 
 TEST_CASE("hub sensors carry alliance tags and report fuel through the world's sensor events") {
+  for (const std::uint64_t category : {sdk::layer::Fuel, kShotFuelLayer}) {
     sdk::testing::FakePhysicsWorld world;
     auto field = Game2026Field::create(world, buildFieldLayout());
     REQUIRE(field.ok());
@@ -213,7 +214,7 @@ TEST_CASE("hub sensors carry alliance tags and report fuel through the world's s
     const sdk::BodyId ball = world.createBody(bd);
     sdk::ShapeDesc sd;
     sd.geometry = sdk::SphereShape{dim::kFuelRadiusM};
-    sd.category = sdk::layer::Fuel;
+    sd.category = category;
     sd.mask = sdk::layer::All;
     sd.sensorEvents = true;
     sd.userTag = makeTag(EntityKind::Fuel, Alliance::Red, 7);
@@ -227,6 +228,7 @@ TEST_CASE("hub sensors carry alliance tags and report fuel through the world's s
             tagId(e.visitorTag) == 7)
             sawRedHub = true;
     CHECK(sawRedHub);
+  }
 }
 
 TEST_CASE("field creation reports a refusing physics world instead of leaking") {

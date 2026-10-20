@@ -205,12 +205,22 @@ void Game2026State::stepShooters(sdk::SimContext& ctx) {
         const ShotSolution sol = shooter->solution();
         const sdk::Vec3 muzzle = chassis.transformPoint(sol.muzzleInChassis);
         const sdk::Vec3 baseDir = chassis.transformVector(sol.directionInChassis);
-        sdk::Vec3 robotVelocity;
-        if (sol.inheritRobotVelocity && ctx.chassisBody().valid())
-            robotVelocity = ctx.physics().pointVelocity(ctx.chassisBody(), muzzle);
+        const sdk::Vec3 lateral = chassis.transformVector(sol.lateralInChassis);
+        const int lanes = std::max(1, sol.parallelBalls);
 
         int fired = 0;
         for (int k = 0; k < shots; ++k) {
+            // volleys of `lanes` balls leave side by side; successive rows are one diameter apart along the barrel
+            const int row = k / lanes;
+            const int lane = k % lanes;
+            const int rowSize = std::min(lanes, shots - row * lanes);
+            const float offset = (static_cast<float>(lane) - 0.5f * static_cast<float>(rowSize - 1)) * spacing;
+            const sdk::Vec3 spawnPos = muzzle - baseDir * (spacing * static_cast<float>(row)) + lateral * offset;
+
+            sdk::Vec3 robotVelocity;
+            if (sol.inheritRobotVelocity && ctx.chassisBody().valid())
+                robotVelocity = ctx.physics().pointVelocity(ctx.chassisBody(), spawnPos);
+
             sdk::Vec3 dir = baseDir;
             if (sol.aimJitterRad > 0.0) {
                 const double yawJitter = ctx.rng().uniform(-sol.aimJitterRad, sol.aimJitterRad);
@@ -224,8 +234,7 @@ void Game2026State::stepShooters(sdk::SimContext& ctx) {
             options.velocity = dir * static_cast<float>(speed) + robotVelocity;
             options.fast = true;
             options.ghostUntilUs = ghostUntil;
-            // several shots in one tick leave one ball diameter apart along the barrel
-            if (pool_.spawn(muzzle - baseDir * (spacing * static_cast<float>(k)), options) == 0) break;
+            if (pool_.spawn(spawnPos, options) == 0) break;
             ++fired;
         }
         meter_ -= fired;

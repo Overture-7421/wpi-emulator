@@ -36,7 +36,7 @@ struct GameConfig {
     int outpostChuteFuel = 24;   // per outpost, held as a stock (not as bodies) until a human player feeds it
     int maxFuelOnField = 800;
     FuelPhysicsConfig fuel;
-    float shotGhostS = 0.15f;    // shot fuel ignores the robot's collision shapes for this long
+    float shotGhostS = 0.15f;    // shot fuel ignores the robot and other shot fuel for this long
     // rules
     bool enforceHubShifts = true;
     FirstInactiveMode firstInactive = FirstInactiveMode::FromAutoResult;

@@ -1,6 +1,7 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
+#include <QSurfaceFormat>
 #include <QTimer>
 
 #include <cstring>
@@ -42,6 +43,11 @@ int main(int argc, char* argv[]) {
     // Headless smoke path used by CTest; avoids creating any window.
     for (int i = 1; i < argc; ++i)
         if (std::strcmp(argv[i], "--version") == 0) return printVersion();
+
+    // No vsync: the run view paces itself (RunPage poll timer, ~144 Hz cap).
+    QSurfaceFormat format = QSurfaceFormat::defaultFormat();
+    format.setSwapInterval(0);
+    QSurfaceFormat::setDefaultFormat(format);
 
     QApplication app(argc, argv);
     QApplication::setOrganizationName(QStringLiteral("WPI Emulator"));

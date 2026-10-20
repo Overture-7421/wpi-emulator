@@ -163,6 +163,55 @@ TEST_CASE("Box3D: fuel dropped through the hub opening scores, fuel dropped besi
     CHECK(rig.state->fuelOnField() == 1);
 }
 
+namespace {
+
+// Two fuel balls driven at each other along X; returns {left ball x, right ball x} after `ticks`.
+std::pair<float, float> headOn(bool ghostLeft, bool ghostRight, int ticks) {
+    Box3dRig rig;
+    rig.makeState(emptyConfig());
+    const sdk::SimTimeUs farFuture = 10'000'000;
+    FuelPool::SpawnOptions left;
+    left.velocity = {3.f, 0.f, 0.f};
+    left.ghostUntilUs = ghostLeft ? farFuture : 0;
+    FuelPool::SpawnOptions right;
+    right.velocity = {-3.f, 0.f, 0.f};
+    right.ghostUntilUs = ghostRight ? farFuture : 0;
+    const std::uint32_t a = rig.state->pool().spawn({7.5f, 4.f, 1.f}, left);
+    const std::uint32_t b = rig.state->pool().spawn({8.5f, 4.f, 1.f}, right);
+    REQUIRE(a != 0);
+    REQUIRE(b != 0);
+    rig.tick(ticks);
+    return {rig.state->pool().position(a).x, rig.state->pool().position(b).x};
+}
+
+}  // namespace
+
+TEST_CASE("Box3D: just-shot fuel passes through other just-shot fuel but not through settled fuel") {
+    const auto ghosts = headOn(true, true, 60);
+    CHECK(ghosts.first > ghosts.second);  // swapped sides
+
+    const auto solid = headOn(false, false, 60);
+    CHECK(solid.first < solid.second);
+
+    const auto mixed = headOn(true, false, 60);
+    CHECK(mixed.first < mixed.second);
+}
+
+TEST_CASE("Box3D: just-shot fuel still scores in the hub") {
+    Box3dRig rig;
+    GameConfig noRecycle = emptyConfig();
+    noRecycle.recycleScoredFuel = false;
+    rig.makeState(noRecycle);
+    rig.ds.enabled = true;
+    rig.ds.mode = sdk::proto::RobotMode::Autonomous;
+    const HubSpec& blue = buildFieldLayout().hub(Alliance::Blue);
+    FuelPool::SpawnOptions ghost;
+    ghost.ghostUntilUs = 10'000'000;
+    rig.state->pool().spawn({blue.center.x, blue.center.y, 2.6f}, ghost);
+    rig.tick(300);
+    CHECK(rig.state->score(Alliance::Blue).points() == 1);
+}
+
 TEST_CASE("Box3D: a shot from the robot flies into the hub, scores, and is recycled out of an exit") {
     Box3dRig rig;
     GameConfig cfg = emptyConfig();

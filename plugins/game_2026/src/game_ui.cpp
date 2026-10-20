@@ -27,13 +27,6 @@ HudWidgetDescriptor widget(std::string id, std::string title, HudWidgetKind kind
     return w;
 }
 
-sdk::PropertySchema subset(const sdk::PropertySchema& all, std::initializer_list<const char*> keys) {
-    sdk::PropertySchema out;
-    for (const char* key : keys)
-        if (const sdk::PropertySpec* spec = all.find(key)) out.properties.push_back(*spec);
-    return out;
-}
-
 }  // namespace
 
 std::vector<HudWidgetDescriptor> hudWidgets() {
@@ -61,37 +54,6 @@ std::vector<HudWidgetDescriptor> hudWidgets() {
     w.push_back(widget("shots", "Shots fired", HudWidgetKind::Counter, hud::kShots, HudAnchor::BottomLeft, 0));
     w.push_back(widget("fuel_on_field", "Fuel on field", HudWidgetKind::Counter, hud::kFuelOnField, HudAnchor::BottomLeft, 1));
     return w;
-}
-
-std::vector<sdk::EditorPanelDescriptor> editorPanels() {
-    const sdk::PropertySchema config = configPropertySchema();
-    std::vector<sdk::EditorPanelDescriptor> panels;
-
-    sdk::EditorPanelDescriptor meter;
-    meter.id = "game_2026.fuel_meter";
-    meter.title = "Fuel meter";
-    meter.scope = sdk::PanelScope::PluginConfig;
-    meter.properties = subset(config, {"capacity", "preloadFuel"});
-    meter.order = 0;
-    panels.push_back(std::move(meter));
-
-    sdk::EditorPanelDescriptor staging;
-    staging.id = "game_2026.field_staging";
-    staging.title = "Field staging";
-    staging.scope = sdk::PanelScope::PluginConfig;
-    staging.properties = subset(config, {"neutralFuel", "depotFuel", "outpostChuteFuel", "humanPlayer", "humanPlayerPeriodS"});
-    staging.order = 1;
-    panels.push_back(std::move(staging));
-
-    sdk::EditorPanelDescriptor rules;
-    rules.id = "game_2026.match_rules";
-    rules.title = "Match rules";
-    rules.scope = sdk::PanelScope::PluginConfig;
-    rules.properties = subset(config, {"enforceHubShifts", "firstInactiveHub", "hubProcessingDelayS", "recycleScoredFuel"});
-    rules.order = 2;
-    panels.push_back(std::move(rules));
-
-    return panels;
 }
 
 }  // namespace wpiemu::plugins::game_2026

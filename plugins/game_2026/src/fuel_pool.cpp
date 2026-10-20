@@ -13,7 +13,8 @@ constexpr float kPi = 3.14159265358979f;
 
 FuelPool::FuelPool(sdk::IPhysicsWorld& world, const FuelPhysicsConfig& physics, int maxBodies)
     : world_(world), physics_(physics), maxBodies_(maxBodies),
-      normalMask_(sdk::layer::Field | sdk::layer::Robot | sdk::layer::Fuel | sdk::layer::Sensor) {}
+      normalMask_(sdk::layer::Field | sdk::layer::Robot | sdk::layer::Fuel | sdk::layer::Sensor |
+                   kShotFuelLayer) {}
 
 FuelPool::~FuelPool() { clear(); }
 
@@ -44,9 +45,9 @@ std::uint32_t FuelPool::spawn(const sdk::Vec3& position, const SpawnOptions& opt
     sd.geometry = sdk::SphereShape{r};
     sd.material = {physics_.friction, physics_.restitution, physics_.rollingResistance};
     sd.density = physics_.massKg / volume;
-    sd.category = sdk::layer::Fuel;
     const bool ghost = options.ghostUntilUs > 0;
-    sd.mask = ghost ? (normalMask_ & ~sdk::layer::Robot) : normalMask_;
+    sd.category = ghost ? kShotFuelLayer : sdk::layer::Fuel;
+    sd.mask = ghost ? (normalMask_ & ~(sdk::layer::Robot | kShotFuelLayer)) : normalMask_;
     sd.sensorEvents = true;
     sd.userTag = makeTag(EntityKind::Fuel, Alliance::Red, id);
     const sdk::ShapeId shape = world_.addShape(body, sd);

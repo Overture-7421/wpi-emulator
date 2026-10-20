@@ -378,7 +378,7 @@ sdk::Result<std::unique_ptr<Game2026Field>> Game2026Field::create(sdk::IPhysicsW
         sd.sensor = true;
         sd.sensorEvents = true;
         sd.category = sdk::layer::Sensor;
-        sd.mask = sdk::layer::Fuel;
+        sd.mask = sdk::layer::Fuel | kShotFuelLayer;
         sd.userTag = s.tag;
         if (!add(sd)) return fail(s.name);
     }
