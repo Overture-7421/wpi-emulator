@@ -31,12 +31,12 @@ protected:
         const double p = a.position();
         out.links.push_back({kMoverLink, linear ? translationAlong(axisName_, p)
                                                 : rotationAbout(axisName_, sign_ * (a.settings().limited ? p : sdk::wrapAngleRad(p)))});
-        out.values.push_back(namedValue("position", p, posUnit));
-        out.values.push_back(namedValue("velocity", a.velocity(), velUnit));
-        out.values.push_back(namedValue("voltage", a.appliedVoltageV(), "V"));
-        out.values.push_back(namedValue("current", a.motorCurrentA(), "A"));
-        out.values.push_back(namedValue("atLowerLimit", a.atLowerLimit() ? 1.0 : 0.0, ""));
-        out.values.push_back(namedValue("atUpperLimit", a.atUpperLimit() ? 1.0 : 0.0, ""));
+        out.values.push_back(namedValue(sdk::value_name::kPosition, p, posUnit));
+        out.values.push_back(namedValue(sdk::value_name::kVelocity, a.velocity(), velUnit));
+        out.values.push_back(namedValue(sdk::value_name::kVoltage, a.appliedVoltageV(), "V"));
+        out.values.push_back(namedValue(sdk::value_name::kCurrent, a.motorCurrentA(), "A"));
+        out.values.push_back(namedValue(sdk::value_name::kAtLowerLimit, a.atLowerLimit() ? 1.0 : 0.0, ""));
+        out.values.push_back(namedValue(sdk::value_name::kAtUpperLimit, a.atUpperLimit() ? 1.0 : 0.0, ""));
     }
 
 private:

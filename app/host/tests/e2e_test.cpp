@@ -386,7 +386,7 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
             rollerSeen |= m.id == "intake_roller";
             if (m.id == "intake_pivot")
                 for (const sdk::NamedValue& v : m.values)
-                    if (v.name == "position") pivotPosition = v.value;
+                    if (v.name == sdk::value_name::kPosition) pivotPosition = v.value;
         }
         CHECK(rollerSeen);
         CHECK(std::abs(pivotPosition - 114.0 * sdk::kPi / 180.0) < sdk::kPi / 180.0);
