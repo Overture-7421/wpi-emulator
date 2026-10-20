@@ -36,8 +36,9 @@ struct GameMetadata {
 // Lifetime: the module object is created at registration, owned by GamePluginRegistry, and
 // lives until shutdown; it must be cheap and stateless between sessions (per-session state
 // belongs in IGameState / IField, which the module creates).
-// Threading: all calls happen on the sim thread, except metadata()/contribute*() which the UI
-// thread may also call (they must be const, pure and thread-safe).
+// Threading: descriptor queries (including layouts/frames) may run on UI/caller threads and
+// must be pure and thread-safe. Registration/construction run on the caller's setup thread,
+// including isolated UI field previews. Live game-state ticking/publication run on the sim thread.
 // Errors: no exceptions; return Status/Result.
 //
 // Per-tick order (see docs/ARCHITECTURE.md):

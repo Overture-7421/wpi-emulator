@@ -8,9 +8,10 @@ The [extension recipes](../extending.md) own all add-a-season, zone-kind, and ga
 
 A season implements [`IGameModule`](../../sdk/include/wpiemu/sdk/game/game_module.h).
 Its implementation depends only on the SDK: no core, Qt, IPC, bridges, or other seasons.
-Keep session state in the returned `IField` and `IGameState`, not in the registry-owned module.
-`metadata()` and `contribute*()` may also be called from the UI thread and must be pure and
-thread-safe; other module calls and game-state operations belong to the simulation thread.
+Keep session state in the returned `IField` / `IGameState`, not the registry-owned module.
+Descriptor queries, including tag layouts and field frames, must be pure and thread-safe.
+Registration and construction run on the caller's setup thread, including UI field previews.
+Live game-state ticking and publication belong to the simulation thread.
 
 `createField()` supplies owned static colliders and sensor volumes before `createGameState()`.
 The runtime resets the game state before the first tick and on Reset. `IGameState::step()` sees

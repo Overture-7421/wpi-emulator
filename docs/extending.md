@@ -74,6 +74,8 @@ Plugins are built in with the host toolchain, not independently loaded shared li
 1. For a new family, create a module under `bridges/` with public headers under its namespaced
    include directory. Keep third-party backend headers inside it and follow the
    [dependency rule](ARCHITECTURE.md#modules-and-dependencies).
+   Declare its library and implementation sources in CMake, export its public include root,
+   and link SDK plus permitted private backend dependencies.
 2. Choose [SimDeviceBridge](../sdk/include/wpiemu/sdk/devices/sim_device_bridge.h) plus a
    `SimDeviceRule` table, [ChannelFamilyBridge](../sdk/include/wpiemu/sdk/devices/channel_family_bridge.h)
    for indexed HAL families, or implement [IDeviceBridge](../sdk/include/wpiemu/sdk/devices/device_bridge.h).
@@ -90,8 +92,9 @@ Plugins are built in with the host toolchain, not independently loaded shared li
    [the boundary checker](../tools/check_boundaries.py), including the aggregator's outgoing edge
    and any aliases/binding targets. Do not allow a direct extension-to-module dependency.
 6. Test discovery/update/retirement, capabilities, direction/scale, missing values, loopback and
-   input-history reset through fake backends. Add the actual device/signal contract to the
-   [bridge reference](reference/bridges.md).
+   input-history reset through fake backends. Link new-module tests explicitly to that module
+   in [test wiring](../tests/CMakeLists.txt), or register a dedicated test target: source discovery
+   does not extend the fixed test-library list. Add the actual contract to the [bridge reference](reference/bridges.md).
 
 ## Add a vendor rule set
 
@@ -116,9 +119,11 @@ Plugins are built in with the host toolchain, not independently loaded shared li
 1. Put the encoder and bridge in `bridges/vision`, or create a bridge module using the device-bridge
    wiring recipe. Keep `CameraFrame` encoding pure and isolate publication behind the existing
    [INtBackend seam](../bridges/vision/include/wpiemu/bridges/vision/nt_backend.h).
+   Add new implementation files to `wpiemu_bridges_vision` in its
+   [explicit source list](../bridges/vision/CMakeLists.txt); they are not auto-discovered.
 2. Implement [IVisionBridge](../sdk/include/wpiemu/sdk/vision/vision_bridge.h) with a unique name.
    Start the backend, configure only cameras of your kind idempotently, poll robot-written settings,
-   publish only due frames, reset stale published state and stop idempotently.
+   publish the producer's due-only frames, reset stale published state and stop idempotently.
 3. Register factories through `VisionBridgeRegistry::registerBridge`. Wire them through
    `registerBuiltinVisionBridges` in the aggregator, not extension internals.
    The existing real-ntcore entry point is `registerNtVisionBridges`; retain its real/fake-backend
@@ -126,8 +131,8 @@ Plugins are built in with the host toolchain, not independently loaded shared li
 4. If needed, add a `CameraKind` and its key in
    [camera metadata](../sdk/include/wpiemu/sdk/config/camera.h), plus codec, validator and editor
    camera-menu handling. Keep the current schema policy; do not add migration code.
-5. Test golden payloads from vendor documentation/captures, foreign-kind filtering, lifecycle
-   reset and not publishing before `publishTimeUs`. Fake-publisher tests need no robot or ntcore.
+5. Test golden payloads, foreign-kind filtering and lifecycle reset with fake publishers.
+   Test producer scheduling separately: no frame is supplied before `publishTimeUs`.
    Document topic layouts and timestamp requirements in the [bridge reference](reference/bridges.md).
 
 ## Add a mechanism template

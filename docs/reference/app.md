@@ -128,10 +128,12 @@ Placement/reset behavior belongs to [runtime](runtime.md), not viewport coordina
 `latestSnapshot()` supplies the latest immutable `ISimSnapshot`, which can be null before a tick.
 The view may miss intermediate snapshots; do not treat its repaint rate as simulation timing.
 
-The run view sends start/stop, reset/restart, pause/step, speed, placement, and Driver Station
-requests through the backend. The real adapter reaches `ISimController` through the shared
-host, never mutable simulation objects. Backend methods and delivered signals belong to the
-UI thread; worker-originated Qt signals require queued delivery.
+`IRunBackend` exposes lifecycle, pause/step, speed, placement and Driver Station capabilities.
+Current Run controls request reset/restart, speed, placement and Driver Station changes;
+the shell starts simulation automatically on entry, with no start/stop/pause/step buttons.
+The real adapter reaches `ISimController` through the shared host, never mutable simulation
+objects. Backend methods and delivered signals belong to the UI thread; worker-originated
+Qt signals require queued delivery.
 
 The Driver Station's timed sequence advances from snapshot simulation time, not wall time.
 Its manual game-message text is a fallback when the game provides FMS data.

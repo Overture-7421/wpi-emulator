@@ -58,7 +58,7 @@ Ownership is deliberately narrow:
 
 - **UI thread:** reads immutable `ISimSnapshot` objects and sends commands through
   `ISimController`; it never reaches into mutable simulation objects.
-- **Sim thread:** owns physics, mechanisms, device hub, game state, configuration and RNG.
+- **Sim thread (live session):** owns physics, mechanisms, device hub, game state, configuration and RNG.
   `SimulationSession` is synchronous, deterministic, and performs no I/O or threading.
   `SessionRunner` wraps it with command queues, lock-step coordination, pacing and snapshot delivery.
 - **Robot threads:** HAL callbacks record events only; they must not block or do socket I/O.
