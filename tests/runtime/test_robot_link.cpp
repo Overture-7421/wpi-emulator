@@ -3,12 +3,16 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
+#include <vector>
 
 #include "wpiemu/core/runtime/robot_link.h"
+#include "wpiemu/sdk/testing/fake_clock_logger.h"
 #include "wpiemu/sdk/testing/in_memory_transport.h"
 
 using namespace wpiemu::sdk;
@@ -269,4 +273,128 @@ TEST_CASE("acceptor: a connection returned concurrently with stop is closed with
     CHECK(transport->closed);
     CHECK(transport->destroyed);
     CHECK_FALSE(transport->receiving);
+}
+
+TEST_CASE("inbox: multi-producer order per producer, timeouts and wake") {
+    MessageInbox inbox;
+    InboundEvent out;
+    CHECK_FALSE(inbox.tryPop(out));
+    const auto t0 = std::chrono::steady_clock::now();
+    CHECK_FALSE(inbox.waitPop(out, 30ms));
+    CHECK(std::chrono::steady_clock::now() - t0 >= 25ms);
+
+    std::thread waiter([&] {
+        InboundEvent e;
+        CHECK_FALSE(inbox.waitPop(e, 5s));  // returns early because of wake()
+    });
+    std::this_thread::sleep_for(20ms);
+    const auto w0 = std::chrono::steady_clock::now();
+    inbox.wake();
+    waiter.join();
+    CHECK(std::chrono::steady_clock::now() - w0 < 2s);
+
+    constexpr int kProducers = 4, kEach = 500;
+    std::vector<std::thread> producers;
+    for (int p = 0; p < kProducers; ++p)
+        producers.emplace_back([&inbox, p] {
+            for (int i = 0; i < kEach; ++i) {
+                InboundEvent e;
+                e.linkId = static_cast<std::uint64_t>(p);
+                e.detail = std::to_string(i);
+                inbox.push(std::move(e));
+            }
+        });
+    for (auto& t : producers) t.join();
+    CHECK(inbox.size() == kProducers * kEach);
+    std::vector<int> next(kProducers, 0);
+    int received = 0;
+    while (inbox.tryPop(out)) {
+        CHECK(std::stoi(out.detail) == next[out.linkId]++);
+        ++received;
+    }
+    CHECK(received == kProducers * kEach);
+}
+
+namespace {
+// Minimal in-memory ITransportServer: connect() hands the other end of a fresh pair to accept().
+class LoopbackServer final : public proto::ITransportServer {
+public:
+    Status listen() override {
+        listening = true;
+        return okStatus();
+    }
+    std::string endpoint() const override { return "loopback:test"; }
+    Result<std::unique_ptr<proto::ITransport>> accept(std::chrono::milliseconds timeout) override {
+        std::unique_lock lock(m);
+        cv.wait_for(lock, timeout, [&] { return !pending.empty() || closed; });
+        if (closed) return makeError(ErrorCode::Cancelled, "closed");
+        if (pending.empty()) return std::unique_ptr<proto::ITransport>{};
+        auto t = std::move(pending.front());
+        pending.pop_front();
+        return t;
+    }
+    void close() override {
+        {
+            std::lock_guard lock(m);
+            closed = true;
+        }
+        cv.notify_all();
+    }
+    std::unique_ptr<testing::InMemoryTransport> connectClient() {
+        auto pair = testing::makeInMemoryTransportPair();
+        {
+            std::lock_guard lock(m);
+            pending.push_back(std::move(pair.a));
+        }
+        cv.notify_all();
+        return std::move(pair.b);
+    }
+    std::mutex m;
+    std::condition_variable cv;
+    std::deque<std::unique_ptr<proto::ITransport>> pending;
+    bool closed = false;
+    bool listening = false;
+};
+}  // namespace
+
+TEST_CASE("acceptor: accepted transports become Connected events followed by their messages") {
+    MessageInbox inbox;
+    testing::CapturingLogger logger;
+    auto codec = std::make_shared<testing::MemoryMessageCodec>();
+    auto server = std::make_unique<LoopbackServer>();
+    LoopbackServer* raw = server.get();
+    RobotLinkAcceptor acceptor(std::move(server), codec, inbox, &logger);
+    REQUIRE(acceptor.start().ok());
+    CHECK(raw->listening);
+    CHECK(acceptor.endpoint() == "loopback:test");
+    CHECK_FALSE(acceptor.start().ok());  // already running
+
+    proto::MessageChannel client(raw->connectClient(), codec);
+    InboundEvent ev;
+    REQUIRE(inbox.waitPop(ev, 2s));
+    CHECK(ev.kind == InboundEvent::Kind::Connected);
+    REQUIRE(ev.link != nullptr);
+    const std::shared_ptr<IRobotLink> link = ev.link;  // the runner's reference
+    CHECK(link->connected());
+
+    proto::Hello hello;
+    hello.pid = 7;
+    REQUIRE(client.send(hello).ok());
+    REQUIRE(inbox.waitPop(ev, 2s));
+    CHECK(ev.kind == InboundEvent::Kind::Message);
+    CHECK(std::get<proto::Hello>(ev.message).pid == 7);
+
+    // emulator -> robot through the link
+    proto::HelloAck reply;
+    reply.sessionId = 9;
+    REQUIRE(link->send(reply).ok());
+    proto::Message received;
+    REQUIRE(client.receive(received, 2s).ok());
+    CHECK(std::get<proto::HelloAck>(received).sessionId == 9);
+    client.close();
+    REQUIRE(inbox.waitPop(ev, 2s));
+    CHECK(ev.kind == InboundEvent::Kind::Disconnected);
+    CHECK_FALSE(link->send(reply).ok());
+    acceptor.stop();
+    acceptor.stop();  // idempotent
 }
