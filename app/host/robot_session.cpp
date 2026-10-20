@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include "wpiemu/core/config/config_validator.h"
+#include "wpiemu/core/launcher/output_level.h"
 #include "wpiemu/core/launcher/project_inspector.h"
 #include "wpiemu/core/physics/box3d_world.h"
 #include "wpiemu/core/runtime/physics_wiring.h"
@@ -134,7 +135,7 @@ public:
         SessionLogEntry e;
         e.timestampMs = wallMs();
         e.stream = stream == launcher::OutputStream::Stderr ? LogStream::Stderr : LogStream::Stdout;
-        e.level = stream == launcher::OutputStream::Stderr ? LogLevel::Warn : LogLevel::Info;
+        e.level = launcher::classifyOutputLine(stream, text);
         e.source = stream == launcher::OutputStream::Stderr ? "robot.stderr" : "robot";
         e.text = std::string(text);
         queue_.add(std::move(e));

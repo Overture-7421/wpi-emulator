@@ -134,6 +134,8 @@ the project season's WPILib JDK (all-users or this-user install, or the Settings
 `java` on `PATH`. Both the session launch and the wizard's toolchain check follow it. The host requests protocol Stop
 before cleanup; cancellation remains latched through startup and escalates to whole-tree kill
 after the grace deadline. Destruction joins the worker and cleans up the process tree.
+Robot console lines get a level from [`classifyOutputLine`](../../core/runtime/include/wpiemu/core/launcher/output_level.h)
+(`ERROR`/`Exception`/stack frames, `Warning`, `DEBUG`, `TRACE` as whole words; plain stderr defaults to Warn).
 
 ## Device feedback and game-fed sensors
 
