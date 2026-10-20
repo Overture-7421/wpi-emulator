@@ -13,6 +13,7 @@ SPEC.loader.exec_module(DOCS)
 
 class DocumentationTests(unittest.TestCase):
     def setUp(self):
+        (REPO / "build").mkdir(exist_ok=True)
         directory = tempfile.TemporaryDirectory(prefix="docs-test-", dir=REPO / "build")
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name).resolve()
