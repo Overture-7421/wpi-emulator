@@ -19,6 +19,7 @@
 #include "wpiemu/sdk/config/start_position.h"
 #include "wpiemu/sdk/config/zone.h"
 #include "wpiemu/sdk/core/geometry.h"
+#include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/core/value.h"
 #include "wpiemu/sdk/devices/slot.h"
 #include "wpiemu/sdk/mechanisms/motion_link.h"
@@ -39,13 +40,13 @@ struct ProjectInfo {
 };
 
 struct BatteryConfig {
-    double nominalVoltageV = 12.6;
+    double nominalVoltageV = kNominalBatteryVoltageV;
     double internalResistanceOhm = 0.015;
     double brownoutVoltageV = 6.8;
 };
 
 struct SimSettings {
-    std::int64_t stepUs = 5000;     // 200 Hz
+    std::int64_t stepUs = kDefaultStepUs;   // 200 Hz
     std::uint64_t seed = 1;
     PhysicsConfig physics;
 };

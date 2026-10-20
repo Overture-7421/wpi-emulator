@@ -16,9 +16,15 @@ inline constexpr double kRadToDeg = 180.0 / kPi;
 inline constexpr double kStandardGravityMps2 = 9.80665;  // g0 (m/s^2); the simulation default is kDefaultGravityMps2
 inline constexpr double kMetersPerInch = 0.0254;
 inline constexpr double kKgPerPound = 0.45359237;
+inline constexpr double kNominalBatteryVoltageV = 12.6;  // a fully charged FRC battery, open circuit
 
 // Simulation time is an integer count of microseconds (the HALSim FPGA-time unit) so it is exact.
 using SimTimeUs = std::int64_t;
+
+// The emulator is the clock master: a tick lasts kDefaultStepUs (200 Hz) unless configured, and a configured step
+// must divide the robot's kRobotPeriodUs (20 ms) evenly.
+inline constexpr SimTimeUs kDefaultStepUs = 5000;
+inline constexpr SimTimeUs kRobotPeriodUs = 20000;
 
 constexpr double usToSeconds(SimTimeUs us) { return static_cast<double>(us) * 1e-6; }
 constexpr SimTimeUs secondsToUs(double s) { return static_cast<SimTimeUs>(s * 1e6 + (s >= 0 ? 0.5 : -0.5)); }

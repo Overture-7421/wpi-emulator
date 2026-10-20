@@ -150,7 +150,7 @@ struct HelloAck {
     std::string reason;                  // when !accepted
     std::uint32_t protocolVersion = kProtocolVersion;
     ClockMode clockMode = ClockMode::Lockstep;
-    std::uint32_t stepUs = 5000;         // must divide the robot period (20 ms) evenly
+    std::uint32_t stepUs = static_cast<std::uint32_t>(kDefaultStepUs);   // must divide the robot period (kRobotPeriodUs) evenly
     std::uint64_t sessionId = 0;
     bool discoveryOnly = false;          // armed start: announce only, no physics, until BeginLockstep
     bool enableL3Hooks = false;          // opt-in CTRE hooks (docs/reference/bridges.md)
@@ -182,8 +182,8 @@ struct LoopbackSet {
 struct SensorFrame {
     std::uint64_t tick = 0;
     SimTimeUs simTimeUs = 0;             // time AFTER this step completes
-    std::uint32_t stepUs = 5000;         // HALSIM_StepTiming delta
-    double batteryVoltageV = 12.6;       // written to the roboRIO VIn + every device's supply voltage
+    std::uint32_t stepUs = static_cast<std::uint32_t>(kDefaultStepUs);   // HALSIM_StepTiming delta
+    double batteryVoltageV = kNominalBatteryVoltageV;   // written to the roboRIO VIn + every device's supply voltage
     double batteryCurrentA = 0.0;        // informational (roboRIO current)
     bool full = false;                   // true: contains every Input signal; false: only changed ones
     std::vector<SignalSample> samples;

@@ -94,7 +94,6 @@ void validateDrivetrain(const RobotConfig& c, const DrivetrainRegistry& drivetra
 }
 
 void validateSimSettings(const RobotConfig& c, std::vector<Issue>& out) {
-    constexpr std::int64_t kRobotPeriodUs = 20000;
     if (c.sim.stepUs <= 0 || kRobotPeriodUs % c.sim.stepUs != 0)
         add(out, Severity::Error, "sim.stepUs", "step must be positive and divide the 20 ms robot period evenly", issue_code::kSimInvalid);
     if (c.sim.physics.subSteps < 1) add(out, Severity::Error, "sim.physics.subSteps", "at least 1 sub-step", issue_code::kSimInvalid);

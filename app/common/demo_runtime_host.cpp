@@ -307,7 +307,7 @@ void DemoRuntimeHost::publish() {
         }
     }
     const double load = std::min(1.0, std::hypot(vx_, vy_) / 3.0);
-    data.batteryVoltageV = ds_.enabled ? 12.6 - 1.8 * load : 12.6;
+    data.batteryVoltageV = ds_.enabled ? sdk::kNominalBatteryVoltageV - 1.8 * load : sdk::kNominalBatteryVoltageV;
     slot_.publish(std::make_shared<const sdk::SimSnapshot>(std::move(data)));
     emit snapshotPublished();
 }

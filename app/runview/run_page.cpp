@@ -28,7 +28,6 @@ namespace {
 
 constexpr int kPollMs = 7;          // ~144 Hz cap
 constexpr int kDsPublishMs = 20;   // like a real DS: 50 Hz
-constexpr int kRobotLoopUs = 20000;
 
 bool isModifier(int key) {
     return key == Qt::Key_Shift || key == Qt::Key_Control || key == Qt::Key_Alt || key == Qt::Key_Meta || key == Qt::Key_AltGr ||

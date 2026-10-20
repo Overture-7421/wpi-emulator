@@ -65,7 +65,7 @@ struct RobotBuildContext {
     QString language;
     int wpilibYear = 0;
     QString gradleRioVersion;
-    std::int64_t stepUs = 5000;
+    std::int64_t stepUs = sdk::kDefaultStepUs;
     const sdk::IGameModule* gameModule = nullptr;   // null = core-only mode
 };
 

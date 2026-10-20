@@ -703,7 +703,7 @@ void FakeRunBackend::publish() {
         d.hud.push_back({"demo.message", ds_.gameSpecificMessage.empty() ? std::string("—") : ds_.gameSpecificMessage});
     }
 
-    d.batteryVoltageV = 12.6 - 0.9 * (std::hypot(static_cast<double>(vel_.x), static_cast<double>(vel_.y)) / 3.5) - (flywheel_ > 1.f ? 0.5 : 0.0);
+    d.batteryVoltageV = sdk::kNominalBatteryVoltageV - 0.9 * (std::hypot(static_cast<double>(vel_.x), static_cast<double>(vel_.y)) / 3.5) - (flywheel_ > 1.f ? 0.5 : 0.0);
     d.driverStation = ds_;
     d.physicsStats.bodies = 2 + static_cast<int>(balls_.size());
     d.physicsStats.awakeBodies = 2;

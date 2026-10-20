@@ -18,7 +18,6 @@ using sdk::ErrorCode;
 namespace {
 constexpr const char* kLog = "extension";
 constexpr std::chrono::milliseconds kJoinTimeout{3000};
-constexpr std::uint32_t kDefaultStepUs = 5000;
 }  // namespace
 
 sdk::Result<proto::HelloAck> performHandshake(proto::MessageChannel& channel, const RobotInfo& robot,
@@ -54,8 +53,8 @@ sdk::Result<proto::HelloAck> performHandshake(proto::MessageChannel& channel, co
                 return sdk::makeError(ErrorCode::VersionMismatch,
                                       "emulator speaks protocol v" + std::to_string(ack->protocolVersion));
             if (ack->stepUs == 0) {
-                logger.warn(kLog, "HelloAck.stepUs is 0; using 5000");
-                ack->stepUs = kDefaultStepUs;
+                ack->stepUs = static_cast<std::uint32_t>(sdk::kDefaultStepUs);
+                logger.warn(kLog, "HelloAck.stepUs is 0; using " + std::to_string(ack->stepUs));
             }
             return std::move(*ack);
         }
