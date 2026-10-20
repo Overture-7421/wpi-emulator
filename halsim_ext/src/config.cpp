@@ -6,16 +6,11 @@
 #include <cstdlib>
 #include <string>
 
+#include "wpiemu/sdk/core/strings.h"
+
 namespace wpiemu::halsim {
 
 namespace {
-
-std::string lower(std::string_view text) {
-    std::string out(text);
-    std::transform(out.begin(), out.end(), out.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return out;
-}
 
 std::string_view trim(std::string_view s) {
     while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.remove_prefix(1);
@@ -32,7 +27,7 @@ std::optional<std::uint32_t> parseUnsigned(std::string_view text) {
 }
 
 std::optional<bool> parseBool(std::string_view text) {
-    const std::string t = lower(trim(text));
+    const std::string t = sdk::asciiLower(trim(text));
     if (t == "1" || t == "true" || t == "yes" || t == "on") return true;
     if (t == "0" || t == "false" || t == "no" || t == "off") return false;
     return std::nullopt;
@@ -57,7 +52,7 @@ std::optional<std::string> processEnvironment(std::string_view name) {
 }
 
 std::optional<sdk::LogLevel> parseLogLevel(std::string_view text) {
-    const std::string t = lower(trim(text));
+    const std::string t = sdk::asciiLower(trim(text));
     if (t == "trace") return sdk::LogLevel::Trace;
     if (t == "debug") return sdk::LogLevel::Debug;
     if (t == "info") return sdk::LogLevel::Info;
@@ -107,7 +102,7 @@ ExtensionConfig parseExtensionConfig(const EnvLookup& env, std::vector<std::stri
         else warn(kEnvDisable, *v, "expected 0/1");
     }
     if (const auto v = get(kEnvClock)) {
-        const std::string t = lower(trim(*v));
+        const std::string t = sdk::asciiLower(trim(*v));
         if (t == "master" || t == "lockstep") cfg.clock = ClockPreference::FollowEmulator;
         else if (t == "realtime" || t == "free") cfg.clock = ClockPreference::Realtime;
         else warn(kEnvClock, *v, "expected master|realtime");
@@ -118,7 +113,7 @@ ExtensionConfig parseExtensionConfig(const EnvLookup& env, std::vector<std::stri
         else cfg.proposedWatchdogMs = *parsed;
     }
     if (const auto v = get(kEnvWatchdog)) {
-        const std::string t = lower(trim(*v));
+        const std::string t = sdk::asciiLower(trim(*v));
         if (t == "off") cfg.watchdogEnabled = false;
         else if (t == "on") cfg.watchdogEnabled = true;
         else if (const auto b = parseBool(*v)) cfg.watchdogEnabled = *b;

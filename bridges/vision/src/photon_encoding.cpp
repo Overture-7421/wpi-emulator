@@ -6,6 +6,8 @@
 #include <cstring>
 #include <utility>
 
+#include "wpiemu/sdk/core/byte_order.h"
+
 namespace wpiemu::bridges::vision {
 
 namespace {
@@ -25,9 +27,7 @@ public:
     std::vector<std::uint8_t> take() { return std::move(out_); }
 
 private:
-    void le(std::uint64_t v, int bytes) {
-        for (int i = 0; i < bytes; ++i) u8(static_cast<std::uint8_t>((v >> (8 * i)) & 0xff));
-    }
+    void le(std::uint64_t v, int bytes) { sdk::appendLittleEndian(out_, v, bytes); }
     std::vector<std::uint8_t> out_;
 };
 

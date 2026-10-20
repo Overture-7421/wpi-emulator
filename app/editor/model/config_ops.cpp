@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "wpiemu/sdk/config/value_codec.h"
+#include "wpiemu/sdk/core/strings.h"
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/mechanisms/motion_config.h"
 
@@ -721,12 +722,8 @@ namespace {
 
 // "Blue left" -> "Red left", "BLUE" -> "RED", "blue" -> "red"; nothing to swap: nullopt.
 std::optional<std::string> swapAllianceWord(const std::string& label, sdk::Alliance from, sdk::Alliance to) {
-    const auto lower = [](std::string s) {
-        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-        return s;
-    };
     const std::string needle(sdk::allianceKey(from));
-    const std::size_t at = lower(label).find(needle);
+    const std::size_t at = sdk::asciiLower(label).find(needle);
     if (at == std::string::npos) return std::nullopt;
     std::string word(sdk::allianceKey(to));
     const std::string found = label.substr(at, needle.size());

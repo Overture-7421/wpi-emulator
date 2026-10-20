@@ -6,6 +6,7 @@
 #include <regex>
 
 #include "wpiemu/core/launcher/process.h"
+#include "wpiemu/sdk/core/strings.h"
 
 namespace wpiemu::core::launcher {
 
@@ -13,11 +14,6 @@ using namespace wpiemu::sdk;
 namespace fs = std::filesystem;
 
 namespace {
-
-std::string lower(std::string s) {
-    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return s;
-}
 
 bool isDirectory(const fs::path& p) {
     std::error_code ec;
@@ -58,7 +54,7 @@ bool hasSourceFiles(const fs::path& dir, std::initializer_list<const char*> exte
     if (!isDirectory(dir)) return false;
     for (fs::recursive_directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
         if (!it->is_regular_file(ec)) continue;
-        const std::string ext = lower(it->path().extension().string());
+        const std::string ext = asciiLower(it->path().extension().string());
         for (const char* e : extensions)
             if (ext == e) return true;
     }
@@ -70,15 +66,15 @@ std::string stringOf(const Value* v) { return v != nullptr && v->isString() ? v-
 }  // namespace
 
 bool ProjectReport::hasVendorDep(std::string_view fragment) const {
-    const std::string needle = lower(std::string(fragment));
+    const std::string needle = asciiLower(fragment);
     return std::any_of(vendorDeps.begin(), vendorDeps.end(), [&](const VendorDep& d) {
-        return lower(d.name).find(needle) != std::string::npos || lower(d.fileName).find(needle) != std::string::npos;
+        return asciiLower(d.name).find(needle) != std::string::npos || asciiLower(d.fileName).find(needle) != std::string::npos;
     });
 }
 
 std::string ProjectReport::photonLibVersion() const {
     for (const VendorDep& d : vendorDeps)
-        if (!d.version.empty() && (lower(d.name).find("photon") != std::string::npos || lower(d.fileName).find("photon") != std::string::npos))
+        if (!d.version.empty() && (asciiLower(d.name).find("photon") != std::string::npos || asciiLower(d.fileName).find("photon") != std::string::npos))
             return d.version;
     return {};
 }
@@ -136,7 +132,7 @@ Result<ProjectReport> ProjectInspector::inspect(const fs::path& dir) const {
                 if (parsedTeam.ec == std::errc{} && parsedTeam.ptr == team.data() + team.size() && number >= 0 && number <= kMaxTeamNumber) r.teamNumber = number;
                 else if (!team.empty()) note(Severity::Warning, ".wpilib/wpilib_preferences.json", "teamNumber '" + team + "' is not a valid FRC team number (0-" + std::to_string(kMaxTeamNumber) + ")");
             }
-            prefsLanguage = lower(stringOf(prefs.find("currentLanguage")));
+            prefsLanguage = asciiLower(stringOf(prefs.find("currentLanguage")));
             if (r.wpilibYear == 0) r.wpilibYear = yearOf(stringOf(prefs.find("projectYear")));
         } else {
             note(Severity::Warning, ".wpilib/wpilib_preferences.json", "not valid JSON: " + (parsed ? std::string("not an object") : parsed.error().message));
@@ -180,7 +176,7 @@ Result<ProjectReport> ProjectInspector::inspect(const fs::path& dir) const {
     if (isDirectory(dir / "vendordeps")) {
         std::vector<fs::path> files;
         for (fs::directory_iterator it(dir / "vendordeps", lec), end; !lec && it != end; it.increment(lec))
-            if (it->is_regular_file(lec) && lower(it->path().extension().string()) == ".json") files.push_back(it->path());
+            if (it->is_regular_file(lec) && asciiLower(it->path().extension().string()) == ".json") files.push_back(it->path());
         std::sort(files.begin(), files.end());
         for (const fs::path& f : files) {
             VendorDep dep;

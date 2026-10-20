@@ -6,6 +6,8 @@
 #include <new>
 #include <string>
 
+#include "wpiemu/sdk/core/byte_order.h"
+
 namespace wpiemu::ipc {
 
 using namespace sdk;
@@ -37,9 +39,9 @@ public:
     void fail() { bad_ = true; }
 
     void u8(std::uint8_t v) { out_.push_back(static_cast<std::byte>(v)); }
-    void u16(std::uint16_t v) { le(v, 2); }
-    void u32(std::uint32_t v) { le(v, 4); }
-    void u64(std::uint64_t v) { le(v, 8); }
+    void u16(std::uint16_t v) { appendLittleEndian(out_, v, 2); }
+    void u32(std::uint32_t v) { appendLittleEndian(out_, v, 4); }
+    void u64(std::uint64_t v) { appendLittleEndian(out_, v, 8); }
     void i32(std::int32_t v) { u32(static_cast<std::uint32_t>(v)); }
     void i64(std::int64_t v) { u64(static_cast<std::uint64_t>(v)); }
     void f32(float v) { u32(std::bit_cast<std::uint32_t>(v)); }
@@ -81,10 +83,6 @@ public:
     }
 
 private:
-    void le(std::uint64_t v, int bytes) {
-        for (int i = 0; i < bytes; ++i) out_.push_back(static_cast<std::byte>((v >> (8 * i)) & 0xFF));
-    }
-
     std::vector<std::byte>& out_;
     bool bad_ = false;
 };
@@ -185,8 +183,7 @@ private:
             fail("truncated field");
             return 0;
         }
-        std::uint64_t v = 0;
-        for (int i = 0; i < bytes; ++i) v |= static_cast<std::uint64_t>(static_cast<std::uint8_t>(d_[pos_ + i])) << (8 * i);
+        const std::uint64_t v = readLittleEndian(d_, pos_, bytes);
         pos_ += static_cast<std::size_t>(bytes);
         return v;
     }
