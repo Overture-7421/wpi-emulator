@@ -220,6 +220,8 @@ VisionSetup sampleVisionSetup() {
     for (int i = 0; i < 3; ++i) v.cameras.push_back(CameraSetup{sampleCameraConfig(i)});
     v.photonVersion = "v2026.3.4";
     v.layoutName = "2026 Rebuilt (welded)";
+    v.fieldLengthM = 16.541;
+    v.fieldWidthM = 8.069;
     return v;
 }
 
@@ -682,23 +684,45 @@ TEST_CASE("codec: VisionSetup round trips with every camera field") {
     CHECK(out.cameras[2].config.local == in.cameras[2].config.local);
     CHECK(out.photonVersion == "v2026.3.4");
     CHECK(out.layoutName == "2026 Rebuilt (welded)");
+    CHECK(out.fieldLengthM == 16.541);
+    CHECK(out.fieldWidthM == 8.069);
+    CHECK(out.hasFieldSize());
 
     const auto empty = std::get<VisionSetup>(decodeOk(encodeOk(VisionSetup{})));
     CHECK(empty.cameras.empty());
     CHECK(empty.photonVersion.empty());
     CHECK(empty.layoutName.empty());
+    CHECK(empty.fieldLengthM == 0.0);
+    CHECK_FALSE(empty.hasFieldSize());
 }
 
-TEST_CASE("codec: VisionSetup without the trailing strings decodes with empty strings") {
-    VisionSetup in = sampleVisionSetup();
+TEST_CASE("codec: VisionSetup without the trailing field size or strings decodes with the defaults") {
+    const VisionSetup full = sampleVisionSetup();
+    std::vector<std::byte> bytes = encodeOk(full);
+    bytes.resize(bytes.size() - 16);   // the two doubles of the field size
+    auto out = std::get<VisionSetup>(decodeOk(bytes));
+    CHECK(out.layoutName == full.layoutName);
+    CHECK(out.fieldLengthM == 0.0);
+    CHECK(out.fieldWidthM == 0.0);
+
+    VisionSetup in = full;
     in.photonVersion.clear();
     in.layoutName.clear();
-    std::vector<std::byte> bytes = encodeOk(in);
-    bytes.resize(bytes.size() - 2);  // both empty strings are one length byte each
-    const auto out = std::get<VisionSetup>(decodeOk(bytes));
+    in.fieldLengthM = in.fieldWidthM = 0.0;
+    bytes = encodeOk(in);
+    bytes.resize(bytes.size() - 2 - 16);  // both empty strings are one length byte each, then the field size
+    out = std::get<VisionSetup>(decodeOk(bytes));
     CHECK(out.cameras.size() == 3);
     CHECK(out.photonVersion.empty());
     CHECK(out.layoutName.empty());
+    CHECK(out.fieldLengthM == 0.0);
+}
+
+TEST_CASE("codec: a VisionSetup cut inside the field size is rejected") {
+    BinaryMessageCodec codec;
+    const std::vector<std::byte> full = encodeOk(sampleVisionSetup());
+    for (std::size_t cut = 1; cut < 16; ++cut)
+        CHECK_FALSE(codec.decode(std::span<const std::byte>(full.data(), full.size() - cut)).ok());
 }
 
 TEST_CASE("codec: SensorFrame carries camera frames with tags, empty frames and optional robot poses") {
@@ -769,7 +793,7 @@ TEST_CASE("codec: truncated vision data in a SensorFrame is rejected") {
 TEST_CASE("codec: truncated VisionSetup cameras are rejected") {
     BinaryMessageCodec codec;
     const std::vector<std::byte> full = encodeOk(sampleVisionSetup());
-    const std::size_t tailBytes = 1 + 9 + 1 + 21;  // photonVersion + layoutName with their length prefixes
+    const std::size_t tailBytes = 1 + 9 + 1 + 21 + 16;  // photonVersion + layoutName with their length prefixes, then the field size
     for (std::size_t len = 0; len < full.size() - tailBytes; ++len)
         CHECK_FALSE(codec.decode(std::span<const std::byte>(full.data(), len)).ok());
 }

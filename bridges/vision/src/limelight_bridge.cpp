@@ -75,6 +75,10 @@ sdk::Status LimelightBridge::start(sdk::ILogger& logger) {
 }
 
 void LimelightBridge::configure(const sdk::VisionSetup& setup) {
+    fieldLengthM_ = setup.fieldLengthM;
+    fieldWidthM_ = setup.fieldWidthM;
+    fieldSizeKnown_ = setup.hasFieldSize();
+    fieldWarningLogged_ = false;
     cams_.clear();
     cams_.resize(setup.cameras.size());
     for (std::size_t i = 0; i < setup.cameras.size(); ++i) {
@@ -90,6 +94,19 @@ void LimelightBridge::configure(const sdk::VisionSetup& setup) {
 LimelightBridge::Cam* LimelightBridge::camera(std::uint32_t index) {
     if (index >= cams_.size() || !cams_[index]) return nullptr;
     return &*cams_[index];
+}
+
+// The robot pose in the field convention `origin`. Blue is our own frame; red and center need the field size, which
+// comes from the game plugin's AprilTag layout. Without it those two are not published (nullopt) rather than guessed.
+std::optional<sdk::Pose3> LimelightBridge::poseInOrigin(const sdk::Pose3& blue, FieldOrigin origin) {
+    if (origin != FieldOrigin::Blue && !fieldSizeKnown_) {
+        if (!fieldWarningLogged_) {
+            fieldWarningLogged_ = true;
+            sink_.warn("the game's AprilTag layout has no field size; only the blue-origin Limelight pose is published");
+        }
+        return std::nullopt;
+    }
+    return detail::inFieldOrigin(blue, origin, fieldLengthM_, fieldWidthM_);
 }
 
 // ntcore may not be ready until the robot constructor ran; callers retry on the next tick.
@@ -197,8 +214,9 @@ void LimelightBridge::publishFrame(Cam& cam, const sdk::CameraFrame& frame, std:
     const bool havePose = valid && frame.hasRobotPose;
     auto poseArray = [&](FieldOrigin origin) {
         if (!havePose) return std::vector<double>{};
-        std::vector<double> a = pose6(detail::inFieldOrigin(frame.robotPoseField, origin, options_.fieldLengthM,
-                                                            options_.fieldWidthM));
+        const std::optional<sdk::Pose3> pose = poseInOrigin(frame.robotPoseField, origin);
+        if (!pose) return std::vector<double>{};
+        std::vector<double> a = pose6(*pose);
         a.push_back(latencyMs);
         a.push_back(static_cast<double>(tags.size()));
         a.push_back(frame.tagSpanM);
@@ -301,9 +319,9 @@ void LimelightBridge::publishFrame(Cam& cam, const sdk::CameraFrame& frame, std:
     j.raw(",").key("txnc").num(valid ? primary->yawDeg : 0.0).raw(",").key("tync").num(valid ? primary->pitchDeg : 0.0);
     j.raw(",").key("ta").num(valid ? primary->areaPercent : 0.0);
     auto pose6OrZeros = [&](FieldOrigin origin) {
-        return havePose ? pose6(detail::inFieldOrigin(frame.robotPoseField, origin, options_.fieldLengthM,
-                                                      options_.fieldWidthM))
-                        : zeros(6);
+        if (!havePose) return zeros(6);
+        const std::optional<sdk::Pose3> pose = poseInOrigin(frame.robotPoseField, origin);
+        return pose ? pose6(*pose) : zeros(6);
     };
     j.raw(",").key("botpose").array(pose6OrZeros(FieldOrigin::Center));
     j.raw(",").key("botpose_wpired").array(pose6OrZeros(FieldOrigin::Red));

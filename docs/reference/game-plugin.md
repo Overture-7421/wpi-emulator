@@ -43,9 +43,10 @@ a warning. Do not silently reinterpret another season's configuration.
 
 `contributeEditorPanels()` and `contributeHud()` return SDK descriptors, never Qt widgets.
 `fieldFrame()` supplies field dimensions and alliance symmetry for start-position copying.
-`aprilTagLayout()` supplies field-frame tags; an empty layout gives simulated cameras no tags
-to observe. Vision computation and robot-side publishing are not season code; see
-[bridges](bridges.md). The [app contract](app.md) explains descriptor presentation.
+`aprilTagLayout()` supplies field-frame tags and the field size (`fieldLengthM`/`fieldWidthM`, finite and positive
+whenever the layout has tags); an empty layout gives simulated cameras no tags to observe. The size travels in
+`VisionSetup`; the bridges never assume a season's field. Vision computation and robot-side publishing are not
+season code; see [bridges](bridges.md). The [app contract](app.md) explains descriptor presentation.
 
 ## Robot zones and game-fed sensors
 

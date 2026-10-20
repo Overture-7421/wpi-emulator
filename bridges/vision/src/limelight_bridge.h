@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "nt_sink.h"
+#include "vision_math.h"
 #include "wpiemu/bridges/vision/vision_bridges.h"
 #include "wpiemu/sdk/vision/vision_bridge.h"
 
@@ -53,12 +54,17 @@ private:
     };
 
     Cam* camera(std::uint32_t index);
+    std::optional<sdk::Pose3> poseInOrigin(const sdk::Pose3& blue, detail::FieldOrigin origin);
     bool ensureInitialized(Cam& cam, std::int64_t ntNow);
     // synthetic: an empty no-target frame (initial state / reset), not a camera capture.
     void publishFrame(Cam& cam, const sdk::CameraFrame& frame, std::int64_t ntNow, bool synthetic);
 
     detail::NtSink sink_;
     VisionBridgeOptions options_;
+    double fieldLengthM_ = 0.0;   // from VisionSetup; valid only while fieldSizeKnown_
+    double fieldWidthM_ = 0.0;
+    bool fieldSizeKnown_ = false;
+    bool fieldWarningLogged_ = false;
     std::vector<std::optional<Cam>> cams_;
     bool started_ = false;
 };

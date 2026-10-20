@@ -23,6 +23,7 @@ public:
     void setLogger(sdk::ILogger* logger) { logger_ = logger != nullptr ? logger : &null_; }
     INtBackend& backend() { return *backend_; }
     void error(const std::string& message) { logger_->error(category_, message); }
+    void warn(const std::string& message) { logger_->warn(category_, message); }
     bool available() { return backend_ && backend_->available(); }
 
     void put(std::string_view path, const NtValue& value, std::int64_t timestampUs, std::string_view typeString = {}) {

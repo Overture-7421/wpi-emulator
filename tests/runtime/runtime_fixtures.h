@@ -157,14 +157,19 @@ struct Registries {
     }
 };
 
-// A game module with one AprilTag (id 3) 3 m ahead of the spawn point, 1 m high, facing back at the robot. Select it with
-// RobotConfig::gamePluginId = "tag_game".
+// A game module with one AprilTag (id 3) 3 m ahead of the spawn point, 1 m high, facing back at the robot, on a 10 m x 6 m
+// field. Select it with RobotConfig::gamePluginId = "tag_game".
+inline constexpr float kTagFieldLengthM = 10.f;
+inline constexpr float kTagFieldWidthM = 6.f;
+
 class TagGameModule final : public testing::FakeGameModule {
 public:
     TagGameModule() : FakeGameModule("tag_game", 2998) {}
     AprilTagLayout aprilTagLayout() const override {
         AprilTagLayout layout;
         layout.name = "tag-layout";
+        layout.fieldLengthM = kTagFieldLengthM;
+        layout.fieldWidthM = kTagFieldWidthM;
         AprilTag tag;
         tag.id = 3;
         tag.pose = Pose3{Vec3{3.f, 0.f, 1.f}, Quat::fromYaw(static_cast<float>(kPi))};

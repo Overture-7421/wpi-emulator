@@ -667,6 +667,8 @@ void write(Writer& w, const VisionSetup& m) {
     for (const CameraSetup& c : m.cameras) write(w, c.config);
     w.str(m.photonVersion);
     w.str(m.layoutName);
+    w.f64(m.fieldLengthM);
+    w.f64(m.fieldWidthM);
 }
 
 void read(Reader& r, VisionSetup& m) {
@@ -677,6 +679,9 @@ void read(Reader& r, VisionSetup& m) {
     m.photonVersion = r.str();
     if (!r.more()) return;
     m.layoutName = r.str();
+    if (!r.more()) return;
+    m.fieldLengthM = r.f64();
+    m.fieldWidthM = r.f64();
 }
 
 template <class T>

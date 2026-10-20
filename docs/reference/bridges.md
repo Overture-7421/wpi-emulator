@@ -120,6 +120,9 @@ hull center, with yaw only, not the chassis COM frame. `robotToCamera` follows t
 and tilt relative to that robot frame. Tag +X is face-outward; bearing is positive right, elevation
 positive up, and image pixels run right/down from the top-left.
 Visibility tests tag centers for FOV, range, and facing; there is no occlusion or optical distortion.
+Limelight red-origin and center-origin pose arrays are derived from the blue-origin pose with the field size in
+`VisionSetup` (the plugin's AprilTag layout). If that size is missing or not finite and positive, those arrays are
+left empty, only the blue-origin array is published, and the bridge warns once per configuration.
 Detections have zero ambiguity; coprocessor robot poses are ground truth plus configured noise,
 not a perspective solve. Robot-side estimators can still solve from the encoded detections.
 

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -58,6 +59,15 @@ struct VisionSetup {
     std::vector<CameraSetup> cameras;
     std::string photonVersion;              // robot project's photonlib version ("v2026.3.4"); empty = unknown (default used)
     std::string layoutName;                 // informational: the AprilTag layout the simulation uses
+    // Size of the field of that layout (the season's data, from AprilTagLayout). The Limelight bridge needs it to
+    // re-express our blue-origin poses in the red-origin and center-origin conventions; 0 = unknown.
+    double fieldLengthM = 0.0;
+    double fieldWidthM = 0.0;
+
+    // True when both dimensions are finite and positive, i.e. poses can be moved to another field origin.
+    bool hasFieldSize() const {
+        return std::isfinite(fieldLengthM) && fieldLengthM > 0.0 && std::isfinite(fieldWidthM) && fieldWidthM > 0.0;
+    }
 };
 
 }  // namespace wpiemu::sdk

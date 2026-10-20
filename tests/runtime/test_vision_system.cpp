@@ -416,13 +416,20 @@ TEST_CASE("vision: setup describes the configured cameras and the layout") {
     VisionSystem none(RobotConfig{}, AprilTagLayout{});
     CHECK(none.empty());
     CHECK(none.setup().cameras.empty());
+    CHECK_FALSE(none.setup().hasFieldSize());   // no layout, no field size: nothing is guessed
 
     CameraConfig cam = cameraAt("cam");
     cam.kind = CameraKind::PhotonVision;
-    VisionSystem vision(configWith({cam}), layoutOf({}));
+    AprilTagLayout layout = layoutOf({});
+    layout.fieldLengthM = 12.5f;
+    layout.fieldWidthM = 6.25f;
+    VisionSystem vision(configWith({cam}), layout);
     const VisionSetup setup = vision.setup();
     REQUIRE(setup.cameras.size() == 1);
     CHECK(setup.cameras[0].config == cam);
     CHECK(setup.layoutName == "test");
     CHECK(setup.photonVersion.empty());
+    CHECK(setup.fieldLengthM == 12.5);          // the season's field size travels with the setup
+    CHECK(setup.fieldWidthM == 6.25);
+    CHECK(setup.hasFieldSize());
 }

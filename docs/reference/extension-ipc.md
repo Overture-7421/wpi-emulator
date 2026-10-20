@@ -96,7 +96,9 @@ Identity rules are shared by the SDK's
   stale-frame isolation. Production traffic must carry the negotiated identity.
 
 `VisionSetup`, including an empty camera list, follows `HelloAck` and precedes the first sensor
-frame of each epoch. Its camera indices and encoder-specific contract are in [Bridges](bridges.md).
+frame of each epoch. It carries the cameras, the photonlib version, the layout name and the field size of the
+game's AprilTag layout (two trailing doubles; absent means unknown). Its camera indices and encoder-specific
+contract are in [Bridges](bridges.md).
 
 ## Tick readiness and commands
 

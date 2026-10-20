@@ -41,6 +41,8 @@ VisionSystem::VisionSystem(const RobotConfig& config, AprilTagLayout layout)
 VisionSetup VisionSystem::setup() const {
     VisionSetup s;
     s.layoutName = layout_.name;
+    s.fieldLengthM = static_cast<double>(layout_.fieldLengthM);
+    s.fieldWidthM = static_cast<double>(layout_.fieldWidthM);
     for (const CameraRuntime& cam : cameras_) s.cameras.push_back(CameraSetup{cam.config});
     return s;
 }

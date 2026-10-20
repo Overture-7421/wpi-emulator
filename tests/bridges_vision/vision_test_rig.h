@@ -37,10 +37,16 @@ inline sdk::CameraConfig makeCamera(sdk::CameraKind kind, std::string name) {
     return c;
 }
 
+// The field size a test layout would carry (the 2026 field); VisionSetup::fieldLengthM/WidthM come from the plugin's layout.
+inline constexpr double kTestFieldLengthM = 16.541;
+inline constexpr double kTestFieldWidthM = 8.069;
+
 inline sdk::VisionSetup makeSetup(std::vector<sdk::CameraConfig> cameras, std::string photonVersion = {}) {
     sdk::VisionSetup s;
     for (auto& c : cameras) s.cameras.push_back(sdk::CameraSetup{std::move(c)});
     s.photonVersion = std::move(photonVersion);
+    s.fieldLengthM = kTestFieldLengthM;
+    s.fieldWidthM = kTestFieldWidthM;
     return s;
 }
 
