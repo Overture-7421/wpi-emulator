@@ -112,7 +112,7 @@ TEST_CASE("PowerDistribution: sim drives bus voltage, temperature and per-channe
     rig.poll();
     const auto id = rig.find("power_distribution", 0).value();
     CHECK(rig.info(id).descriptor.capabilities.has(Capability::SupplyVoltage));
-    REQUIRE(rig.info(id).specs.size() == 2u + 24u);
+    REQUIRE(rig.info(id).signalSpecs.size() == 2u + 24u);
 
     CHECK(rig.write(id, sig::kSupplyVoltage, 11.2));
     CHECK(pd.volts[0] == 11.2);
@@ -182,7 +182,7 @@ TEST_CASE("Addressable LED: strip state is observed as a summary") {
 
     led.pixels[0].clear();
     CHECK(rig.output(id, "avgRed").value() == 0.0);  // empty strip
-    for (const auto& spec : rig.info(id).specs) CHECK(spec.direction == sdk::SignalDirection::Output);
+    for (const auto& spec : rig.info(id).signalSpecs) CHECK(spec.direction == sdk::SignalDirection::Output);
 }
 
 namespace {
@@ -237,7 +237,7 @@ TEST_CASE("CAN: frames create observe-only devices keyed by manufacturer, type a
     CHECK(rig.output(id, "lastPeriodMs").value() == 20.0);
 
     // Nothing is ever written back to the bus.
-    for (const auto& spec : rig.info(id).specs) CHECK(spec.direction == sdk::SignalDirection::Output);
+    for (const auto& spec : rig.info(id).signalSpecs) CHECK(spec.direction == sdk::SignalDirection::Output);
 }
 
 TEST_CASE("CAN: broadcast frames and unknown ids are handled safely") {

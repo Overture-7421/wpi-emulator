@@ -52,7 +52,7 @@ TEST_CASE("PWM: out-of-range speeds and non-finite values are clamped, outputs a
     CHECK(rig.output(id, sig::kDutyCycle).value() == 0.0);
 
     // The sim must never write a robot output: all PWM signals are Output direction.
-    for (const auto& spec : rig.info(id).specs) CHECK(spec.direction == sdk::SignalDirection::Output);
+    for (const auto& spec : rig.info(id).signalSpecs) CHECK(spec.direction == sdk::SignalDirection::Output);
     rig.api->pwmHal.spd[0] = 0.3;
     CHECK(rig.write(id, sig::kDutyCycle, 1.0));
     CHECK(rig.api->pwmHal.spd[0] == 0.3);
@@ -76,9 +76,9 @@ TEST_CASE("DIO: inputs are driven by the sim and expose digitalIn") {
     const auto id = rig.find("dio", 4).value();
     CHECK(rig.info(id).descriptor.capabilities.has(Capability::DigitalInput));
     CHECK_FALSE(rig.info(id).descriptor.capabilities.has(Capability::DigitalOutput));
-    REQUIRE(rig.info(id).specs.size() == 1);
-    CHECK(rig.info(id).specs[0].name == sig::kDigitalIn);
-    CHECK(rig.info(id).specs[0].direction == sdk::SignalDirection::Input);
+    REQUIRE(rig.info(id).signalSpecs.size() == 1);
+    CHECK(rig.info(id).signalSpecs[0].name == sig::kDigitalIn);
+    CHECK(rig.info(id).signalSpecs[0].direction == sdk::SignalDirection::Input);
 
     CHECK(rig.write(id, sig::kDigitalIn, 1.0));
     CHECK(rig.api->dioHal.val[4]);

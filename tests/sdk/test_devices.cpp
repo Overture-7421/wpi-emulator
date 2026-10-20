@@ -8,80 +8,17 @@
 #include "wpiemu/sdk/devices/channel_family_bridge.h"
 #include "wpiemu/sdk/devices/signals.h"
 #include "wpiemu/sdk/devices/sim_device_bridge.h"
+#include "wpiemu/sdk/testing/fake_bridge_host.h"
 #include "wpiemu/sdk/testing/fake_clock_logger.h"
 #include "wpiemu/sdk/testing/fake_device_hub.h"
+#include "wpiemu/sdk/testing/fake_sim_device_backend.h"
 
 using namespace wpiemu::sdk;
 
 namespace {
 
-class FakeHost final : public IBridgeHost {
-public:
-    DeviceId announce(const DeviceDescriptor& d, std::vector<SignalSpec> signalSpecs) override {
-        for (auto& [id, a] : announced) {
-            if (a.descriptor.key() == d.key()) {
-                a.signalSpecs = std::move(signalSpecs);
-                ++reannounce;
-                return id;
-            }
-        }
-        const DeviceId id{next++};
-        announced[id] = {d, std::move(signalSpecs)};
-        return id;
-    }
-    void retire(DeviceId id) override { retired.push_back(id); }
-    ILogger& logger() override { return log; }
-    bool enableOptionalHooks() const override { return false; }
-    void observeBus(DeviceId id, std::string_view bus) override { observed.emplace_back(id, std::string(bus)); }
-
-    struct Announced {
-        DeviceDescriptor descriptor;
-        std::vector<SignalSpec> signalSpecs;
-    };
-    std::map<DeviceId, Announced> announced;
-    std::vector<DeviceId> retired;
-    std::vector<std::pair<DeviceId, std::string>> observed;
-    int reannounce = 0;
-    std::uint32_t next = 1;
-    testing::CapturingLogger log;
-};
-
-// Mimics HAL SimDevices for a Phoenix-6-style TalonFX with a rotor-sensor child.
-class FakeBackend final : public ISimDeviceBackend {
-public:
-    std::uint64_t generation() const override { return generation_; }
-    void listDevices(std::vector<SimDeviceInfo>& out) const override { out = devices_; }
-    void listValues(SimDeviceHandle device, std::vector<SimValueInfo>& out) const override {
-        const auto it = values_.find(device);
-        if (it != values_.end()) out = it->second;
-    }
-    double getValue(SimValueHandle v) const override { return data_.at(v); }
-    void setValue(SimValueHandle v, double d) override { data_[v] = d; }
-
-    SimDeviceHandle addDevice(const std::string& name, std::vector<std::pair<std::string, SignalDirection>> values) {
-        const SimDeviceHandle h{nextHandle_++};
-        devices_.push_back({h, name});
-        auto& list = values_[h];
-        for (auto& [n, dir] : values) {
-            const SimValueHandle vh{nextHandle_++};
-            list.push_back({vh, n, dir, SignalType::Double});
-            data_[vh] = 0.0;
-            names_[{h, n}] = vh;
-        }
-        ++generation_;
-        return h;
-    }
-    SimValueHandle value(SimDeviceHandle h, const std::string& n) const { return names_.at({h, n}); }
-    double& raw(SimDeviceHandle h, const std::string& n) { return data_[names_.at({h, n})]; }
-
-private:
-    std::uint64_t generation_ = 0;
-    std::uint64_t nextHandle_ = 1;
-    std::vector<SimDeviceInfo> devices_;
-    std::map<SimDeviceHandle, std::vector<SimValueInfo>> values_;
-    std::map<std::pair<SimDeviceHandle, std::string>, SimValueHandle> names_;
-    std::map<SimValueHandle, double> data_;
-};
+using FakeHost = testing::FakeBridgeHost;
+using FakeBackend = testing::FakeSimDeviceBackend;
 
 std::vector<SimDeviceRule> talonRules() {
     SimDeviceRule r;
@@ -128,7 +65,7 @@ TEST_CASE("SimDeviceBridge discovers, groups children, and bridges values by can
     CHECK(bridge.owns(id));
 
     // robot -> sim
-    backend.raw(root, "motorVoltage") = 7.5;
+    backend.poke(root, "motorVoltage", 7.5);
     std::vector<SignalSample> out;
     bridge.collectOutputs(out);
     REQUIRE(out.size() == 1);  // only Output signals
@@ -140,11 +77,11 @@ TEST_CASE("SimDeviceBridge discovers, groups children, and bridges values by can
     REQUIRE(findSignal(ann.signalSpecs, signal::kRotorVelocity, &velIdx) != nullptr);
     const SignalSample in[] = {{id, velIdx, 10.0}};
     bridge.applyInputs(in);
-    CHECK(backend.raw(child, "velocity") == doctest::Approx(5.0));
+    CHECK(backend.get(child, "velocity") == doctest::Approx(5.0));
 
     // idle poll does not re-announce
     bridge.poll();
-    CHECK(host.reannounce == 0);
+    CHECK(host.reannounces == 0);
     bridge.stop();
     CHECK_FALSE(bridge.owns(id));
 }
@@ -314,7 +251,7 @@ TEST_CASE("SimDeviceBridge never fabricates a bus for rules that cannot know it 
     CHECK(host.observed[0].second == "canivore");
     CHECK_FALSE(bridge.observeBus(DeviceId{99}, "rio"));
     bridge.poll();
-    CHECK(host.reannounce == 0);
+    CHECK(host.reannounces == 0);
 }
 
 TEST_CASE("SimDeviceBridge keeps the rule bus when it is a fact of the family (default, 1.0 behaviour)") {
