@@ -1,17 +1,24 @@
 #include <doctest/doctest.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 #include "wpiemu/sdk/config/plugin_config.h"
 #include "wpiemu/sdk/config/property_schema.h"
+#include "wpiemu/sdk/config/unit_display.h"
 #include "wpiemu/sdk/config/value_codec.h"
+#include "wpiemu/sdk/core/byte_order.h"
 #include "wpiemu/sdk/core/ids.h"
 #include "wpiemu/sdk/core/math.h"
 #include "wpiemu/sdk/core/registry.h"
 #include "wpiemu/sdk/core/result.h"
 #include "wpiemu/sdk/core/rng.h"
+#include "wpiemu/sdk/core/strings.h"
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/core/value.h"
 #include "wpiemu/sdk/dynamics/motor_model.h"
@@ -72,6 +79,88 @@ TEST_CASE("DC motor model matches WPILib equations") {
     CHECK(m.torqueNm(12.0, 0.0) == doctest::Approx(2.6).epsilon(1e-9));          // stall torque
     CHECK(m.currentA(12.0, 0.0) == doctest::Approx(105.0).epsilon(1e-9));        // stall current
     CHECK(m.currentA(12.0, motors::neo().freeSpeedRadPerSec) == doctest::Approx(1.8).epsilon(1e-6));  // free current
+}
+
+TEST_CASE("motor table keys and names are unique, every row is physical and the SDK defaults come from it") {
+    std::unordered_set<std::string> keys;
+    std::unordered_set<std::string> names;
+    for (const MotorPreset& p : motors::presets()) {
+        INFO(p.key);
+        CHECK(keys.insert(p.key).second);
+        CHECK(names.insert(p.spec.name).second);   // saved wheel motors are matched to the table by name
+        CHECK(p.spec.name == p.label);
+        CHECK(isValidMotorSpec(p.spec));
+    }
+    REQUIRE(motors::findPreset("kraken_x44_foc") != nullptr);
+    CHECK(motors::findPreset("nope") == nullptr);
+    REQUIRE(motors::findPresetByName("Kraken X44") != nullptr);
+    CHECK(motors::findPresetByName("Kraken X44")->key == "kraken_x44");
+    CHECK(motors::findPresetByName("Homebrew") == nullptr);
+    CHECK(motors::krakenX60().name == "Kraken X60");
+    CHECK(motors::falcon500().name == "Falcon 500");
+    CHECK(motors::neo().name == "NEO");
+    CHECK(motors::neo550().name == "NEO 550");
+}
+
+TEST_CASE("motorSpecFaults names each non-physical field") {
+    CHECK(motorSpecFaults(motors::neo()).empty());
+
+    MotorSpec bad = motors::neo();
+    bad.stallTorqueNm = 0.0;
+    bad.freeSpeedRadPerSec = std::numeric_limits<double>::quiet_NaN();
+    const auto faults = motorSpecFaults(bad);
+    REQUIRE(faults.size() == 2);
+    CHECK(std::string(faults[0].field) == "stallTorqueNm");
+    CHECK(std::string(faults[1].field) == "freeSpeedRadPerSec");
+
+    MotorSpec stalled = motors::neo();
+    stalled.freeCurrentA = stalled.stallCurrentA;   // must stay below the stall current
+    REQUIRE(motorSpecFaults(stalled).size() == 1);
+    CHECK(std::string(motorSpecFaults(stalled)[0].field) == "freeCurrentA");
+    stalled.freeCurrentA = -1.0;
+    REQUIRE(motorSpecFaults(stalled).size() == 1);
+    CHECK_FALSE(isValidMotorSpec(stalled));
+}
+
+TEST_CASE("unit display: one table converts, round-trips and labels every property unit in both systems") {
+    using U = PropertyUnit;
+    CHECK(toDisplay(0.0254, U::Meters, UnitSystem::Imperial) == doctest::Approx(1.0));
+    CHECK(toDisplay(0.01, U::Meters, UnitSystem::Metric) == doctest::Approx(1.0));
+    CHECK(toDisplay(0.45359237, U::Kilograms, UnitSystem::Imperial) == doctest::Approx(1.0));
+    CHECK(toDisplay(kPi, U::Radians, UnitSystem::Metric) == doctest::Approx(180.0));
+    CHECK(toDisplay(rpmToRadPerSec(60.0), U::RadiansPerSecond, UnitSystem::Imperial) == doctest::Approx(60.0));
+    CHECK(std::string(unitDisplay(U::Meters, UnitSystem::Imperial).suffix) == " in");
+    CHECK(std::string(unitDisplay(U::Meters, UnitSystem::Metric).suffix) == " cm");
+
+    for (const UnitSystem system : {UnitSystem::Imperial, UnitSystem::Metric}) {
+        for (int i = 0; i <= static_cast<int>(U::Hertz); ++i) {   // Hertz is the last PropertyUnit
+            const U unit = static_cast<U>(i);
+            INFO(i);
+            CHECK(fromDisplay(toDisplay(1.2345, unit, system), unit, system) == doctest::Approx(1.2345));
+            CHECK(unitDisplay(unit, system).factor == doctest::Approx(toDisplay(1.0, unit, system)));
+        }
+    }
+}
+
+TEST_CASE("little-endian helpers write the least significant byte first and read it back") {
+    std::vector<std::byte> out;
+    appendLittleEndian(out, 0x0102030405060708ull, 8);
+    REQUIRE(out.size() == 8);
+    CHECK(static_cast<int>(out[0]) == 0x08);
+    CHECK(static_cast<int>(out[7]) == 0x01);
+    CHECK(readLittleEndian(out, 0, 8) == 0x0102030405060708ull);
+    CHECK(readLittleEndian(out, 4, 4) == 0x01020304ull);
+
+    std::vector<std::uint8_t> raw;
+    appendLittleEndian(raw, 0xABCDull, 2);
+    appendLittleEndian(raw, 0x1FFull, 1);   // only the low byte is written
+    CHECK(raw == std::vector<std::uint8_t>{0xCD, 0xAB, 0xFF});
+}
+
+TEST_CASE("asciiLower lowers A-Z only") {
+    CHECK(asciiLower("Blue LEFT 123-_") == "blue left 123-_");
+    CHECK(asciiLower("\xC3\x84") == "\xC3\x84");   // non-ASCII bytes stay as they are, whatever the locale
+    CHECK(asciiLower("").empty());
 }
 
 TEST_CASE("Value: types, objects keep insertion order, deep equality") {

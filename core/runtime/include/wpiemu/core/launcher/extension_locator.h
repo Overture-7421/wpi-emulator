@@ -11,7 +11,7 @@ namespace wpiemu::core::launcher {
 // "halsim_wpiemu.dll" / "libhalsim_wpiemu.dylib" / "libhalsim_wpiemu.so" for the OS this was built for.
 std::string halsimExtensionFileName();
 
-// Where the packaged / built HALSim extension may live, in priority order (docs/packaging.md). `lib` = halsimExtensionFileName():
+// Where the packaged / built HALSim extension may live, in priority order (docs/releasing.md). `lib` = halsimExtensionFileName():
 //   1. $WPIEMU_EXTENSION               (full file path)
 //   2. $WPIEMU_EXTENSION_DIR/<lib>
 //   3. appDir/<lib>                    (build tree, portable zip)

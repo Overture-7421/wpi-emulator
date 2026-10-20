@@ -83,7 +83,7 @@ std::vector<sdk::SlotSpec> robotSlotSpecs();
 // nullptr = core features only ("unsupported year").
 sdk::IGameModule* selectPlugin(const sdk::RobotConfig& config, const sdk::GamePluginRegistry& plugins);
 
-// Whole-model validation (docs/runtime.md "Validation"). Pure: never mutates, never throws.
+// Whole-model validation (docs/reference/runtime.md). Pure: never mutates, never throws.
 class ConfigValidator final : public sdk::IConfigValidator {
 public:
     // Optional device knowledge: capabilities of a robot-declared device (from discovery or a bridge catalog).

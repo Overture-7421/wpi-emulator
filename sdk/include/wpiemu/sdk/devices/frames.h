@@ -20,7 +20,7 @@ struct MotorOutput {
 };
 
 // What the sim writes back for a motor's integrated sensor (sim -> robot). Rotor side, i.e.
-// BEFORE the device's own SensorToMechanismRatio (ADR 0002: we drive the rotor).
+// BEFORE the device's own SensorToMechanismRatio (docs/reference/bridges.md: we drive the rotor).
 struct MotorFeedback {
     double rotorPositionRot = 0.0;
     double rotorVelocityRps = 0.0;

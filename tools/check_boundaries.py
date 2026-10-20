@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Architecture boundary check for wpi-emulator.
 
-Rules (see docs/decisions/0004-modular-boundaries.md and 0005-sdk-freeze.md):
+Rules (see docs/ARCHITECTURE.md):
   * core/, app/, sdk/ (and every non-plugin module) never include anything from plugins/.
   * plugins/<name>/ may include only wpiemu/sdk/** and its own files; never core, app,
     ipc, bridges, halsim_ext, or another plugin.
@@ -47,7 +47,7 @@ ALLOWED: dict[str, set[str]] = {
 # Any plugin ("plugins/<name>") may reference only these (plus itself).
 PLUGIN_ALLOWED = {"sdk"}
 # The plugins/ aggregation seam (files directly in plugins/, target wpiemu_plugins_builtin) is the one
-# place that may see every plugin (ADR 0005). app may link it (never include it); nobody else may
+# place that may see every plugin (docs/CONTRIBUTING.md). app may link it (never include it); nobody else may
 # reference it, and plugins may not reference it.
 AGGREGATOR = "plugins"
 AGGREGATOR_ALLOWED = {"sdk", AGGREGATOR, "plugins/*"}
@@ -74,14 +74,12 @@ TARGET_OWNERS = {
     "wpiemu_sdk": "sdk",
     "wpiemu_core": "core",
     "wpiemu_core_physics": "core",
-    "wpiemu_physics_tests": "core",
     "wpiemu_ipc": "ipc",
     "halsim_wpiemu": "halsim_ext",
     "wpiemu_halsim_core": "halsim_ext",
     "wpiemu_halsim_hal": "halsim_ext",
     "wpiemu_halsim_ext_tests": "halsim_ext",
     "wpiemu_halsim_ext_hal_tests": "halsim_ext",
-    "wpiemu_halsim_fake_emulator": "halsim_ext",
     # Imported third-party targets, not extension-owned interfaces.
     "wpiemu_wpilib_hal": "wpilib",
     "wpiemu_wpilib_wpiutil": "wpilib",
@@ -97,7 +95,6 @@ TARGET_OWNERS = {
     "wpiemu_app": "app",
     "wpiemu_app_common": "app",
     "wpiemu_app_host": "app",
-    "wpiemu_app_wizard": "app",
     "wpiemu_app_shell": "app",
     "wpiemu_app_editor": "app",
     "wpiemu_app_runview": "app",

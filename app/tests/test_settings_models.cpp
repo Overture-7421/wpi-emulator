@@ -10,6 +10,7 @@
 #include "common/unit_system.h"
 
 using namespace wpiemu::app;
+namespace sdk = wpiemu::sdk;
 
 TEST_CASE("unit formatter converts between SI and display units") {
     const UnitFormatter imperial(UnitSystem::Imperial);
@@ -102,10 +103,10 @@ TEST_CASE("project prefs are stored per project") {
     ProjectPrefsStore prefs(store);
     QTemporaryDir a, b;
     CHECK(prefs.load(a.path()) == ProjectPrefs{});
-    prefs.save(a.path(), ProjectPrefs{Alliance::Blue, 3});
-    CHECK(prefs.load(a.path()).alliance == Alliance::Blue);
+    prefs.save(a.path(), ProjectPrefs{sdk::Alliance::Blue, 3});
+    CHECK(prefs.load(a.path()).alliance == sdk::Alliance::Blue);
     CHECK(prefs.load(a.path()).station == 3);
     CHECK(prefs.load(b.path()) == ProjectPrefs{});
-    prefs.save(a.path(), ProjectPrefs{Alliance::Red, 99});   // out-of-range station is clamped
+    prefs.save(a.path(), ProjectPrefs{sdk::Alliance::Red, 99});   // out-of-range station is clamped
     CHECK(prefs.load(a.path()).station == 3);
 }

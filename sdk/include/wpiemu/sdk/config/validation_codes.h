@@ -5,7 +5,7 @@
 
 namespace wpiemu::sdk::validation_code {
 
-// ---- device identity (devices/device_identity.h, ADR 0006) ---------------------------------------
+// ---- device identity (devices/device_identity.h, docs/ARCHITECTURE.md) ---------------------------------------
 // Two or more robot-declared addresses that differ only by bus resolve to one physical device and
 // are mapped to different slots. Error: the config is rejected; at runtime the device is looped
 // back (never half-driven) until the mappings are fixed.

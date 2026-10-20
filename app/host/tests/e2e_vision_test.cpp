@@ -29,6 +29,7 @@
 #include "host/robot_session.h"
 #include "test_support.h"
 #include "wpiemu/core/launcher/project_inspector.h"
+#include "wpiemu/sdk/core/units.h"
 
 namespace fs = std::filesystem;
 using namespace wpiemu;
@@ -45,41 +46,13 @@ using Clock = std::chrono::steady_clock;
 
 namespace {
 
-constexpr int kSkipExitCode = 77;
 constexpr double kLatencyMs = 40.0;
-constexpr double kPi = 3.14159265358979323846;
 
 // Same constants as the sample robot (samples/vision_robot/<lang>/.../Vision, Robot).
 constexpr float kFrontX = 0.30f;
 constexpr float kRearX = -0.30f;
 constexpr float kCameraHeightM = 0.50f;   // WPILib robot frame: above the floor
 constexpr float kComHeightM = 0.20f;
-
-void copyProject(const fs::path& from, const fs::path& to) {
-    fs::create_directories(to);
-    for (fs::directory_iterator it(from), end; it != end; ++it) {
-        const std::string name = it->path().filename().string();
-        if (name == ".git" || name == "build" || name == ".gradle" || name == "logs" || name == "bin") continue;
-        fs::copy(it->path(), to / name, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
-    }
-}
-
-struct Scratch {
-    fs::path root;
-    ~Scratch() {
-        if (!env("WPIEMU_E2E_KEEP").empty()) {
-            std::printf("kept %s\n", root.string().c_str());
-            return;
-        }
-        std::error_code ec;
-        for (int i = 0; i < 20 && fs::exists(root, ec); ++i) {
-            fs::remove_all(root, ec);
-            if (fs::exists(root, ec)) std::this_thread::sleep_for(500ms);
-        }
-    }
-};
-
-sdk::DeviceKey phoenixKey(const char* type, int id) { return sdk::DeviceKey{"phoenix6", type, id, sdk::kBusUnknown, -1}; }
 
 sdk::CameraConfig makeCamera(const char* id, sdk::CameraKind kind, const char* name, float robotFrameX, float yawRad) {
     sdk::CameraConfig c;
@@ -122,7 +95,7 @@ sdk::RobotConfig visionConfig(const fs::path& project, const std::string& langua
     }
     c.robotMappings.push_back({{sdk::slot_owner::kRobot, "imu"}, phoenixKey("pigeon2", 10)});
     c.cameras.push_back(makeCamera("front", sdk::CameraKind::Limelight, "front", kFrontX, 0.f));
-    c.cameras.push_back(makeCamera("rear", sdk::CameraKind::PhotonVision, "photon-rear", kRearX, static_cast<float>(kPi)));
+    c.cameras.push_back(makeCamera("rear", sdk::CameraKind::PhotonVision, "photon-rear", kRearX, static_cast<float>(sdk::kPi)));
     return c;
 }
 
@@ -191,9 +164,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     const std::string language = env("WPIEMU_E2E_VISION_LANG").empty() ? "java" : env("WPIEMU_E2E_VISION_LANG");
     const bool verbose = !env("WPIEMU_E2E_VERBOSE").empty();
 
-    Scratch scratch;
-    scratch.root = fs::temp_directory_path() /
-                   ("wpiemu-vision-e2e-" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(t0.time_since_epoch()).count() % 100000000));
+    Scratch scratch("wpiemu-vision-e2e-");
     const fs::path project = scratch.root / "project";
     copyProject(original, project);
     std::printf("e2e: project copy %s (%s)\n", project.string().c_str(), language.c_str());
@@ -278,7 +249,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     const auto snap = session.latestSnapshot();
     REQUIRE(snap != nullptr);
     const sdk::Vec3 truth = snap->chassis().pose.position;
-    const double truthYawDeg = snap->chassis().pose.rotation.yaw() * 180.0 / kPi;
+    const double truthYawDeg = sdk::radToDeg(snap->chassis().pose.rotation.yaw());
     std::printf("e2e: sim %.2f s, chassis (%.3f, %.3f, z %.3f) yaw %.1f deg; %zu limelight / %zu photon lines\n", simSeconds(), truth.x, truth.y,
                 truth.z, truthYawDeg, got.limelight.size(), got.photon.size());
     for (const sdk::CameraState& c : snap->cameras()) {
@@ -295,7 +266,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     CHECK(flag(got.photon.back(), "connected"));
     CHECK(snap->cameras().size() == 2);
 
-    // The Java sample drives forward in autonomous (the Phoenix 6 C++ drive path is unverified, ADR 0002 R8: only vision is checked there).
+    // The Java sample drives forward in autonomous (the Phoenix 6 C++ drive path is unverified, docs/reference/bridges.md: only vision is checked there).
     if (language != "cpp") CHECK(truth.x > 2.0 + 0.5);
     // ---- tags were seen by the robot code wherever the emulator says a camera saw them ------------------------
     const bool llSaw = std::any_of(got.limelight.begin(), got.limelight.end(), [](const Fields& f) { return flag(f, "tv") && num(f, "tags") >= 1; });

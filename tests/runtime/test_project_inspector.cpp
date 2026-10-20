@@ -57,24 +57,14 @@ ProjectReport inspect(const fs::path& dir) {
     return r.value();
 }
 
-// A fake WPILib home with a JDK, so toolchain checks do not depend on this machine.
-fs::path makeWpilib(const ScratchDir& d, int year, const std::string& javaVersion = "17.0.12", bool withMaven = true) {
+// A fake WPILib root holding one season with a JDK, so discovery does not depend on this machine.
+fs::path makeWpilib(const ScratchDir& d, int year) {
     const std::string root = "wpilib/" + std::to_string(year);
     const char* java = currentPlatform() == Platform::Windows ? "java.exe" : "java";
     d.write(root + "/jdk/bin/" + java, "x");
-    d.write(root + "/jdk/release", "IMPLEMENTOR=\"x\"\nJAVA_VERSION=\"" + javaVersion + "\"\n");
-    if (withMaven) fs::create_directories(d.path() / root / "maven");
+    fs::create_directories(d.path() / root / "maven");
     fs::create_directories(d.path() / root / "tools");
     return d.path() / "wpilib";
-}
-
-ToolchainContext context(const ScratchDir& d, const fs::path& wpilibRoot) {
-    ToolchainContext c;
-    c.platform = currentPlatform();
-    c.env = envOf({{"PATH", ""}});
-    c.wpilibRoots = {wpilibRoot};
-    (void)d;
-    return c;
 }
 
 }  // namespace
@@ -261,6 +251,9 @@ TEST_CASE("wpilib install discovery per OS") {
     CHECK(win[1] == fs::path("C:\\Users\\Public") / "wpilib");
     const auto winDefault = wpilibRootCandidates(Platform::Windows, envOf({}));
     CHECK(winDefault == std::vector<fs::path>{fs::path("C:\\Users\\Public") / "wpilib"});
+    // "install for this user only" puts the season under the profile folder
+    const auto perUser = wpilibRootCandidates(Platform::Windows, envOf({{"USERPROFILE", "C:\\Users\\me"}}));
+    CHECK(perUser == std::vector<fs::path>{fs::path("C:\\Users\\Public") / "wpilib", fs::path("C:\\Users\\me") / "wpilib"});
     CHECK(wpilibRootCandidates(Platform::Linux, envOf({{"HOME", "/home/a"}})) == std::vector<fs::path>{fs::path("/home/a") / "wpilib"});
     CHECK(wpilibRootCandidates(Platform::MacOS, envOf({{"HOME", "/Users/a"}})) == std::vector<fs::path>{fs::path("/Users/a") / "wpilib"});
     CHECK(wpilibRootCandidates(Platform::Linux, envOf({})).empty());
@@ -276,147 +269,15 @@ TEST_CASE("wpilib install discovery per OS") {
     CHECK_FALSE(install->hasRoboRioToolchain);
     CHECK(fs::exists(install->jdkHome));
     CHECK_FALSE(findWpilibInstall(2025, {root}).has_value());
+
+    // an explicit season folder (the Settings override) is read the same way
+    const auto at = wpilibInstallAt(root / "2026", 2026);
+    REQUIRE(at.has_value());
+    CHECK(at->jdkHome == root / "2026" / "jdk");
+    CHECK_FALSE(wpilibInstallAt(root / "2024", 2024).has_value());
 }
 
-TEST_CASE("toolchain: a healthy Java setup is ready") {
-    ScratchDir d;
-    d.write("bot/build.gradle", kJavaBuild);
-    d.write("bot/.wpilib/wpilib_preferences.json", R"json({"currentLanguage": "java", "teamNumber": 1234})json");
-    addWrapper(d, "bot");
-    d.write("bot/vendordeps/Phoenix6.json", R"json({"name": "CTRE-Phoenix (v6)", "version": "26.1.0", "frcYear": "2026"})json");
-    const fs::path root = makeWpilib(d, 2026);
-    const fs::path ext = d.write("ext/halsim_wpiemu.dll", "x");
-
-    ToolchainContext ctx = context(d, root);
-    ctx.hasGamePlugin = [](int year) { return year == 2026; };
-    ctx.extensionLibrary = ext;
-    const ToolchainReport report = inspectToolchain(inspect(d.path() / "bot"), ctx);
-    CHECK(report.ready());
-    CHECK(report.find("project")->status == CheckStatus::Ok);
-    CHECK(report.find("gradlerio")->status == CheckStatus::Ok);
-    CHECK(report.find("game_plugin")->status == CheckStatus::Ok);
-    CHECK(report.find("gradle_wrapper")->status == CheckStatus::Ok);
-    CHECK(report.find("wpilib_install")->status == CheckStatus::Ok);
-    CHECK(report.find("jdk")->status == CheckStatus::Ok);
-    CHECK(report.find("cpp_toolchain") == nullptr);  // Java project
-    CHECK(report.find("vendordeps")->detail.find("Phoenix 6 detected") != std::string::npos);
-    CHECK(report.find("team")->detail == "1234");
-    CHECK(report.find("extension")->status == CheckStatus::Ok);
-    CHECK(report.find("nope") == nullptr);
-    CHECK(report.javaVersion == "17.0.12");
-    CHECK(report.jdkHome == root / "2026" / "jdk");
-    REQUIRE(report.wpilib.has_value());
-}
-
-TEST_CASE("toolchain: each problem is reported with a fix") {
-    ScratchDir d;
-    d.write("bot/build.gradle", kJavaBuild);  // no wrapper at all
-    ToolchainContext ctx = context(d, d.path() / "no-wpilib");
-    ctx.hasGamePlugin = [](int) { return false; };
-    ctx.extensionLibrary = d.path() / "missing-ext.dll";
-    const ToolchainReport report = inspectToolchain(inspect(d.path() / "bot"), ctx);
-    CHECK_FALSE(report.ready());
-    CHECK(report.find("gradle_wrapper")->status == CheckStatus::Error);
-    CHECK_FALSE(report.find("gradle_wrapper")->fix.empty());
-    CHECK(report.find("jdk")->status == CheckStatus::Error);
-    CHECK(report.find("wpilib_install")->status == CheckStatus::Warning);
-    CHECK(report.find("game_plugin")->status == CheckStatus::Warning);
-    CHECK(report.find("extension")->status == CheckStatus::Error);
-    CHECK(report.find("team")->status == CheckStatus::Info);
-
-    // not a WPILib project at all
-    ScratchDir plain;
-    plain.write("p/readme", "x");
-    const ToolchainReport notProject = inspectToolchain(inspect(plain.path() / "p"), context(plain, plain.path()));
-    CHECK_FALSE(notProject.ready());
-    CHECK(notProject.find("project")->status == CheckStatus::Error);
-
-    // incomplete wrapper is only a warning
-    ScratchDir partial;
-    partial.write("bot/build.gradle", kJavaBuild);
-    partial.write("bot/gradlew", "x");
-    partial.write("bot/gradlew.bat", "x");
-    const ToolchainReport w = inspectToolchain(inspect(partial.path() / "bot"), context(partial, makeWpilib(partial, 2026)));
-    CHECK(w.find("gradle_wrapper")->status == CheckStatus::Warning);
-    CHECK(w.ready());
-}
-
-TEST_CASE("toolchain: JDK sources - JAVA_HOME, PATH, old versions") {
-    ScratchDir d;
-    d.write("bot/build.gradle", kJavaBuild);
-    addWrapper(d, "bot");
-    const ProjectReport project = inspect(d.path() / "bot");
-    const char* java = currentPlatform() == Platform::Windows ? "java.exe" : "java";
-
-    // JAVA_HOME fallback (WPILib not installed)
-    d.write(std::string("jh/bin/") + java, "x");
-    d.write("jh/release", "JAVA_VERSION=\"21.0.2\"\n");
-    ToolchainContext ctx = context(d, d.path() / "none");
-    ctx.env = envOf({{"JAVA_HOME", (d.path() / "jh").string()}, {"PATH", ""}});
-    ToolchainReport r = inspectToolchain(project, ctx);
-    CHECK(r.find("jdk")->status == CheckStatus::Ok);
-    CHECK(r.find("jdk")->detail.find("JAVA_HOME") != std::string::npos);
-    CHECK(r.javaVersion == "21.0.2");
-
-    // too old
-    d.write("old/bin/" + std::string(java), "x");
-    d.write("old/release", "JAVA_VERSION=\"1.8.0_392\"\n");
-    ctx.env = envOf({{"JAVA_HOME", (d.path() / "old").string()}, {"PATH", ""}});
-    r = inspectToolchain(project, ctx);
-    CHECK(r.find("jdk")->status == CheckStatus::Warning);
-    CHECK(r.ready());
-
-    // only java on PATH
-    d.write("pathbin/" + std::string(java), "x");
-    fs::permissions(d.path() / "pathbin" / java, fs::perms::owner_exec, fs::perm_options::add);   // PATH lookup needs the exec bit on POSIX
-    ctx.env = envOf({{"PATH", (d.path() / "pathbin").string()}});
-    r = inspectToolchain(project, ctx);
-    CHECK(r.find("jdk")->status == CheckStatus::Warning);
-    CHECK(r.jdkHome.empty());
-
-    // nothing
-    ctx.env = envOf({{"PATH", ""}});
-    CHECK(inspectToolchain(project, ctx).find("jdk")->status == CheckStatus::Error);
-}
-
-TEST_CASE("toolchain: C++ projects need a host compiler, vendordep years are compared") {
-    ScratchDir d;
-    d.write("cpp/build.gradle", kCppBuild);
-    d.write("cpp/.wpilib/wpilib_preferences.json", R"json({"currentLanguage": "cpp"})json");
-    addWrapper(d, "cpp");
-    d.write("cpp/vendordeps/old.json", R"json({"name": "OldLib", "version": "1", "frcYear": "2023"})json");
-    const ProjectReport project = inspect(d.path() / "cpp");
-    ToolchainContext ctx = context(d, makeWpilib(d, 2025));
-    ctx.env = envOf({{"PATH", ""}, {"ProgramFiles", (d.path() / "nothing").string()}});
-
-    ToolchainReport report = inspectToolchain(project, ctx);
-    if (currentPlatform() != Platform::MacOS) {   // macOS always has the /usr/bin/clang++ shim
-        CHECK(report.find("cpp_toolchain")->status == CheckStatus::Error);
-        CHECK_FALSE(report.ready());
-    }
-    CHECK(report.find("vendordeps")->status == CheckStatus::Warning);
-    CHECK(report.find("vendordeps")->detail.find("2023") != std::string::npos);
-
-    const char* compiler = currentPlatform() == Platform::Windows ? "cl.exe" : currentPlatform() == Platform::MacOS ? "clang++" : "g++";
-    const fs::path tool = d.write(std::string("compiler/") + compiler, "x");
-    fs::permissions(tool, fs::perms::owner_exec | fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::add);
-    ctx.hostCompilerDirs = {d.path() / "compiler"};
-    report = inspectToolchain(project, ctx);
-    CHECK(report.find("cpp_toolchain")->status == CheckStatus::Ok);
-    CHECK(report.ready());
-
-    if (currentPlatform() == Platform::Windows) {  // Visual Studio detection by directory layout
-        ScratchDir vs;
-        fs::create_directories(vs.path() / "Microsoft Visual Studio" / "2022" / "BuildTools" / "VC" / "Tools" / "MSVC");
-        ToolchainContext c2 = context(vs, makeWpilib(vs, 2025));
-        c2.env = envOf({{"PATH", ""}, {"ProgramFiles", vs.path().string()}});
-        vs.write("cpp/build.gradle", kCppBuild);
-        addWrapper(vs, "cpp");
-        CHECK(inspectToolchain(inspect(vs.path() / "cpp"), c2).find("cpp_toolchain")->status == CheckStatus::Ok);
-    }
-}
-
-// ---- the real project on this machine (read-only) ------------------------------------------------------------------------------
+// ---- a real WPILib project (read-only) ----------------------------------------------------------------------------------------
 
 namespace {
 std::map<std::string, std::pair<std::uintmax_t, fs::file_time_type>> snapshotTree(const fs::path& root) {
@@ -430,15 +291,11 @@ std::map<std::string, std::pair<std::uintmax_t, fs::file_time_type>> snapshotTre
 }
 }  // namespace
 
-TEST_CASE("inspector: the FRC-Shelby-2026OS project, read only") {
-    const fs::path shelby = "C:\\Users\\alber\\Documents\\Gits\\FRC-Shelby-2026OS";
-    std::error_code ec;
-    if (!fs::is_directory(shelby, ec)) {
-        MESSAGE("FRC-Shelby-2026OS is not on this machine: skipped");
-        return;
-    }
-    const auto before = snapshotTree(shelby);
-    const ProjectReport r = inspect(shelby);
+TEST_CASE("inspector: a real WPILib sample project, read only") {
+    const fs::path sample = fs::path(WPIEMU_SAMPLES_DIR) / "vision_robot" / "java";
+    REQUIRE(fs::is_directory(sample));
+    const auto before = snapshotTree(sample);
+    const ProjectReport r = inspect(sample);
     CHECK(r.isWpilibProject);
     CHECK(r.language == "java");
     CHECK(r.gradleRioVersion == "2026.2.1");
@@ -448,24 +305,10 @@ TEST_CASE("inspector: the FRC-Shelby-2026OS project, read only") {
     CHECK(r.hasGradlewScript);
     CHECK(r.hasWrapperJar);
     CHECK(r.gradleVersion == "8.11");
-    CHECK(r.vendorDeps.size() >= 5);
+    CHECK(r.vendorDeps.size() >= 3);
     CHECK(r.hasVendorDep("Phoenix6"));
     CHECK(r.hasVendorDep("photonlib"));
     CHECK(r.hasVendorDep("WPILibNewCommands"));
     for (const VendorDep& d : r.vendorDeps) CHECK(d.readable);
-
-    ToolchainContext ctx;
-    ctx.hasGamePlugin = [](int y) { return y == 2026; };
-    const ToolchainReport report = inspectToolchain(r, ctx);
-    CHECK(report.find("project")->status == CheckStatus::Ok);
-    CHECK(report.find("gradlerio")->status == CheckStatus::Ok);
-    CHECK(report.find("game_plugin")->status == CheckStatus::Ok);
-    CHECK(report.find("vendordeps")->detail.find("Phoenix 6 detected") != std::string::npos);
-    if (fs::is_directory("C:\\Users\\Public\\wpilib\\2026", ec)) {  // only meaningful where WPILib 2026 is installed
-        CHECK(report.find("wpilib_install")->status == CheckStatus::Ok);
-        CHECK(report.find("jdk")->status == CheckStatus::Ok);
-        CHECK(report.ready());
-        CHECK_FALSE(report.javaVersion.empty());
-    }
-    CHECK(snapshotTree(shelby) == before);  // nothing was touched
+    CHECK(snapshotTree(sample) == before);  // nothing was touched
 }

@@ -12,7 +12,7 @@
 
 namespace wpiemu::halsim {
 
-// Environment variable names (documented in docs/halsim-extension.md). The IPC names are the ones
+// Environment variable names (documented in docs/reference/extension-ipc.md). The IPC names are the ones
 // ipc/endpoint.h publishes (the emulator sets them); the unprefixed spellings are accepted as aliases.
 inline constexpr std::string_view kEnvEndpoint = "WPIEMU_IPC_ENDPOINT";
 inline constexpr std::string_view kEnvEndpointAlias = "WPIEMU_ENDPOINT";

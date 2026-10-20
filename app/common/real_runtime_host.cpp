@@ -53,7 +53,7 @@ std::filesystem::path RealRuntimeHost::extensionPath() const {
     const std::filesystem::path appDir = options_.appDir.empty() ? std::filesystem::path(QCoreApplication::applicationDirPath().toStdU16String())
                                                                  : options_.appDir;
     const std::filesystem::path buildTree(WPIEMU_BUILD_EXTENSION_PATH);
-    // The packaged-layout contract of docs/packaging.md (WPIEMU_EXTENSION, WPIEMU_EXTENSION_DIR, install layouts, build tree).
+    // The packaged-layout contract of docs/releasing.md (WPIEMU_EXTENSION, WPIEMU_EXTENSION_DIR, install layouts, build tree).
     const auto getenv = [](std::string_view name) -> std::optional<std::string> {
         const QByteArray key(name.data(), static_cast<qsizetype>(name.size()));
         if (!qEnvironmentVariableIsSet(key.constData())) return std::nullopt;
@@ -204,6 +204,11 @@ void RealRuntimeHost::launch() {
     o.driverStation = ds_;
     o.startPose = resolveStartPlacement();
     o.timeScale = timeScale_;
+    if (options_.toolchainOverrides) {
+        const RealRuntimeOptions::ToolchainOverrides toolchain = options_.toolchainOverrides();
+        o.javaHome = toolchain.javaHome;
+        o.wpilibHome = toolchain.wpilibHome;
+    }
     if (options_.tweak) options_.tweak(o);
 
     emitLog(sdk::LogLevel::Info, QStringLiteral("runtime"), tr("Launching the robot with the HALSim extension"));

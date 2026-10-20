@@ -19,7 +19,9 @@ if(WPIEMU_BUILD_PLUGIN_TEMPLATE)
     target_link_libraries(wpiemu_tests PRIVATE wpiemu_plugin_template)
 endif()
 wpiemu_target_defaults(wpiemu_tests)
-target_compile_definitions(wpiemu_tests PRIVATE DOCTEST_CONFIG_USE_STD_HEADERS)
+target_compile_definitions(wpiemu_tests PRIVATE
+    DOCTEST_CONFIG_USE_STD_HEADERS
+    "WPIEMU_SAMPLES_DIR=\"${CMAKE_SOURCE_DIR}/samples\"")
 
 doctest_discover_tests(wpiemu_tests)
 
@@ -30,6 +32,9 @@ add_test(NAME boundaries.check
             --root "${CMAKE_SOURCE_DIR}")
 add_test(NAME boundaries.self_test
     COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/check_boundaries.py" --self-test)
+add_test(NAME docs.check
+    COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/check_docs.py"
+            --root "${CMAKE_SOURCE_DIR}")
 add_test(NAME infrastructure.release_tools
     COMMAND Python3::Interpreter -B -m unittest discover
             -s "${CMAKE_SOURCE_DIR}/tools/tests" -v)

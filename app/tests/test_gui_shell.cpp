@@ -521,7 +521,7 @@ TEST_CASE("icons render in every tone and fall back to empty for unknown names")
     GuiEnvironment env;
     for (const char* name : {"folder-open", "check-circle", "alert-triangle", "x-circle", "circle", "minus-circle", "refresh", "play",
                              "stop", "settings", "info", "arrow-left", "arrow-right", "search", "edit-3d", "run", "robot",
-                             "close-project", "check", "sun", "moon", "upload"}) {
+                             "close-project", "check", "sun", "moon"}) {
         CAPTURE(name);
         for (const IconTone tone : {IconTone::Text, IconTone::Accent, IconTone::Error}) {
             const QIcon icon = env.ui.icon(QString::fromLatin1(name), tone);

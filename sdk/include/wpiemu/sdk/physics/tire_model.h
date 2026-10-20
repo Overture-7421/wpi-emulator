@@ -8,7 +8,7 @@
 
 namespace wpiemu::sdk {
 
-// Per-wheel traction parameters (ADR 0003 "Parameters", FRC defaults).
+// Per-wheel traction parameters (docs/reference/physics.md, FRC defaults).
 struct TireParams {
     float mu = 1.1f;               // peak friction coefficient (0.8 - 1.4)
     float slideRatio = 0.85f;      // sliding friction / peak

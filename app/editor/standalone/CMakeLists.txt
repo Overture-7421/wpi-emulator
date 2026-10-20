@@ -5,7 +5,7 @@
 #   cmake --build build/ui-editor && ctest --test-dir build/ui-editor
 #
 # The regular build (root CMakeLists.txt -> app/ -> editor/) does not use this file.
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.25)
 
 if(POLICY CMP0156)
     cmake_policy(SET CMP0156 NEW)

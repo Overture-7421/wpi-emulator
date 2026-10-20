@@ -1,6 +1,6 @@
 #pragma once
 
-// Mitigation for ADR 0002 R3: the CTRE firmware simulation (CTRE_PhoenixTools_Sim) integrates ramp rates,
+// Mitigation for docs/reference/bridges.md: the CTRE firmware simulation (CTRE_PhoenixTools_Sim) integrates ramp rates,
 // PID derivative terms and Motion Magic with its OWN wall clock, not with HAL sim time. When the emulator
 // pauses or steps HALSIM time faster/slower than real time, the Phoenix controllers see a different elapsed
 // time than the robot loop and the response diverges (a 5x faster sim makes ramps/profiles effectively 5x

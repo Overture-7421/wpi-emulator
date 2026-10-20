@@ -13,7 +13,7 @@ namespace wpiemu::sdk::testing {
 
 class FakeClock final : public ISimClock {
 public:
-    explicit FakeClock(SimTimeUs fixedStepUs = 5000) : fixedStepUs_(fixedStepUs) {}
+    explicit FakeClock(SimTimeUs fixedStepUs = kDefaultStepUs) : fixedStepUs_(fixedStepUs) {}
 
     SimTimeUs simTimeUs() const override { return simTimeUs_; }
     std::uint64_t tickIndex() const override { return tickIndex_; }

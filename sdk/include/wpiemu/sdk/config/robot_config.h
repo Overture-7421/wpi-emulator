@@ -19,6 +19,7 @@
 #include "wpiemu/sdk/config/start_position.h"
 #include "wpiemu/sdk/config/zone.h"
 #include "wpiemu/sdk/core/geometry.h"
+#include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/core/value.h"
 #include "wpiemu/sdk/devices/slot.h"
 #include "wpiemu/sdk/mechanisms/motion_link.h"
@@ -28,7 +29,7 @@
 namespace wpiemu::sdk {
 
 // Version of the CORE schema (chassis/drivetrain/mechanisms/mappings). The SDK stays at version 1 until
-// release (ADR 0013): files with any other version are rejected, there is no migration.
+// release (docs/CONTRIBUTING.md): files with any other version are rejected, there is no migration.
 inline constexpr int kRobotConfigSchemaVersion = 1;
 
 struct ProjectInfo {
@@ -39,13 +40,13 @@ struct ProjectInfo {
 };
 
 struct BatteryConfig {
-    double nominalVoltageV = 12.6;
+    double nominalVoltageV = kNominalBatteryVoltageV;
     double internalResistanceOhm = 0.015;
     double brownoutVoltageV = 6.8;
 };
 
 struct SimSettings {
-    std::int64_t stepUs = 5000;     // 200 Hz
+    std::int64_t stepUs = kDefaultStepUs;   // 200 Hz
     std::uint64_t seed = 1;
     PhysicsConfig physics;
 };
@@ -94,7 +95,7 @@ struct RobotConfig {
     // Field-frame chassis origin on start/reset. Absent: the host chooses a default inside the
     // field.
     std::optional<RobotStartPose> startPose;
-    // Named poses the run view can reset the robot to (ADR 0020).
+    // Named poses the run view can reset the robot to (docs/reference/runtime.md).
     std::vector<StartPosition> startPositions;
 
     // key = plugin id (e.g. "game_2026"). Opaque to core.

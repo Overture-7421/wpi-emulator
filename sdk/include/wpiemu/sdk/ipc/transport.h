@@ -49,7 +49,7 @@ public:
 };
 
 // Emulator-side acceptor (the app listens, the extension connects; endpoint is passed to the
-// robot via WPIEMU_ENDPOINT env, ADR 0001).
+// robot via WPIEMU_ENDPOINT env, docs/reference/extension-ipc.md).
 class ITransportServer {
     WPIEMU_INTERFACE(ITransportServer)
 public:
@@ -67,6 +67,13 @@ public:
     virtual Result<std::unique_ptr<ITransport>> connect(const std::string& endpoint,
                                                         std::chrono::milliseconds timeout) = 0;
 };
+
+// Milliseconds left until `deadline`, never negative. Every blocking wait on a transport is a loop against one deadline;
+// each pass asks this instead of working it out again.
+inline std::chrono::milliseconds timeLeft(std::chrono::steady_clock::time_point deadline) {
+    const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+    return left.count() > 0 ? left : std::chrono::milliseconds{0};
+}
 
 // Codec + transport glued into a typed message pipe (header-only convenience used by both ends).
 class MessageChannel {

@@ -7,7 +7,7 @@ add_library(wpiemu_app_shell STATIC
     shell_controller.cpp
     welcome_page.cpp)
 target_include_directories(wpiemu_app_shell PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
-target_link_libraries(wpiemu_app_shell PUBLIC wpiemu_app_wizard wpiemu_app_common)
+target_link_libraries(wpiemu_app_shell PUBLIC wpiemu_app_common)
 target_compile_definitions(wpiemu_app_shell PRIVATE WPIEMU_APP_VERSION="${PROJECT_VERSION}")
 wpiemu_target_defaults(wpiemu_app_shell)
 

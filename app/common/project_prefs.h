@@ -10,7 +10,7 @@ namespace wpiemu::app {
 // Per-project choices that are not part of the robot model: where the robot starts / which driver
 // station the emulated DS reports.
 struct ProjectPrefs {
-    Alliance alliance = Alliance::Red;
+    sdk::Alliance alliance = sdk::Alliance::Red;
     int station = 2;   // 1..3
 
     bool operator==(const ProjectPrefs&) const = default;

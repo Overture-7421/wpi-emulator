@@ -15,6 +15,7 @@
 #include "wpiemu/bridges/hal/hal_bridges.h"
 #include "wpiemu/bridges/hal/testing/fake_hal_api.h"
 #include "wpiemu/sdk/devices/signals.h"
+#include "wpiemu/sdk/testing/fake_bridge_host.h"
 #include "wpiemu/sdk/testing/fake_clock_logger.h"
 
 namespace hal_test {
@@ -22,34 +23,7 @@ namespace hal_test {
 namespace sdk = wpiemu::sdk;
 namespace hal = wpiemu::bridges::hal;
 
-class RecordingHost final : public sdk::IBridgeHost {
-public:
-    sdk::DeviceId announce(const sdk::DeviceDescriptor& d, std::vector<sdk::SignalSpec> specs) override {
-        for (auto& [id, a] : announced) {
-            if (a.descriptor.key() == d.key()) {
-                a.specs = std::move(specs);
-                ++reannounced;
-                return id;
-            }
-        }
-        const sdk::DeviceId id{next++};
-        announced[id] = {d, std::move(specs)};
-        return id;
-    }
-    void retire(sdk::DeviceId id) override { retired.push_back(id); }
-    sdk::ILogger& logger() override { return log; }
-    bool enableOptionalHooks() const override { return false; }
-
-    struct Announced {
-        sdk::DeviceDescriptor descriptor;
-        std::vector<sdk::SignalSpec> specs;
-    };
-    std::map<sdk::DeviceId, Announced> announced;
-    std::vector<sdk::DeviceId> retired;
-    int reannounced = 0;
-    std::uint32_t next = 1;
-    sdk::testing::CapturingLogger log;
-};
+using RecordingHost = sdk::testing::FakeBridgeHost;
 
 class Rig {
 public:
@@ -105,7 +79,7 @@ public:
     // Value of a named signal of a device in the current outputs, if it is an output signal.
     std::optional<double> output(sdk::DeviceId id, const std::string& signal) {
         std::uint16_t idx = 0;
-        if (sdk::findSignal(info(id).specs, signal, &idx) == nullptr) return std::nullopt;
+        if (sdk::findSignal(info(id).signalSpecs, signal, &idx) == nullptr) return std::nullopt;
         for (const auto& s : outputs())
             if (s.device == id && s.signal == idx) return s.value;
         return std::nullopt;
@@ -114,7 +88,7 @@ public:
     // Delivers a value to a named signal; returns false if the signal does not exist.
     bool write(sdk::DeviceId id, const std::string& signal, double value) {
         std::uint16_t idx = 0;
-        if (sdk::findSignal(info(id).specs, signal, &idx) == nullptr) return false;
+        if (sdk::findSignal(info(id).signalSpecs, signal, &idx) == nullptr) return false;
         apply({{id, idx, value}});
         return true;
     }

@@ -9,7 +9,7 @@
 #include "physics_test_support.h"
 #include "refusing_world.h"
 
-// ADR 0003 validation scenarios as automated tests. Setup: 50 kg, 0.5 m x 0.5 m wheel square, COM 0.2 m,
+// docs/reference/physics.md validation scenarios as automated tests. Setup: 50 kg, 0.5 m x 0.5 m wheel square, COM 0.2 m,
 // mu 1.1, 4 in wheels, Kraken X60 at 6.75:1, 200 Hz, 4 substeps. mu g = 10.79 m/s^2, sliding 0.85 mu g = 9.17.
 
 using namespace physics_test;
@@ -21,7 +21,7 @@ constexpr double kWheelRadius = 0.0508;
 // Voltage of an ideal motor that turns the wheel so its rim moves at `speed` m/s.
 double voltsForRim(const WheelSpec& w, double speed) { return steadyVoltage(w, speed / kWheelRadius); }
 
-// Mecanum inverse kinematics (WPILib X layout, ADR 0003): wheel rim speed = (vc . c) / cos(phi).
+// Mecanum inverse kinematics (WPILib X layout, docs/reference/physics.md): wheel rim speed = (vc . c) / cos(phi).
 std::array<double, 4> mecanumRimSpeeds(const DrivetrainSpec& d, double vx, double vy, double wz) {
     std::array<double, 4> out{};
     for (std::size_t i = 0; i < 4; ++i) {

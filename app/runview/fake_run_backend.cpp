@@ -7,6 +7,7 @@
 
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/units.h"
+#include "wpiemu/sdk/physics/physics_types.h"
 
 namespace wpiemu::app::runview {
 namespace {
@@ -158,7 +159,7 @@ sdk::RobotConfig FakeRunBackend::makeDemoConfig() {
     c.cameras.push_back(std::move(turretCam));
     c.startPositions = {{"blue_left", "Blue left", sdk::Alliance::Blue, {2.5f, 6.5f, 0.f}},
                         {"blue_right", "Blue right", sdk::Alliance::Blue, {2.5f, 1.7f, 0.f}},
-                        {"red_left", "Red left", sdk::Alliance::Red, {kFieldL - 2.5f, 1.7f, 3.14159265f}}};
+                        {"red_left", "Red left", sdk::Alliance::Red, {kFieldL - 2.5f, 1.7f, sdk::kPiF}}};
     return c;
 }
 
@@ -571,7 +572,7 @@ void FakeRunBackend::stepWorld() {
         for (std::size_t i = 0; i < balls_.size(); ++i) {
             Ball& b = balls_[i];
             if (!b.flying) continue;
-            b.vel.z -= 9.81f * dt;
+            b.vel.z -= sdk::kDefaultGravityMps2 * dt;
             b.pos += b.vel * dt;
             for (float hx : kHubX) {
                 if (std::hypot(b.pos.x - hx, b.pos.y - kHubY) < 0.6f && b.pos.z < 1.9f && b.pos.z > 1.7f && b.vel.z < 0.f) {
@@ -702,7 +703,7 @@ void FakeRunBackend::publish() {
         d.hud.push_back({"demo.message", ds_.gameSpecificMessage.empty() ? std::string("—") : ds_.gameSpecificMessage});
     }
 
-    d.batteryVoltageV = 12.6 - 0.9 * (std::hypot(static_cast<double>(vel_.x), static_cast<double>(vel_.y)) / 3.5) - (flywheel_ > 1.f ? 0.5 : 0.0);
+    d.batteryVoltageV = sdk::kNominalBatteryVoltageV - 0.9 * (std::hypot(static_cast<double>(vel_.x), static_cast<double>(vel_.y)) / 3.5) - (flywheel_ > 1.f ? 0.5 : 0.0);
     d.driverStation = ds_;
     d.physicsStats.bodies = 2 + static_cast<int>(balls_.size());
     d.physicsStats.awakeBodies = 2;

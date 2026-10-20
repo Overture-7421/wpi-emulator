@@ -8,13 +8,16 @@
 // halsim_wpiemu. Skipped (exit code 77, CTest SKIP_RETURN_CODE) with a clear message when
 // WPIEMU_E2E is not set or a prerequisite is missing.
 //
+// The robot is samples/swerve_robot/java; the CAN layout and expectations below are its own.
+//
 //   $env:WPIEMU_E2E = "1"; ctest -C Release -L e2e --output-on-failure
-//   $env:WPIEMU_E2E_PROJECT = "C:\path\to\robot"   (default: ../FRC-Shelby-2026OS next to this
-//   repository) $env:WPIEMU_E2E_KEEP = "1"                      keep the temp copy for inspection
+//   $env:WPIEMU_E2E_PROJECT = "C:\path\to\robot"    another robot with the same CAN layout
+//   $env:WPIEMU_E2E_KEEP = "1"                      keep the temp copy for inspection
 //   $env:WPIEMU_E2E_VERBOSE = "1"                   echo the robot console
-//   $env:WPIEMU_E2E_LAUNCH = "direct"               use the simulateExternal direct launch instead
-//   of the gradle init script $env:WPIEMU_E2E_TANK = "1"                     opt in to the saved
-//   six-wheel/two-motor tank fixture case
+//   $env:WPIEMU_E2E_LAUNCH = "direct"               use the simulateExternal direct launch
+//                                                   instead of the gradle init script
+//   $env:WPIEMU_E2E_TANK = "1"                      opt in to the saved six-wheel/two-motor
+//                                                   tank fixture case
 //     Run with --test-case="e2e: saved tank robot*" and WPIEMU_E2E_PROJECT pointing to that robot.
 #include <algorithm>
 #include <chrono>
@@ -50,26 +53,14 @@ using Clock = std::chrono::steady_clock;
 
 namespace {
 
-constexpr int kSkipExitCode = 77;
-
 double seconds(Clock::time_point a, Clock::time_point b) { return std::chrono::duration<double>(b - a).count(); }
-
-// Copy without VCS / build / Gradle state so Gradle rebuilds in the copy (the original is never touched).
-void copyProject(const fs::path& from, const fs::path& to) {
-    fs::create_directories(to);
-    for (fs::directory_iterator it(from), end; it != end; ++it) {
-        const std::string name = it->path().filename().string();
-        if (name == ".git" || name == "build" || name == ".gradle" || name == "logs") continue;
-        fs::copy(it->path(), to / name, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
-    }
-}
 
 struct SwerveModuleIds {
     const char* name;
     float x, y;
     int driveId, steerId, encoderId;
 };
-// FRC-Shelby-2026OS Chassis.java: track 11.125 in x 10.875 in; CAN ids from the module configs.
+// samples/swerve_robot Swerve.java: track 11.125 in x 10.875 in; CAN ids from its module list.
 constexpr SwerveModuleIds kModules[] = {
     {"fl", 0.2826f, 0.2762f, 4, 3, 12},
     {"fr", 0.2826f, -0.2762f, 8, 7, 11},
@@ -81,11 +72,9 @@ constexpr int kIntakeRollerId = 32;
 constexpr int kIntakePivotId = 29;
 constexpr int kIntakePivotEncoderId = 30;
 
-sdk::DeviceKey phoenixKey(const char* type, int id) { return sdk::DeviceKey{"phoenix6", type, id, sdk::kBusUnknown, -1}; }
-
 sdk::RobotConfig baseConfig(const fs::path& project) {
     sdk::RobotConfig c;
-    c.name = "Shelby e2e";
+    c.name = "Swerve sample e2e";
     c.project.path = project.string();
     c.project.language = "java";
     c.project.wpilibYear = 2026;
@@ -127,7 +116,7 @@ sdk::RobotConfig mappedConfig(const fs::path& project) {
     roller.mappings.push_back({{roller.id, "motor"}, phoenixKey("talonfx", kIntakeRollerId)});
     c.mechanisms.push_back(std::move(roller));
 
-    // The intake pivot: teleopInit runs a Motion Magic move to 118 deg through a fused CANcoder, which closes the loop through
+    // The intake pivot: teleopInit runs a Motion Magic move to 114 deg through a fused CANcoder, which closes the loop through
     // the emulator (Phoenix firmware sim -> rotor feedback from the pivot plant -> CANcoder position).
     sdk::MechanismConfig pivot;
     pivot.id = "intake_pivot";
@@ -186,32 +175,15 @@ void dumpConsole(const std::vector<std::string>& console) {
     for (std::size_t i = from; i < console.size(); ++i) std::printf("    | %s\n", console[i].c_str());
 }
 
-struct Scratch {
-    fs::path root;
-    ~Scratch() {
-        if (!env("WPIEMU_E2E_KEEP").empty()) {
-            std::printf("kept %s\n", root.string().c_str());
-            return;
-        }
-        std::error_code ec;
-        for (int i = 0; i < 20 && fs::exists(root, ec); ++i) {
-            fs::remove_all(root, ec);
-            if (fs::exists(root, ec)) std::this_thread::sleep_for(500ms);
-        }
-        if (fs::exists(root, ec)) std::printf("WARNING: could not delete %s\n", root.string().c_str());
-    }
-};
-
 }  // namespace
 
-TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven teleop run") {
+TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run") {
     const Clock::time_point t0 = Clock::now();
     const fs::path original = !env("WPIEMU_E2E_PROJECT").empty() ? fs::path(env("WPIEMU_E2E_PROJECT")) : fs::path(WPIEMU_E2E_DEFAULT_PROJECT);
     const fs::path extension = WPIEMU_E2E_EXTENSION;
     const bool direct = env("WPIEMU_E2E_LAUNCH") == "direct";
 
-    Scratch scratch;
-    scratch.root = fs::temp_directory_path() / ("wpiemu-e2e-" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(t0.time_since_epoch()).count() % 100000000));
+    Scratch scratch("wpiemu-e2e-");
     const fs::path project = scratch.root / "project";
     copyProject(original, project);
     std::printf("e2e: project copy %s (launch mode: %s)\n", project.string().c_str(), direct ? "simulateExternal direct" : "gradle init script");
@@ -262,8 +234,8 @@ TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven t
         std::printf("e2e:   connected after %.1f s, program started after %.1f s, %zu devices announced\n", tConnected, tProgram, snap->devices().size());
         for (const sdk::DiscoveredDevice& d : snap->devices())
             std::printf("e2e:     %-9s %-9s id=%-3d %s\n", d.descriptor.family.c_str(), d.descriptor.type.c_str(), d.descriptor.id, d.live ? "" : "(retired)");
-        CHECK(countType(*snap, "talonfx") >= 16);
-        CHECK(countType(*snap, "cancoder") >= 4);
+        CHECK(countType(*snap, "talonfx") >= 10);   // 8 swerve motors, the roller and the pivot
+        CHECK(countType(*snap, "cancoder") >= 5);   // 4 azimuth encoders and the pivot's
         CHECK(countType(*snap, "pigeon2") >= 1);
         for (const SwerveModuleIds& m : kModules) {
             CHECK(hasDevice(*snap, "talonfx", m.driveId));
@@ -417,7 +389,7 @@ TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven t
                     if (v.name == "position") pivotPosition = v.value;
         }
         CHECK(rollerSeen);
-        CHECK(std::abs(pivotPosition - 118.0 * sdk::kPi / 180.0) < sdk::kPi / 180.0);
+        CHECK(std::abs(pivotPosition - 114.0 * sdk::kPi / 180.0) < sdk::kPi / 180.0);
         for (const sdk::HubWarning& w : snap->warnings()) {
             CHECK(w.code != "slot_missing_device");
             CHECK(w.code != "slot_incompatible");
@@ -437,9 +409,7 @@ TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven t
 
 TEST_CASE("e2e: saved tank robot keeps its two mappings and drives six linked wheels" *
           doctest::skip(env("WPIEMU_E2E_TANK").empty())) {
-    Scratch scratch;
-    scratch.root = fs::temp_directory_path() /
-                   ("wpiemu-tank-e2e-" + std::to_string(Clock::now().time_since_epoch().count()));
+    Scratch scratch("wpiemu-tank-e2e-");
     const fs::path project = scratch.root / "project";
     copyProject(fs::path(env("WPIEMU_E2E_PROJECT")), project);
     TestRegistries registries;

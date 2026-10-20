@@ -1,11 +1,11 @@
 #pragma once
 
-// Sensors: generic, game-fed simulated sensors persisted in RobotConfig::sensors (ADR 0019).
+// Sensors: generic, game-fed simulated sensors persisted in RobotConfig::sensors (docs/reference/game-plugin.md).
 //
 // A sensor has no pose: it turns one value published by the selected game plugin (IGameModule::contributeGameValues,
 // SensorConfig::source) into a device reading (a CANrange distance, a beam break) through its single device slot
 // ("<sensor id>.sensor"). The kind picks the slot type and the response schema; the response says how the value
-// maps to the reading. Stored in SI units. There is no migration (ADR 0013).
+// maps to the reading. Stored in SI units. There is no migration (docs/CONTRIBUTING.md).
 
 #include <array>
 #include <cmath>

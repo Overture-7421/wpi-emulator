@@ -54,17 +54,8 @@ void validateTire(const TireParams& t, const std::string& base, std::vector<Issu
 }
 
 void validateMotor(const MotorSpec& m, const std::string& base, std::vector<Issue>& out) {
-    const auto positive = [&](double v, const char* field, const char* why) {
-        if (!(std::isfinite(v) && v > 0.0)) add(out, Severity::Error, base + "." + field, why, issue_code::kMotorInvalid);
-    };
-    positive(m.nominalVoltageV, "nominalVoltageV", "nominal voltage must be positive and finite");
-    positive(m.stallTorqueNm, "stallTorqueNm", "stall torque must be positive and finite");
-    positive(m.stallCurrentA, "stallCurrentA", "stall current must be positive and finite");
-    positive(m.freeSpeedRadPerSec, "freeSpeedRadPerSec", "free speed must be positive and finite");
-    if (!(std::isfinite(m.freeCurrentA) && m.freeCurrentA >= 0.0))
-        add(out, Severity::Error, base + ".freeCurrentA", "free current must be >= 0 and finite", issue_code::kMotorInvalid);
-    else if (std::isfinite(m.stallCurrentA) && m.stallCurrentA > 0.0 && m.freeCurrentA >= m.stallCurrentA)
-        add(out, Severity::Error, base + ".freeCurrentA", "free current must be below the stall current", issue_code::kMotorInvalid);
+    for (const MotorSpecFault& f : motorSpecFaults(m))
+        add(out, Severity::Error, base + "." + f.field, f.why, issue_code::kMotorInvalid);
 }
 
 void validateDrivetrain(const RobotConfig& c, const DrivetrainRegistry& drivetrains, const TireModelRegistry* tires,
@@ -103,7 +94,6 @@ void validateDrivetrain(const RobotConfig& c, const DrivetrainRegistry& drivetra
 }
 
 void validateSimSettings(const RobotConfig& c, std::vector<Issue>& out) {
-    constexpr std::int64_t kRobotPeriodUs = 20000;
     if (c.sim.stepUs <= 0 || kRobotPeriodUs % c.sim.stepUs != 0)
         add(out, Severity::Error, "sim.stepUs", "step must be positive and divide the 20 ms robot period evenly", issue_code::kSimInvalid);
     if (c.sim.physics.subSteps < 1) add(out, Severity::Error, "sim.physics.subSteps", "at least 1 sub-step", issue_code::kSimInvalid);

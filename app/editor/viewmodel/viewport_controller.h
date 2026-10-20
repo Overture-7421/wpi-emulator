@@ -14,10 +14,11 @@
 
 #include <optional>
 
+#include "common/orbit_camera.h"
 #include "model/scene_theme.h"
 #include "model/transform_access.h"
 #include "viewmodel/editor_controller.h"
-#include "viewmodel/orbit_camera.h"
+#include "viewmodel/gizmo_math.h"
 #include "viewmodel/scene_model.h"
 
 namespace wpiemu::app::editor {

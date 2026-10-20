@@ -97,7 +97,7 @@ TEST_CASE("mecanum basics use opposing roller angles on diagonals") {
 
 TEST_CASE("bumpers follow thickness and alliance colour") {
     RobotBasics b;
-    b.alliance = Alliance::Blue;
+    b.alliance = sdk::Alliance::Blue;
     b.bumperThicknessM = 0.08;
     sdk::RobotConfig c = buildRobotConfig(b, {});
     REQUIRE(c.chassis.primitives.size() == 4);
@@ -145,7 +145,7 @@ TEST_CASE("basics round-trip through the config") {
     b.motorsPerWheel = 2;
     b.driveGearRatio = 10.71;
     b.bumperThicknessM = 0.07;
-    b.alliance = Alliance::Blue;
+    b.alliance = sdk::Alliance::Blue;
     const RobotBasics back = basicsFromConfig(buildRobotConfig(b, {}));
     CHECK(back.name == b.name);
     CHECK(back.drivetrain == b.drivetrain);
@@ -156,7 +156,7 @@ TEST_CASE("basics round-trip through the config") {
     CHECK(back.motorsPerWheel == 2);
     CHECK(back.driveGearRatio == doctest::Approx(10.71));
     CHECK(back.bumperThicknessM == doctest::Approx(0.07));
-    CHECK(back.alliance == Alliance::Blue);
+    CHECK(back.alliance == sdk::Alliance::Blue);
     CHECK(back.wheelDiameterM == doctest::Approx(b.wheelDiameterM));
 
     RobotBasics swerve = defaultBasicsFor(sdk::drivetrain_kind::kSwerve);
@@ -239,4 +239,22 @@ TEST_CASE("motor catalog lookup") {
     sdk::MotorSpec custom;
     custom.name = "Homebrew";
     CHECK(findMotorBySpec(custom) == nullptr);
+}
+
+TEST_CASE("every motor of the SDK table is a wizard choice and survives the config round trip") {
+    REQUIRE(motorCatalog().size() == sdk::motors::presets().size());
+    for (const sdk::MotorPreset& p : sdk::motors::presets()) {
+        INFO(p.key);
+        const QString key = QString::fromStdString(p.key);
+        RobotBasics b = defaultBasicsFor(sdk::drivetrain_kind::kSwerve);
+        b.driveMotor = key;
+        b.steerMotor = key;
+        const sdk::RobotConfig c = buildRobotConfig(b, {});
+        REQUIRE_FALSE(c.drivetrain.spec.wheels.empty());
+        CHECK(c.drivetrain.spec.wheels[0].driveMotor.name == p.spec.name);
+        CHECK(c.drivetrain.spec.wheels[0].steerMotor.name == p.spec.name);
+        const RobotBasics back = basicsFromConfig(c);
+        CHECK(back.driveMotor == key);
+        CHECK(back.steerMotor == key);
+    }
 }

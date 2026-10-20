@@ -57,12 +57,12 @@ public:
     // Adds/removes the last motor row of a motor group (see ops::MotorGroup); `owner` is a mechanism id or "drivetrain".
     bool addMotor(const QString& owner, const QString& countKey);
     bool removeMotor(const QString& owner, const QString& countKey);
-    // Motion links (ADR 0012): make `target` follow `source` (ratio in the units the UI shows) / take its own
+    // Motion links (docs/reference/mechanisms.md): make `target` follow `source` (ratio in the units the UI shows) / take its own
     // motor again. setDrivenBy drops the target's own motor mappings in the same undo step and returns why the edit
     // was refused (empty on success).
     QString setDrivenBy(const sdk::SlotAddress& target, const sdk::SlotAddress& source, double displayRatio);
     bool clearDrivenBy(const sdk::SlotAddress& target);
-    // Tank presets (ADR 0012).
+    // Tank presets (docs/reference/mechanisms.md).
     void toggleDetection();
     void focusIssue(const sdk::Issue& issue);
     sdk::Status flushSave();             // persist now (Ctrl+S), retain dirty state on failure

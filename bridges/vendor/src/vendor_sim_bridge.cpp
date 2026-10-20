@@ -168,7 +168,7 @@ TimeSyncAdvice VendorSimDeviceBridge::timeSyncAdvice() const {
     advice.maxRealtimeFactor = 1.0;
     advice.pauseUnsafe = true;
     advice.reason =
-        "CTRE Phoenix firmware simulation runs on the wall clock, not on HAL sim time (ADR 0002 R3): pace lock-step "
+        "CTRE Phoenix firmware simulation runs on the wall clock, not on HAL sim time (docs/reference/bridges.md): pace lock-step "
         "ticks to at most 1x real time while Phoenix devices are live";
     return advice;
 }

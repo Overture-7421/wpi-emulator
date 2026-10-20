@@ -110,7 +110,7 @@ TEST_CASE("every announced device has a unique key and the hal family on the rio
         CHECK(info.descriptor.bus == "rio");
         CHECK(info.descriptor.vendor.empty() == false);
         ++keys[info.descriptor.key().toString()];
-        CHECK_FALSE(info.specs.empty());
+        CHECK_FALSE(info.signalSpecs.empty());
     }
     for (const auto& [k, n] : keys) CHECK_MESSAGE(n == 1, k);
     CHECK(rig.host.announced.size() == 18);  // incl. roboRIO

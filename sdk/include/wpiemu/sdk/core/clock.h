@@ -7,7 +7,7 @@
 
 namespace wpiemu::sdk {
 
-// Read-only view of the simulation clock. The emulator is the clock master (ADR 0001): time only
+// Read-only view of the simulation clock. The emulator is the clock master (docs/reference/extension-ipc.md): time only
 // advances when the sim loop steps it, in fixed increments. Everything that needs "time" reads it
 // here; nothing calls a wall clock (determinism).
 class ISimClock {

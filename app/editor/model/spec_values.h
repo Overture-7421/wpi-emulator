@@ -13,8 +13,7 @@
 
 namespace wpiemu::app::editor::spec {
 
-// Motors offered for wheel drive/steer (names == MotorSpec::name).
-std::vector<sdk::MotorSpec> motorPresets();
+// The SDK motor table entry named `name` (what the wheel motor dropdowns store), else `fallback`.
 sdk::MotorSpec motorByName(const std::string& name, const sdk::MotorSpec& fallback);
 
 // ---- robot ----

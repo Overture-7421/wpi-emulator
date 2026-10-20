@@ -1,6 +1,6 @@
 #pragma once
 
-// Numbers the 2026 game state publishes each tick for generic core sensors (ADR 0019,
+// Numbers the 2026 game state publishes each tick for generic core sensors (docs/reference/game-plugin.md,
 // IGameModule::contributeGameValues). Read back through Game2026State::gameValue.
 
 #include <vector>

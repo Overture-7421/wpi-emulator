@@ -1,6 +1,6 @@
 #pragma once
 
-// Box3D-backed IPhysicsWorld (ADR 0003 / 0008). Box3D types never appear in this header.
+// Box3D-backed IPhysicsWorld (docs/reference/physics.md). Box3D types never appear in this header.
 
 #include <memory>
 #include <string>

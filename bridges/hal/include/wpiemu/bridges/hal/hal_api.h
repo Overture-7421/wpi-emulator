@@ -4,7 +4,7 @@
 // small per-family interfaces (interface segregation); the real binding (hal_sim_binding.h) is
 // compiled only when the WPILib HAL headers are available, and unit tests use FakeHalApi.
 //
-// Conventions (all match HALSIM 2026.2.1, ADR 0001):
+// Conventions (all match HALSIM 2026.2.1, docs/reference/extension-ipc.md):
 //   * `channelCount()` is HAL_GetNum*(); every other index argument is guaranteed by the bridges to
 //     be in [0, count). Implementations must still tolerate out-of-range indices (return neutral
 //     values / ignore writes) because HALSIM_* itself does not range-check.

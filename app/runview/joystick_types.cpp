@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "wpiemu/sdk/core/units.h"
+
 namespace wpiemu::app::runview::joy {
 namespace {
 
@@ -155,7 +157,7 @@ std::int16_t evaluatePov(const PovBinding& b, const RawInput& raw) {
     const int dx = (keyDown(b.right, raw) ? 1 : 0) - (keyDown(b.left, raw) ? 1 : 0);
     const int dy = (keyDown(b.up, raw) ? 1 : 0) - (keyDown(b.down, raw) ? 1 : 0);
     if (dx == 0 && dy == 0) return -1;
-    const double deg = std::atan2(static_cast<double>(dx), static_cast<double>(dy)) * 180.0 / 3.14159265358979323846;
+    const double deg = sdk::radToDeg(std::atan2(static_cast<double>(dx), static_cast<double>(dy)));
     return static_cast<std::int16_t>(static_cast<int>(std::lround(deg < 0 ? deg + 360.0 : deg)) % 360);
 }
 

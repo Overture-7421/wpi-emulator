@@ -1,6 +1,6 @@
 #pragma once
 
-// Slip-based tire models (ADR 0003 "Tire model"). Both are stateless and implement the semi-implicit
+// Slip-based tire models (docs/reference/physics.md). Both are stateless and implement the semi-implicit
 // wheel + chassis-share solve; they differ only in the shape of the slip->force curve.
 //
 //   "brush"         g(s) = 1 - (1-s)^3 up to the peak, then decays exponentially to the sliding level.

@@ -4,6 +4,8 @@
 #include <cmath>
 #include <memory>
 
+#include "wpiemu/sdk/core/units.h"
+
 namespace wpiemu::core::physics {
 namespace {
 
@@ -12,7 +14,6 @@ using sdk::TireOutput;
 using sdk::TireParams;
 using sdk::WheelDrive;
 
-constexpr float kPi = 3.14159265358979323846f;
 constexpr float kSlipEpsilonMps = 0.02f;  // finite-difference step for the slip-velocity stiffness
 constexpr float kMinInertia = 1e-9f;
 
@@ -23,8 +24,8 @@ struct PacejkaShape {
     float C;
     float B;
     explicit PacejkaShape(float slide) {
-        C = 2.f - (2.f / kPi) * std::asin(clampSlide(slide));
-        B = std::tan(kPi / (2.f * C));
+        C = 2.f - (2.f / sdk::kPiF) * std::asin(clampSlide(slide));
+        B = std::tan(sdk::kPiF / (2.f * C));
     }
     float operator()(float s) const { return std::sin(C * std::atan(B * std::max(s, 0.f))); }
 };

@@ -5,7 +5,7 @@
 // untouched. They are the unit-tested heart of the editor model.
 //
 // Display frame (shared with the viewport): world origin on the floor below the HULL CENTRE, Z up.
-// The chassis frame (origin = COM, ADR 0003) is at (comOffset.xy, comHeight). Wheel `positionM.z` is a
+// The chassis frame (origin = COM, docs/reference/physics.md) is at (comOffset.xy, comHeight). Wheel `positionM.z` is a
 // height above the floor, so a wheel's world z is positionM.z (see wheelWorld()).
 
 #include <optional>

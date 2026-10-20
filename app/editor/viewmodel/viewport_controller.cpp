@@ -18,8 +18,6 @@ using sdk::Vec3;
 
 namespace {
 
-constexpr float kPi = static_cast<float>(sdk::kPi);
-
 QVector3D q3(const Vec3& v) { return SceneModel::toQt(v); }
 
 float component(const Vec3& v, int axis) { return axis == 0 ? v.x : axis == 1 ? v.y : v.z; }
@@ -225,8 +223,8 @@ void ViewportController::rebuildGizmo() {
                 const int segments = 40;
                 const float radius = L * 0.85f;
                 for (int s = 0; s < segments; ++s) {
-                    const float a0 = 2.f * kPi * static_cast<float>(s) / segments;
-                    const float a1 = 2.f * kPi * static_cast<float>(s + 1) / segments;
+                    const float a0 = 2.f * sdk::kPiF * static_cast<float>(s) / segments;
+                    const float a1 = 2.f * sdk::kPiF * static_cast<float>(s + 1) / segments;
                     const Vec3 p0 = origin + (u * std::cos(a0) + v * std::sin(a0)) * radius;
                     const Vec3 p1 = origin + (u * std::cos(a1) + v * std::sin(a1)) * radius;
                     gizmo_.push_back(lineEntry(p0, p1, L * 0.035f, color, 1.0, id));

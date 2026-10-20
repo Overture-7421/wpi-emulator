@@ -1,4 +1,4 @@
-# Install + CPack rules for distributable builds (docs/packaging.md). Included from the root CMakeLists.txt after
+# Install + CPack rules for distributable builds (docs/releasing.md). Included from the root CMakeLists.txt after
 # every target exists. Nothing here changes how the build tree is built or tested, except for the application icon /
 # version resources (Windows .rc, macOS bundle metadata) that are attached to wpiemu_app.
 #

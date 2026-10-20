@@ -13,7 +13,7 @@
 
 namespace wpiemu::sdk {
 
-// ADR 0003: one rigid body, no suspension, body origin == COM. Dimensions are the bounding box
+// docs/reference/physics.md: one rigid body, no suspension, body origin == COM. Dimensions are the bounding box
 // of the frame perimeter (editor primitives refine visuals/collisions).
 struct ChassisSpec {
     Vec3 sizeM{0.7f, 0.7f, 0.12f};           // frame box (x forward, y left, z up)
@@ -59,7 +59,7 @@ struct DrivetrainSpec {
     std::string kind = drivetrain_kind::kSwerve;   // key into DrivetrainRegistry (open set)
     std::string tireModel = "brush";               // key into TireModelRegistry
     std::vector<WheelSpec> wheels;
-    float loadTransferTauS = 0.02f;                // low-pass on chassis acceleration (ADR 0003)
+    float loadTransferTauS = 0.02f;                // low-pass on chassis acceleration (docs/reference/physics.md)
 };
 
 }  // namespace wpiemu::sdk

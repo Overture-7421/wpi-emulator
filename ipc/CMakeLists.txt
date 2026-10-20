@@ -1,5 +1,5 @@
 # IPC transport and wire protocol between the Qt app and the HALSim extension.
-# Depends on wpiemu_sdk only (ADR 0004). See ipc/README.md and docs/decisions/0007-ipc-transport.md.
+# Depends on wpiemu_sdk only (docs/ARCHITECTURE.md). See docs/reference/extension-ipc.md and docs/reference/extension-ipc.md.
 set(WPIEMU_IPC_SOURCES
     src/protocol.cpp
     src/binary_codec.cpp

@@ -4,13 +4,14 @@
 #include <new>
 #include <string>
 
+#include "wpiemu/sdk/core/byte_order.h"
+
 namespace wpiemu::ipc {
 
 using namespace sdk;
 
 void appendFrame(std::span<const std::byte> payload, std::vector<std::byte>& out) {
-    const auto n = static_cast<std::uint32_t>(payload.size());
-    for (int i = 0; i < 4; ++i) out.push_back(static_cast<std::byte>((n >> (8 * i)) & 0xFF));
+    appendLittleEndian(out, payload.size(), 4);
     out.insert(out.end(), payload.begin(), payload.end());
 }
 
@@ -18,8 +19,7 @@ namespace {
 // Header at the front of the unread bytes; false when fewer than 4 bytes are buffered.
 bool peekLength(const std::vector<std::byte>& buf, std::size_t pos, std::uint32_t& length) {
     if (buf.size() - pos < kFrameHeaderBytes) return false;
-    length = 0;
-    for (int i = 0; i < 4; ++i) length |= static_cast<std::uint32_t>(static_cast<std::uint8_t>(buf[pos + i])) << (8 * i);
+    length = static_cast<std::uint32_t>(readLittleEndian(buf, pos, 4));
     return true;
 }
 }  // namespace

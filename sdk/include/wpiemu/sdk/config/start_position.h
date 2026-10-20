@@ -1,10 +1,11 @@
 #pragma once
 
 // Start positions: named field poses the user can put the robot back on from the run view
-// (RobotConfig::startPositions, ADR 0020). Stored in SI units, field frame (Z-up NWU).
+// (RobotConfig::startPositions, docs/reference/runtime.md). Stored in SI units, field frame (Z-up NWU).
 
 #include <string>
-#include <string_view>
+
+#include "wpiemu/sdk/game/alliance.h"
 
 namespace wpiemu::sdk {
 
@@ -16,11 +17,6 @@ struct RobotStartPose {
 
     bool operator==(const RobotStartPose&) const = default;
 };
-
-enum class Alliance { Blue, Red };
-
-constexpr Alliance otherAlliance(Alliance a) { return a == Alliance::Blue ? Alliance::Red : Alliance::Blue; }
-constexpr std::string_view allianceKey(Alliance a) { return a == Alliance::Blue ? "blue" : "red"; }
 
 struct StartPosition {
     std::string id;       // unique among start positions

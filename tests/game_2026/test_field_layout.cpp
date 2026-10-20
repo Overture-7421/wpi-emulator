@@ -134,7 +134,7 @@ TEST_CASE("every field element lies inside the field or behind an alliance wall"
         if (tagKind(s.tag) == EntityKind::HubSensor) {
             ++hubSensors;
             CHECK(s.pose.position.z + s.halfExtentsM.z < dim::kHubTopZM);
-            CHECK(s.halfExtentsM.z * 2 >= 0.3f);  // ADR 0003: sensors have no CCD
+            CHECK(s.halfExtentsM.z * 2 >= 0.3f);  // docs/reference/physics.md: sensors have no CCD
         } else if (tagKind(s.tag) == EntityKind::CorralSensor) {
             ++corrals;
         }

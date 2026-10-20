@@ -12,7 +12,7 @@
 
 namespace wpiemu::plugins::game_2026 {
 
-// Section schema version (the SDK stays at version 1 until release, ADR 0013: no migration).
+// Section schema version (the SDK stays at version 1 until release, docs/CONTRIBUTING.md: no migration).
 inline constexpr int kConfigSchemaVersion = 1;
 
 enum class FirstInactiveMode { FromAutoResult, Red, Blue };

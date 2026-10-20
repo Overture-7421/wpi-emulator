@@ -1,113 +1,65 @@
 # Vision sample robots
 
-Two ordinary WPILib 2026 robot projects, one Java and one C++, that use **both** a Limelight and a PhotonVision camera
-the way real teams do. They are the verification targets for the emulator's vision feature
-([docs/vision.md](../../docs/vision.md)): the code knows nothing about the emulator and is not modified to run in it.
+Read this when trying simulated Limelight and PhotonVision cameras with ordinary robot code.
+Prerequisites: the emulator and [WPILib toolchain](../../docs/BUILDING.md), WPILib 2026's JDK,
+and Gradle/vendor dependencies (download them before using offline mode). C++ desktop simulation
+also needs the platform's C++ compiler. Keep both projects' wrappers and vendordeps.
 
-| Project | Language | Build |
-|---|---|---|
-| [`java/`](java) | Java 17, GradleRIO 2026.2.1 | `gradlew build` |
-| [`cpp/`](cpp) | C++20, GradleRIO 2026.2.1 | `gradlew build` (needs the Visual Studio C++ toolchain for desktop simulation) |
+[Java](java) and [C++](cpp) projects fuse camera measurements into drivetrain pose estimates.
+They use the same mounts and console format; neither contains emulator-specific robot code.
 
-Both builds resolve offline from the WPILib 2026 install and a warm Gradle cache
-(`JAVA_HOME=C:\Users\Public\wpilib\2026\jdk`, `gradlew --offline build`).
+## Build and run
 
-## What the robot does
+From the repository root on Windows (adjust the JDK path):
 
-* **Drivetrain**: a tank drive. `TalonFX` 1 (left) and 2 (right), neither inverted, driven through WPILib `DifferentialDrive`
-  (`set(duty)`), and a `Pigeon2` (CAN id 10) for the gyro. Phoenix 6 is used because the emulator feeds back wheel rotor
-  position and Pigeon yaw for it; plain PWM controllers would give the pose estimator no wheel or heading data.
-  `SensorToMechanismRatio` is 8.0, the wheel radius 0.0762 m and the track width 0.60 m (constants in `Robot`).
-* **Vision** (`Vision` class, called from `robotPeriodic`):
-  * Limelight `limelight-front` through the official `LimelightHelpers` (vendored unmodified): `getBotPoseEstimate_wpiBlue`
-    (MegaTag1, fused when at least 2 tags are seen) and `getBotPoseEstimate_wpiBlue_MegaTag2` after
-    `SetRobotOrientation` (fused with an infinite heading std dev). The camera mount is sent with `setCameraPose_RobotSpace`.
-  * PhotonVision `photon-rear` through `PhotonCamera.getAllUnreadResults()` and `PhotonPoseEstimator`
-    (`estimateCoprocMultiTagPose`, falling back to `estimateLowestAmbiguityPose`) on
-    `AprilTagFields.k2026RebuiltWelded`.
-  * A `DifferentialDrivePoseEstimator` fuses both with `addVisionMeasurement(pose, timestampSeconds)`. It is placed on the
-    field by the first measurement whose heading is trustworthy (MegaTag1 with 2+ tags or a Photon multi-tag result).
-* **Modes**: `autonomousPeriodic` drives straight forward at 30 % duty for the whole autonomous period (deterministic
-  motion, so tags come in and out of view); `teleopPeriodic` is arcade drive from controller 0.
-
-Camera mounts in the WPILib robot frame (+X forward, +Y left, +Z up, origin on the floor below the robot's centre):
-
-| Camera | Name | Translation | Yaw |
-|---|---|---|---|
-| Limelight | `limelight-front` | x = +0.30 m, y = 0, z = 0.50 m | 0 (forward) |
-| PhotonVision | `photon-rear` | x = -0.30 m, y = 0, z = 0.50 m | 180 deg (backward) |
-
-They are the `kRobotToLimelight` / `kRobotToPhoton` constants in `Vision`.
-
-## The `VISION` line contract
-
-Every 0.5 s of robot time (`Timer.getFPGATimestamp()`) each project prints exactly two lines to stdout (flushed):
-
+```powershell
+$env:JAVA_HOME = "C:\Users\Public\wpilib\2026\jdk"
+Push-Location samples\vision_robot\java
+.\gradlew.bat build
+Pop-Location
 ```
-VISION limelight tv=<0|1> tags=<n> botposeX=<m> botposeY=<m> botposeYawDeg=<deg> latencyMs=<tl+cl> connected=<true|false>
+
+Use `cpp` instead of `java` for C++. Add `--offline` only after the needed artifacts are cached.
+Follow the [user guide](../../docs/USER_GUIDE.md) to open that folder and choose **Tank**.
+Set drive ratio 8.0, wheel diameter 0.1524 m and wheel centres at Y = ±0.30 m (0.60 m track).
+Map TalonFX 1/2 to left/right powered wheels and Pigeon 2 ID 10 to Robot's IMU; other wheels follow their side.
+
+Add a Limelight named `front` (robot table `limelight-front`) at robot-frame
+(+0.30, 0, 0.50) m, yaw 0°, and PhotonVision named `photon-rear` at
+(-0.30, 0, 0.50) m, yaw 180°. Match the inspector's **Robot-to-camera (WPILib robot frame)**
+line, not raw attachment-relative pose fields: a chassis mount is relative to its centre of mass.
+Choose **Auto** and **Enable** in Run's Driver Station; Teleop uses joystick port 0.
+
+## Expected output and limits
+
+Console prints these two `VISION` records every 0.5 s of robot time:
+
+```text
+VISION limelight tv=<0|1> tags=<n> botposeX=<m> botposeY=<m> botposeYawDeg=<deg> latencyMs=<ms> connected=<true|false>
 VISION photon hasTargets=<true|false> tags=<n> poseX=<m> poseY=<m> poseYawDeg=<deg> resultAgeMs=<ms> connected=<true|false>
 ```
 
-* Limelight: `tags` / `botpose*` come from the MegaTag1 `botpose_wpiblue` estimate (0 when nothing is published),
-  `latencyMs` is `tl + cl`, and `connected` is true when the `hb` heartbeat entry of the `limelight-front` table changed in
-  the last second (`LimelightHelpers` has no connected check).
-* Photon: values come from the newest result seen and the pose from `PhotonPoseEstimator` on it (0 without an estimate);
-  `resultAgeMs = (Timer.getFPGATimestamp() - result.getTimestampSeconds()) * 1000`; `connected = camera.isConnected()`.
-  Before the first result the age is meaningless (large).
-* Numbers use a `.` decimal point (3 decimals for metres, 2 for degrees, 1 for milliseconds).
+After startup, expect connected cameras and target flags when tags are visible.
+The fused pose is also published at `/SmartDashboard/Vision/estimatedPose`.
+Java autonomous commands forward motion. C++ Phoenix 6 driving is unverified: stationary
+camera checks must not be reported as drive validation. See [bridge limits](../../docs/reference/bridges.md).
 
-The same values are published to NetworkTables under `/SmartDashboard/Vision/limelight/*` and `/SmartDashboard/Vision/photon/*`
-(`tv`, `tags`, `botposeX`, ... / `hasTargets`, `tags`, `poseX`, ...), the fused estimate under
-`/SmartDashboard/Vision/fused/{x,y,yawDeg}`, and the fused `Pose2d` as a struct at `/SmartDashboard/Vision/estimatedPose`.
+## End-to-end check
 
-## Running them with the emulator
-
-Follow [docs/USER_GUIDE.md](../../docs/USER_GUIDE.md): open the project in the emulator, finish the wizard as a **tank**
-drive, then in the editor:
-
-1. Map the detected devices: `TalonFX 1` -> left drive, `TalonFX 2` -> right drive, `Pigeon 2` 10 -> the robot IMU. Use a drive
-   gear ratio of 8.0, wheel diameter 0.1524 m and a track width of 0.60 m so the robot's odometry agrees with the simulated wheels.
-2. Add two cameras (see the *Cameras* walkthrough in the user guide). Their mounts must match the constants above:
-
-   | Camera | kind | name | attachment | position | yaw |
-   |---|---|---|---|---|---|
-   | front | Limelight | `front` (table `limelight-front`) | chassis | x = +0.30, z = 0.50 | 0 |
-   | rear | PhotonVision | `photon-rear` | chassis | x = -0.30, z = 0.50 | 180 deg |
-
-   **Frames**: the robot code's robot frame has its origin on the floor below the hull centre. The emulator's chassis frame
-   (where a camera on the chassis is placed in `robot.json`) has its origin at the **centre of mass**. The camera's inspector shows
-   a read-only **Robot-to-camera (WPILib robot frame)** line: edit the pose until it shows the constants above. By hand:
-   `local = robotToCamera - (COM position in the robot frame)`; for a COM at the hull centre with `comHeightM = 0.2` that gives
-   z = 0.30 for both cameras (x unchanged).
-3. Run autonomous and watch the console: the `VISION` lines show the tags appearing and disappearing as the robot
-   drives, and the fused estimate (`Vision/estimatedPose`) should follow the simulated pose.
-
-## Known limits
-
-* **Java drives, C++ is stationary.** The Java sample drives forward in autonomous in the emulator. The C++ sample's Phoenix 6 drive
-  did not move the robot (Phoenix 6 simulation from C++ is unverified, [ADR 0002](../../docs/decisions/0002-phoenix6-interception.md)
-  R8), so the C++ sample was verified with the robot **stationary**: both cameras, tags, latency and poses work for C++ robots, and
-  the robot-side fusion simply has no motion to follow.
-* PhotonLib for C++ reports results about one NetworkTables cycle older than the Java PhotonLib (`resultAgeMs` is higher).
-* Needs a PhotonLib version the emulator verified; the sample's vendordep is `v2026.3.4` (see [docs/vision.md](../../docs/vision.md)).
-
-## Running the end-to-end test
-
-`e2e.vision_sample` (opt-in, label `e2e`, target `wpiemu_e2e_vision_tests`, `app/host/tests/e2e_vision_test.cpp`) runs a copy of
-the sample through Gradle with the real extension. It does not use a saved `robot.json`: the test builds the robot in code (a tank
-drive with Phoenix 6 mappings, the Limelight `front` and the PhotonVision `photon-rear` at the mounts above, 75 x 50 degree field of
-view, 30 fps, 40 ms latency), drives the autonomous routine and compares the robot's `VISION` lines with the emulator's ground truth:
-cameras connected, tags seen exactly when the emulator says so, Limelight `tl + cl` equal to the configured latency, the Photon result
-age within latency + frame spacing + one loop, poses at rest equal to the ground truth (Limelight < 2 cm, Photon < 4 cm), and the
-Java robot drives.
+With a real HAL/ntcore-enabled emulator build, run from the repository root:
 
 ```powershell
 $env:WPIEMU_E2E = "1"
-$env:JAVA_HOME = "C:\Users\Public\wpilib\2026\jdk"        # if no JDK is on the path
-$env:WPIEMU_E2E_VISION_PROJECT = "<repo>\samples\vision_robot\java"   # default: samples\vision_robot\java (absolute path)
-$env:WPIEMU_E2E_VISION_LANG = "java"                       # java (default) | cpp
+$env:JAVA_HOME = "C:\Users\Public\wpilib\2026\jdk"
+$env:WPIEMU_E2E_VISION_PROJECT = (Resolve-Path samples\vision_robot\java).Path
+$env:WPIEMU_E2E_VISION_LANG = "java"
 ctest --preset windows-vs2022-release -R "^e2e[.]vision_sample$" --output-on-failure
 ```
 
-For C++ use `...\cpp` and `WPIEMU_E2E_VISION_LANG=cpp`. `WPIEMU_E2E_VERBOSE=1` prints the robot console, `WPIEMU_E2E_KEEP=1` keeps the
-project copy. Both samples pass.
+For C++, change the project to `cpp` and language to `cpp`. The check builds a project copy,
+creates its own model and compares robot output with camera/pose truth; it does not use saved editor config.
+Missing opt-in/project/wrapper/extension/JDK prerequisites can return **Skipped** (77), not a pass.
+Use Building's platform test presets elsewhere; this command does not establish native Linux/macOS results.
+Retain FIRST/WPILib notices and helper attributions; the shared notice is [WPILib-License.md](../WPILib-License.md).
+
+Next: [User guide](../../docs/USER_GUIDE.md) for controls and camera troubleshooting.

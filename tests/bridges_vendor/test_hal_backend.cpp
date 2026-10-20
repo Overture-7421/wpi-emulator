@@ -295,7 +295,7 @@ TEST_CASE("vendor HAL binding: end to end with the Phoenix 6 table") {
 }
 
 // Regression for the access violation seen when the bridge was polled while the robot constructor was still creating
-// devices (docs/bridges-vendor.md "Concurrent device construction"): a "robot" thread creates TalonFX trees with
+// devices (docs/reference/bridges.md): a "robot" thread creates TalonFX trees with
 // the HAL lock semantics of the real HAL while the main thread polls as fast as it can.
 TEST_CASE("vendor HAL binding: polling while another thread constructs devices is safe and loses nothing") {
     HalRig rig;

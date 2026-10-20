@@ -73,7 +73,7 @@ public:
     ToolchainCheck checkCppToolchain(const ToolchainInput& input) const;
     ToolchainCheck checkGameModule(const ToolchainInput& input, ToolchainReport& report) const;
 
-    // Existing WPILib install folder for the season (override, then the default location), else empty.
+    // Existing WPILib install folder for the season (override, then the installer's locations in core's order), else empty.
     QString findWpilibHome(const ToolchainInput& input) const;
     // Where the installer puts WPILib by default for `year` (may not exist).
     QString defaultWpilibHome(int year) const;
@@ -82,6 +82,11 @@ public:
     static std::optional<int> parseJavaMajor(const QString& versionOutput);
 
 private:
+    // WPILib roots to look in, as core's launcher lists them for this machine.
+    QStringList wpilibRoots() const;
+    // The java Gradle will be launched with: the first present source of core's JDK order. Empty when none is present.
+    QString launchJava(const ToolchainInput& input, const QString& exe) const;
+
     const ISystemProbe& probe_;
     const sdk::GamePluginRegistry& plugins_;
 };

@@ -306,13 +306,13 @@ TEST_CASE("run page: choosing a start position resets the robot there, switches 
     };
     const float defaultX = robotX();
 
-    f.page.driverStation().setAlliance(DriverStationModel::Alliance::Blue);
+    f.page.driverStation().setAlliance(sdk::Alliance::Blue);
     f.page.driverStation().setEnabled(true);
     const int resets = f.backend.resetCount();
     red->trigger();
     CHECK(f.backend.startPositionId() == QStringLiteral("red_left"));
     CHECK(f.backend.resetCount() == resets + 1);
-    CHECK(f.page.driverStation().alliance() == DriverStationModel::Alliance::Red);
+    CHECK(f.page.driverStation().alliance() == sdk::Alliance::Red);
     CHECK_FALSE(f.page.driverStation().enabled());
     CHECK(robotX() > defaultX + 5.f);
     CHECK(find(QStringLiteral("Red left"))->isChecked());

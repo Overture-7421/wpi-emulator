@@ -1,6 +1,6 @@
 #pragma once
 
-// Data tables: how CTRE SimDevices map onto canonical signals (ADR 0002 table, re-verified for Phoenix 6 26.3.0
+// Data tables: how CTRE SimDevices map onto canonical signals (docs/reference/bridges.md table, re-verified for Phoenix 6 26.3.0
 // against the vendor wrapper classes). A vendor bridge is only a table; adding a device = adding a rule.
 //
 // Units: Phoenix publishes rotations / rotations-per-second for rotary values and DEGREES / degrees-per-second
@@ -59,9 +59,6 @@ inline constexpr const char* kPwm2RiseToFall = "pwm2RiseToFall";
 inline constexpr const char* kSupplyCurrentInput = "supplyCurrentInput";        // Phoenix 5: sim -> robot
 inline constexpr const char* kMotorCurrentInput = "motorCurrentInput";          // Phoenix 5: sim -> robot
 }  // namespace vsignal
-
-inline constexpr double kPi = 3.14159265358979323846;
-inline constexpr double kDegToRad = kPi / 180.0;
 
 struct Phoenix5Options {
     // Counts per output revolution of the quadrature encoder wired to a Talon SRX. The CTRE Mag Encoder in

@@ -48,7 +48,7 @@ inline constexpr const char* kBusUnknown = "";
 
 // What the SIMULATOR sees as one device, independent of how the robot program addressed it. It
 // deliberately has no bus: CTRE sim state is keyed by (type, id) only, so a TalonFX 4 constructed
-// on "rio" and one on "canivore" are the SAME physical simulator device (ADR 0006).
+// on "rio" and one on "canivore" are the SAME physical simulator device (docs/ARCHITECTURE.md).
 struct PhysicalDeviceId {
     std::string family;
     std::string type;
@@ -71,7 +71,7 @@ struct DeviceKey {
     std::string family;  // "hal" | "phoenix6" | "phoenix5" | ... (bridge-defined, lower-case)
     std::string type;    // "pwm", "dio", "talonfx", "cancoder", "pigeon2", "candle", "talonsrx", ...
     int id = -1;         // CAN id / port index / module index; -1 if not applicable
-    std::string bus = "rio";  // "rio", or a CANivore label; label only (ADR 0002). Declared, not verified.
+    std::string bus = "rio";  // "rio", or a CANivore label; label only (docs/reference/bridges.md). Declared, not verified.
     int channel = -1;    // sub-channel (PCM solenoid channel, relay fwd/rev, ...); -1 if n/a
 
     auto operator<=>(const DeviceKey&) const = default;

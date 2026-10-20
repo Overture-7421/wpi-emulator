@@ -1,15 +1,18 @@
 #include <cmath>
 
 #include "test_support.h"
+#include "common/orbit_camera.h"
 #include "model/quat_utils.h"
 #include "model/scene_builder.h"
 #include "model/transform_access.h"
 #include "viewmodel/editor_controller.h"
-#include "viewmodel/orbit_camera.h"
+#include "viewmodel/gizmo_math.h"
 #include "viewmodel/viewport_controller.h"
 
 using namespace wpiemu::app::editor;
 using namespace wpiemu::app::editor::testing;
+using wpiemu::app::OrbitCamera;
+using wpiemu::app::Ray;
 namespace sdk = wpiemu::sdk;
 
 // ---- camera and gizmo math --------------------------------------------------------------------------
@@ -171,26 +174,6 @@ TEST_CASE("scene builder: link lines point from the parent to the child") {
 }
 
 // ---- viewport controller ----------------------------------------------------------------------------
-
-namespace {
-
-struct ViewFixture {
-    FakeEditorBackend backend;
-    EditorController editor{backend};
-    ViewportController view{editor};
-    ViewFixture() {
-        editor.setAutosaveDelayMs(0);
-        view.setViewSize(800, 600);
-        editor.settings().setSnapEnabled(false);
-    }
-    QPointF screen(const sdk::Vec3& world) {
-        const auto px = view.camera().project(world, 800.f, 600.f);
-        REQUIRE(px);
-        return {static_cast<qreal>(px->first), static_cast<qreal>(px->second)};
-    }
-};
-
-}  // namespace
 
 TEST_CASE("viewport: the gizmo follows the selection and the allowed modes") {
     ViewFixture f;

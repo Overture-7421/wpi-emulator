@@ -18,7 +18,6 @@ using sdk::ErrorCode;
 namespace {
 constexpr const char* kLog = "extension";
 constexpr std::chrono::milliseconds kJoinTimeout{3000};
-constexpr std::uint32_t kDefaultStepUs = 5000;
 }  // namespace
 
 sdk::Result<proto::HelloAck> performHandshake(proto::MessageChannel& channel, const RobotInfo& robot,
@@ -37,10 +36,8 @@ sdk::Result<proto::HelloAck> performHandshake(proto::MessageChannel& channel, co
 
     const auto deadline = std::chrono::steady_clock::now() + config.handshakeTimeout;
     for (;;) {
-        const auto now = std::chrono::steady_clock::now();
-        if (now >= deadline) return sdk::makeError(ErrorCode::Timeout, "no HelloAck from the emulator");
-        const auto slice = std::min(std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now),
-                                    std::chrono::milliseconds(100));
+        if (std::chrono::steady_clock::now() >= deadline) return sdk::makeError(ErrorCode::Timeout, "no HelloAck from the emulator");
+        const auto slice = std::min(proto::timeLeft(deadline), std::chrono::milliseconds(100));
         proto::Message message;
         const sdk::Result<bool> got = channel.receive(message, slice);
         if (!got) {
@@ -54,8 +51,8 @@ sdk::Result<proto::HelloAck> performHandshake(proto::MessageChannel& channel, co
                 return sdk::makeError(ErrorCode::VersionMismatch,
                                       "emulator speaks protocol v" + std::to_string(ack->protocolVersion));
             if (ack->stepUs == 0) {
-                logger.warn(kLog, "HelloAck.stepUs is 0; using 5000");
-                ack->stepUs = kDefaultStepUs;
+                ack->stepUs = static_cast<std::uint32_t>(sdk::kDefaultStepUs);
+                logger.warn(kLog, "HelloAck.stepUs is 0; using " + std::to_string(ack->stepUs));
             }
             return std::move(*ack);
         }
@@ -179,7 +176,7 @@ sdk::Status ExtensionRuntime::start() {
     if (!session) return fail(session.error());
     std::unique_ptr<SimSession> active = std::move(session).value();
     active->begin();
-    // HAL time is paused before the robot code exists (ADR 0001); the bridges' initialNotify flood
+    // HAL time is paused before the robot code exists (docs/reference/extension-ipc.md); the bridges' initialNotify flood
     // then lands in the outbound queue in order.
     if (active->lockstep()) s.deps.ports.clock.pauseTiming();
     s.bridges.start(s.optionalHooks);

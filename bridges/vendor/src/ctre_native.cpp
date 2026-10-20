@@ -7,6 +7,8 @@
 #include <cstring>
 #include <set>
 
+#include "wpiemu/bridges/vendor/ctre_rules.h"
+
 namespace wpiemu::bridges::vendor {
 
 std::string_view ctreModelName(CtreDeviceType type) {
@@ -23,16 +25,16 @@ std::string_view ctreModelName(CtreDeviceType type) {
 }
 
 std::optional<CtreDeviceType> ctreDeviceTypeFromDescriptorType(std::string_view t) {
-    if (t == "talonfx") return CtreDeviceType::P6_TalonFX;
-    if (t == "talonfxs") return CtreDeviceType::P6_TalonFXS;
-    if (t == "cancoder") return CtreDeviceType::P6_CANcoder;
-    if (t == "pigeon2") return CtreDeviceType::P6_Pigeon2;
-    if (t == "candle") return CtreDeviceType::P6_CANdle;
-    if (t == "canrange") return CtreDeviceType::P6_CANrange;
-    if (t == "candi") return CtreDeviceType::P6_CANdi;
-    if (t == "talonsrx") return CtreDeviceType::TalonSRX;
-    if (t == "victorspx") return CtreDeviceType::VictorSPX;
-    if (t == "pigeonimu") return CtreDeviceType::PigeonIMU;
+    if (t == ctre::kTypeTalonFx) return CtreDeviceType::P6_TalonFX;
+    if (t == ctre::kTypeTalonFxs) return CtreDeviceType::P6_TalonFXS;
+    if (t == ctre::kTypeCanCoder) return CtreDeviceType::P6_CANcoder;
+    if (t == ctre::kTypePigeon2) return CtreDeviceType::P6_Pigeon2;
+    if (t == ctre::kTypeCanDle) return CtreDeviceType::P6_CANdle;
+    if (t == ctre::kTypeCanRange) return CtreDeviceType::P6_CANrange;
+    if (t == ctre::kTypeCanDi) return CtreDeviceType::P6_CANdi;
+    if (t == ctre::kTypeTalonSrx) return CtreDeviceType::TalonSRX;
+    if (t == ctre::kTypeVictorSpx) return CtreDeviceType::VictorSPX;
+    if (t == ctre::kTypePigeonImu) return CtreDeviceType::PigeonIMU;
     return std::nullopt;
 }
 

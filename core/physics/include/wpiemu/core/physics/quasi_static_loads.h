@@ -1,6 +1,6 @@
 #pragma once
 
-// Quasi-static normal-load distribution for any wheel layout (ADR 0003): min-norm solution of
+// Quasi-static normal-load distribution for any wheel layout (docs/reference/physics.md): min-norm solution of
 //   sum N = W,   sum N x = -h m ax,   sum N y = -h m ay
 // (x, y relative to the centre of mass in the body frame; ax, ay = acceleration produced by the tire forces).
 

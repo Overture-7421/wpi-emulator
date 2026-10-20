@@ -5,7 +5,7 @@
 //
 // The binding has NO link-time dependency on ntcore. It attaches at run time to the `ntcore` module the robot
 // process already loaded and resolves the C API (ntcore_c.h) from it, exactly like the vendor bridges do for
-// CTRE (ADR 0002): a Java robot loads ntcore from an extracted temp directory through JNI, possibly after the
+// CTRE (docs/reference/bridges.md): a Java robot loads ntcore from an extracted temp directory through JNI, possibly after the
 // extension was loaded, and a load-time import would either break the extension (ntcore not on the loader
 // path) or bind a private second copy. Until the module is present `available()` is false and the bridges
 // skip quietly; a robot program that never loads ntcore is unaffected.

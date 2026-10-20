@@ -76,8 +76,8 @@ bool PhotonBridge::ensureInitialized(Cam& cam, std::int64_t ntNow) {
         sink_.putInt("/photonvision/ledModeState", ledMode_, ntNow);
     }
     const sdk::CameraConfig& c = cam.config;
-    const double fx = 0.5 * c.widthPx / std::tan(0.5 * c.hFovDeg / detail::kRadToDeg);
-    const double fy = 0.5 * c.heightPx / std::tan(0.5 * c.vFovDeg / detail::kRadToDeg);
+    const double fx = 0.5 * c.widthPx / std::tan(0.5 * c.hFovDeg / sdk::kRadToDeg);
+    const double fy = 0.5 * c.heightPx / std::tan(0.5 * c.vFovDeg / sdk::kRadToDeg);
     const double cx = 0.5 * c.widthPx;
     const double cy = 0.5 * c.heightPx;
     sink_.putDoubles(cam.root + "/cameraIntrinsics", {fx, 0.0, cx, 0.0, fy, cy, 0.0, 0.0, 1.0}, ntNow);
@@ -173,9 +173,8 @@ void PhotonBridge::publishFrame(Cam& cam, const sdk::CameraFrame* frame, std::in
 
     if (frame != nullptr) {
         cam.sequence = static_cast<std::int64_t>(frame->sequence);
-        const sdk::SimTimeUs latencyUs = std::max<sdk::SimTimeUs>(0, frame->publishTimeUs - frame->captureTimeUs);
-        latencyMs = latencyUs / 1000.0;
-        result.captureTimestampMicros = ntNow - latencyUs;
+        latencyMs = frame->latencyMs();
+        result.captureTimestampMicros = ntNow - frame->latencyUs();
     } else {
         ++cam.sequence;
         result.captureTimestampMicros = ntNow;

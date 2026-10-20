@@ -52,11 +52,11 @@ SettingsDialog::SettingsDialog(AppSettings& settings, const ISystemProbe& probe,
     auto* pathsForm = new QFormLayout;
     pathsForm->setVerticalSpacing(12);
     wpilib_->setPlaceholderText(tr("Detected automatically"));
-    jdk_->setPlaceholderText(tr("Detected automatically (JAVA_HOME, then WPILib's JDK)"));
+    jdk_->setPlaceholderText(tr("Detected automatically (WPILib's JDK, then JAVA_HOME)"));
     pathsForm->addRow(tr("WPILib folder"), pathRow(wpilib_, tr("Select the WPILib installation folder")));
     pathsForm->addRow(tr("JDK folder"), pathRow(jdk_, tr("Select the JDK folder")));
     pathsLayout->addLayout(pathsForm);
-    pathsLayout->addWidget(makeLabel(tr("Leave a field empty to detect it automatically. Changes apply the next time the toolchain is checked."), "muted", nullptr, true));
+    pathsLayout->addWidget(makeLabel(tr("Leave a field empty to detect it automatically. Changes apply the next time the toolchain is checked or the robot is launched."), "muted", nullptr, true));
     pathsLayout->addStretch(1);
     tabs->addTab(paths, ui.icon(QStringLiteral("folder-open")), tr("Toolchain"));
 

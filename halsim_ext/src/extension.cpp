@@ -1,5 +1,5 @@
 // HALSIM extension entry point and composition root. Loaded into the robot process through
-// HALSIM_EXTENSIONS (ADR 0001). All logic lives in testable classes (ExtensionRuntime, SimSession,
+// HALSIM_EXTENSIONS (docs/reference/extension-ipc.md). All logic lives in testable classes (ExtensionRuntime, SimSession,
 // BridgeSet, ...); this file only wires the concrete HAL / IPC / bridge implementations together.
 #include <cstdio>
 #include <exception>

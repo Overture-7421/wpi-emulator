@@ -5,6 +5,7 @@
 
 #include "wpiemu/core/physics/chassis_builder.h"
 #include "wpiemu/sdk/core/sim_context.h"
+#include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/devices/device_hub.h"
 
 namespace wpiemu::core::physics {
@@ -12,7 +13,6 @@ namespace {
 
 using namespace sdk;
 
-constexpr float kPi = 3.14159265358979323846f;
 constexpr float kMinHeadingLength = 1e-4f;
 
 double finiteOrZero(double v) { return std::isfinite(v) ? v : 0.0; }
@@ -43,8 +43,8 @@ TractionDrivetrain::WheelPolicy TractionDrivetrain::policyFor(Layout layout, con
             // WPILib X layout (+y left): FL and RR -45 deg, FR and RL +45 deg.
             if (p.tractionAngleRad == 0.f) {
                 const float handedness = wheel.positionM.x * wheel.positionM.y;
-                if (handedness > 0.f) p.tractionAngleRad = -0.25f * kPi;
-                else if (handedness < 0.f) p.tractionAngleRad = 0.25f * kPi;
+                if (handedness > 0.f) p.tractionAngleRad = -0.25f * kPiF;
+                else if (handedness < 0.f) p.tractionAngleRad = 0.25f * kPiF;
             }
             break;
         }

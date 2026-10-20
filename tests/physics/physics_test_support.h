@@ -1,7 +1,7 @@
 #pragma once
 
 // Shared helpers for the physics tests: floor/ramp builders, canonical FRC-like chassis and drivetrain specs
-// (ADR 0003 validation setup), and a small rig that owns a Box3D world + ChassisSimulator.
+// (docs/reference/physics.md validation setup), and a small rig that owns a Box3D world + ChassisSimulator.
 
 #include <algorithm>
 #include <cmath>
@@ -23,7 +23,6 @@ using namespace wpiemu::sdk;
 namespace phys = wpiemu::core::physics;
 
 constexpr float kDt = 0.005f;
-constexpr float kPiF = 3.14159265358979323846f;
 
 inline std::unique_ptr<IPhysicsWorld> makeWorld(PhysicsConfig cfg = {}) {
     auto w = phys::createBox3dWorld(cfg);
@@ -80,7 +79,7 @@ inline BodyId addBall(IPhysicsWorld& w, Vec3 at, float radius = 0.075f, float de
     return b;
 }
 
-// ---- canonical chassis / drivetrains (ADR 0003 validation setup) ----------------------------------------
+// ---- canonical chassis / drivetrains (docs/reference/physics.md validation setup) ----------------------------------------
 
 inline ChassisSpec testChassis() {
     ChassisSpec c;

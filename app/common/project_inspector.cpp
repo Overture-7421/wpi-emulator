@@ -2,28 +2,16 @@
 
 #include <QCoreApplication>
 #include <QDir>
-#include <QFile>
 #include <QFileInfo>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QRegularExpression>
+
+#include <algorithm>
+#include <filesystem>
+
+#include "wpiemu/core/launcher/project_inspector.h"
 
 namespace wpiemu::app {
 
 namespace {
-
-QString readText(const QString& path) {
-    QFile f(path);
-    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return {};
-    return QString::fromUtf8(f.readAll());
-}
-
-QJsonObject readJsonObject(const QString& path) {
-    QFile f(path);
-    if (!f.open(QIODevice::ReadOnly)) return {};
-    return QJsonDocument::fromJson(f.readAll()).object();
-}
 
 QString findBuildFile(const QDir& dir) {
     for (const char* name : {"build.gradle", "build.gradle.kts"})
@@ -31,13 +19,9 @@ QString findBuildFile(const QDir& dir) {
     return {};
 }
 
-}  // namespace
+QString fromCore(const std::string& text) { return QString::fromStdString(text); }
 
-int GradleProjectInspector::yearFromGradleRioVersion(const QString& version) {
-    static const QRegularExpression re(QStringLiteral("^(\\d{4})\\."));
-    const auto m = re.match(version.trimmed());
-    return m.hasMatch() ? m.captured(1).toInt() : 0;
-}
+}  // namespace
 
 QString GradleProjectInspector::resolveProjectRoot(const QString& path) {
     QFileInfo info(path);
@@ -62,55 +46,28 @@ ProjectInspection GradleProjectInspector::inspect(const QString& rawPath) const 
         return out;
     }
 
-    const QDir dir(info.absoluteFilePath());
-    const QString buildFile = findBuildFile(dir);
-    if (buildFile.isEmpty()) {
+    const auto inspected = core::launcher::ProjectInspector(json_).inspect(std::filesystem::path(info.absoluteFilePath().toStdU16String()));
+    if (!inspected) {
+        out.notes.push_back({sdk::Severity::Error, fromCore(inspected.error().message)});
+        return out;
+    }
+    const core::launcher::ProjectReport& report = inspected.value();
+    if (!report.hasBuildScript) {
         out.notes.push_back({sdk::Severity::Error,
                              tr("No build.gradle found here. Pick the folder that contains your robot project's build.gradle.")});
         return out;
     }
-
-    const QString build = readText(buildFile);
-    if (!build.contains(QLatin1String("GradleRIO"))) {
+    if (!report.gradleRioFound) {
         out.notes.push_back({sdk::Severity::Error, tr("build.gradle does not apply the GradleRIO plugin, so this is not a WPILib robot project.")});
         return out;
     }
     out.isWpilibProject = true;
-
-    static const QRegularExpression versionRe(
-        QStringLiteral("edu\\.wpi\\.first\\.GradleRIO[\"']\\)?\\s*version\\s*\\(?\\s*[\"']([^\"']+)[\"']"));
-    if (const auto m = versionRe.match(build); m.hasMatch()) {
-        out.gradleRioVersion = m.captured(1);
-        out.wpilibYear = yearFromGradleRioVersion(out.gradleRioVersion);
-    }
-
-    const QJsonObject prefs = readJsonObject(dir.filePath(QStringLiteral(".wpilib/wpilib_preferences.json")));
-    out.teamNumber = prefs.value(QStringLiteral("teamNumber")).toInt(0);
-    const QString prefLang = prefs.value(QStringLiteral("currentLanguage")).toString().toLower();
-    if (prefLang == QLatin1String("java") || prefLang == QLatin1String("cpp")) out.language = prefLang;
-    if (out.wpilibYear == 0) {
-        const QJsonValue year = prefs.value(QStringLiteral("projectYear"));
-        out.wpilibYear = year.isString() ? year.toString().toInt() : year.toInt(0);
-    }
-
-    if (out.language.isEmpty()) {
-        const bool java = dir.exists(QStringLiteral("src/main/java"));
-        const bool cpp = dir.exists(QStringLiteral("src/main/cpp"));
-        if (java != cpp) out.language = java ? QStringLiteral("java") : QStringLiteral("cpp");
-        else if (build.contains(QRegularExpression(QStringLiteral("id\\s*\\(?\\s*[\"']cpp[\"']")))) out.language = QStringLiteral("cpp");
-        else if (build.contains(QRegularExpression(QStringLiteral("id\\s*\\(?\\s*[\"']java[\"']")))) out.language = QStringLiteral("java");
-    }
-
-    const QDir vendordeps(dir.filePath(QStringLiteral("vendordeps")));
-    for (const QFileInfo& f : vendordeps.entryInfoList({QStringLiteral("*.json")}, QDir::Files, QDir::Name)) {
-        const QJsonObject o = readJsonObject(f.absoluteFilePath());
-        VendorDep dep;
-        dep.name = o.value(QStringLiteral("name")).toString(f.completeBaseName());
-        dep.version = o.value(QStringLiteral("version")).toString();
-        out.vendorDeps.push_back(dep);
-    }
-
-    out.hasGradleWrapper = dir.exists(QStringLiteral("gradlew")) || dir.exists(QStringLiteral("gradlew.bat"));
+    out.gradleRioVersion = fromCore(report.gradleRioVersion);
+    out.wpilibYear = report.wpilibYear;
+    out.language = fromCore(report.language);
+    out.teamNumber = std::max(report.teamNumber, 0);
+    out.hasGradleWrapper = report.hasGradlewScript || report.hasGradlewBat;
+    for (const core::launcher::VendorDep& dep : report.vendorDeps) out.vendorDeps.push_back({fromCore(dep.name), fromCore(dep.version)});
 
     if (out.wpilibYear == 0)
         out.notes.push_back({sdk::Severity::Warning, tr("Could not read the GradleRIO version, so the WPILib season is unknown.")});

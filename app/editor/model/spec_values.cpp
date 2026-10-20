@@ -4,6 +4,7 @@
 
 #include "model/config_ops.h"
 #include "wpiemu/sdk/config/value_codec.h"
+#include "wpiemu/sdk/dynamics/motor_model.h"
 
 namespace wpiemu::app::editor::spec {
 
@@ -63,49 +64,44 @@ sdk::WheelKind wheelKindFrom(const std::string& s, sdk::WheelKind fallback) {
 }
 
 void motorOptions(PropertySpec& spec, const sdk::MotorSpec& current) {
-    bool found = false;
-    for (const auto& m : motorPresets()) {
-        spec.options.push_back({m.name, m.name});
-        found = found || m.name == current.name;
-    }
-    if (!found) spec.options.push_back({current.name, current.name + " (custom)"});
+    for (const sdk::MotorPreset& m : sdk::motors::presets()) spec.options.push_back({m.spec.name, m.label});
+    if (sdk::motors::findPresetByName(current.name) == nullptr)
+        spec.options.push_back({current.name, current.name + " (custom)"});
 }
 
 }  // namespace
 
-std::vector<sdk::MotorSpec> motorPresets() {
-    return {sdk::motors::krakenX60(), sdk::motors::falcon500(), sdk::motors::neo(), sdk::motors::neo550(),
-            sdk::motors::vortex(),    sdk::motors::cim(),       sdk::motors::miniCim()};
-}
-
 sdk::MotorSpec motorByName(const std::string& name, const sdk::MotorSpec& fallback) {
-    for (const auto& m : motorPresets())
-        if (m.name == name) return m;
-    return fallback;
+    const sdk::MotorPreset* m = sdk::motors::findPresetByName(name);
+    return m != nullptr ? m->spec : fallback;
 }
 
 // ---- robot ------------------------------------------------------------------------------------
 PropertySchema robotSchema() {
     PropertySchema s;
-    s.properties.push_back(makeSpec("name", "Robot name", PropertyType::String, PropertyUnit::None, "Robot", "General"));
-    auto volts = makeSpec("batteryNominalV", "Battery voltage", PropertyType::Double, PropertyUnit::Volts, 12.6, "Battery",
-                          "Fully charged open-circuit voltage.");
+    const sdk::RobotConfig defaults;
+    const sdk::RobotStartPose start;
+    s.properties.push_back(makeSpec("name", "Robot name", PropertyType::String, PropertyUnit::None, defaults.name, "General"));
+    auto volts = makeSpec("batteryNominalV", "Battery voltage", PropertyType::Double, PropertyUnit::Volts,
+                          defaults.battery.nominalVoltageV, "Battery", "Fully charged open-circuit voltage.");
     s.properties.push_back(withRange(volts, 6.0, 14.0, 0.1));
-    auto res = makeSpec("batteryResistanceMilliOhm", "Internal resistance (m\xCE\xA9)", PropertyType::Double, PropertyUnit::None, 15.0,
-                        "Battery", "Higher resistance = deeper voltage sag under load.");
+    auto res = makeSpec("batteryResistanceMilliOhm", "Internal resistance (m\xCE\xA9)", PropertyType::Double, PropertyUnit::None,
+                        defaults.battery.internalResistanceOhm * 1000.0, "Battery",
+                        "Higher resistance = deeper voltage sag under load.");
     s.properties.push_back(withRange(res, 1.0, 100.0, 1.0));
-    auto brown = makeSpec("brownoutV", "Brownout voltage", PropertyType::Double, PropertyUnit::Volts, 6.8, "Battery");
+    auto brown = makeSpec("brownoutV", "Brownout voltage", PropertyType::Double, PropertyUnit::Volts,
+                          defaults.battery.brownoutVoltageV, "Battery");
     s.properties.push_back(withRange(brown, 4.0, 10.0, 0.1));
     s.properties.push_back(makeSpec(
         "customStartPose", "Use custom start pose", PropertyType::Bool, PropertyUnit::None, false,
         "Start pose",
         "Field coordinates restored on start and reset; robot odometry must use the same pose."));
     s.properties.push_back(makeSpec("startX", "Start X", PropertyType::Double, PropertyUnit::Meters,
-                                    0.0, "Start pose"));
+                                    start.xM, "Start pose"));
     s.properties.push_back(makeSpec("startY", "Start Y", PropertyType::Double, PropertyUnit::Meters,
-                                    0.0, "Start pose"));
+                                    start.yM, "Start pose"));
     s.properties.push_back(makeSpec("startHeading", "Start heading", PropertyType::Double,
-                                    PropertyUnit::Radians, 0.0, "Start pose"));
+                                    PropertyUnit::Radians, start.headingRad, "Start pose"));
     return s;
 }
 
@@ -126,7 +122,8 @@ Value robotValues(const sdk::RobotConfig& c) {
 void applyRobot(sdk::RobotConfig& c, const std::string& key, const Value& v) {
     if (key == "name") c.name = v.asString(c.name);
     else if (key == "batteryNominalV") c.battery.nominalVoltageV = num(v, c.battery.nominalVoltageV);
-    else if (key == "batteryResistanceMilliOhm") c.battery.internalResistanceOhm = num(v, 15.0) / 1000.0;
+    else if (key == "batteryResistanceMilliOhm")
+        c.battery.internalResistanceOhm = num(v, c.battery.internalResistanceOhm * 1000.0) / 1000.0;
     else if (key == "brownoutV") c.battery.brownoutVoltageV = num(v, c.battery.brownoutVoltageV);
     else if (key == "customStartPose") {
         if (v.asBool())
@@ -207,7 +204,8 @@ void applyChassis(sdk::RobotConfig& c, const EditorCatalog& catalog, const std::
 // ---- drivetrain -------------------------------------------------------------------------------
 PropertySchema drivetrainSchema(const EditorCatalog& catalog) {
     PropertySchema s;
-    auto kind = makeSpec("kind", "Drivetrain type", PropertyType::Enum, PropertyUnit::None, sdk::drivetrain_kind::kSwerve, "Drivetrain",
+    const sdk::DrivetrainSpec defaults;
+    auto kind = makeSpec("kind", "Drivetrain type", PropertyType::Enum, PropertyUnit::None, defaults.kind, "Drivetrain",
                          "Changing the type updates every wheel (swerve modules steer, tank wheels do not).");
     for (const auto& d : catalog.drivetrains) kind.options.push_back({d.kind, d.info.displayName.empty() ? d.kind : d.info.displayName});
     if (kind.options.empty()) {
@@ -216,9 +214,10 @@ PropertySchema drivetrainSchema(const EditorCatalog& catalog) {
         kind.options.push_back({sdk::drivetrain_kind::kMecanum, "Mecanum"});
     }
     s.properties.push_back(kind);
-    auto tire = makeSpec("tireModel", "Tire model", PropertyType::String, PropertyUnit::None, "brush", "Traction");
+    auto tire = makeSpec("tireModel", "Tire model", PropertyType::String, PropertyUnit::None, defaults.tireModel, "Traction");
     s.properties.push_back(tire);
-    auto tau = makeSpec("loadTransferTauS", "Load-transfer filter", PropertyType::Double, PropertyUnit::Seconds, 0.02, "Traction",
+    auto tau = makeSpec("loadTransferTauS", "Load-transfer filter", PropertyType::Double, PropertyUnit::Seconds,
+                        defaults.loadTransferTauS, "Traction",
                         "Low-pass time constant on chassis acceleration for quasi-static load transfer.");
     s.properties.push_back(withRange(tau, 0.0, 0.5, 0.005));
     return s;

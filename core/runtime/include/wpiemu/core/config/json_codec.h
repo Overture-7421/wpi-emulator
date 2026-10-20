@@ -7,7 +7,7 @@
 
 namespace wpiemu::core::config {
 
-// In-house JSON <-> sdk::Value codec (ADR 0010: no third-party JSON dependency, Value objects keep
+// In-house JSON <-> sdk::Value codec (docs/reference/runtime.md: no third-party JSON dependency, Value objects keep
 // insertion order so files are diff-friendly). RFC 8259 grammar; UTF-8 text; a leading BOM is skipped.
 //  * int64 and double stay distinct: a number without fraction/exponent that fits int64 parses as int;
 //    doubles are written in the shortest form that round-trips and always keep a '.'/exponent.

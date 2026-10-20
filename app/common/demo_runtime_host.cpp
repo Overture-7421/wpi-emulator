@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "wpiemu/sdk/physics/physics_types.h"
+
 namespace wpiemu::app {
 
 namespace {
@@ -300,12 +302,12 @@ void DemoRuntimeHost::publish() {
             s.name = w.name;
             s.contactPoint = data.chassis.pose.transformPoint({w.positionM.x, w.positionM.y, -chassisZ});
             s.spinAngleRad = wheelSpin_;
-            s.normalLoadN = scene_.config->chassis.massKg * 9.81f / static_cast<float>(std::max<std::size_t>(1, scene_.config->drivetrain.spec.wheels.size()));
+            s.normalLoadN = scene_.config->chassis.massKg * sdk::kDefaultGravityMps2 / static_cast<float>(std::max<std::size_t>(1, scene_.config->drivetrain.spec.wheels.size()));
             data.wheels.push_back(std::move(s));
         }
     }
     const double load = std::min(1.0, std::hypot(vx_, vy_) / 3.0);
-    data.batteryVoltageV = ds_.enabled ? 12.6 - 1.8 * load : 12.6;
+    data.batteryVoltageV = ds_.enabled ? sdk::kNominalBatteryVoltageV - 1.8 * load : sdk::kNominalBatteryVoltageV;
     slot_.publish(std::make_shared<const sdk::SimSnapshot>(std::move(data)));
     emit snapshotPublished();
 }

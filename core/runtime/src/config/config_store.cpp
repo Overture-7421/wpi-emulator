@@ -12,6 +12,7 @@
 #include <thread>
 
 #include "wpiemu/core/config/json_codec.h"
+#include "wpiemu/sdk/core/strings.h"
 
 #ifdef _WIN32
 #include <io.h>
@@ -79,10 +80,9 @@ std::string projectKeyForPath(std::string_view canonicalPath, bool caseInsensiti
     std::string path(canonicalPath);
     while (path.size() > 1 && (path.back() == '/' || path.back() == '\\')) path.pop_back();
     std::string hashed = path;
-    for (char& c : hashed) {
+    for (char& c : hashed)
         if (c == '\\') c = '/';
-        if (caseInsensitive) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    }
+    if (caseInsensitive) hashed = asciiLower(hashed);
     std::uint64_t h = 1469598103934665603ull;  // FNV-1a 64
     for (const char c : hashed) {
         h ^= static_cast<unsigned char>(c);

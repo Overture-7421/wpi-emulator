@@ -282,6 +282,24 @@ TEST_CASE("vision: frames are delivered after the latency in publish order") {
     CHECK(vision.collectDue(500'000).empty());
 }
 
+TEST_CASE("vision: a frame's latency is publish minus capture and never negative") {
+    CameraConfig cam = cameraAt("cam");
+    cam.latencyMs = 12.0;
+    VisionSystem vision(configWith({cam}), AprilTagLayout{});
+    Rng rng;
+    vision.step(kStepUs, kSpawn, nullptr, rng);
+    const auto frames = vision.collectDue(kStepUs + 12'000);
+    REQUIRE(frames.size() == 1);
+    CHECK(frames[0].latencyUs() == 12'000);
+    CHECK(frames[0].latencyMs() == doctest::Approx(12.0));
+
+    CameraFrame backwards;
+    backwards.captureTimeUs = 2'000;
+    backwards.publishTimeUs = 1'000;
+    CHECK(backwards.latencyUs() == 0);
+    CHECK(backwards.latencyMs() == 0.0);
+}
+
 TEST_CASE("vision: noise is deterministic for a seed and absent without noise") {
     CameraConfig noisy = cameraAt("cam");
     noisy.positionNoiseM = 0.05;

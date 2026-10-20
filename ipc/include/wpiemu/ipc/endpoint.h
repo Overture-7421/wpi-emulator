@@ -1,6 +1,6 @@
 #pragma once
 
-// How the emulator tells the robot process where to connect (ADR 0007).
+// How the emulator tells the robot process where to connect (docs/reference/extension-ipc.md).
 //
 // The emulator (server) generates a unique endpoint per session, listens on it, and launches the
 // robot with the environment variable WPIEMU_IPC_ENDPOINT=<address>; the HALSim extension (client)

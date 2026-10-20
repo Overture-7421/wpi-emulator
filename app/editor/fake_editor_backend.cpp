@@ -5,6 +5,7 @@
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/devices/device_identity.h"
+#include "wpiemu/sdk/dynamics/motor_model.h"
 #include "wpiemu/sdk/mechanisms/attachment.h"
 
 namespace wpiemu::app::editor {
@@ -123,8 +124,9 @@ sdk::PrimitiveSpec prim(const char* name, sdk::PrimitiveKind kind, sdk::Vec3 pos
 }
 
 std::vector<sdk::EnumOption> motorChoices() {
-    return {{"Kraken X60", "Kraken X60"}, {"Falcon 500", "Falcon 500"}, {"NEO", "NEO"}, {"NEO 550", "NEO 550"},
-            {"NEO Vortex", "NEO Vortex"}, {"CIM", "CIM"}, {"MiniCIM", "MiniCIM"}};
+    std::vector<sdk::EnumOption> options;
+    for (const sdk::MotorPreset& m : sdk::motors::presets()) options.push_back({m.spec.name, m.label});
+    return options;
 }
 
 sdk::MechanismTemplateInfo templ(const char* type, const char* name, const char* category, const char* description,

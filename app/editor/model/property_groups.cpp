@@ -81,56 +81,80 @@ std::vector<const sdk::EditorPanelDescriptor*> panelsFor(const EditorCatalog& ca
     return out;
 }
 
-Value placementValues(const sdk::MechanismConfig& m) {
-    Value o = Value::makeObject();
-    const sdk::MechanismAttachment a = m.attachment;
-    o["parent"] = a.onChassis() ? std::string(sdk::kChassisParent) : a.parentMechanismId;
-    o["parentLink"] = a.parentLink;
-    o["mount"] = sdk::toValue(m.mount);
-    return o;
+// The "parent" and "parentLink" values every Placement group shows.
+void putAttachmentValues(Value& o, const sdk::MechanismAttachment& att) {
+    o["parent"] = att.onChassis() ? std::string(sdk::kChassisParent) : att.parentMechanismId;
+    o["parentLink"] = att.parentLink;
 }
 
-sdk::PropertySchema placementSchema(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::MechanismConfig& m) {
-    sdk::PropertySchema s;
+// What differs between the Placement groups of mechanisms, zones and cameras.
+struct PlacementOptions {
+    const sdk::MechanismConfig* self = nullptr;   // a mechanism cannot hang on itself or on a part that hangs on it
+    const char* poseKey = "local";                // mechanisms keep their pose under "mount"
+    QString poseLabel;                            // empty = "Pose"
+};
+
+// The Placement properties mechanisms, zones and cameras share: what the object hangs on, which frame of it, and the pose
+// there. Returns the property group they were put in.
+std::string addPlacementProperties(sdk::PropertySchema& s, const sdk::RobotConfig& c, const EditorCatalog& catalog,
+                                   const sdk::MechanismAttachment& att, const QString& attachedToHint, const QString& linkHint,
+                                   const QString& poseHint, const PlacementOptions& options = {}) {
     PropertySpec parent;
     parent.key = "parent";
     parent.label = ETR("Attached to").toStdString();
-    parent.description = ETR("Mechanisms move with the part they are attached to. The placement is kept when you change it.").toStdString();
+    parent.description = attachedToHint.toStdString();
     parent.type = PropertyType::Enum;
     parent.group = ETR("Placement").toStdString();
     parent.defaultValue = std::string(sdk::kChassisParent);
     parent.options.push_back({sdk::kChassisParent, ETR("Chassis").toStdString()});
-    const auto below = ops::descendantsOf(c, m.id);
-    for (const auto& other : c.mechanisms) {
-        if (other.id == m.id || std::find(below.begin(), below.end(), other.id) != below.end()) continue;
-        parent.options.push_back({other.id, ops::displayNameFor(other, catalog)});
+    const std::vector<std::string> below = options.self != nullptr ? ops::descendantsOf(c, options.self->id) : std::vector<std::string>{};
+    for (const auto& m : c.mechanisms) {
+        if (options.self != nullptr && (m.id == options.self->id || std::find(below.begin(), below.end(), m.id) != below.end())) continue;
+        parent.options.push_back({m.id, ops::displayNameFor(m, catalog)});
     }
+    if (!att.onChassis() && c.findMechanism(att.parentMechanismId) == nullptr)
+        parent.options.push_back({att.parentMechanismId, att.parentMechanismId + " " + ETR("(missing)").toStdString()});
     s.properties.push_back(parent);
 
     PropertySpec link;
     link.key = "parentLink";
     link.label = ETR("Attachment link").toStdString();
-    link.description = ETR("Named frame of the parent this mechanism hangs on (e.g. an elevator carriage).").toStdString();
+    link.description = linkHint.toStdString();
     link.type = PropertyType::Enum;
     link.group = parent.group;
     link.defaultValue = std::string(sdk::kRootLink);
     link.options.push_back({sdk::kRootLink, ETR("Origin").toStdString()});
-    const sdk::MechanismAttachment att = m.attachment;
     if (!att.onChassis())
         if (const sdk::MechanismConfig* pm = c.findMechanism(att.parentMechanismId))
             if (const auto* info = catalog.findTemplate(pm->type))
                 for (const auto& l : info->links) link.options.push_back({l.name, l.label.empty() ? l.name : l.label});
     s.properties.push_back(link);
 
-    PropertySpec mount;
-    mount.key = "mount";
-    mount.label = ETR("Mount pose").toStdString();
-    mount.description = ETR("Relative to the attachment link: x forward, y left, z up.").toStdString();
-    mount.type = PropertyType::Pose3;
-    mount.unit = PropertyUnit::Meters;
-    mount.group = parent.group;
-    mount.defaultValue = sdk::toValue(sdk::Pose3{});
-    s.properties.push_back(mount);
+    PropertySpec pose;
+    pose.key = options.poseKey;
+    pose.label = (options.poseLabel.isEmpty() ? ETR("Pose") : options.poseLabel).toStdString();
+    pose.description = poseHint.toStdString();
+    pose.type = PropertyType::Pose3;
+    pose.unit = PropertyUnit::Meters;
+    pose.group = parent.group;
+    pose.defaultValue = sdk::toValue(sdk::Pose3{});
+    s.properties.push_back(pose);
+    return parent.group;
+}
+
+Value placementValues(const sdk::MechanismConfig& m) {
+    Value o = Value::makeObject();
+    putAttachmentValues(o, m.attachment);
+    o["mount"] = sdk::toValue(m.mount);
+    return o;
+}
+
+sdk::PropertySchema placementSchema(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::MechanismConfig& m) {
+    sdk::PropertySchema s;
+    addPlacementProperties(
+        s, c, catalog, m.attachment, ETR("Mechanisms move with the part they are attached to. The placement is kept when you change it."),
+        ETR("Named frame of the parent this mechanism hangs on (e.g. an elevator carriage)."),
+        ETR("Relative to the attachment link: x forward, y left, z up."), {&m, "mount", ETR("Mount pose")});
     return s;
 }
 
@@ -203,43 +227,10 @@ bool applyStartPosition(sdk::StartPosition& p, const std::string& groupId, const
 
 sdk::PropertySchema zonePlacementSchema(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::ZoneConfig& z, bool volume) {
     sdk::PropertySchema s;
-    PropertySpec parent;
-    parent.key = "parent";
-    parent.label = ETR("Attached to").toStdString();
-    parent.description = ETR("A zone moves with the part it is attached to. The placement is kept when you change it.").toStdString();
-    parent.type = PropertyType::Enum;
-    parent.group = ETR("Placement").toStdString();
-    parent.defaultValue = std::string(sdk::kChassisParent);
-    parent.options.push_back({sdk::kChassisParent, ETR("Chassis").toStdString()});
-    for (const auto& m : c.mechanisms) parent.options.push_back({m.id, ops::displayNameFor(m, catalog)});
-    const sdk::MechanismAttachment att = z.attachment;
-    if (!att.onChassis() && c.findMechanism(att.parentMechanismId) == nullptr)
-        parent.options.push_back({att.parentMechanismId, att.parentMechanismId + " " + ETR("(missing)").toStdString()});
-    s.properties.push_back(parent);
-
-    PropertySpec link;
-    link.key = "parentLink";
-    link.label = ETR("Attachment link").toStdString();
-    link.description = ETR("Named frame of the parent the zone hangs on (e.g. a turret's moving part).").toStdString();
-    link.type = PropertyType::Enum;
-    link.group = parent.group;
-    link.defaultValue = std::string(sdk::kRootLink);
-    link.options.push_back({sdk::kRootLink, ETR("Origin").toStdString()});
-    if (!att.onChassis())
-        if (const sdk::MechanismConfig* pm = c.findMechanism(att.parentMechanismId))
-            if (const auto* info = catalog.findTemplate(pm->type))
-                for (const auto& l : info->links) link.options.push_back({l.name, l.label.empty() ? l.name : l.label});
-    s.properties.push_back(link);
-
-    PropertySpec local;
-    local.key = "local";
-    local.label = ETR("Pose").toStdString();
-    local.description = ETR("Relative to the attachment link: x forward, y left, z up.").toStdString();
-    local.type = PropertyType::Pose3;
-    local.unit = PropertyUnit::Meters;
-    local.group = parent.group;
-    local.defaultValue = sdk::toValue(sdk::Pose3{});
-    s.properties.push_back(local);
+    const std::string group = addPlacementProperties(
+        s, c, catalog, z.attachment, ETR("A zone moves with the part it is attached to. The placement is kept when you change it."),
+        ETR("Named frame of the parent the zone hangs on (e.g. a turret's moving part)."),
+        ETR("Relative to the attachment link: x forward, y left, z up."));
 
     if (volume) {
         PropertySpec size;
@@ -248,7 +239,7 @@ sdk::PropertySchema zonePlacementSchema(const sdk::RobotConfig& c, const EditorC
         size.description = ETR("Full extents of the volume along its own axes.").toStdString();
         size.type = PropertyType::Vec3;
         size.unit = PropertyUnit::Meters;
-        size.group = parent.group;
+        size.group = group;
         size.defaultValue = sdk::toValue(sdk::Vec3{0.3f, 0.3f, 0.3f});
         s.properties.push_back(size);
     }
@@ -320,43 +311,10 @@ sdk::PropertySchema cameraOpticsSchema() {
 
 sdk::PropertySchema cameraPlacementSchema(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam) {
     sdk::PropertySchema s;
-    PropertySpec parent;
-    parent.key = "parent";
-    parent.label = ETR("Attached to").toStdString();
-    parent.description = ETR("A camera moves with the part it is attached to. The placement is kept when you change it.").toStdString();
-    parent.type = PropertyType::Enum;
-    parent.group = ETR("Placement").toStdString();
-    parent.defaultValue = std::string(sdk::kChassisParent);
-    parent.options.push_back({sdk::kChassisParent, ETR("Chassis").toStdString()});
-    for (const auto& m : c.mechanisms) parent.options.push_back({m.id, ops::displayNameFor(m, catalog)});
-    const sdk::MechanismAttachment att = cam.attachment;
-    if (!att.onChassis() && c.findMechanism(att.parentMechanismId) == nullptr)
-        parent.options.push_back({att.parentMechanismId, att.parentMechanismId + " " + ETR("(missing)").toStdString()});
-    s.properties.push_back(parent);
-
-    PropertySpec link;
-    link.key = "parentLink";
-    link.label = ETR("Attachment link").toStdString();
-    link.description = ETR("Named frame of the parent the camera hangs on (e.g. a turret's moving part).").toStdString();
-    link.type = PropertyType::Enum;
-    link.group = parent.group;
-    link.defaultValue = std::string(sdk::kRootLink);
-    link.options.push_back({sdk::kRootLink, ETR("Origin").toStdString()});
-    if (!att.onChassis())
-        if (const sdk::MechanismConfig* pm = c.findMechanism(att.parentMechanismId))
-            if (const auto* info = catalog.findTemplate(pm->type))
-                for (const auto& l : info->links) link.options.push_back({l.name, l.label.empty() ? l.name : l.label});
-    s.properties.push_back(link);
-
-    PropertySpec local;
-    local.key = "local";
-    local.label = ETR("Pose").toStdString();
-    local.description = ETR("Relative to the attachment link: x forward (optical axis), y left, z up.").toStdString();
-    local.type = PropertyType::Pose3;
-    local.unit = PropertyUnit::Meters;
-    local.group = parent.group;
-    local.defaultValue = sdk::toValue(sdk::Pose3{});
-    s.properties.push_back(local);
+    addPlacementProperties(
+        s, c, catalog, cam.attachment, ETR("A camera moves with the part it is attached to. The placement is kept when you change it."),
+        ETR("Named frame of the parent the camera hangs on (e.g. a turret's moving part)."),
+        ETR("Relative to the attachment link: x forward (optical axis), y left, z up."));
     return s;
 }
 
@@ -385,9 +343,7 @@ Value cameraOpticsValues(const sdk::CameraConfig& cam) {
 
 Value cameraPlacementValues(const sdk::CameraConfig& cam) {
     Value o = Value::makeObject();
-    const sdk::MechanismAttachment att = cam.attachment;
-    o["parent"] = att.onChassis() ? std::string(sdk::kChassisParent) : att.parentMechanismId;
-    o["parentLink"] = att.parentLink;
+    putAttachmentValues(o, cam.attachment);
     o["local"] = sdk::toValue(cam.local);
     return o;
 }
@@ -571,9 +527,7 @@ std::vector<PropertyGroup> propertyGroupsFor(const sdk::RobotConfig& c, const Ed
             out.push_back(groupOf("zone.general", ETR("General"), zoneGeneralSchema(), std::move(general)));
             const bool volume = info == nullptr || info->shape == sdk::ZoneShape::Volume;
             Value placement = Value::makeObject();
-            const sdk::MechanismAttachment att = z->attachment;
-            placement["parent"] = att.onChassis() ? std::string(sdk::kChassisParent) : att.parentMechanismId;
-            placement["parentLink"] = att.parentLink;
+            putAttachmentValues(placement, z->attachment);
             placement["local"] = sdk::toValue(z->local);
             placement["sizeM"] = sdk::toValue(z->sizeM);
             out.push_back(groupOf("zone.placement", ETR("Placement"), zonePlacementSchema(c, catalog, *z, volume), std::move(placement)));

@@ -55,8 +55,7 @@ struct SyntheticProject {
     fs::path extension;
 
     explicit SyntheticProject(const char* script, bool withWrapper = true) {
-        static int counter = 0;
-        root = fs::temp_directory_path() / ("wpiemu-host-test-" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count() % 100000000) + "-" + std::to_string(counter++));
+        root = uniqueTempPath("wpiemu-host-test-");
         fs::create_directories(root / "project");
         if (withWrapper) {
             const fs::path wrapper = root / "project" / (kWindows ? "gradlew.bat" : "gradlew");
@@ -68,13 +67,7 @@ struct SyntheticProject {
         extension = root / "halsim_wpiemu_fake";
         std::ofstream(extension).put('x');
     }
-    ~SyntheticProject() {
-        std::error_code ec;
-        for (int i = 0; i < 10 && fs::exists(root, ec); ++i) {
-            fs::remove_all(root, ec);
-            if (fs::exists(root, ec)) std::this_thread::sleep_for(200ms);
-        }
-    }
+    ~SyntheticProject() { removeTree(root, 10, 200ms); }
     fs::path dir() const { return root / "project"; }
     void signalStop() const { std::ofstream(dir() / "stop.flag").put('x'); }
 

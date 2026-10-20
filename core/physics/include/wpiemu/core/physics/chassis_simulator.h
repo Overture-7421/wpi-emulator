@@ -15,6 +15,7 @@
 #include "wpiemu/core/physics/chassis_coupling.h"
 #include "wpiemu/core/physics/chassis_imu.h"
 #include "wpiemu/sdk/physics/drivetrain.h"
+#include "wpiemu/sdk/physics/physics_types.h"
 
 namespace wpiemu::core::physics {
 
@@ -26,7 +27,7 @@ struct ChassisSimulatorArgs {
     const sdk::TireModelRegistry& tireModels;     // key: drivetrain.tireModel
     ChassisPlacement placement;
     ChassisBuildOptions options;
-    sdk::Vec3 gravity{0.f, 0.f, -9.81f};          // for the IMU; keep equal to PhysicsConfig::gravity
+    sdk::Vec3 gravity{0.f, 0.f, -sdk::kDefaultGravityMps2};   // for the IMU; matches PhysicsConfig::gravity's default
 };
 
 class ChassisSimulator {

@@ -163,8 +163,7 @@ void LimelightBridge::stop() noexcept {
 
 void LimelightBridge::publishFrame(Cam& cam, const sdk::CameraFrame& frame, std::int64_t ntNow, bool synthetic) {
     const std::string& root = cam.root;
-    const double latencyMs =
-        std::max<sdk::SimTimeUs>(0, frame.publishTimeUs - frame.captureTimeUs) / 1000.0;
+    const double latencyMs = frame.latencyMs();
     const double clMs = 0.5 * latencyMs;
     const double tlMs = latencyMs - clMs;
 
@@ -291,7 +290,7 @@ void LimelightBridge::publishFrame(Cam& cam, const sdk::CameraFrame& frame, std:
 
     // ---- json (flat LimelightResults as parsed by LimelightHelpers.getLatestResults) ------------------------
     JsonOut j;
-    const double publishS = static_cast<double>(ntNow) * 1e-6;
+    const double publishS = sdk::usToSeconds(ntNow);
     const double captureS = publishS - latencyMs * 1e-3;
     j.raw("{").key("pID").num(cam.pipeline).raw(",").key("tl").num(tlMs).raw(",").key("cl").num(clMs);
     j.raw(",").key("ts").num(publishS).raw(",").key("ts_rio").num(captureS);

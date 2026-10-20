@@ -37,7 +37,7 @@ public:
     virtual bool digitalOutput(const SlotAddress& slot) const = 0;
 };
 
-// Model -> robot writes (absolute physical truth every tick, ADR 0002; never deltas).
+// Model -> robot writes (absolute physical truth every tick, docs/reference/bridges.md; never deltas).
 class ISensorWriter {
     WPIEMU_INTERFACE(ISensorWriter)
 public:

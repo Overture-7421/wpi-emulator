@@ -21,12 +21,13 @@
 
 #include <algorithm>
 
+#include "wpiemu/sdk/core/units.h"
+
 namespace wpiemu::app::runview {
 namespace {
 
 constexpr int kPollMs = 7;          // ~144 Hz cap
 constexpr int kDsPublishMs = 20;   // like a real DS: 50 Hz
-constexpr int kRobotLoopUs = 20000;
 
 bool isModifier(int key) {
     return key == Qt::Key_Shift || key == Qt::Key_Control || key == Qt::Key_Alt || key == Qt::Key_Meta || key == Qt::Key_AltGr ||
@@ -280,13 +281,13 @@ void RunPage::selectStartPosition(const QString& id) {
         if (QString::fromStdString(p.id) == id) position = &p;
     backend_.setStartPosition(position != nullptr ? id : QString());
     if (position != nullptr) {
-        ds_.setAlliance(position->alliance == sdk::Alliance::Blue ? DriverStationModel::Alliance::Blue : DriverStationModel::Alliance::Red);
+        ds_.setAlliance(position->alliance);
         console_->append({QDateTime::currentMSecsSinceEpoch(), sdk::LogLevel::Info, LogStream::Emulator, tr("start position"),
                           tr("%1: x %2 m, y %3 m, heading %4°")
                               .arg(position->label.empty() ? id : QString::fromStdString(position->label))
                               .arg(static_cast<double>(position->pose.xM), 0, 'f', 2)
                               .arg(static_cast<double>(position->pose.yM), 0, 'f', 2)
-                              .arg(static_cast<double>(position->pose.headingRad) * 180.0 / 3.14159265358979, 0, 'f', 1)});
+                              .arg(sdk::radToDeg(static_cast<double>(position->pose.headingRad)), 0, 'f', 1)});
     }
     ds_.onSimReset();
     backend_.resetSimulation();

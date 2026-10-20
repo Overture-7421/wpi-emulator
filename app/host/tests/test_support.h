@@ -1,11 +1,15 @@
 #pragma once
 
-// Shared fixtures for the host tests and the opt-in end-to-end test: the registries a composition root builds, a
-// platform-neutral environment lookup and a process-liveness probe.
+// Shared fixtures for the host tests and the opt-in end-to-end tests: the registries a composition root builds, a
+// platform-neutral environment lookup, a process-liveness probe, scratch directories and robot-project copies.
+#include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
+#include <system_error>
+#include <thread>
 
 #include <doctest/doctest.h>
 
@@ -15,6 +19,7 @@
 #include "wpiemu/core/config/robot_config_codec.h"
 #include "wpiemu/core/mechanisms/mechanism_templates.h"
 #include "wpiemu/core/physics/chassis_simulator.h"
+#include "wpiemu/sdk/devices/device_descriptor.h"
 #include "wpiemu/sdk/game/builtin_plugins.h"
 
 #if defined(_WIN32)
@@ -55,6 +60,57 @@ inline bool processAlive(std::int64_t pid) {
     return ::kill(static_cast<pid_t>(pid), 0) == 0;
 #endif
 }
+
+// A fresh path under the system temp directory (not created).
+inline std::filesystem::path uniqueTempPath(const std::string& prefix) {
+    static std::atomic<int> counter{0};
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count();
+    return std::filesystem::temp_directory_path() / (prefix + std::to_string(ms % 100000000) + "-" + std::to_string(counter++));
+}
+
+// Removes a directory tree, retrying while Windows still holds files of an exiting process. True once it is gone.
+inline bool removeTree(const std::filesystem::path& root, int attempts, std::chrono::milliseconds delay) {
+    std::error_code ec;
+    for (int i = 0; i < attempts && std::filesystem::exists(root, ec); ++i) {
+        std::filesystem::remove_all(root, ec);
+        if (std::filesystem::exists(root, ec)) std::this_thread::sleep_for(delay);
+    }
+    return !std::filesystem::exists(root, ec);
+}
+
+// Exit code of an e2e executable whose prerequisites are missing; must match SKIP_RETURN_CODE in app/host/CMakeLists.txt.
+inline constexpr int kSkipExitCode = 77;
+
+// The scratch directory of one e2e test, removed afterwards unless WPIEMU_E2E_KEEP is set.
+struct Scratch {
+    std::filesystem::path root;
+
+    explicit Scratch(const std::string& prefix) : root(uniqueTempPath(prefix)) {}
+    Scratch(const Scratch&) = delete;
+    Scratch& operator=(const Scratch&) = delete;
+    ~Scratch() {
+        if (!env("WPIEMU_E2E_KEEP").empty()) {
+            std::printf("kept %s\n", root.string().c_str());
+        } else if (!removeTree(root, 20, std::chrono::milliseconds(500))) {
+            std::printf("WARNING: could not delete %s\n", root.string().c_str());
+        }
+    }
+};
+
+// Copy of a robot project without VCS / build / Gradle state, so Gradle rebuilds in the copy and the original is never touched.
+inline void copyProject(const std::filesystem::path& from, const std::filesystem::path& to) {
+    namespace fs = std::filesystem;
+    fs::create_directories(to);
+    for (fs::directory_iterator it(from), end; it != end; ++it) {
+        const std::string name = it->path().filename().string();
+        if (name == ".git" || name == "build" || name == ".gradle" || name == "logs" || name == "bin") continue;
+        fs::copy(it->path(), to / name, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+    }
+}
+
+// A Phoenix 6 device as the robot declares it; the bus is unknown because the firmware sim cannot tell CAN buses apart.
+inline sdk::DeviceKey phoenixKey(const char* type, int id) { return sdk::DeviceKey{"phoenix6", type, id, sdk::kBusUnknown, -1}; }
 
 // What AppServices builds, for tests that have no Qt.
 struct TestRegistries {

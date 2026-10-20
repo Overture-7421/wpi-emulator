@@ -1,6 +1,6 @@
 #pragma once
 
-// Mechanism attachment contract (ADR 0006).
+// Mechanism attachment contract (docs/ARCHITECTURE.md).
 //
 // A mechanism's mount frame hangs on a named LINK of its parent: another mechanism or the chassis.
 //   pose_in_chassis(m.root) = pose_in_chassis(parent.link) * m.mount

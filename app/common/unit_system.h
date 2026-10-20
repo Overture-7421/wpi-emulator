@@ -2,10 +2,13 @@
 
 #include <QString>
 
+#include "wpiemu/sdk/config/unit_display.h"
+
 namespace wpiemu::app {
 
-// How the UI shows lengths and masses. Persisted values are always SI (see sdk/core/units.h).
-enum class UnitSystem { Imperial, Metric };
+// How the UI shows lengths and masses: the SDK's unit table (sdk/config/unit_display.h). Persisted values are
+// always SI (see sdk/core/units.h).
+using sdk::UnitSystem;
 
 class UnitFormatter {
 public:

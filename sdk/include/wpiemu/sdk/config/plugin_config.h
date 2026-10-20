@@ -4,7 +4,7 @@
 //
 // robot.json stores each plugin's data under a namespaced key and per-section version:
 //   "plugins": { "game_2026": { "schemaVersion": 1, "data": { ... } } }
-// Only the owning plugin interprets `data`. The SDK stays at version 1 until release (ADR 0013): a section
+// Only the owning plugin interprets `data`. The SDK stays at version 1 until release (docs/CONTRIBUTING.md): a section
 // whose version differs from the plugin's `schemaVersion` is rejected, there is no migration.
 
 #include <string>

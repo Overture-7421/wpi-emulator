@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "wpiemu/sdk/game/alliance.h"
 #include "wpiemu/sdk/physics/physics_types.h"
 
 namespace wpiemu::plugins::game_2026 {
@@ -12,21 +13,21 @@ namespace wpiemu::plugins::game_2026 {
 // just-shot fuel, but still collides with the field and settled fuel and triggers sensors.
 inline constexpr std::uint64_t kShotFuelLayer = sdk::layer::kPluginBase;
 
-enum class Alliance : std::uint8_t { Red = 0, Blue = 1 };
+using sdk::Alliance;
 
 inline constexpr std::array<Alliance, 2> kAlliances{Alliance::Red, Alliance::Blue};
 
-constexpr std::size_t index(Alliance a) { return static_cast<std::size_t>(a); }
-constexpr const char* allianceName(Alliance a) { return a == Alliance::Red ? "red" : "blue"; }
+// Slot of an alliance in the per-alliance arrays and in physics tags: red first.
+constexpr std::size_t index(Alliance a) { return a == Alliance::Red ? 0 : 1; }
 
 // What a physics user tag refers to (ShapeDesc::userTag is returned in sensor events).
 enum class EntityKind : std::uint8_t { None = 0, Fuel = 1, HubSensor = 2, CorralSensor = 3 };
 
 constexpr std::uint64_t makeTag(EntityKind kind, Alliance alliance, std::uint32_t id = 0) {
-    return (static_cast<std::uint64_t>(kind) << 56) | (static_cast<std::uint64_t>(alliance) << 48) | id;
+    return (static_cast<std::uint64_t>(kind) << 56) | (static_cast<std::uint64_t>(index(alliance)) << 48) | id;
 }
 constexpr EntityKind tagKind(std::uint64_t tag) { return static_cast<EntityKind>(tag >> 56); }
-constexpr Alliance tagAlliance(std::uint64_t tag) { return static_cast<Alliance>((tag >> 48) & 0xFFu); }
+constexpr Alliance tagAlliance(std::uint64_t tag) { return kAlliances[(tag >> 48) & 1u]; }
 constexpr std::uint32_t tagId(std::uint64_t tag) { return static_cast<std::uint32_t>(tag & 0xFFFFFFFFu); }
 
 }  // namespace wpiemu::plugins::game_2026

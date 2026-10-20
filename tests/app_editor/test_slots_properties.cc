@@ -210,6 +210,20 @@ TEST_CASE("property groups: placement offers every non-descendant as a parent") 
     CHECK(links == std::vector<std::string>{"root", "mover"});   // parent is the turret
 }
 
+TEST_CASE("property groups: a mechanism whose parent no longer exists still shows it") {
+    const auto cat = catalog();
+    auto c = robot();
+    for (auto& m : c.mechanisms)
+        if (m.id == "shooter") m.attachTo("ghost");
+    const auto groups = propertyGroupsFor(c, cat, SelectionRef::mechanism("shooter"));
+    const auto placement = std::find_if(groups.begin(), groups.end(), [](const auto& g) { return g.id == "mech.placement"; });
+    REQUIRE(placement != groups.end());
+    const auto& options = placement->schema.find("parent")->options;
+    const auto ghost = std::find_if(options.begin(), options.end(), [](const auto& o) { return o.value == "ghost"; });
+    REQUIRE(ghost != options.end());
+    CHECK(ghost->label == "ghost (missing)");   // as for zones and cameras, instead of a blank combo box
+}
+
 TEST_CASE("property edits write through to the right place") {
     const auto cat = catalog();
     auto c = robot();
@@ -365,6 +379,34 @@ TEST_CASE("motors: slot rows follow the motor count and the motors that disappea
     ops::setMapping(c, {"climber", "motor2"}, {"phoenix6", "talonfx", 31, "rio", -1});
     REQUIRE(applyProperty(c, cat, SelectionRef::mechanism("climber"), "mech.props", "motorCount", sdk::Value(1)));
     CHECK(ops::findMapping(c, {"climber", "motor2"}) == nullptr);
+}
+
+TEST_CASE("wheel motor dropdowns offer every motor of the SDK table and apply its numbers") {
+    auto c = robot();
+    const sdk::WheelSpec* fl = ops::findWheel(c, "fl");
+    REQUIRE(fl != nullptr);
+    const sdk::PropertySchema schema = spec::wheelSchema(*fl);
+    for (const char* key : {"driveMotor", "steerMotor"}) {
+        INFO(key);
+        const auto it = std::find_if(schema.properties.begin(), schema.properties.end(),
+                                     [&](const sdk::PropertySpec& p) { return p.key == key; });
+        REQUIRE(it != schema.properties.end());
+        const auto& table = sdk::motors::presets();
+        REQUIRE(it->options.size() == table.size());   // the sample wheel uses a table motor: no "(custom)" entry
+        for (std::size_t i = 0; i < table.size(); ++i) {
+            CHECK(it->options[i].value == table[i].spec.name);
+            CHECK(it->options[i].label == table[i].label);
+        }
+    }
+
+    spec::applyWheel(c, "fl", "steerMotor", sdk::Value("Kraken X44 (FOC)"));
+    const sdk::MotorPreset* x44 = sdk::motors::findPreset("kraken_x44_foc");
+    REQUIRE(x44 != nullptr);
+    const sdk::WheelSpec* after = ops::findWheel(c, "fl");
+    REQUIRE(after != nullptr);
+    CHECK(after->steerMotor.name == x44->spec.name);
+    CHECK(after->steerMotor.stallTorqueNm == x44->spec.stallTorqueNm);
+    CHECK(after->steerMotor.freeSpeedRadPerSec == x44->spec.freeSpeedRadPerSec);
 }
 
 TEST_CASE("motors: a wheel gets one drive row per motor and the reversed flag survives re-mapping") {

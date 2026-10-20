@@ -13,15 +13,13 @@
 
 namespace wpiemu::app {
 
-enum class Alliance { Red, Blue };
-
 struct MotorChoice {
-    QString key;     // stable id persisted in the wizard state
+    QString key;     // the SDK motor table key
     QString label;   // shown in the UI
     sdk::MotorSpec spec;
 };
 
-// Motors offered in the wizard (same data as WPILib's DCMotor catalog).
+// Every motor of the SDK table (sdk::motors::presets()), in table order.
 const std::vector<MotorChoice>& motorCatalog();
 const MotorChoice* findMotor(const QString& key);
 // Best catalog match for a spec (by name), nullptr when the spec is custom.
@@ -38,11 +36,11 @@ struct RobotBasics {
     double wheelDiameterM = 0.1016;     // 4 in
     QString driveMotor = QStringLiteral("kraken_x60");
     int motorsPerWheel = 1;
-    QString steerMotor = QStringLiteral("neo550");   // swerve only
+    QString steerMotor = QStringLiteral("neo_550");  // swerve only
     double driveGearRatio = 6.75;       // motor : wheel
     double steerGearRatio = 12.8;       // swerve only
     double bumperThicknessM = 0.0826;   // 3.25 in
-    Alliance alliance = Alliance::Red;
+    sdk::Alliance alliance = sdk::Alliance::Red;
     int station = 2;                    // driver station 1..3
 
     int wheelCount() const;
@@ -56,6 +54,9 @@ struct RobotBasics {
 // Sensible starting values when the user switches the drivetrain type.
 RobotBasics defaultBasicsFor(const std::string& drivetrainKind);
 
+// Colour of the bumper primitives of a robot on this alliance; basicsFromConfig() reads the alliance back from it.
+const char* bumperColorFor(sdk::Alliance alliance);
+
 // Range checks with plain-language messages. Errors block the wizard, warnings do not.
 std::vector<sdk::Issue> validateBasics(const RobotBasics& basics);
 bool hasErrors(const std::vector<sdk::Issue>& issues);
@@ -65,7 +66,7 @@ struct RobotBuildContext {
     QString language;
     int wpilibYear = 0;
     QString gradleRioVersion;
-    std::int64_t stepUs = 5000;
+    std::int64_t stepUs = sdk::kDefaultStepUs;
     const sdk::IGameModule* gameModule = nullptr;   // null = core-only mode
 };
 

@@ -6,11 +6,11 @@
 //  * Right-handed, Z-up world frame == WPILib NWU field frame: +X toward the opposing alliance
 //    wall, +Y to the left, +Z up. Yaw is counter-clockwise (CCW+) seen from above.
 //  * Robot/chassis frame: +X forward, +Y left, +Z up, origin at the chassis centre of mass
-//    (ADR 0003: body origin == COM).
+//    (docs/reference/physics.md: body origin == COM).
 //  * SI units everywhere (m, kg, s, rad, N, Nm, V, A). Degrees/inches/rpm only at UI/config
 //    boundaries (see units.h). Identifiers carry unit suffixes where the type is a plain scalar
 //    (`radiusM`, `massKg`, `timeUs`).
-//  * Geometry uses float (matches Box3D, ADR 0003); signals, time and electrical quantities use double.
+//  * Geometry uses float (matches Box3D, docs/reference/physics.md); signals, time and electrical quantities use double.
 //  * Quaternions are (x, y, z, w), unit length, Hamilton convention.
 //  * The Qt Quick 3D renderer is Y-up: conversion happens ONLY inside the UI view layer.
 

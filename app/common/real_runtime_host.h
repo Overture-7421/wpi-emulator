@@ -17,6 +17,12 @@ struct RealRuntimeOptions {
     std::filesystem::path appDir;          // empty = QCoreApplication::applicationDirPath()
     int pollIntervalMs = 7;
     std::chrono::milliseconds handshakeTimeout{std::chrono::minutes(5)};
+    // The JDK and WPILib folders the user chose in Settings (empty = detect). Asked again at every launch.
+    struct ToolchainOverrides {
+        std::filesystem::path javaHome;
+        std::filesystem::path wpilibHome;
+    };
+    std::function<ToolchainOverrides()> toolchainOverrides;
     // Test / advanced hook: adjusts the options of every run just before it starts.
     std::function<void(host::Options&)> tweak;
 };

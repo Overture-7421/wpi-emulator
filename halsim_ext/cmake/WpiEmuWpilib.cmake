@@ -1,6 +1,6 @@
 # Locates the WPILib simulation HAL (hal-cpp) and wpiutil (headers + desktop shared libraries).
 #
-# The sim HAL is NOT built by us: ADR 0001 links the extension against the `wpiHal` module that
+# The sim HAL is NOT built by us: docs/reference/extension-ipc.md links the extension against the `wpiHal` module that
 # the robot process already loaded. We therefore only need headers and an import library / shared
 # object. Two input layouts are understood (the same cache variable is shared with bridges/hal and
 # bridges/vendor, which expect the "extracted" layout):
@@ -17,7 +17,7 @@
 #   WPIEMU_WPILIB_ROOT      either layout (or the year dir containing maven/). Also read from the
 #                           environment variable of the same name. Default search for a maven cache:
 #                           <PUBLIC|HOME|USERPROFILE>/wpilib/2026/maven.
-#   WPIEMU_WPILIB_VERSION   WPILib version of hal-cpp / wpiutil-cpp (default 2026.2.1, ADR 0001).
+#   WPIEMU_WPILIB_VERSION   WPILib version of hal-cpp / wpiutil-cpp (default 2026.2.1, docs/reference/extension-ipc.md).
 #   WPIEMU_WPILIB_DOWNLOAD  OFF by default. ON: fetch missing zips from frcmaven (CI on a clean machine).
 #
 # Outputs:

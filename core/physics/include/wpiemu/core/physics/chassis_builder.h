@@ -1,6 +1,6 @@
 #pragma once
 
-// Builds the chassis rigid body from ChassisSpec / DrivetrainSpec (ADR 0003 "Chassis model"):
+// Builds the chassis rigid body from ChassisSpec / DrivetrainSpec (docs/reference/physics.md):
 // one body whose origin is the centre of mass, a collision hull (frame box + collidable primitives) lifted
 // by the ground clearance, and one frictionless wheel-pad sphere per wheel that carries the weight.
 
@@ -14,7 +14,7 @@
 namespace wpiemu::core::physics {
 
 // Categories the robot's hull collides with / is detected by. Sensor is included on purpose: sensor volumes
-// only report a visitor whose mask contains the sensor's category (ADR 0003 pitfall).
+// only report a visitor whose mask contains the sensor's category (docs/reference/physics.md pitfall).
 inline constexpr std::uint64_t kRobotHullMask =
     sdk::layer::Field | sdk::layer::Fuel | sdk::layer::Robot | sdk::layer::Projectile | sdk::layer::Sensor;
 inline constexpr std::uint64_t kWheelPadMask =

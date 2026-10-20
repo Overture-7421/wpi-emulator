@@ -10,7 +10,7 @@ namespace wpiemu::core::runtime {
 // The sim clock: integer microseconds, advanced only by the sim loop (never reads a wall clock).
 class SimClock final : public sdk::ISimClock {
 public:
-    explicit SimClock(sdk::SimTimeUs stepUs = 5000) : stepUs_(stepUs > 0 ? stepUs : 5000) {}
+    explicit SimClock(sdk::SimTimeUs stepUs = sdk::kDefaultStepUs) : stepUs_(stepUs > 0 ? stepUs : sdk::kDefaultStepUs) {}
 
     sdk::SimTimeUs simTimeUs() const override { return timeUs_; }
     std::uint64_t tickIndex() const override { return tick_; }

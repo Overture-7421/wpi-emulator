@@ -3,6 +3,8 @@
 #include <optional>
 #include <utility>
 
+#include "wpiemu/sdk/core/units.h"
+
 namespace wpiemu::bridges::vendor::ctre {
 
 namespace {
@@ -35,7 +37,7 @@ SimDeviceRule base(std::string name, const char* family, const char* type, Capab
     r.type = type;
     r.vendor = kVendor;
     r.bus = sdk::kBusUnknown;
-    r.busIsStatic = false;  // SimDevice names carry no bus (ADR 0006)
+    r.busIsStatic = false;  // SimDevice names carry no bus (docs/ARCHITECTURE.md)
     r.nameRegex = std::move(regex);
     r.idGroup = 1;
     r.childGroup = childGroup;
@@ -58,7 +60,7 @@ SimDeviceRule talonFxLike(const char* ruleName, const char* type, const char* mo
         binding("", "motorVoltage", sg::kMotorVoltage, "V", 1.0, std::nullopt, sg::kRotorVelocity),
         binding("", "torqueCurrent", vsignal::kTorqueCurrentReported, "A"),
         binding("", "supplyCurrent", sg::kSupplyCurrentOut, "A"),
-        // rotor sensor: WE drive the rotor (ADR 0002); `position` is the readonly firmware-reported
+        // rotor sensor: WE drive the rotor (docs/reference/bridges.md); `position` is the readonly firmware-reported
         // value.
         binding("Rotor Sensor", "rawPositionInput", sg::kRotorPosition, "rot"),
         binding("Rotor Sensor", "velocity", sg::kRotorVelocity, "rps"),
@@ -91,13 +93,13 @@ SimDeviceRule pigeon2Rule() {
     namespace sg = sdk::signal;
     r.bindings = {
         binding("", "supplyVoltage", sg::kSupplyVoltage, "V"),
-        binding("", "rawYawInput", sg::kYaw, "rad", kDegToRad),
-        binding("", "pitch", sg::kPitch, "rad", kDegToRad),
-        binding("", "roll", sg::kRoll, "rad", kDegToRad),
-        binding("", "angularVelX", sg::kAngularVelX, "rad/s", kDegToRad),
-        binding("", "angularVelY", sg::kAngularVelY, "rad/s", kDegToRad),
-        binding("", "angularVelZ", sg::kAngularVelZ, "rad/s", kDegToRad),
-        binding("", "yaw", vsignal::kYawReported, "rad", kDegToRad),
+        binding("", "rawYawInput", sg::kYaw, "rad", sdk::kDegToRad),
+        binding("", "pitch", sg::kPitch, "rad", sdk::kDegToRad),
+        binding("", "roll", sg::kRoll, "rad", sdk::kDegToRad),
+        binding("", "angularVelX", sg::kAngularVelX, "rad/s", sdk::kDegToRad),
+        binding("", "angularVelY", sg::kAngularVelY, "rad/s", sdk::kDegToRad),
+        binding("", "angularVelZ", sg::kAngularVelZ, "rad/s", sdk::kDegToRad),
+        binding("", "yaw", vsignal::kYawReported, "rad", sdk::kDegToRad),
     };
     return r;
 }
@@ -178,9 +180,8 @@ std::vector<SimDeviceRule> phoenix5Rules(const Phoenix5Options& options) {
     const double cpr = options.quadratureCountsPerRev > 0.0 ? options.quadratureCountsPerRev : 4096.0;
     std::vector<SimDeviceRule> rules;
 
-    // Names below come from the Phoenix 5 WPI wrappers as enumerated live in ADR 0002; the Phoenix 5 vendor
-    // library is not available in this repository's caches, so value names/directions beyond the ADR table are
-    // kept data-driven: unknown values are simply not bound, HAL directions are never overridden except limits.
+    // Names come from the Phoenix 5 WPI wrappers; these rules are not characterized against the real library.
+    // Unknown values are not bound; HAL directions are never overridden except limits.
     const auto motorRoot = [&](const char* name, const char* type, const char* model, CapabilitySet caps, bool withSensors) {
         const std::string pattern = withSensors ? "(?:CANMotor|CANEncoder|CANDIO):" + std::string(model) +
                                                       R"(\[(\d+)\](?:/(Quad Encoder|Fwd Limit|Rev Limit))?)"

@@ -14,7 +14,7 @@ namespace wpiemu::ipc {
 // connection, runEpoch bumped on every Reset and reconnect) so they survive reconnects.
 struct ServerHandshakeConfig {
     sdk::proto::ClockMode clockMode = sdk::proto::ClockMode::Lockstep;
-    std::uint32_t stepUs = 5000;
+    std::uint32_t stepUs = static_cast<std::uint32_t>(sdk::kDefaultStepUs);
     bool discoveryOnly = false;
     bool enableL3Hooks = false;
     std::uint32_t preferredWatchdogMs = 0;  // 0 = no preference

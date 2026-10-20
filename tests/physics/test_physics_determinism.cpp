@@ -88,7 +88,7 @@ TEST_CASE("performance smoke: 200 fuel bodies with a robot plowing through fit t
     MESSAGE("200 fuel, 1 worker: mean " << r.meanStepMs << " ms, max " << r.maxStepMs << " ms per tick");
     CHECK(std::isfinite(r.meanStepMs));
 #ifdef NDEBUG
-    CHECK(r.meanStepMs < 5.0);  // budget at 200 Hz; ADR 0003 measured about 0.12 ms for the world step
+    CHECK(r.meanStepMs < 5.0);  // budget at 200 Hz
 #else
     CHECK(r.meanStepMs < 50.0);
 #endif

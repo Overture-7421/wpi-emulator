@@ -8,7 +8,7 @@
 namespace wpiemu::halsim {
 
 // The real IHalClock / IDriverStationSink / IRobotPowerSink over WPILib's HALSIM_* C API (2026.2.1,
-// ADR 0001; times are microseconds). This header is HAL-free; the implementation file is only
+// docs/reference/extension-ipc.md; times are microseconds). This header is HAL-free; the implementation file is only
 // compiled when the WPILib HAL was found at configure time.
 class HalSimPlatform {
 public:

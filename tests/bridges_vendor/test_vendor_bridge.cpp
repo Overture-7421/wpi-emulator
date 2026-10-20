@@ -7,6 +7,7 @@
 #include "fakes.h"
 #include "wpiemu/bridges/vendor/hal_sim_device_backend.h"
 #include "wpiemu/bridges/vendor/vendor_bridges.h"
+#include "wpiemu/sdk/core/units.h"
 
 using namespace wpiemu::vendor_tests;
 namespace vendor = wpiemu::bridges::vendor;
@@ -148,14 +149,14 @@ TEST_CASE("vendor bridge: yaw reaches the Pigeon once per tick and survives a ve
         rig.bridge->applyInputs(in);
     };
     tick(0.5);
-    CHECK(rig.backend->get(pg, "rawYawInput") == doctest::Approx(0.5 * 180.0 / ctre::kPi));
+    CHECK(rig.backend->get(pg, "rawYawInput") == doctest::Approx(0.5 * 180.0 / wpiemu::sdk::kPi));
     CHECK(rig.backend->writesTo(pg, "rawYawInput") == 1);
     tick(0.5);
     CHECK(rig.backend->writesTo(pg, "rawYawInput") == 1);  // unchanged: no redundant write
 
     rig.backend->poke(pg, "rawYawInput", 0.0);  // vendor mirror corrupts raw before the robot reads
     CHECK(rig.bridge->reassertAfterVendorMirror() == 1);
-    CHECK(rig.backend->get(pg, "rawYawInput") == doctest::Approx(0.5 * 180.0 / ctre::kPi));
+    CHECK(rig.backend->get(pg, "rawYawInput") == doctest::Approx(0.5 * 180.0 / wpiemu::sdk::kPi));
     CHECK(rig.bridge->inputDisturbances().size() == 1);
 
     rig.bridge->resetInputHistory();
@@ -213,7 +214,7 @@ TEST_CASE(
     };
     wpiemu::sdk::IDeviceBridge& generic = *rig.bridge;
     const auto tick = [&](double degrees) {
-        const std::vector<SignalSample> samples{{id, yaw, degrees * ctre::kPi / 180.0}};
+        const std::vector<SignalSample> samples{{id, yaw, degrees * wpiemu::sdk::kPi / 180.0}};
         generic.applyInputs(samples);
     };
     for (int transition = 0; transition != 3; ++transition) {

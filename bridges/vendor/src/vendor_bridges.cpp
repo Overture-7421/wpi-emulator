@@ -76,13 +76,15 @@ sdk::Status registerVendorBridgesChecked(sdk::DeviceBridgeRegistry& registry, Ve
     if (setup->options().enablePhoenix6) {
         sdk::Status st = registry.registerBridge(
             "ctre.phoenix6",
-            sdk::BridgeInfo{"phoenix6", "CTRE Phoenix 6 SimDevices (TalonFX/FXS, CANcoder, Pigeon 2, CANdle, CANrange, CANdi)", "ctre"},
+            sdk::BridgeInfo{ctre::kFamilyPhoenix6, "CTRE Phoenix 6 SimDevices (TalonFX/FXS, CANcoder, Pigeon 2, CANdle, CANrange, CANdi)",
+                            ctre::kVendor},
             [setup] { return setup->makePhoenix6(); });
         if (!st) return st;
     }
     if (setup->options().enablePhoenix5) {
         sdk::Status st = registry.registerBridge(
-            "ctre.phoenix5", sdk::BridgeInfo{"phoenix5", "CTRE Phoenix 5 SimDevices (Talon SRX, Victor SPX, Pigeon IMU)", "ctre"},
+            "ctre.phoenix5",
+            sdk::BridgeInfo{ctre::kFamilyPhoenix5, "CTRE Phoenix 5 SimDevices (Talon SRX, Victor SPX, Pigeon IMU)", ctre::kVendor},
             [setup] { return setup->makePhoenix5(); });
         if (!st) return st;
     }

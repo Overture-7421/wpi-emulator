@@ -1,4 +1,4 @@
-# HALSim extension (shared library) loaded inside the robot process (ADR 0001).
+# HALSim extension (shared library) loaded inside the robot process (docs/reference/extension-ipc.md).
 #
 #   wpiemu_halsim_core   static, HAL-free: lock-step session, IPC link, device table, bridge fan-out.
 #                        Unit-tested with fakes (halsim_ext/tests) on every machine.
@@ -28,7 +28,7 @@ if(WPIEMU_WPILIB_FOUND)
     target_link_libraries(wpiemu_halsim_hal PUBLIC wpiemu_halsim_core wpiemu_wpilib_hal)
     wpiemu_target_defaults(wpiemu_halsim_hal)
 
-    # wpiemu_bridges_builtin is defined in bridges/ (the aggregation seam, ADR 0004 addendum).
+    # wpiemu_bridges_builtin is defined in bridges/ (the aggregation seam, docs/ARCHITECTURE.md addendum).
     add_library(halsim_wpiemu SHARED src/extension.cpp src/ipc_bindings.cpp)
     target_link_libraries(halsim_wpiemu PRIVATE
         wpiemu_halsim_hal wpiemu_halsim_core wpiemu_ipc wpiemu_bridges_builtin wpiemu_sdk)
@@ -63,11 +63,6 @@ if(WPIEMU_BUILD_TESTS)
     target_compile_definitions(wpiemu_halsim_ext_tests PRIVATE DOCTEST_CONFIG_USE_STD_HEADERS)
     wpiemu_target_defaults(wpiemu_halsim_ext_tests)
     doctest_discover_tests(wpiemu_halsim_ext_tests TEST_PREFIX "halsim_ext.")
-
-    # Manual end-to-end tool (not a ctest): see tests/manual/README.md.
-    add_executable(wpiemu_halsim_fake_emulator tests/manual/fake_emulator.cpp)
-    target_link_libraries(wpiemu_halsim_fake_emulator PRIVATE wpiemu_ipc wpiemu_sdk)
-    wpiemu_target_defaults(wpiemu_halsim_fake_emulator)
 
     if(WPIEMU_WPILIB_FOUND)
         # Real sim HAL in-process: stepping, DS, device I/O against a scripted fake emulator.

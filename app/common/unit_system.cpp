@@ -1,32 +1,26 @@
 #include "common/unit_system.h"
 
-#include "wpiemu/sdk/core/units.h"
-
 namespace wpiemu::app {
 
-QString UnitFormatter::lengthSuffix() const {
-    return system_ == UnitSystem::Imperial ? QStringLiteral(" in") : QStringLiteral(" cm");
-}
+namespace {
 
-double UnitFormatter::lengthToDisplay(double meters) const {
-    return system_ == UnitSystem::Imperial ? sdk::metersToInches(meters) : meters * 100.0;
-}
+using sdk::PropertyUnit;
 
-double UnitFormatter::lengthFromDisplay(double shown) const {
-    return system_ == UnitSystem::Imperial ? sdk::inchesToMeters(shown) : shown / 100.0;
-}
+QString suffixOf(PropertyUnit unit, UnitSystem system) { return QString::fromUtf8(sdk::unitDisplay(unit, system).suffix); }
 
-QString UnitFormatter::massSuffix() const {
-    return system_ == UnitSystem::Imperial ? QStringLiteral(" lb") : QStringLiteral(" kg");
-}
+}  // namespace
 
-double UnitFormatter::massToDisplay(double kg) const {
-    return system_ == UnitSystem::Imperial ? sdk::kgToPounds(kg) : kg;
-}
+QString UnitFormatter::lengthSuffix() const { return suffixOf(PropertyUnit::Meters, system_); }
 
-double UnitFormatter::massFromDisplay(double shown) const {
-    return system_ == UnitSystem::Imperial ? sdk::poundsToKg(shown) : shown;
-}
+double UnitFormatter::lengthToDisplay(double meters) const { return sdk::toDisplay(meters, PropertyUnit::Meters, system_); }
+
+double UnitFormatter::lengthFromDisplay(double shown) const { return sdk::fromDisplay(shown, PropertyUnit::Meters, system_); }
+
+QString UnitFormatter::massSuffix() const { return suffixOf(PropertyUnit::Kilograms, system_); }
+
+double UnitFormatter::massToDisplay(double kg) const { return sdk::toDisplay(kg, PropertyUnit::Kilograms, system_); }
+
+double UnitFormatter::massFromDisplay(double shown) const { return sdk::fromDisplay(shown, PropertyUnit::Kilograms, system_); }
 
 QString UnitFormatter::formatLength(double meters, int decimals) const {
     return QString::number(lengthToDisplay(meters), 'f', decimals) + lengthSuffix();

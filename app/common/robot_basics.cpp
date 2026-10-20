@@ -100,15 +100,12 @@ sdk::PrimitiveSpec bumper(const char* name, sdk::Vec3 centre, sdk::Vec3 size, co
 }  // namespace
 
 const std::vector<MotorChoice>& motorCatalog() {
-    static const std::vector<MotorChoice> catalog = {
-        {QStringLiteral("kraken_x60"), QStringLiteral("Kraken X60"), sdk::motors::krakenX60()},
-        {QStringLiteral("falcon_500"), QStringLiteral("Falcon 500"), sdk::motors::falcon500()},
-        {QStringLiteral("neo"), QStringLiteral("NEO"), sdk::motors::neo()},
-        {QStringLiteral("vortex"), QStringLiteral("NEO Vortex"), sdk::motors::vortex()},
-        {QStringLiteral("neo550"), QStringLiteral("NEO 550"), sdk::motors::neo550()},
-        {QStringLiteral("cim"), QStringLiteral("CIM"), sdk::motors::cim()},
-        {QStringLiteral("mini_cim"), QStringLiteral("MiniCIM"), sdk::motors::miniCim()},
-    };
+    static const std::vector<MotorChoice> catalog = [] {
+        std::vector<MotorChoice> choices;
+        for (const sdk::MotorPreset& p : sdk::motors::presets())
+            choices.push_back({QString::fromStdString(p.key), QString::fromStdString(p.label), p.spec});
+        return choices;
+    }();
     return catalog;
 }
 
@@ -125,6 +122,8 @@ const MotorChoice* findMotorBySpec(const sdk::MotorSpec& spec) {
 }
 
 int RobotBasics::wheelCount() const { return isTank() ? 2 * std::max(2, wheelsPerSide) : 4; }
+
+const char* bumperColorFor(sdk::Alliance alliance) { return alliance == sdk::Alliance::Red ? kRedBumper : kBlueBumper; }
 
 RobotBasics defaultBasicsFor(const std::string& kind) {
     RobotBasics b;
@@ -205,7 +204,7 @@ sdk::RobotConfig buildRobotConfig(const RobotBasics& b, const RobotBuildContext&
         const float len = static_cast<float>(b.frameLengthM);
         const float wid = static_cast<float>(b.frameWidthM);
         const float z = kBumperCentreAboveFloorM - kComHeightM;   // chassis frame origin is the COM
-        const char* color = b.alliance == Alliance::Red ? kRedBumper : kBlueBumper;
+        const char* color = bumperColorFor(b.alliance);
         chassis.primitives.push_back(bumper("bumper_front", {len / 2.f + t / 2.f, 0.f, z}, {t, wid + 2.f * t, kBumperHeightM}, color));
         chassis.primitives.push_back(bumper("bumper_back", {-(len / 2.f + t / 2.f), 0.f, z}, {t, wid + 2.f * t, kBumperHeightM}, color));
         chassis.primitives.push_back(bumper("bumper_left", {0.f, wid / 2.f + t / 2.f, z}, {len, t, kBumperHeightM}, color));
@@ -303,7 +302,7 @@ RobotBasics basicsFromConfig(const sdk::RobotConfig& config) {
     for (const auto& p : config.chassis.primitives) {
         if (p.name == "bumper_front") {
             b.bumperThicknessM = p.sizeM.x;
-            b.alliance = p.color == kBlueBumper ? Alliance::Blue : Alliance::Red;
+            b.alliance = p.color == kBlueBumper ? sdk::Alliance::Blue : sdk::Alliance::Red;
         }
     }
 

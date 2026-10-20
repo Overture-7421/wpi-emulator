@@ -61,7 +61,7 @@ public:
 
     std::size_t activeCount() const;
 
-    // ---- vision bridges (simulated Limelight / PhotonVision cameras, ADR 0017) -----------------------------------
+    // ---- vision bridges (simulated Limelight / PhotonVision cameras, docs/reference/bridges.md) -----------------------------------
     // Call before `start`; they are started by it (a failing one is logged and dropped) and stopped by `stop`.
     void setVisionBridges(std::vector<std::unique_ptr<sdk::IVisionBridge>> bridges);
     // The emulator's current camera list (VisionSetup message). Remembered so bridges created later see it.

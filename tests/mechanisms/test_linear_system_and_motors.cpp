@@ -125,6 +125,7 @@ TEST_CASE("motor catalog carries the WPILib DCMotor table") {
     REQUIRE(romi != nullptr);
     CHECK(romi->nominalVoltageV == 4.5);
     CHECK(c.keys().size() == c.entries().size());
+    CHECK(c.entries().size() == sdk::motors::presets().size());   // the catalog accepted every SDK row
     CHECK(c.spec("nope") == nullptr);
 }
 

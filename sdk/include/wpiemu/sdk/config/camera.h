@@ -1,6 +1,6 @@
 #pragma once
 
-// Cameras: simulated vision coprocessors (Limelight, PhotonVision) persisted in RobotConfig::cameras (ADR 0017).
+// Cameras: simulated vision coprocessors (Limelight, PhotonVision) persisted in RobotConfig::cameras (docs/reference/bridges.md).
 //
 // A camera is attached to the chassis or to a mechanism link, exactly like a zone or a mechanism mount:
 //   pose_in_chassis(camera) = pose_in_chassis(attachment parent link) * camera.local
@@ -11,7 +11,7 @@
 // The model is deliberately simple (no occlusion, lens distortion or exposure): a tag is seen when it is inside
 // the field of view, within `maxRangeM` and facing the camera. Results are delivered `latencyMs` after capture.
 //
-// Stored in SI units except the explicitly suffixed degrees / milliseconds. There is no migration (ADR 0013).
+// Stored in SI units except the explicitly suffixed degrees / milliseconds. There is no migration (docs/CONTRIBUTING.md).
 
 #include <cstdint>
 #include <string>

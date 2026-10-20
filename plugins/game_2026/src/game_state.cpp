@@ -20,10 +20,6 @@ namespace {
 
 constexpr float kBoundsMarginM = 2.0f;  // fuel further than this outside the field is lost
 
-Alliance allianceOf(sdk::proto::AllianceStation station) {
-    return station <= sdk::proto::AllianceStation::Red3 ? Alliance::Red : Alliance::Blue;
-}
-
 sdk::Vec3 perturbDirection(const sdk::Vec3& dir, double yawJitter, double pitchJitter) {
     sdk::Vec3 right = sdk::cross(dir, sdk::Vec3{0.f, 0.f, 1.f});
     if (sdk::length(right) < 1e-4f) right = sdk::Vec3{0.f, 1.f, 0.f};
@@ -127,7 +123,7 @@ sdk::Pose3 Game2026State::chassisPose(sdk::SimContext& ctx) const {
 
 void Game2026State::step(sdk::SimContext& ctx, double dt) {
     const sdk::proto::DsState& ds = ctx.driverStation();
-    ownAlliance_ = allianceOf(ds.station);
+    ownAlliance_ = sdk::proto::allianceOf(ds.station);
     // A DS match time (Practice) means a timed match: phases, shifts and scores apply. Without one the robot is in
     // free play: when enabled it behaves like test mode (both hubs scoring, no phases) and the match HUD is hidden.
     const bool timed = ds.matchTimeS >= 0.0;
@@ -372,7 +368,7 @@ void Game2026State::publish(sdk::SnapshotBuilder& out) const {
         out.setHud(hud::kHubBlueStatus, hubStatusText(hub_.active(Alliance::Blue),
                                                       activeRemainingS(Alliance::Blue, status_, fi, config_.enforceHubShifts)));
         out.setHud(hud::kFirstInactive,
-                   hub_.firstInactiveKnown() ? std::string(allianceName(hub_.firstInactive())) : std::string("unknown"));
+                   hub_.firstInactiveKnown() ? std::string(sdk::allianceKey(hub_.firstInactive())) : std::string("unknown"));
         out.setHud(hud::kMatchPhase, std::string(phaseName(status_.phase)));
         out.setHud(hud::kMatchTime, status_.periodRemainingS);
         out.setHud(hud::kPhaseTime, status_.phaseRemainingS);
