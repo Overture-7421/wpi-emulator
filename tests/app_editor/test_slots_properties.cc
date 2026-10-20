@@ -210,6 +210,20 @@ TEST_CASE("property groups: placement offers every non-descendant as a parent") 
     CHECK(links == std::vector<std::string>{"root", "mover"});   // parent is the turret
 }
 
+TEST_CASE("property groups: a mechanism whose parent no longer exists still shows it") {
+    const auto cat = catalog();
+    auto c = robot();
+    for (auto& m : c.mechanisms)
+        if (m.id == "shooter") m.attachTo("ghost");
+    const auto groups = propertyGroupsFor(c, cat, SelectionRef::mechanism("shooter"));
+    const auto placement = std::find_if(groups.begin(), groups.end(), [](const auto& g) { return g.id == "mech.placement"; });
+    REQUIRE(placement != groups.end());
+    const auto& options = placement->schema.find("parent")->options;
+    const auto ghost = std::find_if(options.begin(), options.end(), [](const auto& o) { return o.value == "ghost"; });
+    REQUIRE(ghost != options.end());
+    CHECK(ghost->label == "ghost (missing)");   // as for zones and cameras, instead of a blank combo box
+}
+
 TEST_CASE("property edits write through to the right place") {
     const auto cat = catalog();
     auto c = robot();
