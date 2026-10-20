@@ -46,7 +46,6 @@ using Clock = std::chrono::steady_clock;
 
 namespace {
 
-constexpr int kSkipExitCode = 77;
 constexpr double kLatencyMs = 40.0;
 
 // Same constants as the sample robot (samples/vision_robot/<lang>/.../Vision, Robot).
@@ -54,32 +53,6 @@ constexpr float kFrontX = 0.30f;
 constexpr float kRearX = -0.30f;
 constexpr float kCameraHeightM = 0.50f;   // WPILib robot frame: above the floor
 constexpr float kComHeightM = 0.20f;
-
-void copyProject(const fs::path& from, const fs::path& to) {
-    fs::create_directories(to);
-    for (fs::directory_iterator it(from), end; it != end; ++it) {
-        const std::string name = it->path().filename().string();
-        if (name == ".git" || name == "build" || name == ".gradle" || name == "logs" || name == "bin") continue;
-        fs::copy(it->path(), to / name, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
-    }
-}
-
-struct Scratch {
-    fs::path root;
-    ~Scratch() {
-        if (!env("WPIEMU_E2E_KEEP").empty()) {
-            std::printf("kept %s\n", root.string().c_str());
-            return;
-        }
-        std::error_code ec;
-        for (int i = 0; i < 20 && fs::exists(root, ec); ++i) {
-            fs::remove_all(root, ec);
-            if (fs::exists(root, ec)) std::this_thread::sleep_for(500ms);
-        }
-    }
-};
-
-sdk::DeviceKey phoenixKey(const char* type, int id) { return sdk::DeviceKey{"phoenix6", type, id, sdk::kBusUnknown, -1}; }
 
 sdk::CameraConfig makeCamera(const char* id, sdk::CameraKind kind, const char* name, float robotFrameX, float yawRad) {
     sdk::CameraConfig c;
@@ -191,9 +164,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     const std::string language = env("WPIEMU_E2E_VISION_LANG").empty() ? "java" : env("WPIEMU_E2E_VISION_LANG");
     const bool verbose = !env("WPIEMU_E2E_VERBOSE").empty();
 
-    Scratch scratch;
-    scratch.root = fs::temp_directory_path() /
-                   ("wpiemu-vision-e2e-" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(t0.time_since_epoch()).count() % 100000000));
+    Scratch scratch("wpiemu-vision-e2e-");
     const fs::path project = scratch.root / "project";
     copyProject(original, project);
     std::printf("e2e: project copy %s (%s)\n", project.string().c_str(), language.c_str());

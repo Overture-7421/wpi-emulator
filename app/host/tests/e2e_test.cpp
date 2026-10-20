@@ -50,19 +50,7 @@ using Clock = std::chrono::steady_clock;
 
 namespace {
 
-constexpr int kSkipExitCode = 77;
-
 double seconds(Clock::time_point a, Clock::time_point b) { return std::chrono::duration<double>(b - a).count(); }
-
-// Copy without VCS / build / Gradle state so Gradle rebuilds in the copy (the original is never touched).
-void copyProject(const fs::path& from, const fs::path& to) {
-    fs::create_directories(to);
-    for (fs::directory_iterator it(from), end; it != end; ++it) {
-        const std::string name = it->path().filename().string();
-        if (name == ".git" || name == "build" || name == ".gradle" || name == "logs") continue;
-        fs::copy(it->path(), to / name, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
-    }
-}
 
 struct SwerveModuleIds {
     const char* name;
@@ -80,8 +68,6 @@ constexpr int kPigeonId = 13;
 constexpr int kIntakeRollerId = 32;
 constexpr int kIntakePivotId = 29;
 constexpr int kIntakePivotEncoderId = 30;
-
-sdk::DeviceKey phoenixKey(const char* type, int id) { return sdk::DeviceKey{"phoenix6", type, id, sdk::kBusUnknown, -1}; }
 
 sdk::RobotConfig baseConfig(const fs::path& project) {
     sdk::RobotConfig c;
@@ -186,22 +172,6 @@ void dumpConsole(const std::vector<std::string>& console) {
     for (std::size_t i = from; i < console.size(); ++i) std::printf("    | %s\n", console[i].c_str());
 }
 
-struct Scratch {
-    fs::path root;
-    ~Scratch() {
-        if (!env("WPIEMU_E2E_KEEP").empty()) {
-            std::printf("kept %s\n", root.string().c_str());
-            return;
-        }
-        std::error_code ec;
-        for (int i = 0; i < 20 && fs::exists(root, ec); ++i) {
-            fs::remove_all(root, ec);
-            if (fs::exists(root, ec)) std::this_thread::sleep_for(500ms);
-        }
-        if (fs::exists(root, ec)) std::printf("WARNING: could not delete %s\n", root.string().c_str());
-    }
-};
-
 }  // namespace
 
 TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven teleop run") {
@@ -210,8 +180,7 @@ TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven t
     const fs::path extension = WPIEMU_E2E_EXTENSION;
     const bool direct = env("WPIEMU_E2E_LAUNCH") == "direct";
 
-    Scratch scratch;
-    scratch.root = fs::temp_directory_path() / ("wpiemu-e2e-" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(t0.time_since_epoch()).count() % 100000000));
+    Scratch scratch("wpiemu-e2e-");
     const fs::path project = scratch.root / "project";
     copyProject(original, project);
     std::printf("e2e: project copy %s (launch mode: %s)\n", project.string().c_str(), direct ? "simulateExternal direct" : "gradle init script");
@@ -437,9 +406,7 @@ TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven t
 
 TEST_CASE("e2e: saved tank robot keeps its two mappings and drives six linked wheels" *
           doctest::skip(env("WPIEMU_E2E_TANK").empty())) {
-    Scratch scratch;
-    scratch.root = fs::temp_directory_path() /
-                   ("wpiemu-tank-e2e-" + std::to_string(Clock::now().time_since_epoch().count()));
+    Scratch scratch("wpiemu-tank-e2e-");
     const fs::path project = scratch.root / "project";
     copyProject(fs::path(env("WPIEMU_E2E_PROJECT")), project);
     TestRegistries registries;
