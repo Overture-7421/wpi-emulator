@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "wpiemu/sdk/core/units.h"
+
 namespace wpiemu::app::runview {
 namespace {
 QString tr(const char* s) { return QCoreApplication::translate("DriverStation", s); }
@@ -249,7 +251,7 @@ void DriverStationModel::onSimTime(std::int64_t simTimeUs) {
     const std::int64_t previous = lastSimUs_;
     lastSimUs_ = simTimeUs;
     if (previous < 0 || !match_.running()) return;
-    const double dt = static_cast<double>(simTimeUs - previous) * 1e-6;
+    const double dt = sdk::usToSeconds(simTimeUs - previous);
     if (dt <= 0.0 || dt > 5.0) return;   // reset or a long stall: do not jump the clock
     if (match_.advance(dt)) {
         if (match_.running()) applySegment();
