@@ -70,7 +70,14 @@ The keyboard joystick (slot 0 by default) uses `W A S D` (left stick), arrow key
   more files in that folder to extend). The run view shows no id labels. A tag listed in `CameraState::visibleTagIds` of **any**
   camera (the union) gets a green panel and label. The View menu's "AprilTags" toggle controls panels, images and labels.
   Neither toggle is persisted (like Zones).
-* Game HUD: `HudWidgetDescriptor` + `ISimSnapshot::hud()`; nothing game specific lives in this directory.
+* Game HUD: `HudWidgetDescriptor` + `ISimSnapshot::hud()`; nothing game specific lives in this directory. `HudWidgetKind::Scoreboard`
+  (`qml/Scoreboard.qml`, `HudItemState::{sides, lead, leader}`) draws two sides (`sides[0]` left) with the leader highlighted; it is
+  valid only while both scores are published. `ViewportOptions::topCenterInset` keeps the top-centre stack below the Driver Station
+  clock pill (a widget above the QML scene).
+* Start positions: `RunPage` lists `RunSceneInfo::config->startPositions` in the **Start position** button's menu (Default, Blue,
+  Red; `RunViewport::addStartPositionControl`). Choosing one calls `IRunBackend::setStartPosition`, switches the DS alliance,
+  stops a running match (`DriverStationModel::onSimReset`) and calls `resetSimulation()`; the backend/host keep the choice, so
+  Restart reuses it. The button is enabled only while simulating and when positions exist.
 
 ## Gamepads
 

@@ -414,6 +414,24 @@ TEST_CASE("session: runs are deterministic and reset restores t = 0") {
     CHECK(s.hub().discovered().size() == 7);  // devices and bindings survive a reset
 }
 
+TEST_CASE("session: reset places the chassis on the start placement override and nullopt restores the configured pose") {
+    Fixture f;
+    SimulationSession& s = f.make();
+    const Pose3 built = s.world().pose(s.chassisBody());
+    s.setStartPlacement(RobotStartPose{4.5f, 3.f, 1.5f});
+    s.reset();
+    Pose3 pose = s.world().pose(s.chassisBody());
+    CHECK(pose.position.x == doctest::Approx(4.5f));
+    CHECK(pose.position.y == doctest::Approx(3.f));
+    CHECK(pose.position.z == doctest::Approx(built.position.z));
+    CHECK(pose.rotation.yaw() == doctest::Approx(1.5f).epsilon(1e-3));
+    s.setStartPlacement(std::nullopt);
+    s.reset();
+    pose = s.world().pose(s.chassisBody());
+    CHECK(pose.position.x == doctest::Approx(built.position.x));
+    CHECK(pose.position.y == doctest::Approx(built.position.y));
+}
+
 TEST_CASE("session: RNG is reseeded from the config on reset") {
     Fixture f;
     RobotConfig c = sampleConfig();

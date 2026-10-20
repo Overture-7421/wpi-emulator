@@ -8,6 +8,7 @@
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPushButton>
 #include <QSettings>
 #include <QTemporaryDir>
@@ -142,6 +143,7 @@ TEST_CASE("run page: practice highlights the running segment; setup and joystick
     CHECK(panel->modeButton(DsMode::Practice)->isChecked());
     CHECK(live(DsMode::Auto));
     CHECK(f.page.viewport()->matchClockLabel()->text().contains(QStringLiteral(":")));   // timer shows in the 3D view
+    CHECK(f.page.viewOptions().topCenterInset() > 0);   // the top-centre HUD (scoreboard) sits below it
     CHECK_FALSE(live(DsMode::Teleop));
 
     const double auto_s = ds.matchSettings().autoSeconds;
@@ -280,6 +282,47 @@ TEST_CASE("run page: restart resets the physics, the dropdown also reboots the r
     CHECK(viewport->findChild<QToolButton*>(QStringLiteral("runview.restartButton")) != nullptr);
     CHECK(viewport->findChild<QToolButton*>(QStringLiteral("runview.speedButton")) != nullptr);
     CHECK(f.page.findChild<QToolButton*>(QStringLiteral("runview.homeButton")) != nullptr);
+}
+
+TEST_CASE("run page: choosing a start position resets the robot there, switches the alliance and sticks across restarts") {
+    Fixture f;
+    f.connectRobot();
+    auto* button = f.page.viewport()->findChild<QToolButton*>(QStringLiteral("runview.startButton"));
+    REQUIRE(button != nullptr);
+    CHECK(button->isEnabled());
+    const auto find = [&](const QString& text) -> QAction* {
+        for (QAction* a : button->menu()->actions())
+            if (a->text() == text) return a;
+        return nullptr;
+    };
+    REQUIRE(find(QStringLiteral("Default (robot setup)")) != nullptr);
+    REQUIRE(find(QStringLiteral("Blue left")) != nullptr);
+    QAction* red = find(QStringLiteral("Red left"));
+    REQUIRE(red != nullptr);
+    CHECK(find(QStringLiteral("Default (robot setup)"))->isChecked());
+    const auto robotX = [&] {
+        f.page.pollNow();
+        return f.backend.latestSnapshot()->chassis().pose.position.x;
+    };
+    const float defaultX = robotX();
+
+    f.page.driverStation().setAlliance(DriverStationModel::Alliance::Blue);
+    f.page.driverStation().setEnabled(true);
+    const int resets = f.backend.resetCount();
+    red->trigger();
+    CHECK(f.backend.startPositionId() == QStringLiteral("red_left"));
+    CHECK(f.backend.resetCount() == resets + 1);
+    CHECK(f.page.driverStation().alliance() == DriverStationModel::Alliance::Red);
+    CHECK_FALSE(f.page.driverStation().enabled());
+    CHECK(robotX() > defaultX + 5.f);
+    CHECK(find(QStringLiteral("Red left"))->isChecked());
+
+    f.page.restartAction()->trigger();   // Restart keeps the selected start position
+    CHECK(robotX() > defaultX + 5.f);
+
+    find(QStringLiteral("Default (robot setup)"))->trigger();
+    CHECK(f.backend.startPositionId().isEmpty());
+    CHECK(robotX() == doctest::Approx(defaultX));
 }
 
 TEST_CASE("run page: console receives logs and can be searched and copied") {

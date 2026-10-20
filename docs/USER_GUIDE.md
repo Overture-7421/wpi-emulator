@@ -318,9 +318,18 @@ firmware config read-back; do not copy the same magnet offset into a mechanism's
 A calibration warning means raw passthrough is in use, not a calibrated run.
 
 **Autonomous placement:** select Robot and enable **Use custom start pose** under Start pose, then set
-field X, Y and heading to the path's initial pose. Start and Reset restore that physical placement.
-Robot odometry resets do not teleport the chassis. Mirror/flip the start yourself when changing
-the selected path or alliance; the physical start pose is not automatically alliance-dependent.
+field X, Y and heading to the path's initial pose. Start and Reset restore that physical placement (it is the
+**Default** start). Robot odometry resets do not teleport the chassis.
+
+**Start positions (several starts, both alliances):** right-click the Robot node and choose **Add start position**
+(they are listed under **Start positions**). Each has a name, an **Alliance** and a field **X / Y / Heading**
+(X runs from the blue wall toward the red wall, Y to the left, heading counter-clockwise from +X). To reuse a position
+for the other alliance select it and press **Copy to Red** (or **Copy to Blue**) in its inspector or context menu:
+the copy is placed at the same spot seen from the other side of the field (the 2026 field is rotated 180 degrees)
+and gets the other alliance. In the run view the **Start position** button (flag, left of Restart) lists them
+under Blue and Red; choosing one switches the Driver Station to that alliance and resets the robot there, and Restart
+(`Ctrl+R`) keeps using it until you choose another (or *Default*). Your robot code still has to set its own pose
+(for example the auto's reset pose); the emulator does not change robot odometry.
 
 Devices that are detected but not mapped run in **loopback**: outputs are echoed back as inputs, so the code does not
 break, but nothing physical happens. Required slots that stay unmapped read neutral values. Devices built into the
@@ -403,15 +412,18 @@ and phase widgets only apply in Practice; the other modes are free play.
 
 | Area | What it does |
 |---|---|
-| View controls | Icon buttons at the bottom-right of the 3D view: **Robot state** (list icon, opens the state window), **Restart** (`Ctrl+R`, puts the robot and game pieces back to the start; the robot code keeps running). Its dropdown adds **Restart robot code** (`Ctrl+Shift+R`, reboots the code and resets everything). **Speed** (relative to real time) |
+| View controls | Icon buttons at the bottom-right of the 3D view: **Robot state** (list icon, opens the state window), **Start position** (flag icon: reset the robot to one of your start positions and switch the Driver Station to its alliance; needs start positions, see the editor chapter), **Restart** (`Ctrl+R`, puts the robot (at the chosen start position) and game pieces back to the start; the robot code keeps running). Its dropdown adds **Restart robot code** (`Ctrl+Shift+R`, reboots the code and resets everything). **Speed** (relative to real time) |
 | Camera | Same camera controls as the editor viewport (right-drag or Alt+left-drag to rotate; left-drag, middle-drag or Shift+drag to pan; wheel to zoom) and **Home view** (⌂ button, last in the bottom-right controls, `Ctrl+0`, or double-click the view) |
 | Overlays | **View** menu: game HUD, zones (intake / shooter), vision cameras, AprilTags, individually switchable (Run tab only) |
 | Robot state window | **Robot state** button in the 3D view, or **View > Robot state**: a separate window with a live tree of every mechanism (active / idle and its values), sensor (reading, game value it follows, and that value; a warning when the game does not publish it), zone (active / inactive) and camera (visible AprilTags). Rows expand and collapse; the window remembers its size and position |
 | Telemetry (right side of the toolbar) | simulated time, ticks per second and speed, battery voltage, physics step time and entity count, gamepad status |
 | Console | **View > Console** (`Ctrl+J`); filter by level and source (robot stdout, robot stderr, emulator), search, copy, clear, follow |
 
-In the 2026 HUD you see the fuel meter, match timer and phase, hub active badges, scores, shots fired and fuel on the
-field.
+In the 2026 HUD you see the fuel meter, shots fired and fuel on the field. In **Practice** a **scoreboard** at the top
+shows the blue score (left, like the blue wall in the default view) and the red score (right), highlights the leader
+with the margin (`BLUE +6` or `TIED`), the match phase (`AUTO`, `SHIFT 2`, `END GAME`) and each hub's Active /
+Inactive status. Scores are fuel points only (tower points are not scored). When the match ends the final score
+stays (`FINAL`) until you restart, start the next match or enable the robot in a non-Practice mode.
 
 ### Driver station panel
 Built into the run page; it replaces the real Driver Station. It sits at the bottom-left, next to the console. The **cog**

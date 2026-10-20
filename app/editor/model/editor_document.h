@@ -81,6 +81,11 @@ public:
     QString addSensor(sdk::SensorKind kind);
     bool removeSensor(const QString& id);
     QString duplicateSensor(const QString& id);
+    QString addStartPosition();
+    bool removeStartPosition(const QString& id);
+    QString duplicateStartPosition(const QString& id);
+    // New position for the other alliance (field symmetry); empty when the field has none.
+    QString copyStartPositionToOtherAlliance(const QString& id);
     // ---- slots
     bool mapSlot(const sdk::SlotAddress& slot, const sdk::DeviceKey& device);
     bool clearSlot(const sdk::SlotAddress& slot);

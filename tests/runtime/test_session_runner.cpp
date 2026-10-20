@@ -611,6 +611,20 @@ TEST_CASE("runner: Reset bumps the epoch, resets the sim, restarts tick numbers 
     CHECK_FALSE(frames[1].full);
 }
 
+TEST_CASE("runner: a start placement queued before Reset is in force when the sim resets") {
+    Rig rig;
+    rig.handshake();
+    REQUIRE(rig.run([&] { return rig.runner->ticksSent() >= 5; }));
+    rig.runner->setStartPlacement(RobotStartPose{6.f, 2.f, 0.5f});
+    proto::SimControl reset;
+    reset.command = proto::SimCommand::Reset;
+    rig.runner->control(reset);
+    REQUIRE(rig.run([&] { return rig.runner->runEpoch() == 2; }));
+    const Pose3 pose = rig.session->world().pose(rig.session->chassisBody());
+    CHECK(pose.position.x == doctest::Approx(6.f));
+    CHECK(pose.position.y == doctest::Approx(2.f));
+}
+
 TEST_CASE("runner: no ticks are sent until the extension acknowledges a Reset") {
     Rig rig;
     rig.handshake();

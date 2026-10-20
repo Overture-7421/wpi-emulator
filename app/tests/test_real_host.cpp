@@ -98,6 +98,30 @@ TEST_CASE("real host: pending Run intent belongs to the project across config ed
     CHECK_FALSE(host.simulationStartPending());
 }
 
+TEST_CASE("real host: the selected start position belongs to the project and its config") {
+    auto withPositions = [](std::initializer_list<const char*> ids) {
+        sdk::RobotConfig c;
+        for (const char* id : ids) c.startPositions.push_back({id, id, sdk::Alliance::Red, {1.f, 2.f, 0.f}});
+        return std::make_shared<const sdk::RobotConfig>(std::move(c));
+    };
+    RealRuntimeHost host({});
+    QSignalSpy changed(&host, &IRuntimeHost::startPositionChanged);
+    host.setProject(QStringLiteral("A"), withPositions({"a", "b"}), nullptr);
+    host.setStartPosition(QStringLiteral("a"));
+    CHECK(host.startPosition() == QStringLiteral("a"));
+    host.setStartPosition(QStringLiteral("missing"));
+    CHECK(host.startPosition().isEmpty());
+    host.setStartPosition(QStringLiteral("a"));
+    host.setProject(QStringLiteral("A"), withPositions({"a"}), nullptr);   // an edit that keeps it
+    CHECK(host.startPosition() == QStringLiteral("a"));
+    host.setProject(QStringLiteral("A"), withPositions({"b"}), nullptr);   // deleted
+    CHECK(host.startPosition().isEmpty());
+    host.setStartPosition(QStringLiteral("b"));
+    host.setProject(QStringLiteral("B"), withPositions({"b"}), nullptr);   // another project
+    CHECK(host.startPosition().isEmpty());
+    CHECK(changed.count() == 6);
+}
+
 TEST_CASE("Run intent: readiness consumes only the current project's deliberate request") {
     SimulationStartIntent intent;
     intent.projectReplaced();   // A

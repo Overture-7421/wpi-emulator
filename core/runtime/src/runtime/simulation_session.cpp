@@ -280,7 +280,9 @@ Status SimulationSession::build(SessionParts& parts) {
 
 void SimulationSession::reset() {
     hub_.resetSignalHistory();
-    world_->setPose(chassis_.body, chassis_.spawnPose);
+    Pose3 spawn = chassis_.spawnPose;
+    if (startOverride_) spawn = Pose3{{startOverride_->xM, startOverride_->yM, spawn.position.z}, Quat::fromYaw(startOverride_->headingRad)};
+    world_->setPose(chassis_.body, spawn);
     world_->setLinearVelocity(chassis_.body, Vec3{});
     world_->setAngularVelocity(chassis_.body, Vec3{});
     world_->setMassProperties(chassis_.body, chassis_.baseMass);

@@ -18,6 +18,9 @@ namespace issue_code {
 inline constexpr const char* kSchemaVersion = "schema_version_unsupported";
 inline constexpr const char* kChassisInvalid = "chassis_invalid";
 inline constexpr const char* kStartPoseInvalid = "start_pose_invalid";
+inline constexpr const char* kStartPositionIdInvalid = "start_position_id_invalid";        // empty
+inline constexpr const char* kStartPositionIdDuplicate = "start_position_id_duplicate";
+inline constexpr const char* kStartPositionInvalid = "start_position_invalid";            // non-finite pose
 inline constexpr const char* kDrivetrainKindUnknown = "drivetrain_kind_unknown";
 inline constexpr const char* kTireModelUnknown = "tire_model_unknown";
 inline constexpr const char* kDrivetrainNoWheels = "drivetrain_no_wheels";

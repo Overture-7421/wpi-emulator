@@ -19,6 +19,7 @@ public:
     HostStatus status() const override { return status_; }
     HostScene scene() const override { return scene_; }
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const override { return slot_.latest(); }
+    QString startPosition() const override { return startPositionId_; }
     void setProject(const QString& projectPath, std::shared_ptr<const sdk::RobotConfig> config, const sdk::IGameModule* game) override;
 
     // Devices a robot with this config would typically declare.
@@ -36,6 +37,7 @@ public slots:
     void stop() override;
     void restart() override;
     void resetSimulation() override;
+    void setStartPosition(const QString& id) override;
     void setPaused(bool paused) override;
     void stepTicks(int ticks) override;
     void setTimeScale(double scale) override;
@@ -54,6 +56,7 @@ private:
     HostStatus status_;
     HostScene scene_;
     QString projectPath_;
+    QString startPositionId_;
     sdk::LatestSnapshotSlot slot_;
     QTimer startupTimer_;
     QTimer simTimer_;

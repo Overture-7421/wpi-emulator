@@ -108,6 +108,7 @@ private:
     HubRules hub_;
     Alliance ownAlliance_ = Alliance::Red;
     bool matchTimed_ = false;   // the DS runs a timed match (Practice); otherwise free play without game timing
+    bool matchResult_ = false;  // a timed match just stopped: its final score stays on the HUD
     int meter_ = 0;
     int shots_ = 0;
     int lost_ = 0;

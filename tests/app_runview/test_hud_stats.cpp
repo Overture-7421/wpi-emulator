@@ -59,6 +59,37 @@ TEST_CASE("hud: meter uses the dynamic maximum when given") {
     CHECK(evaluateHud(meter, &over).fraction == doctest::Approx(1.0));
 }
 
+TEST_CASE("hud: scoreboard highlights the leader, shows the margin and needs both scores") {
+    auto board = descriptor(sdk::HudWidgetKind::Scoreboard, "phase");
+    board.sides = {{"BLUE", "blue", "blueStatus", "#1a73e8"}, {"RED", "red", "redStatus", "#d93025"}};
+
+    const auto redAhead = snapshotWith({{"blue", 4}, {"red", 10}, {"phase", std::string("SHIFT 2")},
+                                        {"blueStatus", std::string("Inactive")}, {"redStatus", std::string("Active 0:18")}});
+    const HudItemState s = evaluateHud(board, &redAhead);
+    REQUIRE(s.valid);
+    REQUIRE(s.sides.size() == 2);
+    CHECK(s.sides[0].label == QStringLiteral("BLUE"));   // sides[0] is the left one
+    CHECK(s.sides[0].score == QStringLiteral("4"));
+    CHECK_FALSE(s.sides[0].leading);
+    CHECK_FALSE(s.sides[0].statusActive);
+    CHECK(s.sides[1].leading);
+    CHECK(s.sides[1].statusActive);
+    CHECK(s.leader == 1);
+    CHECK(s.lead == QStringLiteral("RED +6"));
+    CHECK(s.text == QStringLiteral("SHIFT 2"));
+
+    const auto tied = snapshotWith({{"blue", 3}, {"red", 3}});   // no caption, no status
+    const HudItemState t = evaluateHud(board, &tied);
+    CHECK(t.valid);
+    CHECK(t.leader == -1);
+    CHECK(t.lead == QStringLiteral("TIED"));
+    CHECK(t.sides[0].status.isEmpty());
+
+    const auto missing = snapshotWith({{"blue", 3}});
+    CHECK_FALSE(evaluateHud(board, &missing).valid);
+    CHECK_FALSE(evaluateHud(board, nullptr).valid);
+}
+
 TEST_CASE("hud: badge reads booleans and state strings") {
     const auto badge = descriptor(sdk::HudWidgetKind::Badge, "hub");
     const auto on = snapshotWith({{"hub", true}});

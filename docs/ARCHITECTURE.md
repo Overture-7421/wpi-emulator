@@ -88,7 +88,7 @@ backends used by `halsim_ext`, not SDK dependencies or alternative bridge aggreg
 | `devices/` | `device_descriptor.h` `device_identity.h` `signal.h` `signals.h` `slot.h` `frames.h` `discovered_device.h` `device_hub.h` `device_bridge.h` `sim_device_bridge.h` `channel_family_bridge.h` `builtin_bridges.h` | Device model (declared address vs physical identity), hub, bridges, the `registerBuiltinBridges` / `registerBuiltinVisionBridges` aggregation seams |
 | `mechanisms/` | `mechanism.h` `mechanism_state.h` `physics_coupling.h` `attachment.h` | `IMechanism`, `MechanismFactory`, template metadata, chassis coupling, link attachment |
 | `game/` | `game_module.h` `game_state.h` `field.h` `ui_descriptors.h` `zone_kind.h` `zone_activation.h` `plugin_registry.h` `builtin_plugins.h` `null_objects.h` | Year-plugin contract, zone kinds and activation evaluation |
-| `config/` | `robot_config.h` `mechanism_attachment.h` `zone.h` `camera.h` `property_schema.h` `plugin_config.h` `value_codec.h` `config_io.h` `validation_codes.h` | Persisted model (incl. zones and cameras), schemas, stable issue codes |
+| `config/` | `robot_config.h` `start_position.h` `mechanism_attachment.h` `zone.h` `camera.h` `property_schema.h` `plugin_config.h` `value_codec.h` `config_io.h` `validation_codes.h` | Persisted model (incl. zones, cameras and start positions), schemas, stable issue codes |
 | `vision/` | `apriltag.h` `camera_frame.h` `vision_bridge.h` | AprilTag layout, `CameraFrame` / `VisionSetup` (emulator -> extension), `IVisionBridge` and `VisionBridgeRegistry` |
 | `ipc/` | `messages.h` `transport.h` `lockstep.h` `lifecycle.h` | Protocol structs, `ITransport`, `IMessageCodec`, `MessageChannel`, lock-step state machines, lifecycle signals carried as `Log` messages (e.g. robot program started) |
 | `telemetry/` | `snapshot.h` `sim_controller.h` | `ISimSnapshot` view-model, `ISimController` |
@@ -284,6 +284,12 @@ coprocessors attached to the chassis or a mechanism link like a zone. Core's `Vi
 `IGameModule::aprilTagLayout()` each camera sees and delays the result by the camera's latency; the frames due travel in
 `SensorFrame::vision`, and the extension's vision bridges (`IVisionBridge`, clock thread only) publish them into the robot's
 default NetworkTables instance. The full flow, camera model, frames and topic tables are in [vision.md](vision.md).
+
+### 4.9 Start positions
+`RobotConfig::startPositions` ([ADR 0020](decisions/0020-start-positions.md), `config/start_position.h`): named, alliance-tagged field
+poses the run view resets the robot to. The choice is state of `IRuntimeHost` (survives robot-code restarts, cleared on a project
+switch); it reaches the sim thread as `ISimController::setStartPlacement` queued in order before the Reset control, so no wire
+message changes. `IGameModule::fieldFrame()` (size and `FieldSymmetry`) lets the editor copy a position to the other alliance.
 
 ## 5. Extension points
 

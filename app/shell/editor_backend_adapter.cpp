@@ -46,6 +46,7 @@ editor::EditorCatalog EditorBackendAdapter::catalog() const {
         out.pluginPanels = module->contributeEditorPanels();
         out.zoneKinds = module->contributeZoneKinds();
         out.gameValues = module->contributeGameValues();
+        out.fieldFrame = module->fieldFrame();
     }
     return out;
 }

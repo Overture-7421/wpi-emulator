@@ -19,9 +19,20 @@ enum class HudWidgetKind {
     Text,         // string value
     Badge,        // boolean / enum state pill (hub active / inactive)
     Timer,        // seconds formatted mm:ss
+    // Two competitors side by side: `sides[0]` left, `sides[1]` right. Each side shows its label, the number under
+    // `scoreKey` and an optional Badge-style status text under `statusKey`; the leader is highlighted. `valueKey` is
+    // an optional text HUD key shown in the centre (e.g. the match phase).
+    Scoreboard,
 };
 
 enum class HudAnchor { TopLeft, TopCenter, TopRight, BottomLeft, BottomCenter, BottomRight, Center };
+
+struct HudScoreSide {
+    std::string label;       // "BLUE"
+    std::string scoreKey;    // numeric HUD key
+    std::string statusKey;   // optional text HUD key ("Active 0:18" / "Inactive"), empty = none
+    std::string color;       // "#rrggbb" or empty for the theme default
+};
 
 struct HudWidgetDescriptor {
     std::string id;           // unique, namespaced: "game_2026.fuel_meter"
@@ -35,6 +46,7 @@ struct HudWidgetDescriptor {
     std::string color;        // "#rrggbb" or empty for theme default
     HudAnchor anchor = HudAnchor::TopLeft;
     int order = 0;            // within an anchor, ascending
+    std::vector<HudScoreSide> sides;   // Scoreboard only
 };
 
 // ---- editor panels ------------------------------------------------------------------------------

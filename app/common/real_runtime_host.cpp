@@ -148,6 +148,12 @@ void RealRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<con
     if (!sameProject && session_) releaseSession();
     projectPath_ = projectPath;
     config_ = config;
+    // The selected start position belongs to the project: drop it on a switch or when the entry is gone, follow edits otherwise.
+    if (!startPositionId_.isEmpty() && (!sameProject || resolveStartPlacement() == std::nullopt)) {
+        startPositionId_.clear();
+        emit startPositionChanged();
+    }
+    if (session_ && !startPositionId_.isEmpty()) session_->controller().setStartPlacement(resolveStartPlacement());
     scene_ = {};
     scene_.config = std::move(config);
     gamePluginId_.clear();
@@ -196,6 +202,7 @@ void RealRuntimeHost::launch() {
     o.gradleOffline = envFlag("WPIEMU_GRADLE_OFFLINE");
     o.preStartPolling = envFlag("WPIEMU_PRESTART_POLLING");
     o.driverStation = ds_;
+    o.startPose = resolveStartPlacement();
     o.timeScale = timeScale_;
     if (options_.tweak) options_.tweak(o);
 
@@ -257,6 +264,20 @@ void RealRuntimeHost::resetSimulation() {
     sdk::proto::SimControl c;
     c.command = sdk::proto::SimCommand::Reset;
     session_->controller().control(c);
+}
+
+std::optional<sdk::RobotStartPose> RealRuntimeHost::resolveStartPlacement() const {
+    if (startPositionId_.isEmpty() || !config_) return std::nullopt;
+    if (const sdk::StartPosition* p = config_->findStartPosition(startPositionId_.toStdString())) return p->pose;
+    return std::nullopt;
+}
+
+void RealRuntimeHost::setStartPosition(const QString& id) {
+    const QString next = config_ && config_->findStartPosition(id.toStdString()) != nullptr ? id : QString();
+    const bool changed = next != startPositionId_;
+    startPositionId_ = next;
+    if (session_) session_->controller().setStartPlacement(resolveStartPlacement());
+    if (changed) emit startPositionChanged();
 }
 
 void RealRuntimeHost::setPaused(bool paused) {

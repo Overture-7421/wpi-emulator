@@ -96,6 +96,9 @@ public:
     virtual HostStatus status() const = 0;
     virtual HostScene scene() const = 0;
     virtual std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const = 0;
+    // Id of the selected RobotConfig::startPositions entry; empty = the robot setup's default start. The host keeps it
+    // across robot-code restarts and clears it on a project switch or when the entry disappears.
+    virtual QString startPosition() const = 0;
 
     // The shell calls this whenever the open project or its (saved/edited) model changes.
     virtual void setProject(const QString& projectPath, std::shared_ptr<const sdk::RobotConfig> config,
@@ -113,6 +116,8 @@ public slots:
     virtual void stop() = 0;
     virtual void restart() = 0;
     virtual void resetSimulation() = 0;
+    // Chooses where resets place the robot. Does not reset by itself; call resetSimulation() after it.
+    virtual void setStartPosition(const QString& id) = 0;
     virtual void setPaused(bool paused) = 0;
     virtual void stepTicks(int ticks) = 0;
     virtual void setTimeScale(double scale) = 0;
@@ -121,6 +126,7 @@ public slots:
 signals:
     void statusChanged();
     void sceneChanged();
+    void startPositionChanged();
     void snapshotPublished();
     void logLine(const wpiemu::app::HostLogLine& line);
 };

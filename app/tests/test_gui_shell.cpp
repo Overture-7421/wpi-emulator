@@ -288,6 +288,7 @@ public:
     HostStatus status() const override { return status_; }
     HostScene scene() const override { return scene_; }
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const override { return snapshot_; }
+    QString startPosition() const override { return {}; }
     void setProject(const QString&, std::shared_ptr<const sdk::RobotConfig> config, const sdk::IGameModule*) override {
         scene_.config = std::move(config);
     }
@@ -297,6 +298,7 @@ public:
     void stop() override {}
     void restart() override { launch(); }
     void resetSimulation() override {}
+    void setStartPosition(const QString&) override {}
     void setPaused(bool) override {}
     void stepTicks(int) override {}
     void setTimeScale(double) override {}

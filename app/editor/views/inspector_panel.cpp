@@ -206,6 +206,11 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
             }
             icon = NodeKind::Sensor;
             break;
+        case SelKind::StartPosition:
+            if (const auto* p = c.findStartPosition(target.owner))
+                subtitle = (p->alliance == sdk::Alliance::Blue ? ETR("Blue alliance") : ETR("Red alliance")) + QStringLiteral(" \xC2\xB7 ") + ETR("ID: %1").arg(qs(p->id));
+            icon = NodeKind::StartPosition;
+            break;
         case SelKind::Device: title = ETR("Detected device"); icon = NodeKind::Robot; break;
         default: break;
     }
@@ -257,12 +262,24 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
         b->setAutoRaise(true);
         connect(b, &QToolButton::clicked, this, [fn] { fn(); });
         h->addWidget(b, 0, Qt::AlignTop);
+        return b;
     };
     if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Zone || target.kind == SelKind::Camera ||
-        target.kind == SelKind::Sensor)
+        target.kind == SelKind::Sensor || target.kind == SelKind::StartPosition)
         addAction(ETR("Duplicate"), ETR("Duplicate (Ctrl+D)"), [this] { controller_.duplicateSelection(); });
+    if (target.kind == SelKind::StartPosition) {
+        const sdk::StartPosition* p = c.findStartPosition(target.owner);
+        const bool toRed = p == nullptr || p->alliance == sdk::Alliance::Blue;
+        auto* copy = addAction(toRed ? ETR("Copy to Red") : ETR("Copy to Blue"),
+                               cat.fieldFrame.symmetry == sdk::FieldSymmetry::None
+                                   ? ETR("The selected game does not define how its field maps one alliance onto the other.")
+                                   : ETR("Add a copy for the other alliance, placed at the same spot seen from that side of the field."),
+                               [this] { controller_.copySelectedStartPositionToOtherAlliance(); });
+        copy->setObjectName(QStringLiteral("startpos.copy"));
+        copy->setEnabled(cat.fieldFrame.symmetry != sdk::FieldSymmetry::None);
+    }
     if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Wheel || target.kind == SelKind::Zone ||
-        target.kind == SelKind::Camera || target.kind == SelKind::Sensor)
+        target.kind == SelKind::Camera || target.kind == SelKind::Sensor || target.kind == SelKind::StartPosition)
         addAction(ETR("Delete"), ETR("Delete (Del)"), [this] { controller_.deleteSelection(); });
     layout_->addWidget(head);
 }

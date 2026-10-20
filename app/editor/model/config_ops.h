@@ -16,6 +16,7 @@
 
 #include "editor_backend.h"
 #include "wpiemu/sdk/config/robot_config.h"
+#include "wpiemu/sdk/game/field.h"
 #include "wpiemu/sdk/mechanisms/attachment.h"
 
 namespace wpiemu::app::editor::ops {
@@ -123,6 +124,19 @@ bool removeSensor(sdk::RobotConfig& c, std::string_view id);
 // Copy next to the original (same source and response, mappings are NOT copied); returns the new id, empty when unknown.
 std::string duplicateSensor(sdk::RobotConfig& c, std::string_view id);
 sdk::SensorConfig* findSensor(sdk::RobotConfig& c, std::string_view id);
+
+// ---- start positions --------------------------------------------------------------------------
+std::string uniqueStartPositionId(const sdk::RobotConfig& c, std::string base);   // distinct among start positions only
+std::string startPositionDisplayName(const sdk::StartPosition& p);
+// A blue position at a neutral pose; returns the new id.
+std::string addStartPosition(sdk::RobotConfig& c);
+bool removeStartPosition(sdk::RobotConfig& c, std::string_view id);
+// Copy next to the original; returns the new id, empty when unknown.
+std::string duplicateStartPosition(sdk::RobotConfig& c, std::string_view id);
+// Reuses a position for the other alliance: the pose flipped by the field's symmetry, the alliance toggled and an
+// alliance word in the label swapped (else " (Red)" / " (Blue)" appended). Empty when unknown or the frame has no symmetry.
+std::string copyStartPositionToOtherAlliance(sdk::RobotConfig& c, std::string_view id, const sdk::FieldFrame& frame);
+sdk::StartPosition* findStartPosition(sdk::RobotConfig& c, std::string_view id);
 
 // ---- device mappings --------------------------------------------------------------------------
 std::vector<sdk::SlotMapping>* mappingList(sdk::RobotConfig& c, std::string_view owner);

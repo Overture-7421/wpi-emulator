@@ -164,16 +164,21 @@ private:
 class ViewportOptions : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool showHud READ showHud WRITE setShowHud NOTIFY changed)
+    Q_PROPERTY(int topCenterInset READ topCenterInset WRITE setTopCenterInset NOTIFY changed)
 public:
     using QObject::QObject;
     bool showHud() const { return showHud_; }
     void setShowHud(bool v) { if (v != showHud_) { showHud_ = v; emit changed(); } }
+    // Pixels the top-centre HUD stack leaves free for a widget drawn over the view (the Driver Station clock).
+    int topCenterInset() const { return topCenterInset_; }
+    void setTopCenterInset(int v) { if (v != topCenterInset_) { topCenterInset_ = v; emit changed(); } }
 
 signals:
     void changed();
 
 private:
     bool showHud_ = true;
+    int topCenterInset_ = 0;
 };
 
 class SceneModel : public QObject {

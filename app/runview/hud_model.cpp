@@ -1,6 +1,8 @@
 #include "hud_model.h"
 
 #include <QCoreApplication>
+#include <QVariantList>
+#include <QVariantMap>
 
 #include <algorithm>
 #include <cmath>
@@ -54,7 +56,9 @@ HudItemState evaluateHud(const sdk::HudWidgetDescriptor& d, const sdk::ISimSnaps
     s.text = QStringLiteral("—");
 
     const sdk::Value* v = snapshot != nullptr ? snapshot->hudValue(d.valueKey) : nullptr;
-    if (v == nullptr || v->isNull()) return s;
+    if (d.kind == sdk::HudWidgetKind::Scoreboard && snapshot == nullptr) return s;
+    // A scoreboard's own key (the caption) is optional; its scores decide whether it is valid.
+    if ((v == nullptr || v->isNull()) && d.kind != sdk::HudWidgetKind::Scoreboard) return s;
     s.valid = true;
 
     double number = 0.0;
@@ -90,6 +94,39 @@ HudItemState evaluateHud(const sdk::HudWidgetDescriptor& d, const sdk::ISimSnaps
             if (numeric(*v, number)) s.text = formatClock(number);
             else s.valid = false;
             break;
+        case sdk::HudWidgetKind::Scoreboard: {
+            s.text = v != nullptr && v->isString() ? QString::fromStdString(v->asString()) : QString();
+            double scores[2] = {0.0, 0.0};
+            bool ok = d.sides.size() == 2;
+            for (std::size_t i = 0; ok && i < 2; ++i) {
+                const sdk::HudScoreSide& side = d.sides[i];
+                const sdk::Value* sv = snapshot->hudValue(side.scoreKey);
+                ok = sv != nullptr && numeric(*sv, scores[i]);
+                HudSideState state;
+                state.label = QString::fromStdString(side.label);
+                state.color = QString::fromStdString(side.color);
+                if (ok) state.score = formatNumber(scores[i]);
+                if (!side.statusKey.empty())
+                    if (const sdk::Value* st = snapshot->hudValue(side.statusKey); st != nullptr && st->isString()) {
+                        state.status = QString::fromStdString(st->asString());
+                        state.statusActive = badgeOn(*st);
+                    }
+                s.sides.push_back(std::move(state));
+            }
+            if (!ok) {
+                s.sides.clear();
+                s.valid = false;
+                break;
+            }
+            if (scores[0] == scores[1]) {
+                s.lead = tr("TIED");
+            } else {
+                s.leader = scores[0] > scores[1] ? 0 : 1;
+                s.sides[static_cast<std::size_t>(s.leader)].leading = true;
+                s.lead = QStringLiteral("%1 +%2").arg(s.sides[static_cast<std::size_t>(s.leader)].label, formatNumber(std::fabs(scores[0] - scores[1])));
+            }
+            break;
+        }
     }
     if (!s.valid) s.text = QStringLiteral("—");
     return s;
@@ -144,6 +181,19 @@ QVariant HudModel::data(const QModelIndex& index, int role) const {
         case FractionRole: return s.fraction;
         case TextRole: return s.text;
         case ColorRole: return s.color;
+        case SidesRole: {
+            QVariantList list;
+            for (const HudSideState& side : s.sides)
+                list.push_back(QVariantMap{{QStringLiteral("label"), side.label},
+                                           {QStringLiteral("score"), side.score},
+                                           {QStringLiteral("status"), side.status},
+                                           {QStringLiteral("statusActive"), side.statusActive},
+                                           {QStringLiteral("color"), side.color},
+                                           {QStringLiteral("leading"), side.leading}});
+            return list;
+        }
+        case LeadRole: return s.lead;
+        case LeaderRole: return s.leader;
         default: return {};
     }
 }
@@ -151,7 +201,7 @@ QVariant HudModel::data(const QModelIndex& index, int role) const {
 QHash<int, QByteArray> HudModel::roleNames() const {
     return {{IdRole, "widgetId"}, {TitleRole, "title"},   {KindRole, "kind"},         {AnchorRole, "anchor"},
             {OrderRole, "order"}, {ValidRole, "valid"},   {ActiveRole, "active"},     {FractionRole, "fraction"},
-            {TextRole, "text"},   {ColorRole, "accent"}};
+            {TextRole, "text"},   {ColorRole, "accent"}, {SidesRole, "sides"}, {LeadRole, "lead"}, {LeaderRole, "leader"}};
 }
 
 QObject* HudModel::anchorModel(int anchor) const {

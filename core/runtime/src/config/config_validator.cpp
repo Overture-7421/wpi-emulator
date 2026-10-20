@@ -257,6 +257,20 @@ void validateCameras(const RobotConfig& c, const MechanismFactory& mechanisms, s
     }
 }
 
+void validateStartPositions(const RobotConfig& c, std::vector<Issue>& out) {
+    std::set<std::string> ids;
+    for (std::size_t i = 0; i < c.startPositions.size(); ++i) {
+        const StartPosition& p = c.startPositions[i];
+        const std::string base = "startPositions[" + std::to_string(i) + "]";
+        if (p.id.empty())
+            add(out, Severity::Error, base + ".id", "start position id must not be empty", issue_code::kStartPositionIdInvalid);
+        else if (!ids.insert(p.id).second)
+            add(out, Severity::Error, base + ".id", "duplicate start position id '" + p.id + "'", issue_code::kStartPositionIdDuplicate);
+        if (!std::isfinite(p.pose.xM) || !std::isfinite(p.pose.yM) || !std::isfinite(p.pose.headingRad))
+            add(out, Severity::Error, base + ".pose", "start position must have finite x, y and heading", issue_code::kStartPositionInvalid);
+    }
+}
+
 void validateSensors(const RobotConfig& c, const IGameModule* plugin, std::vector<Issue>& out) {
     std::set<std::string> ids;
     const std::vector<GameValueInfo> values = plugin != nullptr ? plugin->contributeGameValues() : std::vector<GameValueInfo>{};
@@ -518,6 +532,7 @@ std::vector<Issue> ConfigValidator::validate(const RobotConfig& config, const Me
     validateZones(config, mechanisms, selected, out);
     validateCameras(config, mechanisms, out);
     validateSensors(config, selected, out);
+    validateStartPositions(config, out);
     return out;
 }
 

@@ -5,6 +5,7 @@
 #include <QWidget>
 
 #include <memory>
+#include <vector>
 
 #include "console_panel.h"
 #include "driver_station_model.h"
@@ -26,6 +27,7 @@ class QMenu;
 class QSplitter;
 class QTimer;
 class QToolBar;
+class QToolButton;
 
 namespace wpiemu::app::runview {
 
@@ -51,6 +53,7 @@ public:
     JoystickManager& joysticks() { return joysticks_; }
     SceneModel& scene() { return scene_; }
     HudModel& hud() { return hud_; }
+    ViewportOptions& viewOptions() { return viewOptions_; }
     RunViewport* viewport() const { return viewport_; }
     StateWindow* stateWindow() const { return stateWindow_; }
     QAction* stateAction() const { return stateAction_; }
@@ -85,6 +88,8 @@ private:
     void refreshControls(const sdk::ISimSnapshot* snapshot);
     void refreshStatsLabels();
     void rebuildZoneMenu();
+    void rebuildStartMenu();
+    void selectStartPosition(const QString& id);
     void onSceneInfoChanged();
     void setStateWindowVisible(bool visible);
     void saveStateWindowGeometry();
@@ -109,6 +114,9 @@ private:
     QSplitter* verticalSplit_ = nullptr;
     QComboBox* speedCombo_ = nullptr;
     QMenu* zoneMenu_ = nullptr;
+    QMenu* startMenu_ = nullptr;
+    QToolButton* startButton_ = nullptr;
+    std::vector<sdk::StartPosition> startPositions_;
     QAction* restartAction_ = nullptr;
     QAction* restartRobotAction_ = nullptr;
     QMenu* restartMenu_ = nullptr;

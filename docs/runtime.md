@@ -79,6 +79,12 @@ and COM height still determine Z. When absent, the existing host-selected placem
 This does not reset robot odometry: a path follower's initial pose must agree with the physical start.
 The editor exposes these fields under **Robot / Start pose**. See [ADR 0018](decisions/0018-real-robot-feedback.md).
 
+`startPositions` is an optional array of named poses `{ "id", "label", "alliance": "blue"|"red", "xM", "yM", "headingRad" }`
+(always written, absent = none) the run view can reset the robot to ([ADR 0020](decisions/0020-start-positions.md)).
+`SimulationSession::setStartPlacement` / `ISimController::setStartPlacement` (queued in order with Reset) override the pose
+`reset()` restores (x, y, yaw; the built spawn height is kept) until set back to `nullopt`; `host::Options::startPose` seeds a
+new session. Codes: `start_position_id_invalid`, `start_position_id_duplicate`, `start_position_invalid`.
+
 ### Validation codes (`Issue::code`)
 
 Optional root `motionLinks` records describe motion links. For example:

@@ -79,6 +79,7 @@ void RunPage::build() {
 
     // State, restart (with its robot-code option) and speed float at the bottom-right of the 3D view, beside Home view.
     viewport_->addStateControl(stateAction_);
+    startButton_ = viewport_->addStartPositionControl(startMenu_);
     viewport_->addRestartControl(restartAction_, restartMenu_);
     viewport_->addSpeedControl(speedCombo_);
     console_ = new ConsolePanel(this);
@@ -112,6 +113,7 @@ void RunPage::build() {
 
     connect(&backend_, &IRunBackend::statusChanged, this, &RunPage::applyStatus);
     connect(&backend_, &IRunBackend::sceneInfoChanged, this, &RunPage::onSceneInfoChanged);
+    connect(&backend_, &IRunBackend::startPositionChanged, this, &RunPage::rebuildStartMenu);
     connect(&backend_, &IRunBackend::logEntry, console_, &ConsolePanel::append);
     connect(&ds_, &DriverStationModel::stateReady, &backend_, &IRunBackend::setDriverStation);
     connect(viewport_->overlay(), &StateOverlay::restartRequested, this, [this] {
@@ -143,7 +145,8 @@ void RunPage::build() {
 
 void RunPage::buildActions() {    restartAction_ = new QAction(reloadIcon(), tr("Restart"), this);
     restartAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
-    restartAction_->setToolTip(tr("Put the robot and game pieces back to their starting state; the robot code keeps running (Ctrl+R). Use the arrow to also restart the robot code."));
+    restartAction_->setToolTip(tr("Put the robot (at the selected start position) and game pieces back to their starting state; the robot code keeps running (Ctrl+R). Use the arrow to also restart the robot code."));
+    startMenu_ = new QMenu(this);
     auto* restartMenu = new QMenu(this);
     restartMenu_ = restartMenu;
     connect(restartMenu->addAction(tr("Restart physics only")), &QAction::triggered, restartAction_, &QAction::trigger);
@@ -235,12 +238,68 @@ void RunPage::rebuildZoneMenu() {
     }
 }
 
+void RunPage::rebuildStartMenu() {
+    // Called from the menu's own actions (through startPositionChanged): never delete an action that is emitting.
+    for (QAction* a : startMenu_->actions()) {
+        startMenu_->removeAction(a);
+        a->deleteLater();
+    }
+    for (QActionGroup* g : startMenu_->findChildren<QActionGroup*>(Qt::FindDirectChildrenOnly)) g->deleteLater();
+    const QString current = backend_.startPositionId();
+    auto* group = new QActionGroup(startMenu_);
+    group->setExclusive(true);
+    const auto addEntry = [&](const QString& text, const QString& id) {
+        QAction* a = startMenu_->addAction(text);
+        a->setCheckable(true);
+        a->setChecked(id == current);
+        group->addAction(a);
+        connect(a, &QAction::triggered, this, [this, id] { selectStartPosition(id); });
+    };
+    addEntry(tr("Default (robot setup)"), QString());
+    QString currentLabel = tr("Default");
+    for (const sdk::Alliance alliance : {sdk::Alliance::Blue, sdk::Alliance::Red}) {
+        bool any = false;
+        for (const sdk::StartPosition& p : startPositions_) {
+            if (p.alliance != alliance) continue;
+            if (!any) startMenu_->addSection(alliance == sdk::Alliance::Blue ? tr("Blue alliance") : tr("Red alliance"));
+            any = true;
+            const QString id = QString::fromStdString(p.id);
+            const QString label = p.label.empty() ? id : QString::fromStdString(p.label);
+            addEntry(label, id);
+            if (id == current) currentLabel = label;
+        }
+    }
+    startButton_->setToolTip(startPositions_.empty()
+                                 ? tr("No start positions yet: add them in the editor under Robot > Start positions")
+                                 : tr("Start position: %1. Choose where the robot is placed on restart.").arg(currentLabel));
+}
+
+void RunPage::selectStartPosition(const QString& id) {
+    const sdk::StartPosition* position = nullptr;
+    for (const sdk::StartPosition& p : startPositions_)
+        if (QString::fromStdString(p.id) == id) position = &p;
+    backend_.setStartPosition(position != nullptr ? id : QString());
+    if (position != nullptr) {
+        ds_.setAlliance(position->alliance == sdk::Alliance::Blue ? DriverStationModel::Alliance::Blue : DriverStationModel::Alliance::Red);
+        console_->append({QDateTime::currentMSecsSinceEpoch(), sdk::LogLevel::Info, LogStream::Emulator, tr("start position"),
+                          tr("%1: x %2 m, y %3 m, heading %4°")
+                              .arg(position->label.empty() ? id : QString::fromStdString(position->label))
+                              .arg(static_cast<double>(position->pose.xM), 0, 'f', 2)
+                              .arg(static_cast<double>(position->pose.yM), 0, 'f', 2)
+                              .arg(static_cast<double>(position->pose.headingRad) * 180.0 / 3.14159265358979, 0, 'f', 1)});
+    }
+    ds_.onSimReset();
+    backend_.resetSimulation();
+}
+
 void RunPage::onSceneInfoChanged() {
     const RunSceneInfo info = backend_.sceneInfo();
+    startPositions_ = info.config ? info.config->startPositions : std::vector<sdk::StartPosition>{};
     scene_.setSceneInfo(info);
     hud_.setDescriptors(info.hud);
     stateWindow_->model()->setScene(info);
     rebuildZoneMenu();
+    rebuildStartMenu();
 }
 
 void RunPage::applyStatus() {
@@ -267,6 +326,7 @@ void RunPage::refreshControls(const sdk::ISimSnapshot* snapshot) {
     const RunControlState c = deriveControlState(backend_.status(), paused);
     restartAction_->setEnabled(c.simulating);
     restartRobotAction_->setEnabled(c.canRestart);
+    startButton_->setEnabled(c.simulating && !startPositions_.empty());
     speedCombo_->setEnabled(c.simulating);
 }
 

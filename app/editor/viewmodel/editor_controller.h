@@ -43,6 +43,9 @@ public:
     // Adds a Limelight / PhotonVision camera on the chassis or a mechanism link and selects it.
     QString addCamera(sdk::CameraKind kind, const sdk::MechanismAttachment& attachment = {});
     QString addSensor(sdk::SensorKind kind);
+    QString addStartPosition();
+    // Copies the selected start position to the other alliance and selects the copy; false without field symmetry.
+    bool copySelectedStartPositionToOtherAlliance();
     bool deleteSelection();
     bool duplicateSelection();
     // Maps a dropped / chosen device: onto a slot, or onto the best free compatible slot of a

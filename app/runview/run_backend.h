@@ -93,6 +93,8 @@ public:
     virtual RunSceneInfo sceneInfo() const = 0;
     // Latest published snapshot; may be null before the first tick. Cheap: call at UI frame rate.
     virtual std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const = 0;
+    // Id of the selected RobotConfig::startPositions entry; empty = the robot setup's default start.
+    virtual QString startPositionId() const = 0;
 
 public slots:
     // The robot program is launched once and stays alive (detecting devices) between simulations:
@@ -103,6 +105,8 @@ public slots:
     virtual void stopSimulation() = 0;
     virtual void restartRobot() = 0;
     virtual void resetSimulation() = 0;
+    // Chooses where resets place the robot ("" = default); does not reset by itself.
+    virtual void setStartPosition(const QString& id) = 0;
     virtual void setPaused(bool paused) = 0;
     virtual void stepTicks(int ticks) = 0;
     virtual void setTimeScale(double scale) = 0;
@@ -111,6 +115,7 @@ public slots:
 signals:
     void statusChanged();
     void sceneInfoChanged();
+    void startPositionChanged();
     void logEntry(const wpiemu::app::runview::RunLogEntry& entry);
 };
 

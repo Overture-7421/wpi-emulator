@@ -28,6 +28,7 @@
 #include "wpiemu/sdk/core/severity.h"
 #include "wpiemu/sdk/core/result.h"
 #include "wpiemu/sdk/devices/discovered_device.h"
+#include "wpiemu/sdk/game/field.h"
 #include "wpiemu/sdk/game/game_value.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
 #include "wpiemu/sdk/game/zone_kind.h"
@@ -55,6 +56,7 @@ struct EditorCatalog {
     std::vector<sdk::ZoneKindInfo> zoneKinds;                      // zone kinds the selected plugin owns (pickup, muzzle, ...)
 
     std::vector<sdk::GameValueInfo> gameValues;                    // values the selected plugin publishes (sensor sources)
+    sdk::FieldFrame fieldFrame;                                    // symmetry of the season's field (start position copy tool)
 
     const sdk::GameValueInfo* findGameValue(std::string_view id) const {
         for (const auto& v : gameValues)

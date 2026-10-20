@@ -52,6 +52,20 @@ TEST_CASE("validator: chassis, wheel, sim and battery sanity") {
     CHECK(hasIssue(issues, issue_code::kStartPoseInvalid));
 }
 
+TEST_CASE("validator: start positions need unique ids and finite poses") {
+    Registries reg;
+    RobotConfig c = sampleConfig();
+    c.startPositions = {{"a", "A", Alliance::Blue, {1.f, 2.f, 0.f}}};
+    CHECK_FALSE(hasIssue(validate(c, reg), issue_code::kStartPositionIdDuplicate));
+    c.startPositions.push_back({"a", "A2", Alliance::Red, {1.f, 2.f, 0.f}});
+    c.startPositions.push_back({"", "no id", Alliance::Red, {1.f, 2.f, 0.f}});
+    c.startPositions.push_back({"nan", "nan", Alliance::Red, {std::numeric_limits<float>::infinity(), 2.f, 0.f}});
+    const auto issues = validate(c, reg);
+    CHECK(hasIssue(issues, issue_code::kStartPositionIdDuplicate));
+    CHECK(hasIssue(issues, issue_code::kStartPositionIdInvalid));
+    CHECK(hasIssue(issues, issue_code::kStartPositionInvalid));
+}
+
 TEST_CASE("validator: tire and motor parameters must be finite and physically meaningful") {
     Registries reg;
     const float nan = std::numeric_limits<float>::quiet_NaN();

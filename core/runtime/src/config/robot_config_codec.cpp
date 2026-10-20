@@ -454,6 +454,23 @@ void readSensor(const Value& v, const std::string& path, Ctx& ctx, RobotConfig& 
 
 // ---- encode helpers --------------------------------------------------------------------------------
 
+void readStartPosition(const Value& v, const std::string& path, Ctx& ctx, RobotConfig& cfg) {
+    StartPosition p;
+    ObjReader r(v, path, ctx);
+    r.str("id", p.id);
+    r.str("label", p.label);
+    std::string alliance;
+    if (r.str("alliance", alliance)) {
+        if (alliance == allianceKey(Alliance::Blue)) p.alliance = Alliance::Blue;
+        else if (alliance == allianceKey(Alliance::Red)) p.alliance = Alliance::Red;
+        else ctx.err(join(path, "alliance"), "unknown alliance '" + alliance + "' (blue|red)");
+    }
+    if (!r.flt("xM", p.pose.xM)) ctx.err(join(path, "xM"), "required finite number");
+    if (!r.flt("yM", p.pose.yM)) ctx.err(join(path, "yM"), "required finite number");
+    if (!r.flt("headingRad", p.pose.headingRad)) ctx.err(join(path, "headingRad"), "required finite number");
+    cfg.startPositions.push_back(std::move(p));
+}
+
 Value fv(float f) { return Value(floatToDouble(f)); }
 
 Value vec3Value(const Vec3& v) {
@@ -723,6 +740,14 @@ Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value) const {
                 readSensor(ss->array()[i], "sensors[" + std::to_string(i) + "]", ctx, cfg);
         }
     }
+    if (const Value* ps = root.get("startPositions")) {
+        if (!ps->isArray()) {
+            ctx.err("startPositions", "expected an array");
+        } else {
+            for (std::size_t i = 0; i < ps->array().size(); ++i)
+                readStartPosition(ps->array()[i], "startPositions[" + std::to_string(i) + "]", ctx, cfg);
+        }
+    }
     if (const Value* links = root.get("motionLinks")) {
         if (!links->isArray()) {
             ctx.err("motionLinks", "expected an array");
@@ -848,6 +873,18 @@ Value RobotConfigCodec::toValue(const RobotConfig& cfg) const {
     Value sensors = Value::makeArray();
     for (const SensorConfig& s : cfg.sensors) sensors.push_back(sensorValue(s));
     root["sensors"] = std::move(sensors);
+    Value startPositions = Value::makeArray();
+    for (const StartPosition& p : cfg.startPositions) {
+        Value item = Value::makeObject();
+        item["id"] = p.id;
+        item["label"] = p.label;
+        item["alliance"] = std::string(allianceKey(p.alliance));
+        item["xM"] = fv(p.pose.xM);
+        item["yM"] = fv(p.pose.yM);
+        item["headingRad"] = fv(p.pose.headingRad);
+        startPositions.push_back(std::move(item));
+    }
+    root["startPositions"] = std::move(startPositions);
     Value links = Value::makeArray();
     for (const auto& link : cfg.motionLinks) {
         Value item = Value::makeObject();

@@ -146,6 +146,61 @@ sdk::PropertySchema zoneGeneralSchema() {
     return s;
 }
 
+sdk::PropertySchema startPositionGeneralSchema() {
+    sdk::PropertySchema s = zoneGeneralSchema();
+    s.properties[0].description = ETR("Name shown in the project tree and in the run view's start position menu.").toStdString();
+    PropertySpec alliance;
+    alliance.key = "alliance";
+    alliance.label = ETR("Alliance").toStdString();
+    alliance.description = ETR("Choosing this position in the run view also switches the Driver Station to this alliance.").toStdString();
+    alliance.type = PropertyType::Enum;
+    alliance.defaultValue = std::string(sdk::allianceKey(sdk::Alliance::Blue));
+    alliance.options.push_back({std::string(sdk::allianceKey(sdk::Alliance::Blue)), ETR("Blue").toStdString()});
+    alliance.options.push_back({std::string(sdk::allianceKey(sdk::Alliance::Red)), ETR("Red").toStdString()});
+    s.properties.push_back(std::move(alliance));
+    return s;
+}
+
+sdk::PropertySchema startPositionPlacementSchema() {
+    sdk::PropertySchema s;
+    const std::string group = ETR("Placement").toStdString();
+    const auto number = [&](const char* key, QString label, PropertyUnit unit, QString description) {
+        PropertySpec p;
+        p.key = key;
+        p.label = label.toStdString();
+        p.description = description.toStdString();
+        p.type = PropertyType::Double;
+        p.unit = unit;
+        p.group = group;
+        p.defaultValue = 0.0;
+        return p;
+    };
+    s.properties.push_back(number("xM", ETR("X"), PropertyUnit::Meters, ETR("Field X: from the blue alliance wall toward the red one.")));
+    s.properties.push_back(number("yM", ETR("Y"), PropertyUnit::Meters, ETR("Field Y: to the left when facing the red wall.")));
+    s.properties.push_back(number("headingRad", ETR("Heading"), PropertyUnit::Radians, ETR("Counter-clockwise from +X (toward the red wall).")));
+    return s;
+}
+
+bool applyStartPosition(sdk::StartPosition& p, const std::string& groupId, const std::string& key, const Value& value) {
+    if (groupId == "startpos.general") {
+        if (key == "label") { p.label = value.asString(p.label); return true; }
+        if (key == "alliance") {
+            p.alliance = value.asString() == sdk::allianceKey(sdk::Alliance::Red) ? sdk::Alliance::Red : sdk::Alliance::Blue;
+            return true;
+        }
+        return false;
+    }
+    if (groupId == "startpos.placement") {
+        const auto num = [&](float fallback) { return value.isNumber() ? static_cast<float>(value.asDouble()) : fallback; };
+        if (key == "xM") p.pose.xM = num(p.pose.xM);
+        else if (key == "yM") p.pose.yM = num(p.pose.yM);
+        else if (key == "headingRad") p.pose.headingRad = num(p.pose.headingRad);
+        else return false;
+        return true;
+    }
+    return false;
+}
+
 sdk::PropertySchema zonePlacementSchema(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::ZoneConfig& z, bool volume) {
     sdk::PropertySchema s;
     PropertySpec parent;
@@ -561,6 +616,21 @@ std::vector<PropertyGroup> propertyGroupsFor(const sdk::RobotConfig& c, const Ed
                 out.push_back(groupOf("sensor.props", ETR("Response"), response, withDefaults(response, s->properties)));
             break;
         }
+        case SelKind::StartPosition: {
+            const sdk::StartPosition* p = c.findStartPosition(sel.owner);
+            if (p == nullptr) break;
+            Value general = Value::makeObject();
+            general["label"] = p->label;
+            general["alliance"] = std::string(sdk::allianceKey(p->alliance));
+            out.push_back(groupOf("startpos.general", ETR("General"), startPositionGeneralSchema(), std::move(general)));
+            Value placement = Value::makeObject();
+            placement["xM"] = static_cast<double>(p->pose.xM);
+            placement["yM"] = static_cast<double>(p->pose.yM);
+            placement["headingRad"] = static_cast<double>(p->pose.headingRad);
+            out.push_back(groupOf("startpos.placement", ETR("Placement"), startPositionPlacementSchema(), std::move(placement)));
+            out.back().section = sdk::PropertySection::Placement;
+            break;
+        }
         case SelKind::Plugin: {
             if (!catalog.hasPlugin()) break;
             const sdk::PluginSection* section = c.findPlugin(catalog.pluginId);
@@ -614,6 +684,10 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
     if (sel.kind == SelKind::Sensor) {
         sdk::SensorConfig* s = ops::findSensor(c, sel.owner);
         return s != nullptr && applySensor(*s, groupId, key, value);
+    }
+    if (sel.kind == SelKind::StartPosition) {
+        sdk::StartPosition* p = ops::findStartPosition(c, sel.owner);
+        return p != nullptr && applyStartPosition(*p, groupId, key, value);
     }
     if (sel.kind == SelKind::Mechanism) {
         sdk::MechanismConfig* m = nullptr;
@@ -704,6 +778,9 @@ QString describeSelection(const sdk::RobotConfig& c, const EditorCatalog& catalo
             return QString::fromStdString(sel.owner);
         case SelKind::Sensor:
             if (const auto* s = c.findSensor(sel.owner)) return QString::fromStdString(ops::sensorDisplayName(*s));
+            return QString::fromStdString(sel.owner);
+        case SelKind::StartPosition:
+            if (const auto* p = c.findStartPosition(sel.owner)) return QString::fromStdString(ops::startPositionDisplayName(*p));
             return QString::fromStdString(sel.owner);
         case SelKind::Device: return QString::fromStdString(sel.owner);
         case SelKind::None: break;

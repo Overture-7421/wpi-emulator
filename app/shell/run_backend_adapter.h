@@ -15,6 +15,7 @@ public:
     runview::RunStatus status() const override;
     runview::RunSceneInfo sceneInfo() const override;
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const override { return services_.runtime().latestSnapshot(); }
+    QString startPositionId() const override { return services_.runtime().startPosition(); }
 
 public slots:
     void launchRobot() override;
@@ -22,6 +23,7 @@ public slots:
     void stopSimulation() override;
     void restartRobot() override;
     void resetSimulation() override;
+    void setStartPosition(const QString& id) override;
     void setPaused(bool paused) override;
     void stepTicks(int ticks) override;
     void setTimeScale(double scale) override;

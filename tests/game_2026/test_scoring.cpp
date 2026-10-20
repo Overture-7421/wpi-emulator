@@ -361,6 +361,46 @@ TEST_CASE("without a timed match the game is free play: no phases, no match HUD,
     CHECK(snap->hudValue(hud::kHubRedActive) == nullptr);
 }
 
+TEST_CASE("the final score stays on the HUD after a timed match stops until reset, a new match or free play") {
+    Session s;
+    emptyField(s);
+    s.start();
+    autoEnabled(s);
+    s.game->pool().spawn(hubSensorCentre(Alliance::Blue), {});
+    s.tick(2);
+    const auto published = [&] {
+        sdk::SnapshotBuilder out;
+        s.stateOwner->publish(out);
+        return out.build();
+    };
+    CHECK(published()->hudValue(hud::kScoreBlue)->asInt() == 1);
+
+    s.env.driverStation.enabled = false;
+    s.env.driverStation.matchTimeS = -1.0;   // the match ended
+    s.tick(2);
+    auto snap = published();
+    REQUIRE(snap->hudValue(hud::kScoreBlue) != nullptr);
+    CHECK(snap->hudValue(hud::kScoreBlue)->asInt() == 1);
+    CHECK(snap->hudValue(hud::kMatchPhase)->asString() == "FINAL");
+    CHECK(snap->hudValue(hud::kHubBlueStatus) == nullptr);
+
+    s.env.driverStation.enabled = true;   // free play hides it again
+    s.env.driverStation.mode = sdk::proto::RobotMode::Teleop;
+    s.tick(2);
+    CHECK(published()->hudValue(hud::kScoreBlue) == nullptr);
+
+    s.env.driverStation.enabled = false;
+    autoEnabled(s);   // a new match starts from zero
+    s.tick(2);
+    CHECK(published()->hudValue(hud::kScoreBlue)->asInt() == 0);
+    s.env.driverStation.enabled = false;
+    s.env.driverStation.matchTimeS = -1.0;
+    s.tick(2);
+    REQUIRE(published()->hudValue(hud::kScoreBlue) != nullptr);
+    s.stateOwner->reset(s.env.ctx);
+    CHECK(published()->hudValue(hud::kScoreBlue) == nullptr);
+}
+
 TEST_CASE("destroying the game state removes its fuel from the world") {
     Session s;
     s.start();
@@ -403,5 +443,9 @@ TEST_CASE("publish exposes the fuel entity group and every HUD value the widgets
     for (const sdk::HudWidgetDescriptor& w : s.module().contributeHud()) {
         CHECK_MESSAGE(snap->hudValue(w.valueKey) != nullptr, w.id);
         if (!w.maxKey.empty()) CHECK_MESSAGE(snap->hudValue(w.maxKey) != nullptr, w.id);
+        for (const sdk::HudScoreSide& side : w.sides) {
+            CHECK_MESSAGE(snap->hudValue(side.scoreKey) != nullptr, w.id);
+            if (!side.statusKey.empty()) CHECK_MESSAGE(snap->hudValue(side.statusKey) != nullptr, w.id);
+        }
     }
 }

@@ -22,7 +22,7 @@
 
 namespace wpiemu::app::editor {
 
-enum class NodeKind { Robot, Chassis, Com, Drivetrain, Wheel, Slot, Shape, Mechanism, Group, Volume, Plugin, Zone, Camera, Sensor };
+enum class NodeKind { Robot, Chassis, Com, Drivetrain, Wheel, Slot, Shape, Mechanism, Group, Volume, Plugin, Zone, Camera, Sensor, StartPosition };
 
 class ProjectTreeModel : public QAbstractItemModel {
     Q_OBJECT

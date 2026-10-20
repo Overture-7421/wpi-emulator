@@ -91,6 +91,16 @@ Sensors (`RobotConfig::sensors`, `sdk/config/sensor.h`) are core-owned Distance 
 dropdown that keeps a saved-but-missing source as `(unavailable) <id>`), Response and the Device slot (`sensor`, owner = sensor id).
 The project tree lists them under "Sensors" (`sensor:<id>` nodes with a nested slot row); `locateIssue` resolves `sensors[i]` paths.
 
+## Start positions (ADR 0020)
+
+Start positions (`RobotConfig::startPositions`, `sdk/config/start_position.h`) are named, alliance-tagged field poses the run view
+resets the robot to. They have no viewport marker (the editor shows no field); X, Y and heading are typed in the inspector with the
+same units as the Robot's Start pose card. `SelKind::StartPosition`, a "Start positions" tree group (`start:<id>` nodes), the
+inspector groups `startpos.general` (label, alliance) and `startpos.placement`, and `ops::add/remove/duplicateStartPosition` follow the
+Sensor pattern. **Copy to Red / Blue** (`ops::copyStartPositionToOtherAlliance`, `EditorController::copySelectedStartPositionToOtherAlliance`)
+flips the pose with `sdk::flipToOtherAlliance` using `EditorCatalog::fieldFrame` (from `IGameModule::fieldFrame()`); it is disabled
+when the frame has no symmetry. `locateIssue` resolves `startPositions[i]` paths.
+
 ## Cameras (ADR 0017)
 
 Cameras (`RobotConfig::cameras`, `sdk/config/camera.h`) are simulated Limelight / PhotonVision coprocessors. They are attached to the

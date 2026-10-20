@@ -38,6 +38,25 @@ TEST_CASE("config codec: optional start pose round trips and rejects malformed c
     }
 }
 
+TEST_CASE("config codec: start positions round trip and reject an unknown alliance") {
+    const RobotConfigCodec codec;
+    const JsonValueCodec json;
+    RobotConfig c;
+    c.startPositions = {{"blue_right", "Blue right", Alliance::Blue, {4.51f, 0.52654f, 0.f}},
+                        {"red_right", "Red right", Alliance::Red, {12.03f, 7.54f, 3.1f}}};
+    const auto back = codec.fromValue(codec.toValue(c));
+    REQUIRE(back.ok());
+    CHECK(back.value().startPositions == c.startPositions);
+    CHECK(codec.fromValue(codec.toValue(RobotConfig{})).value().startPositions.empty());
+    for (const auto* text : {R"({"startPositions":[{"id":"a","alliance":"green","xM":1,"yM":2,"headingRad":0}]})",
+                             R"({"startPositions":[{"id":"a","alliance":"red","xM":1,"yM":2}]})",
+                             R"({"startPositions":{}})"}) {
+        const auto parsed = json.parse(text);
+        REQUIRE(parsed.ok());
+        CHECK_FALSE(codec.fromValue(parsed.value()).ok());
+    }
+}
+
 TEST_CASE("config codec: a full config survives config -> Value -> JSON text -> Value -> config") {
     RobotConfig c = sampleConfig();
     c.chassis.sizeM = Vec3{0.7f, 0.65f, 0.12f};

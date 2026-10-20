@@ -16,6 +16,7 @@
 #include "wpiemu/sdk/config/camera.h"
 #include "wpiemu/sdk/config/mechanism_attachment.h"
 #include "wpiemu/sdk/config/sensor.h"
+#include "wpiemu/sdk/config/start_position.h"
 #include "wpiemu/sdk/config/zone.h"
 #include "wpiemu/sdk/core/geometry.h"
 #include "wpiemu/sdk/core/value.h"
@@ -47,14 +48,6 @@ struct SimSettings {
     std::int64_t stepUs = 5000;     // 200 Hz
     std::uint64_t seed = 1;
     PhysicsConfig physics;
-};
-
-struct RobotStartPose {
-    float xM = 0.f;
-    float yM = 0.f;
-    float headingRad = 0.f;
-
-    bool operator==(const RobotStartPose&) const = default;
 };
 
 struct DrivetrainConfig {
@@ -101,6 +94,8 @@ struct RobotConfig {
     // Field-frame chassis origin on start/reset. Absent: the host chooses a default inside the
     // field.
     std::optional<RobotStartPose> startPose;
+    // Named poses the run view can reset the robot to (ADR 0020).
+    std::vector<StartPosition> startPositions;
 
     // key = plugin id (e.g. "game_2026"). Opaque to core.
     std::map<std::string, PluginSection, std::less<>> plugins;
@@ -119,6 +114,11 @@ struct RobotConfig {
     const SensorConfig* findSensor(std::string_view id) const {
         for (const auto& s : sensors)
             if (s.id == id) return &s;
+        return nullptr;
+    }
+    const StartPosition* findStartPosition(std::string_view id) const {
+        for (const auto& p : startPositions)
+            if (p.id == id) return &p;
         return nullptr;
     }
     const CameraConfig* findCamera(std::string_view id) const {

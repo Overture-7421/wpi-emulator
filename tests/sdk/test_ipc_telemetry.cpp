@@ -125,6 +125,7 @@ public:
     void control(const proto::SimControl& c) override { lastControl = c; }
     void bindSlot(const SlotAddress& s, const DeviceKey& d) override { bound = {s, d}; }
     void unbindSlot(const SlotAddress&) override { bound = {}; }
+    void setStartPlacement(const std::optional<RobotStartPose>&) override {}
     proto::DsState lastDs;
     proto::SimControl lastControl;
     SlotMapping bound;

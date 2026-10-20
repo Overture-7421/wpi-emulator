@@ -78,6 +78,7 @@ public:
     void control(const sdk::proto::SimControl& command) override;
     void bindSlot(const sdk::SlotAddress& slot, const sdk::DeviceKey& device) override;
     void unbindSlot(const sdk::SlotAddress& slot) override;
+    void setStartPlacement(const std::optional<sdk::RobotStartPose>& pose) override;
 
     // ---- driving ----
     // One iteration: apply queued commands, drain inbound events (waiting at most `maxWait` when there is nothing
@@ -106,7 +107,8 @@ private:
     struct Control { sdk::proto::SimControl command; };
     struct Bind { sdk::SlotAddress slot; sdk::DeviceKey device; };
     struct Unbind { sdk::SlotAddress slot; };
-    using Command = std::variant<SetDs, Control, Bind, Unbind>;
+    struct SetStart { std::optional<sdk::RobotStartPose> pose; };
+    using Command = std::variant<SetDs, Control, Bind, Unbind, SetStart>;
 
     void enqueue(Command command);
     void applyCommands(std::vector<Command>& batch);

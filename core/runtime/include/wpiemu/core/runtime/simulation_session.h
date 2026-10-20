@@ -99,6 +99,8 @@ public:
     // numbering; the next sensor frame is full even if the caller requests a delta.
     void reset();
 
+    // The chassis pose reset() restores: this x, y and yaw on the built spawn height. nullopt = the configured pose.
+    void setStartPlacement(const std::optional<sdk::RobotStartPose>& pose) { startOverride_ = pose; }
     void setDriverStation(const sdk::proto::DsState& ds) { ds_ = ds; }
     const sdk::proto::DsState& driverStation() const { return ds_; }
     // FMS game data the loaded game plugin currently wants the robot to see (nullopt: none). Overlaid on
@@ -153,6 +155,7 @@ private:
     sdk::IGameModule* module_ = nullptr;
     std::unique_ptr<sdk::IField> field_;
     ChassisInfo chassis_;
+    std::optional<sdk::RobotStartPose> startOverride_;
     std::unique_ptr<sdk::ITireModel> tire_;
     std::unique_ptr<sdk::IDrivetrain> drivetrain_;
     std::vector<std::unique_ptr<sdk::IMechanism>> mechanismInstances_;

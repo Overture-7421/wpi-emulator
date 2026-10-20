@@ -96,6 +96,19 @@ QIcon houseIcon() {
     });
 }
 
+QIcon flagIcon() {
+    return paintedIcon([](QPainter& p) {
+        p.drawLine(QPointF(5, 3), QPointF(5, 17.5));
+        QPainterPath cloth;
+        cloth.moveTo(5, 4);
+        cloth.lineTo(16, 4);
+        cloth.lineTo(13, 7.5);
+        cloth.lineTo(16, 11);
+        cloth.lineTo(5, 11);
+        p.drawPath(cloth);
+    });
+}
+
 QIcon listIcon() {
     return paintedIcon([](QPainter& p) {
         for (const qreal y : {5.0, 10.0, 15.0}) {
@@ -178,7 +191,7 @@ void StateOverlay::paintEvent(QPaintEvent*) {
 
 RunViewport::RunViewport(SceneModel& scene, HudModel& hud, ViewportTheme& theme, ViewportOptions& options,
                          QWidget* parent)
-    : QWidget(parent) {
+    : QWidget(parent), options_(&options) {
     setObjectName(QStringLiteral("runview.viewport"));
     quick_ = new QQuickWidget(this);
     quick_->setResizeMode(QQuickWidget::SizeRootObjectToView);
@@ -247,6 +260,19 @@ void RunViewport::addStateControl(QAction* action) {
     button->setFixedSize(34, 34);
     button->setCursor(Qt::PointingHandCursor);
     addControl(button);
+}
+
+QToolButton* RunViewport::addStartPositionControl(QMenu* menu) {
+    auto* button = new QToolButton;
+    button->setObjectName(QStringLiteral("runview.startButton"));
+    button->setIcon(flagIcon());
+    button->setIconSize(QSize(20, 20));
+    button->setFixedSize(34, 34);
+    button->setMenu(menu);
+    button->setPopupMode(QToolButton::InstantPopup);
+    button->setCursor(Qt::PointingHandCursor);
+    addControl(button);
+    return button;
 }
 
 void RunViewport::addRestartControl(QAction* restart, QMenu* menu) {
@@ -322,6 +348,8 @@ void RunViewport::placeControls() {
     matchClock_->adjustSize();
     matchClock_->move((width() - matchClock_->width()) / 2, 12);
     matchClock_->raise();
+    // The top-centre HUD stack sits below the clock pill (the pill is a widget above the QML scene).
+    options_->setTopCenterInset(matchClock_->isVisibleTo(this) ? matchClock_->height() + 8 : 0);
     controls_->adjustSize();
     controls_->move(width() - controls_->width() - 12, height() - controls_->height() - 12);
     controls_->raise();

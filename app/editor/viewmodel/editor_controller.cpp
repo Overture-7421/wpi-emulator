@@ -139,6 +139,7 @@ bool EditorController::selectionExists(const SelectionRef& ref) const {
         case SelKind::Zone: return c.findZone(ref.owner) != nullptr;
         case SelKind::Camera: return c.findCamera(ref.owner) != nullptr;
         case SelKind::Sensor: return c.findSensor(ref.owner) != nullptr;
+        case SelKind::StartPosition: return c.findStartPosition(ref.owner) != nullptr;
         case SelKind::Slot:
             for (const auto& s : ops::slotSpecsFor(c, document_.catalog(), ref.owner))
                 if (s.name == ref.sub) return true;
@@ -208,6 +209,23 @@ QString EditorController::addSensor(sdk::SensorKind kind) {
     return id;
 }
 
+QString EditorController::addStartPosition() {
+    const QString id = document_.addStartPosition();
+    if (id.isEmpty()) return {};
+    selection_.set(SelectionRef::startPosition(id.toStdString()));
+    Q_EMIT statusMessage(ETR("Added start position %1. Set its alliance and field pose; choose it from the run view's start position button.").arg(id), 0);
+    return id;
+}
+
+bool EditorController::copySelectedStartPositionToOtherAlliance() {
+    const SelectionRef sel = selection_.current();
+    if (sel.kind != SelKind::StartPosition) return false;
+    const QString id = document_.copyStartPositionToOtherAlliance(QString::fromStdString(sel.owner));
+    if (id.isEmpty()) return false;
+    selection_.set(SelectionRef::startPosition(id.toStdString()));
+    return true;
+}
+
 bool EditorController::deleteSelection() {
     const SelectionRef sel = selection_.current();
     switch (sel.kind) {
@@ -215,6 +233,7 @@ bool EditorController::deleteSelection() {
         case SelKind::Zone: return document_.removeZone(QString::fromStdString(sel.owner));
         case SelKind::Camera: return document_.removeCamera(QString::fromStdString(sel.owner));
         case SelKind::Sensor: return document_.removeSensor(QString::fromStdString(sel.owner));
+        case SelKind::StartPosition: return document_.removeStartPosition(QString::fromStdString(sel.owner));
         case SelKind::Primitive: return document_.removePrimitive(QString::fromStdString(sel.owner), sel.index);
         case SelKind::Wheel: return document_.removeWheel(QString::fromStdString(sel.sub));
         case SelKind::Slot: return clearSlot({sel.owner, sel.sub});
@@ -242,6 +261,11 @@ bool EditorController::duplicateSelection() {
     if (sel.kind == SelKind::Sensor) {
         const QString id = document_.duplicateSensor(QString::fromStdString(sel.owner));
         if (!id.isEmpty()) selection_.set(SelectionRef::sensor(id.toStdString()));
+        return !id.isEmpty();
+    }
+    if (sel.kind == SelKind::StartPosition) {
+        const QString id = document_.duplicateStartPosition(QString::fromStdString(sel.owner));
+        if (!id.isEmpty()) selection_.set(SelectionRef::startPosition(id.toStdString()));
         return !id.isEmpty();
     }
     if (sel.kind == SelKind::Primitive) {

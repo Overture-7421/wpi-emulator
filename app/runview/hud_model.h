@@ -11,6 +11,18 @@
 
 namespace wpiemu::app::runview {
 
+// One side of a Scoreboard widget.
+struct HudSideState {
+    QString label;
+    QString score;
+    QString status;           // empty when the status key is absent
+    QString color;
+    bool statusActive = false;
+    bool leading = false;
+
+    bool operator==(const HudSideState&) const = default;
+};
+
 // Evaluated, display-ready state of one game-plugin HUD widget descriptor.
 struct HudItemState {
     QString id;
@@ -23,6 +35,11 @@ struct HudItemState {
     double fraction = 0.0;   // Meter / Gauge: 0..1
     QString text;            // value text (already formatted, with unit)
     QString color;           // "#rrggbb" or empty for the theme default
+    // Scoreboard: sides[0] left; `text` is the centre caption, `lead` the margin text ("BLUE +6", "TIED"),
+    // `leader` the index of the leading side or -1.
+    std::vector<HudSideState> sides;
+    QString lead;
+    int leader = -1;
 
     bool operator==(const HudItemState&) const = default;
 };
@@ -37,7 +54,7 @@ class HudModel : public QAbstractListModel {
 public:
     enum Role {
         IdRole = Qt::UserRole + 1, TitleRole, KindRole, AnchorRole, OrderRole, ValidRole, ActiveRole,
-        FractionRole, TextRole, ColorRole
+        FractionRole, TextRole, ColorRole, SidesRole, LeadRole, LeaderRole
     };
 
     explicit HudModel(QObject* parent = nullptr);

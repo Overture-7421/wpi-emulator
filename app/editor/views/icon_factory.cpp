@@ -100,6 +100,7 @@ QIcon IconFactory::node(NodeKind kind) const {
         case NodeKind::Zone: return glyph(QStringLiteral("Z"), QColor("#33b5c9"));
         case NodeKind::Camera: return glyph(QStringLiteral("\xE2\x97\x89"), QColor("#9be15d"));
         case NodeKind::Sensor: return glyph(QStringLiteral("\xE2\x97\x8E"), QColor("#f2a65a"));
+        case NodeKind::StartPosition: return glyph(QStringLiteral("\xE2\x9A\x91"), QColor("#7aa2f7"));
         case NodeKind::Group: return {};
         case NodeKind::Slot: break;
     }

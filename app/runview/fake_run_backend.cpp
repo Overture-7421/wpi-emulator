@@ -156,6 +156,9 @@ sdk::RobotConfig FakeRunBackend::makeDemoConfig() {
     turretCam.vFovDeg = 45.0;
     turretCam.maxRangeM = 6.0;
     c.cameras.push_back(std::move(turretCam));
+    c.startPositions = {{"blue_left", "Blue left", sdk::Alliance::Blue, {2.5f, 6.5f, 0.f}},
+                        {"blue_right", "Blue right", sdk::Alliance::Blue, {2.5f, 1.7f, 0.f}},
+                        {"red_left", "Red left", sdk::Alliance::Red, {kFieldL - 2.5f, 1.7f, 3.14159265f}}};
     return c;
 }
 
@@ -248,12 +251,13 @@ FakeRunBackend::FakeRunBackend(Options options, QObject* parent) : IRunBackend(p
         auto fuel = hud("demo_game.fuel", "Fuel", HudWidgetKind::Meter, "demo.fuel.count", HudAnchor::BottomCenter, 0);
         fuel.maxKey = "demo.fuel.capacity";
         fuel.color = "#facc15";
-        auto timer = hud("demo_game.match", "Match", HudWidgetKind::Timer, "demo.match_time", HudAnchor::TopCenter, 0);
-        auto hub = hud("demo_game.hub", "Hub", HudWidgetKind::Badge, "demo.hub.active", HudAnchor::TopCenter, 1);
-        auto score = hud("demo_game.score", "Score", HudWidgetKind::Counter, "demo.score", HudAnchor::TopRight, 0);
-        score.unit = "pts";
+        auto timer = hud("demo_game.match", "Match", HudWidgetKind::Timer, "demo.match_time", HudAnchor::TopCenter, 1);
+        auto hub = hud("demo_game.hub", "Hub", HudWidgetKind::Badge, "demo.hub.active", HudAnchor::TopCenter, 2);
+        auto scoreboard = hud("demo_game.scoreboard", "Scoreboard", HudWidgetKind::Scoreboard, "demo.phase", HudAnchor::TopCenter, 0);
+        scoreboard.sides = {{"BLUE", "demo.score.blue", "demo.hub.blue.status", "#1a73e8"},
+                            {"RED", "demo.score.red", "demo.hub.red.status", "#d93025"}};
         auto message = hud("demo_game.message", "Game data", HudWidgetKind::Text, "demo.message", HudAnchor::TopRight, 1);
-        scene_.hud = {fuel, timer, hub, score, message};
+        scene_.hud = {fuel, scoreboard, timer, hub, message};
         scene_.zoneKinds = makeZoneKinds();
         sdk::GameValueInfo fuelCount;
         fuelCount.id = "demo.fuel.count";
@@ -285,6 +289,11 @@ void FakeRunBackend::scatterBalls() {
 void FakeRunBackend::resetWorld() {
     pos_ = {2.0f, 4.1f, 0.2f};
     yaw_ = 0.f;
+    if (const sdk::StartPosition* p = scene_.config ? scene_.config->findStartPosition(startPositionId_.toStdString()) : nullptr) {
+        pos_.x = p->pose.xM;
+        pos_.y = p->pose.yM;
+        yaw_ = p->pose.headingRad;
+    }
     vel_ = {};
     omega_ = 0.f;
     armAngle_ = turretYaw_ = flywheel_ = carriage_ = 0.f;
@@ -393,6 +402,13 @@ void FakeRunBackend::resetSimulation() {
     resetWorld();
     emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Simulation reset (epoch advanced)"));
     publish();
+}
+
+void FakeRunBackend::setStartPosition(const QString& id) {
+    const QString next = scene_.config && scene_.config->findStartPosition(id.toStdString()) != nullptr ? id : QString();
+    if (next == startPositionId_) return;
+    startPositionId_ = next;
+    emit startPositionChanged();
 }
 
 void FakeRunBackend::setPaused(bool paused) {
@@ -675,8 +691,14 @@ void FakeRunBackend::publish() {
         d.hud.push_back({"demo.fuel.count", fuelHeld_});
         d.hud.push_back({"demo.fuel.capacity", kCapacity});
         d.hud.push_back({"demo.hub.active", static_cast<int>(sdk::usToSeconds(simUs_) / 10.0) % 2 == 0});
-        d.hud.push_back({"demo.score", score_});
-        if (ds_.matchTimeS >= 0.0) d.hud.push_back({"demo.match_time", ds_.matchTimeS});
+        d.hud.push_back({"demo.score.blue", score_});
+        d.hud.push_back({"demo.score.red", score_ / 2 + 3});
+        if (ds_.matchTimeS >= 0.0) {
+            d.hud.push_back({"demo.match_time", ds_.matchTimeS});
+            d.hud.push_back({"demo.phase", std::string(ds_.matchTimeS > 20.0 ? "SHIFT 1" : "AUTO")});
+            d.hud.push_back({"demo.hub.blue.status", std::string("Active 0:18")});
+            d.hud.push_back({"demo.hub.red.status", std::string("Inactive")});
+        }
         d.hud.push_back({"demo.message", ds_.gameSpecificMessage.empty() ? std::string("—") : ds_.gameSpecificMessage});
     }
 

@@ -70,6 +70,10 @@ void DemoRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<con
     projectPath_ = projectPath;
     scene_ = {};
     scene_.config = std::move(config);
+    if (!startPositionId_.isEmpty() && (!sameProject || scene_.config == nullptr || scene_.config->findStartPosition(startPositionId_.toStdString()) == nullptr)) {
+        startPositionId_.clear();
+        emit startPositionChanged();
+    }
     if (game != nullptr) {
         scene_.hud = game->contributeHud();
         scene_.panels = game->contributeEditorPanels();
@@ -204,10 +208,23 @@ void DemoRuntimeHost::restart() {
 
 void DemoRuntimeHost::resetSimulation() {
     x_ = y_ = yaw_ = 0.0;
+    if (scene_.config)
+        if (const sdk::StartPosition* p = scene_.config->findStartPosition(startPositionId_.toStdString())) {
+            x_ = static_cast<double>(p->pose.xM);
+            y_ = static_cast<double>(p->pose.yM);
+            yaw_ = static_cast<double>(p->pose.headingRad);
+        }
     vx_ = vy_ = omega_ = 0.0;
     wheelSpin_ = 0.0;
     tick_ = 0;
     publish();
+}
+
+void DemoRuntimeHost::setStartPosition(const QString& id) {
+    const QString next = scene_.config && scene_.config->findStartPosition(id.toStdString()) != nullptr ? id : QString();
+    if (next == startPositionId_) return;
+    startPositionId_ = next;
+    emit startPositionChanged();
 }
 
 void DemoRuntimeHost::setPaused(bool paused) {

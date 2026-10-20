@@ -264,6 +264,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     }
     if (!built) return makeError(built.error().code, "The simulation could not be built: " + built.error().message);
     self->session_ = std::move(built).value();
+    self->session_->setStartPlacement(options.startPose);
     self->session_->setDriverStation(options.driverStation);
 
     // ---- IPC server + sim thread ----

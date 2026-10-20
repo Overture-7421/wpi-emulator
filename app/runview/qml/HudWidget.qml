@@ -1,7 +1,7 @@
 import QtQuick
 
 // One HUD widget (HudWidgetDescriptor evaluated by HudModel). kind: 0 Counter, 1 Meter, 2 Gauge,
-// 3 Text, 4 Badge, 5 Timer.
+// 3 Text, 4 Badge, 5 Timer, 6 Scoreboard.
 Rectangle {
     id: card
 
@@ -12,15 +12,18 @@ Rectangle {
     required property real fraction
     required property string text
     required property string accent
+    required property var sides
+    required property string lead
+    required property int leader
 
     readonly property color tint: accent !== "" ? accent : theme.accent
 
-    implicitWidth: Math.max(120, content.implicitWidth + 24)
-    implicitHeight: content.implicitHeight + 18
+    implicitWidth: Math.max(120, content.implicitWidth + (kind === 6 ? 0 : 24))
+    implicitHeight: content.implicitHeight + (kind === 6 ? 0 : 18)
     radius: 10
-    color: theme.panel
+    color: kind === 6 ? "transparent" : theme.panel
     border.color: theme.panelBorder
-    border.width: 1
+    border.width: kind === 6 ? 0 : 1
     opacity: valid ? 1.0 : 0.65
     // Values the game does not publish right now (e.g. match timing outside Practice) hide the widget.
     visible: valid
@@ -30,7 +33,16 @@ Rectangle {
         anchors.centerIn: parent
         spacing: 4
 
+        Scoreboard {
+            visible: card.kind === 6
+            sides: card.sides
+            caption: card.text
+            lead: card.lead
+            leader: card.leader
+        }
+
         Text {
+            visible: card.kind !== 6
             text: card.title
             color: theme.mutedText
             font.pixelSize: 11

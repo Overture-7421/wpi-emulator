@@ -251,6 +251,49 @@ QString EditorDocument::duplicateSensor(const QString& id) {
     return QString::fromStdString(created);
 }
 
+QString EditorDocument::addStartPosition() {
+    std::string id;
+    edit(ETR("Add start position"), [&](sdk::RobotConfig& c) {
+        id = ops::addStartPosition(c);
+        return !id.empty();
+    });
+    return QString::fromStdString(id);
+}
+
+bool EditorDocument::removeStartPosition(const QString& id) {
+    const std::string sid = id.toStdString();
+    const sdk::StartPosition* p = config_.findStartPosition(sid);
+    if (p == nullptr) return false;
+    const QString name = QString::fromStdString(ops::startPositionDisplayName(*p));
+    return edit(ETR("Remove %1").arg(name), [&](sdk::RobotConfig& c) { return ops::removeStartPosition(c, sid); });
+}
+
+QString EditorDocument::duplicateStartPosition(const QString& id) {
+    const std::string sid = id.toStdString();
+    const sdk::StartPosition* p = config_.findStartPosition(sid);
+    if (p == nullptr) return {};
+    const QString name = QString::fromStdString(ops::startPositionDisplayName(*p));
+    std::string created;
+    edit(ETR("Duplicate %1").arg(name), [&](sdk::RobotConfig& c) {
+        created = ops::duplicateStartPosition(c, sid);
+        return !created.empty();
+    });
+    return QString::fromStdString(created);
+}
+
+QString EditorDocument::copyStartPositionToOtherAlliance(const QString& id) {
+    const std::string sid = id.toStdString();
+    const sdk::StartPosition* p = config_.findStartPosition(sid);
+    if (p == nullptr) return {};
+    const QString name = QString::fromStdString(ops::startPositionDisplayName(*p));
+    std::string created;
+    edit(ETR("Copy %1 to the other alliance").arg(name), [&](sdk::RobotConfig& c) {
+        created = ops::copyStartPositionToOtherAlliance(c, sid, catalog_.fieldFrame);
+        return !created.empty();
+    });
+    return QString::fromStdString(created);
+}
+
 bool EditorDocument::mapSlot(const sdk::SlotAddress& slot, const sdk::DeviceKey& device) {
     return edit(ETR("Map %1").arg(QString::fromStdString(ops::slotDisplayName(config_, catalog_, slot))),
                 [&](sdk::RobotConfig& c) { return ops::setMapping(c, slot, device); });

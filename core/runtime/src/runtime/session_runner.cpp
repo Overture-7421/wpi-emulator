@@ -43,6 +43,7 @@ void SessionRunner::setDriverStation(const proto::DsState& ds) { enqueue(SetDs{d
 void SessionRunner::control(const proto::SimControl& command) { enqueue(Control{command}); }
 void SessionRunner::bindSlot(const SlotAddress& slot, const DeviceKey& device) { enqueue(Bind{slot, device}); }
 void SessionRunner::unbindSlot(const SlotAddress& slot) { enqueue(Unbind{slot}); }
+void SessionRunner::setStartPlacement(const std::optional<RobotStartPose>& pose) { enqueue(SetStart{pose}); }
 
 std::optional<proto::Hello> SessionRunner::robotHello() const {
     std::lock_guard lock(helloMutex_);
@@ -198,6 +199,8 @@ void SessionRunner::applyCommands(std::vector<Command>& batch) {
             if (Status s = session_.bindSlot(bind->slot, bind->device); !s)
                 logger_.warn("runner", "bind " + bind->slot.toString() + " failed: " + s.error().message);
             sendLoopbackIfChanged(false);
+        } else if (auto* start = std::get_if<SetStart>(&c)) {
+            session_.setStartPlacement(start->pose);
         } else if (auto* unbind = std::get_if<Unbind>(&c)) {
             session_.hub().unbind(unbind->slot);
             sendLoopbackIfChanged(false);

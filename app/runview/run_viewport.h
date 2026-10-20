@@ -67,6 +67,8 @@ public:
     void addControl(QWidget* w);
     // Checkable list button bound to `action` (opens the robot state window).
     void addStateControl(QAction* action);
+    // Start position button with the menu of positions to reset the robot to.
+    QToolButton* addStartPositionControl(QMenu* menu);
     // Restart button joined with a chevron that opens `menu` (restart options).
     void addRestartControl(QAction* restart, QMenu* menu);
     // Moves the speed combo into the cluster, styled with centred text.
@@ -93,6 +95,7 @@ private:
     QToolButton* home_;
     QWidget* controls_;
     QLabel* matchClock_;
+    ViewportOptions* options_;
     QHBoxLayout* controlsLayout_;
     QString error_;
 };

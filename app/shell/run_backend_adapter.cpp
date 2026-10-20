@@ -44,6 +44,7 @@ RunBackendAdapter::RunBackendAdapter(AppServices& services, QObject* parent) : r
     runview::registerRunViewMetaTypes();
     connect(&services_.runtime(), &IRuntimeHost::statusChanged, this, &runview::IRunBackend::statusChanged);
     connect(&services_.runtime(), &IRuntimeHost::sceneChanged, this, &runview::IRunBackend::sceneInfoChanged);
+    connect(&services_.runtime(), &IRuntimeHost::startPositionChanged, this, &runview::IRunBackend::startPositionChanged);
     connect(&services_.runtime(), &IRuntimeHost::logLine, this, &RunBackendAdapter::onLog);
 }
 
@@ -90,6 +91,7 @@ void RunBackendAdapter::startSimulation() {
 void RunBackendAdapter::stopSimulation() { services_.runtime().stopSimulation(); }
 void RunBackendAdapter::restartRobot() { services_.runtime().restart(); }
 void RunBackendAdapter::resetSimulation() { services_.runtime().resetSimulation(); }
+void RunBackendAdapter::setStartPosition(const QString& id) { services_.runtime().setStartPosition(id); }
 void RunBackendAdapter::setPaused(bool paused) { services_.runtime().setPaused(paused); }
 void RunBackendAdapter::stepTicks(int ticks) { services_.runtime().stepTicks(ticks); }
 void RunBackendAdapter::setTimeScale(double scale) { services_.runtime().setTimeScale(scale); }

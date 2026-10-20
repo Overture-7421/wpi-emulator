@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <cmath>
 #include <memory>
 #include <string>
 
@@ -173,4 +174,28 @@ TEST_CASE("SimContext bundles services without globals") {
     CHECK(env.ctx.clock().simTimeUs() == 5000);
     env.ctx.logger().warn("test", "hello");
     CHECK(env.logger.count(LogLevel::Warn) == 1);
+}
+
+TEST_CASE("field frame: flipping a start pose to the other alliance round-trips for both symmetries") {
+    const RobotStartPose blue{4.51f, 0.527f, 0.f};
+    FieldFrame frame{16.541f, 8.069f, FieldSymmetry::Rotational};
+    const auto red = flipToOtherAlliance(blue, frame);
+    REQUIRE(red.has_value());
+    CHECK(red->xM == doctest::Approx(16.541f - 4.51f));
+    CHECK(red->yM == doctest::Approx(8.069f - 0.527f));
+    CHECK(std::fabs(red->headingRad) == doctest::Approx(3.14159265f));
+    const auto back = flipToOtherAlliance(*red, frame);
+    REQUIRE(back.has_value());
+    CHECK(back->xM == doctest::Approx(blue.xM));
+    CHECK(back->yM == doctest::Approx(blue.yM));
+    CHECK(back->headingRad == doctest::Approx(0.f).epsilon(1e-4));
+
+    frame.symmetry = FieldSymmetry::Mirrored;
+    const auto mirrored = flipToOtherAlliance(RobotStartPose{4.51f, 0.527f, 0.5f}, frame);
+    REQUIRE(mirrored.has_value());
+    CHECK(mirrored->yM == doctest::Approx(0.527f));
+    CHECK(mirrored->headingRad == doctest::Approx(3.14159265f - 0.5f));
+
+    frame.symmetry = FieldSymmetry::None;
+    CHECK_FALSE(flipToOtherAlliance(blue, frame).has_value());
 }

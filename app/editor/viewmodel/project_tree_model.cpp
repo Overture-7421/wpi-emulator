@@ -101,6 +101,19 @@ std::unique_ptr<ProjectTreeModel::Node> ProjectTreeModel::build() const {
         cn.tooltip = kind + (cam.name.empty() ? QString() : QStringLiteral(" \"%1\"").arg(qs(cam.name))) + QStringLiteral(" \xE2\x80\x94 ") + cn.detail;
     }
 
+    Node& starts = add(robot, NodeKind::Group, QStringLiteral("startPositions"), SelectionRef{}, ETR("Start positions"),
+                       QString::number(c.startPositions.size()));
+    for (const auto& p : c.startPositions) {
+        const QString alliance = p.alliance == sdk::Alliance::Blue ? ETR("Blue") : ETR("Red");
+        Node& pn = add(starts, NodeKind::StartPosition, QStringLiteral("start:%1").arg(qs(p.id)), SelectionRef::startPosition(p.id),
+                       qs(ops::startPositionDisplayName(p)),
+                       alliance + QStringLiteral(" \xC2\xB7 %1, %2 m, %3\xC2\xB0")
+                                      .arg(static_cast<double>(p.pose.xM), 0, 'f', 2)
+                                      .arg(static_cast<double>(p.pose.yM), 0, 'f', 2)
+                                      .arg(static_cast<double>(p.pose.headingRad) * 180.0 / 3.14159265358979, 0, 'f', 0));
+        pn.tooltip = ETR("Field pose the robot is placed at when this start position is chosen in the run view.");
+    }
+
     if (cat.hasPlugin()) {
         Node& plugin = add(robot, NodeKind::Plugin, QStringLiteral("plugin"), SelectionRef::plugin(), qs(cat.pluginDisplayName), ETR("game rules"));
         for (const auto& vol : ops::volumesFor(c, cat, ""))

@@ -77,6 +77,10 @@ public:
     // and cameras never see a tag.
     virtual AprilTagLayout aprilTagLayout() const { return {}; }
 
+    // Length, width and symmetry of the season's field; lets the editor reuse one alliance's start position for the
+    // other. Default: unknown (no symmetry).
+    virtual FieldFrame fieldFrame() const { return {}; }
+
     // Cross-cutting game logic hook after IGameState::step each tick (e.g. match timer phases).
     virtual void onTick(SimContext& /*ctx*/, double /*dtSeconds*/) {}
 };

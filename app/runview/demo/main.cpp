@@ -1,5 +1,5 @@
 // Standalone demo of the run view against FakeRunBackend. Also used for headless screenshots:
-//   wpiemu_runview_demo --scenario running --screenshot out.png [--size 1500x900] [--state]
+//   wpiemu_runview_demo --scenario running|practice|... --screenshot out.png [--size 1500x900] [--state]
 // --state opens the Robot state window (and saves it next to the screenshot as out.png.state.png).
 // Scenarios: idle, starting, running, crash, timeout, mismatch, failed.
 
@@ -76,6 +76,11 @@ int main(int argc, char* argv[]) {
             page.handleKey(Qt::Key_D, true);
             page.handleKey(Qt::Key_Z, true);
             page.handleKey(Qt::Key_A, false);
+        });
+    } else if (scenario == QLatin1String("practice")) {
+        QTimer::singleShot(1200, &app, [&] {
+            page.driverStation().setDsMode(DsMode::Practice);
+            page.driverStation().setEnabled(true);
         });
     } else if (scenario == QLatin1String("crash")) {
         QTimer::singleShot(1200, &app, [&] { backend.simulateCrash(1); });

@@ -280,6 +280,14 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
         }
         return loc;
     }
+    if (parseIndexed(path, "startPositions", index, rest)) {
+        if (index >= 0 && index < static_cast<int>(c.startPositions.size())) {
+            loc.selection = SelectionRef::startPosition(c.startPositions[static_cast<std::size_t>(index)].id);
+            if (rest.rfind("pose", 0) == 0) loc.fieldKey = "xM";
+            else if (rest.rfind("id", 0) == 0) loc.fieldKey = "label";
+        }
+        return loc;
+    }
     if (parseIndexed(path, "cameras", index, rest)) {
         if (index >= 0 && index < static_cast<int>(c.cameras.size())) {
             loc.selection = SelectionRef::camera(c.cameras[static_cast<std::size_t>(index)].id);

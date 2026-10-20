@@ -264,6 +264,9 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                 connect(sub->addAction(QString::fromUtf8(k.displayName)), &QAction::triggered, this,
                         [this, kind = k.kind] { d->controller.addSensor(kind); });
         };
+        auto addStartPositionAction = [&](QMenu* into) {
+            into->addAction(d->icons.node(NodeKind::StartPosition), ETR("Add start position"), this, [this] { d->controller.addStartPosition(); });
+        };
         // "Attach to" for something hanging on the chassis or a mechanism link (zones, cameras).
         using AttachFn = std::function<void(const QString& parent, const QString& link)>;
         auto addAttachMenu = [&](QMenu* into, const AttachFn& attach) {
@@ -294,6 +297,19 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                 addAttachMenu(&menu, [this, cameraId](const QString& parent, const QString& link) {
                     d->controller.document().reattachCamera(cameraId, parent, link);
                 });
+                break;
+            }
+            case SelKind::StartPosition: {
+                d->controller.selection().set(ref);
+                menu.addAction(ETR("Duplicate"), this, [this] { d->controller.duplicateSelection(); });
+                menu.addAction(ETR("Delete"), this, [this] { d->controller.deleteSelection(); });
+                const bool hasSymmetry = cat.fieldFrame.symmetry != sdk::FieldSymmetry::None;
+                const sdk::StartPosition* p = cfg.findStartPosition(ref.owner);
+                QAction* copy = menu.addAction(p != nullptr && p->alliance == sdk::Alliance::Red ? ETR("Copy to Blue") : ETR("Copy to Red"), this,
+                                               [this] { d->controller.copySelectedStartPositionToOtherAlliance(); });
+                copy->setEnabled(hasSymmetry);
+                menu.addSeparator();
+                addStartPositionAction(&menu);
                 break;
             }
             case SelKind::Sensor:
@@ -416,6 +432,7 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                 });
                 addCameraMenu(&menu, sdk::MechanismAttachment{});
                 addSensorMenu(&menu);
+                addStartPositionAction(&menu);
                 break;
         }
         if (!menu.isEmpty()) menu.exec(global);

@@ -111,6 +111,7 @@ void Game2026State::reset(sdk::SimContext& ctx) {
     status_ = MatchStatus{};
     hub_.reset();
     matchTimed_ = false;
+    matchResult_ = false;
     meter_ = std::min(config_.preloadFuel, config_.capacity);
     shots_ = 0;
     lost_ = 0;
@@ -134,6 +135,11 @@ void Game2026State::step(sdk::SimContext& ctx, double dt) {
         clock_.reset();
         hub_.reset();
     }
+    // When the timed match stops (it ended or was aborted) its final score stays on the HUD until a reset, the next
+    // timed match, or free play is enabled.
+    if (timed) matchResult_ = false;
+    else if (matchTimed_) matchResult_ = true;
+    else if (matchResult_ && ds.enabled && !ds.eStop) matchResult_ = false;
     matchTimed_ = timed;
     if (timed || ds.mode == sdk::proto::RobotMode::Test || !ds.enabled || ds.eStop) {
         status_ = clock_.update(ds, dt);
@@ -351,9 +357,12 @@ void Game2026State::publish(sdk::SnapshotBuilder& out) const {
     out.setHud(hud::kFuelCapacity, config_.capacity);
     out.setHud(hud::kFuelOnField, static_cast<int>(fuelPositions_.size()));
     out.setHud(hud::kShots, shots_);
-    if (matchTimed_) {
+    if (matchTimed_ || matchResult_) {
         out.setHud(hud::kScoreRed, hub_.score(Alliance::Red).points());
         out.setHud(hud::kScoreBlue, hub_.score(Alliance::Blue).points());
+    }
+    if (matchResult_) out.setHud(hud::kMatchPhase, std::string("FINAL"));
+    if (matchTimed_) {
         out.setHud(hud::kHubRedActive, hub_.active(Alliance::Red));
         out.setHud(hud::kHubBlueActive, hub_.active(Alliance::Blue));
         out.setHud(hud::kHubOwnActive, hub_.active(ownAlliance_));

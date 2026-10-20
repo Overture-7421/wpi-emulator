@@ -29,6 +29,7 @@ public:
     RunStatus status() const override { return status_; }
     RunSceneInfo sceneInfo() const override { return scene_; }
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const override { return slot_.latest(); }
+    QString startPositionId() const override { return startPositionId_; }
 
     // ---- test / demo hooks ----
     void tickOnce();                              // advance one 5 ms sim tick and publish a snapshot
@@ -58,6 +59,7 @@ public slots:
     void stopSimulation() override;
     void restartRobot() override;
     void resetSimulation() override;
+    void setStartPosition(const QString& id) override;
     void setPaused(bool paused) override;
     void stepTicks(int ticks) override;
     void setTimeScale(double scale) override;
@@ -88,6 +90,7 @@ private:
     sdk::LatestSnapshotSlot slot_;
     sdk::proto::DsState ds_;
 
+    QString startPositionId_;
     bool paused_ = false;
     bool programStarted_ = false;
     bool simulating_ = false;

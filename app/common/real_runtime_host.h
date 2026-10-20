@@ -36,6 +36,7 @@ public:
     HostStatus status() const override { return status_; }
     HostScene scene() const override { return scene_; }
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const override;
+    QString startPosition() const override { return startPositionId_; }
     void setProject(const QString& projectPath, std::shared_ptr<const sdk::RobotConfig> config, const sdk::IGameModule* game) override;
 
     // The extension that would be launched (empty when it cannot be found).
@@ -49,6 +50,7 @@ public slots:
     void stop() override;
     void restart() override;
     void resetSimulation() override;
+    void setStartPosition(const QString& id) override;
     void setPaused(bool paused) override;
     void stepTicks(int ticks) override;
     void setTimeScale(double scale) override;
@@ -61,6 +63,7 @@ private:
     void sendBeginIfReady();
     void emitLog(sdk::LogLevel level, const QString& source, const QString& text);
     void releaseSession();
+    std::optional<sdk::RobotStartPose> resolveStartPlacement() const;
     static HostStatus map(const host::SessionStatus& s);
 
     host::Registries registries_;
@@ -76,6 +79,7 @@ private:
     std::string gamePluginId_;
     std::shared_ptr<const sdk::FieldDescription> field_;
     std::string fieldPluginId_;
+    QString startPositionId_;
 
     std::unique_ptr<host::RobotSession> session_;
     std::shared_ptr<const sdk::ISimSnapshot> lastSnapshot_;

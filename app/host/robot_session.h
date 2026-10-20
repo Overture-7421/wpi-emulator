@@ -82,6 +82,8 @@ struct Options {
     double timeScale = 1.0;
     bool startPaused = false;
     sdk::proto::DsState driverStation;
+    // Placement every Reset (including the one that starts the simulation) restores instead of RobotConfig::startPose.
+    std::optional<sdk::RobotStartPose> startPose;
     std::uint32_t watchdogMs = 0;                         // 0 = negotiated default
     std::chrono::milliseconds handshakeTimeout{std::chrono::minutes(5)};  // robot started but the extension never connected
     std::chrono::milliseconds stopGrace{500};             // how long the robot may leave by itself before its tree is killed

@@ -157,6 +157,8 @@ public:
                 {id_ + ".steps", "Steps", "Game state steps", PropertyUnit::Count}};
     }
 
+    FieldFrame fieldFrame() const override { return {16.f, 8.f, FieldSymmetry::Rotational}; }
+
     std::vector<EditorPanelDescriptor> contributeEditorPanels() const override {
         EditorPanelDescriptor panel;
         panel.id = id_ + ".panel";

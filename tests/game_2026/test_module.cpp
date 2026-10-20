@@ -5,7 +5,9 @@
 
 #include "test_support.h"
 #include "wpiemu/plugins/game_2026/config.h"
+#include "wpiemu/plugins/game_2026/field_layout.h"
 #include "wpiemu/plugins/game_2026/fuel_zones.h"
+#include "wpiemu/plugins/game_2026/game_state.h"
 #include "wpiemu/plugins/game_2026/game_values.h"
 #include "wpiemu/sdk/game/builtin_plugins.h"
 
@@ -127,19 +129,41 @@ TEST_CASE("HUD widgets are namespaced, unique, and well-formed") {
     sdk::GamePluginRegistry registry;
     REQUIRE(registerPlugin(registry).ok());
     const auto widgets = registry.find("game_2026")->contributeHud();
-    CHECK(widgets.size() >= 7);
+    CHECK(widgets.size() >= 3);
     std::vector<std::string> ids;
-    bool hasMeter = false, hasBadge = false;
+    bool hasMeter = false;
+    const sdk::HudWidgetDescriptor* board = nullptr;
     for (const sdk::HudWidgetDescriptor& w : widgets) {
         CHECK(w.id.rfind("game_2026.", 0) == 0);
         CHECK(w.valueKey.rfind("game_2026.", 0) == 0);
         CHECK(std::find(ids.begin(), ids.end(), w.id) == ids.end());
         ids.push_back(w.id);
         hasMeter |= w.kind == sdk::HudWidgetKind::Meter && !w.maxKey.empty();
-        hasBadge |= w.kind == sdk::HudWidgetKind::Badge;
+        if (w.kind == sdk::HudWidgetKind::Scoreboard) board = &w;
     }
     CHECK(hasMeter);
-    CHECK(hasBadge);
+    // blue is on the left of the screen (its wall is the left one in the home view), red on the right
+    REQUIRE(board != nullptr);
+    CHECK(board->anchor == sdk::HudAnchor::TopCenter);
+    REQUIRE(board->sides.size() == 2);
+    CHECK(board->sides[0].label == "BLUE");
+    CHECK(board->sides[0].scoreKey == hud::kScoreBlue);
+    CHECK(board->sides[1].label == "RED");
+    CHECK(board->sides[1].scoreKey == hud::kScoreRed);
+}
+
+TEST_CASE("the field frame is rotationally symmetric and maps a blue hub onto the red one") {
+    sdk::GamePluginRegistry registry;
+    REQUIRE(registerPlugin(registry).ok());
+    const sdk::FieldFrame frame = registry.find("game_2026")->fieldFrame();
+    CHECK(frame.symmetry == sdk::FieldSymmetry::Rotational);
+    const FieldLayout layout = buildFieldLayout();
+    CHECK(frame.lengthM == doctest::Approx(layout.description.lengthM));
+    CHECK(frame.widthM == doctest::Approx(layout.description.widthM));
+    const auto flipped = sdk::flipToOtherAlliance({layout.hub(Alliance::Blue).center.x, layout.hub(Alliance::Blue).center.y, 0.f}, frame);
+    REQUIRE(flipped.has_value());
+    CHECK(flipped->xM == doctest::Approx(layout.hub(Alliance::Red).center.x));
+    CHECK(flipped->yM == doctest::Approx(layout.hub(Alliance::Red).center.y));
 }
 
 TEST_CASE("module hooks are safe with default contexts and an absent plugin section") {

@@ -7,6 +7,7 @@
 
 #include "wpiemu/plugins/game_2026/april_tags.h"
 #include "wpiemu/plugins/game_2026/config.h"
+#include "wpiemu/plugins/game_2026/field_dimensions.h"
 #include "wpiemu/plugins/game_2026/field_layout.h"
 #include "wpiemu/plugins/game_2026/fuel_zones.h"
 #include "wpiemu/plugins/game_2026/game_state.h"
@@ -58,6 +59,11 @@ public:
     std::vector<sdk::GameValueInfo> contributeGameValues() const override { return gameValueInfos(); }
 
     sdk::AprilTagLayout aprilTagLayout() const override { return game2026AprilTagLayout(); }
+
+    // Authored for blue and rotated 180 degrees about the field centre for red (field_layout.cpp).
+    sdk::FieldFrame fieldFrame() const override {
+        return {dim::kFieldLengthM, dim::kFieldWidthM, sdk::FieldSymmetry::Rotational};
+    }
 
     // All per-tick game logic lives in Game2026State::step (it needs per-session state).
     void onTick(sdk::SimContext&, double) override {}

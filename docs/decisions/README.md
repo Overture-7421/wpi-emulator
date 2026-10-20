@@ -23,3 +23,4 @@ Numbers are unique and sequential; never reuse or renumber an ADR (update refere
 | [0017](0017-vision-cameras.md) | Vision cameras: simulated Limelight / PhotonVision coprocessors published through ntcore inside the robot process; `RobotConfig::cameras`, `IVisionBridge`, `VisionSetup` |
 | [0018](0018-real-robot-feedback.md) | Calibrated robot feedback and explicit start placement |
 | [0019](0019-game-fed-sensors.md) | Core sensors (distance, beam break) fed by plugin-published game values |
+| [0020](0020-start-positions.md) | Start positions (per project, alliance-aware), run-time placement on Reset, the Scoreboard HUD widget |

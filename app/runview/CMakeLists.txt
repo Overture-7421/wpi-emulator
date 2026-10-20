@@ -47,6 +47,7 @@ qt_add_resources(wpiemu_app_runview runview_qml
         qml/PartModel.qml
         qml/TagMarker.qml
         qml/HudStack.qml
+        qml/Scoreboard.qml
         qml/HudWidget.qml)
 
 # Official AprilTag 36h11 images (ids 1-32, 10x10 px) textured onto the field tags.

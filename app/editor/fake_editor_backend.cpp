@@ -280,6 +280,7 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
     cat.gameValues.push_back({"game_2026.fuel.count", "Fuel in robot", "Fuel currently held by the robot.", PropertyUnit::Count});
     cat.gameValues.push_back({"game_2026.fuel.capacity", "Fuel capacity", "How much fuel the robot can hold.", PropertyUnit::Count});
     cat.gameValues.push_back({"game_2026.fuel.fraction", "Fuel fill", "Held fuel divided by capacity (0 to 1).", PropertyUnit::Ratio});
+    cat.fieldFrame = {16.541f, 8.069f, sdk::FieldSymmetry::Rotational};
     sdk::Box3 hopper;
     hopper.pose.position = {-0.05f, 0.f, 0.f};
     hopper.sizeM = {0.4f, 0.5f, 0.3f};
