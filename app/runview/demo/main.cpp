@@ -7,8 +7,6 @@
 #include <QDir>
 #include <QGuiApplication>
 #include <QStyleHints>
-#include <QGuiApplication>
-#include <QStyleHints>
 #include <QMainWindow>
 #include <QSettings>
 #include <QTabWidget>
