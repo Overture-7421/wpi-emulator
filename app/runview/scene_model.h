@@ -18,7 +18,7 @@
 #include <vector>
 
 #include "common/orbit_camera.h"
-#include "run_backend.h"
+#include "contract/runtime_host.h"
 #include "scene_parts.h"
 
 namespace wpiemu::app::runview {
@@ -203,7 +203,7 @@ class SceneModel : public QObject {
 public:
     explicit SceneModel(QObject* parent = nullptr);
 
-    void setSceneInfo(const RunSceneInfo& info);
+    void setSceneInfo(const HostScene& info);
     void update(const sdk::ISimSnapshot* snapshot);
 
     QObject* fieldParts() { return &field_; }
@@ -267,7 +267,7 @@ private:
     RobotRig rig_;
     OrbitCamera camera_;
     float viewHeightPx_ = 720.f;
-    RunSceneInfo info_;
+    HostScene info_;
     ZoneRig zoneRig_;
     TagRig tagRig_;
     QStringList zoneLabels_;

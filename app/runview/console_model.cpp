@@ -25,7 +25,7 @@ int ConsoleModel::rowCount(const QModelIndex& parent) const {
     return parent.isValid() ? 0 : static_cast<int>(entries_.size());
 }
 
-QString ConsoleModel::formatLine(const RunLogEntry& e) {
+QString ConsoleModel::formatLine(const HostLogLine& e) {
     const QString time = QDateTime::fromMSecsSinceEpoch(e.timestampMs).toString(QStringLiteral("HH:mm:ss.zzz"));
     return e.source.isEmpty() ? QStringLiteral("%1  %2").arg(time, e.text)
                               : QStringLiteral("%1  [%2] %3").arg(time, e.source, e.text);
@@ -33,7 +33,7 @@ QString ConsoleModel::formatLine(const RunLogEntry& e) {
 
 QVariant ConsoleModel::data(const QModelIndex& index, int role) const {
     if (!index.isValid() || index.row() < 0 || index.row() >= rowCount()) return {};
-    const RunLogEntry& e = entries_[static_cast<std::size_t>(index.row())];
+    const HostLogLine& e = entries_[static_cast<std::size_t>(index.row())];
     switch (role) {
         case Qt::DisplayRole: return formatLine(e);
         case LevelRole: return static_cast<int>(e.level);
@@ -45,7 +45,7 @@ QVariant ConsoleModel::data(const QModelIndex& index, int role) const {
     }
 }
 
-void ConsoleModel::append(const RunLogEntry& entry) {
+void ConsoleModel::append(const HostLogLine& entry) {
     if (static_cast<int>(entries_.size()) >= capacity_) {
         beginRemoveRows({}, 0, 0);
         entries_.pop_front();
@@ -73,7 +73,7 @@ void ConsoleFilterModel::setMinimumLevel(sdk::LogLevel level) {
     invalidateFilter();
 }
 
-void ConsoleFilterModel::setStreamEnabled(LogStream stream, bool enabled) {
+void ConsoleFilterModel::setStreamEnabled(sdk::LogStream stream, bool enabled) {
     bool& slot = streams_[static_cast<int>(stream)];
     if (slot == enabled) return;
     slot = enabled;

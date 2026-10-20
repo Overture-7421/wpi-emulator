@@ -7,23 +7,19 @@ namespace {
 QString tr(const char* s) { return QCoreApplication::translate("RunStatus", s); }
 }  // namespace
 
-RunControlState deriveControlState(const RunStatus& status, bool paused) {
+RunControlState deriveControlState(const HostStatus& status, bool paused) {
     RunControlState s;
     s.paused = paused;
-    const bool idleLike = status.process == RobotProcessState::Idle || status.process == RobotProcessState::Exited ||
-                          status.process == RobotProcessState::Crashed || status.process == RobotProcessState::FailedToStart;
-    const bool active = status.process == RobotProcessState::Starting || status.process == RobotProcessState::Running;
-    const bool live = status.process == RobotProcessState::Running && status.link == LinkState::Connected;
-    s.canRestart = active || idleLike;
-    s.simulating = live && status.simulating;
+    s.canRestart = status.process != sdk::ProcessState::Stopping;   // every state but a stop in progress
+    s.simulating = status.live() && status.simulating;
     return s;
 }
 
-StatusPresentation presentStatus(const RunStatus& st, bool snapshotConnected) {
+StatusPresentation presentStatus(const HostStatus& st, bool snapshotConnected) {
     StatusPresentation p;
     p.detail = st.detail;
     switch (st.process) {
-        case RobotProcessState::Idle:
+        case sdk::ProcessState::Idle:
             p.tone = Tone::Neutral;
             p.chipText = tr("Robot not running");
             p.title = tr("The robot program is not running");
@@ -31,20 +27,20 @@ StatusPresentation presentStatus(const RunStatus& st, bool snapshotConnected) {
             p.showOverlay = true;
             p.offerRestart = true;
             return p;
-        case RobotProcessState::Starting:
+        case sdk::ProcessState::Starting:
             p.tone = Tone::Info;
             p.chipText = tr("Starting robot…");
             p.title = tr("Starting robot program…");
             if (p.detail.isEmpty()) p.detail = tr("Building and launching your project. This can take a while the first time.");
             p.showOverlay = true;
             return p;
-        case RobotProcessState::Stopping:
+        case sdk::ProcessState::Stopping:
             p.tone = Tone::Info;
             p.chipText = tr("Stopping…");
             p.title = tr("Stopping robot program…");
             p.showOverlay = true;
             return p;
-        case RobotProcessState::Exited:
+        case sdk::ProcessState::Exited:
             p.tone = Tone::Neutral;
             p.chipText = tr("Robot exited (code %1)").arg(st.exitCode);
             p.title = tr("Robot program exited");
@@ -53,7 +49,7 @@ StatusPresentation presentStatus(const RunStatus& st, bool snapshotConnected) {
             p.offerRestart = true;
             p.offerShowConsole = true;
             return p;
-        case RobotProcessState::Crashed:
+        case sdk::ProcessState::Crashed:
             p.tone = Tone::Error;
             p.chipText = tr("Robot crashed (code %1)").arg(st.exitCode);
             p.title = tr("The robot program crashed");
@@ -62,7 +58,7 @@ StatusPresentation presentStatus(const RunStatus& st, bool snapshotConnected) {
                         p.offerRestart = true;
             p.offerShowConsole = true;
             return p;
-        case RobotProcessState::FailedToStart:
+        case sdk::ProcessState::FailedToStart:
             p.tone = Tone::Error;
             p.chipText = tr("Failed to start");
             p.title = tr("The robot could not be started");
@@ -71,12 +67,12 @@ StatusPresentation presentStatus(const RunStatus& st, bool snapshotConnected) {
                         p.offerRestart = true;
             p.offerShowConsole = true;
             return p;
-        case RobotProcessState::Running:
+        case sdk::ProcessState::Running:
             break;
     }
 
     switch (st.link) {
-        case LinkState::Connected:
+        case sdk::LinkState::Connected:
             if (!st.programStarted) {
                 p.tone = Tone::Info;
                 p.chipText = tr("Starting robot program…");
@@ -94,8 +90,8 @@ StatusPresentation presentStatus(const RunStatus& st, bool snapshotConnected) {
             p.tone = Tone::Success;
             p.chipText = snapshotConnected ? tr("Simulating") : tr("Simulating · waiting for data");
             return p;
-        case LinkState::Connecting:
-        case LinkState::Disconnected:
+        case sdk::LinkState::Connecting:
+        case sdk::LinkState::Disconnected:
             p.tone = Tone::Info;
             p.chipText = tr("Waiting for robot…");
             p.title = tr("Waiting for the robot extension…");
@@ -103,7 +99,7 @@ StatusPresentation presentStatus(const RunStatus& st, bool snapshotConnected) {
             p.showOverlay = true;
             p.offerShowConsole = true;
             return p;
-        case LinkState::HandshakeTimeout:
+        case sdk::LinkState::HandshakeTimeout:
             p.tone = Tone::Error;
             p.chipText = tr("Handshake timed out");
             p.offerRestart = true;
@@ -114,7 +110,7 @@ StatusPresentation presentStatus(const RunStatus& st, bool snapshotConnected) {
             p.showOverlay = true;
             p.offerShowConsole = true;
             return p;
-        case LinkState::ProtocolMismatch:
+        case sdk::LinkState::ProtocolMismatch:
             p.tone = Tone::Error;
             p.chipText = tr("Protocol mismatch");
             p.offerRestart = true;
@@ -123,7 +119,7 @@ StatusPresentation presentStatus(const RunStatus& st, bool snapshotConnected) {
             p.showOverlay = true;
             p.offerShowConsole = true;
             return p;
-        case LinkState::Stalled:
+        case sdk::LinkState::Stalled:
             p.tone = Tone::Warning;
             p.chipText = tr("Robot not responding");
             p.offerRestart = true;

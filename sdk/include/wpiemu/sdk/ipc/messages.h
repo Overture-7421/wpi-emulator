@@ -229,6 +229,8 @@ constexpr Alliance allianceOf(AllianceStation s) { return s <= AllianceStation::
 constexpr AllianceStation stationOf(Alliance a, int number) {
     return static_cast<AllianceStation>((a == Alliance::Red ? 0 : 3) + std::clamp(number, 1, 3) - 1);
 }
+// The 1..3 number within its alliance (inverse of stationOf).
+constexpr int stationNumberOf(AllianceStation s) { return static_cast<int>(s) % 3 + 1; }
 
 struct JoystickState {
     bool present = false;

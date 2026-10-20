@@ -63,8 +63,7 @@ bool EditorBackendAdapter::detecting() const {
 void EditorBackendAdapter::submitConfig(const sdk::RobotConfig& config) {
     pending_ = config;
     pendingProject_ = services_.session().path();
-    services_.runtime().setProject(services_.session().path(), std::make_shared<const sdk::RobotConfig>(config),
-                                   services_.session().gameModule());
+    services_.bindRuntime(std::make_shared<const sdk::RobotConfig>(config));
 }
 
 sdk::Status EditorBackendAdapter::saveConfig() {

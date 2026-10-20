@@ -6,12 +6,13 @@
 #include "state_model.h"
 
 using namespace wpiemu::app::runview;
+using wpiemu::app::HostScene;
 namespace sdk = wpiemu::sdk;
 
 namespace {
 
-RunSceneInfo sceneInfo() {
-    RunSceneInfo info;
+HostScene sceneInfo() {
+    HostScene info;
     info.config = std::make_shared<const sdk::RobotConfig>(FakeRunBackend::makeDemoConfig());
     sdk::GameValueInfo fuel;
     fuel.id = "demo.fuel.count";

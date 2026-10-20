@@ -57,7 +57,7 @@ QString StateModel::formatNumber(double value, const QString& unit) {
     return text;
 }
 
-void StateModel::setScene(const RunSceneInfo& info) {
+void StateModel::setScene(const HostScene& info) {
     info_ = info;
     update(nullptr);
 }

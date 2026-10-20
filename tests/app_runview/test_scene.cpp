@@ -10,6 +10,7 @@
 #include "scene_parts.h"
 
 using namespace wpiemu::app::runview;
+using wpiemu::app::HostScene;
 namespace sdk = wpiemu::sdk;
 
 namespace {
@@ -382,7 +383,7 @@ TEST_CASE("scene model follows the snapshot and exposes zone toggles") {
     opts.startupDelayMs = 0;
     FakeRunBackend backend(opts);
     SceneModel scene;
-    scene.setSceneInfo(backend.sceneInfo());
+    scene.setSceneInfo(backend.scene());
     CHECK_FALSE(scene.robotVisible());
     CHECK(scene.zoneLabels().contains(QStringLiteral("Intake zone")));
     CHECK(scene.zoneLabels().contains(QStringLiteral("Shooter zone")));
@@ -408,7 +409,7 @@ TEST_CASE("scene model follows the snapshot and exposes zone toggles") {
 
 TEST_CASE("scene model draws zones and updates their parts only when something changed") {
     SceneModel scene;
-    RunSceneInfo info;
+    HostScene info;
     info.config = demoConfig();
     info.zoneKinds = FakeRunBackend::makeZoneKinds();
     scene.setSceneInfo(info);
@@ -455,7 +456,7 @@ TEST_CASE("fake backend publishes zone states that follow the intake arm and the
     opts.autoRun = false;
     opts.startupDelayMs = 0;
     FakeRunBackend backend(opts);
-    const RunSceneInfo info = backend.sceneInfo();
+    const HostScene info = backend.scene();
     CHECK(info.zoneKinds.size() == 2);
     CHECK(info.config->zones.size() == 2);
 

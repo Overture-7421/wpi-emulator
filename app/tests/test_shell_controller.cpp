@@ -43,6 +43,24 @@ TEST_CASE("controller distinguishes opened, needs-setup and invalid projects") {
     CHECK(controller.projectName() == QFileInfo(configured.path()).fileName());   // still on the previous project
 }
 
+TEST_CASE("the wizard's Driver Station choice and the open project reach the runtime scene") {
+    TestEnvironment env;
+    ShellController controller(*env.services);
+    TestProject p;
+    AppServices& s = *env.services;
+    REQUIRE(s.session().open(p.path()).ok());
+    ProjectPrefs prefs;
+    prefs.alliance = sdk::Alliance::Blue;
+    prefs.station = 3;
+    REQUIRE(s.session().commit(buildRobotConfig(RobotBasics{}, s.buildContext(s.session().inspection())), prefs).ok());
+    REQUIRE(s.session().close().ok());
+
+    REQUIRE(controller.openProject(p.path()) == OpenOutcome::Opened);
+    CHECK(env.demo->scene().projectPath == s.session().path());
+    CHECK(env.demo->scene().defaultStation == sdk::proto::AllianceStation::Blue3);
+    CHECK(env.demo->scene().config != nullptr);
+}
+
 TEST_CASE("run mode needs a robot model") {
     TestEnvironment env;
     ShellController controller(*env.services);

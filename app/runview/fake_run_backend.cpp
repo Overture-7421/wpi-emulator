@@ -230,8 +230,7 @@ sdk::FieldDescription FakeRunBackend::makeDemoField() {
     return f;
 }
 
-FakeRunBackend::FakeRunBackend(Options options, QObject* parent) : IRunBackend(parent), options_(options), timer_(this) {
-    registerRunViewMetaTypes();
+FakeRunBackend::FakeRunBackend(Options options, QObject* parent) : IRuntimeHost(parent), options_(options), timer_(this) {
     scene_.config = std::make_shared<const sdk::RobotConfig>(makeDemoConfig());
     scene_.field = std::make_shared<const sdk::FieldDescription>(makeDemoField());
     scene_.gameName = QStringLiteral("Demo game");
@@ -307,13 +306,18 @@ void FakeRunBackend::resetWorld() {
     scatterBalls();
 }
 
-void FakeRunBackend::setStatus(RobotProcessState process, LinkState link, int exitCode, const QString& detail) {
-    const bool live = process == RobotProcessState::Running && link == LinkState::Connected;
-    if (!live) {
+void FakeRunBackend::setStatus(sdk::ProcessState process, sdk::LinkState link, int exitCode, const QString& detail) {
+    if (!sdk::isLive(process, link)) {
         programStarted_ = false;
         simulating_ = false;
     }
-    const RunStatus next{process, link, exitCode, detail, programStarted_, simulating_};
+    HostStatus next;
+    next.process = process;
+    next.link = link;
+    next.exitCode = exitCode;
+    next.detail = detail;
+    next.programStarted = programStarted_;
+    next.simulating = simulating_;
     if (next == status_) return;
     status_ = next;
     emit statusChanged();
@@ -332,28 +336,28 @@ void FakeRunBackend::beginTransition(int delayMs, std::function<void()> fn) {
     });
 }
 
-void FakeRunBackend::emitLog(sdk::LogLevel level, LogStream stream, const QString& source, const QString& text) {
-    emit logEntry({QDateTime::currentMSecsSinceEpoch(), level, stream, source, text});
+void FakeRunBackend::emitLog(sdk::LogLevel level, sdk::LogStream stream, const QString& source, const QString& text) {
+    emit logLine({QDateTime::currentMSecsSinceEpoch(), level, stream, source, text});
 }
 
-void FakeRunBackend::launchRobot() {
-    if (status_.process == RobotProcessState::Starting || status_.process == RobotProcessState::Running) return;
+void FakeRunBackend::launch() {
+    if (status_.process == sdk::ProcessState::Starting || status_.process == sdk::ProcessState::Running) return;
     ++startCount_;
     ++transitionGeneration_;
     slot_.publish(nullptr);
-    setStatus(RobotProcessState::Starting, LinkState::Disconnected);
-    emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Starting robot: gradlew simulateJava"));
-    emitLog(sdk::LogLevel::Info, LogStream::Stdout, QStringLiteral("gradle"), QStringLiteral("> Task :compileJava UP-TO-DATE"));
-    emitLog(sdk::LogLevel::Info, LogStream::Stdout, QStringLiteral("gradle"), QStringLiteral("> Task :simulateJava"));
+    setStatus(sdk::ProcessState::Starting, sdk::LinkState::Disconnected);
+    emitLog(sdk::LogLevel::Info, sdk::LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Starting robot: gradlew simulateJava"));
+    emitLog(sdk::LogLevel::Info, sdk::LogStream::Stdout, QStringLiteral("gradle"), QStringLiteral("> Task :compileJava UP-TO-DATE"));
+    emitLog(sdk::LogLevel::Info, sdk::LogStream::Stdout, QStringLiteral("gradle"), QStringLiteral("> Task :simulateJava"));
     beginTransition(options_.startupDelayMs, [this] {
-        setStatus(RobotProcessState::Running, LinkState::Connecting);
-        emitLog(sdk::LogLevel::Info, LogStream::Stdout, QStringLiteral("robot"), QStringLiteral("********** Robot program starting **********"));
+        setStatus(sdk::ProcessState::Running, sdk::LinkState::Connecting);
+        emitLog(sdk::LogLevel::Info, sdk::LogStream::Stdout, QStringLiteral("robot"), QStringLiteral("********** Robot program starting **********"));
         beginTransition(options_.startupDelayMs, [this] {
             resetWorld();
-            setStatus(RobotProcessState::Running, LinkState::Connected);
+            setStatus(sdk::ProcessState::Running, sdk::LinkState::Connected);
             programStarted_ = true;
             refreshFlags();
-            emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("extension"), QStringLiteral("Extension connected"));
+            emitLog(sdk::LogLevel::Info, sdk::LogStream::Emulator, QStringLiteral("extension"), QStringLiteral("Extension connected"));
             publish();
             beginIfReady();
         });
@@ -362,7 +366,7 @@ void FakeRunBackend::launchRobot() {
 
 void FakeRunBackend::startSimulation() {
     beginWhenReady_ = true;
-    if (status_.process != RobotProcessState::Starting && status_.process != RobotProcessState::Running) launchRobot();
+    if (status_.process != sdk::ProcessState::Starting && status_.process != sdk::ProcessState::Running) launch();
     beginIfReady();
 }
 
@@ -374,7 +378,7 @@ void FakeRunBackend::beginIfReady() {
     timeAccum_ = 0.0;
     simulating_ = true;
     refreshFlags();
-    emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Simulation started (lock-step, t = 0)"));
+    emitLog(sdk::LogLevel::Info, sdk::LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Simulation started (lock-step, t = 0)"));
     publish();
 }
 
@@ -383,25 +387,30 @@ void FakeRunBackend::stopSimulation() {
     if (!simulating_) return;
     simulating_ = false;
     refreshFlags();
-    emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Simulation stopped; the robot keeps running"));
+    emitLog(sdk::LogLevel::Info, sdk::LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Simulation stopped; the robot keeps running"));
 }
 
-void FakeRunBackend::restartRobot() {
+void FakeRunBackend::stop() {
     ++transitionGeneration_;
-    const bool resume = simulating_ || beginWhenReady_;
-    if (status_.process == RobotProcessState::Starting || status_.process == RobotProcessState::Running) {
+    beginWhenReady_ = false;
+    if (status_.process == sdk::ProcessState::Starting || status_.process == sdk::ProcessState::Running) {
         slot_.publish(nullptr);
-        setStatus(RobotProcessState::Exited, LinkState::Disconnected, 0);
+        setStatus(sdk::ProcessState::Exited, sdk::LinkState::Disconnected, 0);
     }
-    launchRobot();
+}
+
+void FakeRunBackend::restart() {
+    const bool resume = simulating_ || beginWhenReady_;
+    stop();
+    launch();
     beginWhenReady_ = resume;
 }
 
 void FakeRunBackend::resetSimulation() {
-    if (status_.process != RobotProcessState::Running) return;
+    if (status_.process != sdk::ProcessState::Running) return;
     ++resetCount_;
     resetWorld();
-    emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Simulation reset (epoch advanced)"));
+    emitLog(sdk::LogLevel::Info, sdk::LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Simulation reset (epoch advanced)"));
     publish();
 }
 
@@ -415,7 +424,7 @@ void FakeRunBackend::setStartPosition(const QString& id) {
 void FakeRunBackend::setPaused(bool paused) {
     paused_ = paused;
     pendingSteps_ = 0;
-    if (status_.process == RobotProcessState::Running) publish();
+    if (status_.process == sdk::ProcessState::Running) publish();
 }
 
 void FakeRunBackend::stepTicks(int ticks) {
@@ -426,7 +435,7 @@ void FakeRunBackend::setTimeScale(double scale) { timeScale_ = std::clamp(scale,
 
 void FakeRunBackend::setDriverStation(const sdk::proto::DsState& state) {
     if (state.enabled != ds_.enabled)
-        emitLog(sdk::LogLevel::Info, LogStream::Stdout, QStringLiteral("robot"),
+        emitLog(sdk::LogLevel::Info, sdk::LogStream::Stdout, QStringLiteral("robot"),
                 state.enabled ? QStringLiteral("Robot enabled") : QStringLiteral("Robot disabled"));
     ds_ = state;
 }
@@ -434,41 +443,47 @@ void FakeRunBackend::setDriverStation(const sdk::proto::DsState& state) {
 void FakeRunBackend::simulateCrash(int exitCode, const QString& detail) {
     ++transitionGeneration_;
     slot_.publish(nullptr);
-    emitLog(sdk::LogLevel::Error, LogStream::Stderr, QStringLiteral("robot"),
+    emitLog(sdk::LogLevel::Error, sdk::LogStream::Stderr, QStringLiteral("robot"),
             QStringLiteral("Exception in thread \"main\" java.lang.NullPointerException"));
-    emitLog(sdk::LogLevel::Error, LogStream::Stderr, QStringLiteral("robot"), QStringLiteral("    at frc.robot.Robot.robotPeriodic(Robot.java:42)"));
-    setStatus(RobotProcessState::Crashed, LinkState::Disconnected, exitCode, detail);
+    emitLog(sdk::LogLevel::Error, sdk::LogStream::Stderr, QStringLiteral("robot"), QStringLiteral("    at frc.robot.Robot.robotPeriodic(Robot.java:42)"));
+    setStatus(sdk::ProcessState::Crashed, sdk::LinkState::Disconnected, exitCode, detail);
 }
 
 void FakeRunBackend::simulateHandshakeTimeout() {
     ++transitionGeneration_;
-    setStatus(RobotProcessState::Running, LinkState::HandshakeTimeout);
+    setStatus(sdk::ProcessState::Running, sdk::LinkState::HandshakeTimeout);
 }
 
 void FakeRunBackend::simulateProtocolMismatch(const QString& detail) {
     ++transitionGeneration_;
-    setStatus(RobotProcessState::Running, LinkState::ProtocolMismatch, 0, detail);
+    setStatus(sdk::ProcessState::Running, sdk::LinkState::ProtocolMismatch, 0, detail);
 }
 
-void FakeRunBackend::simulateStall() { setStatus(RobotProcessState::Running, LinkState::Stalled); }
+void FakeRunBackend::simulateStall() { setStatus(sdk::ProcessState::Running, sdk::LinkState::Stalled); }
 
 void FakeRunBackend::simulateFailedToStart(const QString& detail) {
     ++transitionGeneration_;
-    setStatus(RobotProcessState::FailedToStart, LinkState::Disconnected, 1, detail);
+    setStatus(sdk::ProcessState::FailedToStart, sdk::LinkState::Disconnected, 1, detail);
 }
 
 void FakeRunBackend::setLinkSettled() {
     ++transitionGeneration_;
     resetWorld();
-    setStatus(RobotProcessState::Running, LinkState::Connected);
+    setStatus(sdk::ProcessState::Running, sdk::LinkState::Connected);
     programStarted_ = true;
     simulating_ = true;
     refreshFlags();
     publish();
 }
 
+void FakeRunBackend::setProjectDefaults(const QString& projectPath, sdk::proto::AllianceStation station) {
+    scene_.projectPath = projectPath;
+    scene_.defaultStation = station;
+    emit sceneChanged();
+}
+
 void FakeRunBackend::onTimer() {
-    if (!simulating_ || status_.process != RobotProcessState::Running || status_.link != LinkState::Connected) return;
+    if (!simulating_ || !status_.live()) return;
     int steps = 0;
     if (paused_) {
         steps = pendingSteps_;
@@ -484,7 +499,7 @@ void FakeRunBackend::onTimer() {
 }
 
 void FakeRunBackend::tickOnce() {
-    if (!simulating_ || status_.process != RobotProcessState::Running || status_.link != LinkState::Connected) return;
+    if (!simulating_ || !status_.live()) return;
     stepWorld();
     publish();
 }
@@ -595,10 +610,10 @@ void FakeRunBackend::stepWorld() {
     if (logTimer_ >= 3.0) {
         logTimer_ = 0.0;
         if (enabled) {
-            emitLog(sdk::LogLevel::Info, LogStream::Stdout, QStringLiteral("robot"),
+            emitLog(sdk::LogLevel::Info, sdk::LogStream::Stdout, QStringLiteral("robot"),
                     QStringLiteral("Drive: vx=%1 vy=%2").arg(static_cast<double>(vel_.x), 0, 'f', 2).arg(static_cast<double>(vel_.y), 0, 'f', 2));
         } else {
-            emitLog(sdk::LogLevel::Warn, LogStream::Stdout, QStringLiteral("robot"), QStringLiteral("Warning at frc.robot.Robot: robot is disabled"));
+            emitLog(sdk::LogLevel::Warn, sdk::LogStream::Stdout, QStringLiteral("robot"), QStringLiteral("Warning at frc.robot.Robot: robot is disabled"));
         }
     }
 }
@@ -609,7 +624,7 @@ void FakeRunBackend::publish() {
     d.tick = tick_;
     d.simTimeUs = simUs_;
     d.paused = paused_;
-    d.robotConnected = status_.link == LinkState::Connected;
+    d.robotConnected = status_.link == sdk::LinkState::Connected;
     d.chassis.name = "chassis";
     d.chassis.pose = {pos_, sdk::Quat::fromYaw(yaw_)};
     d.chassis.linearVelocity = {vel_.x * std::cos(yaw_) - vel_.y * std::sin(yaw_), vel_.x * std::sin(yaw_) + vel_.y * std::cos(yaw_), 0.f};
@@ -710,6 +725,7 @@ void FakeRunBackend::publish() {
     d.physicsStats.contacts = 4;
     d.physicsStats.lastStepMs = 0.35;
     slot_.publish(builder.build());
+    emit snapshotPublished();
 }
 
 }  // namespace wpiemu::app::runview

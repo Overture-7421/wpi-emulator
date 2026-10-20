@@ -6,7 +6,7 @@
 #include <functional>
 #include <memory>
 
-#include "common/runtime_host.h"
+#include "contract/runtime_host.h"
 #include "host/robot_session.h"
 
 namespace wpiemu::app {
@@ -33,7 +33,7 @@ struct RealRuntimeOptions {
 //
 // Environment (advanced / diagnostics): WPIEMU_EXTENSION, WPIEMU_EXTENSION_DIR, WPIEMU_LAUNCH_MODE=gradle|direct, WPIEMU_GRADLE_OFFLINE=1,
 // WPIEMU_PRESTART_POLLING=1 (poll vendor bridges while the robot constructor runs; crashes the JVM with CTRE, off by default).
-class RealRuntimeHost final : public IRuntimeHost {
+class RealRuntimeHost final : public IProjectRuntimeHost {
     Q_OBJECT
 public:
     RealRuntimeHost(host::Registries registries, RealRuntimeOptions options = {}, QObject* parent = nullptr);
@@ -43,7 +43,7 @@ public:
     HostScene scene() const override { return scene_; }
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const override;
     QString startPosition() const override { return startPositionId_; }
-    void setProject(const QString& projectPath, std::shared_ptr<const sdk::RobotConfig> config, const sdk::IGameModule* game) override;
+    void setProject(const HostProject& project) override;
 
     // The extension that would be launched (empty when it cannot be found).
     std::filesystem::path extensionPath() const;

@@ -4,11 +4,11 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 
+#include "contract/runtime_host.h"
 #include "driver_station_model.h"
 #include "fake_joystick.h"
 #include "joystick_manager.h"
 #include "joystick_types.h"
-#include "run_backend.h"
 
 using namespace wpiemu::app::runview;
 namespace sdk = wpiemu::sdk;
@@ -354,6 +354,7 @@ TEST_CASE("driver station: single-period match and test mode") {
 TEST_CASE("driver station publishes on change and as a keep-alive") {
     DriverStationModel ds;
     std::array<sdk::proto::JoystickState, 6> js{};
+    wpiemu::app::registerHostMetaTypes();   // the spy reads the DsState payload by metatype
     QSignalSpy spy(&ds, &DriverStationModel::stateReady);
     CHECK(ds.publish(js, 1000));
     CHECK_FALSE(ds.publish(js, 1100));

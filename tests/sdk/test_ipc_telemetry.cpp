@@ -39,7 +39,7 @@ TEST_CASE("driver station numbers map to an alliance and back") {
         for (int number = 1; number <= 3; ++number) {
             const proto::AllianceStation station = proto::stationOf(a, number);
             CHECK(proto::allianceOf(station) == a);
-            CHECK(static_cast<int>(station) % 3 + 1 == number);
+            CHECK(proto::stationNumberOf(station) == number);
         }
     CHECK(proto::stationOf(Alliance::Red, 1) == proto::AllianceStation::Red1);
     CHECK(proto::stationOf(Alliance::Blue, 3) == proto::AllianceStation::Blue3);

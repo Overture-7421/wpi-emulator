@@ -13,10 +13,12 @@ It owns the registries, persistence/model services, project session, and injecte
 `main()` passes it to the shell by reference. Built-in games enter through the plugin
 aggregator, not direct season dependencies.
 
-[`IRuntimeHost`](../../app/common/runtime_host.h) is the UI-thread seam for project selection,
-robot-process and link status, scene descriptions, immutable snapshots, logs, and commands.
-`EditorBackendAdapter` and `RunBackendAdapter` share the same host: discovery and the run view
-refer to the same robot instance.
+[`IRuntimeHost`](../../app/contract/runtime_host.h) is the UI-thread seam for robot-process and
+link status, scene descriptions, immutable snapshots, logs, and run commands. It lives in the
+SDK+Qt `wpiemu_app_contract` target, so the run view consumes it without core. The editor adapter
+and `RunPage` share the same host: discovery and the run view refer to the same robot instance.
+Selecting the open project is a separate interface, `IProjectBinding`, reached only through
+`AppServices::bindRuntime`; hosts implement both (`IProjectRuntimeHost`).
 
 Normal startup constructs `RealRuntimeHost`, which delegates process/session work to the
 Qt-free [`RobotSession`](../../app/host/robot_session.h). That host builds the configured
@@ -126,17 +128,22 @@ Placement/reset behavior belongs to [runtime](runtime.md), not viewport coordina
 
 ## Run-view snapshots and commands
 
-`RunPage` consumes [`IRunBackend`](../../app/runview/run_backend.h).
-`sceneInfo()` supplies immutable config/field copies and game presentation descriptors;
+`RunPage` consumes [`IRuntimeHost`](../../app/contract/runtime_host.h) directly.
+`scene()` supplies immutable config/field copies and game presentation descriptors;
 `latestSnapshot()` supplies the latest immutable `ISimSnapshot`, which can be null before a tick.
 The view may miss intermediate snapshots; do not treat its repaint rate as simulation timing.
 
-`IRunBackend` exposes lifecycle, pause/step, speed, placement and Driver Station capabilities.
+`IRuntimeHost` exposes lifecycle, pause/step, speed, placement and Driver Station capabilities.
 Current Run controls request reset/restart, speed, placement and Driver Station changes;
 the shell starts simulation automatically on entry, with no start/stop/pause/step buttons.
-The real adapter reaches `ISimController` through the shared host, never mutable simulation
-objects. Backend methods and delivered signals belong to the UI thread; worker-originated
-Qt signals require queued delivery.
+The real host reaches `ISimController` through `RobotSession`, never mutable simulation
+objects. Host methods and delivered signals belong to the UI thread; worker-originated
+Qt signals require queued delivery (`HostLogLine` and `DsState` are registered once, by the
+`IRuntimeHost` constructor).
+
+`HostScene` carries the open project's path and the wizard's Driver Station choice. `RunPage`
+applies that station to its Driver Station panel when the project (or the choice) changes and
+never on a same-project config edit, so a later change made in the panel is kept.
 
 The Driver Station's timed sequence advances from snapshot simulation time, not wall time.
 Its manual game-message text is a fallback when the game provides FMS data.

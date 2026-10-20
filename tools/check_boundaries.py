@@ -94,6 +94,7 @@ TARGET_OWNERS = {
     "wpiemu_bridges_vision_nt_tests": "bridges/vision",
     "wpiemu_app": "app",
     "wpiemu_app_common": "app",
+    "wpiemu_app_contract": "app",
     "wpiemu_app_host": "app",
     "wpiemu_app_shell": "app",
     "wpiemu_app_editor": "app",

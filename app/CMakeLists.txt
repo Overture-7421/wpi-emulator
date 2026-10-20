@@ -4,6 +4,9 @@ find_package(Qt6 REQUIRED COMPONENTS Svg)
 
 option(WPIEMU_BUILD_UI_DEMOS "Build the standalone UI demo executables (wpiemu_editor_demo, wpiemu_runview_demo)" ON)
 
+# The host seam every page and the shell share (SDK + Qt only); declared before the pages that link it.
+add_subdirectory(contract)
+
 # Page libraries owned by the editor / run view streams; optional so the shell builds without them.
 foreach(_page editor runview)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${_page}/CMakeLists.txt")

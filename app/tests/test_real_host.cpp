@@ -85,14 +85,14 @@ TEST_CASE("the default runtime is the real host, not the 'no runtime' placeholde
 TEST_CASE("real host: pending Run intent belongs to the project across config edits and relaunches") {
     // No configured model: launch fails synchronously, without starting a robot or an IPC worker.
     RealRuntimeHost host({});
-    host.setProject(QStringLiteral("A"), {}, nullptr);
+    host.setProject({QStringLiteral("A"), {}});
     host.startSimulation();
     REQUIRE(host.simulationStartPending());
     host.restart();
     CHECK(host.simulationStartPending());
-    host.setProject(QStringLiteral("A"), std::make_shared<const sdk::RobotConfig>(), nullptr);
+    host.setProject({QStringLiteral("A"), std::make_shared<const sdk::RobotConfig>()});
     CHECK(host.simulationStartPending());
-    host.setProject(QStringLiteral("B"), {}, nullptr);
+    host.setProject({QStringLiteral("B"), {}});
     CHECK_FALSE(host.simulationStartPending());
     host.startSimulation();
     CHECK(host.simulationStartPending());
@@ -108,18 +108,18 @@ TEST_CASE("real host: the selected start position belongs to the project and its
     };
     RealRuntimeHost host({});
     QSignalSpy changed(&host, &IRuntimeHost::startPositionChanged);
-    host.setProject(QStringLiteral("A"), withPositions({"a", "b"}), nullptr);
+    host.setProject({QStringLiteral("A"), withPositions({"a", "b"})});
     host.setStartPosition(QStringLiteral("a"));
     CHECK(host.startPosition() == QStringLiteral("a"));
     host.setStartPosition(QStringLiteral("missing"));
     CHECK(host.startPosition().isEmpty());
     host.setStartPosition(QStringLiteral("a"));
-    host.setProject(QStringLiteral("A"), withPositions({"a"}), nullptr);   // an edit that keeps it
+    host.setProject({QStringLiteral("A"), withPositions({"a"})});   // an edit that keeps it
     CHECK(host.startPosition() == QStringLiteral("a"));
-    host.setProject(QStringLiteral("A"), withPositions({"b"}), nullptr);   // deleted
+    host.setProject({QStringLiteral("A"), withPositions({"b"})});   // deleted
     CHECK(host.startPosition().isEmpty());
     host.setStartPosition(QStringLiteral("b"));
-    host.setProject(QStringLiteral("B"), withPositions({"b"}), nullptr);   // another project
+    host.setProject({QStringLiteral("B"), withPositions({"b"})});   // another project
     CHECK(host.startPosition().isEmpty());
     CHECK(changed.count() == 6);
 }

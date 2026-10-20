@@ -9,7 +9,7 @@
 #include <memory>
 #include <vector>
 
-#include "run_backend.h"
+#include "contract/runtime_host.h"
 #include "scene_model.h"
 
 namespace wpiemu::app::runview {
@@ -29,7 +29,7 @@ public:
     explicit StateModel(const ViewportTheme& theme, QObject* parent = nullptr);
     ~StateModel() override;
 
-    void setScene(const RunSceneInfo& info);
+    void setScene(const HostScene& info);
     // Rebuilds the tree from the snapshot (labels/kinds/units come from setScene); nullptr empties it.
     void update(const sdk::ISimSnapshot* snapshot);
 
@@ -71,7 +71,7 @@ private:
     static const Node* find(const Node& node, const QString& key);
 
     const ViewportTheme& theme_;
-    RunSceneInfo info_;
+    HostScene info_;
     Node root_;
     mutable QHash<QRgb, QIcon> dots_;
 };

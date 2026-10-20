@@ -27,8 +27,7 @@ QString fromStd(const std::string& s) { return QString::fromStdString(s); }
 }  // namespace
 
 RealRuntimeHost::RealRuntimeHost(host::Registries registries, RealRuntimeOptions options, QObject* parent)
-    : IRuntimeHost(parent), registries_(registries), options_(std::move(options)) {
-    qRegisterMetaType<wpiemu::app::HostLogLine>();
+    : IProjectRuntimeHost(parent), registries_(registries), options_(std::move(options)) {
     timer_.setInterval(std::max(5, options_.pollIntervalMs));
     connect(&timer_, &QTimer::timeout, this, &RealRuntimeHost::pump);
 }
@@ -86,13 +85,15 @@ void RealRuntimeHost::releaseSession() {
     session_.reset();
 }
 
-void RealRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<const sdk::RobotConfig> config, const sdk::IGameModule* game) {
+void RealRuntimeHost::setProject(const HostProject& project) {
+    const QString& projectPath = project.path;
+    const sdk::IGameModule* game = project.game;
     const bool sameProject = projectPath == projectPath_;
     if (!sameProject) beginIntent_.projectReplaced();
     // A different project invalidates a run; edits of the same project apply to the next run.
     if (!sameProject && session_) releaseSession();
     projectPath_ = projectPath;
-    config_ = config;
+    config_ = project.config;
     // The selected start position belongs to the project: drop it on a switch or when the entry is gone, follow edits otherwise.
     if (!startPositionId_.isEmpty() && (!sameProject || resolveStartPlacement() == std::nullopt)) {
         startPositionId_.clear();
@@ -100,7 +101,9 @@ void RealRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<con
     }
     if (session_ && !startPositionId_.isEmpty()) session_->controller().setStartPlacement(resolveStartPlacement());
     scene_ = {};
-    scene_.config = std::move(config);
+    scene_.config = project.config;
+    scene_.projectPath = projectPath;
+    scene_.defaultStation = project.defaultStation;
     gamePluginId_.clear();
     if (game != nullptr) {
         gamePluginId_ = game->metadata().id;

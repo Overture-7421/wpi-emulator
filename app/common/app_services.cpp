@@ -72,6 +72,15 @@ AppServices::AppServices(AppServicesOptions options)
 
 AppServices::~AppServices() = default;
 
+void AppServices::bindRuntime(std::shared_ptr<const sdk::RobotConfig> config) {
+    HostProject project;
+    project.path = session_->path();
+    project.config = std::move(config);
+    project.game = session_->gameModule();
+    project.defaultStation = sdk::proto::stationOf(session_->prefs().alliance, session_->prefs().station);
+    runtime_->setProject(project);
+}
+
 RobotBuildContext AppServices::buildContext(const ProjectInspection& inspection) const {
     RobotBuildContext ctx;
     ctx.projectPath = inspection.path;

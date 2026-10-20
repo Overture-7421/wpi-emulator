@@ -66,10 +66,10 @@ ConsolePanel::ConsolePanel(QWidget* parent) : QWidget(parent), model_(nullptr), 
     streams_->setPopupMode(QToolButton::InstantPopup);
     streams_->setStyleSheet(QStringLiteral("QToolButton { padding-right: 16px; }"));
     auto* menu = new QMenu(streams_);
-    const std::pair<LogStream, QString> streamNames[] = {
-        {LogStream::Stdout, tr("Robot output (stdout)")},
-        {LogStream::Stderr, tr("Robot errors (stderr)")},
-        {LogStream::Emulator, tr("Emulator messages")}};
+    const std::pair<sdk::LogStream, QString> streamNames[] = {
+        {sdk::LogStream::Stdout, tr("Robot output (stdout)")},
+        {sdk::LogStream::Stderr, tr("Robot errors (stderr)")},
+        {sdk::LogStream::Emulator, tr("Emulator messages")}};
     for (const auto& [stream, text] : streamNames) {
         QAction* a = menu->addAction(text);
         a->setCheckable(true);
@@ -151,7 +151,7 @@ ConsolePanel::ConsolePanel(QWidget* parent) : QWidget(parent), model_(nullptr), 
     updateCount();
 }
 
-void ConsolePanel::append(const RunLogEntry& entry) { model_.append(entry); }
+void ConsolePanel::append(const HostLogLine& entry) { model_.append(entry); }
 
 void ConsolePanel::clear() { model_.clear(); }
 

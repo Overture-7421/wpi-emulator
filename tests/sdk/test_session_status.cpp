@@ -14,6 +14,13 @@ TEST_CASE("session status: a robot process is active until it ends") {
     CHECK(status.active());
 }
 
+TEST_CASE("session status: live needs a running process and a connected link") {
+    CHECK(isLive(ProcessState::Running, LinkState::Connected));
+    CHECK_FALSE(isLive(ProcessState::Running, LinkState::Connecting));
+    CHECK_FALSE(isLive(ProcessState::Running, LinkState::Stalled));
+    CHECK_FALSE(isLive(ProcessState::Starting, LinkState::Connected));
+}
+
 TEST_CASE("session status: armed is a linked robot whose simulation is idle") {
     CHECK(isArmed(ProcessState::Running, LinkState::Connected, false));
     CHECK(isArmed(ProcessState::Running, LinkState::Connecting, false));

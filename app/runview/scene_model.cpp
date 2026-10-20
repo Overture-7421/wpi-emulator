@@ -260,7 +260,7 @@ void SceneModel::resetCamera() {
     refreshCamera();
 }
 
-void SceneModel::setSceneInfo(const RunSceneInfo& info) {
+void SceneModel::setSceneInfo(const HostScene& info) {
     info_ = info;
     rig_.setConfig(info_.config);
     robot_.setParts(rig_.parts());

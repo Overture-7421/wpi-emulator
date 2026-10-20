@@ -283,15 +283,13 @@ struct BlockAppDataSave {
     }
 };
 
-class InventoryRuntime final : public IRuntimeHost {
+class InventoryRuntime final : public IProjectRuntimeHost {
 public:
     HostStatus status() const override { return status_; }
     HostScene scene() const override { return scene_; }
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const override { return snapshot_; }
     QString startPosition() const override { return {}; }
-    void setProject(const QString&, std::shared_ptr<const sdk::RobotConfig> config, const sdk::IGameModule*) override {
-        scene_.config = std::move(config);
-    }
+    void setProject(const HostProject& project) override { scene_.config = project.config; }
     void launch() override { ++status_.runGeneration; emit statusChanged(); }
     void startSimulation() override {}
     void stopSimulation() override {}

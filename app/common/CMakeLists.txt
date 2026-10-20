@@ -13,7 +13,6 @@ add_library(wpiemu_app_common STATIC
     real_runtime_host.cpp
     robot_basics.cpp
     system_probe.cpp
-    runtime_host.h
     theme.cpp
     toolchain_checker.cpp
     ui_helpers.cpp
@@ -32,7 +31,7 @@ add_library(wpiemu_app_common STATIC
 # Includes are rooted at app/ ("common/x.h", "wizard/x.h", "shell/x.h").
 target_include_directories(wpiemu_app_common PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(wpiemu_app_common
-    PUBLIC wpiemu_sdk wpiemu_core wpiemu_app_host Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg
+    PUBLIC wpiemu_sdk wpiemu_core wpiemu_app_host wpiemu_app_contract Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg
     PRIVATE wpiemu_plugins_builtin)
 wpiemu_target_defaults(wpiemu_app_common)
 # Build-tree fallback of the extension lookup (an installed app finds halsim_wpiemu next to itself first).

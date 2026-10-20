@@ -68,7 +68,7 @@ void ShellController::syncRuntime() {    ProjectSession& session = services_.ses
                 emit errorOccurred(tr("Game module problem: %1").arg(QString::fromStdString(status.error().message)));
         }
     }
-    services_.runtime().setProject(session.path(), session.config(), session.gameModule());
+    services_.bindRuntime(session.config());
 }
 
 OpenOutcome ShellController::openProject(const QString& path) {

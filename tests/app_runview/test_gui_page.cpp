@@ -16,6 +16,8 @@
 #include <QToolButton>
 #include <QTest>
 
+#include <thread>
+
 #include "fake_joystick.h"
 #include "fake_run_backend.h"
 #include "joystick_editor.h"
@@ -74,7 +76,7 @@ TEST_CASE("run page: start connects, drives the view models and enables the DS")
     Fixture f;
     f.connectRobot();
     CHECK(f.backend.startCount() == 1);
-    CHECK(f.backend.status().link == LinkState::Connected);
+    CHECK(f.backend.status().link == sdk::LinkState::Connected);
     CHECK(f.backend.status().simulating);
     CHECK_FALSE(f.page.viewport()->overlay()->isVisible());
     CHECK(f.page.restartRobotAction()->isEnabled());
@@ -244,14 +246,14 @@ TEST_CASE("run page: a robot crash shows the error state and offers a restart") 
 
 TEST_CASE("run page: handshake timeout and protocol mismatch are explained") {
     Fixture f;
-    f.backend.launchRobot();
+    f.backend.launch();
     f.backend.simulateHandshakeTimeout();
     f.page.pollNow();
     auto* overlay = f.page.viewport()->overlay();
     CHECK(overlay->isVisible());
     CHECK(overlay->restartButton()->isVisible());
     overlay->restartButton()->click();
-    CHECK(f.backend.status().link == LinkState::Connected);
+    CHECK(f.backend.status().link == sdk::LinkState::Connected);
 
     f.backend.simulateProtocolMismatch(QStringLiteral("robot v1, app v2"));
     f.page.pollNow();
@@ -310,7 +312,7 @@ TEST_CASE("run page: choosing a start position resets the robot there, switches 
     f.page.driverStation().setEnabled(true);
     const int resets = f.backend.resetCount();
     red->trigger();
-    CHECK(f.backend.startPositionId() == QStringLiteral("red_left"));
+    CHECK(f.backend.startPosition() == QStringLiteral("red_left"));
     CHECK(f.backend.resetCount() == resets + 1);
     CHECK(f.page.driverStation().alliance() == sdk::Alliance::Red);
     CHECK_FALSE(f.page.driverStation().enabled());
@@ -321,14 +323,14 @@ TEST_CASE("run page: choosing a start position resets the robot there, switches 
     CHECK(robotX() > defaultX + 5.f);
 
     find(QStringLiteral("Default (robot setup)"))->trigger();
-    CHECK(f.backend.startPositionId().isEmpty());
+    CHECK(f.backend.startPosition().isEmpty());
     CHECK(robotX() == doctest::Approx(defaultX));
 }
 
 TEST_CASE("run page: console receives logs and can be searched and copied") {
     Fixture f;
-    f.backend.emitLog(sdk::LogLevel::Error, LogStream::Stderr, QStringLiteral("robot"), QStringLiteral("something exploded"));
-    f.backend.emitLog(sdk::LogLevel::Info, LogStream::Stdout, QStringLiteral("robot"), QStringLiteral("all fine"));
+    f.backend.emitLog(sdk::LogLevel::Error, sdk::LogStream::Stderr, QStringLiteral("robot"), QStringLiteral("something exploded"));
+    f.backend.emitLog(sdk::LogLevel::Info, sdk::LogStream::Stdout, QStringLiteral("robot"), QStringLiteral("all fine"));
     auto* console = f.page.console();
     CHECK(console->totalLineCount() == 2);
     console->filter().setSearchText(QStringLiteral("exploded"));
@@ -339,6 +341,41 @@ TEST_CASE("run page: console receives logs and can be searched and copied") {
     console->filter().setSearchText({});
     console->clear();
     CHECK(console->totalLineCount() == 0);
+}
+
+TEST_CASE("run page: log lines emitted from a worker thread arrive on the UI thread") {
+    Fixture f;
+    std::thread worker([&f] { f.backend.emitLog(sdk::LogLevel::Info, sdk::LogStream::Stdout, QStringLiteral("robot"), QStringLiteral("from a worker")); });
+    worker.join();
+    QApplication::processEvents();   // delivers the queued signal; it is lost if HostLogLine is not a registered metatype
+    CHECK(f.page.console()->totalLineCount() == 1);
+    CHECK(f.page.console()->visibleText().contains(QStringLiteral("from a worker")));
+}
+
+TEST_CASE("run page: the project's default station moves the Driver Station once per project switch") {
+    Fixture f;
+    auto& ds = f.page.driverStation();
+    f.backend.setProjectDefaults(QStringLiteral("projectA"), sdk::proto::AllianceStation::Blue3);
+    CHECK(ds.alliance() == sdk::Alliance::Blue);
+    CHECK(ds.station() == 3);
+
+    ds.setAlliance(sdk::Alliance::Red);
+    ds.setStation(2);
+    f.backend.setProjectDefaults(QStringLiteral("projectA"), sdk::proto::AllianceStation::Blue3);   // an edit of the same project
+    CHECK(ds.alliance() == sdk::Alliance::Red);
+    CHECK(ds.station() == 2);
+
+    f.backend.setProjectDefaults(QStringLiteral("projectB"), sdk::proto::AllianceStation::Red1);
+    CHECK(ds.alliance() == sdk::Alliance::Red);
+    CHECK(ds.station() == 1);
+
+    f.backend.setProjectDefaults(QStringLiteral("projectB"), sdk::proto::AllianceStation::Blue2);   // the wizard changed it
+    CHECK(ds.alliance() == sdk::Alliance::Blue);
+    CHECK(ds.station() == 2);
+
+    f.backend.setProjectDefaults({}, sdk::proto::AllianceStation::Red3);   // no project: nothing to apply
+    CHECK(ds.alliance() == sdk::Alliance::Blue);
+    CHECK(ds.station() == 2);
 }
 
 TEST_CASE("run page: restart shortcuts work with the dropdown closed") {

@@ -43,6 +43,11 @@ constexpr bool isActive(ProcessState process) {
     return process == ProcessState::Starting || process == ProcessState::Running || process == ProcessState::Stopping;
 }
 
+// Robot alive and connected.
+constexpr bool isLive(ProcessState process, LinkState link) {
+    return process == ProcessState::Running && link == LinkState::Connected;
+}
+
 // Robot alive and connected, simulation idle: the state in which devices are detected.
 constexpr bool isArmed(ProcessState process, LinkState link, bool simulating) {
     return process == ProcessState::Running && link != LinkState::Disconnected && !simulating;

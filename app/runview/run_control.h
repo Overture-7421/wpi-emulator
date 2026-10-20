@@ -5,7 +5,7 @@
 
 #include <QString>
 
-#include "run_backend.h"
+#include "contract/runtime_host.h"
 
 namespace wpiemu::app::runview {
 
@@ -17,7 +17,7 @@ struct RunControlState {
     bool operator==(const RunControlState&) const = default;
 };
 
-RunControlState deriveControlState(const RunStatus& status, bool paused);
+RunControlState deriveControlState(const HostStatus& status, bool paused);
 
 enum class Tone { Neutral, Info, Success, Warning, Error };
 
@@ -32,6 +32,6 @@ struct StatusPresentation {
 };
 
 // `snapshotConnected` is ISimSnapshot::robotConnected() of the newest snapshot (false when none).
-StatusPresentation presentStatus(const RunStatus& status, bool snapshotConnected);
+StatusPresentation presentStatus(const HostStatus& status, bool snapshotConnected);
 
 }  // namespace wpiemu::app::runview

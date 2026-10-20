@@ -13,7 +13,6 @@
 #endif
 #ifdef WPIEMU_APP_HAS_RUNVIEW
 #include "runview/run_page.h"
-#include "shell/run_backend_adapter.h"
 #endif
 
 namespace wpiemu::app {
@@ -66,8 +65,7 @@ ShellPages createShellPages([[maybe_unused]] AppServices& services, [[maybe_unus
 #endif
 #ifdef WPIEMU_APP_HAS_RUNVIEW
     {
-        auto* backend = new RunBackendAdapter(services, backendParent);
-        auto* runPage = new runview::RunPage(*backend);
+        auto* runPage = new runview::RunPage(services.runtime());
         pages.run = runPage;
         pages.runViewActions = runPage->viewActions();
         pages.runIsReal = true;

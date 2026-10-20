@@ -33,8 +33,7 @@ sdk::CapabilitySet talonCaps() {
 
 }  // namespace
 
-DemoRuntimeHost::DemoRuntimeHost(QObject* parent) : IRuntimeHost(parent) {
-    qRegisterMetaType<wpiemu::app::HostLogLine>();
+DemoRuntimeHost::DemoRuntimeHost(QObject* parent) : IProjectRuntimeHost(parent) {
     startupTimer_.setSingleShot(true);
     connect(&startupTimer_, &QTimer::timeout, this, &DemoRuntimeHost::advanceStartup);
     simTimer_.setInterval(kSimIntervalMs);
@@ -61,8 +60,9 @@ std::vector<sdk::DiscoveredDevice> DemoRuntimeHost::demoDevicesFor(const sdk::Ro
     return out;
 }
 
-void DemoRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<const sdk::RobotConfig> config,
-                                 const sdk::IGameModule* game) {
+void DemoRuntimeHost::setProject(const HostProject& project) {
+    const QString& projectPath = project.path;
+    const sdk::IGameModule* game = project.game;
     // A different project invalidates the run; edits of the same project are applied live.
     if (projectPath != projectPath_) {
         beginIntent_.projectReplaced();
@@ -71,7 +71,9 @@ void DemoRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<con
     const bool sameProject = projectPath == projectPath_;
     projectPath_ = projectPath;
     scene_ = {};
-    scene_.config = std::move(config);
+    scene_.config = project.config;
+    scene_.projectPath = projectPath;
+    scene_.defaultStation = project.defaultStation;
     if (!startPositionId_.isEmpty() && (!sameProject || scene_.config == nullptr || scene_.config->findStartPosition(startPositionId_.toStdString()) == nullptr)) {
         startPositionId_.clear();
         emit startPositionChanged();

@@ -105,7 +105,7 @@ TEST_CASE("scene model emits tag changes only when a tag switches state") {
     opts.autoRun = false;
     FakeRunBackend backend(opts);
     SceneModel scene;
-    scene.setSceneInfo(backend.sceneInfo());
+    scene.setSceneInfo(backend.scene());
     auto& tags = *static_cast<PartListModel*>(scene.tags());
     CHECK(tags.rowCount() == 8);
     auto& markers = *static_cast<TagMarkerModel*>(scene.tagMarkers());
@@ -144,8 +144,8 @@ TEST_CASE("fake backend cameras see tags and the visible set changes as the robo
     opts.autoRun = false;
     opts.startupDelayMs = 0;
     FakeRunBackend backend(opts);
-    CHECK(backend.sceneInfo().tags.tags.size() == 8);
-    CHECK(backend.sceneInfo().config->cameras.size() == 2);
+    CHECK(backend.scene().tags.tags.size() == 8);
+    CHECK(backend.scene().config->cameras.size() == 2);
 
     backend.startSimulation();
     backend.tick(1);

@@ -40,18 +40,17 @@ bool typingInto(const QWidget* w) {
 
 }  // namespace
 
-RunPage::RunPage(IRunBackend& backend, QWidget* parent) : RunPage(backend, RunPageOptions{}, parent) {}
+RunPage::RunPage(IRuntimeHost& host, QWidget* parent) : RunPage(host, RunPageOptions{}, parent) {}
 
-RunPage::RunPage(IRunBackend& backend, RunPageOptions options, QWidget* parent)
+RunPage::RunPage(IRuntimeHost& host, RunPageOptions options, QWidget* parent)
     : QWidget(parent),
-      backend_(backend),
+      host_(host),
       options_(options),
       ownedSettings_(options.settings == nullptr ? std::make_unique<QSettings>() : nullptr),
       ownedProvider_(options.gamepads == nullptr && options.useDefaultGamepadBackend ? createDefaultJoystickProvider() : nullptr),
       settings_(options.settings != nullptr ? options.settings : ownedSettings_.get()),
       ds_(settings_),
       joysticks_(options.gamepads != nullptr ? options.gamepads : ownedProvider_.get(), settings_) {
-    registerRunViewMetaTypes();
     setObjectName(QStringLiteral("runview.page"));
     build();
 }
@@ -112,22 +111,22 @@ void RunPage::build() {
     layout->setSpacing(0);
     layout->addWidget(verticalSplit_, 1);
 
-    connect(&backend_, &IRunBackend::statusChanged, this, &RunPage::applyStatus);
-    connect(&backend_, &IRunBackend::sceneInfoChanged, this, &RunPage::onSceneInfoChanged);
-    connect(&backend_, &IRunBackend::startPositionChanged, this, &RunPage::rebuildStartMenu);
-    connect(&backend_, &IRunBackend::logEntry, console_, &ConsolePanel::append);
-    connect(&ds_, &DriverStationModel::stateReady, &backend_, &IRunBackend::setDriverStation);
+    connect(&host_, &IRuntimeHost::statusChanged, this, &RunPage::applyStatus);
+    connect(&host_, &IRuntimeHost::sceneChanged, this, &RunPage::onSceneChanged);
+    connect(&host_, &IRuntimeHost::startPositionChanged, this, &RunPage::rebuildStartMenu);
+    connect(&host_, &IRuntimeHost::logLine, console_, &ConsolePanel::append);
+    connect(&ds_, &DriverStationModel::stateReady, &host_, &IRuntimeHost::setDriverStation);
     connect(viewport_->overlay(), &StateOverlay::restartRequested, this, [this] {
         ds_.disable();
-        backend_.restartRobot();
+        host_.restart();
     });
     connect(dsPanel_, &DriverStationPanel::matchClockChanged, viewport_, &RunViewport::setMatchClock);
     connect(viewport_, &RunViewport::homeRequested, this, [this] { scene_.resetCamera(); });
     connect(viewport_->overlay(), &StateOverlay::showConsoleRequested, this, [this] { setConsoleVisible(true); });
     connect(&scene_, &SceneModel::zoneLabelsChanged, this, &RunPage::rebuildZoneMenu);
     connect(&joysticks_, &JoystickManager::gamepadConnected, this, [this](const JoystickSourceInfo& info, int slot) {
-        console_->append({QDateTime::currentMSecsSinceEpoch(), sdk::LogLevel::Info, LogStream::Emulator, tr("gamepad"),
-                          tr("%1 connected, assigned to joystick port %2").arg(info.name).arg(slot)});
+        console_->append(emulatorLogLine(sdk::LogLevel::Info, tr("gamepad"),
+                                         tr("%1 connected, assigned to joystick port %2").arg(info.name).arg(slot)));
     });
 
     pollTimer_ = new QTimer(this);
@@ -139,7 +138,7 @@ void RunPage::build() {
     connect(dsTimer_, &QTimer::timeout, this, &RunPage::publishDriverStation);
     dsTimer_->start();
 
-    onSceneInfoChanged();
+    onSceneChanged();
     applyStatus();
     setConsoleVisible(true);
 }
@@ -196,15 +195,15 @@ void RunPage::buildActions() {    restartAction_ = new QAction(reloadIcon(), tr(
     consoleAction_->setToolTip(tr("Show or hide the console (Ctrl+J)"));
     connect(restartAction_, &QAction::triggered, this, [this] {
         ds_.onSimReset();
-        backend_.resetSimulation();
+        host_.resetSimulation();
     });
     connect(restartRobotAction_, &QAction::triggered, this, [this] {
         ds_.disable();
         ds_.onSimReset();
-        backend_.restartRobot();
-        backend_.startSimulation();
+        host_.restart();
+        host_.startSimulation();
     });
-    connect(speedCombo_, &QComboBox::activated, this, [this](int i) { backend_.setTimeScale(speedCombo_->itemData(i).toDouble()); });
+    connect(speedCombo_, &QComboBox::activated, this, [this](int i) { host_.setTimeScale(speedCombo_->itemData(i).toDouble()); });
     connect(resetView, &QAction::triggered, this, [this] { scene_.resetCamera(); });
     connect(hudAction_, &QAction::toggled, &viewOptions_, &ViewportOptions::setShowHud);
     connect(stateAction_, &QAction::toggled, this, [this](bool on) { setStateWindowVisible(on); });
@@ -246,7 +245,7 @@ void RunPage::rebuildStartMenu() {
         a->deleteLater();
     }
     for (QActionGroup* g : startMenu_->findChildren<QActionGroup*>(Qt::FindDirectChildrenOnly)) g->deleteLater();
-    const QString current = backend_.startPositionId();
+    const QString current = host_.startPosition();
     auto* group = new QActionGroup(startMenu_);
     group->setExclusive(true);
     const auto addEntry = [&](const QString& text, const QString& id) {
@@ -279,22 +278,32 @@ void RunPage::selectStartPosition(const QString& id) {
     const sdk::StartPosition* position = nullptr;
     for (const sdk::StartPosition& p : startPositions_)
         if (QString::fromStdString(p.id) == id) position = &p;
-    backend_.setStartPosition(position != nullptr ? id : QString());
+    host_.setStartPosition(position != nullptr ? id : QString());
     if (position != nullptr) {
         ds_.setAlliance(position->alliance);
-        console_->append({QDateTime::currentMSecsSinceEpoch(), sdk::LogLevel::Info, LogStream::Emulator, tr("start position"),
-                          tr("%1: x %2 m, y %3 m, heading %4°")
-                              .arg(position->label.empty() ? id : QString::fromStdString(position->label))
-                              .arg(static_cast<double>(position->pose.xM), 0, 'f', 2)
-                              .arg(static_cast<double>(position->pose.yM), 0, 'f', 2)
-                              .arg(sdk::radToDeg(static_cast<double>(position->pose.headingRad)), 0, 'f', 1)});
+        console_->append(emulatorLogLine(sdk::LogLevel::Info, tr("start position"),
+                                         tr("%1: x %2 m, y %3 m, heading %4°")
+                                             .arg(position->label.empty() ? id : QString::fromStdString(position->label))
+                                             .arg(static_cast<double>(position->pose.xM), 0, 'f', 2)
+                                             .arg(static_cast<double>(position->pose.yM), 0, 'f', 2)
+                                             .arg(sdk::radToDeg(static_cast<double>(position->pose.headingRad)), 0, 'f', 1)));
     }
     ds_.onSimReset();
-    backend_.resetSimulation();
+    host_.resetSimulation();
 }
 
-void RunPage::onSceneInfoChanged() {
-    const RunSceneInfo info = backend_.sceneInfo();
+void RunPage::applyProjectDefaults(const HostScene& scene) {
+    if (scene.projectPath.isEmpty()) return;
+    if (scene.projectPath == defaultsProject_ && defaultsStation_ == scene.defaultStation) return;
+    defaultsProject_ = scene.projectPath;
+    defaultsStation_ = scene.defaultStation;
+    ds_.setAlliance(sdk::proto::allianceOf(scene.defaultStation));
+    ds_.setStation(sdk::proto::stationNumberOf(scene.defaultStation));
+}
+
+void RunPage::onSceneChanged() {
+    const HostScene info = host_.scene();
+    applyProjectDefaults(info);
     startPositions_ = info.config ? info.config->startPositions : std::vector<sdk::StartPosition>{};
     scene_.setSceneInfo(info);
     hud_.setDescriptors(info.hud);
@@ -304,13 +313,13 @@ void RunPage::onSceneInfoChanged() {
 }
 
 void RunPage::applyStatus() {
-    const RunStatus status = backend_.status();
-    const auto snapshot = backend_.latestSnapshot();
+    const HostStatus status = host_.status();
+    const auto snapshot = host_.latestSnapshot();
     const StatusPresentation p = presentStatus(status, snapshot != nullptr && snapshot->robotConnected());
     viewport_->overlay()->setPresentation(p);
     refreshControls(snapshot.get());
 
-    const bool available = status.process == RobotProcessState::Running && status.link == LinkState::Connected && status.simulating;
+    const bool available = status.live() && status.simulating;
     ds_.setRobotAvailable(available);
     dsPanel_->setRobotConnected(available);
 
@@ -324,7 +333,7 @@ void RunPage::applyStatus() {
 
 void RunPage::refreshControls(const sdk::ISimSnapshot* snapshot) {
     const bool paused = snapshot != nullptr && snapshot->paused();
-    const RunControlState c = deriveControlState(backend_.status(), paused);
+    const RunControlState c = deriveControlState(host_.status(), paused);
     restartAction_->setEnabled(c.simulating);
     restartRobotAction_->setEnabled(c.canRestart);
     startButton_->setEnabled(c.simulating && !startPositions_.empty());
@@ -334,7 +343,7 @@ void RunPage::refreshControls(const sdk::ISimSnapshot* snapshot) {
 void RunPage::pollNow() {
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
 
-    const auto snapshot = backend_.latestSnapshot();
+    const auto snapshot = host_.latestSnapshot();
     const sdk::ISimSnapshot* s = snapshot.get();
     if (s != nullptr) ds_.onSimTime(s->simTimeUs());
 
@@ -416,7 +425,7 @@ void RunPage::saveStateWindowGeometry() {
 
 void RunPage::setStateWindowVisible(bool visible) {
     if (visible) {
-        stateWindow_->showSnapshot(backend_.latestSnapshot().get());
+        stateWindow_->showSnapshot(host_.latestSnapshot().get());
         stateWindow_->show();
         stateWindow_->raise();
         stateWindow_->activateWindow();
