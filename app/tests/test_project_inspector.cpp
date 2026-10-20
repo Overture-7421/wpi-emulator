@@ -76,6 +76,4 @@ TEST_CASE("kotlin build scripts and sub-folders resolve to the project root") {
     QDir().mkpath(nested);
     CHECK(QDir::cleanPath(GradleProjectInspector::resolveProjectRoot(nested)) == p.path());
     CHECK(QDir::cleanPath(GradleProjectInspector::resolveProjectRoot(p.path() + "/build.gradle.kts")) == p.path());
-    CHECK(GradleProjectInspector::yearFromGradleRioVersion(QStringLiteral("2026.1.1-beta-2")) == 2026);
-    CHECK(GradleProjectInspector::yearFromGradleRioVersion(QStringLiteral("garbage")) == 0);
 }

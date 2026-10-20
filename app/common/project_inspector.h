@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "wpiemu/core/config/json_codec.h"
 #include "wpiemu/sdk/core/severity.h"
 
 namespace wpiemu::app {
@@ -48,14 +49,14 @@ struct ProjectInspection {
     }
 };
 
-// Port: core/runtime may provide a richer implementation; the wizard only depends on this.
+// Port: the wizard only depends on this.
 class IProjectInspector {
 public:
     virtual ~IProjectInspector() = default;
     virtual ProjectInspection inspect(const QString& path) const = 0;
 };
 
-// Reads build.gradle(.kts), .wpilib/wpilib_preferences.json and vendordeps/*.json.
+// What core's ProjectInspector found (build script, preferences, vendordeps), worded for the wizard.
 class GradleProjectInspector final : public IProjectInspector {
     Q_DECLARE_TR_FUNCTIONS(GradleProjectInspector)
 public:
@@ -65,8 +66,8 @@ public:
     // to the folder holding build.gradle. Returns the input folder when none is found.
     static QString resolveProjectRoot(const QString& path);
 
-    // "2026.1.1-beta-2" -> 2026; 0 when malformed.
-    static int yearFromGradleRioVersion(const QString& version);
+private:
+    core::config::JsonValueCodec json_;
 };
 
 }  // namespace wpiemu::app
