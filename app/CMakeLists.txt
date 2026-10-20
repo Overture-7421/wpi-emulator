@@ -16,12 +16,11 @@ endforeach()
 set(CMAKE_AUTOUIC OFF)
 add_subdirectory(host)
 add_subdirectory(common)
-add_subdirectory(wizard)
 add_subdirectory(shell)
 
 qt_add_executable(wpiemu_app main.cpp)
 target_link_libraries(wpiemu_app PRIVATE
-    wpiemu_app_shell wpiemu_app_wizard wpiemu_app_common
+    wpiemu_app_shell wpiemu_app_common
     wpiemu_core wpiemu_ipc wpiemu_sdk wpiemu_plugins_builtin
     Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::Quick3D Qt6::QuickWidgets)
 target_compile_definitions(wpiemu_app PRIVATE WPIEMU_APP_VERSION="${PROJECT_VERSION}")

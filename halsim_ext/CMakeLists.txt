@@ -64,11 +64,6 @@ if(WPIEMU_BUILD_TESTS)
     wpiemu_target_defaults(wpiemu_halsim_ext_tests)
     doctest_discover_tests(wpiemu_halsim_ext_tests TEST_PREFIX "halsim_ext.")
 
-    # Manual end-to-end tool (not registered with CTest).
-    add_executable(wpiemu_halsim_fake_emulator tests/manual/fake_emulator.cpp)
-    target_link_libraries(wpiemu_halsim_fake_emulator PRIVATE wpiemu_ipc wpiemu_sdk)
-    wpiemu_target_defaults(wpiemu_halsim_fake_emulator)
-
     if(WPIEMU_WPILIB_FOUND)
         # Real sim HAL in-process: stepping, DS, device I/O against a scripted fake emulator.
         add_executable(wpiemu_halsim_ext_hal_tests

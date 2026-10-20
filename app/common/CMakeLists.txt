@@ -17,7 +17,17 @@ add_library(wpiemu_app_common STATIC
     toolchain_checker.cpp
     ui_helpers.cpp
     ui_resources.cpp
-    unit_system.cpp)
+    unit_system.cpp
+    # The setup wizard sources live in ../wizard and are compiled into this library.
+    ../wizard/project_drop_zone.cpp
+    ../wizard/project_page.cpp
+    ../wizard/robot_page.cpp
+    ../wizard/robot_schematic_view.cpp
+    ../wizard/summary_page.cpp
+    ../wizard/toolchain_page.cpp
+    ../wizard/wizard_dialog.cpp
+    ../wizard/wizard_page.h
+    ../wizard/wizard_view_model.cpp)
 # Includes are rooted at app/ ("common/x.h", "wizard/x.h", "shell/x.h").
 target_include_directories(wpiemu_app_common PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(wpiemu_app_common
