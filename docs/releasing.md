@@ -166,7 +166,7 @@ and check native rendering; `--version` and offscreen suites cannot prove either
 Review [THIRD-PARTY-NOTICES.txt](../packaging/THIRD-PARTY-NOTICES.txt) and required license texts
 for every bundled dependency. A root `LICENSE` is currently absent; when present CPack uses it
 for NSIS's license page. Linux AppStream metadata also has no product license declaration.
-Package generation is not license clearance. Keep the [sample WPILib notice](../samples/vision_robot/WPILib-License.md)
+Package generation is not license clearance. Keep the [sample WPILib notice](../samples/WPILib-License.md)
 and all upstream attributions intact.
 
 Next: [User guide](USER_GUIDE.md) for installation and controls, or [Building](BUILDING.md) for validation setup.

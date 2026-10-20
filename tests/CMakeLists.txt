@@ -19,7 +19,9 @@ if(WPIEMU_BUILD_PLUGIN_TEMPLATE)
     target_link_libraries(wpiemu_tests PRIVATE wpiemu_plugin_template)
 endif()
 wpiemu_target_defaults(wpiemu_tests)
-target_compile_definitions(wpiemu_tests PRIVATE DOCTEST_CONFIG_USE_STD_HEADERS)
+target_compile_definitions(wpiemu_tests PRIVATE
+    DOCTEST_CONFIG_USE_STD_HEADERS
+    "WPIEMU_SAMPLES_DIR=\"${CMAKE_SOURCE_DIR}/samples\"")
 
 doctest_discover_tests(wpiemu_tests)
 

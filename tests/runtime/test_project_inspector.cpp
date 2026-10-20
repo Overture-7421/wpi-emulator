@@ -277,7 +277,7 @@ TEST_CASE("wpilib install discovery per OS") {
     CHECK_FALSE(wpilibInstallAt(root / "2024", 2024).has_value());
 }
 
-// ---- the real project on this machine (read-only) ------------------------------------------------------------------------------
+// ---- a real WPILib project (read-only) ----------------------------------------------------------------------------------------
 
 namespace {
 std::map<std::string, std::pair<std::uintmax_t, fs::file_time_type>> snapshotTree(const fs::path& root) {
@@ -291,15 +291,11 @@ std::map<std::string, std::pair<std::uintmax_t, fs::file_time_type>> snapshotTre
 }
 }  // namespace
 
-TEST_CASE("inspector: the FRC-Shelby-2026OS project, read only") {
-    const fs::path shelby = "C:\\Users\\alber\\Documents\\Gits\\FRC-Shelby-2026OS";
-    std::error_code ec;
-    if (!fs::is_directory(shelby, ec)) {
-        MESSAGE("FRC-Shelby-2026OS is not on this machine: skipped");
-        return;
-    }
-    const auto before = snapshotTree(shelby);
-    const ProjectReport r = inspect(shelby);
+TEST_CASE("inspector: a real WPILib sample project, read only") {
+    const fs::path sample = fs::path(WPIEMU_SAMPLES_DIR) / "vision_robot" / "java";
+    REQUIRE(fs::is_directory(sample));
+    const auto before = snapshotTree(sample);
+    const ProjectReport r = inspect(sample);
     CHECK(r.isWpilibProject);
     CHECK(r.language == "java");
     CHECK(r.gradleRioVersion == "2026.2.1");
@@ -309,10 +305,10 @@ TEST_CASE("inspector: the FRC-Shelby-2026OS project, read only") {
     CHECK(r.hasGradlewScript);
     CHECK(r.hasWrapperJar);
     CHECK(r.gradleVersion == "8.11");
-    CHECK(r.vendorDeps.size() >= 5);
+    CHECK(r.vendorDeps.size() >= 3);
     CHECK(r.hasVendorDep("Phoenix6"));
     CHECK(r.hasVendorDep("photonlib"));
     CHECK(r.hasVendorDep("WPILibNewCommands"));
     for (const VendorDep& d : r.vendorDeps) CHECK(d.readable);
-    CHECK(snapshotTree(shelby) == before);  // nothing was touched
+    CHECK(snapshotTree(sample) == before);  // nothing was touched
 }

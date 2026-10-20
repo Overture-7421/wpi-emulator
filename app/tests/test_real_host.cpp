@@ -232,7 +232,7 @@ TEST_CASE("real host e2e (opt-in): the shell discovers the devices of a real rob
     }
     const QString original = !qEnvironmentVariableIsEmpty("WPIEMU_E2E_PROJECT")
                                  ? qEnvironmentVariable("WPIEMU_E2E_PROJECT")
-                                 : QDir::cleanPath(QFileInfo(QString::fromUtf8(__FILE__)).absolutePath() + "/../../../FRC-Shelby-2026OS");
+                                 : QStringLiteral(WPIEMU_SAMPLES_DIR "/swerve_robot/java");
     if (!QFileInfo::exists(original + "/gradlew.bat") && !QFileInfo::exists(original + "/gradlew")) {
         MESSAGE("skipped: no robot project at " << original.toStdString());
         return;
@@ -256,8 +256,8 @@ TEST_CASE("real host e2e (opt-in): the shell discovers the devices of a real rob
     });
 
     controller.launchRobot();
-    REQUIRE_MESSAGE(waitFor([&] { return discovered >= 25 || !host.status().active(); }, 240000), host.status().detail.toStdString());
-    CHECK(discovered >= 25);
+    REQUIRE_MESSAGE(waitFor([&] { return discovered >= 16 || !host.status().active(); }, 240000), host.status().detail.toStdString());
+    CHECK(discovered >= 16);
     CHECK(host.status().process == HostProcessState::Running);
     CHECK(host.status().link == HostLinkState::Connected);
     host.stop();

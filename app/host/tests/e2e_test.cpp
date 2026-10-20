@@ -8,13 +8,16 @@
 // halsim_wpiemu. Skipped (exit code 77, CTest SKIP_RETURN_CODE) with a clear message when
 // WPIEMU_E2E is not set or a prerequisite is missing.
 //
+// The robot is samples/swerve_robot/java; the CAN layout and expectations below are its own.
+//
 //   $env:WPIEMU_E2E = "1"; ctest -C Release -L e2e --output-on-failure
-//   $env:WPIEMU_E2E_PROJECT = "C:\path\to\robot"   (default: ../FRC-Shelby-2026OS next to this
-//   repository) $env:WPIEMU_E2E_KEEP = "1"                      keep the temp copy for inspection
+//   $env:WPIEMU_E2E_PROJECT = "C:\path\to\robot"    another robot with the same CAN layout
+//   $env:WPIEMU_E2E_KEEP = "1"                      keep the temp copy for inspection
 //   $env:WPIEMU_E2E_VERBOSE = "1"                   echo the robot console
-//   $env:WPIEMU_E2E_LAUNCH = "direct"               use the simulateExternal direct launch instead
-//   of the gradle init script $env:WPIEMU_E2E_TANK = "1"                     opt in to the saved
-//   six-wheel/two-motor tank fixture case
+//   $env:WPIEMU_E2E_LAUNCH = "direct"               use the simulateExternal direct launch
+//                                                   instead of the gradle init script
+//   $env:WPIEMU_E2E_TANK = "1"                      opt in to the saved six-wheel/two-motor
+//                                                   tank fixture case
 //     Run with --test-case="e2e: saved tank robot*" and WPIEMU_E2E_PROJECT pointing to that robot.
 #include <algorithm>
 #include <chrono>
@@ -57,7 +60,7 @@ struct SwerveModuleIds {
     float x, y;
     int driveId, steerId, encoderId;
 };
-// FRC-Shelby-2026OS Chassis.java: track 11.125 in x 10.875 in; CAN ids from the module configs.
+// samples/swerve_robot Swerve.java: track 11.125 in x 10.875 in; CAN ids from its module list.
 constexpr SwerveModuleIds kModules[] = {
     {"fl", 0.2826f, 0.2762f, 4, 3, 12},
     {"fr", 0.2826f, -0.2762f, 8, 7, 11},
@@ -71,7 +74,7 @@ constexpr int kIntakePivotEncoderId = 30;
 
 sdk::RobotConfig baseConfig(const fs::path& project) {
     sdk::RobotConfig c;
-    c.name = "Shelby e2e";
+    c.name = "Swerve sample e2e";
     c.project.path = project.string();
     c.project.language = "java";
     c.project.wpilibYear = 2026;
@@ -174,7 +177,7 @@ void dumpConsole(const std::vector<std::string>& console) {
 
 }  // namespace
 
-TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven teleop run") {
+TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run") {
     const Clock::time_point t0 = Clock::now();
     const fs::path original = !env("WPIEMU_E2E_PROJECT").empty() ? fs::path(env("WPIEMU_E2E_PROJECT")) : fs::path(WPIEMU_E2E_DEFAULT_PROJECT);
     const fs::path extension = WPIEMU_E2E_EXTENSION;
@@ -231,8 +234,8 @@ TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven t
         std::printf("e2e:   connected after %.1f s, program started after %.1f s, %zu devices announced\n", tConnected, tProgram, snap->devices().size());
         for (const sdk::DiscoveredDevice& d : snap->devices())
             std::printf("e2e:     %-9s %-9s id=%-3d %s\n", d.descriptor.family.c_str(), d.descriptor.type.c_str(), d.descriptor.id, d.live ? "" : "(retired)");
-        CHECK(countType(*snap, "talonfx") >= 16);
-        CHECK(countType(*snap, "cancoder") >= 4);
+        CHECK(countType(*snap, "talonfx") >= 10);   // 8 swerve motors, the roller and the pivot
+        CHECK(countType(*snap, "cancoder") >= 5);   // 4 azimuth encoders and the pivot's
         CHECK(countType(*snap, "pigeon2") >= 1);
         for (const SwerveModuleIds& m : kModules) {
             CHECK(hasDevice(*snap, "talonfx", m.driveId));

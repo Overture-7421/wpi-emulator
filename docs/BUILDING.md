@@ -95,13 +95,13 @@ These need the WPILib JDK/toolchain, the project's Gradle wrapper and cached Mav
 plus a real HAL-enabled build. Originals are untouched: tests run copied projects.
 ```powershell
 $env:WPIEMU_E2E = "1"
-$env:WPIEMU_E2E_PROJECT = "C:\path\to\robot"
-ctest --preset windows-vs2022-release -R "^e2e[.]shelby_2026$"
+ctest --preset windows-vs2022-release -R "^e2e[.]swerve_sample$"
 $env:WPIEMU_E2E_VISION_PROJECT = (Resolve-Path samples\vision_robot\java).Path
 $env:WPIEMU_E2E_VISION_LANG = "java"
 ctest --preset windows-vs2022-release -R "^e2e[.]vision_sample$"
 ```
-Vision also needs ntcore. For C++, select `samples\vision_robot\cpp` and language `cpp`.
+The swerve check drives [`samples\swerve_robot\java`](../samples/swerve_robot/README.md); `WPIEMU_E2E_PROJECT` selects
+another robot with that CAN layout. Vision also needs ntcore. For C++, select `samples\vision_robot\cpp` and language `cpp`.
 Set `JAVA_HOME` to the WPILib JDK if discovery fails; `WPIEMU_E2E_VERBOSE=1` shows robot output.
 Without opt-in/prerequisites these tests report skipped; a skip does not verify integration.
 

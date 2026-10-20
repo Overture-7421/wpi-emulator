@@ -60,6 +60,6 @@ For C++, change the project to `cpp` and language to `cpp`. The check builds a p
 creates its own model and compares robot output with camera/pose truth; it does not use saved editor config.
 Missing opt-in/project/wrapper/extension/JDK prerequisites can return **Skipped** (77), not a pass.
 Use Building's platform test presets elsewhere; this command does not establish native Linux/macOS results.
-Retain FIRST/WPILib notices and helper attributions; the shared notice is [WPILib-License.md](WPILib-License.md).
+Retain FIRST/WPILib notices and helper attributions; the shared notice is [WPILib-License.md](../WPILib-License.md).
 
 Next: [User guide](../../docs/USER_GUIDE.md) for controls and camera troubleshooting.
