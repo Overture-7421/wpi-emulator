@@ -127,7 +127,11 @@ Brownout disables the outgoing Driver Station state; recovery requires voltage a
 [RobotLauncher](../../core/runtime/include/wpiemu/core/launcher/robot_launcher.h) supervises unmodified robot code.
 Default launch injects a generated Gradle init script; external-direct mode builds/describes
 the simulation target, then starts its JVM/native binary. Neither edits sources/build scripts.
-`ProjectInspector` reads metadata without executing Gradle. The host requests protocol Stop
+`ProjectInspector` reads metadata without executing Gradle; the wizard words its report and
+adds nothing of its own. The JDK Gradle runs with is chosen in one order,
+[`kJdkSources`](../../core/runtime/include/wpiemu/core/launcher/project_inspector.h): the Settings JDK folder,
+the project season's WPILib JDK (all-users or this-user install, or the Settings WPILib folder), `JAVA_HOME`, then
+`java` on `PATH`. Both the session launch and the wizard's toolchain check follow it. The host requests protocol Stop
 before cleanup; cancellation remains latched through startup and escalates to whole-tree kill
 after the grace deadline. Destruction joins the worker and cleans up the process tree.
 

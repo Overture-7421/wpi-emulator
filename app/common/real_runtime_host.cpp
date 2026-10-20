@@ -204,6 +204,11 @@ void RealRuntimeHost::launch() {
     o.driverStation = ds_;
     o.startPose = resolveStartPlacement();
     o.timeScale = timeScale_;
+    if (options_.toolchainOverrides) {
+        const RealRuntimeOptions::ToolchainOverrides toolchain = options_.toolchainOverrides();
+        o.javaHome = toolchain.javaHome;
+        o.wpilibHome = toolchain.wpilibHome;
+    }
     if (options_.tweak) options_.tweak(o);
 
     emitLog(sdk::LogLevel::Info, QStringLiteral("runtime"), tr("Launching the robot with the HALSim extension"));

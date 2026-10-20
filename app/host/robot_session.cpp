@@ -51,6 +51,29 @@ std::string detectLanguage(const fs::path& dir, const std::string& configured) {
     return "java";
 }
 
+// The JDK Gradle runs with: the first of launcher::kJdkSources that is present. Empty means `java` on PATH.
+fs::path pickJdkHome(const Options& options, int wpilibYear) {
+    std::optional<launcher::WpilibInstall> install;
+    if (!options.wpilibHome.empty()) install = launcher::wpilibInstallAt(options.wpilibHome, wpilibYear);
+    else if (wpilibYear > 0) install = launcher::findWpilibInstall(wpilibYear, {});
+    const std::optional<std::string> javaHomeEnv = core::config::systemEnv()("JAVA_HOME");
+    for (const launcher::JdkSource source : launcher::kJdkSources) {
+        switch (source) {
+            case launcher::JdkSource::Setting:
+                if (!options.javaHome.empty()) return options.javaHome;
+                break;
+            case launcher::JdkSource::WpilibInstall:
+                if (install && !install->jdkHome.empty()) return install->jdkHome;
+                break;
+            case launcher::JdkSource::JavaHome:
+                if (javaHomeEnv && !javaHomeEnv->empty()) return *javaHomeEnv;
+                break;
+            case launcher::JdkSource::Path: break;
+        }
+    }
+    return {};
+}
+
 }  // namespace
 
 // ---- log plumbing ----------------------------------------------------------------------------------------------------------------
@@ -296,9 +319,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     req.extensionLibrary = options.extensionLibrary;
     req.ipcEndpoint = self->endpoint_;
     req.scratchDir = options.scratchDir.empty() ? fs::temp_directory_path() / "wpiemu" : options.scratchDir;
-    req.javaHome = options.javaHome;
-    if (req.javaHome.empty() && cfg.project.wpilibYear > 0)
-        if (const auto install = launcher::findWpilibInstall(cfg.project.wpilibYear, {})) req.javaHome = install->jdkHome;
+    req.javaHome = pickJdkHome(options, cfg.project.wpilibYear);
     req.gradleOffline = options.gradleOffline;
     req.extraGradleArgs = options.extraGradleArgs;
     req.extraEnv["WPIEMU_LIVE_DISCOVERY"] = options.preStartPolling ? "1" : "0";

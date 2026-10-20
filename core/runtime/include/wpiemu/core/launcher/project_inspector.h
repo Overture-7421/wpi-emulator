@@ -1,7 +1,7 @@
 #pragma once
 
+#include <array>
 #include <filesystem>
-#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -56,7 +56,8 @@ private:
     const sdk::IValueTextCodec& json_;
 };
 
-// ---- WPILib / toolchain discovery (the wizard's step 2) ----------------------------------------------------------------
+// ---- WPILib install and JDK discovery -------------------------------------------------------------------------------------
+// Shared by the launcher (RobotSession) and the wizard's toolchain check, so the two cannot disagree about what a run uses.
 
 struct WpilibInstall {
     std::filesystem::path home;        // <root>/<year>
@@ -67,40 +68,20 @@ struct WpilibInstall {
     bool hasRoboRioToolchain = false;
 };
 
-// <PUBLIC>\wpilib (C:\Users\Public\wpilib) on Windows, $HOME/wpilib on macOS and Linux.
+// Where the WPILib installer puts a season. Windows: <publicDir>\wpilib and C:\Users\Public\wpilib ("everyone"), then
+// <homeDir>\wpilib ("this user only"); macOS and Linux: <homeDir>/wpilib. An empty folder is skipped.
+std::vector<std::filesystem::path> wpilibRootCandidates(config::Platform platform, const std::filesystem::path& publicDir,
+                                                        const std::filesystem::path& homeDir);
+// The same with the folders taken from the environment: PUBLIC, and USERPROFILE on Windows or HOME elsewhere.
 std::vector<std::filesystem::path> wpilibRootCandidates(config::Platform platform, const config::EnvLookup& env);
+// The install at `home`, a season folder such as <root>/2026; nullopt when it is not a directory.
+std::optional<WpilibInstall> wpilibInstallAt(const std::filesystem::path& home, int year);
 // First root containing "<year>/" wins. `roots` empty => wpilibRootCandidates().
 std::optional<WpilibInstall> findWpilibInstall(int year, const std::vector<std::filesystem::path>& roots);
 
-enum class CheckStatus { Ok, Info, Warning, Error };
-
-struct ToolchainCheck {
-    std::string id;       // stable: "project", "gradlerio", "game_plugin", "gradle_wrapper", "jdk", "wpilib_install", "cpp_toolchain", "vendordeps", "team", "extension"
-    std::string title;
-    CheckStatus status = CheckStatus::Ok;
-    std::string detail;
-    std::string fix;      // what the user can do (empty when Ok)
-};
-
-struct ToolchainReport {
-    std::vector<ToolchainCheck> checks;
-    std::optional<WpilibInstall> wpilib;
-    std::filesystem::path jdkHome;        // the JDK to launch with (WPILib's or JAVA_HOME's); empty if none was found
-    std::string javaVersion;              // from the JDK's `release` file, "" if unknown
-
-    bool ready() const;                   // no Error check
-    const ToolchainCheck* find(std::string_view id) const;
-};
-
-struct ToolchainContext {
-    config::Platform platform = config::currentPlatform();
-    config::EnvLookup env = config::systemEnv();
-    std::vector<std::filesystem::path> wpilibRoots;     // empty => wpilibRootCandidates(platform, env)
-    std::function<bool(int)> hasGamePlugin;              // year -> a game plugin is registered; unset => check skipped
-    std::filesystem::path extensionLibrary;              // halsim_wpiemu; empty => check skipped
-    std::vector<std::filesystem::path> hostCompilerDirs; // extra places to look for a C++ compiler (tests / unusual installs)
-};
-
-ToolchainReport inspectToolchain(const ProjectReport& project, const ToolchainContext& context = {});
+// Where the JDK that runs Gradle comes from, in the order the launcher tries: the explicit setting, the season's WPILib JDK,
+// JAVA_HOME, then `java` on PATH. The robot session and the wizard's toolchain check both walk this list.
+enum class JdkSource { Setting, WpilibInstall, JavaHome, Path };
+inline constexpr std::array<JdkSource, 4> kJdkSources{JdkSource::Setting, JdkSource::WpilibInstall, JdkSource::JavaHome, JdkSource::Path};
 
 }  // namespace wpiemu::core::launcher

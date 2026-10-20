@@ -174,8 +174,10 @@ Tower points, penalties and ranking points are not scored.
 
 ## Settings and project files
 
-**File > Settings…** controls theme, dialog units, toolchain path hints, physics rate and
-reopening the last project. Toolchain paths affect the next check. The physics-rate setting
+**File > Settings…** controls theme, dialog units, the WPILib and JDK folders, physics rate and
+reopening the last project. The folders apply to the next toolchain check and robot launch; left
+empty, Gradle runs with WPILib's JDK for the project's season (all-users or this-user install),
+then `JAVA_HOME`, then `java` on `PATH`. The physics-rate setting
 is copied into the model when the wizard finishes: rerun setup to apply a changed rate.
 
 Edits autosave; **Save** / `Ctrl+S` saves immediately. Closing, switching projects or rerunning

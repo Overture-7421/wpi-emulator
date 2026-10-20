@@ -62,6 +62,10 @@ AppServices::AppServices(AppServicesOptions options)
         registries.json = &textCodec_;
         RealRuntimeOptions real;
         real.scratchDir = root / "scratch";
+        real.toolchainOverrides = [this] {
+            const auto folder = [](const QString& text) { return text.isEmpty() ? std::filesystem::path() : std::filesystem::path(text.toStdU16String()); };
+            return RealRuntimeOptions::ToolchainOverrides{folder(settings_->data().jdkHome), folder(settings_->data().wpilibHome)};
+        };
         runtime_ = std::make_unique<RealRuntimeHost>(registries, std::move(real));
     }
 }

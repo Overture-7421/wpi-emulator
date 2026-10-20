@@ -54,11 +54,23 @@ TEST_CASE("jdk check finds JAVA_HOME, rejects old versions and explains the fix"
     CHECK(!missing.fixHint.isEmpty());
 }
 
-TEST_CASE("jdk search order: settings override, JAVA_HOME, WPILib's JDK, PATH") {
+TEST_CASE("jdk search order: settings override, WPILib's JDK, JAVA_HOME, PATH (the launcher's order)") {
     Fixture f;
+    f.probe.onPath[QStringLiteral("java")] = QStringLiteral("/usr/bin/java");
+    f.probe.addJava(QStringLiteral("/usr/bin/java"), QStringLiteral("openjdk version \"17.0.1\""));
+    const ToolchainCheck onPath = f.checker().checkJdk(inputFor(QStringLiteral("java"), 2026));
+    CHECK(onPath.status == CheckStatus::Ok);
+    CHECK(onPath.detail.contains(QDir::toNativeSeparators(QStringLiteral("/usr/bin/java"))));
+
+    f.probe.environment[QStringLiteral("JAVA_HOME")] = QStringLiteral("/jdk");
+    f.probe.addJava(QStringLiteral("/jdk/bin/java"), QStringLiteral("openjdk version \"21.0.3\""));
+    CHECK(f.checker().checkJdk(inputFor(QStringLiteral("java"), 2026)).detail.contains(QStringLiteral("Java 21")));
+
     f.probe.dirs.insert(QStringLiteral("/home/user/wpilib/2026"));
     f.probe.addJava(QStringLiteral("/home/user/wpilib/2026/jdk/bin/java"), QStringLiteral("openjdk version \"17.0.8\""));
-    CHECK(f.checker().checkJdk(inputFor(QStringLiteral("java"), 2026)).status == CheckStatus::Ok);
+    const ToolchainCheck wpilib = f.checker().checkJdk(inputFor(QStringLiteral("java"), 2026));
+    CHECK(wpilib.status == CheckStatus::Ok);
+    CHECK(wpilib.detail.contains(QStringLiteral("Java 17")));   // beats JAVA_HOME, as the launcher does
 
     f.probe.addJava(QStringLiteral("/custom/bin/java"), QStringLiteral("openjdk version \"21.0.1\""));
     ToolchainInput in = inputFor(QStringLiteral("java"), 2026);
@@ -66,6 +78,34 @@ TEST_CASE("jdk search order: settings override, JAVA_HOME, WPILib's JDK, PATH") 
     const ToolchainCheck c = f.checker().checkJdk(in);
     CHECK(c.status == CheckStatus::Ok);
     CHECK(c.detail.contains(QStringLiteral("21")));
+
+    // The first present source is the one that counts: a broken setting is not silently replaced by a working JDK.
+    in.jdkHomeOverride = QStringLiteral("/nowhere");
+    const ToolchainCheck broken = f.checker().checkJdk(in);
+    CHECK(broken.status == CheckStatus::Missing);
+    CHECK(broken.detail.contains(QStringLiteral("does not exist")));
+}
+
+TEST_CASE("jdk: a WPILib season without a bundled JDK falls through to JAVA_HOME") {
+    Fixture f;
+    f.probe.dirs.insert(QStringLiteral("/home/user/wpilib/2026"));   // installed, but no jdk/bin/java
+    f.probe.environment[QStringLiteral("JAVA_HOME")] = QStringLiteral("/jdk");
+    f.probe.addJava(QStringLiteral("/jdk/bin/java"), QStringLiteral("openjdk version \"17.0.2\""));
+    CHECK(f.checker().checkJdk(inputFor(QStringLiteral("java"), 2026)).detail.contains(QDir::toNativeSeparators(QStringLiteral("/jdk/bin/java"))));
+}
+
+TEST_CASE("wpilib install is found in the all-users and the this-user-only locations on Windows") {
+    Fixture f;
+    f.probe.os = HostOs::Windows;
+    f.probe.home = QStringLiteral("C:/Users/me");
+    CHECK(f.checker().findWpilibHome(inputFor(QStringLiteral("java"), 2026)).isEmpty());
+    f.probe.dirs.insert(QStringLiteral("C:/Users/me/wpilib/2026"));
+    CHECK(f.checker().findWpilibHome(inputFor(QStringLiteral("java"), 2026)) == QStringLiteral("C:/Users/me/wpilib/2026"));
+    f.probe.dirs.insert(QStringLiteral("C:/Users/Public/wpilib/2026"));
+    CHECK(f.checker().findWpilibHome(inputFor(QStringLiteral("java"), 2026)) == QStringLiteral("C:/Users/Public/wpilib/2026"));   // the shared one wins
+    f.probe.environment[QStringLiteral("PUBLIC")] = QStringLiteral("D:/Shared");
+    f.probe.dirs.insert(QStringLiteral("D:/Shared/wpilib/2026"));
+    CHECK(f.checker().findWpilibHome(inputFor(QStringLiteral("java"), 2026)) == QStringLiteral("D:/Shared/wpilib/2026"));
 }
 
 TEST_CASE("gradle wrapper and wpilib install checks") {

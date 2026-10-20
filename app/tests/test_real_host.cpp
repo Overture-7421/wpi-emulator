@@ -22,10 +22,12 @@ namespace {
 #if defined(_WIN32)
 constexpr const char* kWaitScript = "@echo off\r\necho fake gradle started\r\n:loop\r\nping -n 2 127.0.0.1 >nul\r\ngoto loop\r\n";
 constexpr const char* kFailScript = "@echo off\r\necho fake gradle: BUILD FAILED\r\nexit /b 3\r\n";
+constexpr const char* kJavaHomeScript = "@echo off\r\necho gradle JAVA_HOME=%JAVA_HOME%\r\nexit /b 3\r\n";
 constexpr const char* kWrapper = "/gradlew.bat";
 #else
 constexpr const char* kWaitScript = "#!/bin/sh\necho fake gradle started\nwhile true; do sleep 1; done\n";
 constexpr const char* kFailScript = "#!/bin/sh\necho fake gradle: BUILD FAILED\nexit 3\n";
+constexpr const char* kJavaHomeScript = "#!/bin/sh\necho \"gradle JAVA_HOME=$JAVA_HOME\"\nexit 3\n";
 constexpr const char* kWrapper = "/gradlew";
 #endif
 
@@ -156,6 +158,17 @@ TEST_CASE("real host: a project whose build fails is reported as FailedToStart w
     // the user can try again after fixing the project
     f.controller.rescanDevices();
     REQUIRE(f.waitProcess(HostProcessState::FailedToStart));
+}
+
+TEST_CASE("real host: the JDK folder chosen in Settings is what Gradle is launched with") {
+    RealFixture f(kJavaHomeScript);
+    AppSettingsData chosen = f.env.services->settings().data();
+    chosen.jdkHome = QStringLiteral("/chosen/jdk");
+    f.env.services->settings().update(chosen);
+
+    f.controller.launchRobot();
+    REQUIRE(f.waitProcess(HostProcessState::FailedToStart));
+    CHECK(f.logged("gradle JAVA_HOME=/chosen/jdk"));
 }
 
 TEST_CASE("real host: Stop ends a starting robot and the process tree, restart starts a fresh run") {

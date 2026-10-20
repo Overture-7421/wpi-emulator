@@ -74,7 +74,8 @@ struct Options {
     core::launcher::LaunchMode launchMode = core::launcher::LaunchMode::GradleInitScript;
     bool release = true;                                  // ExternalDirect: Release vs Debug variant
     std::filesystem::path scratchDir;                     // generated init script; empty = <temp>/wpiemu
-    std::filesystem::path javaHome;                       // empty = the WPILib JDK of the project year, else JAVA_HOME / PATH
+    std::filesystem::path javaHome;                       // JDK for Gradle; empty = the WPILib JDK of the project year, else JAVA_HOME / PATH
+    std::filesystem::path wpilibHome;                     // a WPILib season folder (<root>/<year>); empty = search the default locations
     bool gradleOffline = false;
     std::vector<std::string> extraGradleArgs;
     std::map<std::string, std::string> extraEnv;          // robot-process environment (wins over everything)
