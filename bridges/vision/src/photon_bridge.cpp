@@ -173,9 +173,8 @@ void PhotonBridge::publishFrame(Cam& cam, const sdk::CameraFrame* frame, std::in
 
     if (frame != nullptr) {
         cam.sequence = static_cast<std::int64_t>(frame->sequence);
-        const sdk::SimTimeUs latencyUs = std::max<sdk::SimTimeUs>(0, frame->publishTimeUs - frame->captureTimeUs);
-        latencyMs = latencyUs / 1000.0;
-        result.captureTimestampMicros = ntNow - latencyUs;
+        latencyMs = frame->latencyMs();
+        result.captureTimestampMicros = ntNow - frame->latencyUs();
     } else {
         ++cam.sequence;
         result.captureTimestampMicros = ntNow;

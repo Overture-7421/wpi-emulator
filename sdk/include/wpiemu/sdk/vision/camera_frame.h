@@ -4,6 +4,7 @@
 // them at connect time. The core VisionSystem produces CameraFrames; the vision bridges (bridges/vision)
 // translate them into Limelight / PhotonVision NetworkTables data.
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <string>
@@ -42,6 +43,10 @@ struct CameraFrame {
     double avgTagDistM = 0.0;
     double avgTagAreaPercent = 0.0;
     double tagSpanM = 0.0;                  // largest distance between two seen tags (0 for one tag)
+
+    // How long the result took to be published (publish - capture); never negative.
+    SimTimeUs latencyUs() const { return std::max<SimTimeUs>(0, publishTimeUs - captureTimeUs); }
+    double latencyMs() const { return static_cast<double>(latencyUs()) / 1000.0; }
 };
 
 // What the extension needs to create the NetworkTables topics of one camera before the first frame.
