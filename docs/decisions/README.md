@@ -21,3 +21,5 @@ Numbers are unique and sequential; never reuse or renumber an ADR (update refere
 | [0015](0015-single-mechanism-template.md) | One core mechanism template (Motion: rotary, arm, linear); no catalog panel |
 | [0016](0016-zones.md) | Zones replace game wrapper mechanisms: generic `RobotConfig::zones`, plugin-owned kinds, activation conditions |
 | [0017](0017-vision-cameras.md) | Vision cameras: simulated Limelight / PhotonVision coprocessors published through ntcore inside the robot process; `RobotConfig::cameras`, `IVisionBridge`, `VisionSetup` |
+| [0018](0018-real-robot-feedback.md) | Calibrated robot feedback and explicit start placement |
+| [0019](0019-game-fed-sensors.md) | Core sensors (distance, beam break) fed by plugin-published game values |

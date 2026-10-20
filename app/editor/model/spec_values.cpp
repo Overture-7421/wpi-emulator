@@ -96,6 +96,16 @@ PropertySchema robotSchema() {
     s.properties.push_back(withRange(res, 1.0, 100.0, 1.0));
     auto brown = makeSpec("brownoutV", "Brownout voltage", PropertyType::Double, PropertyUnit::Volts, 6.8, "Battery");
     s.properties.push_back(withRange(brown, 4.0, 10.0, 0.1));
+    s.properties.push_back(makeSpec(
+        "customStartPose", "Use custom start pose", PropertyType::Bool, PropertyUnit::None, false,
+        "Start pose",
+        "Field coordinates restored on start and reset; robot odometry must use the same pose."));
+    s.properties.push_back(makeSpec("startX", "Start X", PropertyType::Double, PropertyUnit::Meters,
+                                    0.0, "Start pose"));
+    s.properties.push_back(makeSpec("startY", "Start Y", PropertyType::Double, PropertyUnit::Meters,
+                                    0.0, "Start pose"));
+    s.properties.push_back(makeSpec("startHeading", "Start heading", PropertyType::Double,
+                                    PropertyUnit::Radians, 0.0, "Start pose"));
     return s;
 }
 
@@ -105,6 +115,11 @@ Value robotValues(const sdk::RobotConfig& c) {
     o["batteryNominalV"] = c.battery.nominalVoltageV;
     o["batteryResistanceMilliOhm"] = c.battery.internalResistanceOhm * 1000.0;
     o["brownoutV"] = c.battery.brownoutVoltageV;
+    const auto start = c.startPose.value_or(sdk::RobotStartPose{});
+    o["customStartPose"] = c.startPose.has_value();
+    o["startX"] = start.xM;
+    o["startY"] = start.yM;
+    o["startHeading"] = start.headingRad;
     return o;
 }
 
@@ -113,6 +128,21 @@ void applyRobot(sdk::RobotConfig& c, const std::string& key, const Value& v) {
     else if (key == "batteryNominalV") c.battery.nominalVoltageV = num(v, c.battery.nominalVoltageV);
     else if (key == "batteryResistanceMilliOhm") c.battery.internalResistanceOhm = num(v, 15.0) / 1000.0;
     else if (key == "brownoutV") c.battery.brownoutVoltageV = num(v, c.battery.brownoutVoltageV);
+    else if (key == "customStartPose") {
+        if (v.asBool())
+            c.startPose = c.startPose.value_or(sdk::RobotStartPose{});
+        else
+            c.startPose.reset();
+    } else if (key == "startX" || key == "startY" || key == "startHeading") {
+        auto start = c.startPose.value_or(sdk::RobotStartPose{});
+        if (key == "startX")
+            start.xM = numF(v, start.xM);
+        else if (key == "startY")
+            start.yM = numF(v, start.yM);
+        else
+            start.headingRad = numF(v, start.headingRad);
+        c.startPose = start;
+    }
 }
 
 // ---- chassis ----------------------------------------------------------------------------------
@@ -293,7 +323,12 @@ void applyWheel(sdk::RobotConfig& c, const std::string& wheelName, const std::st
         w->steered = w->kind == sdk::WheelKind::Swerve;
         if (!w->steered) {
             auto& maps = c.drivetrain.mappings;
-            maps.erase(std::remove_if(maps.begin(), maps.end(), [&](const sdk::SlotMapping& m) { return m.slot.slot == w->name + ".steer"; }), maps.end());
+            maps.erase(std::remove_if(maps.begin(), maps.end(),
+                                      [&](const sdk::SlotMapping& m) {
+                                          return m.slot.slot == w->name + ".steer" ||
+                                                 m.slot.slot == w->name + ".steerEncoder";
+                                      }),
+                       maps.end());
         }
     }
     else if (key == "position") w->positionM = vec(v, w->positionM);
@@ -309,7 +344,9 @@ void applyWheel(sdk::RobotConfig& c, const std::string& wheelName, const std::st
                                   [&](const sdk::SlotMapping& m) {
                                       for (int i = 0; i < w->driveMotorCount; ++i)
                                           if (m.slot.slot == sdk::driveSlotName(w->name, i)) return false;
-                                      return ops::wheelOfSlot(m.slot.slot) == w->name && m.slot.slot != w->name + ".steer";
+                                      return ops::wheelOfSlot(m.slot.slot) == w->name &&
+                                             m.slot.slot != w->name + ".steer" &&
+                                             m.slot.slot != w->name + ".steerEncoder";
                                   }),
                    maps.end());
     }

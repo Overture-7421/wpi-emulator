@@ -114,6 +114,16 @@ sdk::CameraConfig* findCamera(sdk::RobotConfig& c, std::string_view id);
 // The robot-code name no other camera of the kind uses, derived from `base` ("" is the Limelight default name).
 std::string uniqueCameraName(const sdk::RobotConfig& c, sdk::CameraKind kind, std::string base, std::string_view exceptId = {});
 
+// ---- sensors ----------------------------------------------------------------------------------
+std::string uniqueSensorId(const sdk::RobotConfig& c, std::string base);   // distinct from sensor, mechanism, zone AND camera ids
+std::string sensorDisplayName(const sdk::SensorConfig& s);
+// A sensor of `kind` with the kind's default response and no source; returns the new id.
+std::string addSensor(sdk::RobotConfig& c, sdk::SensorKind kind);
+bool removeSensor(sdk::RobotConfig& c, std::string_view id);
+// Copy next to the original (same source and response, mappings are NOT copied); returns the new id, empty when unknown.
+std::string duplicateSensor(sdk::RobotConfig& c, std::string_view id);
+sdk::SensorConfig* findSensor(sdk::RobotConfig& c, std::string_view id);
+
 // ---- device mappings --------------------------------------------------------------------------
 std::vector<sdk::SlotMapping>* mappingList(sdk::RobotConfig& c, std::string_view owner);
 const sdk::SlotMapping* findMapping(const sdk::RobotConfig& c, const sdk::SlotAddress& slot);

@@ -151,7 +151,9 @@ std::shared_ptr<const FieldDescription> describeField(IGameModule* module) {
     return description;   // `field` is destroyed before `world`
 }
 
-StartPlacement startPlacementFor(const FieldDescription* field) {
+StartPlacement startPlacementFor(const FieldDescription* field,
+                                 const std::optional<RobotStartPose>& configured) {
+    if (configured) return {configured->xM, configured->yM, configured->headingRad};
     if (field == nullptr || field->lengthM <= 0.f || field->widthM <= 0.f) return {};
     return {std::min(2.0f, field->lengthM * 0.15f), field->widthM * 0.5f};
 }
@@ -183,10 +185,11 @@ Result<std::unique_ptr<runtime::SimulationSession>> buildSession(const Registrie
         slab.category = layer::Field;
         if (!body.valid() || !parts.world->addShape(body, slab).valid()) return makeError(ErrorCode::Internal, "could not create the floor");
     }
-    const StartPlacement start = startPlacementFor(field);
+    const StartPlacement start = startPlacementFor(field, config.startPose);
     core::physics::ChassisPlacement placement;
     placement.xM = start.xM;
     placement.yM = start.yM;
+    placement.yawRad = start.headingRad;
     parts.config = std::move(config);
     parts.mechanisms = reg.mechanisms;
     parts.drivetrains = reg.drivetrains;

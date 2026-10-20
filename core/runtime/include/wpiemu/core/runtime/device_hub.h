@@ -65,6 +65,7 @@ public:
     void writeEncoder(const sdk::SlotAddress& slot, const sdk::EncoderFeedback& feedback) override;
     void writeDigital(const sdk::SlotAddress& slot, bool value) override;
     void writeAnalog(const sdk::SlotAddress& slot, double volts) override;
+    void writeDistance(const sdk::SlotAddress& slot, double metres) override;
     void writeImu(const sdk::SlotAddress& slot, const sdk::ImuFeedback& feedback) override;
 
     // ---- sdk::IDeviceDirectory ----

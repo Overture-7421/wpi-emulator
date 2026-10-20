@@ -35,6 +35,8 @@ TEST_CASE("integration: the session drives a real Box3D swerve robot from hub vo
         w.positionM.z = w.radiusM;
         c.drivetrain.mappings.push_back({{slot_owner::kDrivetrain, w.name + ".drive"}, DeviceKey{"phoenix6", "talonfx", can, "rio", -1}});
         c.drivetrain.mappings.push_back({{slot_owner::kDrivetrain, w.name + ".steer"}, DeviceKey{"phoenix6", "talonfx", can + 10, "rio", -1}});
+        c.drivetrain.mappings.push_back({{slot_owner::kDrivetrain, w.name + ".steerEncoder"},
+                                         DeviceKey{"phoenix6", "cancoder", can + 20, "rio", -1}});
         ++can;
     }
     c.mechanisms.clear();
@@ -67,6 +69,8 @@ TEST_CASE("integration: the session drives a real Box3D swerve robot from hub vo
     for (std::uint32_t i = 0; i < 4; ++i) {
         s.hub().onAnnounce(talonAnnounce(101 + i, static_cast<int>(i) + 1));
         s.hub().onAnnounce(talonAnnounce(111 + i, static_cast<int>(i) + 11));
+        s.hub().onAnnounce(
+            wpiemu::test_runtime::cancoderAnnounce(121 + i, static_cast<int>(i) + 21));
     }
     CHECK(s.hub().loopbackSet().loopback.empty());
 
@@ -101,9 +105,31 @@ TEST_CASE("integration: the session drives a real Box3D swerve robot from hub vo
     CHECK(snap->wheels().size() == 4);
     CHECK(snap->chassis().pose.position.x == pose.position.x);
 
+    outputs.samples[1].value = 2.0;
+    s.hub().onActuatorFrame(outputs);
+    for (int i = 0; i < 20; ++i) s.tick(out, true);
+    const auto& azimuth = s.drivetrain()->wheelStates().front();
+    CHECK(std::abs(azimuth.steerAngleRad) > 0.01);
+    bool positionSeen = false, velocitySeen = false;
+    for (const auto& sample : out.samples) {
+        if (sample.device != DeviceId{121}) continue;
+        if (sample.signal == 0) {
+            positionSeen = true;
+            CHECK(sample.value == doctest::Approx(azimuth.steerAngleRad / kTwoPi));
+        }
+        if (sample.signal == 1) {
+            velocitySeen = true;
+            CHECK(sample.value == doctest::Approx(azimuth.steerOmegaRadPerSec / kTwoPi));
+        }
+    }
+    CHECK(positionSeen);
+    CHECK(velocitySeen);
     s.reset();
-    CHECK(std::abs(s.world().pose(s.chassisBody()).position.x) < 0.01f);
     CHECK(s.clock().tickIndex() == 0);
+    s.tick(out, true);
+    for (const auto& sample : out.samples)
+        if (sample.device == DeviceId{121}) CHECK(sample.value == doctest::Approx(0.0));
+    CHECK(std::abs(s.world().pose(s.chassisBody()).position.x) < 0.01f);
 }
 
 TEST_CASE("integration: two motors move and turn a six-contact linked tank in Box3D") {

@@ -93,8 +93,10 @@ std::shared_ptr<const sdk::FieldDescription> describeField(sdk::IGameModule* mod
 // Where the robot starts: inside the plugin's field when it has one, else at the origin.
 struct StartPlacement {
     float xM = 0.f, yM = 0.f;
+    float headingRad = 0.f;
 };
-StartPlacement startPlacementFor(const sdk::FieldDescription* field);
+StartPlacement startPlacementFor(const sdk::FieldDescription* field,
+                                 const std::optional<sdk::RobotStartPose>& configured = {});
 
 class RobotSession {
 public:

@@ -42,6 +42,7 @@ public:
     QString addZone(const QString& kind, const sdk::MechanismAttachment& attachment = {});
     // Adds a Limelight / PhotonVision camera on the chassis or a mechanism link and selects it.
     QString addCamera(sdk::CameraKind kind, const sdk::MechanismAttachment& attachment = {});
+    QString addSensor(sdk::SensorKind kind);
     bool deleteSelection();
     bool duplicateSelection();
     // Maps a dropped / chosen device: onto a slot, or onto the best free compatible slot of a

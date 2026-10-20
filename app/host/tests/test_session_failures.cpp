@@ -20,6 +20,23 @@ using namespace wpiemu::app::host::testing;
 using namespace std::chrono_literals;
 using Clock = std::chrono::steady_clock;
 
+TEST_CASE("start placement uses the configured field pose without changing the default") {
+    sdk::FieldDescription field;
+    field.lengthM = 16.5f;
+    field.widthM = 8.f;
+    const auto normal = startPlacementFor(&field);
+    CHECK(normal.xM == 2.f);
+    CHECK(normal.yM == 4.f);
+    CHECK(normal.headingRad == 0.f);
+    const sdk::RobotStartPose pose{4.51f, 0.52654f, 1.2f};
+    for (const auto* description : {&field, static_cast<sdk::FieldDescription*>(nullptr)}) {
+        const auto custom = startPlacementFor(description, pose);
+        CHECK(custom.xM == pose.xM);
+        CHECK(custom.yM == pose.yM);
+        CHECK(custom.headingRad == pose.headingRad);
+    }
+}
+
 namespace {
 
 constexpr bool kWindows = fs::path::preferred_separator == '\\';

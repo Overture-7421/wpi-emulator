@@ -1,7 +1,7 @@
 // Standalone demo of the robot editor on top of FakeEditorBackend:
 //   wpiemu_editor_demo                       interactive window
 //   wpiemu_editor_demo --grab out.png        render once, save a PNG of the whole page, exit
-//   wpiemu_editor_demo --select intake       select an item first (chassis, drivetrain, wheel:fl, slot:intake.motor, zone:pickup, camera:limelight, plugin)
+//   wpiemu_editor_demo --select intake       select an item first (chassis, drivetrain, wheel:fl, slot:intake.motor, zone:pickup, camera:limelight, sensor:feed_sensor, plugin)
 //   wpiemu_editor_demo --detect              run the scripted "Detect devices" before grabbing
 //   wpiemu_editor_demo --tank                tank drive with 3 wheels per side, 3 motors per side (linked wheels)
 //   wpiemu_editor_demo --light               light palette
@@ -90,6 +90,7 @@ SelectionRef parseSelection(const QString& text) {
     if (text == QStringLiteral("plugin")) return SelectionRef::plugin();
     if (text.startsWith(QStringLiteral("zone:"))) return SelectionRef::zone(text.mid(5).toStdString());
     if (text.startsWith(QStringLiteral("camera:"))) return SelectionRef::camera(text.mid(7).toStdString());
+    if (text.startsWith(QStringLiteral("sensor:"))) return SelectionRef::sensor(text.mid(7).toStdString());
     if (text.startsWith(QStringLiteral("wheel:"))) return SelectionRef::wheel(text.mid(6).toStdString());
     if (text.startsWith(QStringLiteral("slot:"))) {
         const QString rest = text.mid(5);

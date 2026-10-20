@@ -76,8 +76,18 @@ std::unique_ptr<ProjectTreeModel::Node> ProjectTreeModel::build() const {
                       qs(c.drivetrain.spec.kind));
     Node& mechs = add(robot, NodeKind::Group, QStringLiteral("mechanisms"), SelectionRef{}, ETR("Mechanisms"),
                       QString::number(c.mechanisms.size()));
-    Node& sensors = add(robot, NodeKind::Group, QStringLiteral("sensors"), SelectionRef{}, ETR("Robot sensors"));
+    Node& sensors = add(robot, NodeKind::Group, QStringLiteral("sensors"), SelectionRef{}, ETR("Sensors"), QString::number(c.sensors.size()));
     addSlots(sensors, sdk::slot_owner::kRobot);
+    for (const auto& s : c.sensors) {
+        const sdk::GameValueInfo* value = cat.findGameValue(s.source);
+        QString source = s.source.empty() ? ETR("no source") : value != nullptr ? qs(value->label.empty() ? value->id : value->label) : qs(s.source);
+        const QString kind = QString::fromUtf8(sdk::sensorKindInfo(s.kind).displayName);
+        Node& sn = add(sensors, NodeKind::Sensor, QStringLiteral("sensor:%1").arg(qs(s.id)), SelectionRef::sensor(s.id),
+                       qs(ops::sensorDisplayName(s)), kind + QStringLiteral(" \xC2\xB7 ") + source);
+        sn.tooltip = qs(sdk::sensorKindInfo(s.kind).description);
+        const bool slotWarning = addSlots(sn, s.id);
+        sn.warning = slotWarning || sensorsWithIssues_.count(s.id) != 0;
+    }
 
     Node& cameras = add(robot, NodeKind::Group, QStringLiteral("cameras"), SelectionRef{}, ETR("Cameras"), QString::number(c.cameras.size()));
     for (const auto& cam : c.cameras) {
@@ -307,15 +317,18 @@ void ProjectTreeModel::copyContents(Node& dst, const Node& src) {
 void ProjectTreeModel::setIssues(const std::vector<sdk::Issue>& issues) {
     std::set<std::string> zones;
     std::set<std::string> cameras;
+    std::set<std::string> sensors;
     for (const sdk::Issue& issue : issues) {
         if (issue.severity == sdk::Severity::Info) continue;
         const IssueLocation loc = locateIssue(document_.config(), document_.catalog(), issue);
         if (loc.selection.kind == SelKind::Zone) zones.insert(loc.selection.owner);
         if (loc.selection.kind == SelKind::Camera) cameras.insert(loc.selection.owner);
+        if (loc.selection.kind == SelKind::Sensor) sensors.insert(loc.selection.owner);
     }
-    if (zones == zonesWithIssues_ && cameras == camerasWithIssues_) return;
+    if (zones == zonesWithIssues_ && cameras == camerasWithIssues_ && sensors == sensorsWithIssues_) return;
     zonesWithIssues_ = std::move(zones);
     camerasWithIssues_ = std::move(cameras);
+    sensorsWithIssues_ = std::move(sensors);
     refresh();
 }
 
@@ -476,7 +489,7 @@ bool ProjectTreeModel::acceptsDevice(const Node* target, sdk::CapabilitySet caps
             if (spec.name == target->ref.sub) return slotAccepts(spec, caps);
         return false;
     }
-    if (target->kind == NodeKind::Mechanism)
+    if (target->kind == NodeKind::Mechanism || target->kind == NodeKind::Sensor)
         return canAcceptDevice(c, document_.catalog(), target->ref.owner, caps);
     if (target->kind == NodeKind::Wheel)
         return canAcceptDevice(c, document_.catalog(), sdk::slot_owner::kDrivetrain, caps, target->ref.sub + ".");

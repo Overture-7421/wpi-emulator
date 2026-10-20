@@ -43,6 +43,7 @@ constexpr const char* kOverlayButtonStyle =
     "QToolButton, QComboBox, QLineEdit { color: white; background: rgba(20,24,32,170);"
     " border: 1px solid rgba(255,255,255,60); border-radius: 6px; }"
     "QToolButton:hover, QComboBox:hover { background: rgba(60,70,90,220); }"
+    "QToolButton:checked { background: rgba(59,111,182,220); }"
     "QToolButton:disabled, QComboBox:disabled, QLineEdit:disabled { color: rgba(255,255,255,90); }"
     "QToolButton::menu-indicator { image: none; }"
     "QToolButton[seg=\"left\"] { border-top-right-radius: 0; border-bottom-right-radius: 0; }"
@@ -92,6 +93,15 @@ QIcon houseIcon() {
         path.lineTo(15.5, 17);
         path.lineTo(15.5, 8.5);
         p.drawPath(path);
+    });
+}
+
+QIcon listIcon() {
+    return paintedIcon([](QPainter& p) {
+        for (const qreal y : {5.0, 10.0, 15.0}) {
+            p.drawPoint(QPointF(3.5, y));
+            p.drawLine(QPointF(7.5, y), QPointF(17, y));
+        }
     });
 }
 }  // namespace
@@ -166,8 +176,8 @@ void StateOverlay::paintEvent(QPaintEvent*) {
     painter.fillRect(rect(), bg);
 }
 
-RunViewport::RunViewport(SceneModel& scene, HudModel& hud, MechanismOverlayModel& mechanisms, ViewportTheme& theme,
-                         ViewportOptions& options, QWidget* parent)
+RunViewport::RunViewport(SceneModel& scene, HudModel& hud, ViewportTheme& theme, ViewportOptions& options,
+                         QWidget* parent)
     : QWidget(parent) {
     setObjectName(QStringLiteral("runview.viewport"));
     quick_ = new QQuickWidget(this);
@@ -175,7 +185,6 @@ RunViewport::RunViewport(SceneModel& scene, HudModel& hud, MechanismOverlayModel
     QQmlContext* ctx = quick_->rootContext();
     ctx->setContextProperty(QStringLiteral("scene"), &scene);
     ctx->setContextProperty(QStringLiteral("hud"), &hud);
-    ctx->setContextProperty(QStringLiteral("mechanisms"), &mechanisms);
     ctx->setContextProperty(QStringLiteral("theme"), &theme);
     ctx->setContextProperty(QStringLiteral("options"), &options);
     quick_->setSource(QUrl(QStringLiteral("qrc:/wpiemu/runview/qml/RunScene.qml")));
@@ -226,6 +235,18 @@ void RunViewport::addControl(QWidget* w) {
     controlsLayout_->insertWidget(controlsLayout_->count() - 1, w);
     w->show();
     placeControls();
+}
+
+void RunViewport::addStateControl(QAction* action) {
+    auto* button = new QToolButton;
+    button->setObjectName(QStringLiteral("runview.stateButton"));
+    action->setIcon(listIcon());
+    button->setDefaultAction(action);
+    button->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    button->setIconSize(QSize(20, 20));
+    button->setFixedSize(34, 34);
+    button->setCursor(Qt::PointingHandCursor);
+    addControl(button);
 }
 
 void RunViewport::addRestartControl(QAction* restart, QMenu* menu) {

@@ -56,6 +56,8 @@ public:
     void publish(sdk::SnapshotBuilder& out) const override;
     // 'R'/'B' = the alliance whose hub goes inactive first (FMS game data), available once TELEOP has started.
     std::optional<std::string> gameSpecificMessage() const override;
+    // The values declared by gameValueInfos() (game_values.h); nullopt for any other id.
+    std::optional<double> gameValue(std::string_view id) const override;
     // ---- read-only view for HUD, tests and tools ----------------------------------------------
     const GameConfig& config() const { return config_; }
     int fuelInRobot() const { return meter_; }

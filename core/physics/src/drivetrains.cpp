@@ -108,6 +108,9 @@ std::vector<SlotSpec> TractionDrivetrain::slotSpecs() const {
             steer.required = true;
             steer.description = "Azimuth motor of module '" + w.spec->name + "'";
             out.push_back(std::move(steer));
+            out.push_back({w.spec->name + ".steerEncoder", w.spec->name + " steer encoder",
+                           SlotType::PositionSensor, false,
+                           "Azimuth in rotations, before controller calibration."});
         }
     }
     return out;

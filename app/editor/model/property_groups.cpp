@@ -377,6 +377,45 @@ bool applyCamera(sdk::RobotConfig& c, const EditorCatalog& catalog, sdk::CameraC
     return false;
 }
 
+bool applySensor(sdk::SensorConfig& s, const std::string& groupId, const std::string& key, const Value& value) {
+    if (groupId == "sensor.general") {
+        if (key == "label") { s.label = value.asString(s.label); return true; }
+        return false;
+    }
+    if (groupId == "sensor.source") {
+        if (key != "source") return false;
+        s.source = value.asString();
+        return true;
+    }
+    if (groupId == "sensor.props") {
+        if (!s.properties.isObject()) s.properties = Value::makeObject();
+        s.properties[key] = value;
+        return true;
+    }
+    return false;
+}
+
+sdk::PropertySchema sensorSourceSchema(const EditorCatalog& catalog, const sdk::SensorConfig& s) {
+    sdk::PropertySchema schema;
+    PropertySpec source;
+    source.key = "source";
+    source.label = ETR("Game value").toStdString();
+    source.description = ETR("The value the game publishes that drives this sensor.").toStdString();
+    source.type = PropertyType::Enum;
+    source.defaultValue = std::string();
+    source.options.push_back({"", ETR("None").toStdString()});
+    for (const auto& v : catalog.gameValues) {
+        QString label = QString::fromStdString(v.label.empty() ? v.id : v.label);
+        const QString unit = unitSuffix(v.unit, UnitSystem::Metric).trimmed();
+        if (!unit.isEmpty()) label += QStringLiteral(" (%1)").arg(unit);
+        source.options.push_back({v.id, label.toStdString()});
+    }
+    if (!s.source.empty() && catalog.findGameValue(s.source) == nullptr)
+        source.options.push_back({s.source, ETR("(unavailable) %1").arg(QString::fromStdString(s.source)).toStdString()});
+    schema.properties.push_back(std::move(source));
+    return schema;
+}
+
 }  // namespace
 
 SelectionRef formTargetOf(const sdk::RobotConfig& c, const SelectionRef& sel) {
@@ -389,6 +428,7 @@ SelectionRef formTargetOf(const sdk::RobotConfig& c, const SelectionRef& sel) {
                     return SelectionRef::wheel(sel.sub.substr(0, dot));
                 return SelectionRef::drivetrain();
             }
+            if (c.findSensor(sel.owner) != nullptr) return SelectionRef::sensor(sel.owner);
             return SelectionRef::mechanism(sel.owner);
         case SelKind::Overlay:
             return sel.owner.empty() ? SelectionRef::plugin() : SelectionRef::mechanism(sel.owner);
@@ -498,6 +538,29 @@ std::vector<PropertyGroup> propertyGroupsFor(const sdk::RobotConfig& c, const Ed
             out.back().section = sdk::PropertySection::Placement;
             break;
         }
+        case SelKind::Sensor: {
+            const sdk::SensorConfig* s = c.findSensor(sel.owner);
+            if (s == nullptr) break;
+            Value general = Value::makeObject();
+            general["label"] = s->label;
+            out.push_back(groupOf("sensor.general", ETR("General"), zoneGeneralSchema(), std::move(general)));
+            Value source = Value::makeObject();
+            source["source"] = s->source;
+            PropertyGroup src = groupOf("sensor.source", ETR("Source"), sensorSourceSchema(catalog, *s), std::move(source));
+            if (const sdk::GameValueInfo* v = catalog.findGameValue(s->source)) {
+                src.hint = QString::fromStdString(v->description);
+            } else if (!s->source.empty()) {
+                src.hint = ETR("The selected game plugin does not publish this value. The sensor reads as idle.");
+            } else {
+                src.hint = catalog.gameValues.empty() ? ETR("The selected game plugin publishes no values.")
+                                                      : ETR("Choose the game value that drives this sensor.");
+            }
+            out.push_back(std::move(src));
+            const sdk::PropertySchema response = sdk::sensorResponseSchema(s->kind);
+            if (!response.properties.empty())
+                out.push_back(groupOf("sensor.props", ETR("Response"), response, withDefaults(response, s->properties)));
+            break;
+        }
         case SelKind::Plugin: {
             if (!catalog.hasPlugin()) break;
             const sdk::PluginSection* section = c.findPlugin(catalog.pluginId);
@@ -547,6 +610,10 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
     if (sel.kind == SelKind::Camera) {
         sdk::CameraConfig* cam = ops::findCamera(c, sel.owner);
         return cam != nullptr && applyCamera(c, catalog, *cam, groupId, key, value);
+    }
+    if (sel.kind == SelKind::Sensor) {
+        sdk::SensorConfig* s = ops::findSensor(c, sel.owner);
+        return s != nullptr && applySensor(*s, groupId, key, value);
     }
     if (sel.kind == SelKind::Mechanism) {
         sdk::MechanismConfig* m = nullptr;
@@ -634,6 +701,9 @@ QString describeSelection(const sdk::RobotConfig& c, const EditorCatalog& catalo
             return QString::fromStdString(sel.owner);
         case SelKind::Camera:
             if (const auto* cam = c.findCamera(sel.owner)) return QString::fromStdString(ops::cameraDisplayName(*cam));
+            return QString::fromStdString(sel.owner);
+        case SelKind::Sensor:
+            if (const auto* s = c.findSensor(sel.owner)) return QString::fromStdString(ops::sensorDisplayName(*s));
             return QString::fromStdString(sel.owner);
         case SelKind::Device: return QString::fromStdString(sel.owner);
         case SelKind::None: break;

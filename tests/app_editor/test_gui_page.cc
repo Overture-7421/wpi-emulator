@@ -346,7 +346,7 @@ TEST_CASE("page: selecting a mechanism shows its slots and generated property fo
     CHECK(insp->form("panel:game_2026.hopper") != nullptr);
     CHECK(insp->form("plugin")->hasField("preloadFuel"));
     f.c().selection().set(SelectionRef::wheel("fr"));
-    CHECK(insp->slotRows().size() == 2);                          // drive + steer of that wheel only
+    CHECK(insp->slotRows().size() == 3);  // drive + steer + optional azimuth encoder
     f.c().selection().set(SelectionRef::primitive("chassis", 0));
     CHECK(insp->form("primitive") != nullptr);
 }

@@ -10,6 +10,7 @@
 #include "wpiemu/sdk/core/result.h"
 #include "wpiemu/sdk/game/field.h"
 #include "wpiemu/sdk/game/game_state.h"
+#include "wpiemu/sdk/game/game_value.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
 #include "wpiemu/sdk/game/zone_kind.h"
 #include "wpiemu/sdk/mechanisms/mechanism.h"
@@ -67,6 +68,10 @@ public:
     // core rejects zones whose kind is not owned by the selected plugin and validates ZoneConfig::properties
     // against the kind's schema. The plugin runtime builds the actual intake/shooter behaviour from the zones.
     virtual std::vector<ZoneKindInfo> contributeZoneKinds() const { return {}; }
+
+    // Numbers the game state publishes every tick for generic sensors (SensorConfig::source). Every id must start
+    // with metadata().id + '.'; IGameState::gameValue(id) returns the live value.
+    virtual std::vector<GameValueInfo> contributeGameValues() const { return {}; }
 
     // The season's AprilTag layout (field frame), used by the simulated vision cameras. Empty = the season has none
     // and cameras never see a tag.

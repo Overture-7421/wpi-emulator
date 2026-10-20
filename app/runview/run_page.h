@@ -11,12 +11,12 @@
 #include "driver_station_panel.h"
 #include "hud_model.h"
 #include "joystick_manager.h"
-#include "mechanism_overlay_model.h"
 #include "run_backend.h"
 #include "run_control.h"
 #include "run_viewport.h"
 #include "scene_model.h"
 #include "sim_stats.h"
+#include "state_window.h"
 #include "status_chip.h"
 
 class QAction;
@@ -51,13 +51,14 @@ public:
     JoystickManager& joysticks() { return joysticks_; }
     SceneModel& scene() { return scene_; }
     HudModel& hud() { return hud_; }
-    MechanismOverlayModel& mechanisms() { return mechanisms_; }
     RunViewport* viewport() const { return viewport_; }
+    StateWindow* stateWindow() const { return stateWindow_; }
+    QAction* stateAction() const { return stateAction_; }
     const SimStatsValues& stats() const { return stats_.values(); }
 
     QAction* restartAction() const { return restartAction_; }
     QAction* restartRobotAction() const { return restartRobotAction_; }
-    // Overlay toggles, the zone submenu and the console toggle; listed in the shell's View menu.
+    // Overlay toggles, the zone submenu, the Robot state window and the console toggle; listed in the shell's View menu.
     QList<QAction*> viewActions() const;
     QComboBox* speedCombo() const { return speedCombo_; }
 
@@ -85,6 +86,8 @@ private:
     void refreshStatsLabels();
     void rebuildZoneMenu();
     void onSceneInfoChanged();
+    void setStateWindowVisible(bool visible);
+    void saveStateWindowGeometry();
 
     IRunBackend& backend_;
     RunPageOptions options_;
@@ -96,7 +99,6 @@ private:
     JoystickManager joysticks_;
     SceneModel scene_;
     HudModel hud_;
-    MechanismOverlayModel mechanisms_;
     ViewportTheme theme_;
     ViewportOptions viewOptions_;
     SimStats stats_;
@@ -112,7 +114,8 @@ private:
     QMenu* restartMenu_ = nullptr;
     QAction* consoleAction_ = nullptr;
     QAction* hudAction_ = nullptr;
-    QAction* mechAction_ = nullptr;
+    QAction* stateAction_ = nullptr;
+    StateWindow* stateWindow_ = nullptr;
     QAction* zonesAction_ = nullptr;
     QAction* tagsAction_ = nullptr;
     QTimer* pollTimer_ = nullptr;

@@ -51,6 +51,9 @@ public:
             case SlotType::VelocitySensor:
                 descriptor.capabilities = Capability::VelocitySensor;
                 break;
+            case SlotType::DistanceSensor:
+                descriptor.capabilities = Capability::Distance;
+                break;
             default:
                 break;
         }
@@ -71,6 +74,7 @@ public:
     std::optional<EncoderFeedback> lastEncoder(const SlotAddress& slot) const { return lookup(encoders_, slot); }
     std::optional<bool> lastDigital(const SlotAddress& slot) const { return lookup(digitals_, slot); }
     std::optional<double> lastAnalog(const SlotAddress& slot) const { return lookup(analogs_, slot); }
+    std::optional<double> lastDistance(const SlotAddress& slot) const { return lookup(distances_, slot); }
     std::optional<ImuFeedback> lastImu(const SlotAddress& slot) const { return lookup(imus_, slot); }
 
     void declareAlias(DeviceId id, const DeviceKey& key) {
@@ -107,6 +111,9 @@ public:
     }
     void writeAnalog(const SlotAddress& slot, double volts) override {
         if (resolve(slot)) analogs_[slot] = volts;
+    }
+    void writeDistance(const SlotAddress& slot, double metres) override {
+        if (resolve(slot)) distances_[slot] = metres;
     }
     void writeImu(const SlotAddress& slot, const ImuFeedback& feedback) override {
         if (resolve(slot)) imus_[slot] = feedback;
@@ -222,6 +229,7 @@ private:
     std::map<SlotAddress, EncoderFeedback> encoders_;
     std::map<SlotAddress, bool> digitals_;
     std::map<SlotAddress, double> analogs_;
+    std::map<SlotAddress, double> distances_;
     std::map<SlotAddress, ImuFeedback> imus_;
     std::vector<HubWarning> warnings_;
     double batteryVoltage_ = 12.0;

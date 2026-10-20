@@ -311,6 +311,17 @@ Restarting robot code invalidates the old live inventory. Devices absent from su
 discovery snapshots remain listed as `gone`; their saved slot mappings are preserved. Numeric
 runtime device IDs being reused by a different device do not transfer physical identity or mappings.
 
+For swerve with external/fused CANcoder feedback, map each module's CANcoder to its **steer encoder**
+sensor slot (`fl.steerEncoder`, etc.), as well as mapping its steer motor. The encoder reports wheel
+azimuth, not steer-motor rotations. Phoenix magnet offset and sensor direction are compensated from
+firmware config read-back; do not copy the same magnet offset into a mechanism's sensor offset.
+A calibration warning means raw passthrough is in use, not a calibrated run.
+
+**Autonomous placement:** select Robot and enable **Use custom start pose** under Start pose, then set
+field X, Y and heading to the path's initial pose. Start and Reset restore that physical placement.
+Robot odometry resets do not teleport the chassis. Mirror/flip the start yourself when changing
+the selected path or alliance; the physical start pose is not automatically alliance-dependent.
+
 Devices that are detected but not mapped run in **loopback**: outputs are echoed back as inputs, so the code does not
 break, but nothing physical happens. Required slots that stay unmapped read neutral values. Devices built into the
 robot controller, such as the roboRIO, are listed as `built in`: there is no slot to map them to, so they never raise a warning.
@@ -345,6 +356,35 @@ game node's right-click menu:
 A condition that names a mechanism that does not exist leaves that zone inactive and the Validation tab warns. The settings
 tables are in [game_2026.md](game_2026.md).
 
+For CANrange fuel detection, add a **Distance sensor** (Add > Sensor), choose a game value such as
+*Fuel count* as its **Source**, and map its device slot. In threshold mode set the fuel count at which it
+reads the near distance, plus near/far distances suited to the robot's proximity tests. This approximates
+inventory rather than individual fuel staging.
+
+### Shelby 2026 characterization
+
+The unmodified no-Maple Shelby project exercised all 28 CAN devices (29 discovered including
+infrastructure), four external swerve encoders and two Limelights. A 12.1 m driving loop agreed with
+robot pose to under 4 cm at sampled leg endpoints; stationary module azimuth errors were below 2 degrees.
+Intake filled inventory from 8 to 30, and both CANrange-derived robot booleans cleared as shots depleted
+the inventory. A 165-second auto/teleop run delivered 8,251 robot loops with zero dropped frames.
+
+The locally saved model uses estimated geometry and inertia, disabled hood/pivot gravity (no CAD),
+inventory-based range sensors, and a rear-facing ballistic muzzle fitted to the robot's shot tables.
+Motor **Reversed** is on for hood 24, pivot 29, roller 32 and shooter 25/26; it is off for roller 31,
+indexer 20/23, shooter 27/28 and drive/steer motors; indexer 21/22 are reversed.
+The blue-right auto physical start is (4.51, 0.52654, 0 rad). Select `Double pass right` through the
+robot's NetworkTables **Auto Chooser** (for example in Elastic); the emulator does not choose an auto.
+
+**Known robot-code limitations, deliberately not hidden by model compensation:** `Hood.setMotor`
+does not assign an in-range request to `target`, so the hood remains at zero despite the shot table.
+Teleop homes successfully, but the autonomous command group leaves the hood unhomed on a fresh boot.
+Short-range characterization scored 8/8 at 1.51, 2.0 and 2.5 m; a 5 m run fired 8 and scored none.
+Full-range shooting is therefore not validated. Blue right/left and red-right autos completed the
+first two paths and began the third, but did not complete all three within the 20-second period or
+produce the two intended shots. Robot source and vendor libraries were left unchanged. A brief
+Teleop enable can home the hood before trying Auto, but does not repair the in-range target bug.
+
 ## 5. The run view and the driver station
 
 Your robot launches automatically when you enter the Editor/Run tab and stays alive until you close the project or
@@ -361,9 +401,10 @@ and phase widgets only apply in Practice; the other modes are free play.
 
 | Area | What it does |
 |---|---|
-| View controls | Icon buttons at the bottom-right of the 3D view: **Restart** (`Ctrl+R`, puts the robot and game pieces back to the start; the robot code keeps running). Its dropdown adds **Restart robot code** (`Ctrl+Shift+R`, reboots the code and resets everything). **Speed** (relative to real time) |
+| View controls | Icon buttons at the bottom-right of the 3D view: **Robot state** (list icon, opens the state window), **Restart** (`Ctrl+R`, puts the robot and game pieces back to the start; the robot code keeps running). Its dropdown adds **Restart robot code** (`Ctrl+Shift+R`, reboots the code and resets everything). **Speed** (relative to real time) |
 | Camera | Same camera controls as the editor viewport (right-drag or Alt+left-drag to rotate; left-drag, middle-drag or Shift+drag to pan; wheel to zoom) and **Home view** (⌂ button, last in the bottom-right controls, `Ctrl+0`, or double-click the view) |
-| Overlays | **View** menu: game HUD, mechanism values, zones (intake / shooter), vision cameras, individually switchable (Run tab only) |
+| Overlays | **View** menu: game HUD, zones (intake / shooter), vision cameras, AprilTags, individually switchable (Run tab only) |
+| Robot state window | **Robot state** button in the 3D view, or **View > Robot state**: a separate window with a live tree of every mechanism (active / idle and its values), sensor (reading, game value it follows, and that value; a warning when the game does not publish it), zone (active / inactive) and camera (visible AprilTags). Rows expand and collapse; the window remembers its size and position |
 | Telemetry (right side of the toolbar) | simulated time, ticks per second and speed, battery voltage, physics step time and entity count, gamepad status |
 | Console | **View > Console** (`Ctrl+J`); filter by level and source (robot stdout, robot stderr, emulator), search, copy, clear, follow |
 

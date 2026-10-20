@@ -34,6 +34,8 @@ inline constexpr const char* kTypePigeonImu = "pigeonimu";
 // Vendor-specific (non-canonical) signal names. "...Reported" are the values the robot-visible firmware sim
 // publishes back (readonly in the Sim GUI): they include the robot's own setPosition/setYaw offsets.
 namespace vsignal {
+inline constexpr const char* kTorqueCurrentReported =
+    "torqueCurrentReported";  // A, telemetry, not a current request
 inline constexpr const char* kRotorPositionReported = "rotorPositionReported";  // rot
 inline constexpr const char* kPositionReported = "positionReported";            // rot
 inline constexpr const char* kYawReported = "yawReported";                      // rad

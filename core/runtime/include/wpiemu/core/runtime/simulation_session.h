@@ -9,6 +9,7 @@
 
 #include "wpiemu/core/runtime/device_hub.h"
 #include "wpiemu/core/runtime/sim_clock.h"
+#include "wpiemu/core/runtime/sensor_system.h"
 #include "wpiemu/core/runtime/vision_system.h"
 #include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/core/logger.h"
@@ -159,6 +160,7 @@ private:
     std::unique_ptr<sdk::SimContext> ctx_;
     std::unique_ptr<sdk::IGameState> gameState_;
     std::unique_ptr<VisionSystem> vision_;
+    std::unique_ptr<SensorSystem> sensors_;
 
     std::vector<sdk::WheelCommand> wheelCommands_;
     sdk::Vec3 lastVelocity_;

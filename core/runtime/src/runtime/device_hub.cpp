@@ -215,10 +215,16 @@ void DeviceHub::writeDigital(const SlotAddress& slot, bool value) {
     setFirstInput(*i, {signal::kDigitalIn, signal::kDetected}, value ? 1.0 : 0.0);
 }
 
-void DeviceHub::writeAnalog(const SlotAddress& slot, double volts) {
+void DeviceHub::writeAnalog(const SlotAddress& slot, double value) {
     const auto i = usable(slot);
     if (!i) return;
-    setFirstInput(*i, {signal::kAnalogVoltage, signal::kDistance}, volts);
+    setFirstInput(*i, {signal::kAnalogVoltage}, value);
+}
+
+void DeviceHub::writeDistance(const SlotAddress& slot, double metres) {
+    const auto i = usable(slot);
+    if (!i) return;
+    setFirstInput(*i, {signal::kDistance}, metres);
 }
 
 void DeviceHub::writeImu(const SlotAddress& slot, const ImuFeedback& f) {

@@ -347,6 +347,28 @@ TEST_CASE("hub: encoder / digital / analog / IMU writes land on the canonical si
     CHECK(value(DeviceId{2}, 0) == 1.0);
 }
 
+TEST_CASE("hub: distance slots accept CANrange and deliver metres rather than voltage") {
+    DeviceHub hub;
+    proto::DeviceAnnounce range;
+    range.id = DeviceId{1};
+    range.descriptor = {"phoenix6", "canrange", "ctre", 33, kBusUnknown};
+    range.descriptor.capabilities = Capability::Distance;
+    range.signalSpecs = {sig(signal::kDistance, SignalDirection::Input)};
+    const SlotSpec sensor{"sensor", "Distance", SlotType::DistanceSensor, false, ""};
+    hub.declareSlots("hopper", {sensor});
+    hub.onAnnounce(range);
+    CHECK(hasWarning(hub, "unmapped_loopback"));
+    REQUIRE(hub.bind({"hopper", "sensor"}, range.descriptor.key()).ok());
+    CHECK_FALSE(hasWarning(hub, "unmapped_loopback"));
+    CHECK(isCompatible(sensor, range.descriptor));
+    CHECK_FALSE(isCompatible({"voltage", "", SlotType::AnalogSensor}, range.descriptor));
+    hub.writeDistance({"hopper", "sensor"}, 0.12);
+    proto::SensorFrame out;
+    hub.buildSensorFrame(out, true);
+    REQUIRE(out.samples.size() == 1);
+    CHECK(out.samples.front().value == doctest::Approx(0.12));
+}
+
 TEST_CASE("hub: aliases of one physical device mapped twice are disabled (conflict), one mapping is only a warning") {
     DeviceHub hub;
     hub.onAnnounce(talon(1, 1));

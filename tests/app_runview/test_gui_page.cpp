@@ -81,10 +81,41 @@ TEST_CASE("run page: start connects, drives the view models and enables the DS")
     CHECK(f.page.speedCombo()->isEnabled());
     CHECK(f.page.scene().robotVisible());
     CHECK(f.page.hud().rowCount() == 5);
-    CHECK(f.page.mechanisms().rowCount() == 3);
+    CHECK(f.page.stateWindow()->isHidden());   // the Robot state window opens on demand
     CHECK(f.page.stats().hasData);
     CHECK(f.page.driverStationPanel()->enableButton()->isEnabled());
     CHECK(f.page.console()->totalLineCount() >= 3);   // start-up output arrived through the log signal
+}
+
+TEST_CASE("run page: the Robot state window lists mechanisms and sensors and follows its toggle") {
+    Fixture f;
+    f.connectRobot();
+    auto* button = f.page.viewport()->findChild<QToolButton*>(QStringLiteral("runview.stateButton"));
+    REQUIRE(button != nullptr);
+    CHECK(button->isCheckable());
+    CHECK(f.page.viewActions().contains(f.page.stateAction()));
+    CHECK_FALSE(f.page.stateWindow()->isVisible());
+
+    button->click();
+    CHECK(f.page.stateAction()->isChecked());
+    REQUIRE(f.page.stateWindow()->isVisible());
+    f.page.pollNow();
+    StateModel* model = f.page.stateWindow()->model();
+    CHECK(model->rowCount(model->findKey(QStringLiteral("section:mechanisms"))) == 3);
+    const QModelIndex sensors = model->findKey(QStringLiteral("section:sensors"));
+    REQUIRE(sensors.isValid());
+    CHECK(model->rowCount(sensors) == 2);
+    CHECK(model->findKey(QStringLiteral("zone:pickup")).isValid());
+    CHECK(model->findKey(QStringLiteral("camera:cam_rear")).isValid());
+
+    f.page.stateWindow()->close();   // the user closes it: the toggle follows
+    CHECK_FALSE(f.page.stateAction()->isChecked());
+    CHECK_FALSE(f.page.stateWindow()->isVisible());
+
+    f.page.stateAction()->setChecked(true);
+    CHECK(f.page.stateWindow()->isVisible());
+    f.page.stateAction()->setChecked(false);
+    CHECK_FALSE(f.page.stateWindow()->isVisible());
 }
 
 TEST_CASE("run page: simulation stats live in a framed group of the Driver Station panel") {

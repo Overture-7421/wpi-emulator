@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -74,6 +75,13 @@ struct CameraState {
     std::vector<int> visibleTagIds; // tag ids in the last captured frame
 };
 
+// Runtime state of one robot sensor (RobotConfig::sensors).
+struct SensorState {
+    std::string id;                      // SensorConfig::id
+    std::optional<double> sourceValue;   // the game value it read this tick; nullopt = source unavailable
+    double reading = 0.0;                // what the robot sees: metres (Distance) or 1/0 digital level (BeamBreak)
+};
+
 class ISimSnapshot {
     WPIEMU_INTERFACE(ISimSnapshot)
 public:
@@ -92,6 +100,8 @@ public:
     virtual std::span<const ZoneState> zones() const { return {}; }
     // State of the robot's simulated cameras (empty when none are configured).
     virtual std::span<const CameraState> cameras() const { return {}; }
+    // State of the robot's sensors (empty when none are configured).
+    virtual std::span<const SensorState> sensors() const { return {}; }
     virtual std::span<const DiscoveredDevice> devices() const = 0;
     virtual std::span<const HubWarning> warnings() const = 0;
 
@@ -121,6 +131,7 @@ struct SimSnapshotData {
     std::vector<HudValue> hud;
     std::vector<ZoneState> zones;
     std::vector<CameraState> cameras;
+    std::vector<SensorState> sensors;
     std::vector<DiscoveredDevice> devices;
     std::vector<HubWarning> warnings;
     double batteryVoltageV = 12.6;
@@ -144,6 +155,7 @@ public:
     std::span<const HudValue> hud() const override { return d_.hud; }
     std::span<const ZoneState> zones() const override { return d_.zones; }
     std::span<const CameraState> cameras() const override { return d_.cameras; }
+    std::span<const SensorState> sensors() const override { return d_.sensors; }
     std::span<const DiscoveredDevice> devices() const override { return d_.devices; }
     std::span<const HubWarning> warnings() const override { return d_.warnings; }
     double batteryVoltageV() const override { return d_.batteryVoltageV; }
@@ -163,6 +175,7 @@ public:
     void addMechanism(MechanismState m) { data_.mechanisms.push_back(std::move(m)); }
     void addZone(ZoneState z) { data_.zones.push_back(std::move(z)); }
     void addCamera(CameraState c) { data_.cameras.push_back(std::move(c)); }
+    void addSensor(SensorState s) { data_.sensors.push_back(std::move(s)); }
     EntityGroupSample& addEntityGroup(EntityGroupSample g) {
         data_.entityGroups.push_back(std::move(g));
         return data_.entityGroups.back();

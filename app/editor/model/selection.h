@@ -22,6 +22,7 @@ enum class SelKind {
     Plugin,      // the selected game plugin's config section
     Zone,        // owner = zone id (RobotConfig::zones)
     Camera,      // owner = camera id (RobotConfig::cameras)
+    Sensor,      // owner = sensor id (RobotConfig::sensors)
     Device,       // a detected device: owner = serialized DeviceKey (see device_mime.h)
 };
 
@@ -46,6 +47,7 @@ struct SelectionRef {
     static SelectionRef plugin() { return {SelKind::Plugin, {}, {}, -1}; }
     static SelectionRef zone(std::string id) { return {SelKind::Zone, std::move(id), {}, -1}; }
     static SelectionRef camera(std::string id) { return {SelKind::Camera, std::move(id), {}, -1}; }
+    static SelectionRef sensor(std::string id) { return {SelKind::Sensor, std::move(id), {}, -1}; }
     static SelectionRef device(std::string key) { return {SelKind::Device, std::move(key), {}, -1}; }
 
     // Stable textual key (tree expansion state, QML item ids, tests).

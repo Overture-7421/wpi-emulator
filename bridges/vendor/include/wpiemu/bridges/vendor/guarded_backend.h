@@ -106,6 +106,7 @@ private:
     };
 
     bool close(double a, double b) const;
+    bool readbackMatches(const Meta& meta, double readback, double written) const;
     double unwrapped(State& s, const Guard& g, double incoming) const;
     void commit(sdk::SimValueHandle h, const Meta& meta, State& s, double target, bool force);
     bool verifyReadback(sdk::SimValueHandle h, const Meta& meta, State& s);

@@ -84,7 +84,7 @@ and **TalonFXS** (`type=talonfxs`, identical tree with model `Talon FXS`) ✔
 | `CANMotor:Talon FX (v6)[%d]` | `supplyVoltage` | In | `supplyVoltage` | V |
 | | `dutyCycle` | Out | `dutyCycle` | -1..1 |
 | | `motorVoltage` | Out | `motorVoltage` (loopback → `rotorVelocity`) | V |
-| | `torqueCurrent` | Out | `torqueCurrent` | A |
+| | `torqueCurrent` | Out | `torqueCurrentReported` | A (telemetry, not a current request) |
 | | `supplyCurrent` | Out | `supplyCurrent` | A |
 | `CANEncoder:…/Rotor Sensor` | `rawPositionInput` | In | `rotorPosition` | rot (rotor, before ratios) |
 | | `velocity` | In | `rotorVelocity` | rps |
@@ -98,10 +98,31 @@ Not available through SimDevices: temperature, faults, `MotorType` (X60/X44; L2 
 sim value is the contact state ("closed"); with `NormallyOpen` (default) closed = limit active, with `NormallyClosed`
 the hub must invert (`CtreConfigSnapshot::forwardLimitType()/reverseLimitType()`, 0 = NormallyOpen).
 
+Phoenix resolves voltage and TorqueCurrentFOC controls inside its firmware simulator. The plant uses
+`motorVoltage`; the reported `torqueCurrent` is **not** the SDK's canonical torque-current command.
+Confusing those signals caused inverted homing motion and unstable pivot feedback in a real project.
+
 **CANcoder** (`cancoder`) ✔: `CANEncoder:CANcoder (v6)[%d]`: `supplyVoltage` In → `supplyVoltage`; `rawPositionInput` In →
 `position` (rot); `velocity` In → `velocity` (rps); `position` Out → `positionReported`. Capabilities: PositionSensor,
 VelocitySensor, SupplyVoltage. Absolute position is the same integrated value (magnet offset/direction are firmware
 config; read them with L2 `magnetOffsetRot()`/`clockwisePositive()`). `MagnetHealth` is an L2 physics key only.
+
+**Mapped CANcoder calibration.** A slot supplies the desired calibrated model-frame position/velocity.
+For a finite L2 magnet offset and a known sensor direction, the bridge converts these to raw inputs:
+`rawPosition = sign * (slotPosition - magnetOffset)`, `rawVelocity = sign * slotVelocity`,
+where `sign = -1` for clockwise-positive and `+1` otherwise. Phoenix reports
+`sign * rawPosition + magnetOffset`, so the robot and fused-feedback controllers see the slot frame.
+Use the actual firmware read-back (which may be quantized), not constants copied from robot code.
+Config floats may be encoded as signed or unsigned 32-bit float bit patterns; both are decoded.
+This applies to mechanism encoders and optional wheel `steerEncoder` slots; disabled writes and
+unmapped-device loopback retain their existing behavior. Model `sensorOffsetRot` remains an additional
+model-frame offset, not a second copy of the firmware calibration.
+
+Config snapshots are read during initial quiescent discovery, not continuously after robot-side
+reconfiguration. If native config read-back is unavailable or incomplete, the bridge logs a warning
+and retains raw passthrough. Such a run is not calibrated; manually supplying raw-frame feedback
+requires accounting for both firmware offset and direction, or restoring L2 support. No calibration
+is guessed from a CAN id or bus. See [ADR 0018](decisions/0018-real-robot-feedback.md).
 
 **Pigeon 2** (`pigeon2`) ✔: `CANGyro:Pigeon 2 (v6)[%d]`: `supplyVoltage` In; `rawYawInput` In → `yaw`; `pitch`, `roll` In;
 `angularVelX/Y/Z` In → `angularVelX/Y/Z`; `yaw` Out → `yawReported`. **Degrees and deg/s on the wire**, canonical rad and
@@ -159,6 +180,11 @@ while the wrapper's own `SimPeriodicBefore` mirror writes the native value back 
    `SimPeriodicBefore` callbacks in registration order and the CTRE wrappers register theirs at device construction, so the
    host's callback must be registered **after** them (see "Loop hook the host needs" below). Optional; without it a
    disturbance can be visible for one loop at most.
+
+For guarded **yaw only**, read-back comparison accepts equivalent angles modulo 360 degrees: the
+vendor mirror can return +180 for a written -180 without any competing writer. Outgoing yaw is still
+continuous, and encoder/rotor positions are never compared modulo a turn. Genuine angular disturbances
+still trigger the normal reassertion and warning policy.
 
 Delta writes (`AddYaw`/`AddPosition`, L2) would be the fallback if integration semantics ever change; the guard keeps the
 absolute-write contract because it is idempotent and race-free. **Open item:** a robot-level characterisation run

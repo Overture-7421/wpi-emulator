@@ -140,11 +140,4 @@ Item {
         HudStack { anchorIndex: 5; hAlign: 2; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.bottomMargin: 54 }
         HudStack { anchorIndex: 6; hAlign: 1; anchors.centerIn: parent }
     }
-
-    MechanismPanel {
-        anchors.left: parent.left
-        anchors.leftMargin: 12
-        anchors.verticalCenter: parent.verticalCenter
-        visible: options.showMechanisms && scene.robotVisible && count > 0
-    }
 }

@@ -81,6 +81,23 @@ TEST_CASE("vendor guard: one coalesced write per tick, unchanged values are not 
     CHECK(r.inner.writesTo(r.pigeon, "rawYawInput") == 2);
 }
 
+TEST_CASE("vendor guard: equivalent wrapped yaw readback is not a foreign writer") {
+    GuardRig r;
+    r.guarded.setValue(r.rawYaw, -180.00006);
+    for (int tick = 0; tick < 10; ++tick) {
+        r.inner.poke(r.pigeon, "rawYawInput", 179.99994);
+        CHECK(r.guarded.reassertAfterMirror() == 0);
+        r.guarded.setValue(r.rawYaw, -180.00006);
+    }
+    CHECK(r.guarded.disturbances().empty());
+    CHECK(r.log.count(wpiemu::sdk::LogLevel::Warn) == 0);
+    CHECK(r.inner.writesTo(r.pigeon, "rawYawInput") == 1);
+
+    r.guarded.setValue(r.rawPos, 1.0);
+    r.inner.poke(r.cancoder, "rawPositionInput", 361.0);
+    CHECK(r.guarded.reassertAfterMirror() == 1);  // rotor revolutions must not be wrapped
+}
+
 TEST_CASE("vendor guard: unguarded inputs are written through every time") {
     GuardRig r;
     r.guarded.beginWrites();

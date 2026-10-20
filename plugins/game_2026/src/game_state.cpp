@@ -8,6 +8,7 @@
 
 #include "wpiemu/plugins/game_2026/field_dimensions.h"
 #include "wpiemu/plugins/game_2026/fuel_layout.h"
+#include "wpiemu/plugins/game_2026/game_values.h"
 #include "wpiemu/plugins/game_2026/plugin_info.h"
 #include "wpiemu/sdk/game/zone_activation.h"
 #include "wpiemu/sdk/ipc/messages.h"
@@ -317,6 +318,14 @@ void Game2026State::refreshPositions() {
 std::optional<std::string> Game2026State::gameSpecificMessage() const {
     if (!hub_.firstInactiveKnown()) return std::nullopt;
     return std::string(hub_.firstInactive() == Alliance::Red ? "R" : "B");
+}
+
+std::optional<double> Game2026State::gameValue(std::string_view id) const {
+    if (id == game_value::kFuelCount) return static_cast<double>(meter_);
+    if (id == game_value::kFuelCapacity) return static_cast<double>(config_.capacity);
+    if (id == game_value::kFuelFraction)
+        return config_.capacity > 0 ? static_cast<double>(meter_) / config_.capacity : 0.0;
+    return std::nullopt;
 }
 
 void Game2026State::publish(sdk::SnapshotBuilder& out) const {

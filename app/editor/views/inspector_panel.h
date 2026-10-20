@@ -54,6 +54,7 @@ private:
     void addPartCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
     void addZoneCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
     void addCameraCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
+    void addSensorCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
     void updateRobotToCamera(const sdk::CameraConfig& cam, const sdk::RobotConfig& c, const EditorCatalog& cat);
     void addHeader(const SelectionRef& target, const std::vector<PropertyGroup>& groups);
     void addShapes(const std::string& owner);

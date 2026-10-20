@@ -435,6 +435,23 @@ void readCamera(const Value& v, const std::string& path, Ctx& ctx, RobotConfig& 
     cfg.cameras.push_back(std::move(c));
 }
 
+void readSensor(const Value& v, const std::string& path, Ctx& ctx, RobotConfig& cfg) {
+    SensorConfig s;
+    ObjReader r(v, path, ctx);
+    r.str("id", s.id);
+    r.str("label", s.label);
+    std::string kind;
+    if (r.str("kind", kind) && !sensorKindFromKey(kind, s.kind))
+        ctx.err(join(path, "kind"), "unknown sensor kind '" + kind + "' (distance|beam_break)");
+    r.str("source", s.source);
+    if (const Value* props = r.get("properties")) {
+        if (props->isObject()) s.properties = *props;
+        else ctx.err(join(path, "properties"), "expected an object");
+    }
+    s.mappings = readMappings(r.get("mappings"), join(path, "mappings"), ctx);
+    cfg.sensors.push_back(std::move(s));
+}
+
 // ---- encode helpers --------------------------------------------------------------------------------
 
 Value fv(float f) { return Value(floatToDouble(f)); }
@@ -622,6 +639,17 @@ Value cameraValue(const CameraConfig& c) {
     return o;
 }
 
+Value sensorValue(const SensorConfig& s) {
+    Value o = Value::makeObject();
+    o["id"] = s.id;
+    o["label"] = s.label;
+    o["kind"] = std::string(sensorKindKey(s.kind));
+    o["source"] = s.source;
+    o["properties"] = s.properties.isObject() ? s.properties : Value::makeObject();
+    o["mappings"] = mappingsValue(s.mappings);
+    return o;
+}
+
 }  // namespace
 
 Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value) const {
@@ -643,6 +671,15 @@ Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value) const {
     ObjReader root(work, "", ctx);
     root.str("name", cfg.name);
     root.str("gamePluginId", cfg.gamePluginId);
+    if (const Value* p = root.get("startPose")) {
+        ObjReader r(*p, "startPose", ctx);
+        RobotStartPose pose;
+        if (!r.flt("xM", pose.xM)) ctx.err("startPose.xM", "required finite number");
+        if (!r.flt("yM", pose.yM)) ctx.err("startPose.yM", "required finite number");
+        if (!r.flt("headingRad", pose.headingRad))
+            ctx.err("startPose.headingRad", "required finite number");
+        cfg.startPose = pose;
+    }
 
     if (const Value* p = root.get("project")) {
         ObjReader r(*p, "project", ctx);
@@ -676,6 +713,14 @@ Result<RobotConfig> RobotConfigCodec::fromValue(const Value& value) const {
         } else {
             for (std::size_t i = 0; i < cs->array().size(); ++i)
                 readCamera(cs->array()[i], "cameras[" + std::to_string(i) + "]", ctx, cfg);
+        }
+    }
+    if (const Value* ss = root.get("sensors")) {
+        if (!ss->isArray()) {
+            ctx.err("sensors", "expected an array");
+        } else {
+            for (std::size_t i = 0; i < ss->array().size(); ++i)
+                readSensor(ss->array()[i], "sensors[" + std::to_string(i) + "]", ctx, cfg);
         }
     }
     if (const Value* links = root.get("motionLinks")) {
@@ -761,6 +806,13 @@ Value RobotConfigCodec::toValue(const RobotConfig& cfg) const {
     project["gradleRioVersion"] = cfg.project.gradleRioVersion;
     root["project"] = std::move(project);
     root["gamePluginId"] = cfg.gamePluginId;
+    if (cfg.startPose) {
+        Value pose = Value::makeObject();
+        pose["xM"] = fv(cfg.startPose->xM);
+        pose["yM"] = fv(cfg.startPose->yM);
+        pose["headingRad"] = fv(cfg.startPose->headingRad);
+        root["startPose"] = std::move(pose);
+    }
 
     Value chassis = Value::makeObject();
     chassis["sizeM"] = vec3Value(cfg.chassis.sizeM);
@@ -793,6 +845,9 @@ Value RobotConfigCodec::toValue(const RobotConfig& cfg) const {
     Value cameras = Value::makeArray();
     for (const CameraConfig& c : cfg.cameras) cameras.push_back(cameraValue(c));
     root["cameras"] = std::move(cameras);
+    Value sensors = Value::makeArray();
+    for (const SensorConfig& s : cfg.sensors) sensors.push_back(sensorValue(s));
+    root["sensors"] = std::move(sensors);
     Value links = Value::makeArray();
     for (const auto& link : cfg.motionLinks) {
         Value item = Value::makeObject();

@@ -34,6 +34,7 @@ The app selects the plugin from the project's GradleRIO year (`RobotConfig::proj
 | `contributeConfigSchema()` | `PluginConfigSchema{schemaVersion, PropertySchema, groupOrder}` | persisted under `RobotConfig::plugins["game_<year>"]`; rendered by the generic inspector; core validates it |
 | `contributeEditorPanels()` / `contributeHud()` | Qt-free descriptors | `PanelScope::PluginConfig` or `Mechanism` (with viewport overlays); HUD widgets bind to `SnapshotBuilder::setHud` keys |
 | `contributeZoneKinds()` | `std::vector<ZoneKindInfo>` | optional; kinds are `"<id>.<name>"`, persisted as `RobotConfig::zones` (ADR 0016); core validates ownership, attachment and properties |
+| `contributeGameValues()` + `IGameState::gameValue(id)` | `std::vector<GameValueInfo>` / `optional<double>` | optional; ids are `"<id>.<name>"`; core sensors (Distance, Beam break) read them as their `source` (ADR 0019) |
 | `onTick(ctx, dt)` | rarely needed | per-tick hook after `IGameState::step`; keep logic in the game state |
 
 Per-tick order (docs/ARCHITECTURE.md §4): hub ingest -> mechanisms -> drivetrain -> physics step -> `IGameState::step`

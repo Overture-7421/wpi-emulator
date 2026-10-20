@@ -91,7 +91,13 @@ std::optional<double> CtreConfigSnapshot::number(int spnId) const {
     if (token.starts_with("s_")) token.remove_prefix(2);
     if (floatSpns().count(spnId) != 0) {
         std::uint32_t bits = 0;
-        if (!parseNumber(token, bits)) return std::nullopt;
+        if (token.starts_with('-')) {
+            std::int32_t signedBits = 0;
+            if (!parseNumber(token, signedBits)) return std::nullopt;
+            bits = static_cast<std::uint32_t>(signedBits);
+        } else if (!parseNumber(token, bits)) {
+            return std::nullopt;
+        }
         return static_cast<double>(std::bit_cast<float>(bits));
     }
     long long n = 0;

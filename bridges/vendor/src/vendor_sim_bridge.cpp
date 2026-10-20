@@ -1,8 +1,10 @@
 #include "wpiemu/bridges/vendor/vendor_sim_bridge.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "wpiemu/bridges/vendor/ctre_rules.h"
+#include "wpiemu/sdk/devices/signals.h"
 
 namespace wpiemu::bridges::vendor {
 
@@ -19,8 +21,28 @@ public:
     RecordingHost(VendorSimDeviceBridge& owner, sdk::IBridgeHost& real) : owner_(&owner), real_(&real) {}
 
     sdk::DeviceId announce(const sdk::DeviceDescriptor& descriptor, std::vector<sdk::SignalSpec> signalSpecs) override {
+        std::optional<std::uint32_t> position, velocity;
+        for (std::size_t i = 0; i < signalSpecs.size(); ++i) {
+            if (signalSpecs[i].name == sdk::signal::kPosition)
+                position = static_cast<std::uint32_t>(i);
+            if (signalSpecs[i].name == sdk::signal::kVelocity)
+                velocity = static_cast<std::uint32_t>(i);
+        }
         const sdk::DeviceId id = real_->announce(descriptor, std::move(signalSpecs));
-        if (id.valid()) owner_->announced_[id].descriptor = descriptor;
+        if (id.valid()) {
+            auto& announced = owner_->announced_[id];
+            announced.descriptor = descriptor;
+            announced.positionSignal = position;
+            announced.velocitySignal = velocity;
+            if (descriptor.type == ctre::kTypeCanCoder && !owner_->options_.nativeProvider &&
+                !announced.configDone) {
+                announced.configDone = true;
+                real_->logger().warn(
+                    kCategory,
+                    descriptor.key().toString() +
+                        ": config read-back disabled; encoder inputs remain uncalibrated");
+            }
+        }
         return id;
     }
     void retire(sdk::DeviceId id) override {
@@ -95,14 +117,27 @@ std::size_t VendorSimDeviceBridge::readPendingConfigs(std::size_t maxDevices) {
 
 void VendorSimDeviceBridge::applyInputs(std::span<const sdk::SignalSample> samples) {
     guarded_.beginWrites();
-    if (disabled_.empty()) {
-        inner_.applyInputs(samples);
-    } else {
-        filtered_.clear();
-        for (const auto& s : samples)
-            if (disabled_.count(s.device) == 0) filtered_.push_back(s);
-        inner_.applyInputs(filtered_);
+    filtered_.clear();
+    for (auto sample : samples) {
+        if (disabled_.contains(sample.device)) continue;
+        const auto device = announced_.find(sample.device);
+        const auto config = configs_.find(sample.device);
+        if (device != announced_.end() && device->second.descriptor.type == ctre::kTypeCanCoder &&
+            config != configs_.end()) {
+            const auto offset = config->second.magnetOffsetRot();
+            const auto clockwise = config->second.clockwisePositive();
+            if (offset && std::isfinite(*offset) && clockwise) {
+                const double sign = *clockwise ? -1.0 : 1.0;
+                // Firmware reports sign * raw + magnetOffset. Slots carry the calibrated model
+                // frame.
+                if (device->second.positionSignal == sample.signal)
+                    sample.value = sign * (sample.value - *offset);
+                if (device->second.velocitySignal == sample.signal) sample.value *= sign;
+            }
+        }
+        filtered_.push_back(sample);
     }
+    inner_.applyInputs(filtered_);
     guarded_.endWrites();
 }
 
@@ -208,6 +243,11 @@ bool VendorSimDeviceBridge::readOneConfig() {
     const auto type = ctreDeviceTypeFromDescriptorType(a.descriptor.type);
     if (!type || !native_->hasConfigReadback()) {
         a.configDone = true;
+        if (a.descriptor.type == ctre::kTypeCanCoder)
+            host_->logger().warn(
+                kCategory,
+                a.descriptor.key().toString() +
+                    ": config read-back unavailable; encoder inputs remain uncalibrated");
         return false;
     }
     ++a.configAttempts;
@@ -215,12 +255,22 @@ bool VendorSimDeviceBridge::readOneConfig() {
     if (!text) {
         if (text.error().code == sdk::ErrorCode::Unsupported || a.configAttempts >= options_.configReadAttempts) {
             a.configDone = true;
-            host_->logger().debug(kCategory, a.descriptor.key().toString() + ": config read-back unavailable: " +
-                                                 text.error().message);
+            const auto message = a.descriptor.key().toString() +
+                                 ": config read-back unavailable: " + text.error().message;
+            if (a.descriptor.type == ctre::kTypeCanCoder)
+                host_->logger().warn(kCategory, message + "; encoder inputs remain uncalibrated");
+            else
+                host_->logger().debug(kCategory, message);
         }
         return false;
     }
     CtreConfigSnapshot snapshot = CtreConfigSnapshot::parse(text.value());
+    if (a.descriptor.type == ctre::kTypeCanCoder &&
+        (!snapshot.magnetOffsetRot() || !std::isfinite(*snapshot.magnetOffsetRot()) ||
+         !snapshot.clockwisePositive()))
+        host_->logger().warn(
+            kCategory, a.descriptor.key().toString() +
+                           ": incomplete CANcoder calibration; encoder inputs remain uncalibrated");
     a.configDone = true;
     host_->logger().info(kCategory, a.descriptor.key().toString() + " config: " + snapshot.summary());
     const CtreConfigSnapshot& stored = configs_[id] = std::move(snapshot);

@@ -111,6 +111,12 @@ sag), then the stator current limit. **Neutral** (zero command/unmapped): *brake
 braking), *coast* = `V = w/Kv` (no current). Battery draw per motor = `max(0, V·I)/Vbattery`
 (`IMechanism::batteryCurrentA()`).
 
+Only an actual current **request** uses that torque-current path. Phoenix's `torqueCurrent` SimDevice
+value is reported telemetry, including during voltage control; the vendor bridge names it
+`torqueCurrentReported`, so Phoenix mechanisms use the firmware-resolved applied voltage instead.
+Treating that reported current as a new request can reverse a mechanism's effective drive or destabilize
+a closed loop.
+
 ## 4. The core template (`registerGenericMechanisms`)
 
 Core registers **one** template, `mechanism`: a single motor-driven degree of freedom
@@ -128,6 +134,11 @@ metres (linear).
 | `encoder` | PositionSensor | no | output-side position/velocity in rotations × `sensorRatio` (± inversion, + `sensorOffsetRot`); linear motion reports **drum** rotations |
 | `velocitySensor` | VelocitySensor | no | same data on a velocity-only slot |
 | `reverseLimit` / `forwardLimit` | LimitSwitch | no | closed at the min / max stop (`limitMargin`, polarity `limitPressedValue`) |
+
+The encoder's `sensorOffsetRot`, `sensorRatio` and inversion describe the **model/sensor frame**.
+They are not Phoenix magnet-calibration settings. For CANcoder, the vendor bridge inversely applies
+the firmware's magnet offset and direction so the reported reading equals the slot value; do not
+also put that firmware offset into `sensorOffsetRot`. See [bridges-vendor.md](bridges-vendor.md).
 
 ### Properties
 

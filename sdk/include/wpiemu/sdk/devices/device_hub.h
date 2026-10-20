@@ -45,6 +45,8 @@ public:
     virtual void writeEncoder(const SlotAddress& slot, const EncoderFeedback& feedback) = 0;
     virtual void writeDigital(const SlotAddress& slot, bool value) = 0;   // limit / beam break
     virtual void writeAnalog(const SlotAddress& slot, double volts) = 0;
+    // DistanceSensor: metres (canonical signal::kDistance).
+    virtual void writeDistance(const SlotAddress& slot, double metres) = 0;
     virtual void writeImu(const SlotAddress& slot, const ImuFeedback& feedback) = 0;
 };
 

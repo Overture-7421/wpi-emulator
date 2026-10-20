@@ -221,6 +221,36 @@ bool EditorDocument::reattachCamera(const QString& id, const QString& newParent,
     });
 }
 
+QString EditorDocument::addSensor(sdk::SensorKind kind) {
+    std::string id;
+    edit(ETR("Add %1").arg(QString::fromUtf8(sdk::sensorKindInfo(kind).displayName)), [&](sdk::RobotConfig& c) {
+        id = ops::addSensor(c, kind);
+        return !id.empty();
+    });
+    return QString::fromStdString(id);
+}
+
+bool EditorDocument::removeSensor(const QString& id) {
+    const std::string sid = id.toStdString();
+    const sdk::SensorConfig* s = config_.findSensor(sid);
+    if (s == nullptr) return false;
+    const QString name = QString::fromStdString(ops::sensorDisplayName(*s));
+    return edit(ETR("Remove %1").arg(name), [&](sdk::RobotConfig& c) { return ops::removeSensor(c, sid); });
+}
+
+QString EditorDocument::duplicateSensor(const QString& id) {
+    const std::string sid = id.toStdString();
+    const sdk::SensorConfig* s = config_.findSensor(sid);
+    if (s == nullptr) return {};
+    const QString name = QString::fromStdString(ops::sensorDisplayName(*s));
+    std::string created;
+    edit(ETR("Duplicate %1").arg(name), [&](sdk::RobotConfig& c) {
+        created = ops::duplicateSensor(c, sid);
+        return !created.empty();
+    });
+    return QString::fromStdString(created);
+}
+
 bool EditorDocument::mapSlot(const sdk::SlotAddress& slot, const sdk::DeviceKey& device) {
     return edit(ETR("Map %1").arg(QString::fromStdString(ops::slotDisplayName(config_, catalog_, slot))),
                 [&](sdk::RobotConfig& c) { return ops::setMapping(c, slot, device); });

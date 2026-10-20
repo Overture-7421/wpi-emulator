@@ -21,6 +21,23 @@ Value roundTripValue(const RobotConfig& c) {
 
 }  // namespace
 
+TEST_CASE("config codec: optional start pose round trips and rejects malformed coordinates") {
+    const RobotConfigCodec codec;
+    const JsonValueCodec json;
+    RobotConfig c;
+    CHECK(codec.toValue(c).find("startPose") == nullptr);
+    c.startPose = RobotStartPose{4.51f, 0.52654f, 1.25f};
+    const auto back = codec.fromValue(codec.toValue(c));
+    REQUIRE(back.ok());
+    CHECK(back.value().startPose == c.startPose);
+    for (const auto* text : {R"({"startPose":null})", R"({"startPose":{"xM":1,"yM":2}})",
+                             R"({"startPose":{"xM":"1","yM":2,"headingRad":0}})"}) {
+        const auto parsed = json.parse(text);
+        REQUIRE(parsed.ok());
+        CHECK_FALSE(codec.fromValue(parsed.value()).ok());
+    }
+}
+
 TEST_CASE("config codec: a full config survives config -> Value -> JSON text -> Value -> config") {
     RobotConfig c = sampleConfig();
     c.chassis.sizeM = Vec3{0.7f, 0.65f, 0.12f};

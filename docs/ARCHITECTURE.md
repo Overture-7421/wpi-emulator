@@ -173,7 +173,7 @@ One tick `N` (sim thread unless noted):
    capture is due sees from the season's `AprilTagLayout` (FOV, range, facing; deterministic noise from `SimContext::rng()`), and
    queues the `CameraFrame` until its simulated latency has elapsed; the frames whose publish time has come go into
    `SensorFrame::vision`.
-8. **Snapshot** built (`SnapshotBuilder`, mechanisms/game state `publish`, `CameraState`) and handed to `ISnapshotSink`.
+8. **Snapshot** built (`SnapshotBuilder`, mechanisms/game state `publish`, `CameraState`, `SensorState`) and handed to `ISnapshotSink`.
 9. **Extension**, on receipt: bridges `applyInputs` (writes `HAL_SetSimValue`, `HALSIM_Set*`), vision bridges `pollVision` then
    `applyVision(frames, simTime)` (publishes the due camera results to NetworkTables through ntcore with sim-time timestamps),
    `HALSIM_StepTiming(stepUs)` (robot loop runs), bridges `collectOutputs`,

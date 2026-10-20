@@ -56,9 +56,10 @@ SimDeviceRule talonFxLike(const char* ruleName, const char* type, const char* mo
         binding("", "supplyVoltage", sg::kSupplyVoltage, "V"),
         binding("", "dutyCycle", sg::kDutyCycle, ""),
         binding("", "motorVoltage", sg::kMotorVoltage, "V", 1.0, std::nullopt, sg::kRotorVelocity),
-        binding("", "torqueCurrent", sg::kTorqueCurrent, "A"),
+        binding("", "torqueCurrent", vsignal::kTorqueCurrentReported, "A"),
         binding("", "supplyCurrent", sg::kSupplyCurrentOut, "A"),
-        // rotor sensor: WE drive the rotor (ADR 0002); `position` is the readonly firmware-reported value.
+        // rotor sensor: WE drive the rotor (ADR 0002); `position` is the readonly firmware-reported
+        // value.
         binding("Rotor Sensor", "rawPositionInput", sg::kRotorPosition, "rot"),
         binding("Rotor Sensor", "velocity", sg::kRotorVelocity, "rps"),
         binding("Rotor Sensor", "acceleration", sg::kRotorAcceleration, "rps2"),

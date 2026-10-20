@@ -89,7 +89,8 @@ class IDrivetrain {
 public:
     virtual std::string_view kind() const = 0;
     virtual const DrivetrainSpec& spec() const = 0;
-    // Slot specs the editor/hub should expose: motors ("<wheel>.drive" / "<wheel>.steer"), owner = slot_owner::kDrivetrain.
+    // Motors ("<wheel>.drive[N]" / "<wheel>.steer") and optional azimuth position sensor
+    // ("<wheel>.steerEncoder"), owner = slot_owner::kDrivetrain.
     virtual std::vector<SlotSpec> slotSpecs() const = 0;
 
     // commands.size() == spec().wheels.size(), same order.

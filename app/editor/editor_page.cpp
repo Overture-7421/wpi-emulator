@@ -257,6 +257,13 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                 connect(sub->addAction(name), &QAction::triggered, this, [this, kind, att] { d->controller.addCamera(kind, att); });
             }
         };
+        // Sensors have no pose: they are driven by a game value.
+        auto addSensorMenu = [&](QMenu* into) {
+            QMenu* sub = into->addMenu(d->icons.node(NodeKind::Sensor), ETR("Add sensor"));
+            for (const auto& k : sdk::sensorKinds())
+                connect(sub->addAction(QString::fromUtf8(k.displayName)), &QAction::triggered, this,
+                        [this, kind = k.kind] { d->controller.addSensor(kind); });
+        };
         // "Attach to" for something hanging on the chassis or a mechanism link (zones, cameras).
         using AttachFn = std::function<void(const QString& parent, const QString& link)>;
         auto addAttachMenu = [&](QMenu* into, const AttachFn& attach) {
@@ -289,6 +296,13 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                 });
                 break;
             }
+            case SelKind::Sensor:
+                d->controller.selection().set(ref);
+                menu.addAction(ETR("Duplicate"), this, [this] { d->controller.duplicateSelection(); });
+                menu.addAction(ETR("Delete"), this, [this] { d->controller.deleteSelection(); });
+                menu.addSeparator();
+                addSensorMenu(&menu);
+                break;
             case SelKind::Zone: {
                 d->controller.selection().set(ref);
                 menu.addAction(ETR("Duplicate"), this, [this] { d->controller.duplicateSelection(); });
@@ -390,6 +404,7 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                 }
                 menu.addSeparator();
                 addCameraMenu(&menu, sdk::MechanismAttachment{});
+                addSensorMenu(&menu);
                 break;
             case SelKind::Plugin:
                 addTemplates(&menu, [this](const QString& type, const ops::MechanismVariant& v) { d->controller.addMechanism(type, sdk::MechanismAttachment{}, v); }, true);
@@ -400,6 +415,7 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
                     d->controller.addMechanism(type, sdk::MechanismAttachment{}, v);
                 });
                 addCameraMenu(&menu, sdk::MechanismAttachment{});
+                addSensorMenu(&menu);
                 break;
         }
         if (!menu.isEmpty()) menu.exec(global);

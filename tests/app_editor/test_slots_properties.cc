@@ -234,15 +234,32 @@ TEST_CASE("property edits write through to the right place") {
     CHECK(applyProperty(c, cat, SelectionRef::wheel("fl"), "wheel", "radius", sdk::Value(0.05)));
     CHECK(approx(ops::findWheel(c, "fl")->radiusM, 0.05f));
     CHECK(ops::findWheel(c, "fl")->steered);
+    CHECK(ops::setMapping(c, {"drivetrain", "fl.steerEncoder"},
+                          {"phoenix6", "cancoder", 12, "rio", -1}));
+    CHECK(ops::wheelOfSlot("fl.steerEncoder") == "fl");
+    CHECK(applyProperty(c, cat, SelectionRef::wheel("fl"), "wheel", "driveMotorCount",
+                        sdk::Value(2)));
+    CHECK(ops::findMapping(c, {"drivetrain", "fl.steerEncoder"}) != nullptr);
     CHECK(applyProperty(c, cat, SelectionRef::wheel("fl"), "wheel", "kind", sdk::Value("standard")));
     CHECK_FALSE(ops::findWheel(c, "fl")->steered);   // only a swerve module steers
     CHECK(ops::findMapping(c, {"drivetrain", "fl.steer"}) == nullptr);   // the steer mapping goes away with the steering
+    CHECK(ops::findMapping(c, {"drivetrain", "fl.steerEncoder"}) == nullptr);
     CHECK(applyProperty(c, cat, SelectionRef::wheel("fl"), "wheel", "kind", sdk::Value("swerve")));
     CHECK(ops::findWheel(c, "fl")->steered);
     CHECK(applyProperty(c, cat, SelectionRef::drivetrain(), "drivetrain", "kind", sdk::Value("tank")));
     CHECK(c.drivetrain.spec.kind == "tank");
     CHECK(applyProperty(c, cat, SelectionRef::robot(), "robot", "name", sdk::Value("Bot")));
     CHECK(c.name == "Bot");
+    CHECK(applyProperty(c, cat, SelectionRef::robot(), "robot", "startX", sdk::Value(4.51)));
+    CHECK(applyProperty(c, cat, SelectionRef::robot(), "robot", "startY", sdk::Value(0.52654)));
+    CHECK(applyProperty(c, cat, SelectionRef::robot(), "robot", "startHeading", sdk::Value(1.5)));
+    REQUIRE(c.startPose);
+    CHECK(c.startPose->xM == doctest::Approx(4.51f));
+    CHECK(c.startPose->yM == doctest::Approx(0.52654f));
+    CHECK(c.startPose->headingRad == doctest::Approx(1.5f));
+    CHECK(applyProperty(c, cat, SelectionRef::robot(), "robot", "customStartPose",
+                        sdk::Value(false)));
+    CHECK_FALSE(c.startPose);
     CHECK_FALSE(applyProperty(c, cat, SelectionRef::mechanism("nobody"), "mech.props", "x", sdk::Value(1)));
 }
 

@@ -138,6 +138,7 @@ bool EditorController::selectionExists(const SelectionRef& ref) const {
         case SelKind::Mechanism: return c.findMechanism(ref.owner) != nullptr;
         case SelKind::Zone: return c.findZone(ref.owner) != nullptr;
         case SelKind::Camera: return c.findCamera(ref.owner) != nullptr;
+        case SelKind::Sensor: return c.findSensor(ref.owner) != nullptr;
         case SelKind::Slot:
             for (const auto& s : ops::slotSpecsFor(c, document_.catalog(), ref.owner))
                 if (s.name == ref.sub) return true;
@@ -199,12 +200,21 @@ QString EditorController::addCamera(sdk::CameraKind kind, const sdk::MechanismAt
     return id;
 }
 
+QString EditorController::addSensor(sdk::SensorKind kind) {
+    const QString id = document_.addSensor(kind);
+    if (id.isEmpty()) return {};
+    selection_.set(SelectionRef::sensor(id.toStdString()));
+    Q_EMIT statusMessage(ETR("Added sensor %1. Pick the game value that drives it, then drop a device on its slot.").arg(id), 0);
+    return id;
+}
+
 bool EditorController::deleteSelection() {
     const SelectionRef sel = selection_.current();
     switch (sel.kind) {
         case SelKind::Mechanism: return document_.removeMechanism(QString::fromStdString(sel.owner));
         case SelKind::Zone: return document_.removeZone(QString::fromStdString(sel.owner));
         case SelKind::Camera: return document_.removeCamera(QString::fromStdString(sel.owner));
+        case SelKind::Sensor: return document_.removeSensor(QString::fromStdString(sel.owner));
         case SelKind::Primitive: return document_.removePrimitive(QString::fromStdString(sel.owner), sel.index);
         case SelKind::Wheel: return document_.removeWheel(QString::fromStdString(sel.sub));
         case SelKind::Slot: return clearSlot({sel.owner, sel.sub});
@@ -227,6 +237,11 @@ bool EditorController::duplicateSelection() {
     if (sel.kind == SelKind::Camera) {
         const QString id = document_.duplicateCamera(QString::fromStdString(sel.owner));
         if (!id.isEmpty()) selection_.set(SelectionRef::camera(id.toStdString()));
+        return !id.isEmpty();
+    }
+    if (sel.kind == SelKind::Sensor) {
+        const QString id = document_.duplicateSensor(QString::fromStdString(sel.owner));
+        if (!id.isEmpty()) selection_.set(SelectionRef::sensor(id.toStdString()));
         return !id.isEmpty();
     }
     if (sel.kind == SelKind::Primitive) {
@@ -273,7 +288,7 @@ QString EditorController::mapDevice(const SelectionRef& target, const sdk::Devic
                     return ETR("%1 cannot act as a %2.").arg(deviceLabel(device), slotTypeLabel(spec.type).toLower());
             }
         if (!found) return ETR("That slot no longer exists.");
-    } else if (target.kind == SelKind::Mechanism || target.kind == SelKind::Wheel) {
+    } else if (target.kind == SelKind::Mechanism || target.kind == SelKind::Wheel || target.kind == SelKind::Sensor) {
         const std::string owner = target.kind == SelKind::Wheel ? std::string(sdk::slot_owner::kDrivetrain) : target.owner;
         const std::string prefix = target.kind == SelKind::Wheel ? target.sub + "." : std::string();
         const auto best = bestSlotFor(c, document_.catalog(), owner, caps, prefix);
@@ -299,7 +314,7 @@ QString EditorController::mapDevice(const SelectionRef& target, const sdk::Devic
         if (!best) return ETR("No free slot that accepts %1 on %2.").arg(deviceLabel(device), describeSelection(c, document_.catalog(), target));
         address = *best;
     } else {
-        return ETR("Drop a device on a mechanism, a wheel or one of their slots.");
+        return ETR("Drop a device on a mechanism, a sensor, a wheel or one of their slots.");
     }
     const auto axes = sdk::motionAxisInfos(
         c, [&](std::string_view type) { return document_.catalog().findTemplate(type); });

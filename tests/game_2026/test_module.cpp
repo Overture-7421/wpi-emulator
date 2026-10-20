@@ -6,6 +6,7 @@
 #include "test_support.h"
 #include "wpiemu/plugins/game_2026/config.h"
 #include "wpiemu/plugins/game_2026/fuel_zones.h"
+#include "wpiemu/plugins/game_2026/game_values.h"
 #include "wpiemu/sdk/game/builtin_plugins.h"
 
 using namespace wpiemu;
@@ -25,11 +26,10 @@ TEST_CASE("module metadata identifies REBUILT and registers through the aggregat
     CHECK(module->contributeConfigSchema().schemaVersion == kConfigSchemaVersion);
 }
 
-TEST_CASE("zone kinds are owned by the plugin, registered no mechanism templates and describe themselves for the editor") {
+TEST_CASE("zone kinds describe themselves for the editor and the plugin registers no mechanism templates") {
     g26test::Session s;
     REQUIRE(s.module().registerMechanisms(s.factory).ok());
-    CHECK(s.factory.empty());  // the pickup and the shooter are zones, not mechanisms
-    CHECK(s.module().registerMechanisms(s.factory).ok());
+    CHECK(s.factory.templateInfo("game_2026.fuel_sensor") == nullptr);
 
     const std::vector<sdk::ZoneKindInfo> kinds = s.module().contributeZoneKinds();
     REQUIRE(kinds.size() == 2);
@@ -68,6 +68,34 @@ TEST_CASE("zone kinds are owned by the plugin, registered no mechanism templates
                             "aimJitterRad", "inheritRobotVelocity"})
         CHECK_MESSAGE(shooter->properties.find(key) != nullptr, key);
     CHECK(shooter->properties.properties.size() == 18);  // no muzzleOffset (the zone pose) and no feed*
+}
+
+TEST_CASE("game values: the plugin declares what its game state publishes, and the fuel meter follows shots and reset") {
+    g26test::Session s;
+    const std::vector<sdk::GameValueInfo> values = s.module().contributeGameValues();
+    REQUIRE(values.size() == 3);
+    for (const sdk::GameValueInfo& v : values) {
+        CHECK(sdk::ownsGameValue("game_2026", v.id));
+        CHECK_FALSE(v.label.empty());
+    }
+    s.section()["preloadFuel"] = 2;
+    s.section()["neutralFuel"] = 0;
+    s.section()["depotFuel"] = 0;
+    sdk::Value shooter = sdk::Value::makeObject();
+    shooter["fixedExitSpeedMps"] = 8.0;
+    s.addZone(g26test::makeZone("muzzle", kShooterKind, shooter));
+    s.start();
+    s.env.driverStation.enabled = true;
+    for (const sdk::GameValueInfo& v : values) CHECK_MESSAGE(s.game->gameValue(v.id).has_value(), v.id);
+    CHECK_FALSE(s.game->gameValue("game_2026.nonsense").has_value());
+    CHECK(s.game->gameValue(game_value::kFuelCount).value() == doctest::Approx(2.0));
+    CHECK(s.game->gameValue(game_value::kFuelCapacity).value() == doctest::Approx(s.game->config().capacity));
+    CHECK(s.game->gameValue(game_value::kFuelFraction).value() == doctest::Approx(2.0 / s.game->config().capacity));
+    for (int i = 0; i < 40 && s.game->fuelInRobot() >= 2; ++i) s.tick();
+    REQUIRE(s.game->fuelInRobot() < 2);
+    CHECK(s.game->gameValue(game_value::kFuelCount).value() == doctest::Approx(s.game->fuelInRobot()));
+    s.game->reset(s.env.ctx);
+    CHECK(s.game->gameValue(game_value::kFuelCount).value() == doctest::Approx(2.0));
 }
 
 TEST_CASE("zone parameters have sane defaults and survive invalid persisted values") {

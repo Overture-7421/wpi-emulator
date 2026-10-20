@@ -234,6 +234,64 @@ TEST_CASE(
     CHECK(reported == doctest::Approx(30 - firmwareOffset));
 }
 
+TEST_CASE("vendor bridge: CANcoder inputs undo firmware direction and magnet offset") {
+    for (const bool clockwise : {false, true}) {
+        auto native = std::make_shared<FakeNative>();
+        native->text = std::string("828,s_") + (clockwise ? "1" : "0") + "\n987,s_-1105788928\n";
+        auto options = BridgeRig::defaultOptions();
+        options.nativeProvider = [native] { return native; };
+        BridgeRig rig(options);
+        const auto cc = addCanCoder(*rig.backend, 12);
+        rig.start();
+        rig.bridge->poll();
+        const auto id = rig.host.idOf("cancoder", 12);
+        REQUIRE(rig.bridge->readPendingConfigs() == 1);
+        const std::vector<SignalSample> samples{{id, rig.host.signalIndex(id, sg::kPosition), 0.2},
+                                                {id, rig.host.signalIndex(id, sg::kVelocity), 1.5}};
+        rig.bridge->applyInputs(samples);
+        const double sign = clockwise ? -1.0 : 1.0;
+        CHECK(rig.backend->get(cc, "rawPositionInput") ==
+              doctest::Approx(sign * (0.2 + 0.1474609375)));
+        CHECK(rig.backend->get(cc, "velocity") == doctest::Approx(sign * 1.5));
+        rig.bridge->resetInputHistory();
+        rig.bridge->applyInputs(samples);
+        CHECK(rig.backend->get(cc, "rawPositionInput") ==
+              doctest::Approx(sign * (0.2 + 0.1474609375)));
+        rig.bridge->setInputWritesEnabled(id, false);
+        auto changed = samples;
+        changed.front().value = 0.4;
+        rig.bridge->applyInputs(changed);
+        CHECK(rig.backend->get(cc, "rawPositionInput") ==
+              doctest::Approx(sign * (0.2 + 0.1474609375)));
+    }
+}
+
+TEST_CASE("vendor bridge: missing CANcoder calibration warns and leaves raw feedback unchanged") {
+    auto native = std::make_shared<FakeNative>();
+    native->text = "828,s_1\n";
+    auto options = BridgeRig::defaultOptions();
+    options.nativeProvider = [native] { return native; };
+    SUBCASE("incomplete calibration") {}
+    SUBCASE("native API unavailable") {
+        native->configApi = false;
+    }
+    SUBCASE("config read-back disabled") {
+        options.nativeProvider = {};
+    }
+    BridgeRig rig(options);
+    const auto cc = addCanCoder(*rig.backend, 12);
+    rig.start();
+    rig.bridge->poll();
+    const auto id = rig.host.idOf("cancoder", 12);
+    const std::size_t expectedReads = options.nativeProvider && native->configApi ? 1 : 0;
+    REQUIRE(rig.bridge->readPendingConfigs() == expectedReads);
+    rig.bridge->readPendingConfigs();
+    CHECK(rig.host.log.count(LogLevel::Warn) == 1);
+    rig.bridge->applyInputs(
+        std::vector<SignalSample>{{id, rig.host.signalIndex(id, sg::kPosition), 0.2}});
+    CHECK(rig.backend->get(cc, "rawPositionInput") == doctest::Approx(0.2));
+}
+
 TEST_CASE("vendor bridge: time-sync advice appears while Phoenix devices are live") {
     BridgeRig rig;
     rig.start();

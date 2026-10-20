@@ -6,7 +6,6 @@
 #include <QWidget>
 
 #include "hud_model.h"
-#include "mechanism_overlay_model.h"
 #include "run_control.h"
 #include "scene_model.h"
 
@@ -56,8 +55,8 @@ private:
 class RunViewport : public QWidget {
     Q_OBJECT
 public:
-    RunViewport(SceneModel& scene, HudModel& hud, MechanismOverlayModel& mechanisms, ViewportTheme& theme,
-                ViewportOptions& options, QWidget* parent = nullptr);
+    RunViewport(SceneModel& scene, HudModel& hud, ViewportTheme& theme, ViewportOptions& options,
+                QWidget* parent = nullptr);
 
     StateOverlay* overlay() const { return overlay_; }
     bool sceneLoaded() const;
@@ -66,6 +65,8 @@ public:
     QToolButton* homeButton() const { return home_; }
     // Adds a control to the button cluster at the bottom-right of the view (left of the home button).
     void addControl(QWidget* w);
+    // Checkable list button bound to `action` (opens the robot state window).
+    void addStateControl(QAction* action);
     // Restart button joined with a chevron that opens `menu` (restart options).
     void addRestartControl(QAction* restart, QMenu* menu);
     // Moves the speed combo into the cluster, styled with centred text.

@@ -218,11 +218,12 @@ TEST_CASE("editor ops: slot specs come from templates, wheels and the robot") {
     auto c = robot();
     CHECK(ops::slotSpecsFor(c, cat, "intake").size() == 3);
     CHECK(ops::slotSpecsFor(c, cat, "robot").size() == 1);
-    CHECK(ops::slotSpecsFor(c, cat, "drivetrain").size() == 8);   // 4 swerve modules x (drive, steer)
+    CHECK(ops::slotSpecsFor(c, cat, "drivetrain").size() ==
+          12);  // 4 swerve modules x (drive, steer)
     CHECK(ops::slotSpecsFor(c, cat, "nobody").empty());
     ops::setDrivetrainKind(c, "tank");
     CHECK(ops::slotSpecsFor(c, cat, "drivetrain").size() == 4);
-    CHECK(ops::slotOwners(c).size() == 2 + c.mechanisms.size());
+    CHECK(ops::slotOwners(c).size() == 2 + c.mechanisms.size() + c.sensors.size());
 }
 
 TEST_CASE("editor ops: mapping a device reuses an existing alias of the same physical device") {
@@ -244,4 +245,3 @@ TEST_CASE("editor ops: mapping a device reuses an existing alias of the same phy
     CHECK_FALSE(ops::clearMapping(c, {"intake", "deploy"}));
     CHECK_FALSE(ops::setMapping(c, {"nobody", "x"}, fresh));
 }
-

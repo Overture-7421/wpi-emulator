@@ -48,6 +48,8 @@ Result<LoadedConfig> ConfigPipeline::process(RobotConfig config) const {
                 if (k.kind == z.kind) applyDefaults(k.properties, z.properties);
     }
 
+    for (SensorConfig& s : config.sensors) applyDefaults(sensorResponseSchema(s.kind), s.properties);
+
     auto issues = validator_.validate(config, registrar_.factory(), drivetrains_, plugins_);
     out.issues.insert(out.issues.end(), issues.begin(), issues.end());
     out.config = std::move(config);

@@ -34,6 +34,7 @@ tests/runtime/                    doctest suite (fixtures in runtime_fixtures.h,
   "schemaVersion": 1,
   "name": "Robot", "gamePluginId": "",
   "project": { "path": "...", "language": "java", "wpilibYear": 2026, "gradleRioVersion": "2026.2.1" },
+  "startPose": { "xM": 4.51, "yM": 0.52654, "headingRad": 0 },
   "chassis": { "sizeM": {x,y,z}, "massKg": 50, "comHeightM": 0.2, "comOffsetM": {..}, "groundClearanceM": 0.03,
                "inertiaDiagKgM2": {..}, "material": {friction, restitution, rollingResistance}, "primitives": [ ... ] },
   "drivetrain": { "kind": "swerve", "tireModel": "brush", "loadTransferTauS": 0.02,
@@ -72,6 +73,12 @@ classic locale, independent of the process locale.
 
 Unknown fields in a file are ignored on load and are not written back.
 
+`startPose` is optional. When present, all three finite numbers are required; the host places the chassis
+at that field-frame X/Y and yaw, and Reset restores the same physical pose. Chassis ground clearance
+and COM height still determine Z. When absent, the existing host-selected placement is unchanged.
+This does not reset robot odometry: a path follower's initial pose must agree with the physical start.
+The editor exposes these fields under **Robot / Start pose**. See [ADR 0018](decisions/0018-real-robot-feedback.md).
+
 ### Validation codes (`Issue::code`)
 
 Optional root `motionLinks` records describe motion links. For example:
@@ -88,10 +95,21 @@ SDK codes (`device_alias_conflict`, `attachment_*`, `mechanism_id_reserved`) plu
 `mechanism_id_duplicate`, `mechanism_type_unknown`, `property_invalid`, `slot_owner_unknown`, `slot_owner_mismatch`,
 `slot_unknown` (W for the `robot` owner), `slot_required_unmapped` (Error for mechanisms, Warning for drivetrain slots),
 `slot_duplicate_mapping`, `device_duplicate_mapping`, `slot_device_incompatible` (needs a capability lookup, unknown
-devices are skipped), `battery_invalid`, `sim_invalid` (step must divide 20 ms), `plugin_not_found` (W),
+devices are skipped), `battery_invalid`, `start_pose_invalid`, `sim_invalid` (step must divide 20 ms), `plugin_not_found` (W),
 `plugin_section_unknown` (W), `plugin_section_version_unsupported`, `plugin_property_invalid`, and the zone and camera codes of
 "Zones" and "Cameras" below.
-Drivetrain slot names follow the convention `"<wheel>.drive"`, `"<wheel>.drive2"`.. (one per `driveMotorCount`, up to 8) / `"<wheel>.steer"` (steer for swerve/steered wheels), robot slot `"imu"`.
+Drivetrain slot names follow the convention `"<wheel>.drive"`, `"<wheel>.drive2"`.. (one per `driveMotorCount`, up to 8) /
+`"<wheel>.steer"` (steer for swerve/steered wheels), robot slot `"imu"`. A steered wheel also has an optional
+`"<wheel>.steerEncoder"` PositionSensor slot: each tick it receives output-side azimuth in rotations and
+azimuth velocity in rotations/s, independently of the steer motor's rotor-side feedback and gearing.
+A CANcoder used for fused/remote steering feedback belongs here, not on the steer motor slot.
+`SlotType::DistanceSensor` requires `Capability::Distance`; `writeDistance` routes its value in metres to
+the canonical `distance` input; `writeAnalog` is volts only. Core-owned `RobotConfig::sensors`
+(Distance, Beam break; no pose) are driven by `SensorSystem`, which reads plugin-published game values
+(`IGameState::gameValue`) right after the game tick; see [ADR 0019](decisions/0019-game-fed-sensors.md).
+An unavailable source writes the idle reading and raises a `sensor_source_unavailable` warning. Each tick
+`SensorSystem::publish` adds a `SensorState` (`id`, optional `sourceValue`, `reading`: metres or 1/0) per sensor to the
+snapshot for the run view's Robot state window.
 A mapping may carry `"reversed": true` (Motor slots only, omitted when false): the controller spins against the mechanism's positive direction, and the hub negates its command and rotor feedback ([ADR 0014](decisions/0014-multi-motor-gearboxes.md)). New codes: `slot_motor_inactive` (W, a mapped motor above the motor count), `slot_reversed_invalid` (W, `reversed` on a non-motor slot).
 
 ### Zones (`RobotConfig::zones`)

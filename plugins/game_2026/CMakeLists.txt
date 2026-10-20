@@ -9,6 +9,7 @@ add_library(wpiemu_plugin_game_2026 STATIC
     src/game_module.cpp
     src/game_state.cpp
     src/game_ui.cpp
+    src/game_values.cpp
     src/hub_rules.cpp
     src/match_clock.cpp
     src/plugin_info.cpp)

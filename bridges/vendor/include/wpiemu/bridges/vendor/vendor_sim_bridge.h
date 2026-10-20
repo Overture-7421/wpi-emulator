@@ -117,6 +117,8 @@ private:
     class RecordingHost;
     struct Announced {
         sdk::DeviceDescriptor descriptor;
+        std::optional<std::uint32_t> positionSignal;
+        std::optional<std::uint32_t> velocitySignal;
         int configAttempts = 0;
         bool configDone = false;
     };

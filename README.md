@@ -26,7 +26,7 @@ in year plugins; v1 ships `game_2026` (REBUILT). Current version: 0.1.0.
   of view, range, facing, frame rate, latency, optional noise) and the extension publishes the usual NetworkTables topics into the
   robot's own NT instance, so `LimelightHelpers` and PhotonLib work on the unmodified project. No occlusion, distortion or object
   detection ([docs/vision.md](docs/vision.md)).
-* **Run view**: live 3D scene, game HUD, mechanism overlays, camera view pyramids, console, start / stop / restart / reset / pause / step,
+* **Run view**: live 3D scene, game HUD, a Robot state window (mechanisms, sensors, zones, cameras), camera view pyramids, console, start / stop / restart / reset / pause / step,
   and a built-in **Driver Station** (enable, e-stop, mode, alliance, timed match, joysticks via keyboard or gamepad).
 * **Deterministic, lock-step simulation**: the emulator is the clock master (default 5 ms step); runs are
   reproducible from a seed.

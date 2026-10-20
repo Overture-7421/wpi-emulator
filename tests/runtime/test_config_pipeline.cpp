@@ -42,12 +42,14 @@ TEST_CASE("validator: chassis, wheel, sim and battery sanity") {
     c.drivetrain.spec.wheels[2].name = "a.b";  // dot would break slot addresses
     c.sim.stepUs = 7000;                       // does not divide 20 ms
     c.battery.brownoutVoltageV = 20.0;
+    c.startPose = RobotStartPose{0.f, 0.f, std::numeric_limits<float>::infinity()};
     const auto issues = validate(c, reg);
     CHECK(hasIssue(issues, issue_code::kChassisInvalid));
     CHECK(hasIssue(issues, issue_code::kWheelInvalid));
     CHECK(hasIssue(issues, issue_code::kWheelDuplicate));
     CHECK(hasIssue(issues, issue_code::kSimInvalid));
     CHECK(hasIssue(issues, issue_code::kBatteryInvalid));
+    CHECK(hasIssue(issues, issue_code::kStartPoseInvalid));
 }
 
 TEST_CASE("validator: tire and motor parameters must be finite and physically meaningful") {

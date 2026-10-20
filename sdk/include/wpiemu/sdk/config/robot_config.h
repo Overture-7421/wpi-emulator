@@ -15,6 +15,7 @@
 
 #include "wpiemu/sdk/config/camera.h"
 #include "wpiemu/sdk/config/mechanism_attachment.h"
+#include "wpiemu/sdk/config/sensor.h"
 #include "wpiemu/sdk/config/zone.h"
 #include "wpiemu/sdk/core/geometry.h"
 #include "wpiemu/sdk/core/value.h"
@@ -46,6 +47,14 @@ struct SimSettings {
     std::int64_t stepUs = 5000;     // 200 Hz
     std::uint64_t seed = 1;
     PhysicsConfig physics;
+};
+
+struct RobotStartPose {
+    float xM = 0.f;
+    float yM = 0.f;
+    float headingRad = 0.f;
+
+    bool operator==(const RobotStartPose&) const = default;
 };
 
 struct DrivetrainConfig {
@@ -89,6 +98,9 @@ struct RobotConfig {
 
     BatteryConfig battery;
     SimSettings sim;
+    // Field-frame chassis origin on start/reset. Absent: the host chooses a default inside the
+    // field.
+    std::optional<RobotStartPose> startPose;
 
     // key = plugin id (e.g. "game_2026"). Opaque to core.
     std::map<std::string, PluginSection, std::less<>> plugins;
@@ -101,6 +113,14 @@ struct RobotConfig {
     // Simulated vision cameras (Limelight / PhotonVision) attached to the chassis or a mechanism link (config/camera.h).
     std::vector<CameraConfig> cameras;
 
+    // Game-fed sensors (config/sensor.h): a game value in, a device reading out.
+    std::vector<SensorConfig> sensors;
+
+    const SensorConfig* findSensor(std::string_view id) const {
+        for (const auto& s : sensors)
+            if (s.id == id) return &s;
+        return nullptr;
+    }
     const CameraConfig* findCamera(std::string_view id) const {
         for (const auto& c : cameras)
             if (c.id == id) return &c;
@@ -131,7 +151,8 @@ struct RobotConfig {
         std::vector<SlotMapping> out = robotMappings;
         out.insert(out.end(), drivetrain.mappings.begin(), drivetrain.mappings.end());
         for (const auto& m : mechanisms) out.insert(out.end(), m.mappings.begin(), m.mappings.end());
-        return out;
+                for (const auto& s : sensors) out.insert(out.end(), s.mappings.begin(), s.mappings.end());
+                return out;
     }
 };
 

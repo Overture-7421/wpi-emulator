@@ -18,6 +18,7 @@
 #include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/game/field.h"
+#include "wpiemu/sdk/game/game_value.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
 #include "wpiemu/sdk/game/zone_kind.h"
 #include "wpiemu/sdk/ipc/messages.h"
@@ -78,6 +79,7 @@ struct RunSceneInfo {
     std::vector<sdk::HudWidgetDescriptor> hud;
     std::vector<sdk::EditorPanelDescriptor> panels;       // viewport overlays (zones) are read from these
     std::vector<sdk::ZoneKindInfo> zoneKinds;             // kinds of RobotConfig::zones the game module declares
+    std::vector<sdk::GameValueInfo> gameValues;          // values the game module publishes (labels/units for sensor sources)
     sdk::AprilTagLayout tags;                             // the game module's aprilTagLayout(); empty = no tags drawn
     QString gameName;                                     // "REBUILT (2026)"
 };

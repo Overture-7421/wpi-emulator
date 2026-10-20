@@ -257,6 +257,58 @@ void validateCameras(const RobotConfig& c, const MechanismFactory& mechanisms, s
     }
 }
 
+void validateSensors(const RobotConfig& c, const IGameModule* plugin, std::vector<Issue>& out) {
+    std::set<std::string> ids;
+    const std::vector<GameValueInfo> values = plugin != nullptr ? plugin->contributeGameValues() : std::vector<GameValueInfo>{};
+    for (std::size_t i = 0; i < c.sensors.size(); ++i) {
+        const SensorConfig& s = c.sensors[i];
+        const std::string base = "sensors[" + std::to_string(i) + "]";
+
+        if (s.id.empty())
+            add(out, Severity::Error, base + ".id", "sensor id must not be empty", issue_code::kSensorIdInvalid);
+        else if (s.id == slot_owner::kDrivetrain || s.id == slot_owner::kRobot)
+            add(out, Severity::Error, base + ".id", "'" + s.id + "' is a reserved slot owner", issue_code::kSensorIdInvalid);
+        else if (s.id.find('.') != std::string::npos)
+            add(out, Severity::Error, base + ".id", "sensor id must not contain '.'", issue_code::kSensorIdInvalid);
+        else if (c.findMechanism(s.id) != nullptr)
+            add(out, Severity::Error, base + ".id", "sensor id '" + s.id + "' is also a mechanism id", issue_code::kSensorIdDuplicate);
+        else if (c.findZone(s.id) != nullptr)
+            add(out, Severity::Error, base + ".id", "sensor id '" + s.id + "' is also a zone id", issue_code::kSensorIdDuplicate);
+        else if (c.findCamera(s.id) != nullptr)
+            add(out, Severity::Error, base + ".id", "sensor id '" + s.id + "' is also a camera id", issue_code::kSensorIdDuplicate);
+        else if (!ids.insert(s.id).second)
+            add(out, Severity::Error, base + ".id", "duplicate sensor id '" + s.id + "'", issue_code::kSensorIdDuplicate);
+
+        if (s.source.empty()) {
+            add(out, Severity::Warning, base + ".source", "sensor '" + s.id + "' has no game value selected; it will read as idle",
+                issue_code::kSensorSourceMissing);
+        } else if (plugin == nullptr || !ownsGameValue(plugin->metadata().id, s.source)) {
+            add(out, Severity::Error, base + ".source",
+                plugin == nullptr ? "sensor source '" + s.source + "' needs a game plugin (none is selected)"
+                                  : "sensor source '" + s.source + "' is not owned by plugin '" + plugin->metadata().id + "'",
+                issue_code::kSensorSourceNotOwned);
+        } else if (std::none_of(values.begin(), values.end(), [&](const GameValueInfo& v) { return v.id == s.source; })) {
+            add(out, Severity::Warning, base + ".source",
+                "plugin '" + plugin->metadata().id + "' does not declare game value '" + s.source + "'", issue_code::kSensorSourceUnknown);
+        }
+
+        const PropertySchema schema = sensorResponseSchema(s.kind);
+        for (Issue& issue : validateProperties(schema, s.properties, base + ".properties")) {
+            if (issue.code.empty()) issue.code = issue_code::kSensorPropertyInvalid;
+            out.push_back(std::move(issue));
+        }
+        if (s.kind == SensorKind::Distance && s.properties.isObject()) {
+            const Value* mode = s.properties.find(sensor_prop::kMode);
+            const Value* lo = s.properties.find(sensor_prop::kInputMin);
+            const Value* hi = s.properties.find(sensor_prop::kInputMax);
+            if (mode != nullptr && mode->isString() && mode->asString() == sensor_prop::kModeLinear && lo != nullptr && hi != nullptr &&
+                lo->isNumber() && hi->isNumber() && lo->asDouble() == hi->asDouble())
+                add(out, Severity::Error, base + ".properties." + sensor_prop::kInputMax, "linear input range must not be empty",
+                    issue_code::kSensorPropertyInvalid);
+        }
+    }
+}
+
 }  // namespace
 
 std::vector<SlotSpec> drivetrainSlotSpecs(const DrivetrainSpec& spec) {
@@ -265,8 +317,14 @@ std::vector<SlotSpec> drivetrainSlotSpecs(const DrivetrainSpec& spec) {
         for (int i = 0; i < std::clamp(w.driveMotorCount, 1, kMaxMotorsPerAxis); ++i)
             out.push_back({driveSlotName(w.name, i), w.name + " drive motor" + (i > 0 ? " " + std::to_string(i + 1) : std::string()),
                            SlotType::Motor, false, {}});
-        if (w.steered || w.kind == WheelKind::Swerve)
+        if (w.steered || w.kind == WheelKind::Swerve) {
             out.push_back({w.name + ".steer", w.name + " steer motor", SlotType::Motor, false, {}});
+            out.push_back({w.name + ".steerEncoder",
+                           w.name + " steer encoder",
+                           SlotType::PositionSensor,
+                           false,
+                           {}});
+        }
     }
     return out;
 }
@@ -295,6 +353,11 @@ std::vector<Issue> ConfigValidator::validate(const RobotConfig& config, const Me
             issue_code::kSchemaVersion);
 
     validateChassis(config, out);
+    if (config.startPose &&
+        (!std::isfinite(config.startPose->xM) || !std::isfinite(config.startPose->yM) ||
+         !std::isfinite(config.startPose->headingRad)))
+        add(out, Severity::Error, "startPose", "start pose must have finite x, y and heading",
+            issue_code::kStartPoseInvalid);
     validateDrivetrain(config, drivetrains, tireModels_, out);
     validateSimSettings(config, out);
     const auto motionAxes = motionAxisInfos(
@@ -331,6 +394,8 @@ std::vector<Issue> ConfigValidator::validate(const RobotConfig& config, const Me
     }
     slotSpecsByOwner[slot_owner::kDrivetrain] = drivetrainSlotSpecs(config.drivetrain.spec);
     slotSpecsByOwner[slot_owner::kRobot] = robotSlotSpecs();
+    for (const SensorConfig& s : config.sensors)
+        if (!s.id.empty() && slotSpecsByOwner.find(s.id) == slotSpecsByOwner.end()) slotSpecsByOwner[s.id] = {sensorSlotSpec(s.kind)};
 
     // ---- attachments and aliases ----
     for (Issue& issue : validateMechanismAttachments(config, mechanisms)) out.push_back(std::move(issue));
@@ -386,6 +451,8 @@ std::vector<Issue> ConfigValidator::validate(const RobotConfig& config, const Me
     checkGroup(config.drivetrain.mappings, slot_owner::kDrivetrain, "drivetrain.mappings");
     for (std::size_t i = 0; i < config.mechanisms.size(); ++i)
         checkGroup(config.mechanisms[i].mappings, config.mechanisms[i].id, "mechanisms[" + std::to_string(i) + "].mappings");
+    for (std::size_t i = 0; i < config.sensors.size(); ++i)
+        checkGroup(config.sensors[i].mappings, config.sensors[i].id, "sensors[" + std::to_string(i) + "].mappings");
 
     std::map<SlotAddress, int> slotUses;
     std::map<DeviceKey, std::vector<SlotAddress>> deviceUses;
@@ -450,6 +517,7 @@ std::vector<Issue> ConfigValidator::validate(const RobotConfig& config, const Me
     }
     validateZones(config, mechanisms, selected, out);
     validateCameras(config, mechanisms, out);
+    validateSensors(config, selected, out);
     return out;
 }
 

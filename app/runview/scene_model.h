@@ -164,20 +164,16 @@ private:
 class ViewportOptions : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool showHud READ showHud WRITE setShowHud NOTIFY changed)
-    Q_PROPERTY(bool showMechanisms READ showMechanisms WRITE setShowMechanisms NOTIFY changed)
 public:
     using QObject::QObject;
     bool showHud() const { return showHud_; }
-    bool showMechanisms() const { return showMechanisms_; }
     void setShowHud(bool v) { if (v != showHud_) { showHud_ = v; emit changed(); } }
-    void setShowMechanisms(bool v) { if (v != showMechanisms_) { showMechanisms_ = v; emit changed(); } }
 
 signals:
     void changed();
 
 private:
     bool showHud_ = true;
-    bool showMechanisms_ = true;
 };
 
 class SceneModel : public QObject {

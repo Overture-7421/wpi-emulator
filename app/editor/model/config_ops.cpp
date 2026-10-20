@@ -64,7 +64,8 @@ std::string baseIdForType(std::string_view type) {
 std::string uniqueMechanismId(const RobotConfig& c, std::string base) {
     if (base.empty()) base = "mechanism";
     auto taken = [&](const std::string& id) {
-        return reservedOwner(id) || c.findMechanism(id) != nullptr || c.findZone(id) != nullptr || c.findCamera(id) != nullptr;
+        return reservedOwner(id) || c.findMechanism(id) != nullptr || c.findZone(id) != nullptr || c.findCamera(id) != nullptr ||
+               c.findSensor(id) != nullptr;
     };
     if (!taken(base)) return base;
     for (int n = 2;; ++n) {
@@ -273,7 +274,7 @@ std::string duplicateMechanism(RobotConfig& c, std::string_view id) {
     std::vector<MechanismConfig> copies;
     auto taken = [&](const std::string& candidate) {
         if (reservedOwner(candidate) || c.findMechanism(candidate) != nullptr || c.findZone(candidate) != nullptr ||
-            c.findCamera(candidate) != nullptr)
+            c.findCamera(candidate) != nullptr || c.findSensor(candidate) != nullptr)
             return true;
         return std::any_of(renamed.begin(), renamed.end(), [&](const auto& r) { return r.second == candidate; });
     };
@@ -349,7 +350,8 @@ void normalizeOrder(RobotConfig& c) {
 std::string uniqueZoneId(const RobotConfig& c, std::string base) {
     if (base.empty()) base = "zone";
     auto taken = [&](const std::string& id) {
-        return reservedOwner(id) || c.findZone(id) != nullptr || c.findMechanism(id) != nullptr || c.findCamera(id) != nullptr;
+        return reservedOwner(id) || c.findZone(id) != nullptr || c.findMechanism(id) != nullptr || c.findCamera(id) != nullptr ||
+               c.findSensor(id) != nullptr;
     };
     if (!taken(base)) return base;
     for (int n = 2;; ++n) {
@@ -500,7 +502,8 @@ bool nameTaken(const RobotConfig& c, sdk::CameraKind kind, const std::string& na
 std::string uniqueCameraId(const RobotConfig& c, std::string base) {
     if (base.empty()) base = "camera";
     auto taken = [&](const std::string& id) {
-        return reservedOwner(id) || c.findCamera(id) != nullptr || c.findZone(id) != nullptr || c.findMechanism(id) != nullptr;
+        return reservedOwner(id) || c.findCamera(id) != nullptr || c.findZone(id) != nullptr || c.findMechanism(id) != nullptr ||
+               c.findSensor(id) != nullptr;
     };
     if (!taken(base)) return base;
     for (int n = 2;; ++n) {
@@ -618,11 +621,68 @@ bool reattachCamera(RobotConfig& c, const EditorCatalog& catalog, std::string_vi
     return true;
 }
 
+// ---- sensors ----------------------------------------------------------------------------------
+std::string uniqueSensorId(const RobotConfig& c, std::string base) {
+    if (base.empty()) base = "sensor";
+    auto taken = [&](const std::string& id) {
+        return reservedOwner(id) || c.findSensor(id) != nullptr || c.findMechanism(id) != nullptr || c.findZone(id) != nullptr ||
+               c.findCamera(id) != nullptr;
+    };
+    if (!taken(base)) return base;
+    for (int n = 2;; ++n) {
+        std::string candidate = base + "_" + std::to_string(n);
+        if (!taken(candidate)) return candidate;
+    }
+}
+
+std::string sensorDisplayName(const sdk::SensorConfig& s) {
+    if (!s.label.empty()) return s.label;
+    return sdk::sensorKindInfo(s.kind).displayName + std::string(" (") + s.id + ")";
+}
+
+std::string addSensor(RobotConfig& c, sdk::SensorKind kind) {
+    sdk::SensorConfig s;
+    s.kind = kind;
+    s.id = uniqueSensorId(c, sdk::sensorKindKey(kind));
+    s.label = sdk::sensorKindInfo(kind).displayName;
+    s.properties = sdk::Value::makeObject();
+    for (const auto& p : sdk::sensorResponseSchema(kind).properties) s.properties[p.key] = p.defaultValue;
+    std::string id = s.id;
+    c.sensors.push_back(std::move(s));
+    return id;
+}
+
+bool removeSensor(RobotConfig& c, std::string_view id) {
+    const auto it = std::find_if(c.sensors.begin(), c.sensors.end(), [&](const sdk::SensorConfig& s) { return s.id == id; });
+    if (it == c.sensors.end()) return false;
+    c.sensors.erase(it);
+    return true;
+}
+
+std::string duplicateSensor(RobotConfig& c, std::string_view id) {
+    const sdk::SensorConfig* original = c.findSensor(id);
+    if (original == nullptr) return {};
+    sdk::SensorConfig copy = *original;
+    copy.id = uniqueSensorId(c, copy.id);
+    copy.label = (copy.label.empty() ? original->id : copy.label) + " (copy)";
+    copy.mappings.clear();   // a device drives one thing
+    std::string newId = copy.id;
+    c.sensors.push_back(std::move(copy));
+    return newId;
+}
+
+sdk::SensorConfig* findSensor(RobotConfig& c, std::string_view id) {
+    for (auto& s : c.sensors)
+        if (s.id == id) return &s;
+    return nullptr;
+}
+
 // ---- device mappings --------------------------------------------------------------------------
 std::vector<sdk::SlotMapping>* mappingList(RobotConfig& c, std::string_view owner) {
     if (owner == sdk::slot_owner::kRobot) return &c.robotMappings;
     if (owner == sdk::slot_owner::kDrivetrain) return &c.drivetrain.mappings;
     if (MechanismConfig* m = findMech(c, owner)) return &m->mappings;
+    if (sdk::SensorConfig* s = findSensor(c, owner)) return &s->mappings;
     return nullptr;
 }
 
@@ -632,6 +692,7 @@ const sdk::SlotMapping* findMapping(const RobotConfig& c, const SlotAddress& slo
         if (slot.owner == sdk::slot_owner::kRobot) return c.robotMappings;
         if (slot.owner == sdk::slot_owner::kDrivetrain) return c.drivetrain.mappings;
         if (const MechanismConfig* m = c.findMechanism(slot.owner)) return m->mappings;
+        if (const sdk::SensorConfig* s = c.findSensor(slot.owner)) return s->mappings;
         return empty;
     }();
     for (const auto& m : list)
@@ -718,6 +779,9 @@ std::vector<sdk::SlotSpec> drivetrainSlotSpecs(const sdk::DrivetrainSpec& spec) 
             steer.label = w.name + " steer";
             steer.description = "Motor controller steering module '" + w.name + "'.";
             out.push_back(steer);
+            out.push_back({w.name + ".steerEncoder", w.name + " steer encoder",
+                           sdk::SlotType::PositionSensor, false,
+                           "Azimuth encoder of module '" + w.name + "'."});
         }
     }
     return out;
@@ -755,7 +819,7 @@ std::string wheelOfSlot(std::string_view slotName) {
     const auto dot = slotName.rfind('.');
     if (dot == std::string_view::npos || dot == 0) return {};
     std::string_view tail = slotName.substr(dot + 1);
-    if (tail == "steer") return std::string(slotName.substr(0, dot));
+    if (tail == "steer" || tail == "steerEncoder") return std::string(slotName.substr(0, dot));
     if (tail.substr(0, 5) != "drive") return {};
     tail.remove_prefix(5);
     for (const char ch : tail)
@@ -791,7 +855,9 @@ void pruneInactiveMappings(RobotConfig& c, const EditorCatalog& catalog, std::st
                                    // Only motor slots that exist for a higher motor number are pruned; unknown slots are left for the validator.
                                    if (owner == sdk::slot_owner::kDrivetrain) {
                                        const std::string wheel = wheelOfSlot(m.slot.slot);
-                                       return !wheel.empty() && findWheel(c, wheel) != nullptr && m.slot.slot != wheel + ".steer";
+                                       return !wheel.empty() && findWheel(c, wheel) != nullptr &&
+                                              m.slot.slot != wheel + ".steer" &&
+                                              m.slot.slot != wheel + ".steerEncoder";
                                    }
                                    const MechanismConfig* mech = c.findMechanism(owner);
                                    const auto* info = mech != nullptr ? catalog.findTemplate(mech->type) : nullptr;
@@ -824,6 +890,8 @@ std::vector<sdk::SlotSpec> slotSpecsFor(const RobotConfig& c, const EditorCatalo
         out = robotSlotSpecs();
     else if (owner == sdk::slot_owner::kDrivetrain)
         out = drivetrainSlotSpecs(c.drivetrain.spec);
+    else if (const sdk::SensorConfig* s = c.findSensor(owner))
+        out.push_back(sdk::sensorSlotSpec(s->kind));
     else if (const MechanismConfig* m = c.findMechanism(owner))
         if (const auto* info = catalog.findTemplate(m->type)) {
             for (const auto& spec : info->slotSpecs) {
@@ -845,6 +913,7 @@ std::vector<sdk::SlotSpec> slotSpecsFor(const RobotConfig& c, const EditorCatalo
 std::vector<std::string> slotOwners(const RobotConfig& c) {
     std::vector<std::string> out{sdk::slot_owner::kRobot, sdk::slot_owner::kDrivetrain};
     for (const auto& m : c.mechanisms) out.push_back(m.id);
+    for (const auto& s : c.sensors) out.push_back(s.id);
     return out;
 }
 
@@ -853,6 +922,7 @@ std::string slotDisplayName(const RobotConfig& c, const EditorCatalog& catalog, 
                             : slot.owner == sdk::slot_owner::kDrivetrain ? "Drivetrain"
                                                                          : slot.owner;
     if (const MechanismConfig* m = c.findMechanism(slot.owner)) ownerName = displayNameFor(*m, catalog);
+    if (const sdk::SensorConfig* s = c.findSensor(slot.owner)) ownerName = sensorDisplayName(*s);
     std::string slotName = slot.slot;
     for (const auto& s : slotSpecsFor(c, catalog, slot.owner))
         if (s.name == slot.slot) { slotName = s.label.empty() ? s.name : s.label; break; }

@@ -67,14 +67,14 @@ void copyProject(const fs::path& from, const fs::path& to) {
 struct SwerveModuleIds {
     const char* name;
     float x, y;
-    int driveId, steerId;
+    int driveId, steerId, encoderId;
 };
 // FRC-Shelby-2026OS Chassis.java: track 11.125 in x 10.875 in; CAN ids from the module configs.
 constexpr SwerveModuleIds kModules[] = {
-    {"fl", 0.2826f, 0.2762f, 4, 3},
-    {"fr", 0.2826f, -0.2762f, 8, 7},
-    {"bl", -0.2826f, 0.2762f, 2, 1},
-    {"br", -0.2826f, -0.2762f, 6, 5},
+    {"fl", 0.2826f, 0.2762f, 4, 3, 12},
+    {"fr", 0.2826f, -0.2762f, 8, 7, 11},
+    {"bl", -0.2826f, 0.2762f, 2, 1, 9},
+    {"br", -0.2826f, -0.2762f, 6, 5, 10},
 };
 constexpr int kPigeonId = 13;
 constexpr int kIntakeRollerId = 32;
@@ -110,9 +110,12 @@ sdk::RobotConfig mappedConfig(const fs::path& project) {
         w.radiusM = 0.0508f;
         w.driveGearRatio = 7.03f;
         w.steerGearRatio = 287.0f / 11.0f;
+        w.steerMotor = sdk::motors::falcon500();
         c.drivetrain.spec.wheels.push_back(w);
         c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, w.name + ".drive"}, phoenixKey("talonfx", m.driveId)});
         c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, w.name + ".steer"}, phoenixKey("talonfx", m.steerId)});
+        c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, w.name + ".steerEncoder"},
+                                         phoenixKey("cancoder", m.encoderId)});
     }
     c.robotMappings.push_back({{sdk::slot_owner::kRobot, "imu"}, phoenixKey("pigeon2", kPigeonId)});
 
@@ -137,7 +140,10 @@ sdk::RobotConfig mappedConfig(const fs::path& project) {
     pivot.properties["maxPosition"] = 2.3;
     pivot.properties["startPosition"] = 0.087;
     pivot.properties["simulateGravity"] = false;
-    pivot.mappings.push_back({{pivot.id, "motor"}, phoenixKey("talonfx", kIntakePivotId)});
+    pivot.properties["momentOfInertiaKgM2"] = 0.4;
+    pivot.properties["statorCurrentLimitA"] = 75.0;
+    pivot.properties["neutralMode"] = "brake";
+    pivot.mappings.push_back({{pivot.id, "motor"}, phoenixKey("talonfx", kIntakePivotId), true});
     pivot.mappings.push_back({{pivot.id, "encoder"}, phoenixKey("cancoder", kIntakePivotEncoderId)});
     c.mechanisms.push_back(std::move(pivot));
     return c;
@@ -313,7 +319,7 @@ TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven t
             return snap ? static_cast<double>(snap->simTimeUs()) / 1e6 : 0.0;
         };
         constexpr double kRealtimeSimS = 5.0;
-        constexpr double kFastSimS = 6.0;
+        constexpr double kContinuedSimS = 6.0;
         bool stalled = false;
         std::vector<std::pair<double, double>> pace;   // (wall s, sim s) once per wall second: shows start-up hiccups
         ok = waitFor(
@@ -330,21 +336,17 @@ TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven t
         if (!ok) dumpConsole(console);
         REQUIRE_MESSAGE(ok, st.detail);
 
-        // second part as fast as the robot answers
-        sdk::proto::SimControl fast;
-        fast.command = sdk::proto::SimCommand::SetTimeScale;
-        fast.timeScale = 0.0;
-        session.controller().control(fast);
-        const Clock::time_point fastStart = Clock::now();
-        const double simAtFast = simSeconds();
+        // Phoenix closed loops run on wall time: keep the entire driven run paced at 1x.
+        const Clock::time_point continuedStart = Clock::now();
+        const double simAtContinue = simSeconds();
         ok = waitFor(
             session, 120s,
             [&](const app::host::SessionStatus& s) {
                 stalled |= s.link == app::host::LinkState::Stalled;
-                return simSeconds() >= kRealtimeSimS + kFastSimS;
+                return simSeconds() >= kRealtimeSimS + kContinuedSimS;
             },
             st, console);
-        const double fastWall = seconds(fastStart, Clock::now());
+        const double continuedWall = seconds(continuedStart, Clock::now());
         if (!ok) dumpConsole(console);
         REQUIRE_MESSAGE(ok, st.detail);
         const double simNow = simSeconds();
@@ -362,8 +364,11 @@ TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven t
         const std::uint64_t ticks = session.runner().ticksSent();
         const double expectedLoops = simTotal / 0.020;
         const sdk::Vec3 p0 = snap->chassis().pose.position;
-        std::printf("e2e:   program started after %.1f s; real-time part: %.1f sim s in %.2f wall s; fast part: %.1f sim s in %.2f wall s (%.1fx)\n",
-                    tStart, kRealtimeSimS, realtimeWall, simNow - simAtFast, fastWall, (simNow - simAtFast) / std::max(fastWall, 1e-6));
+        std::printf(
+            "e2e:   program started after %.1f s; first part: %.1f sim s in %.2f wall s; "
+            "continued: %.1f sim s in %.2f wall s (%.1fx)\n",
+            tStart, kRealtimeSimS, realtimeWall, simNow - simAtContinue, continuedWall,
+            (simNow - simAtContinue) / std::max(continuedWall, 1e-6));
         std::printf("e2e:   ticks sent %llu, sim time %.3f s, robot loops %llu (expected ~%.0f), dropped frames %llu\n", static_cast<unsigned long long>(ticks),
                     simTotal, static_cast<unsigned long long>(loops), expectedLoops, static_cast<unsigned long long>(session.runner().droppedFrames()));
         std::printf("e2e:   chassis pose (%.2f, %.2f, %.2f) v=(%.2f, %.2f), battery %.2f V\n", p0.x, p0.y, p0.z, snap->chassis().linearVelocity.x,
@@ -389,12 +394,17 @@ TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven t
         CHECK(realtimeWall <= kRealtimeSimS * 1.5);
         CHECK(snap->robotConnected());
         CHECK(snap->driverStation().enabled);
-        CHECK(mapped == 12);   // 8 swerve motors + imu + roller + pivot motor + pivot CANcoder
+        CHECK(mapped ==
+              16);  // 8 swerve motors + 4 azimuth encoders + imu + roller + pivot motor/encoder
         CHECK(snap->wheels().size() == 4);
         double spin = 0;
         for (const sdk::WheelSample& w : snap->wheels()) spin += std::abs(w.spinAngleRad);
         CHECK(spin > 1.0);   // the robot's drive commands reached the wheels
-        CHECK(std::hypot(p0.x - 2.0, p0.y - 4.03) > 0.3);   // and the chassis moved
+        CHECK(p0.x > 2.3);   // forward stick drives forward, not merely "somewhere"
+        CHECK(std::abs(p0.y - 4.0345) < 0.15);
+        CHECK(std::abs(snap->chassis().pose.rotation.yaw()) < 2.0 * sdk::kPi / 180.0);
+        for (const auto& wheel : snap->wheels())
+            CHECK(std::abs(wheel.steerAngleRad) < 2.0 * sdk::kPi / 180.0);
         CHECK(p0.z > 0.02);
         CHECK(p0.z < 0.6);
         CHECK(snap->batteryVoltageV() < 12.6);   // motor current sagged the battery
@@ -407,7 +417,7 @@ TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven t
                     if (v.name == "position") pivotPosition = v.value;
         }
         CHECK(rollerSeen);
-        CHECK(pivotPosition > 1.0);   // Motion Magic to 118 deg (2.06 rad) ran through the emulator's plant and CANcoder
+        CHECK(std::abs(pivotPosition - 118.0 * sdk::kPi / 180.0) < sdk::kPi / 180.0);
         for (const sdk::HubWarning& w : snap->warnings()) {
             CHECK(w.code != "slot_missing_device");
             CHECK(w.code != "slot_incompatible");

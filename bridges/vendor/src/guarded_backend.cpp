@@ -59,6 +59,16 @@ bool GuardedSimDeviceBackend::close(double a, double b) const {
     return std::abs(a - b) <= options_.absTolerance + options_.relTolerance * std::max(std::abs(a), std::abs(b));
 }
 
+bool GuardedSimDeviceBackend::readbackMatches(const Meta& meta, double readback,
+                                              double written) const {
+    if (meta.guardIndex >= 0 &&
+        guards_[static_cast<std::size_t>(meta.guardIndex)].spec.unwrapDegrees) {
+        // Phoenix may mirror an equivalent wrapped yaw, including +180 for a written -180.
+        readback -= 360.0 * std::round((readback - written) / 360.0);
+    }
+    return close(readback, written);
+}
+
 double GuardedSimDeviceBackend::unwrapped(State& s, const Guard& g, double incoming) const {
     if (!g.spec.unwrapDegrees) return incoming;
     if (!s.hasIncoming) {
@@ -87,7 +97,7 @@ bool GuardedSimDeviceBackend::verifyReadback(sdk::SimValueHandle h, const Meta& 
     if (!s.hasWritten) return false;
     const double readback = inner_->getValue(h);
     s.lastReadback = readback;
-    if (close(readback, s.lastWritten)) {
+    if (readbackMatches(meta, readback, s.lastWritten)) {
         if (!s.reasserted) s.streak = 0;
         s.reasserted = false;
         return false;
@@ -165,7 +175,7 @@ std::size_t GuardedSimDeviceBackend::reassertAfterMirror() {
         const auto metaIt = meta_.find(h);
         if (metaIt == meta_.end() || metaIt->second.guardIndex < 0) continue;
         const double readback = inner_->getValue(h);
-        if (close(readback, s.lastWritten)) continue;
+        if (readbackMatches(metaIt->second, readback, s.lastWritten)) continue;
         s.lastReadback = readback;
         ++s.reasserts;
         s.reasserted = true;

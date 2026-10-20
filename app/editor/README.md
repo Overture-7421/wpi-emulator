@@ -82,6 +82,15 @@ selected plugin's `sdk::ZoneKindInfo` list (`EditorCatalog::zoneKinds`, `findZon
   (`SelKind::Zone`). `readTransform` / `writeTransform` edit pose and size (not size for Muzzle) so the gizmos, the numeric bar and undo
   merging work like for mechanisms. The editor shows no live "active" state; the run view does.
 
+## Sensors
+
+Sensors (`RobotConfig::sensors`, `sdk/config/sensor.h`) are core-owned Distance / Beam-break devices fed by a plugin *game value*
+(`EditorCatalog::gameValues`, from `IGameModule::contributeGameValues()`). They have no pose, so there is no viewport marker.
+`ops::addSensor` / `removeSensor` / `duplicateSensor` / `uniqueSensorId` are undoable through `EditorDocument` and
+`EditorController::addSensor`; every other id generator avoids sensor ids. The inspector shows General, Source (a game-value
+dropdown that keeps a saved-but-missing source as `(unavailable) <id>`), Response and the Device slot (`sensor`, owner = sensor id).
+The project tree lists them under "Sensors" (`sensor:<id>` nodes with a nested slot row); `locateIssue` resolves `sensors[i]` paths.
+
 ## Cameras (ADR 0017)
 
 Cameras (`RobotConfig::cameras`, `sdk/config/camera.h`) are simulated Limelight / PhotonVision coprocessors. They are attached to the

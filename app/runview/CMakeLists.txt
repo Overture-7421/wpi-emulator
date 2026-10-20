@@ -17,7 +17,8 @@ set(WPIEMU_RUNVIEW_SOURCES
     hud_model.cpp
     scene_parts.cpp
     scene_model.cpp
-    mechanism_overlay_model.cpp
+    state_model.cpp
+    state_window.cpp
     sim_stats.cpp
     joystick_types.cpp
     joystick_source.cpp
@@ -46,8 +47,7 @@ qt_add_resources(wpiemu_app_runview runview_qml
         qml/PartModel.qml
         qml/TagMarker.qml
         qml/HudStack.qml
-        qml/HudWidget.qml
-        qml/MechanismPanel.qml)
+        qml/HudWidget.qml)
 
 # Official AprilTag 36h11 images (ids 1-32, 10x10 px) textured onto the field tags.
 file(GLOB WPIEMU_RUNVIEW_TAG_IMAGES CONFIGURE_DEPENDS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"

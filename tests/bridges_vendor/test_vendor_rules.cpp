@@ -89,7 +89,8 @@ TEST_CASE("vendor rules: TalonFX: tree grouped into one device with canonical si
     };
     CHECK(dir(sg::kDutyCycle) == SignalDirection::Output);
     CHECK(dir(sg::kMotorVoltage) == SignalDirection::Output);
-    CHECK(dir(sg::kTorqueCurrent) == SignalDirection::Output);
+    CHECK(dir(ctre::vsignal::kTorqueCurrentReported) == SignalDirection::Output);
+    CHECK(rig.host.signalSpec(id, sg::kTorqueCurrent) == nullptr);
     CHECK(dir(sg::kSupplyCurrentOut) == SignalDirection::Output);
     CHECK(dir(sg::kSupplyVoltage) == SignalDirection::Input);
     CHECK(dir(sg::kRotorPosition) == SignalDirection::Input);
@@ -110,7 +111,8 @@ TEST_CASE("vendor rules: TalonFX: tree grouped into one device with canonical si
     rig.bridge->collectOutputs(out);
     CHECK(outputOf(out, rig.host, id, sg::kMotorVoltage) == doctest::Approx(7.5));
     CHECK(outputOf(out, rig.host, id, sg::kDutyCycle) == doctest::Approx(0.625));
-    CHECK(outputOf(out, rig.host, id, sg::kTorqueCurrent) == doctest::Approx(33.0));
+    CHECK(outputOf(out, rig.host, id, ctre::vsignal::kTorqueCurrentReported) ==
+          doctest::Approx(33.0));
     CHECK(outputOf(out, rig.host, id, ctre::vsignal::kRotorPositionReported) == doctest::Approx(12.5));
     CHECK_FALSE(hasOutput(out, rig.host, id, sg::kRotorPosition));  // inputs are never read back as outputs
 

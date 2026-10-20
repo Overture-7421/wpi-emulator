@@ -28,6 +28,7 @@
 #include "wpiemu/sdk/core/severity.h"
 #include "wpiemu/sdk/core/result.h"
 #include "wpiemu/sdk/devices/discovered_device.h"
+#include "wpiemu/sdk/game/game_value.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
 #include "wpiemu/sdk/game/zone_kind.h"
 #include "wpiemu/sdk/mechanisms/mechanism.h"
@@ -53,6 +54,13 @@ struct EditorCatalog {
     std::vector<sdk::EditorPanelDescriptor> pluginPanels;
     std::vector<sdk::ZoneKindInfo> zoneKinds;                      // zone kinds the selected plugin owns (pickup, muzzle, ...)
 
+    std::vector<sdk::GameValueInfo> gameValues;                    // values the selected plugin publishes (sensor sources)
+
+    const sdk::GameValueInfo* findGameValue(std::string_view id) const {
+        for (const auto& v : gameValues)
+            if (v.id == id) return &v;
+        return nullptr;
+    }
     const sdk::MechanismTemplateInfo* findTemplate(std::string_view type) const {
         for (const auto& t : mechanismTemplates)
             if (t.type == type) return &t;

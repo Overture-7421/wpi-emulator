@@ -20,6 +20,8 @@ const char* slotTypeName(sdk::SlotType type) {
         case sdk::SlotType::BeamBreak: return "beam break";
         case sdk::SlotType::Imu: return "IMU";
         case sdk::SlotType::AnalogSensor: return "analog sensor";
+        case sdk::SlotType::DistanceSensor:
+            return "distance sensor";
         case sdk::SlotType::Solenoid: return "solenoid";
         case sdk::SlotType::DigitalOutput: return "digital output";
     }
@@ -35,6 +37,8 @@ QString slotTypeLabel(sdk::SlotType type) {
         case sdk::SlotType::BeamBreak: return ETR("Beam break");
         case sdk::SlotType::Imu: return ETR("IMU");
         case sdk::SlotType::AnalogSensor: return ETR("Analog sensor");
+        case sdk::SlotType::DistanceSensor:
+            return ETR("Distance sensor");
         case sdk::SlotType::Solenoid: return ETR("Solenoid");
         case sdk::SlotType::DigitalOutput: return ETR("Digital output");
     }
@@ -262,6 +266,17 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
             else if (rest.rfind("kind", 0) == 0) loc.fieldKey = "kind";
             else if (rest.rfind("id", 0) == 0) loc.fieldKey = "id";
             else if (rest.rfind("activation.conditions[", 0) == 0) loc.fieldKey = "activation:" + std::to_string(std::atoi(rest.c_str() + 22));
+        }
+        return loc;
+    }
+    if (parseIndexed(path, "sensors", index, rest)) {
+        if (index >= 0 && index < static_cast<int>(c.sensors.size())) {
+            loc.selection = SelectionRef::sensor(c.sensors[static_cast<std::size_t>(index)].id);
+            if (rest.rfind("properties.", 0) == 0) loc.fieldKey = firstSegment(rest.substr(11));
+            else if (rest.rfind("source", 0) == 0) loc.fieldKey = "source";
+            else if (rest.rfind("label", 0) == 0) loc.fieldKey = "label";
+            else if (rest.rfind("id", 0) == 0) loc.fieldKey = "id";
+            else if (rest.rfind("mappings", 0) == 0) loc.selection = SelectionRef::slot(loc.selection.owner, sdk::kSensorSlot);
         }
         return loc;
     }

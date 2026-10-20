@@ -277,6 +277,9 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
     shooter.color = "#d1495b";
     cat.zoneKinds.push_back(shooter);
 
+    cat.gameValues.push_back({"game_2026.fuel.count", "Fuel in robot", "Fuel currently held by the robot.", PropertyUnit::Count});
+    cat.gameValues.push_back({"game_2026.fuel.capacity", "Fuel capacity", "How much fuel the robot can hold.", PropertyUnit::Count});
+    cat.gameValues.push_back({"game_2026.fuel.fraction", "Fuel fill", "Held fuel divided by capacity (0 to 1).", PropertyUnit::Ratio});
     sdk::Box3 hopper;
     hopper.pose.position = {-0.05f, 0.f, 0.f};
     hopper.sizeM = {0.4f, 0.5f, 0.3f};
@@ -412,6 +415,24 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
     photon.attachment.parentLink = "mover";
     photon.local.position = {0.1f, 0.f, 0.1f};
     c.cameras.push_back(std::move(photon));
+
+    // Game-fed sensors: a distance sensor and a beam break, both driven by values the plugin publishes.
+    sdk::SensorConfig hopper;
+    hopper.id = "hopper_sensor";
+    hopper.label = "Hopper sensor";
+    hopper.kind = sdk::SensorKind::Distance;
+    hopper.source = "game_2026.fuel.count";
+    for (const auto& p : sdk::sensorResponseSchema(hopper.kind).properties) hopper.properties[p.key] = p.defaultValue;
+    hopper.properties[sdk::sensor_prop::kThreshold] = 1.0;
+    c.sensors.push_back(std::move(hopper));
+
+    sdk::SensorConfig feed;
+    feed.id = "feed_sensor";
+    feed.label = "Feed beam break";
+    feed.kind = sdk::SensorKind::BeamBreak;
+    feed.source = "game_2026.fuel.fraction";
+    for (const auto& p : sdk::sensorResponseSchema(feed.kind).properties) feed.properties[p.key] = p.defaultValue;
+    c.sensors.push_back(std::move(feed));
     return c;
 }
 
@@ -504,6 +525,7 @@ std::vector<sdk::Issue> FakeEditorBackend::validate(const sdk::RobotConfig& c) c
     for (auto& issue : sdk::validateMechanismAttachments(c, factory_)) out.push_back(std::move(issue));
     for (auto& issue : validateZones(c)) out.push_back(std::move(issue));
     for (auto& issue : validateCameras(c)) out.push_back(std::move(issue));
+    for (auto& issue : validateSensors(c)) out.push_back(std::move(issue));
     for (auto& issue : sdk::validateDeviceAliases(c.allMappings())) out.push_back(std::move(issue));
     if (c.chassis.massKg < 10.f) out.push_back({sdk::Severity::Warning, "chassis.massKg", "chassis mass below 10 kg is unusual for an FRC robot", {}});
     return out;
@@ -542,6 +564,20 @@ std::vector<sdk::Issue> FakeEditorBackend::validateZones(const sdk::RobotConfig&
             if (c.findMechanism(z.activation.conditions[j].mechanismId) == nullptr)
                 out.push_back({sdk::Severity::Warning, base + ".activation.conditions[" + std::to_string(j) + "].mechanism",
                                "condition mechanism '" + z.activation.conditions[j].mechanismId + "' does not exist", "zone_condition_mechanism_unknown"});
+    }
+    return out;
+}
+
+std::vector<sdk::Issue> FakeEditorBackend::validateSensors(const sdk::RobotConfig& c) const {
+    // Mirrors the real validator's sensor source checks (core: config_validator.h, issue_code::kSensor*).
+    std::vector<sdk::Issue> out;
+    for (std::size_t i = 0; i < c.sensors.size(); ++i) {
+        const sdk::SensorConfig& s = c.sensors[i];
+        const std::string base = "sensors[" + std::to_string(i) + "]";
+        if (s.source.empty())
+            out.push_back({sdk::Severity::Warning, base + ".source", "sensor has no source; it reads as idle", "sensor_source_missing"});
+        else if (catalog_.findGameValue(s.source) == nullptr)
+            out.push_back({sdk::Severity::Warning, base + ".source", "the game plugin does not publish '" + s.source + "'", "sensor_source_unknown"});
     }
     return out;
 }

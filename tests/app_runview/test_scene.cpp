@@ -6,7 +6,6 @@
 
 #include "common/orbit_camera.h"
 #include "fake_run_backend.h"
-#include "mechanism_overlay_model.h"
 #include "scene_model.h"
 #include "scene_parts.h"
 
@@ -484,28 +483,4 @@ TEST_CASE("fake backend publishes zone states that follow the intake arm and the
     snap = backend.latestSnapshot();
     CHECK_FALSE(snap->zones()[0].active);
     CHECK(snap->zones()[1].active);
-}
-
-TEST_CASE("mechanism overlay model shows labels and human units") {
-    MechanismOverlayModel model;
-    model.setConfig(demoConfig());
-    sdk::SimSnapshotData d = baseSnapshot();
-    sdk::MechanismState intake;
-    intake.id = "intake";
-    intake.type = "mechanism";
-    intake.active = true;
-    intake.values = {{"angle", 3.14159265358979, "rad"}, {"speed", 62.8318530718, "rad/s"}, {"height", 0.5, "m"}};
-    d.mechanisms.push_back(intake);
-    const sdk::SimSnapshot snap(d);
-    model.update(&snap);
-    REQUIRE(model.rowCount() == 1);
-    CHECK(model.index(0).data(MechanismOverlayModel::LabelRole).toString() == QStringLiteral("Intake"));
-    CHECK(model.index(0).data(MechanismOverlayModel::ActiveRole).toBool());
-    const QString values = model.index(0).data(MechanismOverlayModel::ValuesRole).toString();
-    CHECK(values.contains(QStringLiteral("180.0 °")));   // rad -> deg
-    CHECK(values.contains(QStringLiteral("600.0 rpm")));    // rad/s -> rpm
-    CHECK(values.contains(QStringLiteral("0.50 m")));
-
-    model.update(nullptr);
-    CHECK(model.rowCount() == 0);
 }

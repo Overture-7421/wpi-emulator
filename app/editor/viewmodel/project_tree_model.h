@@ -22,7 +22,7 @@
 
 namespace wpiemu::app::editor {
 
-enum class NodeKind { Robot, Chassis, Com, Drivetrain, Wheel, Slot, Shape, Mechanism, Group, Volume, Plugin, Zone, Camera };
+enum class NodeKind { Robot, Chassis, Com, Drivetrain, Wheel, Slot, Shape, Mechanism, Group, Volume, Plugin, Zone, Camera, Sensor };
 
 class ProjectTreeModel : public QAbstractItemModel {
     Q_OBJECT
@@ -103,6 +103,7 @@ private:
     std::unique_ptr<Node> root_;   // invisible root; first child is the robot
     std::set<std::string> zonesWithIssues_;
     std::set<std::string> camerasWithIssues_;
+    std::set<std::string> sensorsWithIssues_;
 };
 
 }  // namespace wpiemu::app::editor

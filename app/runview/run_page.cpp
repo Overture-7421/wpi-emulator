@@ -67,9 +67,18 @@ void RunPage::build() {
 
     buildActions();
 
-    viewport_ = new RunViewport(scene_, hud_, mechanisms_, theme_, viewOptions_, this);
+    viewport_ = new RunViewport(scene_, hud_, theme_, viewOptions_, this);
 
-    // Restart (with its robot-code option) and speed float at the bottom-right of the 3D view, beside Home view.
+    stateWindow_ = new StateWindow(theme_, this);
+    stateWindow_->restoreGeometry(settings_->value(QStringLiteral("runview/stateWindow/geometry")).toByteArray());
+    connect(stateWindow_, &StateWindow::closed, this, [this] {
+        saveStateWindowGeometry();
+        const QSignalBlocker block(stateAction_);
+        stateAction_->setChecked(false);
+    });
+
+    // State, restart (with its robot-code option) and speed float at the bottom-right of the 3D view, beside Home view.
+    viewport_->addStateControl(stateAction_);
     viewport_->addRestartControl(restartAction_, restartMenu_);
     viewport_->addSpeedControl(speedCombo_);
     console_ = new ConsolePanel(this);
@@ -163,9 +172,9 @@ void RunPage::buildActions() {    restartAction_ = new QAction(reloadIcon(), tr(
     hudAction_ = new QAction(tr("Game HUD"), this);
     hudAction_->setCheckable(true);
     hudAction_->setChecked(viewOptions_.showHud());
-    mechAction_ = new QAction(tr("Mechanism values"), this);
-    mechAction_->setCheckable(true);
-    mechAction_->setChecked(viewOptions_.showMechanisms());
+    stateAction_ = new QAction(tr("Robot state"), this);
+    stateAction_->setCheckable(true);
+    stateAction_->setToolTip(tr("Open a window with the live state of mechanisms, sensors, zones and cameras"));
     zonesAction_ = new QAction(tr("Zones (intake, shooter, ...)"), this);
     zonesAction_->setCheckable(true);
     zonesAction_->setChecked(scene_.zonesVisible());
@@ -194,14 +203,14 @@ void RunPage::buildActions() {    restartAction_ = new QAction(reloadIcon(), tr(
     connect(speedCombo_, &QComboBox::activated, this, [this](int i) { backend_.setTimeScale(speedCombo_->itemData(i).toDouble()); });
     connect(resetView, &QAction::triggered, this, [this] { scene_.resetCamera(); });
     connect(hudAction_, &QAction::toggled, &viewOptions_, &ViewportOptions::setShowHud);
-    connect(mechAction_, &QAction::toggled, &viewOptions_, &ViewportOptions::setShowMechanisms);
+    connect(stateAction_, &QAction::toggled, this, [this](bool on) { setStateWindowVisible(on); });
     connect(zonesAction_, &QAction::toggled, &scene_, &SceneModel::setZonesVisible);
     connect(tagsAction_, &QAction::toggled, &scene_, &SceneModel::setTagsVisible);
     connect(consoleAction_, &QAction::toggled, this, [this](bool on) { setConsoleVisible(on); });
 }
 
 QList<QAction*> RunPage::viewActions() const {
-    return {hudAction_, mechAction_, zonesAction_, zoneMenu_->menuAction(), tagsAction_, consoleAction_};
+    return {hudAction_, stateAction_, zonesAction_, zoneMenu_->menuAction(), tagsAction_, consoleAction_};
 }
 
 void RunPage::setConsoleVisible(bool visible) {
@@ -230,7 +239,7 @@ void RunPage::onSceneInfoChanged() {
     const RunSceneInfo info = backend_.sceneInfo();
     scene_.setSceneInfo(info);
     hud_.setDescriptors(info.hud);
-    mechanisms_.setConfig(info.config);
+    stateWindow_->model()->setScene(info);
     rebuildZoneMenu();
 }
 
@@ -270,7 +279,7 @@ void RunPage::pollNow() {
 
     scene_.update(s);
     hud_.update(s);
-    mechanisms_.update(s);
+    if (stateWindow_->isVisible()) stateWindow_->showSnapshot(s);
     refreshControls(s);
 
     if (stats_.update(s, now) || now - lastLabelMs_ > 250) {
@@ -326,12 +335,34 @@ void RunPage::showEvent(QShowEvent* e) {
     QWidget::showEvent(e);
     qApp->installEventFilter(this);
     theme_.setPalette(palette());
+    if (stateAction_ != nullptr && stateAction_->isChecked() && stateWindow_->isHidden()) stateWindow_->show();
 }
 
 void RunPage::hideEvent(QHideEvent* e) {
     QWidget::hideEvent(e);
     if (qApp != nullptr) qApp->removeEventFilter(this);
     joysticks_.releaseAllKeys();
+    // The shell's stacked widget does not hide child windows; the action stays checked so showEvent restores it.
+    if (stateWindow_ != nullptr && stateWindow_->isVisible()) {
+        saveStateWindowGeometry();
+        stateWindow_->hide();
+    }
+}
+
+void RunPage::saveStateWindowGeometry() {
+    settings_->setValue(QStringLiteral("runview/stateWindow/geometry"), stateWindow_->saveGeometry());
+}
+
+void RunPage::setStateWindowVisible(bool visible) {
+    if (visible) {
+        stateWindow_->showSnapshot(backend_.latestSnapshot().get());
+        stateWindow_->show();
+        stateWindow_->raise();
+        stateWindow_->activateWindow();
+    } else {
+        saveStateWindowGeometry();
+        stateWindow_->hide();
+    }
 }
 
 }  // namespace wpiemu::app::runview

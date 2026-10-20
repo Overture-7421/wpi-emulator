@@ -252,9 +252,12 @@ TEST_CASE("swerve: azimuth motors reach their targets and expose slot specs") {
     Rig rig(swerveSpec());
     REQUIRE(rig.sim);
     const auto slots = rig.sim->drivetrain().slotSpecs();
-    REQUIRE(slots.size() == 8);
+    REQUIRE(slots.size() == 12);
     CHECK(slots[0].name == "fl.drive");
     CHECK(slots[1].name == "fl.steer");
+    CHECK(slots[2].name == "fl.steerEncoder");
+    CHECK(slots[2].type == SlotType::PositionSensor);
+    CHECK_FALSE(slots[2].required);
     CHECK(slots[0].type == SlotType::Motor);
     CHECK(rig.sim->drivetrain().kind() == "swerve");
     const std::array<double, 4> targets{0.5, -0.5, 1.0, -1.0};

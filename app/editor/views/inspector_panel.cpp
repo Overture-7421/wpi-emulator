@@ -199,6 +199,13 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
             }
             icon = NodeKind::Camera;
             break;
+        case SelKind::Sensor:
+            if (const auto* s = c.findSensor(target.owner)) {
+                subtitle = QString::fromUtf8(sdk::sensorKindInfo(s->kind).displayName);
+                if (const auto* v = cat.findGameValue(s->source)) subtitle += QStringLiteral(" \xC2\xB7 ") + qs(v->label.empty() ? v->id : v->label);
+            }
+            icon = NodeKind::Sensor;
+            break;
         case SelKind::Device: title = ETR("Detected device"); icon = NodeKind::Robot; break;
         default: break;
     }
@@ -251,10 +258,11 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
         connect(b, &QToolButton::clicked, this, [fn] { fn(); });
         h->addWidget(b, 0, Qt::AlignTop);
     };
-    if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Zone || target.kind == SelKind::Camera)
+    if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Zone || target.kind == SelKind::Camera ||
+        target.kind == SelKind::Sensor)
         addAction(ETR("Duplicate"), ETR("Duplicate (Ctrl+D)"), [this] { controller_.duplicateSelection(); });
     if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Wheel || target.kind == SelKind::Zone ||
-        target.kind == SelKind::Camera)
+        target.kind == SelKind::Camera || target.kind == SelKind::Sensor)
         addAction(ETR("Delete"), ETR("Delete (Del)"), [this] { controller_.deleteSelection(); });
     layout_->addWidget(head);
 }
@@ -364,7 +372,7 @@ QString InspectorPanel::signature(const std::vector<PropertyGroup>& groups) cons
          }))
         parts << qs(axis.address.toString()) << QString::number(static_cast<int>(axis.kind));
     for (const auto& g : groups) {
-        parts << qs(g.id) << g.title;
+        parts << qs(g.id) << g.title << g.hint;
         for (const auto& p : g.schema.properties) {
             parts << qs(p.key) << QString::number(p.options.size());
             for (const auto& o : p.options) parts << qs(o.value);
@@ -512,6 +520,55 @@ void InspectorPanel::updateRobotToCamera(const sdk::CameraConfig& cam, const sdk
     robotToCameraLabel_->setToolTip(tip);
 }
 
+void InspectorPanel::addSensorCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups) {
+    const sdk::RobotConfig& c = controller_.document().config();
+    const EditorCatalog& cat = controller_.document().catalog();
+    const sdk::SensorConfig* sensor = c.findSensor(target.owner);
+    if (sensor == nullptr) return;
+
+    auto* general = new QWidget(content_);
+    auto* gv = new QVBoxLayout(general);
+    gv->setContentsMargins(0, 0, 0, 0);
+    gv->setSpacing(6);
+    for (const PropertyGroup& g : groups)
+        if (g.id == "sensor.general") gv->addWidget(makeForm(g, general));
+    auto* info = new QLabel(ETR("ID: %1  \xC2\xB7  Type: %2")
+                                .arg(QStringLiteral("<b>%1</b>").arg(qs(target.owner).toHtmlEscaped()),
+                                     QStringLiteral("<b>%1</b>").arg(QString::fromUtf8(sdk::sensorKindInfo(sensor->kind).displayName).toHtmlEscaped())),
+                            general);
+    info->setObjectName(QStringLiteral("sensor.id"));
+    info->setTextFormat(Qt::RichText);
+    info->setToolTip(ETR("Used in robot.json; the ID and the type cannot be changed."));
+    info->setEnabled(false);
+    gv->addWidget(info);
+    addSection(ETR("General"), general, false, SectionRole::Info);
+
+    for (const PropertyGroup& g : groups)
+        if (g.id == "sensor.source") {
+            auto* body = new QWidget(content_);
+            auto* bv = new QVBoxLayout(body);
+            bv->setContentsMargins(0, 0, 0, 0);
+            bv->setSpacing(6);
+            bv->addWidget(makeForm(g, body));
+            if (!g.hint.isEmpty()) {
+                auto* hint = mutedLabel(g.hint, body);
+                hint->setObjectName(QStringLiteral("sensor.sourceHint"));
+                bv->addWidget(hint);
+            }
+            addSection(ETR("Source"), body, false, SectionRole::Configure);
+        }
+
+    for (const PropertyGroup& g : groups)
+        if (g.id == "sensor.props") addSection(ETR("Response"), makeForm(g, content_), false, SectionRole::Configure);
+
+    auto* device = new QWidget(content_);
+    auto* dv = new QVBoxLayout(device);
+    dv->setContentsMargins(0, 0, 0, 0);
+    dv->setSpacing(6);
+    for (const SlotInfo& slot : slotInfos(c, cat, controller_.devices(), target.owner)) dv->addWidget(makeRow(slot, device));
+    addSection(ETR("Device"), device, false, SectionRole::Configure);
+}
+
 void InspectorPanel::addZoneCards(const SelectionRef& target, const std::vector<PropertyGroup>& groups) {
     auto* general = new QWidget(content_);
     auto* gv = new QVBoxLayout(general);
@@ -565,6 +622,8 @@ void InspectorPanel::rebuild() {
         addZoneCards(target, groups);
     } else if (target.kind == SelKind::Camera) {
         addCameraCards(target, groups);
+    } else if (target.kind == SelKind::Sensor) {
+        addSensorCards(target, groups);
     } else {
         for (const PropertyGroup& g : groups) {
             auto* f = makeForm(g, content_);

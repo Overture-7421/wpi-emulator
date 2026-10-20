@@ -199,6 +199,8 @@ Status SimulationSession::build(SessionParts& parts) {
     // 3. slots and persisted mappings
     if (drivetrain_) hub_.declareSlots(slot_owner::kDrivetrain, drivetrain_->slotSpecs());
     hub_.declareSlots(slot_owner::kRobot, config::robotSlotSpecs());
+    for (const SensorConfig& s : config_.sensors)
+        if (!s.id.empty()) hub_.declareSlots(s.id, {sensorSlotSpec(s.kind)});
     for (MechanismConfig& m : config_.mechanisms)
         if (const MechanismTemplateInfo* info = factory_->templateInfo(m.type)) {
             hub_.declareSlots(m.id, info->slotSpecs);
@@ -270,6 +272,7 @@ Status SimulationSession::build(SessionParts& parts) {
     }
 
     vision_ = std::make_unique<VisionSystem>(config_, module_ != nullptr ? module_->aprilTagLayout() : AprilTagLayout{});
+    sensors_ = std::make_unique<SensorSystem>(config_);
 
     world_->setPose(chassis_.body, chassis_.spawnPose);
     return okStatus();
@@ -319,6 +322,8 @@ void SimulationSession::stepDrivetrain(double dt, double& currentA) {
             steer.rotorPositionRot = radToRot(st.steerAngleRad) * w.steerGearRatio;
             steer.rotorVelocityRps = radToRot(st.steerOmegaRadPerSec) * w.steerGearRatio;
             hub_.writeMotorFeedback({slot_owner::kDrivetrain, w.name + ".steer"}, steer);
+            hub_.writeEncoder({slot_owner::kDrivetrain, w.name + ".steerEncoder"},
+                              {radToRot(st.steerAngleRad), radToRot(st.steerOmegaRadPerSec)});
         }
     }
 }
@@ -389,6 +394,7 @@ void SimulationSession::tick(proto::SensorFrame& out, bool fullFrame) {
 
     if (gameState_) gameState_->step(*ctx_, dt);
     if (module_ != nullptr) module_->onTick(*ctx_, dt);
+    sensors_->step(gameState_.get(), hub_);
 
     writeImu(dt);
     hub_.setBatteryVoltage(battery_.update(options_.baselineCurrentA + mechanismCurrentA + drivetrainCurrentA));
@@ -441,12 +447,15 @@ std::shared_ptr<const ISimSnapshot> SimulationSession::buildSnapshot(bool paused
     const auto hubWarnings = hub_.warnings();
     d.warnings.assign(hubWarnings.begin(), hubWarnings.end());
     d.warnings.insert(d.warnings.end(), sessionWarnings_.begin(), sessionWarnings_.end());
+    const auto sensorWarnings = sensors_->warnings();
+    d.warnings.insert(d.warnings.end(), sensorWarnings.begin(), sensorWarnings.end());
     d.warnings.insert(d.warnings.end(), extraWarnings.begin(), extraWarnings.end());
     d.batteryVoltageV = battery_.voltageV();
     d.driverStation = ds_;
     d.physicsStats = world_->stats();
     if (gameState_) gameState_->publish(builder);
     vision_->publish(builder);
+    sensors_->publish(builder);
     return builder.build();
 }
 

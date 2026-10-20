@@ -74,6 +74,7 @@ void DemoRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<con
         scene_.hud = game->contributeHud();
         scene_.panels = game->contributeEditorPanels();
         scene_.zoneKinds = game->contributeZoneKinds();
+        scene_.gameValues = game->contributeGameValues();
         scene_.tags = game->aprilTagLayout();
         scene_.gameName = QString::fromStdString(game->metadata().displayName);
     }

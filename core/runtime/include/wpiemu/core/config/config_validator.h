@@ -17,6 +17,7 @@ namespace wpiemu::core::config {
 namespace issue_code {
 inline constexpr const char* kSchemaVersion = "schema_version_unsupported";
 inline constexpr const char* kChassisInvalid = "chassis_invalid";
+inline constexpr const char* kStartPoseInvalid = "start_pose_invalid";
 inline constexpr const char* kDrivetrainKindUnknown = "drivetrain_kind_unknown";
 inline constexpr const char* kTireModelUnknown = "tire_model_unknown";
 inline constexpr const char* kDrivetrainNoWheels = "drivetrain_no_wheels";
@@ -58,11 +59,19 @@ inline constexpr const char* kCameraIdDuplicate = "camera_id_duplicate";        
 inline constexpr const char* kCameraNameDuplicate = "camera_name_duplicate";    // two cameras of one kind share the robot-code name (Error)
 inline constexpr const char* kCameraGeometryInvalid = "camera_geometry_invalid";  // non-finite mount pose
 inline constexpr const char* kCameraOpticsInvalid = "camera_optics_invalid";    // fov/range/fps/latency/resolution/noise out of range
+// sensors (sdk/config/sensor.h)
+inline constexpr const char* kSensorIdInvalid = "sensor_id_invalid";            // empty, reserved, or contains '.'
+inline constexpr const char* kSensorIdDuplicate = "sensor_id_duplicate";        // duplicate, or equal to a mechanism / zone / camera id
+inline constexpr const char* kSensorSourceMissing = "sensor_source_missing";    // no game value selected (Warning)
+inline constexpr const char* kSensorSourceNotOwned = "sensor_source_not_owned";  // no plugin, or the value lacks the plugin id prefix (Error)
+inline constexpr const char* kSensorSourceUnknown = "sensor_source_unknown";    // owned prefix but not declared by the plugin (Warning)
+inline constexpr const char* kSensorPropertyInvalid = "sensor_property_invalid";  // response schema violation, or a degenerate linear range
 }  // namespace issue_code
 
-// Slot names of the drivetrain owner (sdk::slot_owner::kDrivetrain): "<wheel>.drive" (+ "<wheel>.drive2"..
-// up to driveMotorCount), and "<wheel>.steer" for swerve / steered wheels. Matches IDrivetrain::slotSpecs() by convention (the validator has no world to
-// instantiate a drivetrain in).
+// Slot names of the drivetrain owner (sdk::slot_owner::kDrivetrain): "<wheel>.drive" (+
+// "<wheel>.drive2".. up to driveMotorCount), and "<wheel>.steer" / optional "<wheel>.steerEncoder"
+// for swerve / steered wheels. Matches IDrivetrain::slotSpecs() by convention (the validator has no
+// world to instantiate a drivetrain in).
 std::vector<sdk::SlotSpec> drivetrainSlotSpecs(const sdk::DrivetrainSpec& spec);
 // robot-level slots: "imu".
 std::vector<sdk::SlotSpec> robotSlotSpecs();

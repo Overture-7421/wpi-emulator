@@ -100,6 +100,24 @@ sdk::RobotConfig FakeRunBackend::makeDemoConfig() {
     climber.geometry.push_back(box("carriage.plate", {0.05f, 0.f, 0.06f}, {0.06f, 0.3f, 0.08f}, "#34d399"));
     c.mechanisms.push_back(std::move(climber));
 
+    sdk::SensorConfig hopper;
+    hopper.id = "hopper_sensor";
+    hopper.label = "Hopper sensor";
+    hopper.kind = sdk::SensorKind::Distance;
+    hopper.source = "demo.fuel.count";
+    hopper.properties["threshold"] = 6.0;
+    hopper.properties["nearM"] = 0.1;
+    hopper.properties["farM"] = 1.0;
+    c.sensors.push_back(std::move(hopper));
+
+    sdk::SensorConfig feed;
+    feed.id = "feed_sensor";
+    feed.label = "Feed sensor";
+    feed.kind = sdk::SensorKind::BeamBreak;
+    feed.source = "demo.fuel.count";
+    feed.properties["threshold"] = 1.0;
+    c.sensors.push_back(std::move(feed));
+
     sdk::ZoneConfig pickup;
     pickup.id = "pickup";
     pickup.kind = "demo_game.pickup";
@@ -237,6 +255,12 @@ FakeRunBackend::FakeRunBackend(Options options, QObject* parent) : IRunBackend(p
         auto message = hud("demo_game.message", "Game data", HudWidgetKind::Text, "demo.message", HudAnchor::TopRight, 1);
         scene_.hud = {fuel, timer, hub, score, message};
         scene_.zoneKinds = makeZoneKinds();
+        sdk::GameValueInfo fuelCount;
+        fuelCount.id = "demo.fuel.count";
+        fuelCount.label = "Fuel held";
+        fuelCount.description = "Fuel pieces the robot currently holds";
+        fuelCount.unit = sdk::PropertyUnit::Count;
+        scene_.gameValues = {fuelCount};
     }
     ds_.dsAttached = true;
     resetWorld();
@@ -639,6 +663,8 @@ void FakeRunBackend::publish() {
     if (options_.withGameContent) {
         d.zones.push_back({"pickup", armAngle_ > 1.2f});
         d.zones.push_back({"shooter", flywheel_ > 250.f});
+        d.sensors.push_back({"hopper_sensor", static_cast<double>(fuelHeld_), fuelHeld_ >= 6 ? 0.1 : 1.0});
+        d.sensors.push_back({"feed_sensor", static_cast<double>(fuelHeld_), fuelHeld_ >= 1 ? 1.0 : 0.0});
         sdk::EntityGroupSample fuel;
         fuel.group = "fuel";
         fuel.radiusM = kBallR;

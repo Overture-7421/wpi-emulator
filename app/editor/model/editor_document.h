@@ -77,6 +77,10 @@ public:
     bool removeCamera(const QString& id);
     QString duplicateCamera(const QString& id);
     bool reattachCamera(const QString& id, const QString& newParent, const QString& link = QStringLiteral("root"));
+    // ---- sensors
+    QString addSensor(sdk::SensorKind kind);
+    bool removeSensor(const QString& id);
+    QString duplicateSensor(const QString& id);
     // ---- slots
     bool mapSlot(const sdk::SlotAddress& slot, const sdk::DeviceKey& device);
     bool clearSlot(const sdk::SlotAddress& slot);

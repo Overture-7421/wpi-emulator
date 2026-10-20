@@ -105,6 +105,15 @@ TEST_CASE("vendor config snapshot: tolerant of CRLF, junk lines and empty input"
     CHECK(CtreConfigSnapshot::parse("828,s_1").clockwisePositive().value() == true);  // CANcoder SensorDirection
 }
 
+TEST_CASE(
+    "vendor config snapshot: negative float bits may use signed or unsigned decimal integers") {
+    CHECK(CtreConfigSnapshot::parse("987,s_-1105788928").magnetOffsetRot().value() ==
+          doctest::Approx(-0.1474609375));
+    CHECK(CtreConfigSnapshot::parse("987,s_3189178368").magnetOffsetRot().value() ==
+          doctest::Approx(-0.1474609375));
+    CHECK_FALSE(CtreConfigSnapshot::parse("987,s_-4294967296").magnetOffsetRot().has_value());
+}
+
 TEST_CASE("vendor native: reads configs through the exported C ABI") {
     g_configCalls = 0;
     CtreSimNative native(FakeResolver::full());

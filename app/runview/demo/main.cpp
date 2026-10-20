@@ -1,5 +1,6 @@
 // Standalone demo of the run view against FakeRunBackend. Also used for headless screenshots:
-//   wpiemu_runview_demo --scenario running --screenshot out.png [--size 1500x900]
+//   wpiemu_runview_demo --scenario running --screenshot out.png [--size 1500x900] [--state]
+// --state opens the Robot state window (and saves it next to the screenshot as out.png.state.png).
 // Scenarios: idle, starting, running, crash, timeout, mismatch, failed.
 
 #include <QApplication>
@@ -65,6 +66,7 @@ int main(int argc, char* argv[]) {
     window.show();
 
     if (args.contains(QStringLiteral("--joysticks"))) page.driverStationPanel()->showSettings(1);
+    if (args.contains(QStringLiteral("--state"))) page.stateAction()->setChecked(true);
 
     if (scenario != QLatin1String("idle")) backend.startSimulation();
     if (scenario == QLatin1String("running")) {
@@ -88,6 +90,7 @@ int main(int argc, char* argv[]) {
     if (!shot.isEmpty()) {
         QTimer::singleShot(settle, &app, [&] {
             const bool ok = page.grab().save(shot);
+            if (page.stateWindow()->isVisible()) page.stateWindow()->grab().save(shot + QStringLiteral(".state.png"));
             const QImage scene = page.viewport()->grabScene();
             if (!scene.isNull()) scene.save(shot + QStringLiteral(".scene.png"));
             std::cout << "screenshot " << (ok ? "saved" : "FAILED") << " scene " << (scene.isNull() ? "null" : "ok") << " loaded "

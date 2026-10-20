@@ -32,6 +32,9 @@ public:
     // produced one yet; nullopt = nothing to send. The runtime forwards it in DsState::gameSpecificMessage and
     // re-reads it after every tick and Reset. Additive: defaults to "none".
     virtual std::optional<std::string> gameSpecificMessage() const { return std::nullopt; }
+    // Live value of a game value declared by IGameModule::contributeGameValues(); nullopt = not published.
+    // Read by core's sensors every tick after step().
+    virtual std::optional<double> gameValue(std::string_view /*id*/) const { return std::nullopt; }
 };
 
 }  // namespace wpiemu::sdk

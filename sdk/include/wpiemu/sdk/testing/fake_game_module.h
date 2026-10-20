@@ -43,6 +43,7 @@ public:
         int registerMechanismsCalls = 0;
         int createFieldCalls = 0;
         int createGameStateCalls = 0;
+        double level = 0.0;  // published as the game value "<id>.level"
     };
 
     FakeGameModule() : FakeGameModule("game_fake", 2999) {}
@@ -108,6 +109,11 @@ public:
             void publish(SnapshotBuilder& out) const override {
                 out.setHud(pluginId_ + ".steps", steps_);
             }
+            std::optional<double> gameValue(std::string_view id) const override {
+                if (id == pluginId_ + ".level") return counters_->level;
+                if (id == pluginId_ + ".steps") return static_cast<double>(steps_);
+                return std::nullopt;
+            }
 
         private:
             std::string pluginId_;
@@ -144,6 +150,11 @@ public:
         capacity.max = 100;
         kind.properties.properties.push_back(std::move(capacity));
         return {kind};
+    }
+
+    std::vector<GameValueInfo> contributeGameValues() const override {
+        return {{id_ + ".level", "Level", "Test level", PropertyUnit::Count},
+                {id_ + ".steps", "Steps", "Game state steps", PropertyUnit::Count}};
     }
 
     std::vector<EditorPanelDescriptor> contributeEditorPanels() const override {
