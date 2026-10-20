@@ -6,6 +6,7 @@ add_library(wpiemu_app_common STATIC
     icon_provider.cpp
     key_value_store.cpp
     project_inspector.cpp
+    project_path.cpp
     project_prefs.cpp
     project_session.cpp
     recent_projects.cpp

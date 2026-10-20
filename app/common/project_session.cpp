@@ -1,7 +1,6 @@
 #include "common/project_session.h"
 
-#include <QDir>
-#include <QFileInfo>
+#include "common/project_path.h"
 
 namespace wpiemu::app {
 
@@ -25,7 +24,7 @@ sdk::Status ProjectSession::open(const QString& rawPath) {
     }
 
     if (auto flushed = flushPendingChanges(); !flushed) return flushed;
-    path_ = QDir::cleanPath(QFileInfo(root).absoluteFilePath());
+    path_ = normalizedProjectPath(root);
     inspection_ = std::move(inspection);
     prefs_ = prefsStore_.load(path_);
     config_.reset();

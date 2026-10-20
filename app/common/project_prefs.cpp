@@ -1,19 +1,16 @@
 #include "common/project_prefs.h"
 
 #include <QCryptographicHash>
-#include <QDir>
-#include <QFileInfo>
 
 #include <algorithm>
+
+#include "common/project_path.h"
 
 namespace wpiemu::app {
 
 QString ProjectPrefsStore::keyFor(const QString& projectPath, const char* field) {
-    QString p = QDir::cleanPath(QFileInfo(projectPath).absoluteFilePath());
-#ifdef Q_OS_WIN
-    p = p.toLower();
-#endif
-    const QString hash = QString::fromLatin1(QCryptographicHash::hash(p.toUtf8(), QCryptographicHash::Sha1).toHex().left(10));
+    const QString hash =
+        QString::fromLatin1(QCryptographicHash::hash(projectPathKeyText(projectPath).toUtf8(), QCryptographicHash::Sha1).toHex().left(10));
     return QStringLiteral("projectPrefs/%1/%2").arg(hash, QLatin1String(field));
 }
 
