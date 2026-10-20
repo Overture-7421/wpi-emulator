@@ -137,8 +137,13 @@ inline std::vector<SlotSpec> tractionSlotSpecs(const DrivetrainSpec& spec, bool 
             steer.type = SlotType::Motor;
             steer.description = "Motor controller steering module '" + w.name + "'.";
             out.push_back(std::move(steer));
-            out.push_back({steerEncoderSlotName(w.name), w.name + " steer encoder", SlotType::PositionSensor, false,
-                           "Azimuth encoder of module '" + w.name + "'."});
+            SlotSpec encoder;
+            encoder.name = steerEncoderSlotName(w.name);
+            encoder.label = w.name + " steer encoder";
+            encoder.type = SlotType::PositionSensor;
+            encoder.required = false;
+            encoder.description = "Azimuth encoder of module '" + w.name + "'.";
+            out.push_back(std::move(encoder));
         }
     }
     return out;

@@ -2,11 +2,87 @@
 #include <cctype>
 #include <map>
 
+#include "process_base.h"
 #include "wpiemu/core/launcher/process.h"
 
 namespace wpiemu::core::launcher {
 
 namespace fs = std::filesystem;
+
+using sdk::ErrorCode;
+using sdk::makeError;
+using sdk::okStatus;
+using sdk::Status;
+
+bool ProcessBase::running() const {
+    std::lock_guard lock(mutex_);
+    return started_ && !exited_;
+}
+
+std::int64_t ProcessBase::pid() const {
+    std::lock_guard lock(mutex_);
+    return pid_;
+}
+
+std::optional<ExitInfo> ProcessBase::exitInfo() const {
+    std::lock_guard lock(mutex_);
+    return exited_ ? std::optional<ExitInfo>(exit_) : std::nullopt;
+}
+
+bool ProcessBase::waitForExit(std::chrono::milliseconds timeout) {
+    std::unique_lock lock(mutex_);
+    if (!started_) return true;
+    return cv_.wait_for(lock, timeout, [this] { return exited_; });
+}
+
+Status ProcessBase::beginStart(ILogSink& sink) {
+    if (started_) return makeError(ErrorCode::InvalidState, "process already started");
+    if (killedByUs_) return makeError(ErrorCode::Cancelled, "process cancelled before startup");
+    sink_ = &sink;
+    return okStatus();
+}
+
+void ProcessBase::startSupervision(std::int64_t pid) {
+    pid_ = pid;
+    started_ = true;
+    outReader_ = std::thread([this] { readLoop(OutputStream::Stdout); });
+    errReader_ = std::thread([this] { readLoop(OutputStream::Stderr); });
+    monitor_ = std::thread([this] { monitorLoop(); });
+}
+
+void ProcessBase::joinAll() {
+    if (outReader_.joinable()) outReader_.join();
+    if (errReader_.joinable()) errReader_.join();
+    if (monitor_.joinable()) monitor_.join();
+}
+
+void ProcessBase::readLoop(OutputStream stream) {
+    LineSplitter splitter;
+    char buffer[kReadChunkBytes];
+    const auto emit = [&](std::string_view line) { sink_->line(stream, line); };
+    for (;;) {
+        const long n = readSome(stream, buffer, sizeof(buffer));
+        if (n <= 0) break;
+        splitter.feed(std::string_view(buffer, static_cast<std::size_t>(n)), emit);
+    }
+    splitter.flush(emit);
+    ++readersDone_;
+}
+
+void ProcessBase::monitorLoop() {
+    ExitInfo info = waitForChild();
+    // A grandchild (a daemon) may keep the pipes open: give the readers a moment, then make them stop.
+    for (int i = 0; i < kReaderGraceSteps && readersDone_ < kReaderCount; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    cancelReaders_ = true;
+    if (readersDone_ < kReaderCount) cancelBlockedReaders();
+    {
+        std::lock_guard lock(mutex_);
+        info.killedByUs = killedByUs_;
+        exit_ = info;
+        exited_ = true;
+    }
+    cv_.notify_all();
+}
 
 void LineSplitter::feed(std::string_view chunk, const std::function<void(std::string_view)>& onLine) {
     for (const char c : chunk) {
@@ -47,12 +123,15 @@ std::string fold(const std::string& name, bool caseInsensitive) {
     for (char& c : out) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     return out;
 }
+
+// Index of the '=' between name and value; Windows has "=C:=C:\dir" entries whose name starts with '='.
+std::size_t environmentSeparator(const std::string& kv) { return kv.find('=', kv.empty() || kv[0] != '=' ? 0 : 1); }
 }  // namespace
 
 std::vector<std::string> mergeEnvironment(const std::vector<std::string>& base, const ProcessSpec& spec, bool caseInsensitiveNames) {
     std::map<std::string, std::pair<std::string, std::string>> entries;  // folded name -> (name, value)
     for (const std::string& kv : base) {
-        const std::size_t eq = kv.find('=', kv.empty() || kv[0] != '=' ? 0 : 1);  // Windows has "=C:=C:\dir" entries
+        const std::size_t eq = environmentSeparator(kv);
         if (eq == std::string::npos || eq == 0) continue;
         const std::string name = kv.substr(0, eq);
         entries[fold(name, caseInsensitiveNames)] = {name, kv.substr(eq + 1)};
@@ -63,6 +142,16 @@ std::vector<std::string> mergeEnvironment(const std::vector<std::string>& base, 
     out.reserve(entries.size());
     for (const auto& [key, nv] : entries) out.push_back(nv.first + "=" + nv.second);
     return out;
+}
+
+std::optional<std::string> lookupEnvironment(const std::vector<std::string>& env, std::string_view name, bool caseInsensitiveNames) {
+    const std::string wanted = fold(std::string(name), caseInsensitiveNames);
+    for (const std::string& kv : env) {
+        const std::size_t eq = environmentSeparator(kv);
+        if (eq == std::string::npos || eq == 0) continue;
+        if (fold(kv.substr(0, eq), caseInsensitiveNames) == wanted) return kv.substr(eq + 1);
+    }
+    return std::nullopt;
 }
 
 std::string quoteWindowsArgument(std::string_view arg) {

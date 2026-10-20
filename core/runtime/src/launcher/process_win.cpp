@@ -1,17 +1,13 @@
 // Windows supervision: the child is created suspended, put into a kill-on-close job object (so the whole tree dies with
 // it) and resumed; stdout/stderr go through anonymous pipes with exactly three inheritable handles.
-#include <atomic>
-#include <condition_variable>
-#include <mutex>
 #include <set>
-#include <thread>
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
 #include <tlhelp32.h>
 
-#include "wpiemu/core/launcher/process.h"
+#include "process_base.h"
 
 namespace wpiemu::core::launcher {
 
@@ -59,15 +55,6 @@ std::vector<std::string> currentEnvironment() {
     return out;
 }
 
-std::optional<std::string> lookupEnv(const std::vector<std::string>& env, std::string_view name) {
-    for (const std::string& kv : env) {
-        const std::size_t eq = kv.find('=', 1);
-        if (eq == std::string::npos || eq != name.size()) continue;
-        if (_strnicmp(kv.c_str(), name.data(), name.size()) == 0) return kv.substr(eq + 1);
-    }
-    return std::nullopt;
-}
-
 bool endsWithNoCase(const std::string& s, const char* suffix) {
     const std::size_t n = std::char_traits<char>::length(suffix);
     return s.size() >= n && _strnicmp(s.c_str() + s.size() - n, suffix, n) == 0;
@@ -92,7 +79,7 @@ struct Handle {
     bool valid() const { return h != nullptr && h != INVALID_HANDLE_VALUE; }
 };
 
-class WinProcess final : public IRobotProcess {
+class WinProcess final : public ProcessBase {
 public:
     ~WinProcess() override {
         kill();
@@ -101,23 +88,6 @@ public:
 
     Status start(const ProcessSpec& spec, ILogSink& sink) override;
 
-    bool running() const override {
-        std::lock_guard lock(mutex_);
-        return started_ && !exited_;
-    }
-    std::int64_t pid() const override {
-        std::lock_guard lock(mutex_);
-        return pid_;
-    }
-    std::optional<ExitInfo> exitInfo() const override {
-        std::lock_guard lock(mutex_);
-        return exited_ ? std::optional<ExitInfo>(exit_) : std::nullopt;
-    }
-    bool waitForExit(std::chrono::milliseconds timeout) override {
-        std::unique_lock lock(mutex_);
-        if (!started_) return true;
-        return cv_.wait_for(lock, timeout, [this] { return exited_; });
-    }
     void requestStop() override {
         std::lock_guard lock(mutex_);
         if (started_ && !exited_) GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, static_cast<DWORD>(pid_));  // only reaches children sharing our console
@@ -129,69 +99,40 @@ public:
         else if (pid_ != 0 && started_ && !exited_) (void)killProcessTree(pid_);
     }
 
-private:
-    void readLoop(HANDLE pipe, OutputStream stream) {
-        LineSplitter splitter;
-        char buffer[8192];
-        const auto emit = [&](std::string_view line) { sink_->line(stream, line); };
-        for (;;) {
-            DWORD got = 0;
-            if (!ReadFile(pipe, buffer, sizeof(buffer), &got, nullptr) || got == 0) break;
-            splitter.feed(std::string_view(buffer, got), emit);
-        }
-        splitter.flush(emit);
-        ++readersDone_;
+protected:
+    long readSome(OutputStream stream, char* buffer, std::size_t capacity) override {
+        DWORD got = 0;
+        const HANDLE pipe = stream == OutputStream::Stdout ? outRead_.h : errRead_.h;
+        if (!ReadFile(pipe, buffer, static_cast<DWORD>(capacity), &got, nullptr)) return -1;
+        return static_cast<long>(got);
     }
 
-    void monitorLoop() {
+    ExitInfo waitForChild() override {
         WaitForSingleObject(process_.h, INFINITE);
         DWORD code = 0;
         GetExitCodeProcess(process_.h, &code);
-        // grandchildren may keep the pipes open (daemons): give the readers a moment, then cancel their blocking reads
-        for (int i = 0; i < 150 && readersDone_ < 2; ++i) Sleep(10);
-        if (readersDone_ < 2) {
-            CancelIoEx(outRead_.h, nullptr);
-            CancelIoEx(errRead_.h, nullptr);
-        }
-        {
-            std::lock_guard lock(mutex_);
-            exit_.exitCode = static_cast<int>(code);
-            exit_.killedByUs = killedByUs_;
-            exit_.signalled = false;
-            exited_ = true;
-        }
-        cv_.notify_all();
+        ExitInfo info;
+        info.exitCode = static_cast<int>(code);
+        return info;
     }
 
-    void joinAll() {
-        if (outReader_.joinable()) outReader_.join();
-        if (errReader_.joinable()) errReader_.join();
-        if (monitor_.joinable()) monitor_.join();
+    void cancelBlockedReaders() override {
+        CancelIoEx(outRead_.h, nullptr);
+        CancelIoEx(errRead_.h, nullptr);
     }
 
-    mutable std::mutex mutex_;
-    std::condition_variable cv_;
-    bool started_ = false;
-    bool exited_ = false;
-    ExitInfo exit_;
-    std::atomic<bool> killedByUs_{false};
-    std::atomic<int> readersDone_{0};
-    std::int64_t pid_ = 0;
-    ILogSink* sink_ = nullptr;
+private:
     Handle process_, job_, outRead_, errRead_;
-    std::thread outReader_, errReader_, monitor_;
 };
 
 Status WinProcess::start(const ProcessSpec& spec, ILogSink& sink) {
     std::lock_guard lock(mutex_);
-    if (started_) return makeError(ErrorCode::InvalidState, "process already started");
-    if (killedByUs_) return makeError(ErrorCode::Cancelled, "process cancelled before startup");
-    sink_ = &sink;
+    if (Status s = beginStart(sink); !s) return s;
 
     // ---- environment and program resolution ----
     const std::vector<std::string> env = mergeEnvironment(currentEnvironment(), spec, true);
-    const std::string pathVar = lookupEnv(env, "PATH").value_or("");
-    const std::string pathExt = lookupEnv(env, "PATHEXT").value_or(".COM;.EXE;.BAT;.CMD");
+    const std::string pathVar = lookupEnvironment(env, "PATH", true).value_or("");
+    const std::string pathExt = lookupEnvironment(env, "PATHEXT", true).value_or(".COM;.EXE;.BAT;.CMD");
     std::optional<fs::path> exe;
     if (!spec.workingDir.empty() && (spec.program.find('\\') != std::string::npos || spec.program.find('/') != std::string::npos) &&
         fs::path(spec.program).is_relative())
@@ -210,7 +151,7 @@ Status WinProcess::start(const ProcessSpec& spec, ILogSink& sink) {
         for (const std::string& a : spec.args)
             if (!isSafeForBatchFile(a)) return makeError(ErrorCode::InvalidArgument, "argument not allowed for a batch file: " + a);
         if (!isSafeForBatchFile(exeName)) return makeError(ErrorCode::InvalidArgument, "unsafe batch file path: " + exeName);
-        const std::string comspec = lookupEnv(env, "ComSpec").value_or("C:\\Windows\\System32\\cmd.exe");
+        const std::string comspec = lookupEnvironment(env, "ComSpec", true).value_or("C:\\Windows\\System32\\cmd.exe");
         application = toWide(comspec);
         std::string inner = quoteBatchArgument(exeName);
         for (const std::string& a : spec.args) inner += " " + quoteBatchArgument(a);
@@ -278,7 +219,6 @@ Status WinProcess::start(const ProcessSpec& spec, ILogSink& sink) {
 
     Handle thread(pi.hThread);
     process_.reset(pi.hProcess);
-    pid_ = pi.dwProcessId;
     if (AssignProcessToJobObject(job.h, process_.h)) {
         job_.reset(job.release());
     }  // else: tree kill falls back to the PID walk in killProcessTree()
@@ -289,10 +229,7 @@ Status WinProcess::start(const ProcessSpec& spec, ILogSink& sink) {
     nul.reset();
     outRead_.reset(outRd.release());
     errRead_.reset(errRd.release());
-    started_ = true;
-    outReader_ = std::thread([this] { readLoop(outRead_.h, OutputStream::Stdout); });
-    errReader_ = std::thread([this] { readLoop(errRead_.h, OutputStream::Stderr); });
-    monitor_ = std::thread([this] { monitorLoop(); });
+    startSupervision(pi.dwProcessId);
     return okStatus();
 }
 

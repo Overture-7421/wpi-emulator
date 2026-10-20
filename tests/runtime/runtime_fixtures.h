@@ -147,7 +147,7 @@ struct Registries {
 
     explicit Registries(bool withFakePlugin = true) {
         (void)mechanisms.registerTemplate(rollerInfo(), [](const MechanismBuildContext& c) { return std::make_unique<TestRoller>(c); });
-        (void)drivetrains.registerDrivetrain("test", {"Test", ""}, [](const DrivetrainBuildArgs& a) { return std::make_unique<TestDrivetrain>(a); });
+        (void)drivetrains.registerDrivetrain("test", {"Test", "", nullptr}, [](const DrivetrainBuildArgs& a) { return std::make_unique<TestDrivetrain>(a); });
         (void)tires.registerModel("test", [] { return std::make_unique<TestTire>(); });
         if (withFakePlugin) {
             auto module = std::make_unique<testing::FakeGameModule>("fake_game", 2999);

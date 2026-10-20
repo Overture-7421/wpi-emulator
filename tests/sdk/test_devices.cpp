@@ -246,7 +246,12 @@ TEST_CASE("one steering rule and one traction slot generator serve every drivetr
 
     CHECK(namesOf(drivetrainSlotSpecs(nullptr, spec)) == namesOf(tractionSlotSpecs(spec, true)));   // unknown kind: convention
     DrivetrainInfo custom;
-    custom.slotSpecs = [](const DrivetrainSpec&) { return std::vector<SlotSpec>{{"kiwi.motor", "Kiwi", SlotType::Motor, true, ""}}; };
+    custom.slotSpecs = [](const DrivetrainSpec&) {
+        SlotSpec kiwi;
+        kiwi.name = "kiwi.motor";
+        kiwi.label = "Kiwi";
+        return std::vector<SlotSpec>{kiwi};
+    };
     CHECK(namesOf(drivetrainSlotSpecs(&custom, spec)) == std::vector<std::string>{"kiwi.motor"});
     const DrivetrainInfo none;
     CHECK(namesOf(drivetrainSlotSpecs(&none, spec)) == namesOf(tractionSlotSpecs(spec, true)));   // no callback: convention

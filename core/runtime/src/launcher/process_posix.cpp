@@ -1,12 +1,8 @@
 // POSIX supervision: fork/exec into a NEW PROCESS GROUP (so the whole tree can be signalled), stdout/stderr through pipes,
 // exec failures reported back through a close-on-exec pipe. Everything the child needs is prepared before fork() so the
 // child only calls async-signal-safe functions.
-#include <atomic>
 #include <cerrno>
-#include <condition_variable>
 #include <cstring>
-#include <mutex>
-#include <thread>
 
 #include <fcntl.h>
 #include <poll.h>
@@ -15,7 +11,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "wpiemu/core/launcher/process.h"
+#include "process_base.h"
 
 extern char** environ;
 
@@ -30,12 +26,6 @@ std::vector<std::string> currentEnvironment() {
     std::vector<std::string> out;
     for (char** e = environ; e != nullptr && *e != nullptr; ++e) out.emplace_back(*e);
     return out;
-}
-
-std::optional<std::string> lookupEnv(const std::vector<std::string>& env, std::string_view name) {
-    for (const std::string& kv : env)
-        if (kv.size() > name.size() && kv.compare(0, name.size(), name) == 0 && kv[name.size()] == '=') return kv.substr(name.size() + 1);
-    return std::nullopt;
 }
 
 void setCloexec(int fd) { fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC); }
@@ -58,7 +48,7 @@ struct Fd {
     }
 };
 
-class PosixProcess final : public IRobotProcess {
+class PosixProcess final : public ProcessBase {
 public:
     ~PosixProcess() override {
         kill();
@@ -67,23 +57,6 @@ public:
 
     Status start(const ProcessSpec& spec, ILogSink& sink) override;
 
-    bool running() const override {
-        std::lock_guard lock(mutex_);
-        return started_ && !exited_;
-    }
-    std::int64_t pid() const override {
-        std::lock_guard lock(mutex_);
-        return pid_;
-    }
-    std::optional<ExitInfo> exitInfo() const override {
-        std::lock_guard lock(mutex_);
-        return exited_ ? std::optional<ExitInfo>(exit_) : std::nullopt;
-    }
-    bool waitForExit(std::chrono::milliseconds timeout) override {
-        std::unique_lock lock(mutex_);
-        if (!started_) return true;
-        return cv_.wait_for(lock, timeout, [this] { return exited_; });
-    }
     void requestStop() override {
         std::lock_guard lock(mutex_);
         if (pid_ > 0 && started_ && !exited_) ::killpg(static_cast<pid_t>(pid_), SIGTERM);
@@ -94,30 +67,25 @@ public:
         if (pid_ > 0) ::killpg(static_cast<pid_t>(pid_), SIGKILL);  // group leader == child pid; also reaps descendants that stayed in the group
     }
 
-private:
-    void readLoop(int fd, OutputStream stream) {
-        LineSplitter splitter;
-        char buffer[8192];
-        const auto emit = [&](std::string_view line) { sink_->line(stream, line); };
+protected:
+    long readSome(OutputStream stream, char* buffer, std::size_t capacity) override {
+        const int fd = stream == OutputStream::Stdout ? outFd_.fd : errFd_.fd;
         for (;;) {
             pollfd p{fd, POLLIN, 0};
             const int r = ::poll(&p, 1, 100);
             if (r < 0 && errno == EINTR) continue;
-            if (r < 0) break;
+            if (r < 0) return -1;
             if (r == 0) {
-                if (cancelReaders_) break;  // process gone and a grandchild keeps the pipe open
+                if (readersCancelled()) return 0;  // process gone and a grandchild keeps the pipe open
                 continue;
             }
-            const ssize_t n = ::read(fd, buffer, sizeof(buffer));
+            const ssize_t n = ::read(fd, buffer, capacity);
             if (n < 0 && errno == EINTR) continue;
-            if (n <= 0) break;
-            splitter.feed(std::string_view(buffer, static_cast<std::size_t>(n)), emit);
+            return static_cast<long>(n);
         }
-        splitter.flush(emit);
-        ++readersDone_;
     }
 
-    void monitorLoop() {
+    ExitInfo waitForChild() override {
         int status = 0;
         pid_t r;
         do {
@@ -130,47 +98,19 @@ private:
             info.exitCode = 128 + WTERMSIG(status);
             info.signalled = true;
         }
-        for (int i = 0; i < 150 && readersDone_ < 2; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        cancelReaders_ = true;
-        {
-            std::lock_guard lock(mutex_);
-            info.killedByUs = killedByUs_;
-            exit_ = info;
-            exited_ = true;
-        }
-        cv_.notify_all();
+        return info;
     }
 
-    void joinAll() {
-        if (outReader_.joinable()) outReader_.join();
-        if (errReader_.joinable()) errReader_.join();
-        if (monitor_.joinable()) monitor_.join();
-        outFd_.reset();
-        errFd_.reset();
-    }
-
-    mutable std::mutex mutex_;
-    std::condition_variable cv_;
-    bool started_ = false;
-    bool exited_ = false;
-    ExitInfo exit_;
-    std::atomic<bool> killedByUs_{false};
-    std::atomic<bool> cancelReaders_{false};
-    std::atomic<int> readersDone_{0};
-    std::int64_t pid_ = 0;
-    ILogSink* sink_ = nullptr;
+private:
     Fd outFd_, errFd_;
-    std::thread outReader_, errReader_, monitor_;
 };
 
 Status PosixProcess::start(const ProcessSpec& spec, ILogSink& sink) {
     std::lock_guard lock(mutex_);
-    if (started_) return makeError(ErrorCode::InvalidState, "process already started");
-    if (killedByUs_) return makeError(ErrorCode::Cancelled, "process cancelled before startup");
-    sink_ = &sink;
+    if (Status s = beginStart(sink); !s) return s;
 
     const std::vector<std::string> env = mergeEnvironment(currentEnvironment(), spec, false);
-    const std::string pathVar = lookupEnv(env, "PATH").value_or("/usr/local/bin:/usr/bin:/bin");
+    const std::string pathVar = lookupEnvironment(env, "PATH", false).value_or("/usr/local/bin:/usr/bin:/bin");
     std::optional<fs::path> exe;
     if (!spec.workingDir.empty() && spec.program.find('/') != std::string::npos && fs::path(spec.program).is_relative())
         exe = findOnPath((spec.workingDir / fs::path(spec.program)).string(), pathVar, false);
@@ -239,13 +179,9 @@ Status PosixProcess::start(const ProcessSpec& spec, ILogSink& sink) {
         return makeError(ErrorCode::IoError, "cannot start " + exePath + ": " + std::strerror(childErrno));
     }
 
-    pid_ = child;
     outFd_.reset(outR.release());
     errFd_.reset(errR.release());
-    started_ = true;
-    outReader_ = std::thread([this] { readLoop(outFd_.fd, OutputStream::Stdout); });
-    errReader_ = std::thread([this] { readLoop(errFd_.fd, OutputStream::Stderr); });
-    monitor_ = std::thread([this] { monitorLoop(); });
+    startSupervision(child);
     return okStatus();
 }
 
