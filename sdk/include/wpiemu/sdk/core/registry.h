@@ -53,6 +53,20 @@ public:
         return p;
     }
 
+    // Instantiates every entry in registration order; stops at the first failure. Only for factories without arguments.
+    Result<std::vector<std::unique_ptr<Product>>> createAll() const
+        requires(sizeof...(Args) == 0)
+    {
+        std::vector<std::unique_ptr<Product>> out;
+        out.reserve(entries_.size());
+        for (const Entry& e : entries_) {
+            Result<std::unique_ptr<Product>> p = create(e.key);
+            if (!p) return p.error();
+            out.push_back(std::move(p).value());
+        }
+        return out;
+    }
+
     std::vector<std::string> keys() const {
         std::vector<std::string> out;
         out.reserve(entries_.size());

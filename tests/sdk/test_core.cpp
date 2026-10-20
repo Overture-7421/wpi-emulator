@@ -10,6 +10,7 @@
 
 #include "wpiemu/sdk/config/plugin_config.h"
 #include "wpiemu/sdk/config/property_schema.h"
+#include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/config/unit_display.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/byte_order.h"
@@ -321,6 +322,44 @@ TEST_CASE("Registry: ordered, rejects duplicates, creates by key") {
     CHECK(reg.create("one").value()->n() == 1);
     CHECK(reg.create("two").error().code == ErrorCode::NotFound);
     CHECK(reg.keys() == std::vector<std::string>{"one"});
+
+    struct Two final : Thing { int n() const override { return 2; } };
+    CHECK(reg.add("two", {}, [] { return std::make_unique<Two>(); }).ok());
+    const auto all = reg.createAll();
+    REQUIRE(all.ok());
+    REQUIRE(all.value().size() == 2);
+    CHECK(all.value()[0]->n() == 1);   // registration order
+    CHECK(all.value()[1]->n() == 2);
+    CHECK(reg.add("broken", {}, [] { return std::unique_ptr<Thing>(); }).ok());
+    CHECK(reg.createAll().error().code == ErrorCode::Internal);   // a null product stops the batch
+}
+
+TEST_CASE("wheel kinds round trip through their persisted keys") {
+    for (const WheelKind kind : {WheelKind::Standard, WheelKind::Omni, WheelKind::Mecanum, WheelKind::Swerve})
+        CHECK(parseWheelKind(wheelKindName(kind)) == std::optional<WheelKind>(kind));
+    CHECK(std::string_view(wheelKindName(WheelKind::Swerve)) == "swerve");
+    CHECK_FALSE(parseWheelKind("treads").has_value());
+    CHECK_FALSE(parseWheelKind("").has_value());
+}
+
+TEST_CASE("RobotConfig finds entries by id and hands out mutable ones from a mutable config") {
+    RobotConfig c;
+    c.mechanisms.push_back({});
+    c.mechanisms.back().id = "arm";
+    c.zones.push_back({});
+    c.zones.back().id = "pickup";
+    c.cameras.push_back({});
+    c.cameras.back().id = "front";
+    c.findMechanism("arm")->label = "Arm";
+    c.findZone("pickup")->kind = "box";
+    c.findCamera("front")->name = "cam";
+    const RobotConfig& view = c;
+    CHECK(view.findMechanism("arm")->label == "Arm");
+    CHECK(view.findZone("pickup")->kind == "box");
+    CHECK(view.findCamera("front")->name == "cam");
+    CHECK(view.findMechanism("nope") == nullptr);
+    CHECK(c.findZone("nope") == nullptr);
+    CHECK(view.findSensor("nope") == nullptr);
 }
 
 TEST_CASE("Rng is deterministic for a seed") {

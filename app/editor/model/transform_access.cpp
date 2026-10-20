@@ -161,14 +161,14 @@ bool writeTransform(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sel
             return false;
         }
         case SelKind::Zone: {
-            sdk::ZoneConfig* z = ops::findZone(c, sel.owner);
+            sdk::ZoneConfig* z = c.findZone(sel.owner);
             if (z == nullptr) return false;
             z->local = Pose3{t.local.position, t.local.rotation.normalized()};
             if (old.canScale) z->sizeM = size;
             return true;
         }
         case SelKind::Camera: {
-            sdk::CameraConfig* cam = ops::findCamera(c, sel.owner);
+            sdk::CameraConfig* cam = c.findCamera(sel.owner);
             if (cam == nullptr) return false;
             cam->local = Pose3{t.local.position, t.local.rotation.normalized()};
             return true;

@@ -2,7 +2,9 @@
 
 // Static descriptions of the chassis and drivetrain (also the persisted config shape).
 
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "wpiemu/sdk/core/geometry.h"
@@ -27,6 +29,23 @@ struct ChassisSpec {
 };
 
 enum class WheelKind { Standard, Omni, Mecanum, Swerve };
+
+// The persisted key of a wheel kind ("standard", "omni", "mecanum", "swerve") and its inverse; nullopt for an unknown key.
+inline const char* wheelKindName(WheelKind kind) {
+    switch (kind) {
+        case WheelKind::Standard: return "standard";
+        case WheelKind::Omni: return "omni";
+        case WheelKind::Mecanum: return "mecanum";
+        case WheelKind::Swerve: return "swerve";
+    }
+    return "standard";
+}
+
+inline std::optional<WheelKind> parseWheelKind(std::string_view key) {
+    for (const WheelKind kind : {WheelKind::Standard, WheelKind::Omni, WheelKind::Mecanum, WheelKind::Swerve})
+        if (key == wheelKindName(kind)) return kind;
+    return std::nullopt;
+}
 
 struct WheelSpec {
     std::string name;                // unique within the drivetrain: "fl", "fr", "left0", ...

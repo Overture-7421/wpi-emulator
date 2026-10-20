@@ -81,7 +81,6 @@ std::string duplicateZone(sdk::RobotConfig& c, std::string_view id);
 // Re-attaches a zone to another parent / link; with `keepWorldPose` its local pose is recomputed so it does not move.
 bool reattachZone(sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view id, const std::string& newParent,
                   const std::string& newLink, bool keepWorldPose = true);
-sdk::ZoneConfig* findZone(sdk::RobotConfig& c, std::string_view id);
 // Activation edits. Conditions keep their mechanism id even when the mechanism is later deleted (the validator warns).
 // addZoneCondition appends a condition on the first mechanism (empty id when there is none) and returns its index, -1 when
 // the zone is unknown.
@@ -111,7 +110,6 @@ std::string duplicateCamera(sdk::RobotConfig& c, std::string_view id);
 // Re-attaches a camera to another parent / link; with `keepWorldPose` its local pose is recomputed so it does not move.
 bool reattachCamera(sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view id, const std::string& newParent,
                     const std::string& newLink, bool keepWorldPose = true);
-sdk::CameraConfig* findCamera(sdk::RobotConfig& c, std::string_view id);
 // The robot-code name no other camera of the kind uses, derived from `base` ("" is the Limelight default name).
 std::string uniqueCameraName(const sdk::RobotConfig& c, sdk::CameraKind kind, std::string base, std::string_view exceptId = {});
 

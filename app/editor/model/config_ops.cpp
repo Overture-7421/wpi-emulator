@@ -24,12 +24,6 @@ bool reservedOwner(std::string_view id) {
     return id == sdk::kChassisParent || id == sdk::slot_owner::kDrivetrain || id == sdk::slot_owner::kRobot;
 }
 
-MechanismConfig* findMech(RobotConfig& c, std::string_view id) {
-    for (auto& m : c.mechanisms)
-        if (m.id == id) return &m;
-    return nullptr;
-}
-
 bool onChassis(const std::string& parent) { return parent.empty() || parent == sdk::kChassisParent; }
 
 const char* const kVolumeColors[] = {"#4488ff", "#ff9944", "#44cc88", "#cc55bb"};
@@ -216,7 +210,7 @@ bool canReparent(const RobotConfig& c, std::string_view id, std::string_view new
 bool reparentMechanism(RobotConfig& c, const EditorCatalog& catalog, std::string_view id, const std::string& newParent,
                        const std::string& newLink, bool keepWorldPose) {
     if (!canReparent(c, id, newParent)) return false;
-    MechanismConfig* m = findMech(c, id);
+    MechanismConfig* m = c.findMechanism(id);
     const std::string link = newLink.empty() ? std::string(sdk::kRootLink) : newLink;
     if (onChassis(newParent)) {
         if (link != sdk::kRootLink) return false;
@@ -238,12 +232,12 @@ bool reparentMechanism(RobotConfig& c, const EditorCatalog& catalog, std::string
 }
 
 bool removeMechanism(RobotConfig& c, const EditorCatalog& catalog, std::string_view id) {
-    MechanismConfig* m = findMech(c, id);
+    MechanismConfig* m = c.findMechanism(id);
     if (m == nullptr) return false;
     const sdk::MechanismAttachment att = m->attachment;
     for (const auto& child : childrenOf(c, id)) {
         if (!reparentMechanism(c, catalog, child, att.parentMechanismId, att.parentLink)) {
-            if (MechanismConfig* cm = findMech(c, child)) cm->attachTo(sdk::kChassisParent);
+            if (MechanismConfig* cm = c.findMechanism(child)) cm->attachTo(sdk::kChassisParent);
         }
     }
     // Zones and cameras hang on the removed mechanism's parent now, in the same place.
@@ -251,13 +245,13 @@ bool removeMechanism(RobotConfig& c, const EditorCatalog& catalog, std::string_v
         if (z.attachment.parentMechanismId == id && !z.attachment.onChassis()) {
             const std::string zoneId = z.id;
             if (!reattachZone(c, catalog, zoneId, att.parentMechanismId, att.parentLink))
-                if (sdk::ZoneConfig* zc = findZone(c, zoneId)) zc->attachment = sdk::MechanismAttachment{};
+                if (sdk::ZoneConfig* zc = c.findZone(zoneId)) zc->attachment = sdk::MechanismAttachment{};
         }
     for (auto& cam : c.cameras)
         if (cam.attachment.parentMechanismId == id && !cam.attachment.onChassis()) {
             const std::string cameraId = cam.id;
             if (!reattachCamera(c, catalog, cameraId, att.parentMechanismId, att.parentLink))
-                if (sdk::CameraConfig* cc = findCamera(c, cameraId)) cc->attachment = sdk::MechanismAttachment{};
+                if (sdk::CameraConfig* cc = c.findCamera(cameraId)) cc->attachment = sdk::MechanismAttachment{};
         }
     const std::string removed(id);
     c.mechanisms.erase(std::remove_if(c.mechanisms.begin(), c.mechanisms.end(),
@@ -428,15 +422,9 @@ std::string duplicateZone(RobotConfig& c, std::string_view id) {
     return newId;
 }
 
-sdk::ZoneConfig* findZone(RobotConfig& c, std::string_view id) {
-    for (auto& z : c.zones)
-        if (z.id == id) return &z;
-    return nullptr;
-}
-
 bool reattachZone(RobotConfig& c, const EditorCatalog& catalog, std::string_view id, const std::string& newParent,
                   const std::string& newLink, bool keepWorldPose) {
-    sdk::ZoneConfig* z = findZone(c, id);
+    sdk::ZoneConfig* z = c.findZone(id);
     if (z == nullptr) return false;
     const std::string link = newLink.empty() ? std::string(sdk::kRootLink) : newLink;
     if (onChassis(newParent)) {
@@ -454,7 +442,7 @@ bool reattachZone(RobotConfig& c, const EditorCatalog& catalog, std::string_view
 }
 
 int addZoneCondition(RobotConfig& c, std::string_view zoneId) {
-    sdk::ZoneConfig* z = findZone(c, zoneId);
+    sdk::ZoneConfig* z = c.findZone(zoneId);
     if (z == nullptr) return -1;
     sdk::ZoneCondition cond;
     if (!c.mechanisms.empty()) cond.mechanismId = c.mechanisms.front().id;
@@ -463,14 +451,14 @@ int addZoneCondition(RobotConfig& c, std::string_view zoneId) {
 }
 
 bool removeZoneCondition(RobotConfig& c, std::string_view zoneId, int index) {
-    sdk::ZoneConfig* z = findZone(c, zoneId);
+    sdk::ZoneConfig* z = c.findZone(zoneId);
     if (z == nullptr || index < 0 || index >= static_cast<int>(z->activation.conditions.size())) return false;
     z->activation.conditions.erase(z->activation.conditions.begin() + index);
     return true;
 }
 
 bool setZoneCondition(RobotConfig& c, std::string_view zoneId, int index, const sdk::ZoneCondition& condition) {
-    sdk::ZoneConfig* z = findZone(c, zoneId);
+    sdk::ZoneConfig* z = c.findZone(zoneId);
     if (z == nullptr || index < 0 || index >= static_cast<int>(z->activation.conditions.size())) return false;
     sdk::ZoneCondition& slot = z->activation.conditions[static_cast<std::size_t>(index)];
     if (slot == condition) return false;
@@ -479,7 +467,7 @@ bool setZoneCondition(RobotConfig& c, std::string_view zoneId, int index, const 
 }
 
 bool setZoneActivationMode(RobotConfig& c, std::string_view zoneId, sdk::ActivationMode mode) {
-    sdk::ZoneConfig* z = findZone(c, zoneId);
+    sdk::ZoneConfig* z = c.findZone(zoneId);
     if (z == nullptr || z->activation.mode == mode) return false;
     z->activation.mode = mode;
     return true;
@@ -597,15 +585,9 @@ std::string duplicateCamera(RobotConfig& c, std::string_view id) {
     return newId;
 }
 
-sdk::CameraConfig* findCamera(RobotConfig& c, std::string_view id) {
-    for (auto& cam : c.cameras)
-        if (cam.id == id) return &cam;
-    return nullptr;
-}
-
 bool reattachCamera(RobotConfig& c, const EditorCatalog& catalog, std::string_view id, const std::string& newParent,
                     const std::string& newLink, bool keepWorldPose) {
-    sdk::CameraConfig* cam = findCamera(c, id);
+    sdk::CameraConfig* cam = c.findCamera(id);
     if (cam == nullptr) return false;
     const std::string link = newLink.empty() ? std::string(sdk::kRootLink) : newLink;
     if (onChassis(newParent)) {
@@ -766,7 +748,7 @@ sdk::StartPosition* findStartPosition(RobotConfig& c, std::string_view id) {
 std::vector<sdk::SlotMapping>* mappingList(RobotConfig& c, std::string_view owner) {
     if (owner == sdk::slot_owner::kRobot) return &c.robotMappings;
     if (owner == sdk::slot_owner::kDrivetrain) return &c.drivetrain.mappings;
-    if (MechanismConfig* m = findMech(c, owner)) return &m->mappings;
+    if (MechanismConfig* m = c.findMechanism(owner)) return &m->mappings;
     if (sdk::SensorConfig* s = findSensor(c, owner)) return &s->mappings;
     return nullptr;
 }
@@ -961,7 +943,7 @@ bool setMotorCount(RobotConfig& c, const EditorCatalog& catalog, std::string_vie
     if (owner == sdk::slot_owner::kDrivetrain) {
         findWheel(c, countKey.substr(0, countKey.size() - kWheelCountSuffix.size()))->driveMotorCount = count;
     } else {
-        MechanismConfig* m = findMech(c, owner);
+        MechanismConfig* m = c.findMechanism(owner);
         if (!m->properties.isObject()) m->properties = sdk::Value::makeObject();
         m->properties[countKey] = count;
     }
@@ -1128,7 +1110,7 @@ bool renameWheel(RobotConfig& c, const std::string& oldName, const std::string& 
 // ---- primitives -------------------------------------------------------------------------------
 std::vector<sdk::PrimitiveSpec>* primitivesOf(RobotConfig& c, std::string_view owner) {
     if (owner == kChassisOwner) return &c.chassis.primitives;
-    if (MechanismConfig* m = findMech(c, owner)) return &m->geometry;
+    if (MechanismConfig* m = c.findMechanism(owner)) return &m->geometry;
     return nullptr;
 }
 const std::vector<sdk::PrimitiveSpec>* primitivesOf(const RobotConfig& c, std::string_view owner) {
@@ -1203,7 +1185,7 @@ sdk::Value* volumeStore(RobotConfig& c, const EditorCatalog& catalog, std::strin
         if (!catalog.hasPlugin()) return nullptr;
         return &c.pluginSection(catalog.pluginId).data;
     }
-    if (MechanismConfig* m = findMech(c, owner)) return &m->properties;
+    if (MechanismConfig* m = c.findMechanism(owner)) return &m->properties;
     return nullptr;
 }
 

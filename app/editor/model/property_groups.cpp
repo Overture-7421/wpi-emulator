@@ -614,7 +614,7 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
         return true;
     }
     if (sel.kind == SelKind::Zone) {
-        sdk::ZoneConfig* z = ops::findZone(c, sel.owner);
+        sdk::ZoneConfig* z = c.findZone(sel.owner);
         if (z == nullptr) return false;
         if (groupId == "zone.general") return key == "label" ? (z->label = value.asString(z->label), true) : false;
         if (groupId == "zone.placement") {
@@ -632,7 +632,7 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
         return false;
     }
     if (sel.kind == SelKind::Camera) {
-        sdk::CameraConfig* cam = ops::findCamera(c, sel.owner);
+        sdk::CameraConfig* cam = c.findCamera(sel.owner);
         return cam != nullptr && applyCamera(c, catalog, *cam, groupId, key, value);
     }
     if (sel.kind == SelKind::Sensor) {

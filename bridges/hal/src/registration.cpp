@@ -29,7 +29,7 @@ public:
     void add(std::string name, const char* description, const char* vendor, Make make) {
         if (!status_.ok()) return;
         std::shared_ptr<IHalApi> api = api_;
-        status_ = registry_.registerBridge(
+        status_ = registry_.add(
             std::move(name), sdk::BridgeInfo{"hal", description, vendor},
             [api, make]() -> std::unique_ptr<sdk::IDeviceBridge> { return make(api); });
     }

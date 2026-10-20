@@ -134,7 +134,7 @@ TEST_CASE("camera ops: ids stay distinct from mechanism, zone and camera ids in 
 
 TEST_CASE("camera ops: duplicate copies the setup with a fresh id and name, remove deletes") {
     auto c = robot();
-    ops::findCamera(c, "photon")->hFovDeg = 90.0;
+    c.findCamera("photon")->hFovDeg = 90.0;
     const std::string copy = ops::duplicateCamera(c, "photon");
     CHECK(copy == "photon_2");
     const auto* z = c.findCamera(copy);
@@ -480,9 +480,9 @@ TEST_CASE("camera validation: the editor backend reports duplicate names and bad
     FakeEditorBackend backend;
     const auto cat = catalog();
     auto c = robot();
-    ops::findCamera(c, "photon")->kind = sdk::CameraKind::Limelight;   // the other Limelight is named "" too
-    ops::findCamera(c, "photon")->name = "";
-    ops::findCamera(c, "limelight")->vFovDeg = 0.0;
+    c.findCamera("photon")->kind = sdk::CameraKind::Limelight;   // the other Limelight is named "" too
+    c.findCamera("photon")->name = "";
+    c.findCamera("limelight")->vFovDeg = 0.0;
     std::vector<std::string> codes;
     for (const auto& issue : backend.validate(c)) {
         codes.push_back(issue.code);
@@ -496,7 +496,7 @@ TEST_CASE("camera validation: the editor backend reports duplicate names and bad
     CHECK(std::count(codes.begin(), codes.end(), "camera_optics_invalid") == 1);
 
     auto d = robot();
-    ops::findCamera(d, "photon")->id = "intake";   // collides with a mechanism
+    d.findCamera("photon")->id = "intake";   // collides with a mechanism
     bool clash = false;
     for (const auto& issue : backend.validate(d)) clash = clash || issue.code == "camera_id_duplicate";
     CHECK(clash);

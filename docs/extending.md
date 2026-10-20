@@ -85,7 +85,7 @@ Plugins are built in with the host toolchain, not independently loaded shared li
    directions and conversions. Preserve [identity/alias and neutral-feedback rules](reference/bridges.md):
    a CAN-vendor rule with no observed bus uses `busIsStatic = false`, not an invented bus label.
 4. Expose a module registration function that registers factories with
-   `DeviceBridgeRegistry::registerBridge`. Add its subdirectory and link it into
+   `DeviceBridgeRegistry::add`. Add its subdirectory and link it into
    `wpiemu_bridges_builtin` in [bridge build wiring](../bridges/CMakeLists.txt); call the function
    from [the bridge aggregator](../bridges/builtin_bridges.cpp). The extension does not change.
 5. For a new bridge module, update `ALLOWED`, `MODULE_OWNERS` and `TARGET_OWNERS` in
@@ -124,7 +124,7 @@ Plugins are built in with the host toolchain, not independently loaded shared li
 2. Implement [IVisionBridge](../sdk/include/wpiemu/sdk/vision/vision_bridge.h) with a unique name.
    Start the backend, configure only cameras of your kind idempotently, poll robot-written settings,
    publish the producer's due-only frames, reset stale published state and stop idempotently.
-3. Register factories through `VisionBridgeRegistry::registerBridge`. Wire them through
+3. Register factories through `VisionBridgeRegistry::add`. Wire them through
    `registerBuiltinVisionBridges` in the aggregator, not extension internals.
    The existing real-ntcore entry point is `registerNtVisionBridges`; retain its real/fake-backend
    selection when adding to the built-in vision module.

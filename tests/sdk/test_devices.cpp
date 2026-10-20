@@ -186,8 +186,8 @@ TEST_CASE("ChannelFamilyBridge is safe to poll and collect after stop") {
 
 TEST_CASE("DeviceBridgeRegistry creates every registered bridge in order") {
     DeviceBridgeRegistry registry;
-    CHECK(registry.registerBridge("hal.dio", {"hal", "DIO", "wpilib"}, [] { return std::make_unique<FakeDioBridge>(); }).ok());
-    CHECK(registry.registerBridge("hal.dio", {}, [] { return std::make_unique<FakeDioBridge>(); }).error().code ==
+    CHECK(registry.add("hal.dio", {"hal", "DIO", "wpilib"}, [] { return std::make_unique<FakeDioBridge>(); }).ok());
+    CHECK(registry.add("hal.dio", {}, [] { return std::make_unique<FakeDioBridge>(); }).error().code ==
           ErrorCode::AlreadyExists);
     auto all = registry.createAll();
     REQUIRE(all.ok());
@@ -204,8 +204,6 @@ TEST_CASE("slot compatibility follows device capabilities") {
     CHECK(isCompatible(motorSlot, talon));
     CHECK_FALSE(isCompatible(motorSlot, dio));
     CHECK(isCompatible(SlotSpec{"lim", "Limit", SlotType::LimitSwitch, true, ""}, dio));
-    CHECK(defaultDirection(SlotType::Motor) == SlotDirection::ActuatorInput);
-    CHECK(defaultDirection(SlotType::BeamBreak) == SlotDirection::SensorOutput);
 }
 
 TEST_CASE("FakeDeviceHub behaves like the real hub: unbound slots are neutral") {

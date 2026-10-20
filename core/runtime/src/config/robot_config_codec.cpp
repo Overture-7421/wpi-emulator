@@ -151,24 +151,6 @@ private:
     Ctx& ctx_;
 };
 
-bool wheelKindFrom(const std::string& s, WheelKind& out) {
-    if (s == "standard") out = WheelKind::Standard;
-    else if (s == "omni") out = WheelKind::Omni;
-    else if (s == "mecanum") out = WheelKind::Mecanum;
-    else if (s == "swerve") out = WheelKind::Swerve;
-    else return false;
-    return true;
-}
-const char* wheelKindName(WheelKind k) {
-    switch (k) {
-        case WheelKind::Standard: return "standard";
-        case WheelKind::Omni: return "omni";
-        case WheelKind::Mecanum: return "mecanum";
-        case WheelKind::Swerve: return "swerve";
-    }
-    return "standard";
-}
-
 void readMaterial(const Value* v, const std::string& path, Ctx& ctx, Material& m) {
     if (v == nullptr) return;
     ObjReader r(*v, path, ctx);
@@ -266,8 +248,10 @@ void readWheel(const Value& v, const std::string& path, Ctx& ctx, WheelSpec& w) 
     ObjReader r(v, path, ctx);
     r.str("name", w.name);
     std::string kind;
-    if (r.str("kind", kind) && !wheelKindFrom(kind, w.kind))
-        ctx.err(join(path, "kind"), "unknown wheel kind '" + kind + "' (standard|omni|mecanum|swerve)");
+    if (r.str("kind", kind)) {
+        if (const std::optional<WheelKind> parsed = parseWheelKind(kind)) w.kind = *parsed;
+        else ctx.err(join(path, "kind"), "unknown wheel kind '" + kind + "' (standard|omni|mecanum|swerve)");
+    }
     r.vec3("positionM", w.positionM);
     r.flt("radiusM", w.radiusM);
     r.flt("widthM", w.widthM);

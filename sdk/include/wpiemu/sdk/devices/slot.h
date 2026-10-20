@@ -24,22 +24,6 @@ enum class SlotType {
     DistanceSensor,  // model writes distance (m)
 };
 
-enum class SlotDirection {
-    ActuatorInput,   // data flows robot -> model (we read device Output signals)
-    SensorOutput,    // data flows model -> robot (we write device Input signals)
-};
-
-inline SlotDirection defaultDirection(SlotType t) {
-    switch (t) {
-        case SlotType::Motor:
-        case SlotType::Solenoid:
-        case SlotType::DigitalOutput:
-            return SlotDirection::ActuatorInput;
-        default:
-            return SlotDirection::SensorOutput;
-    }
-}
-
 // Capabilities a device must have to be mappable onto a slot of this type.
 inline CapabilitySet requiredCapabilities(SlotType t) {
     switch (t) {

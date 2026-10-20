@@ -27,24 +27,6 @@ sdk::Vec3 vec(const Value& v, const sdk::Vec3& fallback) {
     return out;
 }
 
-const char* wheelKindKey(sdk::WheelKind k) {
-    switch (k) {
-        case sdk::WheelKind::Standard: return "standard";
-        case sdk::WheelKind::Omni: return "omni";
-        case sdk::WheelKind::Mecanum: return "mecanum";
-        case sdk::WheelKind::Swerve: return "swerve";
-    }
-    return "standard";
-}
-
-sdk::WheelKind wheelKindFrom(const std::string& s, sdk::WheelKind fallback) {
-    if (s == "standard") return sdk::WheelKind::Standard;
-    if (s == "omni") return sdk::WheelKind::Omni;
-    if (s == "mecanum") return sdk::WheelKind::Mecanum;
-    if (s == "swerve") return sdk::WheelKind::Swerve;
-    return fallback;
-}
-
 void motorOptions(PropertySpec& spec, const sdk::MotorSpec& current) {
     for (const sdk::MotorPreset& m : sdk::motors::presets()) spec.options.push_back({m.spec.name, m.label});
     if (sdk::motors::findPresetByName(current.name) == nullptr)
@@ -225,8 +207,11 @@ PropertySchema wheelSchema(const sdk::WheelSpec& wheel) {
     const sdk::WheelSpec d;
     s.properties.push_back(makeSpec("name", "Name", PropertyType::String, PropertyUnit::None, "wheel", "Wheel",
                                     "Unique within the drivetrain; used in the slot names (<name>.drive)."));
-    auto kind = makeSpec("kind", "Type", PropertyType::Enum, PropertyUnit::None, "standard", "Wheel");
-    kind.options = {{"standard", "Standard"}, {"omni", "Omni"}, {"mecanum", "Mecanum"}, {"swerve", "Swerve module"}};
+    auto kind = makeSpec("kind", "Type", PropertyType::Enum, PropertyUnit::None, sdk::wheelKindName(sdk::WheelKind::Standard), "Wheel");
+    kind.options = {{sdk::wheelKindName(sdk::WheelKind::Standard), "Standard"},
+                    {sdk::wheelKindName(sdk::WheelKind::Omni), "Omni"},
+                    {sdk::wheelKindName(sdk::WheelKind::Mecanum), "Mecanum"},
+                    {sdk::wheelKindName(sdk::WheelKind::Swerve), "Swerve module"}};
     s.properties.push_back(kind);
     s.properties.push_back(makeSpec("position", "Hub position (z = height above floor)", PropertyType::Vec3, PropertyUnit::Meters,
                                     sdk::toValue(sdk::Vec3{}), "Wheel"));
@@ -276,7 +261,7 @@ PropertySchema wheelSchema(const sdk::WheelSpec& wheel) {
 Value wheelValues(const sdk::WheelSpec& w) {
     Value o = Value::makeObject();
     o["name"] = w.name;
-    o["kind"] = wheelKindKey(w.kind);
+    o["kind"] = sdk::wheelKindName(w.kind);
     o["position"] = sdk::toValue(w.positionM);
     o["radius"] = w.radiusM;
     o["width"] = w.widthM;
@@ -300,7 +285,7 @@ void applyWheel(sdk::RobotConfig& c, const std::string& wheelName, const std::st
     sdk::WheelSpec* w = ops::findWheel(c, wheelName);
     if (w == nullptr) return;
     if (key == "kind") {
-        w->kind = wheelKindFrom(v.asString(), w->kind);
+        w->kind = sdk::parseWheelKind(v.asString()).value_or(w->kind);
         w->steered = w->kind == sdk::WheelKind::Swerve;
         if (!w->steered) {
             auto& maps = c.drivetrain.mappings;
