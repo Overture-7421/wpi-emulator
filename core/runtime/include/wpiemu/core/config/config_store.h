@@ -1,21 +1,18 @@
 #pragma once
 
 #include <filesystem>
-#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
 
 #include "wpiemu/core/config/robot_config_codec.h"
 #include "wpiemu/sdk/config/config_io.h"
+#include "wpiemu/sdk/core/environment.h"
 #include "wpiemu/sdk/core/logger.h"
 
 namespace wpiemu::core::config {
 
 // ---- platform locations (no Qt) --------------------------------------------------------------------
-
-using EnvLookup = std::function<std::optional<std::string>(std::string_view name)>;
-EnvLookup systemEnv();  // std::getenv
 
 enum class Platform { Windows, MacOS, Linux };
 Platform currentPlatform();
@@ -26,7 +23,7 @@ Platform currentPlatform();
 //   Linux    $XDG_DATA_HOME/wpi-emulator      (fallback $HOME/.local/share)
 // `env` and `platform` are parameters so every branch is testable on one machine. NotFound when the
 // environment offers no home directory.
-sdk::Result<std::filesystem::path> appDataRoot(Platform platform, const EnvLookup& env);
+sdk::Result<std::filesystem::path> appDataRoot(Platform platform, const sdk::EnvLookup& env);
 
 // Key of a project directory: "<sanitised folder name>-<16 hex>", the FNV-1a 64 hash of its canonical path
 // (lower-cased on Windows). Stable across runs; distinct projects with the same folder name never collide.

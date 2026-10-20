@@ -1,25 +1,18 @@
 #include <doctest/doctest.h>
 
-#include <map>
-
 #include "runtime_fixtures.h"
 #include "wpiemu/core/config/config_store.h"
 #include "wpiemu/core/config/json_codec.h"
+#include "wpiemu/sdk/testing/environment.h"
 
 using namespace wpiemu::sdk;
 using namespace wpiemu::core::config;
+using wpiemu::sdk::testing::envOf;
 using wpiemu::test_runtime::sampleConfig;
 using wpiemu::test_runtime::ScratchDir;
 namespace fs = std::filesystem;
 
 namespace {
-EnvLookup fakeEnv(std::map<std::string, std::string> vars) {
-    return [vars = std::move(vars)](std::string_view name) -> std::optional<std::string> {
-        const auto it = vars.find(std::string(name));
-        if (it == vars.end()) return std::nullopt;
-        return it->second;
-    };
-}
 
 struct Codecs {
     JsonValueCodec json;
@@ -29,18 +22,18 @@ struct Codecs {
 }  // namespace
 
 TEST_CASE("app data root per OS") {
-    CHECK(appDataRoot(Platform::Windows, fakeEnv({{"APPDATA", "C:\\Users\\a\\AppData\\Roaming"}})).value() ==
+    CHECK(appDataRoot(Platform::Windows, envOf({{"APPDATA", "C:\\Users\\a\\AppData\\Roaming"}})).value() ==
           fs::path("C:\\Users\\a\\AppData\\Roaming") / "WpiEmulator");
-    CHECK(appDataRoot(Platform::Windows, fakeEnv({{"USERPROFILE", "C:\\Users\\a"}})).value() ==
+    CHECK(appDataRoot(Platform::Windows, envOf({{"USERPROFILE", "C:\\Users\\a"}})).value() ==
           fs::path("C:\\Users\\a") / "AppData" / "Roaming" / "WpiEmulator");
-    CHECK(appDataRoot(Platform::MacOS, fakeEnv({{"HOME", "/Users/a"}})).value() ==
+    CHECK(appDataRoot(Platform::MacOS, envOf({{"HOME", "/Users/a"}})).value() ==
           fs::path("/Users/a") / "Library" / "Application Support" / "WpiEmulator");
-    CHECK(appDataRoot(Platform::Linux, fakeEnv({{"XDG_DATA_HOME", "/x/share"}, {"HOME", "/home/a"}})).value() ==
+    CHECK(appDataRoot(Platform::Linux, envOf({{"XDG_DATA_HOME", "/x/share"}, {"HOME", "/home/a"}})).value() ==
           fs::path("/x/share") / "wpi-emulator");
-    CHECK(appDataRoot(Platform::Linux, fakeEnv({{"HOME", "/home/a"}})).value() == fs::path("/home/a") / ".local" / "share" / "wpi-emulator");
-    CHECK(appDataRoot(Platform::Linux, fakeEnv({})).error().code == ErrorCode::NotFound);
+    CHECK(appDataRoot(Platform::Linux, envOf({{"HOME", "/home/a"}})).value() == fs::path("/home/a") / ".local" / "share" / "wpi-emulator");
+    CHECK(appDataRoot(Platform::Linux, envOf({})).error().code == ErrorCode::NotFound);
     CHECK(appDataRoot(Platform::Windows, nullptr).error().code == ErrorCode::NotFound);
-    CHECK(appDataRoot(currentPlatform(), systemEnv()).ok());  // the real environment of the test machine has a home
+    CHECK(appDataRoot(currentPlatform(), &readEnvironment).ok());  // the real environment of the test machine has a home
 }
 
 TEST_CASE("project key: stable, path-hashed, readable") {

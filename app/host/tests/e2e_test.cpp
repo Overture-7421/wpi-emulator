@@ -196,7 +196,7 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
     base.scratchDir = scratch.root / "scratch";
     base.launchMode = direct ? core::launcher::LaunchMode::ExternalDirect : core::launcher::LaunchMode::GradleInitScript;
     base.handshakeTimeout = 8min;
-    base.extraEnv["WPIEMU_LOG_LEVEL"] = "info";
+    base.extraEnv[sdk::env_names::kLogLevel] = "info";
 
     std::vector<std::string> console;
     app::host::SessionStatus st;

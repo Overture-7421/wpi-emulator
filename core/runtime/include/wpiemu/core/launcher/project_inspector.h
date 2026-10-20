@@ -73,7 +73,7 @@ struct WpilibInstall {
 std::vector<std::filesystem::path> wpilibRootCandidates(config::Platform platform, const std::filesystem::path& publicDir,
                                                         const std::filesystem::path& homeDir);
 // The same with the folders taken from the environment: PUBLIC, and USERPROFILE on Windows or HOME elsewhere.
-std::vector<std::filesystem::path> wpilibRootCandidates(config::Platform platform, const config::EnvLookup& env);
+std::vector<std::filesystem::path> wpilibRootCandidates(config::Platform platform, const sdk::EnvLookup& env);
 // The install at `home`, a season folder such as <root>/2026; nullopt when it is not a directory.
 std::optional<WpilibInstall> wpilibInstallAt(const std::filesystem::path& home, int year);
 // First root containing "<year>/" wins. `roots` empty => wpilibRootCandidates().

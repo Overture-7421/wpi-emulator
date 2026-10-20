@@ -7,6 +7,8 @@
 #include <cstdlib>
 
 #include "wpiemu/core/launcher/extension_locator.h"
+#include "wpiemu/sdk/core/environment.h"
+#include "wpiemu/sdk/core/strings.h"
 
 #ifndef WPIEMU_BUILD_EXTENSION_PATH
 #define WPIEMU_BUILD_EXTENSION_PATH ""
@@ -16,12 +18,9 @@ namespace wpiemu::app {
 
 namespace {
 
-std::string envString(const char* name) { return qEnvironmentVariable(name).toStdString(); }
+std::string envString(const char* name) { return sdk::readEnvironment(name).value_or(std::string()); }
 
-bool envFlag(const char* name) {
-    const std::string v = envString(name);
-    return v == "1" || v == "true" || v == "on" || v == "yes";
-}
+bool envFlag(const char* name) { return sdk::parseBool(envString(name)).value_or(false); }
 
 QString fromStd(const std::string& s) { return QString::fromStdString(s); }
 
@@ -54,12 +53,7 @@ std::filesystem::path RealRuntimeHost::extensionPath() const {
                                                                  : options_.appDir;
     const std::filesystem::path buildTree(WPIEMU_BUILD_EXTENSION_PATH);
     // The packaged-layout contract of docs/releasing.md (WPIEMU_EXTENSION, WPIEMU_EXTENSION_DIR, install layouts, build tree).
-    const auto getenv = [](std::string_view name) -> std::optional<std::string> {
-        const QByteArray key(name.data(), static_cast<qsizetype>(name.size()));
-        if (!qEnvironmentVariableIsSet(key.constData())) return std::nullopt;
-        return qEnvironmentVariable(key.constData()).toStdString();
-    };
-    return core::launcher::locateHalsimExtension(appDir, getenv, buildTree);
+    return core::launcher::locateHalsimExtension(appDir, &sdk::readEnvironment, buildTree);
 }
 
 std::shared_ptr<const sdk::ISimSnapshot> RealRuntimeHost::latestSnapshot() const {

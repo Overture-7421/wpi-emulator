@@ -1,20 +1,10 @@
 #include <doctest/doctest.h>
 
-#include <map>
-
 #include "wpiemu/halsim_ext/config.h"
+#include "wpiemu/sdk/testing/environment.h"
 
 using namespace wpiemu::halsim;
-
-namespace {
-EnvLookup envOf(std::map<std::string, std::string> vars) {
-    return [vars = std::move(vars)](std::string_view name) -> std::optional<std::string> {
-        const auto it = vars.find(std::string(name));
-        if (it == vars.end()) return std::nullopt;
-        return it->second;
-    };
-}
-}  // namespace
+using wpiemu::sdk::testing::envOf;
 
 TEST_CASE("config defaults: no endpoint means the extension is inert") {
     std::vector<std::string> warnings;
@@ -62,10 +52,4 @@ TEST_CASE("config parses switches and keeps defaults for malformed values") {
     CHECK(c.handshakeTimeout.count() == 5000);
     CHECK(c.connectTimeout.count() == 10000);
     CHECK(warnings.size() == 2);
-}
-
-TEST_CASE("log level names parse case-insensitively") {
-    CHECK(parseLogLevel("WARN") == wpiemu::sdk::LogLevel::Warn);
-    CHECK(parseLogLevel("Warning") == wpiemu::sdk::LogLevel::Warn);
-    CHECK_FALSE(parseLogLevel("loud").has_value());
 }

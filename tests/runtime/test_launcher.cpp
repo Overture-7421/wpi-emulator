@@ -242,7 +242,7 @@ TEST_CASE("launcher: gradle mode runs one process, phases Running -> Exited, out
     }
     REQUIRE(world.started.size() == 1);
     CHECK(world.started[0].args.back() == "simulateJava");
-    CHECK(world.started[0].env.at(env_var::kEndpoint) == request.ipcEndpoint);
+    CHECK(world.started[0].env.at(env_names::kIpcEndpoint) == request.ipcEndpoint);
 
     // a finished launcher can launch again
     world.scripts.push_back({5, false, false, nullptr, {}});

@@ -16,7 +16,7 @@ namespace {
 
 std::filesystem::path defaultAppDataRoot() {
     using namespace core::config;
-    if (auto root = appDataRoot(currentPlatform(), systemEnv()); root) return root.value();
+    if (auto root = appDataRoot(currentPlatform(), &sdk::readEnvironment); root) return root.value();
     return std::filesystem::path(QDir::homePath().toStdU16String()) / ".wpiemu";
 }
 

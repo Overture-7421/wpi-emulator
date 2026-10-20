@@ -172,7 +172,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     o.handshakeTimeout = 10min;
     o.mode = app::host::Mode::Run;
     o.timeScale = 1.0;
-    o.extraEnv["WPIEMU_LOG_LEVEL"] = "info";
+    o.extraEnv[sdk::env_names::kLogLevel] = "info";
     sdk::proto::DsState& ds = o.driverStation;
     ds.enabled = true;
     ds.mode = sdk::proto::RobotMode::Autonomous;

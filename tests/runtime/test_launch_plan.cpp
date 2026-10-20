@@ -34,17 +34,17 @@ TEST_CASE("launch env: contract variables and overrides") {
     CHECK(halExtensionsValue(r, true) == r.extensionLibrary.string());
     const auto env = emulatorEnvironment(r, false);
     CHECK(env.at(env_var::kExtension) == r.extensionLibrary.string());
-    CHECK(env.at(env_var::kEndpoint) == r.ipcEndpoint);
-    CHECK(env.at(env_var::kEndpointAlias) == r.ipcEndpoint);
+    CHECK(env.at(env_names::kIpcEndpoint) == r.ipcEndpoint);
+    CHECK(env.at(env_names::kIpcEndpointAlias) == r.ipcEndpoint);
     CHECK(env.at("JAVA_HOME") == fs::path("/opt/jdk").string());
     CHECK(env.at("CUSTOM") == "1");
-    CHECK(env.at(env_var::kClock) == "override");  // extraEnv wins
-    CHECK(env.at(env_var::kProgramName) == "robot");
+    CHECK(env.at(env_names::kClock) == "override");  // extraEnv wins
+    CHECK(env.at(env_names::kProgramName) == "robot");
     r.extraEnv.clear();
     r.realtimeClock = true;
     r.javaHome.clear();
     const auto plain = emulatorEnvironment(r, true);
-    CHECK(plain.at(env_var::kClock) == "realtime");
+    CHECK(plain.at(env_names::kClock) == "realtime");
     CHECK(plain.count("JAVA_HOME") == 0);
 }
 
@@ -178,7 +178,7 @@ TEST_CASE("external launch plan: describe task names and descriptor paths") {
     CHECK(plan.value().args.back() == "simulateExternalNativeDebug");
     CHECK(plan.value().args.front() == "--no-daemon");
     CHECK(plan.value().env.at("JAVA_HOME") == "/jdk");
-    CHECK(plan.value().env.count(env_var::kEndpoint) == 0);  // the build step needs no emulator variables
+    CHECK(plan.value().env.count(env_names::kIpcEndpoint) == 0);  // the build step needs no emulator variables
     r.projectDir = dir.path() / "none";
     CHECK(planExternalDescribe(r, false).error().code == ErrorCode::NotFound);
 }
@@ -209,7 +209,7 @@ TEST_CASE("external launch plan: Java descriptor -> JVM command line") {
         CHECK(s.env.at("HALSIM_EXTENSIONS") == r.extensionLibrary.string());  // ours replaces the stock Sim GUI
         CHECK(s.env.at("KEEP") == "me");
         CHECK(s.env.count("NUM") == 0);  // non-string values are ignored
-        CHECK(s.env.at(env_var::kEndpoint) == r.ipcEndpoint);
+        CHECK(s.env.at(env_names::kIpcEndpoint) == r.ipcEndpoint);
         CHECK(s.env.at("PATH").rfind("C:\\jni\\release", 0) == 0);  // library dir first
     }
     {  // JAVA_HOME from the host, macOS flag, DYLD path, host value appended

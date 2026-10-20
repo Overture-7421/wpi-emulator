@@ -76,34 +76,9 @@ Result<ConnectionEndpoint> ConnectionEndpoint::parse(std::string address) {
 }
 
 Result<ConnectionEndpoint> ConnectionEndpoint::fromEnvironment(const char* variable) {
-    std::optional<std::string> value = readEnvironment(variable);
+    std::optional<std::string> value = sdk::readEnvironment(variable);
     if (!value) return makeError(ErrorCode::NotFound, std::string("environment variable ") + variable + " is not set");
     return parse(std::move(*value));
-}
-
-std::optional<std::string> readEnvironment(const char* name) {
-#if defined(_WIN32)
-    char* buffer = nullptr;
-    std::size_t length = 0;
-    if (_dupenv_s(&buffer, &length, name) != 0 || buffer == nullptr) return std::nullopt;
-    std::string value(buffer);
-    std::free(buffer);
-#else
-    const char* raw = std::getenv(name);
-    if (raw == nullptr) return std::nullopt;
-    std::string value(raw);
-#endif
-    if (value.empty()) return std::nullopt;
-    return value;
-}
-
-std::chrono::milliseconds readEnvironmentMillis(const char* name, std::chrono::milliseconds fallback) {
-    const std::optional<std::string> value = readEnvironment(name);
-    if (!value) return fallback;
-    char* end = nullptr;
-    const long long ms = std::strtoll(value->c_str(), &end, 10);
-    if (end == value->c_str() || *end != '\0' || ms < 0 || ms > 24LL * 3600 * 1000) return fallback;
-    return std::chrono::milliseconds{ms};
 }
 
 }  // namespace wpiemu::ipc

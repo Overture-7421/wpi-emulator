@@ -76,36 +76,23 @@ TEST_CASE("endpoint: environment variable round trip") {
     const ConnectionEndpoint ep = ConnectionEndpoint::generate();
     const EnvironmentEntry entry = ep.environmentEntry();
     CHECK(entry.name == "WPIEMU_IPC_ENDPOINT");
-    CHECK(entry.name == kEndpointEnvVar);
     CHECK(entry.value == ep.address());
 
-    unsetEnv(kEndpointEnvVar);
+    unsetEnv(env_names::kIpcEndpoint);
     auto missing = ConnectionEndpoint::fromEnvironment();
     REQUIRE_FALSE(missing.ok());
     CHECK(missing.error().code == ErrorCode::NotFound);
 
-    setEnv(kEndpointEnvVar, entry.value.c_str());
+    setEnv(env_names::kIpcEndpoint, entry.value.c_str());
     auto got = ConnectionEndpoint::fromEnvironment();
     REQUIRE(got.ok());
     CHECK(got.value().address() == ep.address());
 
-    setEnv(kEndpointEnvVar, "garbage");
+    setEnv(env_names::kIpcEndpoint, "garbage");
     auto bad = ConnectionEndpoint::fromEnvironment();
     REQUIRE_FALSE(bad.ok());
     CHECK(bad.error().code == ErrorCode::InvalidArgument);
-    unsetEnv(kEndpointEnvVar);
-}
-
-TEST_CASE("endpoint: millisecond environment values") {
-    unsetEnv(kConnectTimeoutEnvVar);
-    CHECK(readEnvironmentMillis(kConnectTimeoutEnvVar, 1234ms) == 1234ms);
-    setEnv(kConnectTimeoutEnvVar, "250");
-    CHECK(readEnvironmentMillis(kConnectTimeoutEnvVar, 1234ms) == 250ms);
-    setEnv(kConnectTimeoutEnvVar, "12x");
-    CHECK(readEnvironmentMillis(kConnectTimeoutEnvVar, 1234ms) == 1234ms);
-    setEnv(kConnectTimeoutEnvVar, "-5");
-    CHECK(readEnvironmentMillis(kConnectTimeoutEnvVar, 1234ms) == 1234ms);
-    unsetEnv(kConnectTimeoutEnvVar);
+    unsetEnv(env_names::kIpcEndpoint);
 }
 
 // ---- servers / clients (in-process AND the real native transport) ----------------------------------------------

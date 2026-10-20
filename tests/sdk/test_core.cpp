@@ -13,7 +13,9 @@
 #include "wpiemu/sdk/config/unit_display.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/byte_order.h"
+#include "wpiemu/sdk/core/environment.h"
 #include "wpiemu/sdk/core/ids.h"
+#include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/core/math.h"
 #include "wpiemu/sdk/core/registry.h"
 #include "wpiemu/sdk/core/result.h"
@@ -22,6 +24,7 @@
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/core/value.h"
 #include "wpiemu/sdk/dynamics/motor_model.h"
+#include "wpiemu/sdk/testing/environment.h"
 #include "wpiemu/sdk/testing/fake_game_module.h"
 
 using namespace wpiemu::sdk;
@@ -224,6 +227,48 @@ TEST_CASE("asciiLower lowers A-Z only") {
     CHECK(asciiLower("Blue LEFT 123-_") == "blue left 123-_");
     CHECK(asciiLower("\xC3\x84") == "\xC3\x84");   // non-ASCII bytes stay as they are, whatever the locale
     CHECK(asciiLower("").empty());
+}
+
+TEST_CASE("asciiTrim strips whitespace and NUL padding from both ends only") {
+    CHECK(asciiTrim("  a b\t\r\n") == "a b");
+    CHECK(asciiTrim(std::string_view("12\0\0", 4)) == "12");
+    CHECK(asciiTrim(" \t\n").empty());
+    CHECK(asciiTrim("").empty());
+    CHECK(asciiTrim("\xC2\xA0x") == "\xC2\xA0x");   // a non-ASCII space is not whitespace here
+}
+
+TEST_CASE("parseBool and parseInteger accept only complete unambiguous text") {
+    CHECK(parseBool(" Yes ") == std::optional<bool>(true));
+    CHECK(parseBool("ON") == std::optional<bool>(true));
+    CHECK(parseBool("0") == std::optional<bool>(false));
+    CHECK(parseBool("False") == std::optional<bool>(false));
+    CHECK_FALSE(parseBool("maybe").has_value());
+    CHECK_FALSE(parseBool("").has_value());
+
+    CHECK(parseInteger<int>("-42") == std::optional<int>(-42));
+    CHECK(parseInteger<std::uint32_t>("4294967295") == std::optional<std::uint32_t>(4294967295u));
+    CHECK_FALSE(parseInteger<std::uint32_t>("4294967296").has_value());   // overflow
+    CHECK_FALSE(parseInteger<std::uint32_t>("-5").has_value());
+    CHECK_FALSE(parseInteger<int>("12x").has_value());
+    CHECK_FALSE(parseInteger<int>(" 12").has_value());
+    CHECK_FALSE(parseInteger<int>("").has_value());
+}
+
+TEST_CASE("log levels print as console names and parse case-insensitively with warning accepted") {
+    for (const LogLevel level : {LogLevel::Trace, LogLevel::Debug, LogLevel::Info, LogLevel::Warn, LogLevel::Error})
+        CHECK(parseLogLevel(logLevelName(level)) == std::optional<LogLevel>(level));
+    CHECK(logLevelName(LogLevel::Warn) == "WARN");
+    CHECK(parseLogLevel(" Warning ") == std::optional<LogLevel>(LogLevel::Warn));
+    CHECK_FALSE(parseLogLevel("loud").has_value());
+}
+
+TEST_CASE("the process environment reads unset and empty variables as absent and a fixed one is injectable") {
+    CHECK_FALSE(readEnvironment("WPIEMU_SURELY_UNSET_VARIABLE").has_value());
+    CHECK(readEnvironment("PATH").has_value());   // set on every machine that can run the tests
+
+    const EnvLookup fixed = testing::envOf({{"A", "1"}});
+    CHECK(fixed("A") == std::optional<std::string>("1"));
+    CHECK_FALSE(fixed("B").has_value());
 }
 
 TEST_CASE("Value: types, objects keep insertion order, deep equality") {

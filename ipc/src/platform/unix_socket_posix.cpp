@@ -356,7 +356,7 @@ std::string nativeAddressFor(const std::string& token) {
     // Short, private base directory: sun_path is only 104 bytes on macOS.
     std::string base = "/tmp";
     for (const char* var : {"XDG_RUNTIME_DIR", "TMPDIR"}) {
-        const std::optional<std::string> value = readEnvironment(var);
+        const std::optional<std::string> value = sdk::readEnvironment(var);
         if (value && value->front() == '/') {
             std::string candidate = *value;
             while (candidate.size() > 1 && candidate.back() == '/') candidate.pop_back();

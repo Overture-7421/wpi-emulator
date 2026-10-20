@@ -1,9 +1,5 @@
 #include "wpiemu/halsim_ext/config.h"
 
-#include <algorithm>
-#include <cctype>
-#include <charconv>
-#include <cstdlib>
 #include <string>
 
 #include "wpiemu/sdk/core/strings.h"
@@ -12,67 +8,16 @@ namespace wpiemu::halsim {
 
 namespace {
 
-std::string_view trim(std::string_view s) {
-    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.remove_prefix(1);
-    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.remove_suffix(1);
-    return s;
-}
+using sdk::asciiLower;
+using sdk::asciiTrim;
+using sdk::parseBool;
+namespace names = sdk::env_names;
 
-std::optional<std::uint32_t> parseUnsigned(std::string_view text) {
-    text = trim(text);
-    std::uint32_t v = 0;
-    const auto [ptr, ec] = std::from_chars(text.data(), text.data() + text.size(), v);
-    if (ec != std::errc{} || ptr != text.data() + text.size()) return std::nullopt;
-    return v;
-}
-
-std::optional<bool> parseBool(std::string_view text) {
-    const std::string t = sdk::asciiLower(trim(text));
-    if (t == "1" || t == "true" || t == "yes" || t == "on") return true;
-    if (t == "0" || t == "false" || t == "no" || t == "off") return false;
-    return std::nullopt;
-}
+std::optional<std::uint32_t> parseUnsigned(std::string_view text) { return sdk::parseInteger<std::uint32_t>(asciiTrim(text)); }
 
 }  // namespace
 
-std::optional<std::string> processEnvironment(std::string_view name) {
-    const std::string key(name);
-#if defined(_MSC_VER)
-    char* buffer = nullptr;
-    std::size_t size = 0;
-    if (_dupenv_s(&buffer, &size, key.c_str()) != 0 || buffer == nullptr) return std::nullopt;
-    std::string value(buffer);
-    std::free(buffer);
-    return value;
-#else
-    const char* value = std::getenv(key.c_str());  // NOLINT(concurrency-mt-unsafe): read at init only
-    if (value == nullptr) return std::nullopt;
-    return std::string(value);
-#endif
-}
-
-std::optional<sdk::LogLevel> parseLogLevel(std::string_view text) {
-    const std::string t = sdk::asciiLower(trim(text));
-    if (t == "trace") return sdk::LogLevel::Trace;
-    if (t == "debug") return sdk::LogLevel::Debug;
-    if (t == "info") return sdk::LogLevel::Info;
-    if (t == "warn" || t == "warning") return sdk::LogLevel::Warn;
-    if (t == "error") return sdk::LogLevel::Error;
-    return std::nullopt;
-}
-
-std::string_view toString(sdk::LogLevel level) {
-    switch (level) {
-        case sdk::LogLevel::Trace: return "TRACE";
-        case sdk::LogLevel::Debug: return "DEBUG";
-        case sdk::LogLevel::Info: return "INFO";
-        case sdk::LogLevel::Warn: return "WARN";
-        case sdk::LogLevel::Error: return "ERROR";
-    }
-    return "?";
-}
-
-ExtensionConfig parseExtensionConfig(const EnvLookup& env, std::vector<std::string>* warnings) {
+ExtensionConfig parseExtensionConfig(const sdk::EnvLookup& env, std::vector<std::string>* warnings) {
     ExtensionConfig cfg;
     auto warn = [&](std::string_view name, const std::string& value, std::string_view why) {
         if (warnings != nullptr)
@@ -80,8 +25,8 @@ ExtensionConfig parseExtensionConfig(const EnvLookup& env, std::vector<std::stri
     };
     auto get = [&](std::string_view name, std::string_view alias = {}) -> std::optional<std::string> {
         std::optional<std::string> v = env(name);
-        if ((!v || trim(*v).empty()) && !alias.empty()) v = env(alias);
-        if (v && trim(*v).empty()) return std::nullopt;
+        if ((!v || asciiTrim(*v).empty()) && !alias.empty()) v = env(alias);
+        if (v && asciiTrim(*v).empty()) return std::nullopt;
         return v;
     };
     auto getMs = [&](std::string_view name, std::string_view alias, std::chrono::milliseconds& target,
@@ -96,44 +41,44 @@ ExtensionConfig parseExtensionConfig(const EnvLookup& env, std::vector<std::stri
         target = std::chrono::milliseconds(*parsed);
     };
 
-    if (const auto v = get(kEnvEndpoint, kEnvEndpointAlias)) cfg.endpoint = std::string(trim(*v));
+    if (const auto v = get(names::kIpcEndpoint, names::kIpcEndpointAlias)) cfg.endpoint = std::string(asciiTrim(*v));
     if (const auto v = get(kEnvDisable)) {
         if (const auto b = parseBool(*v)) cfg.disabled = *b;
         else warn(kEnvDisable, *v, "expected 0/1");
     }
-    if (const auto v = get(kEnvClock)) {
-        const std::string t = sdk::asciiLower(trim(*v));
+    if (const auto v = get(names::kClock)) {
+        const std::string t = asciiLower(asciiTrim(*v));
         if (t == "master" || t == "lockstep") cfg.clock = ClockPreference::FollowEmulator;
         else if (t == "realtime" || t == "free") cfg.clock = ClockPreference::Realtime;
-        else warn(kEnvClock, *v, "expected master|realtime");
+        else warn(names::kClock, *v, "expected master|realtime");
     }
-    if (const auto v = get(kEnvWatchdogMs, kEnvWatchdogMsAlias)) {
+    if (const auto v = get(names::kIpcWatchdogMs, kEnvWatchdogMsAlias)) {
         const std::optional<std::uint32_t> parsed = parseUnsigned(*v);
-        if (!parsed) warn(kEnvWatchdogMs, *v, "expected milliseconds");
+        if (!parsed) warn(names::kIpcWatchdogMs, *v, "expected milliseconds");
         else cfg.proposedWatchdogMs = *parsed;
     }
     if (const auto v = get(kEnvWatchdog)) {
-        const std::string t = sdk::asciiLower(trim(*v));
+        const std::string t = asciiLower(asciiTrim(*v));
         if (t == "off") cfg.watchdogEnabled = false;
         else if (t == "on") cfg.watchdogEnabled = true;
         else if (const auto b = parseBool(*v)) cfg.watchdogEnabled = *b;
         else warn(kEnvWatchdog, *v, "expected on|off");
     }
-    getMs(kEnvConnectTimeoutMs, kEnvConnectTimeoutMsAlias, cfg.connectTimeout, 0, 600000);
+    getMs(names::kIpcConnectTimeoutMs, kEnvConnectTimeoutMsAlias, cfg.connectTimeout, 0, 600000);
     getMs(kEnvHandshakeTimeoutMs, {}, cfg.handshakeTimeout, 1, 600000);
     if (const auto v = get(kEnvReconnect)) {
         if (const auto b = parseBool(*v)) cfg.reconnect = *b;
         else warn(kEnvReconnect, *v, "expected 0/1");
     }
-    if (const auto v = get(kEnvLogLevel)) {
-        if (const auto level = parseLogLevel(*v)) cfg.logLevel = *level;
-        else warn(kEnvLogLevel, *v, "expected trace|debug|info|warn|error");
+    if (const auto v = get(names::kLogLevel)) {
+        if (const auto level = sdk::parseLogLevel(*v)) cfg.logLevel = *level;
+        else warn(names::kLogLevel, *v, "expected trace|debug|info|warn|error");
     }
-    if (const auto v = get(kEnvLiveDiscovery)) {
+    if (const auto v = get(names::kLiveDiscovery)) {
         if (const auto b = parseBool(*v)) cfg.pollWhileConstructing = *b;
-        else warn(kEnvLiveDiscovery, *v, "expected 0/1");
+        else warn(names::kLiveDiscovery, *v, "expected 0/1");
     }
-    if (const auto v = get(kEnvProgramName)) cfg.programName = std::string(trim(*v));
+    if (const auto v = get(names::kProgramName)) cfg.programName = std::string(asciiTrim(*v));
     return cfg;
 }
 

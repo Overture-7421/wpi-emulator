@@ -1,26 +1,19 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
-#include <map>
 
 #include "runtime_fixtures.h"
 #include "wpiemu/core/launcher/extension_locator.h"
 #include "wpiemu/core/launcher/robot_launcher.h"
+#include "wpiemu/sdk/testing/environment.h"
 
 using namespace wpiemu::core::launcher;
-using wpiemu::core::config::EnvLookup;
+using wpiemu::sdk::EnvLookup;
+using wpiemu::sdk::testing::envOf;
 using wpiemu::test_runtime::ScratchDir;
 namespace fs = std::filesystem;
 
 namespace {
-
-EnvLookup envOf(std::map<std::string, std::string, std::less<>> vars) {
-    return [vars = std::move(vars)](std::string_view name) -> std::optional<std::string> {
-        const auto it = vars.find(name);
-        if (it == vars.end()) return std::nullopt;
-        return it->second;
-    };
-}
 
 const std::string kLib = halsimExtensionFileName();
 

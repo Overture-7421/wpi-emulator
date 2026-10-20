@@ -1,32 +1,24 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
-#include <map>
 
 #include "runtime_fixtures.h"
 #include "wpiemu/core/config/json_codec.h"
 #include "wpiemu/core/launcher/project_inspector.h"
+#include "wpiemu/sdk/testing/environment.h"
 
 using namespace wpiemu::sdk;
 using namespace wpiemu::core::launcher;
-using wpiemu::core::config::EnvLookup;
 using wpiemu::core::config::JsonValueCodec;
 using wpiemu::core::config::Platform;
 using wpiemu::core::config::currentPlatform;
+using wpiemu::sdk::testing::envOf;
 using wpiemu::test_runtime::ScratchDir;
 namespace fs = std::filesystem;
 
 namespace {
 
 const JsonValueCodec kJson;
-
-EnvLookup envOf(std::map<std::string, std::string> vars) {
-    return [vars = std::move(vars)](std::string_view name) -> std::optional<std::string> {
-        const auto it = vars.find(std::string(name));
-        if (it == vars.end()) return std::nullopt;
-        return it->second;
-    };
-}
 
 constexpr const char* kJavaBuild = R"gradle(plugins {
     id "java"

@@ -19,6 +19,7 @@
 #include "wpiemu/core/config/robot_config_codec.h"
 #include "wpiemu/core/mechanisms/mechanism_templates.h"
 #include "wpiemu/core/physics/chassis_simulator.h"
+#include "wpiemu/sdk/core/environment.h"
 #include "wpiemu/sdk/devices/device_descriptor.h"
 #include "wpiemu/sdk/game/builtin_plugins.h"
 
@@ -33,19 +34,7 @@
 
 namespace wpiemu::app::host::testing {
 
-inline std::string env(const char* name) {
-#if defined(_WIN32)
-    char* value = nullptr;
-    size_t len = 0;
-    if (_dupenv_s(&value, &len, name) != 0 || value == nullptr) return {};
-    std::string out(value);
-    std::free(value);
-    return out;
-#else
-    const char* v = std::getenv(name);
-    return v != nullptr ? v : "";
-#endif
-}
+inline std::string env(const char* name) { return sdk::readEnvironment(name).value_or(std::string()); }
 
 inline bool processAlive(std::int64_t pid) {
     if (pid <= 0) return false;

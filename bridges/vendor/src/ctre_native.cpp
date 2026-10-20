@@ -1,13 +1,13 @@
 #include "wpiemu/bridges/vendor/ctre_native.h"
 
 #include <bit>
-#include <charconv>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <set>
 
 #include "wpiemu/bridges/vendor/ctre_rules.h"
+#include "wpiemu/sdk/core/strings.h"
 
 namespace wpiemu::bridges::vendor {
 
@@ -49,31 +49,19 @@ const std::set<int>& floatSpns() {
     return kFloat;
 }
 
-template <class T>
-bool parseNumber(std::string_view s, T& out) {
-    const auto res = std::from_chars(s.data(), s.data() + s.size(), out);
-    return res.ec == std::errc{} && res.ptr == s.data() + s.size();
-}
-
-std::string_view trim(std::string_view s) {
-    while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r')) s.remove_prefix(1);
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r' || s.back() == '\0')) s.remove_suffix(1);
-    return s;
-}
-
 }  // namespace
 
 CtreConfigSnapshot CtreConfigSnapshot::parse(std::string_view text) {
     CtreConfigSnapshot snap;
     while (!text.empty()) {
         const auto nl = text.find('\n');
-        std::string_view line = trim(text.substr(0, nl));
+        std::string_view line = sdk::asciiTrim(text.substr(0, nl));
         text = nl == std::string_view::npos ? std::string_view{} : text.substr(nl + 1);
         const auto comma = line.find(',');
         if (comma == std::string_view::npos) continue;
-        int id = 0;
-        if (!parseNumber(trim(line.substr(0, comma)), id)) continue;
-        snap.raw_[id] = std::string(trim(line.substr(comma + 1)));
+        const std::optional<int> id = sdk::parseInteger<int>(sdk::asciiTrim(line.substr(0, comma)));
+        if (!id) continue;
+        snap.raw_[*id] = std::string(sdk::asciiTrim(line.substr(comma + 1)));
     }
     return snap;
 }
@@ -94,16 +82,17 @@ std::optional<double> CtreConfigSnapshot::number(int spnId) const {
     if (floatSpns().count(spnId) != 0) {
         std::uint32_t bits = 0;
         if (token.starts_with('-')) {
-            std::int32_t signedBits = 0;
-            if (!parseNumber(token, signedBits)) return std::nullopt;
-            bits = static_cast<std::uint32_t>(signedBits);
-        } else if (!parseNumber(token, bits)) {
+            const std::optional<std::int32_t> signedBits = sdk::parseInteger<std::int32_t>(token);
+            if (!signedBits) return std::nullopt;
+            bits = static_cast<std::uint32_t>(*signedBits);
+        } else if (const std::optional<std::uint32_t> unsignedBits = sdk::parseInteger<std::uint32_t>(token)) {
+            bits = *unsignedBits;
+        } else {
             return std::nullopt;
         }
         return static_cast<double>(std::bit_cast<float>(bits));
     }
-    long long n = 0;
-    if (parseNumber(token, n)) return static_cast<double>(n);
+    if (const std::optional<long long> n = sdk::parseInteger<long long>(token)) return static_cast<double>(*n);
     return std::nullopt;
 }
 

@@ -26,8 +26,9 @@ Connection and handshake complete before lock-step pauses HAL timing and starts 
 | `1` | Attachment or initialization failed; the failure is reported to stderr. |
 | `-1` | The no-HAL stub reports that this library was built without WPILib HAL support. |
 
-The launcher passes `WPIEMU_IPC_ENDPOINT`. The
-[configuration contract](../../halsim_ext/include/wpiemu/halsim_ext/config.h) owns environment names,
+The launcher passes `WPIEMU_IPC_ENDPOINT`. The names the emulator and the extension share live in the
+[SDK environment header](../../sdk/include/wpiemu/sdk/core/environment.h); the
+[configuration contract](../../halsim_ext/include/wpiemu/halsim_ext/config.h) owns the extension-only names,
 aliases, defaults, and debugging switches; [parsing](../../halsim_ext/src/config.cpp) warns and keeps
 defaults for malformed settings. `WPIEMU_CLOCK=realtime` prevents HAL pausing even if the peer asks
 for lock-step. An inert real extension is different from the

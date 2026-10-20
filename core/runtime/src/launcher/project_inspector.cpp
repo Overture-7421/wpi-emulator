@@ -216,7 +216,7 @@ std::vector<fs::path> wpilibRootCandidates(config::Platform platform, const fs::
     return unique;
 }
 
-std::vector<fs::path> wpilibRootCandidates(config::Platform platform, const config::EnvLookup& env) {
+std::vector<fs::path> wpilibRootCandidates(config::Platform platform, const sdk::EnvLookup& env) {
     auto folder = [&](std::string_view name) {
         const std::optional<std::string> value = env ? env(name) : std::nullopt;
         return value ? fs::path(*value) : fs::path();
@@ -242,7 +242,7 @@ std::optional<WpilibInstall> wpilibInstallAt(const fs::path& home, int year) {
 }
 
 std::optional<WpilibInstall> findWpilibInstall(int year, const std::vector<fs::path>& roots) {
-    const std::vector<fs::path> candidates = roots.empty() ? wpilibRootCandidates(config::currentPlatform(), config::systemEnv()) : roots;
+    const std::vector<fs::path> candidates = roots.empty() ? wpilibRootCandidates(config::currentPlatform(), &sdk::readEnvironment) : roots;
     for (const fs::path& root : candidates)
         if (auto install = wpilibInstallAt(root / std::to_string(year), year)) return install;
     return std::nullopt;
