@@ -113,7 +113,7 @@ sdk::RobotConfig mappedConfig(const fs::path& project) {
     roller.mappings.push_back({{roller.id, "motor"}, phoenixKey("talonfx", kIntakeRollerId)});
     c.mechanisms.push_back(std::move(roller));
 
-    // The intake pivot: teleopInit runs a Motion Magic move to 118 deg through a fused CANcoder, which closes the loop through
+    // The intake pivot: teleopInit runs a Motion Magic move to 114 deg through a fused CANcoder, which closes the loop through
     // the emulator (Phoenix firmware sim -> rotor feedback from the pivot plant -> CANcoder position).
     sdk::MechanismConfig pivot;
     pivot.id = "intake_pivot";
@@ -386,7 +386,7 @@ TEST_CASE("e2e: unmodified Shelby 2026 robot - discovery, mapping and a driven t
                     if (v.name == "position") pivotPosition = v.value;
         }
         CHECK(rollerSeen);
-        CHECK(std::abs(pivotPosition - 118.0 * sdk::kPi / 180.0) < sdk::kPi / 180.0);
+        CHECK(std::abs(pivotPosition - 114.0 * sdk::kPi / 180.0) < sdk::kPi / 180.0);
         for (const sdk::HubWarning& w : snap->warnings()) {
             CHECK(w.code != "slot_missing_device");
             CHECK(w.code != "slot_incompatible");
