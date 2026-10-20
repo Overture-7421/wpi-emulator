@@ -235,6 +235,41 @@ TEST_CASE("session: tick order is mechanisms -> drivetrain -> physics -> game st
     CHECK(log == expected);
 }
 
+TEST_CASE("session: the hub declares exactly the drivetrain slots the strategy declares") {
+    struct NoSteer final : IDrivetrain {
+        explicit NoSteer(const DrivetrainBuildArgs& a) : spec_(&a.spec), states_(a.spec.wheels.size()) {}
+        std::string_view kind() const override { return "nosteer"; }
+        const DrivetrainSpec& spec() const override { return *spec_; }
+        std::vector<SlotSpec> slotSpecs() const override { return tractionSlotSpecs(*spec_, false); }
+        void step(std::span<const WheelCommand>, float) override {}
+        std::span<const WheelState> wheelStates() const override { return states_; }
+        void reset() override {}
+        const DrivetrainSpec* spec_;
+        std::vector<WheelState> states_;
+    };
+    Registries reg;
+    REQUIRE(reg.drivetrains.registerDrivetrain("nosteer", {}, [](const DrivetrainBuildArgs& a) { return std::make_unique<NoSteer>(a); }).ok());
+    RobotConfig c = sampleConfig();
+    c.drivetrain.spec.kind = "nosteer";
+    c.drivetrain.spec.wheels[0].steered = true;   // flagged, but this drivetrain has no azimuth
+    c.drivetrain.mappings.clear();
+    SessionParts p;
+    p.world = std::make_unique<testing::FakePhysicsWorld>(c.sim.physics);
+    p.config = c;
+    p.mechanisms = &reg.mechanisms;
+    p.drivetrains = &reg.drivetrains;
+    p.tireModels = &reg.tires;
+    p.plugins = &reg.plugins;
+    auto built = SessionBuilder::build(std::move(p));
+    REQUIRE_MESSAGE(built.ok(), (built.ok() ? "" : built.error().message));
+    const std::string wheelName = c.drivetrain.spec.wheels[0].name;
+    CHECK(built.value()->hub().isDeclared({slot_owner::kDrivetrain, driveSlotName(wheelName, 0)}));
+    CHECK_FALSE(built.value()->hub().isDeclared({slot_owner::kDrivetrain, steerSlotName(wheelName)}));
+    CHECK_FALSE(built.value()->hub().isDeclared({slot_owner::kDrivetrain, steerEncoderSlotName(wheelName)}));
+    proto::SensorFrame out;
+    built.value()->tick(out, true);   // the undeclared steer slots are simply not written
+}
+
 TEST_CASE("session: SensorFrame bookkeeping - tick numbers, sim time, step") {
     Fixture f;
     SimulationSession& s = f.make();

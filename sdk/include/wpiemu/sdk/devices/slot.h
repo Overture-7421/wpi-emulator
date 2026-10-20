@@ -5,6 +5,7 @@
 // slot list generically from SlotSpec; models read/write slots through IDeviceHub.
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "wpiemu/sdk/devices/device_descriptor.h"
@@ -70,11 +71,29 @@ namespace slot_owner {
 inline constexpr const char* kDrivetrain =
     "drivetrain";  // "<wheel>.drive[N]", ".steer", ".steerEncoder"
 inline constexpr const char* kRobot = "robot";            // robot-level slots, e.g. "imu"
+inline constexpr const char* kRobotImuSlot = "imu";       // the gyro slot of slot_owner::kRobot
 }  // namespace slot_owner
 
 // Drive slot `index` (0-based) of a drivetrain wheel: "<wheel>.drive", "<wheel>.drive2", ...
 inline std::string driveSlotName(const std::string& wheel, int index) {
     return wheel + ".drive" + (index > 0 ? std::to_string(index + 1) : std::string());
+}
+
+// The slots of a steered wheel: the azimuth motor "<wheel>.steer" and its optional position sensor "<wheel>.steerEncoder".
+inline constexpr std::string_view kSteerSlot = "steer";
+inline constexpr std::string_view kSteerEncoderSlot = "steerEncoder";
+inline std::string steerSlotName(const std::string& wheel) { return wheel + "." + std::string(kSteerSlot); }
+inline std::string steerEncoderSlotName(const std::string& wheel) { return wheel + "." + std::string(kSteerEncoderSlot); }
+
+// The robot-level slots (owner slot_owner::kRobot).
+inline std::vector<SlotSpec> robotSlotSpecs() {
+    SlotSpec imu;
+    imu.name = slot_owner::kRobotImuSlot;
+    imu.label = "IMU (gyro)";
+    imu.type = SlotType::Imu;
+    imu.required = false;
+    imu.description = "Pigeon 2 / navX the robot code uses as its gyro.";
+    return {imu};
 }
 
 struct SlotMapping {

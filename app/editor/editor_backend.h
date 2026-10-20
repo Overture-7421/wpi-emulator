@@ -68,6 +68,11 @@ struct EditorCatalog {
             if (t.type == type) return &t;
         return nullptr;
     }
+    const sdk::DrivetrainInfo* findDrivetrain(std::string_view kind) const {
+        for (const auto& d : drivetrains)
+            if (d.kind == kind) return &d.info;
+        return nullptr;
+    }
     const sdk::ZoneKindInfo* findZoneKind(std::string_view kind) const {
         for (const auto& k : zoneKinds)
             if (k.kind == kind) return &k;

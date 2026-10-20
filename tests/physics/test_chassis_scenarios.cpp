@@ -555,6 +555,62 @@ TEST_CASE("drivetrain registry: the shipped kinds can be registered, created and
     }
 }
 
+TEST_CASE("drivetrain registry: the registered slot callback matches every built-in strategy") {
+    DrivetrainRegistry drivetrains;
+    TireModelRegistry tires;
+    REQUIRE(phys::registerPhysicsComponents(drivetrains, tires).ok());
+    DrivetrainSpec multiMotor = swerveSpec();
+    multiMotor.wheels[1].driveMotorCount = 3;
+    DrivetrainSpec steeredTank = tankSpec(2, WheelKind::Standard);
+    steeredTank.wheels[0].steered = true;                     // a tank layout never steers
+    DrivetrainSpec fixedWheel = swerveSpec();
+    fixedWheel.wheels[2].kind = WheelKind::Standard;          // a fixed wheel inside a swerve drivetrain
+    fixedWheel.wheels[2].steered = false;
+    const std::vector<DrivetrainSpec> specs{swerveSpec(), multiMotor, tankSpec(3, WheelKind::Omni), steeredTank,
+                                            mecanumSpec(), fixedWheel};
+    for (const DrivetrainSpec& spec : specs) {
+        INFO("kind " << spec.kind << ", wheels " << spec.wheels.size());
+        auto world = makeWorld();
+        addFloor(*world);
+        const ChassisSpec chassis = testChassis();
+        auto tire = tires.create("brush");
+        REQUIRE(tire.ok());
+        auto body = phys::buildChassisBody(*world, chassis, spec, {});
+        REQUIRE(body.ok());
+        const DrivetrainBuildArgs args{spec, chassis, *world, body.value().body, *tire.value()};
+        auto drivetrain = drivetrains.create(spec.kind, args);
+        REQUIRE(drivetrain.ok());
+
+        const std::vector<SlotSpec> strategy = drivetrain.value()->slotSpecs();
+        const std::vector<SlotSpec> registered = drivetrainSlotSpecs(drivetrains.info(spec.kind), spec);
+        REQUIRE(strategy.size() == registered.size());
+        for (std::size_t i = 0; i < strategy.size(); ++i) {
+            CHECK(strategy[i].name == registered[i].name);
+            CHECK(strategy[i].label == registered[i].label);
+            CHECK(strategy[i].type == registered[i].type);
+            CHECK(strategy[i].required == registered[i].required);
+            CHECK(strategy[i].description == registered[i].description);
+            CHECK(strategy[i].countKey == registered[i].countKey);
+            CHECK(strategy[i].ordinal == registered[i].ordinal);
+        }
+    }
+
+    const auto names = [](const std::vector<SlotSpec>& slots) {
+        std::vector<std::string> out;
+        for (const SlotSpec& s : slots) out.push_back(s.name);
+        return out;
+    };
+    const auto has = [](const std::vector<std::string>& v, const std::string& name) {
+        return std::find(v.begin(), v.end(), name) != v.end();
+    };
+    const auto tankNames = names(drivetrainSlotSpecs(drivetrains.info("tank"), steeredTank));
+    CHECK_FALSE(has(tankNames, steerSlotName("left0")));                 // steered=true is ignored for a tank
+    const auto swerveNames = names(drivetrainSlotSpecs(drivetrains.info("swerve"), fixedWheel));
+    CHECK(has(swerveNames, steerSlotName("fl")));
+    CHECK_FALSE(has(swerveNames, steerSlotName("rl")));                  // the fixed wheel has no azimuth slots
+    CHECK(has(names(drivetrainSlotSpecs(drivetrains.info("swerve"), multiMotor)), driveSlotName("fr", 2)));
+}
+
 TEST_CASE("drivetrain: non-finite commands are ignored") {
     Rig rig(swerveSpec());
     REQUIRE(rig.sim);

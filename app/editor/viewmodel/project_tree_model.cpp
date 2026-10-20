@@ -225,7 +225,7 @@ std::unique_ptr<ProjectTreeModel::Node> ProjectTreeModel::makeWheelNode(const sd
     n.follower = om.followsAll;
     QStringList parts;
     // A wheel whose only slot is its drive motor shows that motor on the wheel row itself.
-    if (slots.size() == 1 && slots.front().spec.name == w.name + ".drive") {
+    if (slots.size() == 1 && slots.front().spec.name == sdk::driveSlotName(w.name, 0)) {
         const SlotInfo& s = slots.front();
         parts << (s.mapped ? mappedLabel(s) : (s.spec.required ? ETR("not mapped") : ETR("optional")));
         n.state = static_cast<int>(s.state);

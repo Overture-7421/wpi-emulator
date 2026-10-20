@@ -34,8 +34,8 @@ TEST_CASE("integration: the session drives a real Box3D swerve robot from hub vo
         w.steered = true;
         w.positionM.z = w.radiusM;
         c.drivetrain.mappings.push_back({{slot_owner::kDrivetrain, w.name + ".drive"}, DeviceKey{"phoenix6", "talonfx", can, "rio", -1}});
-        c.drivetrain.mappings.push_back({{slot_owner::kDrivetrain, w.name + ".steer"}, DeviceKey{"phoenix6", "talonfx", can + 10, "rio", -1}});
-        c.drivetrain.mappings.push_back({{slot_owner::kDrivetrain, w.name + ".steerEncoder"},
+        c.drivetrain.mappings.push_back({{slot_owner::kDrivetrain, steerSlotName(w.name)}, DeviceKey{"phoenix6", "talonfx", can + 10, "rio", -1}});
+        c.drivetrain.mappings.push_back({{slot_owner::kDrivetrain, steerEncoderSlotName(w.name)},
                                          DeviceKey{"phoenix6", "cancoder", can + 20, "rio", -1}});
         ++can;
     }

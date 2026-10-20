@@ -145,7 +145,9 @@ Per-motor mounting orientation is applied only at this boundary; see
 [multi-motor actuation](mechanisms.md#motor-commands-and-multiple-controllers).
 
 Drivetrain motor slots receive rotor-side turns and turns/s, including their gearing.
-Every steered wheel also exposes optional `<wheel>.steerEncoder`: output-side azimuth
+Only drivetrains whose registered slots include a wheel's steer slots (swerve) expose
+`<wheel>.steer` and the optional `<wheel>.steerEncoder`; tank and mecanum never do, whatever
+`WheelSpec::steered` says. `steerEncoder` reports output-side azimuth
 in rotations and rotations/s, with no steer gear ratio. A remote/fused steering encoder
 belongs there, not on the steer motor slot. Generic mechanism feedback conversions are
 specified in [Mechanisms](mechanisms.md#feedback-units).

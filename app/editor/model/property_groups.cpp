@@ -605,7 +605,7 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
     const SelectionRef sel = formTargetOf(c, selIn);
     if (groupId == "robot") { spec::applyRobot(c, key, value); return true; }
     if (groupId == "chassis") { spec::applyChassis(c, catalog, key, value); return true; }
-    if (groupId == "drivetrain") { spec::applyDrivetrain(c, key, value); return true; }
+    if (groupId == "drivetrain") { spec::applyDrivetrain(c, catalog, key, value); return true; }
     if (groupId == "wheel" || groupId == "wheel.drive" || groupId == "wheel.placement") { spec::applyWheel(c, sel.sub, key, value); return true; }
     if (groupId == "primitive") {
         auto* list = ops::primitivesOf(c, sel.owner);

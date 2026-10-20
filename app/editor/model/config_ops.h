@@ -149,9 +149,7 @@ bool setMappingReversed(sdk::RobotConfig& c, const sdk::SlotAddress& slot, bool 
 std::vector<sdk::SlotAddress> slotsUsing(const sdk::RobotConfig& c, const sdk::PhysicalDeviceId& device);
 
 // ---- slots ------------------------------------------------------------------------------------
-std::vector<sdk::SlotSpec> robotSlotSpecs();
-std::vector<sdk::SlotSpec> drivetrainSlotSpecs(const sdk::DrivetrainSpec& spec);
-// Owners in tree order: robot, drivetrain, then mechanisms.
+// Owners in tree order: robot, drivetrain, then mechanisms. The drivetrain's slots come from its kind's registered callback.
 std::vector<sdk::SlotSpec> slotSpecsFor(const sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view owner);
 std::vector<std::string> slotOwners(const sdk::RobotConfig& c);
 // A gearbox with several motors: one row per motor, the count lives in a mechanism property (`countKey`) or in
@@ -177,7 +175,7 @@ std::string slotDisplayName(const sdk::RobotConfig& c, const EditorCatalog& cata
 // primitives, chassis-attached mounts) is re-expressed so the robot looks the same.
 void setCom(sdk::RobotConfig& c, float offsetX, float offsetY, float height, bool compensate = true,
             const EditorCatalog* catalog = nullptr);
-void setDrivetrainKind(sdk::RobotConfig& c, const std::string& kind);
+void setDrivetrainKind(sdk::RobotConfig& c, const EditorCatalog& catalog, const std::string& kind);
 std::string addWheel(sdk::RobotConfig& c);
 bool removeWheel(sdk::RobotConfig& c, const std::string& name);
 bool renameWheel(sdk::RobotConfig& c, const std::string& oldName, const std::string& newName);

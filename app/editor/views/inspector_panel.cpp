@@ -448,9 +448,9 @@ void InspectorPanel::addPartCards(const SelectionRef& target, const std::vector<
         if (g.id == "mech.props" || g.id == "wheel") cv->addWidget(makeForm(g, configure));
     // A swerve module steers: its steer controller sits with the rest of what makes the wheel a swerve module.
     if (wheel)
-        if (const auto* w = ops::findWheel(c, target.sub); w != nullptr && w->steered)
+        if (const auto* w = ops::findWheel(c, target.sub); w != nullptr && sdk::isSteered(*w))
             for (const SlotInfo& info : slotInfos(c, cat, controller_.devices(), owner))
-                if (info.address.slot == target.sub + ".steer") {
+                if (info.address.slot == sdk::steerSlotName(target.sub)) {
                     auto* row = makeRow(info, configure);
                     row->setLabel(ETR("Steer motor"));
                     cv->addWidget(row);

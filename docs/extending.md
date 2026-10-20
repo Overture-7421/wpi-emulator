@@ -179,7 +179,9 @@ Plugins are built in with the host toolchain, not independently loaded shared li
 
 - **Drivetrain:** implement `IDrivetrain`, register with `DrivetrainRegistry::registerDrivetrain`
   and include it in [built-in registration](../core/physics/include/wpiemu/core/physics/drivetrains.h).
-  Supply slot metadata and feedback; never step the world from a drivetrain.
+  Declare its slots once: `DrivetrainInfo::slotSpecs` is a pure function of the spec, shared by the validator,
+  the editor and `IDrivetrain::slotSpecs()` (use `tractionSlotSpecs`, `isSteered` and the `steerSlotName`
+  helpers). Never step the world from a drivetrain.
 - **Tires:** implement stateless `ITireModel::solve`, register with `TireModelRegistry::registerModel`
   and the [tire registration](../core/physics/include/wpiemu/core/physics/tire_models.h).
   Check affected config selectors/editor choices when introducing a new strategy key.

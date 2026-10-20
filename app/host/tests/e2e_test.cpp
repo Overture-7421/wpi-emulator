@@ -102,8 +102,8 @@ sdk::RobotConfig mappedConfig(const fs::path& project) {
         w.steerMotor = sdk::motors::falcon500();
         c.drivetrain.spec.wheels.push_back(w);
         c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, w.name + ".drive"}, phoenixKey("talonfx", m.driveId)});
-        c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, w.name + ".steer"}, phoenixKey("talonfx", m.steerId)});
-        c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, w.name + ".steerEncoder"},
+        c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, sdk::steerSlotName(w.name)}, phoenixKey("talonfx", m.steerId)});
+        c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, sdk::steerEncoderSlotName(w.name)},
                                          phoenixKey("cancoder", m.encoderId)});
     }
     c.robotMappings.push_back({{sdk::slot_owner::kRobot, "imu"}, phoenixKey("pigeon2", kPigeonId)});

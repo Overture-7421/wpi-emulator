@@ -84,7 +84,7 @@ void validateDrivetrain(const RobotConfig& c, const DrivetrainRegistry& drivetra
         if (!finitePositive(w.tire.mu)) add(out, Severity::Error, base + ".tire.mu", "friction coefficient must be positive", issue_code::kWheelInvalid);
         validateTire(w.tire, base + ".tire", out);
         validateMotor(w.driveMotor, base + ".driveMotor", out);
-        if (w.steered || w.kind == WheelKind::Swerve) {
+        if (isSteered(w)) {
             if (!finitePositive(w.steerGearRatio))
                 add(out, Severity::Error, base + ".steerGearRatio", "steer gear ratio must be positive", issue_code::kWheelInvalid);
             validateMotor(w.steerMotor, base + ".steerMotor", out);
@@ -309,26 +309,6 @@ void validateSensors(const RobotConfig& c, const IGameModule* plugin, std::vecto
 
 }  // namespace
 
-std::vector<SlotSpec> drivetrainSlotSpecs(const DrivetrainSpec& spec) {
-    std::vector<SlotSpec> out;
-    for (const WheelSpec& w : spec.wheels) {
-        for (int i = 0; i < std::clamp(w.driveMotorCount, 1, kMaxMotorsPerAxis); ++i)
-            out.push_back({driveSlotName(w.name, i), w.name + " drive motor" + (i > 0 ? " " + std::to_string(i + 1) : std::string()),
-                           SlotType::Motor, false, {}});
-        if (w.steered || w.kind == WheelKind::Swerve) {
-            out.push_back({w.name + ".steer", w.name + " steer motor", SlotType::Motor, false, {}});
-            out.push_back({w.name + ".steerEncoder",
-                           w.name + " steer encoder",
-                           SlotType::PositionSensor,
-                           false,
-                           {}});
-        }
-    }
-    return out;
-}
-
-std::vector<SlotSpec> robotSlotSpecs() { return {{"imu", "IMU", SlotType::Imu, false, "robot gyro"}}; }
-
 IGameModule* selectPlugin(const RobotConfig& config, const GamePluginRegistry& plugins) {
     if (!config.gamePluginId.empty()) return plugins.find(config.gamePluginId);
     if (config.project.wpilibYear > 0) return plugins.findByYear(config.project.wpilibYear);
@@ -390,7 +370,7 @@ std::vector<Issue> ConfigValidator::validate(const RobotConfig& config, const Me
             out.push_back(std::move(issue));
         }
     }
-    slotSpecsByOwner[slot_owner::kDrivetrain] = drivetrainSlotSpecs(config.drivetrain.spec);
+    slotSpecsByOwner[slot_owner::kDrivetrain] = drivetrainSlotSpecs(drivetrains.info(config.drivetrain.spec.kind), config.drivetrain.spec);
     slotSpecsByOwner[slot_owner::kRobot] = robotSlotSpecs();
     for (const SensorConfig& s : config.sensors)
         if (!s.id.empty() && slotSpecsByOwner.find(s.id) == slotSpecsByOwner.end()) slotSpecsByOwner[s.id] = {sensorSlotSpec(s.kind)};

@@ -71,14 +71,6 @@ inline constexpr const char* kSensorSourceUnknown = "sensor_source_unknown";    
 inline constexpr const char* kSensorPropertyInvalid = "sensor_property_invalid";  // response schema violation, or a degenerate linear range
 }  // namespace issue_code
 
-// Slot names of the drivetrain owner (sdk::slot_owner::kDrivetrain): "<wheel>.drive" (+
-// "<wheel>.drive2".. up to driveMotorCount), and "<wheel>.steer" / optional "<wheel>.steerEncoder"
-// for swerve / steered wheels. Matches IDrivetrain::slotSpecs() by convention (the validator has no
-// world to instantiate a drivetrain in).
-std::vector<sdk::SlotSpec> drivetrainSlotSpecs(const sdk::DrivetrainSpec& spec);
-// robot-level slots: "imu".
-std::vector<sdk::SlotSpec> robotSlotSpecs();
-
 // The plugin a config selects: gamePluginId when set, else the registered plugin for project.wpilibYear;
 // nullptr = core features only ("unsupported year").
 sdk::IGameModule* selectPlugin(const sdk::RobotConfig& config, const sdk::GamePluginRegistry& plugins);

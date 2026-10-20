@@ -195,8 +195,8 @@ Value drivetrainValues(const sdk::DrivetrainSpec& s) {
     return o;
 }
 
-void applyDrivetrain(sdk::RobotConfig& c, const std::string& key, const Value& v) {
-    if (key == "kind") ops::setDrivetrainKind(c, v.asString(c.drivetrain.spec.kind));
+void applyDrivetrain(sdk::RobotConfig& c, const EditorCatalog& catalog, const std::string& key, const Value& v) {
+    if (key == "kind") ops::setDrivetrainKind(c, catalog, v.asString(c.drivetrain.spec.kind));
     else if (key == "tireModel") c.drivetrain.spec.tireModel = v.asString(c.drivetrain.spec.tireModel);
     else if (key == "loadTransferTauS") c.drivetrain.spec.loadTransferTauS = numF(v, c.drivetrain.spec.loadTransferTauS);
 }
@@ -291,8 +291,8 @@ void applyWheel(sdk::RobotConfig& c, const std::string& wheelName, const std::st
             auto& maps = c.drivetrain.mappings;
             maps.erase(std::remove_if(maps.begin(), maps.end(),
                                       [&](const sdk::SlotMapping& m) {
-                                          return m.slot.slot == w->name + ".steer" ||
-                                                 m.slot.slot == w->name + ".steerEncoder";
+                                          return m.slot.slot == sdk::steerSlotName(w->name) ||
+                                                 m.slot.slot == sdk::steerEncoderSlotName(w->name);
                                       }),
                        maps.end());
         }
@@ -311,8 +311,8 @@ void applyWheel(sdk::RobotConfig& c, const std::string& wheelName, const std::st
                                       for (int i = 0; i < w->driveMotorCount; ++i)
                                           if (m.slot.slot == sdk::driveSlotName(w->name, i)) return false;
                                       return ops::wheelOfSlot(m.slot.slot) == w->name &&
-                                             m.slot.slot != w->name + ".steer" &&
-                                             m.slot.slot != w->name + ".steerEncoder";
+                                             m.slot.slot != sdk::steerSlotName(w->name) &&
+                                             m.slot.slot != sdk::steerEncoderSlotName(w->name);
                                   }),
                    maps.end());
     }

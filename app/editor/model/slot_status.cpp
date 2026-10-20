@@ -309,7 +309,7 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
         const auto dot = path.find('.');
         if (dot != std::string::npos) {
             const std::string slot = path.substr(dot + 1);
-            for (const auto& spec : ops::drivetrainSlotSpecs(c.drivetrain.spec))
+            for (const auto& spec : ops::slotSpecsFor(c, catalog, sdk::slot_owner::kDrivetrain))
                 if (spec.name == slot) {
                     loc.selection = SelectionRef::slot(sdk::slot_owner::kDrivetrain, slot);
                     return loc;

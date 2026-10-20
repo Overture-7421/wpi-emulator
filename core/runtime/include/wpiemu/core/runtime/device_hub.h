@@ -38,6 +38,7 @@ public:
 
     // ---- slot knowledge (used for compatibility warnings; optional) ----
     void declareSlots(const std::string& owner, const std::vector<sdk::SlotSpec>& specs);
+    bool isDeclared(const sdk::SlotAddress& slot) const { return slotSpecs_.count(slot) != 0; }
     void clearSlotDeclarations();
 
     // ---- persisted mappings ----

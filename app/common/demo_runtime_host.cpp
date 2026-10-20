@@ -49,7 +49,7 @@ std::vector<sdk::DiscoveredDevice> DemoRuntimeHost::demoDevicesFor(const sdk::Ro
     int encoderId = 21;
     for (const auto& w : config.drivetrain.spec.wheels) {
         out.push_back(makeDevice(next++, "talonfx", "ctre", driveId++, talonCaps(), "phoenix6"));
-        if (w.steered) {
+        if (sdk::isSteered(w)) {
             out.push_back(makeDevice(next++, "talonfx", "ctre", steerId++, talonCaps(), "phoenix6"));
             out.push_back(makeDevice(next++, "cancoder", "ctre", encoderId++,
                                      sdk::Capability::PositionSensor | sdk::Capability::VelocitySensor, "phoenix6"));

@@ -98,7 +98,7 @@ public:
         : spec_(&a.spec), world_(&a.world), body_(a.chassisBody), states_(a.spec.wheels.size()) {}
     std::string_view kind() const override { return "test"; }
     const DrivetrainSpec& spec() const override { return *spec_; }
-    std::vector<SlotSpec> slotSpecs() const override { return core::config::drivetrainSlotSpecs(*spec_); }
+    std::vector<SlotSpec> slotSpecs() const override { return tractionSlotSpecs(*spec_, true); }
     void step(std::span<const WheelCommand> commands, float dt) override {
         float total = 0.f;
         for (std::size_t i = 0; i < commands.size() && i < states_.size(); ++i) {

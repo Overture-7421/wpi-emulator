@@ -310,14 +310,14 @@ RobotBasics basicsFromConfig(const sdk::RobotConfig& config) {
         const auto source =
             std::find_if(spec.wheels.begin(), spec.wheels.end(), [&](const auto& wheel) {
                 return sdk::motionLinkTo(config, {sdk::slot_owner::kDrivetrain,
-                                                  wheel.name + ".drive"}) == nullptr;
+                                                  sdk::driveSlotName(wheel.name, 0)}) == nullptr;
             });
         const sdk::WheelSpec& w = source == spec.wheels.end() ? spec.wheels.front() : *source;
         b.wheelDiameterM = static_cast<double>(w.radiusM) * 2.0;
         b.driveGearRatio = w.driveGearRatio;
         b.motorsPerWheel = std::max(1, w.driveMotorCount);
         if (const MotorChoice* m = findMotorBySpec(w.driveMotor)) b.driveMotor = m->key;
-        if (w.steered) {
+        if (sdk::isSteered(w)) {
             b.steerGearRatio = w.steerGearRatio;
             if (const MotorChoice* m = findMotorBySpec(w.steerMotor)) b.steerMotor = m->key;
         }

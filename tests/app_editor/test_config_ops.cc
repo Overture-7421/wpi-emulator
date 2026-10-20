@@ -156,13 +156,14 @@ TEST_CASE("editor ops: plugin volumes are moved along with the COM") {
 }
 
 TEST_CASE("editor ops: drivetrain kind changes steering and drops stale steer mappings") {
+    const auto cat = catalog();
     auto c = robot();
     REQUIRE(c.drivetrain.mappings.size() == 8);
-    ops::setDrivetrainKind(c, "tank");
+    ops::setDrivetrainKind(c, cat, "tank");
     for (const auto& w : c.drivetrain.spec.wheels) CHECK_FALSE(w.steered);
     CHECK(c.drivetrain.mappings.size() == 4);   // only the drive motors remain mapped
     for (const auto& m : c.drivetrain.mappings) CHECK(m.slot.slot.find(".drive") != std::string::npos);
-    ops::setDrivetrainKind(c, "swerve");
+    ops::setDrivetrainKind(c, cat, "swerve");
     CHECK(c.drivetrain.spec.wheels[0].steered);
     CHECK(c.drivetrain.spec.wheels[0].kind == sdk::WheelKind::Swerve);
 }
@@ -221,7 +222,7 @@ TEST_CASE("editor ops: slot specs come from templates, wheels and the robot") {
     CHECK(ops::slotSpecsFor(c, cat, "drivetrain").size() ==
           12);  // 4 swerve modules x (drive, steer)
     CHECK(ops::slotSpecsFor(c, cat, "nobody").empty());
-    ops::setDrivetrainKind(c, "tank");
+    ops::setDrivetrainKind(c, cat, "tank");
     CHECK(ops::slotSpecsFor(c, cat, "drivetrain").size() == 4);
     CHECK(ops::slotOwners(c).size() == 2 + c.mechanisms.size() + c.sensors.size());
 }

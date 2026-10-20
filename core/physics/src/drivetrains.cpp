@@ -35,7 +35,7 @@ TractionDrivetrain::WheelPolicy TractionDrivetrain::policyFor(Layout layout, con
     p.tractionAngleRad = wheel.tire.tractionAngleRad;
     switch (layout) {
         case Layout::Swerve:
-            p.steered = wheel.steered || wheel.kind == WheelKind::Swerve;
+            p.steered = isSteered(wheel);
             break;
         case Layout::Tank:
             break;
@@ -64,6 +64,7 @@ TractionDrivetrain::TractionDrivetrain(Layout layout, std::string kind, const Dr
       mass_(chassisMassProperties(args.chassis)) {
     if (!options_.motorModels)
         options_.motorModels = [](const MotorSpec& s) { return std::make_unique<DcMotorModel>(s); };
+    steerable_ = layout == Layout::Swerve;
 
     wheels_.reserve(spec_->wheels.size());
     for (const WheelSpec& ws : spec_->wheels) {
@@ -87,34 +88,7 @@ TractionDrivetrain::TractionDrivetrain(Layout layout, std::string kind, const Dr
 
 TractionDrivetrain::~TractionDrivetrain() = default;
 
-std::vector<SlotSpec> TractionDrivetrain::slotSpecs() const {
-    std::vector<SlotSpec> out;
-    for (const Wheel& w : wheels_) {
-        for (int i = 0; i < driveMotorCount(*w.spec); ++i) {
-            SlotSpec drive;
-            drive.name = driveSlotName(w.spec->name, i);
-            drive.label = w.spec->name + " drive motor" + (i > 0 ? " " + std::to_string(i + 1) : std::string());
-            drive.type = SlotType::Motor;
-            drive.required = i == 0;
-            drive.description = i == 0 ? "Drive motor of wheel '" + w.spec->name + "'"
-                                       : "Additional drive motor on the gearbox of wheel '" + w.spec->name + "'";
-            out.push_back(std::move(drive));
-        }
-        if (w.policy.steered) {
-            SlotSpec steer;
-            steer.name = w.spec->name + ".steer";
-            steer.label = w.spec->name + " steer motor";
-            steer.type = SlotType::Motor;
-            steer.required = true;
-            steer.description = "Azimuth motor of module '" + w.spec->name + "'";
-            out.push_back(std::move(steer));
-            out.push_back({w.spec->name + ".steerEncoder", w.spec->name + " steer encoder",
-                           SlotType::PositionSensor, false,
-                           "Azimuth in rotations, before controller calibration."});
-        }
-    }
-    return out;
-}
+std::vector<SlotSpec> TractionDrivetrain::slotSpecs() const { return tractionSlotSpecs(*spec_, steerable_); }
 
 void TractionDrivetrain::setChassisMass(const MassProperties& composed) {
     if (composed.massKg > 0.f && std::isfinite(composed.massKg)) mass_ = composed;
@@ -354,17 +328,23 @@ void TractionDrivetrain::advanceWheel(std::size_t i, WheelCommand cmd, float dt,
 
 Status registerDrivetrains(DrivetrainRegistry& registry) {
     if (auto s = registry.registerDrivetrain(
-            drivetrain_kind::kSwerve, {"Swerve", "Four or more independently steered and driven modules"},
+            drivetrain_kind::kSwerve,
+            {"Swerve", "Four or more independently steered and driven modules",
+             [](const DrivetrainSpec& spec) { return tractionSlotSpecs(spec, true); }},
             [](const DrivetrainBuildArgs& a) { return std::make_unique<SwerveDrivetrain>(a); });
         !s.ok())
         return s;
     if (auto s = registry.registerDrivetrain(
-            drivetrain_kind::kTank, {"Tank / differential", "Fixed-heading wheels, any number per side"},
+            drivetrain_kind::kTank,
+            {"Tank / differential", "Fixed-heading wheels, any number per side",
+             [](const DrivetrainSpec& spec) { return tractionSlotSpecs(spec, false); }},
             [](const DrivetrainBuildArgs& a) { return std::make_unique<TankDrivetrain>(a); });
         !s.ok())
         return s;
     return registry.registerDrivetrain(
-        drivetrain_kind::kMecanum, {"Mecanum", "Four roller wheels with +-45 degree traction axes"},
+        drivetrain_kind::kMecanum,
+        {"Mecanum", "Four roller wheels with +-45 degree traction axes",
+         [](const DrivetrainSpec& spec) { return tractionSlotSpecs(spec, false); }},
         [](const DrivetrainBuildArgs& a) { return std::make_unique<MecanumDrivetrain>(a); });
 }
 

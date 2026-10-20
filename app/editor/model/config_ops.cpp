@@ -813,47 +813,6 @@ std::vector<SlotAddress> slotsUsing(const RobotConfig& c, const sdk::PhysicalDev
 }
 
 // ---- slots ------------------------------------------------------------------------------------
-std::vector<sdk::SlotSpec> robotSlotSpecs() {
-    sdk::SlotSpec imu;
-    imu.name = "imu";
-    imu.label = "IMU (gyro)";
-    imu.type = sdk::SlotType::Imu;
-    imu.required = false;
-    imu.description = "Pigeon 2 / navX the robot code uses as its gyro.";
-    return {imu};
-}
-
-std::vector<sdk::SlotSpec> drivetrainSlotSpecs(const sdk::DrivetrainSpec& spec) {
-    std::vector<sdk::SlotSpec> out;
-    for (const auto& w : spec.wheels) {
-        const int motors = std::clamp(w.driveMotorCount, 1, sdk::kMaxMotorsPerAxis);
-        for (int i = 0; i < motors; ++i) {
-            sdk::SlotSpec drive;
-            drive.name = sdk::driveSlotName(w.name, i);
-            drive.label = w.name + " drive" + (i > 0 ? " " + std::to_string(i + 1) : std::string());
-            drive.type = sdk::SlotType::Motor;
-            drive.required = i == 0;
-            drive.description = i == 0 ? "Motor controller driving wheel '" + w.name + "'."
-                                       : "Additional motor controller on the gearbox of wheel '" + w.name + "'.";
-            drive.countKey = w.name + ".driveMotorCount";
-            drive.ordinal = i + 1;
-            out.push_back(drive);
-        }
-        if (w.steered) {
-            sdk::SlotSpec steer;
-            steer.type = sdk::SlotType::Motor;
-            steer.name = w.name + ".steer";
-            steer.label = w.name + " steer";
-            steer.description = "Motor controller steering module '" + w.name + "'.";
-            out.push_back(steer);
-            out.push_back({w.name + ".steerEncoder", w.name + " steer encoder",
-                           sdk::SlotType::PositionSensor, false,
-                           "Azimuth encoder of module '" + w.name + "'."});
-        }
-    }
-    return out;
-}
-
 namespace {
 constexpr std::string_view kWheelCountSuffix = ".driveMotorCount";
 
@@ -886,7 +845,7 @@ std::string wheelOfSlot(std::string_view slotName) {
     const auto dot = slotName.rfind('.');
     if (dot == std::string_view::npos || dot == 0) return {};
     std::string_view tail = slotName.substr(dot + 1);
-    if (tail == "steer" || tail == "steerEncoder") return std::string(slotName.substr(0, dot));
+    if (tail == sdk::kSteerSlot || tail == sdk::kSteerEncoderSlot) return std::string(slotName.substr(0, dot));
     if (tail.substr(0, 5) != "drive") return {};
     tail.remove_prefix(5);
     for (const char ch : tail)
@@ -923,8 +882,8 @@ void pruneInactiveMappings(RobotConfig& c, const EditorCatalog& catalog, std::st
                                    if (owner == sdk::slot_owner::kDrivetrain) {
                                        const std::string wheel = wheelOfSlot(m.slot.slot);
                                        return !wheel.empty() && findWheel(c, wheel) != nullptr &&
-                                              m.slot.slot != wheel + ".steer" &&
-                                              m.slot.slot != wheel + ".steerEncoder";
+                                              m.slot.slot != sdk::steerSlotName(wheel) &&
+                                              m.slot.slot != sdk::steerEncoderSlotName(wheel);
                                    }
                                    const MechanismConfig* mech = c.findMechanism(owner);
                                    const auto* info = mech != nullptr ? catalog.findTemplate(mech->type) : nullptr;
@@ -954,9 +913,9 @@ bool setMotorCount(RobotConfig& c, const EditorCatalog& catalog, std::string_vie
 std::vector<sdk::SlotSpec> slotSpecsFor(const RobotConfig& c, const EditorCatalog& catalog, std::string_view owner) {
     std::vector<sdk::SlotSpec> out;
     if (owner == sdk::slot_owner::kRobot)
-        out = robotSlotSpecs();
+        out = sdk::robotSlotSpecs();
     else if (owner == sdk::slot_owner::kDrivetrain)
-        out = drivetrainSlotSpecs(c.drivetrain.spec);
+        out = sdk::drivetrainSlotSpecs(catalog.findDrivetrain(c.drivetrain.spec.kind), c.drivetrain.spec);
     else if (const sdk::SensorConfig* s = c.findSensor(owner))
         out.push_back(sdk::sensorSlotSpec(s->kind));
     else if (const MechanismConfig* m = c.findMechanism(owner))
@@ -1030,7 +989,7 @@ void setCom(RobotConfig& c, float offsetX, float offsetY, float height, bool com
     }
 }
 
-void setDrivetrainKind(RobotConfig& c, const std::string& kind) {
+void setDrivetrainKind(RobotConfig& c, const EditorCatalog& catalog, const std::string& kind) {
     c.drivetrain.spec.kind = kind;
     for (auto& w : c.drivetrain.spec.wheels) {
         if (kind == sdk::drivetrain_kind::kSwerve) {
@@ -1043,9 +1002,10 @@ void setDrivetrainKind(RobotConfig& c, const std::string& kind) {
         }
     }
     auto& maps = c.drivetrain.mappings;
+    const std::vector<sdk::SlotSpec> remaining = sdk::drivetrainSlotSpecs(catalog.findDrivetrain(kind), c.drivetrain.spec);
     maps.erase(std::remove_if(maps.begin(), maps.end(),
                               [&](const sdk::SlotMapping& m) {
-                                  for (const auto& s : drivetrainSlotSpecs(c.drivetrain.spec))
+                                  for (const auto& s : remaining)
                                       if (s.name == m.slot.slot) return false;
                                   return true;
                               }),
@@ -1097,10 +1057,10 @@ bool renameWheel(RobotConfig& c, const std::string& oldName, const std::string& 
     if (w == nullptr) return false;
     w->name = newName;
     for (auto& link : c.motionLinks) {
-        if (link.source == SlotAddress{sdk::slot_owner::kDrivetrain, oldName + ".drive"})
-            link.source.slot = newName + ".drive";
-        if (link.target == SlotAddress{sdk::slot_owner::kDrivetrain, oldName + ".drive"})
-            link.target.slot = newName + ".drive";
+        if (link.source == SlotAddress{sdk::slot_owner::kDrivetrain, sdk::driveSlotName(oldName, 0)})
+            link.source.slot = sdk::driveSlotName(newName, 0);
+        if (link.target == SlotAddress{sdk::slot_owner::kDrivetrain, sdk::driveSlotName(oldName, 0)})
+            link.target.slot = sdk::driveSlotName(newName, 0);
     }
     for (auto& m : c.drivetrain.mappings)
         if (wheelOfSlot(m.slot.slot) == oldName) m.slot.slot = newName + m.slot.slot.substr(oldName.size());

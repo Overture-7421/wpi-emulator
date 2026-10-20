@@ -226,6 +226,29 @@ TEST_CASE("validator: slots - unknown, owner mismatch, required, duplicates") {
     CHECK(hasIssue(issues, issue_code::kDeviceDuplicateMapping));
 }
 
+TEST_CASE("validator: drivetrain slots come from the registered kind, so a tank declares no steer slots") {
+    Registries reg;
+    REQUIRE(reg.drivetrains
+                .registerDrivetrain("tank",
+                                    {"Tank", "", [](const DrivetrainSpec& spec) { return tractionSlotSpecs(spec, false); }},
+                                    [](const DrivetrainBuildArgs& a) { return std::make_unique<wpiemu::test_runtime::TestDrivetrain>(a); })
+                .ok());
+    RobotConfig c = sampleConfig();
+    c.drivetrain.spec.wheels[0].steered = true;
+    c.drivetrain.mappings.clear();
+    const std::string wheelName = c.drivetrain.spec.wheels[0].name;
+    c.drivetrain.mappings.push_back({{slot_owner::kDrivetrain, steerSlotName(wheelName)}, DeviceKey{"hal", "pwm", 5, "rio", -1}});
+
+    c.drivetrain.spec.kind = "tank";   // steered=true is ignored: there is no such slot
+    CHECK(hasIssue(validate(c, reg), issue_code::kSlotUnknown, Severity::Error));
+    c.drivetrain.spec.kind = "test";   // a kind without a callback follows the traction convention, which steers flagged wheels
+    CHECK_FALSE(hasIssue(validate(c, reg), issue_code::kSlotUnknown));
+    c.drivetrain.spec.kind = "hover";  // an unknown kind is reported once and its mappings still validate by convention
+    const auto issues = validate(c, reg);
+    CHECK(hasIssue(issues, issue_code::kDrivetrainKindUnknown));
+    CHECK_FALSE(hasIssue(issues, issue_code::kSlotUnknown));
+}
+
 TEST_CASE("validator: motor counts, inactive motor slots and the reversed flag") {
     Registries reg;
     RobotConfig c = sampleConfig();
