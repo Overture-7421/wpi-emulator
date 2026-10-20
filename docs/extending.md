@@ -22,8 +22,9 @@ the linked reference pages own detailed behavior. Do not add season/vendor switc
    keys, zone kinds and game-value IDs start with the plugin ID plus `.`; plugin config belongs only
    to its own section. Follow the [game-plugin contract](reference/game-plugin.md).
 4. Return Qt-free editor/HUD descriptors when needed; publish every HUD key they bind to.
-   Supply `aprilTagLayout()` for simulated tag visibility and `fieldFrame()` for alliance-copy
-   start positions. Empty/default implementations intentionally provide neither feature.
+   Supply `aprilTagLayout()` (tags plus `fieldLengthM`/`fieldWidthM`, which Limelight red and
+   center poses need) for simulated tag visibility and `fieldFrame()` for alliance-copy start
+   positions. Empty/default implementations intentionally provide neither feature.
 5. Place `WPIEMU_REGISTER_GAME_PLUGIN(YourModule)` **inside the plugin's namespace**. It defines
    `registerPlugin`; declare that function in the plugin's public header.
 6. In [plugins/CMakeLists.txt](../plugins/CMakeLists.txt), add the subdirectory and link its target

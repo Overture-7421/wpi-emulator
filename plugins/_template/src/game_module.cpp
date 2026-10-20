@@ -107,6 +107,7 @@ public:
     }
 
     // 6. optional: the season's AprilTag layout for the simulated vision cameras (default: empty = no tags).
+    //    Set fieldLengthM/fieldWidthM too: Limelight red- and center-origin poses are not published without them.
     //    Poses are in the field frame; a tag's +X points out of its face (WPILib convention). See
     //    plugins/game_2026/src/april_tags.cpp for a table copied from the official WPILib JSON.
     // sdk::AprilTagLayout aprilTagLayout() const override;

@@ -162,9 +162,8 @@ Largest area is primary; no-target pose arrays are empty, not a zero pose.
 MegaTag 2 arrays carry the same simulated estimate, not an orientation-conditioned solve.
 
 Blue arrays preserve blue-origin poses; red uses the opposite corner with a half-turn, and bare
-`botpose` uses field-center origin. Conversion dimensions come from
-[VisionBridgeOptions](../../bridges/vision/include/wpiemu/bridges/vision/vision_bridges.h), not the
-layout name. Geometry arrays use [pose6](../../bridges/vision/src/vision_math.h) directly in NWU;
+`botpose` uses field-center origin. Conversion dimensions come from the `VisionSetup` field size
+(the plugin's AprilTag layout), not the layout name. Geometry arrays use [pose6](../../bridges/vision/src/vision_math.h) directly in NWU;
 there is no extra optical-axis remapping. `camerapose_robotspace` comes from model frames, not a
 robot-written transform request. Pipeline index is mirrored; LED/orientation/crop settings do not
 change detections. The encoder is AprilTag-only, not a complete Limelight firmware implementation.
