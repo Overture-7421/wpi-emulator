@@ -24,7 +24,7 @@ EulerAngles eulerZyx(const sdk::Quat& q);
 
 class ChassisImuSensor {
 public:
-    explicit ChassisImuSensor(sdk::Vec3 gravity = {0.f, 0.f, -9.81f}) : gravity_(gravity) {}
+    explicit ChassisImuSensor(sdk::Vec3 gravity = {0.f, 0.f, -sdk::kDefaultGravityMps2}) : gravity_(gravity) {}
 
     // Call once after every IPhysicsWorld::step(dt). Returns neutral values for an invalid body.
     sdk::ImuFeedback update(const sdk::IPhysicsWorld& world, sdk::BodyId body, float dt);

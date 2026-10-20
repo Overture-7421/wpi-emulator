@@ -7,6 +7,7 @@
 #include "fakes.h"
 #include "wpiemu/bridges/vendor/ctre_rules.h"
 #include "wpiemu/bridges/vendor/vendor_bridges.h"
+#include "wpiemu/sdk/core/units.h"
 
 using namespace wpiemu::vendor_tests;
 namespace ctre = wpiemu::bridges::vendor::ctre;
@@ -226,7 +227,7 @@ TEST_CASE("vendor rules: Pigeon 2 converts degrees to canonical radians and back
     CHECK(rig.host.announced.at(id).descriptor.capabilities.has(Capability::Imu));
     CHECK(rig.host.signalSpec(id, sg::kAccelX) == nullptr);  // CTRE sim has no accelerometer inputs
 
-    const double pi = ctre::kPi;
+    const double pi = wpiemu::sdk::kPi;
     std::vector<SignalSample> in{{id, rig.host.signalIndex(id, sg::kYaw), pi / 2},
                                  {id, rig.host.signalIndex(id, sg::kPitch), pi / 6},
                                  {id, rig.host.signalIndex(id, sg::kRoll), -pi / 6},

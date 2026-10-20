@@ -8,8 +8,6 @@
 
 namespace wpiemu::bridges::hal {
 
-inline constexpr double kStandardGravityMps2 = 9.80665;
-
 // NaN / inf -> 0, otherwise clamped to [-1, 1].
 inline double normalizeSpeed(double v) {
     if (!std::isfinite(v)) return 0.0;

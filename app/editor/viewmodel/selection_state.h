@@ -37,7 +37,7 @@ public:
     bool snapEnabled() const { return snapEnabled_; }
     void setSnapEnabled(bool on);
     // Snap increments in SI (metres, degrees) derived from the unit system: 1 in or 1 cm; 15 degrees.
-    double moveStepM() const { return units_ == UnitSystem::Imperial ? 0.0254 : 0.01; }
+    double moveStepM() const { return units_ == UnitSystem::Imperial ? sdk::kMetersPerInch : 0.01; }
     double rotateStepDeg() const { return rotateStepDeg_; }
     void setRotateStepDeg(double deg);
 

@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "wpiemu/core/physics/joint_host.h"
+#include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::core::physics {
 namespace {
@@ -25,7 +26,6 @@ namespace {
 using namespace sdk;
 
 constexpr int kCylinderSides = 24;
-constexpr float kPi = 3.14159265358979323846f;
 
 bool finite(float v) { return std::isfinite(v); }
 bool finite(const Vec3& v) { return finite(v.x) && finite(v.y) && finite(v.z); }
@@ -41,7 +41,7 @@ b3Transform toB3(const Pose3& p) { return {toB3(p.position), toB3(p.rotation.nor
 // Shortest-arc rotation taking +X onto `axis` (unit length).
 Quat rotationFromX(const Vec3& axis) {
     const float d = axis.x;
-    if (d < -0.999999f) return Quat::fromAxisAngle({0.f, 0.f, 1.f}, kPi);
+    if (d < -0.999999f) return Quat::fromAxisAngle({0.f, 0.f, 1.f}, kPiF);
     const Vec3 c{0.f, -axis.z, axis.y};  // (1,0,0) x axis
     return Quat{c.x, c.y, c.z, 1.f + d}.normalized();
 }
@@ -168,7 +168,7 @@ public:
             // Box3D cylinders have their axis on Y; rotate it onto the SDK's local Z.
             b3HullData* hull = b3CreateCylinder(2.f * cyl->halfHeight, cyl->radius, -cyl->halfHeight, kCylinderSides);
             if (hull == nullptr) return {};
-            const Pose3 axisFix{{}, Quat::fromAxisAngle({1.f, 0.f, 0.f}, 0.5f * kPi)};
+            const Pose3 axisFix{{}, Quat::fromAxisAngle({1.f, 0.f, 0.f}, 0.5f * kPiF)};
             created = b3CreateTransformedHullShape(rec->id, &sd, hull, toB3(d.local * axisFix), {1.f, 1.f, 1.f});
             b3DestroyHull(hull);
         } else if (const auto* m = std::get_if<MeshShape>(&d.geometry)) {

@@ -30,6 +30,7 @@
 #include "hud_model.h"
 #include "joystick_editor.h"
 #include "status_chip.h"
+#include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::app::runview {
 namespace {
@@ -46,11 +47,10 @@ QIcon cogIcon(const QColor& color) {
     p.setBrush(color);
     QPainterPath gear;
     constexpr int kTeeth = 8;
-    constexpr double kPi = 3.14159265358979;
     for (int i = 0; i < kTeeth * 2; ++i) {
         // Alternate outer/inner radius with a short flat on each tooth.
         const double r = (i % 2 == 0) ? 9.0 : 6.6;
-        const double a0 = (i - 0.35) * kPi / kTeeth, a1 = (i + 0.35) * kPi / kTeeth;
+        const double a0 = (i - 0.35) * sdk::kPi / kTeeth, a1 = (i + 0.35) * sdk::kPi / kTeeth;
         const QPointF p0(r * std::cos(a0), r * std::sin(a0)), p1(r * std::cos(a1), r * std::sin(a1));
         if (i == 0) gear.moveTo(p0); else gear.lineTo(p0);
         gear.lineTo(p1);

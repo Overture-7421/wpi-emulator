@@ -12,6 +12,7 @@
 #include "wpiemu/bridges/vendor/ctre_rules.h"
 #include "wpiemu/bridges/vendor/incremental_backend.h"
 #include "wpiemu/bridges/vendor/vendor_sim_bridge.h"
+#include "wpiemu/sdk/core/units.h"
 
 // Live discovery: the bridge is polled while the robot constructor is still creating SimDevices and values.
 using namespace wpiemu::vendor_tests;
@@ -92,7 +93,7 @@ TEST_CASE("vendor live poll: late values of guarded inputs are still guarded") {
     const DeviceId id = rig.host.idOf("pigeon2", 13);
     REQUIRE(rig.host.signalSpec(id, sg::kYaw) != nullptr);
     const auto yaw = rig.host.signalIndex(id, sg::kYaw);
-    const double pi = ctre::kPi;
+    const double pi = wpiemu::sdk::kPi;
 
     std::vector<SignalSample> a{{id, yaw, 170.0 * pi / 180.0}};
     rig.bridge->applyInputs(a);

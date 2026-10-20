@@ -60,9 +60,6 @@ inline constexpr const char* kSupplyCurrentInput = "supplyCurrentInput";        
 inline constexpr const char* kMotorCurrentInput = "motorCurrentInput";          // Phoenix 5: sim -> robot
 }  // namespace vsignal
 
-inline constexpr double kPi = 3.14159265358979323846;
-inline constexpr double kDegToRad = kPi / 180.0;
-
 struct Phoenix5Options {
     // Counts per output revolution of the quadrature encoder wired to a Talon SRX. The CTRE Mag Encoder in
     // quadrature mode reports 4096 counts/rev; Phoenix 5 velocity is counts per 100 ms.

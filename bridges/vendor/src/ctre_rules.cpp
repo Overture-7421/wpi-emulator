@@ -3,6 +3,8 @@
 #include <optional>
 #include <utility>
 
+#include "wpiemu/sdk/core/units.h"
+
 namespace wpiemu::bridges::vendor::ctre {
 
 namespace {
@@ -91,13 +93,13 @@ SimDeviceRule pigeon2Rule() {
     namespace sg = sdk::signal;
     r.bindings = {
         binding("", "supplyVoltage", sg::kSupplyVoltage, "V"),
-        binding("", "rawYawInput", sg::kYaw, "rad", kDegToRad),
-        binding("", "pitch", sg::kPitch, "rad", kDegToRad),
-        binding("", "roll", sg::kRoll, "rad", kDegToRad),
-        binding("", "angularVelX", sg::kAngularVelX, "rad/s", kDegToRad),
-        binding("", "angularVelY", sg::kAngularVelY, "rad/s", kDegToRad),
-        binding("", "angularVelZ", sg::kAngularVelZ, "rad/s", kDegToRad),
-        binding("", "yaw", vsignal::kYawReported, "rad", kDegToRad),
+        binding("", "rawYawInput", sg::kYaw, "rad", sdk::kDegToRad),
+        binding("", "pitch", sg::kPitch, "rad", sdk::kDegToRad),
+        binding("", "roll", sg::kRoll, "rad", sdk::kDegToRad),
+        binding("", "angularVelX", sg::kAngularVelX, "rad/s", sdk::kDegToRad),
+        binding("", "angularVelY", sg::kAngularVelY, "rad/s", sdk::kDegToRad),
+        binding("", "angularVelZ", sg::kAngularVelZ, "rad/s", sdk::kDegToRad),
+        binding("", "yaw", vsignal::kYawReported, "rad", sdk::kDegToRad),
     };
     return r;
 }

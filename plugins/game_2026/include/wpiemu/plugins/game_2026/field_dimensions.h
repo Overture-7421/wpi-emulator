@@ -9,9 +9,11 @@
 //   [MS]  MapleSim REBUILT arena (community sim): hub centre, trench post, tower uprights, depot, hub exits
 // Anything not stated by [GM] is derived and marked "approx".
 
+#include "wpiemu/sdk/core/units.h"
+
 namespace wpiemu::plugins::game_2026::dim {
 
-constexpr float inch(double inches) { return static_cast<float>(inches * 0.0254); }
+constexpr float inch(double inches) { return static_cast<float>(sdk::inchesToMeters(inches)); }
 
 // ---- field ----------------------------------------------------------------------------------
 inline constexpr float kFieldLengthM = 16.541f;  // [AT] field.length ([GM] ~651.2 in)

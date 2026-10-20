@@ -20,6 +20,7 @@
 #include "wpiemu/core/physics/quasi_static_loads.h"
 #include "wpiemu/sdk/dynamics/motor_model.h"
 #include "wpiemu/sdk/physics/drivetrain.h"
+#include "wpiemu/sdk/physics/physics_types.h"
 
 namespace wpiemu::core::physics {
 
@@ -36,7 +37,7 @@ using MotorModelFactory = std::function<std::unique_ptr<sdk::IMotorModel>(const 
 struct TractionOptions {
     // Default: ideal DC motor (sdk::DcMotorModel). Inject another model (thermal, data table, a fake) here.
     MotorModelFactory motorModels;
-    float gravityMps2 = 9.81f;          // gravity used to estimate the tire-force acceleration
+    float gravityMps2 = sdk::kDefaultGravityMps2;   // gravity used to estimate the tire-force acceleration
     float rotorInertiaKgM2 = 5e-5f;     // per drive / steer motor rotor, reflected through the gearbox
     float steerEfficiency = 0.9f;
     float groundRayExtraM = 0.02f;      // ray length = wheel radius + this

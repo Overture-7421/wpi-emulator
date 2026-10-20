@@ -21,6 +21,8 @@
 
 #include <algorithm>
 
+#include "wpiemu/sdk/core/units.h"
+
 namespace wpiemu::app::runview {
 namespace {
 
@@ -286,7 +288,7 @@ void RunPage::selectStartPosition(const QString& id) {
                               .arg(position->label.empty() ? id : QString::fromStdString(position->label))
                               .arg(static_cast<double>(position->pose.xM), 0, 'f', 2)
                               .arg(static_cast<double>(position->pose.yM), 0, 'f', 2)
-                              .arg(static_cast<double>(position->pose.headingRad) * 180.0 / 3.14159265358979, 0, 'f', 1)});
+                              .arg(sdk::radToDeg(static_cast<double>(position->pose.headingRad)), 0, 'f', 1)});
     }
     ds_.onSimReset();
     backend_.resetSimulation();

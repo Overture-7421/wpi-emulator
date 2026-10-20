@@ -4,6 +4,7 @@
 
 #include "bridge_support.h"
 #include "wpiemu/bridges/hal/hal_units.h"
+#include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/devices/signals.h"
 
 namespace wpiemu::bridges::hal {
@@ -105,8 +106,8 @@ std::vector<sdk::SignalSpec> AccelerometerBridge::signalsOf(int) const {
 void AccelerometerBridge::writeSignal(int, std::size_t signalIndex, double value) {
     if (signalIndex >= accelMps2_.size()) return;
     accelMps2_[signalIndex] = value;
-    hal_->setAcceleration(accelMps2_[0] / kStandardGravityMps2, accelMps2_[1] / kStandardGravityMps2,
-                          accelMps2_[2] / kStandardGravityMps2);
+    hal_->setAcceleration(accelMps2_[0] / sdk::kStandardGravityMps2, accelMps2_[1] / sdk::kStandardGravityMps2,
+                          accelMps2_[2] / sdk::kStandardGravityMps2);
 }
 
 }  // namespace wpiemu::bridges::hal

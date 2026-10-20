@@ -47,8 +47,8 @@ This avoids contact-impulse spikes at edges becoming enormous traction impulses.
 It is an approximate grip/load-transfer model, not a suspension or tipping solver.
 The equations and degenerate-layout handling live in
 [quasi-static loads](../../core/physics/src/quasi_static_loads.cpp).
-`TractionOptions::gravityMps2` defaults to 9.81 independently of `PhysicsConfig::gravity`;
-changing world gravity alone does not retune the load estimator.
+`TractionOptions::gravityMps2` defaults to `sdk::kDefaultGravityMps2` (9.81) but is not linked to a
+configured `PhysicsConfig::gravity`; changing world gravity alone does not retune the load estimator.
 
 The default `brush` and alternative `pacejka_lite` implement
 [ITireModel](../../sdk/include/wpiemu/sdk/physics/tire_model.h). Slip uses wheel rim speed

@@ -11,6 +11,7 @@
 #include "model/motion_links.h"
 #include "model/property_groups.h"
 #include "model/tr.h"
+#include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::app::editor {
 
@@ -110,7 +111,7 @@ std::unique_ptr<ProjectTreeModel::Node> ProjectTreeModel::build() const {
                        alliance + QStringLiteral(" \xC2\xB7 %1, %2 m, %3\xC2\xB0")
                                       .arg(static_cast<double>(p.pose.xM), 0, 'f', 2)
                                       .arg(static_cast<double>(p.pose.yM), 0, 'f', 2)
-                                      .arg(static_cast<double>(p.pose.headingRad) * 180.0 / 3.14159265358979, 0, 'f', 0));
+                                      .arg(sdk::radToDeg(static_cast<double>(p.pose.headingRad)), 0, 'f', 0));
         pn.tooltip = ETR("Field pose the robot is placed at when this start position is chosen in the run view.");
     }
 

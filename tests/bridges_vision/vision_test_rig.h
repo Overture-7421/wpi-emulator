@@ -21,7 +21,7 @@ namespace vision_test {
 namespace sdk = wpiemu::sdk;
 namespace vis = wpiemu::bridges::vision;
 
-inline constexpr double kPi = 3.14159265358979323846;
+using sdk::kPi;
 
 inline sdk::CameraConfig makeCamera(sdk::CameraKind kind, std::string name) {
     sdk::CameraConfig c;

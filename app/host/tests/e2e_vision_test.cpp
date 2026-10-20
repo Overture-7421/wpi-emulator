@@ -29,6 +29,7 @@
 #include "host/robot_session.h"
 #include "test_support.h"
 #include "wpiemu/core/launcher/project_inspector.h"
+#include "wpiemu/sdk/core/units.h"
 
 namespace fs = std::filesystem;
 using namespace wpiemu;
@@ -47,7 +48,6 @@ namespace {
 
 constexpr int kSkipExitCode = 77;
 constexpr double kLatencyMs = 40.0;
-constexpr double kPi = 3.14159265358979323846;
 
 // Same constants as the sample robot (samples/vision_robot/<lang>/.../Vision, Robot).
 constexpr float kFrontX = 0.30f;
@@ -122,7 +122,7 @@ sdk::RobotConfig visionConfig(const fs::path& project, const std::string& langua
     }
     c.robotMappings.push_back({{sdk::slot_owner::kRobot, "imu"}, phoenixKey("pigeon2", 10)});
     c.cameras.push_back(makeCamera("front", sdk::CameraKind::Limelight, "front", kFrontX, 0.f));
-    c.cameras.push_back(makeCamera("rear", sdk::CameraKind::PhotonVision, "photon-rear", kRearX, static_cast<float>(kPi)));
+    c.cameras.push_back(makeCamera("rear", sdk::CameraKind::PhotonVision, "photon-rear", kRearX, static_cast<float>(sdk::kPi)));
     return c;
 }
 
@@ -278,7 +278,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     const auto snap = session.latestSnapshot();
     REQUIRE(snap != nullptr);
     const sdk::Vec3 truth = snap->chassis().pose.position;
-    const double truthYawDeg = snap->chassis().pose.rotation.yaw() * 180.0 / kPi;
+    const double truthYawDeg = sdk::radToDeg(snap->chassis().pose.rotation.yaw());
     std::printf("e2e: sim %.2f s, chassis (%.3f, %.3f, z %.3f) yaw %.1f deg; %zu limelight / %zu photon lines\n", simSeconds(), truth.x, truth.y,
                 truth.z, truthYawDeg, got.limelight.size(), got.photon.size());
     for (const sdk::CameraState& c : snap->cameras()) {

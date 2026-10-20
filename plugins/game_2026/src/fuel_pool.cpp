@@ -4,12 +4,9 @@
 
 #include "wpiemu/plugins/game_2026/field_dimensions.h"
 #include "wpiemu/plugins/game_2026/types.h"
+#include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::plugins::game_2026 {
-
-namespace {
-constexpr float kPi = 3.14159265358979f;
-}
 
 FuelPool::FuelPool(sdk::IPhysicsWorld& world, const FuelPhysicsConfig& physics, int maxBodies)
     : world_(world), physics_(physics), maxBodies_(maxBodies),
@@ -40,7 +37,7 @@ std::uint32_t FuelPool::spawn(const sdk::Vec3& position, const SpawnOptions& opt
     }
 
     const float r = dim::kFuelRadiusM;
-    const float volume = 4.f / 3.f * kPi * r * r * r;
+    const float volume = 4.f / 3.f * sdk::kPiF * r * r * r;
     sdk::ShapeDesc sd;
     sd.geometry = sdk::SphereShape{r};
     sd.material = {physics_.friction, physics_.restitution, physics_.rollingResistance};

@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "wpiemu/plugins/game_2026/field_dimensions.h"
+#include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::plugins::game_2026 {
 
@@ -14,7 +15,6 @@ using sdk::Pose3;
 using sdk::Quat;
 using sdk::Vec3;
 
-constexpr float kPi = 3.14159265358979f;
 constexpr float kRampAngleRad = 0.2617994f;  // 15 degrees
 
 const char* const kRedColor = "#b3261e";
@@ -33,7 +33,7 @@ public:
     Vec3 vector(const Vec3& v) const { return red_ ? Vec3{-v.x, -v.y, v.z} : v; }
     Pose3 pose(const Pose3& p) const {
         if (!red_) return p;
-        return {point(p.position), (Quat::fromYaw(kPi) * p.rotation).normalized()};
+        return {point(p.position), (Quat::fromYaw(sdk::kPiF) * p.rotation).normalized()};
     }
     float xDir() const { return red_ ? -1.f : 1.f; }
 
@@ -145,7 +145,7 @@ void addTower(FieldLayout& l, const Frame& f, Alliance a) {
         FieldCylinder c;
         c.name = n + rungName[i];
         // cylinder axis is local Z; rotate it onto the field Y axis
-        c.pose = f.pose({{d::kUprightCenterXM, cy, rungZ[i]}, Quat::fromAxisAngle({1.f, 0.f, 0.f}, kPi / 2)});
+        c.pose = f.pose({{d::kUprightCenterXM, cy, rungZ[i]}, Quat::fromAxisAngle({1.f, 0.f, 0.f}, sdk::kPiF / 2)});
         c.radiusM = d::kRungRadiusM;
         c.heightM = d::kRungLengthM;
         c.color = color;

@@ -8,12 +8,10 @@
 #include <vector>
 
 #include "wpiemu/sdk/core/math.h"
+#include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/vision/camera_frame.h"
 
 namespace wpiemu::bridges::vision::detail {
-
-inline constexpr double kPi = 3.14159265358979323846;
-inline constexpr double kRadToDeg = 180.0 / kPi;
 
 struct EulerDeg {
     double rollDeg = 0, pitchDeg = 0, yawDeg = 0;
@@ -25,7 +23,7 @@ inline EulerDeg eulerDeg(const sdk::Quat& q) {
     const double roll = std::atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y));
     const double pitch = std::asin(std::clamp(2.0 * (w * y - z * x), -1.0, 1.0));
     const double yaw = std::atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z));
-    return {roll * kRadToDeg, pitch * kRadToDeg, yaw * kRadToDeg};
+    return {roll * sdk::kRadToDeg, pitch * sdk::kRadToDeg, yaw * sdk::kRadToDeg};
 }
 
 inline double wrapDeg(double deg) {
@@ -56,7 +54,7 @@ inline sdk::Pose3 inFieldOrigin(const sdk::Pose3& blue, FieldOrigin origin, doub
                      static_cast<float>(blue.position.y - 0.5 * fieldWidthM), blue.position.z},
                     blue.rotation};
         case FieldOrigin::Red: {
-            const sdk::Quat turn = sdk::Quat::fromYaw(static_cast<float>(kPi));
+            const sdk::Quat turn = sdk::Quat::fromYaw(sdk::kPiF);
             return {{static_cast<float>(fieldLengthM - blue.position.x),
                      static_cast<float>(fieldWidthM - blue.position.y), blue.position.z},
                     (turn * blue.rotation).normalized()};

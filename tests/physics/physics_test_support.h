@@ -23,7 +23,6 @@ using namespace wpiemu::sdk;
 namespace phys = wpiemu::core::physics;
 
 constexpr float kDt = 0.005f;
-constexpr float kPiF = 3.14159265358979323846f;
 
 inline std::unique_ptr<IPhysicsWorld> makeWorld(PhysicsConfig cfg = {}) {
     auto w = phys::createBox3dWorld(cfg);
