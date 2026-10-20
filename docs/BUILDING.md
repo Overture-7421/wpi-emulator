@@ -5,7 +5,7 @@ Prerequisites: a checkout and a terminal at the repository root.
 
 ## Prerequisites
 
-- Git, Python 3, CMake 3.25+ for the shipped presets, and a C++20 compiler. Windows uses MSVC 2022;
+- Git, Python 3, CMake 3.25+, and a C++20 compiler. Windows uses MSVC 2022;
   Linux/macOS use GCC/Clang or Apple Clang. Non-Visual-Studio presets also require Ninja.
 - A matching Qt 6.8 kit with Quick 3D and Shader Tools; the Windows examples use
   `C:\Qt\6.8.3\msvc2022_64`. Omit Qt for a Qt-free build using the option below.
