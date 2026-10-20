@@ -298,7 +298,8 @@ inline proto::DeviceAnnounce cancoderAnnounce(std::uint32_t runtimeId, int canId
     return a;
 }
 
-// Announces the devices of sampleConfig(): talonfx 1..4 (drivetrain, runtime ids 101..104), talonfx 10 (intake, 105),\n// cancoder 12 (intake encoder, 106: signals 0 position, 1 velocity), pigeon2 20 (107).
+// Announces the devices of sampleConfig(): talonfx 1..4 (drivetrain, runtime ids 101..104), talonfx 10 (intake, 105),
+// cancoder 12 (intake encoder, 106: signals 0 position, 1 velocity), pigeon2 20 (107).
 inline std::vector<proto::DeviceAnnounce> sampleDevices() {
     std::vector<proto::DeviceAnnounce> out;
     std::uint32_t rid = 101;
