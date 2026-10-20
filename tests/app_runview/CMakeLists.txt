@@ -19,3 +19,11 @@ if(WIN32)
     list(APPEND _wpiemu_runview_test_env "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
 set_tests_properties(runview.ui_tests PROPERTIES ENVIRONMENT_MODIFICATION "${_wpiemu_runview_test_env}")
+
+# The demo is not a test, but it must leave cleanly: it once deleted a stack-allocated page at exit (heap corruption).
+if(WPIEMU_BUILD_UI_DEMOS)
+    add_test(NAME runview.demo_exit
+             COMMAND wpiemu_runview_demo --scenario idle --screenshot "${CMAKE_CURRENT_BINARY_DIR}/demo_exit.png"
+                     --settle 300 --size 640x400)
+    set_tests_properties(runview.demo_exit PROPERTIES TIMEOUT 60 ENVIRONMENT_MODIFICATION "${_wpiemu_runview_test_env}")
+endif()

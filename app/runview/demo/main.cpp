@@ -59,7 +59,7 @@ int main(int argc, char* argv[]) {
 
     QMainWindow window;
     window.setWindowTitle(QStringLiteral("Run view demo (fake backend)"));
-    window.setCentralWidget(&page);
+    window.setCentralWidget(&page);   // QMainWindow takes ownership, but `page` lives on the stack: handed back before exit
     const QStringList wh = size.split(QLatin1Char('x'));
     window.resize(wh.value(0).toInt(), wh.value(1).toInt());
     if (args.contains(QStringLiteral("--park"))) window.move(-6000, 100);   // real platform, window out of sight (screenshots)
@@ -103,5 +103,7 @@ int main(int argc, char* argv[]) {
             QApplication::quit();
         });
     }
-    return app.exec();
+    const int exitCode = app.exec();
+    window.takeCentralWidget();   // otherwise the window's destructor deletes the stack-allocated page (heap corruption, 0xC0000374)
+    return exitCode;
 }
