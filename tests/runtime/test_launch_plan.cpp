@@ -14,7 +14,7 @@ using wpiemu::test_runtime::ScratchDir;
 using wpiemu::test_runtime::makeRequest;
 namespace fs = std::filesystem;
 
-TEST_CASE("init script: ADR 0001 content, no machine specific paths") {
+TEST_CASE("init script: ADR 0003 content, no machine specific paths") {
     const std::string s = generateInitScript();
     CHECK(s == generateInitScript());  // deterministic: identical for every run
     CHECK(s.find("WPIEMU_EXT") != std::string::npos);

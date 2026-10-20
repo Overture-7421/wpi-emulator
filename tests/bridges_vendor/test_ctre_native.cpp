@@ -72,7 +72,7 @@ public:
 
 }  // namespace
 
-TEST_CASE("vendor config snapshot: decodes the ADR 0002 example and typed accessors") {
+TEST_CASE("vendor config snapshot: decodes a sample snapshot and typed accessors") {
     const auto snap = CtreConfigSnapshot::parse(
         "1901,s_1\n"
         "1918,s_1070945649\n"      // SensorToMechanismRatio 1.6667 (IEEE-754 float bits)
