@@ -117,6 +117,8 @@ private:
     QMenu* zoneMenu_ = nullptr;
     QMenu* startMenu_ = nullptr;
     QToolButton* startButton_ = nullptr;
+    QToolButton* allianceButton_ = nullptr;
+    void updateAllianceButton();
     std::vector<sdk::StartPosition> startPositions_;
     QAction* restartAction_ = nullptr;
     QAction* restartRobotAction_ = nullptr;

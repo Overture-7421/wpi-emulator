@@ -262,13 +262,16 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
     }
     h->addLayout(texts, 1);
 
+    // Actions sit on their own row so several of them never force the panel wider than its column.
+    auto* actions = new QHBoxLayout;
+    actions->setContentsMargins(0, 0, 0, 0);
     auto addAction = [&](const QString& text, const QString& tip, const std::function<void()>& fn) {
         auto* b = new QToolButton(head);
         b->setText(text);
         b->setToolTip(tip);
         b->setAutoRaise(true);
         connect(b, &QToolButton::clicked, this, [fn] { fn(); });
-        h->addWidget(b, 0, Qt::AlignTop);
+        actions->addWidget(b);
         return b;
     };
     if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Zone || target.kind == SelKind::Camera ||
@@ -288,7 +291,19 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
     if (target.kind == SelKind::Mechanism || target.kind == SelKind::Primitive || target.kind == SelKind::Wheel || target.kind == SelKind::Zone ||
         target.kind == SelKind::Camera || target.kind == SelKind::Sensor || target.kind == SelKind::StartPosition)
         addAction(ETR("Delete"), ETR("Delete (Del)"), [this] { controller_.deleteSelection(); });
-    layout_->addWidget(head);
+    if (actions->count() == 0) {
+        delete actions;
+        layout_->addWidget(head);
+        return;
+    }
+    actions->addStretch();
+    auto* column = new QWidget(content_);
+    auto* v = new QVBoxLayout(column);
+    v->setContentsMargins(0, 0, 0, 0);
+    v->setSpacing(2);
+    v->addWidget(head);
+    v->addLayout(actions);
+    layout_->addWidget(column);
 }
 
 void InspectorPanel::addShapes(const std::string& owner) {

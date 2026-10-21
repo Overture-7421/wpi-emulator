@@ -275,6 +275,16 @@ QToolButton* RunViewport::addStartPositionControl(QMenu* menu) {
     return button;
 }
 
+QToolButton* RunViewport::addAllianceControl() {
+    auto* button = new QToolButton;
+    button->setObjectName(QStringLiteral("runview.allianceButton"));
+    button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    button->setFixedSize(64, 34);
+    button->setCursor(Qt::PointingHandCursor);
+    addControl(button);
+    return button;
+}
+
 void RunViewport::addRestartControl(QAction* restart, QMenu* menu) {
     auto* main = new QToolButton;
     main->setObjectName(QStringLiteral("runview.restartButton"));

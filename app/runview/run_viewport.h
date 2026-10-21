@@ -69,6 +69,8 @@ public:
     void addStateControl(QAction* action);
     // Start position button with the menu of positions to reset the robot to.
     QToolButton* addStartPositionControl(QMenu* menu);
+    // A coloured Red/Blue button; the owner sets its text and colour and toggles the alliance on click.
+    QToolButton* addAllianceControl();
     // Restart button joined with a chevron that opens `menu` (restart options).
     void addRestartControl(QAction* restart, QMenu* menu);
     // Moves the speed combo into the cluster, styled with centred text.

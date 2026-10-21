@@ -80,6 +80,12 @@ void RunPage::build() {
     // State, restart (with its robot-code option) and speed float at the bottom-right of the 3D view, beside Home view.
     viewport_->addStateControl(stateAction_);
     startButton_ = viewport_->addStartPositionControl(startMenu_);
+    allianceButton_ = viewport_->addAllianceControl();
+    connect(allianceButton_, &QToolButton::clicked, this, [this] {
+        ds_.setAlliance(ds_.alliance() == sdk::Alliance::Red ? sdk::Alliance::Blue : sdk::Alliance::Red);
+    });
+    connect(&ds_, &DriverStationModel::changed, this, &RunPage::updateAllianceButton);
+    updateAllianceButton();
     viewport_->addRestartControl(restartAction_, restartMenu_);
     viewport_->addSpeedControl(speedCombo_);
     console_ = new ConsolePanel(this);
@@ -272,6 +278,17 @@ void RunPage::rebuildStartMenu() {
     startButton_->setToolTip(startPositions_.empty()
                                  ? tr("No start positions yet: add them in the editor under Robot > Start positions")
                                  : tr("Start position: %1. Choose where the robot is placed on restart.").arg(currentLabel));
+}
+
+void RunPage::updateAllianceButton() {
+    const bool red = ds_.alliance() == sdk::Alliance::Red;
+    allianceButton_->setText(red ? tr("RED") : tr("BLUE"));
+    allianceButton_->setToolTip(tr("Running as the %1 alliance. Click to switch to %2.").arg(red ? tr("Red") : tr("Blue"), red ? tr("Blue") : tr("Red")));
+    allianceButton_->setAccessibleName(tr("Alliance: %1").arg(red ? tr("Red") : tr("Blue")));
+    allianceButton_->setStyleSheet(QStringLiteral(
+        "QToolButton { color: white; font-weight: 700; border-radius: 8px; border: 1px solid rgba(255,255,255,90); background: %1; }"
+        "QToolButton:hover { border-color: white; }")
+                                       .arg(red ? QStringLiteral("#c93a3f") : QStringLiteral("#3a6fd8")));
 }
 
 void RunPage::selectStartPosition(const QString& id) {
