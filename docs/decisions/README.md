@@ -19,6 +19,9 @@ These records explain adopted design constraints, not implementation inventories
 | [0007](0007-generic-mechanisms-plugin-world.md) | Generic mechanisms and plugin-owned world |
 | [0008](0008-in-process-vision.md) | In-process vision coprocessors |
 | [0009](0009-start-placement-feedback.md) | Explicit start placement and calibrated feedback |
+| [0010](0010-plugin-owned-season-data.md) | Plugin-owned season data |
+| [0011](0011-one-host-contract.md) | One host contract and app layering |
+| [0012](0012-shared-primitives-in-the-sdk.md) | Shared primitives live in the SDK |
 
 ## Maintaining the set
 

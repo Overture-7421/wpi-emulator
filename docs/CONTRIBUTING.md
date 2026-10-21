@@ -41,9 +41,9 @@ Scratch experiments go in the git-ignored `spikes/`; never commit them.
 - For device changes, preserve the [identity and feedback contracts](reference/bridges.md);
   a declared CAN address is not necessarily a distinguishable physical simulator device.
 - Define anything several modules need once in the SDK and derive from it, as the
-  [motor table](../sdk/include/wpiemu/sdk/dynamics/motor_model.h) does for core, wizard and editor and
-  [`Alliance`](../sdk/include/wpiemu/sdk/game/alliance.h) does for config, plugins and the UI;
-  do not copy tables, validation rules or helpers between modules.
+  [motor table](../sdk/include/wpiemu/sdk/dynamics/motor_model.h) and
+  [`Alliance`](../sdk/include/wpiemu/sdk/game/alliance.h) do; do not copy tables, validation rules or helpers between
+  modules.
 
 ## Look-alikes kept on purpose
 
@@ -51,12 +51,14 @@ The simplification audit found these differ in behavior, precision, threading or
 Merge one only with proof that it removes complexity without changing behavior or adding a module edge:
 
 - Formatters and parsers: the run-view HUD, state and stats formatters; extension versus IPC environment parsing.
-- Layers: IPC framing, framed transport, codec and channel; core versus extension link types; the vendor backend
-  chain; the wizard's input ranges versus core validation; the config codec versus the SDK value codec.
-- Math: motor, tire and mechanism dynamics; the vision bridges' double-precision vendor math versus SDK float poses.
-- Hosts and shells: demo versus real runtime host, editor versus run-view 3D shell, POSIX versus Windows processes.
-- Targets and tests: `wpiemu_halsim_hal`, the physics library, per-boundary test harnesses, and the shared
-  `PluginRegistrar` and init-script seams.
+- Layers: IPC framing, framed transport, codec and channel; core versus extension link types, `IpcLink`'s outbound
+  side, watchdogs and process readers; the vendor backend chain; the wizard's input ranges versus core validation;
+  the config codec versus the SDK value codec; Photon's wire format versus the IPC codec (only bytes are shared).
+- Math: motor, tire and mechanism dynamics (analytic gearbox versus numeric `DcMotorModel`); the vision bridges'
+  double-precision vendor math versus SDK float poses.
+- Hosts and shells: demo versus real runtime host, editor versus run-view lighting, POSIX versus Windows processes.
+- Targets and tests: `wpiemu_halsim_hal`, the physics library, per-boundary test harnesses, the shared
+  `PluginRegistrar` and init-script seams, the core-only runtime sample config.
 
 ## Tests
 
@@ -64,9 +66,8 @@ Add a focused regression test for changed behavior, next to the tests for that m
 interfaces and the header-only [SDK fakes](../sdk/include/wpiemu/sdk/testing) over implementation access.
 Wait on another thread or process with that folder's `waitUntil`, not a hand-written sleep loop, and build device
 announcements and hub-warning checks with its `device_fixtures.h`. Play the robot-process side of the protocol with its
-`fake_extension.h` (Hello, frame answering and control acks; a failing robot is configuration, not a new fake) and the
-emulator side with `fake_emulator.h`. Test helpers
-that need platform calls, such as the `ScopedEnv` environment guard, live in [tests/support](../tests/support).
+`fake_extension.h` (a failing robot is configuration, not a new fake) and the emulator side with `fake_emulator.h`.
+Test helpers that need platform calls, such as the `ScopedEnv` environment guard, live in [tests/support](../tests/support).
 Cover the important failure/reset edge as well as the happy path; do not test constants or language
 behavior merely to increase coverage.
 
