@@ -46,6 +46,7 @@ set(WPIEMU_EDITOR_SOURCES
     views/property_form.cpp
     views/section_card.cpp
     views/toast_overlay.cpp
+    views/tree_context_menu.cpp
     views/viewport_widget.cpp
 )
 

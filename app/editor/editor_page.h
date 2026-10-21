@@ -17,6 +17,7 @@
 
 class QAction;
 class QUndoStack;
+class QVBoxLayout;
 
 namespace wpiemu::app::editor {
 
@@ -62,6 +63,15 @@ Q_SIGNALS:
     void autosaveRequested();
 
 private:
+    // The constructor runs these in order: widgets first, then the connections between models and views.
+    void createActions();
+    void buildTopBar(QVBoxLayout* root);
+    void buildPanes(QVBoxLayout* root);
+    void connectTree();
+    void connectTreeDrops();
+    void connectController();
+    void connectValidationButton();
+
     struct Impl;
     std::unique_ptr<Impl> d;
 };
