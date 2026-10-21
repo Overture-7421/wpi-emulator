@@ -35,6 +35,9 @@ that id plus `.`. `registerMechanisms()` contributes those templates through `Me
 `contributeConfigSchema()` describes the plugin section. The config pipeline supplies defaults
 and checks its declared schema version and properties; a mismatched section version is rejected.
 Keep other plugins' sections intact. Persistence and loading rules are in [runtime](runtime.md).
+A typed section is declared once with [`ConfigBindings`](../../sdk/include/wpiemu/sdk/config/config_bindings.h):
+each `PropertySpec` is bound to its config member, and that one table yields the schema, the decode
+(a missing, mistyped or NaN key keeps the struct's default; numbers clamp to the spec range) and the encode.
 
 `contributeZoneKinds()` declares owned `ZoneKindInfo` metadata, and `contributeGameValues()`
 declares available numeric sensor sources. Kind and value ids start with the selected plugin id

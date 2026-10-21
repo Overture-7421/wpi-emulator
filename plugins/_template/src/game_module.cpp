@@ -88,7 +88,8 @@ public:
 
     // 4. config fields shown by the generic inspector and persisted under RobotConfig::plugins[<id>].
     //    The SDK stays at version 1 until release: a section with another schemaVersion is rejected (no migration).
-    //    TODO(new season): describe your fields with PropertySpec (key, label, type, default, range, group).
+    //    TODO(new season): describe your fields with PropertySpec (key, label, type, default, range, group), bound to a
+    //    typed config struct through sdk::ConfigBindings (see plugins/game_2026/src/config.cpp): one table, no repeats.
     sdk::PluginConfigSchema contributeConfigSchema() const override {
         sdk::PluginConfigSchema schema;
         schema.schemaVersion = 1;

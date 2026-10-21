@@ -172,6 +172,8 @@ Plugins are built in with the host toolchain, not independently loaded shared li
    Build entries with the [`props::` builders](../sdk/include/wpiemu/sdk/config/property_builders.h)
    and read stored values with `getDouble/getBool/getString/getFiniteDouble` from the SDK
    [`Value`](../sdk/include/wpiemu/sdk/core/value.h); do not write a per-module builder or reader.
+   A plugin's typed config section binds each spec to its member once with
+   [`ConfigBindings`](../sdk/include/wpiemu/sdk/config/config_bindings.h), which supplies schema, decode and encode.
 2. Implement consumption and validation in the owning module. Test defaults, an invalid value and
    persistence round-trip; use Qt-free editor/HUD descriptors for plugin presentation.
 3. For a new structural robot field, update the SDK model, codec/defaults and validator together.
