@@ -30,7 +30,7 @@ TEST_CASE("a robot built by the wizard passes core validation apart from device 
         in.path = QStringLiteral("/p");
         in.wpilibYear = 2026;
         in.language = QStringLiteral("java");
-        const sdk::RobotConfig config = buildRobotConfig(defaultBasicsFor(kind), s.buildContext(in));
+        const sdk::RobotConfig config = defaultRobotConfig(s, in, kind);
         // the game plugin's mechanisms must be registered before validating against them
         if (auto* module = s.plugins().findByYear(2026)) CHECK(s.pluginRegistrar().ensureRegistered(*module).ok());
         const auto issues = s.validator().validate(config, s.mechanisms(), s.drivetrains(), s.plugins());

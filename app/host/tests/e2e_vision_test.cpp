@@ -133,10 +133,7 @@ struct Collected {
 };
 
 void drain(app::host::RobotSession& s, Collected& out, bool verbose) {
-    for (const sdk::SessionLogEntry& e : s.takeLogs(5000)) {
-        const std::string line = (e.stream == sdk::LogStream::Emulator ? "[emu " + e.source + "] " : "[robot] ") + e.text;
-        out.console.push_back(line);
-        if (verbose) std::printf("%s\n", line.c_str());
+    for (const sdk::SessionLogEntry& e : drainConsole(s, out.console, verbose)) {
         if (const auto f = parseVision(e.text)) {
             if ((*f).at("camera") == "limelight") out.limelight.push_back(*f);
             else if ((*f).at("camera") == "photon") out.photon.push_back(*f);
@@ -144,10 +141,7 @@ void drain(app::host::RobotSession& s, Collected& out, bool verbose) {
     }
 }
 
-void dumpConsole(const std::vector<std::string>& console) {
-    const std::size_t from = console.size() > 60 ? console.size() - 60 : 0;
-    for (std::size_t i = from; i < console.size(); ++i) std::printf("    | %s\n", console[i].c_str());
-}
+constexpr std::size_t kConsoleTailLines = 60;
 
 }  // namespace
 
@@ -214,7 +208,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     bool ok = pump(600s, [](const sdk::SessionStatus& s) { return s.programStarted; });
     if (!ok) {
         std::printf("e2e: robot did not start: %s\n", session.status().detail.c_str());
-        dumpConsole(got.console);
+        dumpConsole(got.console, kConsoleTailLines);
     }
     REQUIRE_MESSAGE(ok, session.status().detail);
     std::printf("e2e: robot program started after %.1f s\n", std::chrono::duration<double>(Clock::now() - t0).count());
@@ -225,7 +219,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     fast.timeScale = 0.0;
     session.controller().control(fast);
     ok = pump(240s, [&](const sdk::SessionStatus&) { return simSeconds() >= 6.0; });
-    if (!ok) dumpConsole(got.console);
+    if (!ok) dumpConsole(got.console, kConsoleTailLines);
     REQUIRE(ok);
 
     // Stop the robot (disabled) and let the pose estimators settle while the chassis coasts to rest.
@@ -233,7 +227,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     session.controller().setDriverStation(ds);
     const double stopAt = simSeconds();
     ok = pump(240s, [&](const sdk::SessionStatus&) { return simSeconds() >= stopAt + 3.0; });
-    if (!ok) dumpConsole(got.console);
+    if (!ok) dumpConsole(got.console, kConsoleTailLines);
     REQUIRE(ok);
     sdk::proto::SimControl pause;
     pause.command = sdk::proto::SimCommand::Pause;

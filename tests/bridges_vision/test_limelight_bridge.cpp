@@ -17,11 +17,6 @@ std::vector<sdk::CameraFrame> oneTagFrame() {
     return {makeFrame(0, {makeTag(7, 2.0, 5.0, -3.0, {2.f, 0.2f, 0.f})})};
 }
 
-std::vector<sdk::CameraFrame> twoTagFrame() {
-    return {makeFrame(0, {makeTag(3, 1.0, -10.0, 1.0, {3.f, -0.5f, 0.1f}),
-                          makeTag(7, 2.0, 5.0, -3.0, {2.f, 0.2f, 0.f})})};
-}
-
 void configureLimelight(Rig& rig, const std::string& name = "") {
     rig.configure(makeSetup({makeCamera(sdk::CameraKind::Limelight, name)}));
 }

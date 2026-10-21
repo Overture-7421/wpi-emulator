@@ -427,7 +427,7 @@ TEST_CASE("editor adapter: complete inventories and new runs reconcile physical 
     options.runtime = std::move(runtime);
     AppServices services(std::move(options));
     REQUIRE(services.session().open(project.path()).ok());
-    auto config = buildRobotConfig(RobotBasics{}, services.buildContext(services.session().inspection()));
+    auto config = defaultRobotConfig(services);
     auto devices = DemoRuntimeHost::demoDevicesFor(config);
     REQUIRE(devices.size() >= 3);
     REQUIRE_FALSE(config.drivetrain.spec.wheels.empty());

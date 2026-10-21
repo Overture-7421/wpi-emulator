@@ -14,6 +14,7 @@
 #include "common/app_services.h"
 #include "common/demo_runtime_host.h"
 #include "common/key_value_store.h"
+#include "common/robot_basics.h"
 #include "common/system_probe.h"
 #include "wpiemu/sdk/testing/wait.h"
 
@@ -132,5 +133,16 @@ struct TestEnvironment {
         if (withWrapper) probe->files.insert(QDir::cleanPath(project.path() + "/gradlew"));
     }
 };
+
+// The robot model the wizard builds for an inspected project from its starting values for `drivetrainKind`.
+inline sdk::RobotConfig defaultRobotConfig(const AppServices& services, const ProjectInspection& inspection,
+                                           const std::string& drivetrainKind = sdk::drivetrain_kind::kSwerve) {
+    return buildRobotConfig(defaultBasicsFor(drivetrainKind), services.buildContext(inspection));
+}
+
+// The same for the project that is open in `services`.
+inline sdk::RobotConfig defaultRobotConfig(AppServices& services) {
+    return defaultRobotConfig(services, services.session().inspection());
+}
 
 }  // namespace wpiemu::app::testing

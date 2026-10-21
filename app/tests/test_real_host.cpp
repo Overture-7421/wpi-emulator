@@ -9,7 +9,6 @@
 #include <optional>
 
 #include "common/real_runtime_host.h"
-#include "common/robot_basics.h"
 #include "contract/start_position_selection.h"
 #include "gui_support.h"
 #include "scoped_env.h"
@@ -57,8 +56,7 @@ struct RealFixture {
 
         REQUIRE(controller.openProject(project.path()) == OpenOutcome::NeedsSetup);
         ProjectSession& session = env.services->session();
-        const sdk::RobotConfig config = buildRobotConfig(defaultBasicsFor(sdk::drivetrain_kind::kSwerve), env.services->buildContext(session.inspection()));
-        REQUIRE(session.commit(config, session.prefs()).ok());
+        REQUIRE(session.commit(defaultRobotConfig(*env.services), session.prefs()).ok());
         QObject::connect(&env.services->runtime(), &IRuntimeHost::logLine, [this](const HostLogLine& l) { logs << l.text; });
     }
     ~RealFixture() {
@@ -284,8 +282,7 @@ TEST_CASE("real host e2e (opt-in): the shell discovers the devices of a real rob
     env.probe->files.insert(QDir::cleanPath(project + "/gradlew"));
     REQUIRE(controller.openProject(project) == OpenOutcome::NeedsSetup);
     ProjectSession& session = env.services->session();
-    const sdk::RobotConfig config = buildRobotConfig(defaultBasicsFor(sdk::drivetrain_kind::kSwerve), env.services->buildContext(session.inspection()));
-    REQUIRE(session.commit(config, session.prefs()).ok());
+    REQUIRE(session.commit(defaultRobotConfig(*env.services), session.prefs()).ok());
     IRuntimeHost& host = env.services->runtime();
     int discovered = 0;
     QObject::connect(&host, &IRuntimeHost::snapshotPublished, [&] {

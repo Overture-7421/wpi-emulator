@@ -9,14 +9,10 @@
 
 using namespace wpiemu;
 using namespace wpiemu::plugins::game_2026;
+using g26test::emptyField;
 using g26test::Session;
 
 namespace {
-
-void emptyField(Session& s) {
-    s.section()["neutralFuel"] = 0;
-    s.section()["depotFuel"] = 0;
-}
 
 sdk::Vec3 hubSensorCentre(Alliance a) {
     const FieldLayout layout = buildFieldLayout();

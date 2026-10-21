@@ -26,11 +26,6 @@ void configurePhoton(Rig& rig, std::string version = {}) {
     rig.configure(makeSetup({makeCamera(sdk::CameraKind::PhotonVision, "front")}, std::move(version)));
 }
 
-std::vector<sdk::CameraFrame> twoTagFrame() {
-    return {makeFrame(0, {makeTag(3, 1.0, -10.0, 1.0, {3.f, -0.5f, 0.1f}),
-                          makeTag(7, 2.0, 5.0, -3.0, {2.f, 0.2f, 0.f})})};
-}
-
 }  // namespace
 
 TEST_CASE("vision photon: topics are created under photonvision slash camera name") {

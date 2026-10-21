@@ -83,6 +83,12 @@ inline sdk::CameraFrame makeFrame(std::uint32_t cameraIndex, std::vector<sdk::Ta
     return f;
 }
 
+// Camera 0's frame with tags 3 and 7 in view (makeFrame's pose and timing).
+inline std::vector<sdk::CameraFrame> twoTagFrame() {
+    return {makeFrame(0, {makeTag(3, 1.0, -10.0, 1.0, {3.f, -0.5f, 0.1f}),
+                          makeTag(7, 2.0, 5.0, -3.0, {2.f, 0.2f, 0.f})})};
+}
+
 struct Rig {
     std::shared_ptr<vis::testing::FakeNtBackend> nt = std::make_shared<vis::testing::FakeNtBackend>();
     sdk::VisionBridgeRegistry registry;

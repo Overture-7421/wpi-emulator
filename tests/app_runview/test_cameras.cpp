@@ -9,24 +9,15 @@
 #include "fake_run_backend.h"
 #include "scene_model.h"
 #include "scene_parts.h"
+#include "test_support.h"
 #include "wpiemu/sdk/testing/demo_game.h"
 
 using namespace wpiemu::app::runview;
+using namespace runview_test;
 namespace sdk = wpiemu::sdk;
 namespace demo = wpiemu::sdk::testing::demo_game;
 
 namespace {
-
-constexpr float kEps = 1e-3f;
-
-bool near(const sdk::Vec3& a, const sdk::Vec3& b, float eps = kEps) { return sdk::length(a - b) < eps; }
-
-sdk::SimSnapshotData baseSnapshot() {
-    sdk::SimSnapshotData d;
-    d.chassis.pose = {{3.f, 2.f, 0.2f}, sdk::Quat::fromYaw(0.f)};
-    d.robotConnected = true;
-    return d;
-}
 
 sdk::CameraState cameraState(const char* id, std::vector<int> tags) {
     sdk::CameraState c;

@@ -158,22 +158,13 @@ bool waitFor(app::host::RobotSession& s, std::chrono::seconds timeout, Done&& do
     bool reached = false;
     sdk::testing::waitUntil(
         [&] {
-            for (const sdk::SessionLogEntry& e : s.takeLogs(5000)) {
-                const std::string line = (e.stream == sdk::LogStream::Emulator ? "[emu " + e.source + "] " : "[robot] ") + e.text;
-                console.push_back(line);
-                if (verbose) std::printf("%s\n", line.c_str());
-            }
+            drainConsole(s, console, verbose);
             last = s.status();
             reached = done(last);
             return reached || !last.active();   // crashed / failed / exited
         },
         timeout, 50ms);
     return reached;
-}
-
-void dumpConsole(const std::vector<std::string>& console) {
-    const std::size_t from = console.size() > 80 ? console.size() - 80 : 0;
-    for (std::size_t i = from; i < console.size(); ++i) std::printf("    | %s\n", console[i].c_str());
 }
 
 }  // namespace

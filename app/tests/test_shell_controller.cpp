@@ -2,7 +2,6 @@
 
 #include <QSignalSpy>
 
-#include "common/robot_basics.h"
 #include "shell/shell_controller.h"
 #include "test_support.h"
 
@@ -14,7 +13,7 @@ namespace {
 // Saves a model for the project so it opens straight into the editor.
 void configure(AppServices& s, const TestProject& project) {
     REQUIRE(s.session().open(project.path()).ok());
-    REQUIRE(s.session().commit(buildRobotConfig(RobotBasics{}, s.buildContext(s.session().inspection())), ProjectPrefs{}).ok());
+    REQUIRE(s.session().commit(defaultRobotConfig(s), ProjectPrefs{}).ok());
     REQUIRE(s.session().close().ok());
 }
 }  // namespace
@@ -52,7 +51,7 @@ TEST_CASE("the wizard's Driver Station choice and the open project reach the run
     ProjectPrefs prefs;
     prefs.alliance = sdk::Alliance::Blue;
     prefs.station = 3;
-    REQUIRE(s.session().commit(buildRobotConfig(RobotBasics{}, s.buildContext(s.session().inspection())), prefs).ok());
+    REQUIRE(s.session().commit(defaultRobotConfig(s), prefs).ok());
     REQUIRE(s.session().close().ok());
 
     REQUIRE(controller.openProject(p.path()) == OpenOutcome::Opened);
