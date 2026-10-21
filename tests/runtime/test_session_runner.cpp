@@ -13,6 +13,7 @@ using namespace wpiemu::sdk;
 using namespace wpiemu::core::runtime;
 using namespace std::chrono_literals;
 using wpiemu::sdk::testing::waitUntil;
+using wpiemu::test_runtime::Reply;
 using wpiemu::test_runtime::Rig;
 
 TEST_CASE("runner: handshake assigns session, epoch, step and the negotiated watchdog") {
@@ -85,7 +86,7 @@ TEST_CASE("runner: lock-step - consecutive ticks, one outstanding, identity on e
     Rig rig;
     rig.ext = nullptr;
     rig.handshake();
-    rig.ext->autoAck = false;
+    rig.ext->reply = Reply::Hold;
     rig.ext->pending.reset();
     // the first tick was auto-acked during the handshake; from here every tick needs an explicit answer
     const std::size_t base = rig.ext->sensorFrames.size();
@@ -146,7 +147,7 @@ TEST_CASE("runner: Reset bumps the epoch, resets the sim, restarts tick numbers 
     const int resets = intake->resets;
 
     // hold the extension: the next tick stays unanswered while Reset is issued
-    rig.ext->autoAck = false;
+    rig.ext->reply = Reply::Hold;
     rig.ext->pending.reset();
     REQUIRE(rig.run([&] { return rig.ext->pending.has_value(); }));
     const proto::SensorFrame inFlight = *rig.ext->pending;
@@ -177,7 +178,7 @@ TEST_CASE("runner: Reset bumps the epoch, resets the sim, restarts tick numbers 
     CHECK(rig.session->hub().motorOutput({"intake", "motor"}).valid == false);
 
     // ticks resume in the new epoch from 0, after the extension acknowledged the Reset
-    rig.ext->autoAck = true;
+    rig.ext->reply = Reply::Answer;
     if (rig.ext->pending) rig.ext->answer(*rig.ext->pending);
     rig.ext->pending.reset();
     auto newEpochFrames = [&] {
@@ -230,7 +231,7 @@ TEST_CASE("runner: no ticks are sent until the extension acknowledges a Reset") 
 TEST_CASE("runner: watchdog expiry stalls lock-step, late frames are ignored, Reset recovers") {
     Rig rig;
     rig.handshake(500);
-    rig.ext->autoAck = false;
+    rig.ext->reply = Reply::Hold;
     rig.ext->pending.reset();
     REQUIRE(rig.run([&] { return rig.ext->pending.has_value(); }));
     const proto::SensorFrame outstanding = *rig.ext->pending;
@@ -260,7 +261,7 @@ TEST_CASE("runner: watchdog expiry stalls lock-step, late frames are ignored, Re
     CHECK(rig.runner->state() == RunnerState::RobotStalled);
 
     // Reset opens a new epoch and recovery
-    rig.ext->autoAck = true;
+    rig.ext->reply = Reply::Answer;
     proto::SimControl reset;
     reset.command = proto::SimCommand::Reset;
     rig.runner->control(reset);
@@ -272,7 +273,7 @@ TEST_CASE("runner: watchdog expiry stalls lock-step, late frames are ignored, Re
 TEST_CASE("runner: a RobotStalled answer from the extension suspends lock-step") {
     Rig rig;
     rig.handshake();
-    rig.ext->nextResult = proto::TickResult::RobotStalled;
+    rig.ext->reply = Reply::Stall;
     REQUIRE(rig.run([&] { return rig.runner->state() == RunnerState::RobotStalled; }));
     const std::uint64_t sent = rig.runner->ticksSent();
     for (int i = 0; i < 20; ++i) {
@@ -389,7 +390,7 @@ TEST_CASE("runner: robot logs are forwarded, stray and malformed traffic is igno
 TEST_CASE("runner: an unsolicited ActuatorFrame is a protocol error and closes the connection") {
     Rig rig;
     rig.handshake();
-    rig.ext->autoAck = false;
+    rig.ext->reply = Reply::Hold;
     rig.ext->pending.reset();
     REQUIRE(rig.run([&] { return rig.ext->pending.has_value(); }));
     proto::ActuatorFrame bogus;  // wrong tick for the one in flight, current identity

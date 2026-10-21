@@ -9,9 +9,8 @@
 
 #include "test_support.h"
 #include "wpiemu/ipc/binary_codec.h"
-#include "wpiemu/ipc/handshake.h"
 #include "wpiemu/ipc/local_ipc.h"
-#include "wpiemu/sdk/ipc/lifecycle.h"
+#include "wpiemu/sdk/testing/fake_extension.h"
 #include "wpiemu/sdk/testing/wait.h"
 
 namespace fs = std::filesystem;
@@ -105,17 +104,21 @@ bool waitForStatus(RobotSession& s, std::chrono::milliseconds timeout, Pred&& pr
         timeout, 20ms);
 }
 
-// The robot side of the handshake, played by the test instead of halsim_wpiemu.
-struct FakeExtension {
-    sdk::proto::MessageChannel channel;
-    static std::unique_ptr<FakeExtension> connect(const std::string& endpoint) {
-        auto client = ipc::makeLocalClient();
-        auto transport = client->connect(endpoint, 10s);
-        if (!transport) return nullptr;
-        return std::unique_ptr<FakeExtension>(new FakeExtension(std::move(transport).value()));
-    }
-    explicit FakeExtension(std::unique_ptr<sdk::proto::ITransport> t) : channel(std::move(t), std::make_shared<ipc::BinaryMessageCodec>()) {}
-};
+// The robot side, played by the test instead of halsim_wpiemu, over the session's real local transport.
+std::unique_ptr<sdk::testing::FakeExtension> connectFakeExtension(const std::string& endpoint) {
+    auto client = ipc::makeLocalClient();
+    auto transport = client->connect(endpoint, 10s);
+    if (!transport) return nullptr;
+    return std::make_unique<sdk::testing::FakeExtension>(std::move(transport).value(),
+                                                         std::make_shared<ipc::BinaryMessageCodec>());
+}
+
+// True when the emulator accepted the Hello the fake sent; false when it refused or dropped the connection.
+bool awaitHandshake(sdk::testing::FakeExtension& ext, std::chrono::milliseconds timeout = 5s) {
+    sdk::testing::waitUntil([&] { return ext.helloAck.has_value() || ext.disconnected; }, timeout, 5ms,
+                            [&] { ext.pump(); });
+    return ext.handshaken();
+}
 
 }  // namespace
 
@@ -199,12 +202,10 @@ TEST_CASE("an extension with an unsupported protocol version is reported as Prot
     REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
     RobotSession& s = *r.value();
 
-    auto ext = FakeExtension::connect(s.endpoint());
+    auto ext = connectFakeExtension(s.endpoint());
     REQUIRE(ext != nullptr);
-    sdk::proto::Hello hello;
-    hello.protocolVersion = 0;   // below kMinCompatibleProtocolVersion
-    hello.pid = 1;
-    CHECK_FALSE(ipc::performClientHandshake(ext->channel, hello, 5s).ok());
+    ext->hello(0, 0);   // below kMinCompatibleProtocolVersion
+    CHECK_FALSE(awaitHandshake(*ext));
 
     SessionStatus st;
     REQUIRE(waitForStatus(s, 10s, [](const SessionStatus& x) { return x.link == LinkState::ProtocolMismatch; }, &st));
@@ -222,18 +223,16 @@ TEST_CASE("a connected robot that then dies is Crashed with its exit code, stop 
         RobotSession& s = *r.value();
         CHECK(s.status().process == ProcessState::Starting);
 
-        auto ext = FakeExtension::connect(s.endpoint());
+        auto ext = connectFakeExtension(s.endpoint());
         REQUIRE(ext != nullptr);
-        sdk::proto::Hello hello;
-        hello.pid = 4242;
-        hello.programName = "fake robot";
-        REQUIRE(ipc::performClientHandshake(ext->channel, hello, 5s).ok());
+        ext->hello();
+        REQUIRE(awaitHandshake(*ext));
         SessionStatus st;
         REQUIRE(waitForStatus(s, 10s, [](const SessionStatus& x) { return x.link == LinkState::Connected; }, &st));
         CHECK(st.process == ProcessState::Running);
         CHECK_FALSE(st.programStarted);   // the constructor has not finished yet: no ticks, no watchdog
 
-        REQUIRE(ext->channel.send(sdk::proto::makeLifecycleLog(sdk::proto::kLifecycleProgramStarted)).ok());
+        ext->programStarted();
         REQUIRE(waitForStatus(s, 10s, [](const SessionStatus& x) { return x.programStarted; }));
 
         p.signalStop();   // the "robot" exits with code 7

@@ -14,7 +14,7 @@ using namespace wpiemu::ipc;
 using namespace wpiemu::ipc::testing;
 using namespace wpiemu::sdk;
 using namespace std::chrono_literals;
-using Act = FakeExtension::Act;
+using Reply = FakeExtension::Reply;
 using wpiemu::sdk::testing::waitUntil;
 
 namespace {
@@ -58,7 +58,7 @@ TEST_CASE("lockstep: normal ticking acknowledges every tick, in order, with the 
 
 TEST_CASE("lockstep: the window refuses a second outstanding tick") {
     forEachTransportKind([](TransportKind kind) {
-        Session s(kind, [](const proto::SensorFrame&, FakeExtension&) { return Act::Ignore; });
+        Session s(kind, [](const proto::SensorFrame&, FakeExtension&) { return Reply::Hold; });
         CHECK(s.emulator->tick(1, 30ms) == TickOutcome::Timeout);
         CHECK(s.emulator->window().stalled());
         CHECK(s.emulator->tick(2, 30ms) == TickOutcome::SendFailed);  // lock-step suspended
@@ -104,7 +104,7 @@ TEST_CASE("lockstep: a late frame from before a Reset carries a stale epoch and 
                 stale.samples.push_back({sdk::DeviceId{1}, 0, -999.0});
                 (void)ext.channel().send(stale);
             }
-            return Act::Answer;
+            return Reply::Answer;
         });
         for (std::uint64_t t = 1; t <= 3; ++t) REQUIRE(s.emulator->tick(t, 2000ms) == TickOutcome::Completed);
 
@@ -132,7 +132,7 @@ TEST_CASE("lockstep: Reset while a tick is outstanding - the late answer is drop
         // The robot is slow on tick 10 of epoch 1; the emulator resets meanwhile.
         Session s(kind, [](const proto::SensorFrame& sf, FakeExtension&) {
             if (sf.tick == 10 && sf.runEpoch == 1) std::this_thread::sleep_for(150ms);
-            return Act::Answer;
+            return Reply::Answer;
         });
         for (std::uint64_t t = 1; t <= 9; ++t) REQUIRE(s.emulator->tick(t, 2000ms) == TickOutcome::Completed);
 
@@ -212,8 +212,8 @@ TEST_CASE("lockstep: frames of a foreign session are dropped on both sides") {
         proto::SensorFrame foreign = s.emulator->makeFrame(1);
         foreign.sessionId = 999;
         REQUIRE(s.emulator->channel().send(foreign).ok());
-        waitUntil([&] { return s.extension->droppedSensor != 0; }, 2000ms, 1ms);
-        CHECK(s.extension->droppedSensor == 1);
+        waitUntil([&] { return s.extension->droppedFrames != 0; }, 2000ms, 1ms);
+        CHECK(s.extension->droppedFrames == 1);
         CHECK(s.extension->stepped == 0);
         REQUIRE(s.emulator->tick(1, 2000ms) == TickOutcome::Completed);  // tick 1 was never consumed
     });
@@ -236,7 +236,7 @@ TEST_CASE("lockstep: a duplicate or out-of-order SensorFrame is answered with Pr
 
 TEST_CASE("lockstep: the robot reports RobotStalled and the window suspends lock-step until reset") {
     forEachTransportKind([](TransportKind kind) {
-        Session s(kind, [](const proto::SensorFrame& sf, FakeExtension&) { return sf.tick == 4 && sf.runEpoch == 1 ? Act::AnswerStalled : Act::Answer; });
+        Session s(kind, [](const proto::SensorFrame& sf, FakeExtension&) { return sf.tick == 4 && sf.runEpoch == 1 ? Reply::Stall : Reply::Answer; });
         for (std::uint64_t t = 1; t <= 3; ++t) REQUIRE(s.emulator->tick(t, 2000ms) == TickOutcome::Completed);
         CHECK(s.emulator->tick(4, 2000ms) == TickOutcome::Stalled);
         CHECK(s.emulator->window().stalled());
@@ -255,7 +255,7 @@ TEST_CASE("lockstep: robot stall - the watchdog expires, the emulator never bloc
         // Tick 3 of epoch 1 hangs for 400 ms (robot code stuck) and is then answered anyway.
         Session s(kind, [](const proto::SensorFrame& sf, FakeExtension&) {
             if (sf.tick == 3 && sf.runEpoch == 1) std::this_thread::sleep_for(400ms);
-            return Act::Answer;
+            return Reply::Answer;
         });
         for (std::uint64_t t = 1; t <= 2; ++t) REQUIRE(s.emulator->tick(t, 2000ms) == TickOutcome::Completed);
 
@@ -282,7 +282,7 @@ TEST_CASE("lockstep: the peer disappears in the middle of a tick, the emulator n
         auto first = link.connect();
         EmulatorSide emulator(std::move(first.emulator));
         auto crashing = std::make_unique<FakeExtension>(std::move(first.extension), [](const proto::SensorFrame& sf, FakeExtension&) {
-            return sf.tick == 3 ? Act::Disconnect : Act::Answer;  // robot process dies while stepping tick 3
+            return sf.tick == 3 ? Reply::Disconnect : Reply::Answer;  // robot process dies while stepping tick 3
         });
         REQUIRE(emulator.handshake(1, 1).ok());
         REQUIRE(crashing->waitHandshaken(5000ms));
