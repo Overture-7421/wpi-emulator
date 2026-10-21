@@ -1,8 +1,11 @@
 cmake_minimum_required(VERSION 3.25)
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/WpiEmuVersions.cmake")
+
 # Set before project()/compiler initialization; presets, releases and the bundle share this default.
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum supported macOS version")
+    wpiemu_pinned_version(_wpiemu_macos_deployment macosDeployment)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "${_wpiemu_macos_deployment}" CACHE STRING "Minimum supported macOS version")
 endif()
 
 # Qt otherwise forces the deprecated OLD behavior of CMP0156 and warns about it.

@@ -6,6 +6,7 @@ and tools/tests/support.py does the same for the unit tests.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -20,6 +21,11 @@ def read_text(path: Path, errors: str = "strict") -> str:
 def write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
+
+
+def load_versions(root: Path = REPO_ROOT) -> dict:
+    """The entries of <root>/versions.json, the single home of the repository's version pins."""
+    return json.loads(read_text(root / "versions.json"))
 
 
 def root_parser(description: str, **options) -> argparse.ArgumentParser:

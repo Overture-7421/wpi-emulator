@@ -139,6 +139,16 @@ Linux AppImage deployment belongs to linuxdeploy.
 beside the extension. It is not a substitute for testing loader behavior against the robot's runtime.
 General dependency, SDL2 and build switches belong to [Building](BUILDING.md).
 
+## Version pins
+
+[versions.json](../versions.json) is the only home of the WPILib, Qt, CMake, Python, Ubuntu and macOS pins:
+`qt.release` is the exact kit for releases and the Docker image, `qt.ci` the pattern CI installs.
+CMake reads `wpilib` (the default of `WPIEMU_WPILIB_VERSION`) and `macosDeployment`. The workflows, Docker image,
+AppImage script and docs cannot read it, so `tools\check_versions.py` (CTest `versions.check`) reports every copy that
+disagrees, with file and line. To change a pin, edit the JSON and fix what the checker lists; an existing build tree
+keeps its cached `WPIEMU_WPILIB_VERSION` until you pass the new value. The linuxdeploy versions and checksums live
+only in the [AppImage script](../packaging/linux/build-appimage.sh).
+
 ## Release automation and publication
 
 [release.yml](../.github/workflows/release.yml) runs on `v*` tags and manual dispatch.

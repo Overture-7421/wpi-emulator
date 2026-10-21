@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 env:
-  WPILIB_VERSION: "2026.2.1"   # must match WPIEMU_WPILIB_VERSION in halsim_ext/cmake/WpiEmuWpilib.cmake
+  WPILIB_VERSION: "2026.2.1"
   QT_QPA_PLATFORM: offscreen    # every Qt test / smoke run is headless
 
 jobs:

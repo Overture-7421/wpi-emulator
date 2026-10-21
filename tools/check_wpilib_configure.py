@@ -20,6 +20,7 @@ def main() -> None:
     parser.add_argument("--directory", type=Path, default=Path("build/wpilib-root-fixture"))
     args = parser.parse_args()
     repo = common.REPO_ROOT
+    wpilib = common.load_versions(repo)["wpilib"]
     work = args.directory.resolve()
     extracted = work / "extracted"
     headers = {"hal/HAL.h": "", "hal/Ports.h": "", "hal/simulation/SimDeviceData.h": "",
@@ -36,7 +37,7 @@ def main() -> None:
         common.write_text(extracted / name, content)
     maven = work / "maven"
     for module in ("hal", "wpiutil"):
-        prefix = maven / f"edu/wpi/first/{module}/{module}-cpp/2026.2.1/{module}-cpp-2026.2.1"
+        prefix = maven / f"edu/wpi/first/{module}/{module}-cpp/{wpilib}/{module}-cpp-{wpilib}"
         prefix.parent.mkdir(parents=True, exist_ok=True)
         for classifier, entries in (
                 ("headers", {key: value for key, value in headers.items()

@@ -39,7 +39,7 @@ if(WPIEMU_BUILD_TESTS)
 endif()
 
 # ---- Qt 6 (app only) ------------------------------------------------------
-# Point CMAKE_PREFIX_PATH at the Qt kit, e.g. C:/Qt/6.8.3/msvc2022_64
+# Point CMAKE_PREFIX_PATH at the Qt kit, e.g. C:/Qt/<version>/msvc2022_64
 if(WPIEMU_BUILD_APP)
     find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets Quick Quick3D QuickWidgets)
     qt_standard_project_setup()

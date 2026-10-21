@@ -1,7 +1,7 @@
 # Builds ONLY the robot editor (+ its tests and the demo) against the SDK and app/ui, without the rest of the
 # tree (core, ipc, wizard, run view...). Handy for UI work and for CI jobs that only touch app/editor:
 #
-#   cmake -S app/editor/standalone -B build/ui-editor -G Ninja -DCMAKE_PREFIX_PATH=C:/Qt/6.8.3/msvc2022_64
+#   cmake -S app/editor/standalone -B build/ui-editor -G Ninja -DCMAKE_PREFIX_PATH=C:/Qt/<version>/msvc2022_64
 #   cmake --build build/ui-editor && ctest --test-dir build/ui-editor
 #
 # The regular build (root CMakeLists.txt -> app/ -> editor/) does not use this file.
