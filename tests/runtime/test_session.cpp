@@ -4,6 +4,7 @@
 
 #include "runtime_fixtures.h"
 #include "wpiemu/core/runtime/simulation_session.h"
+#include "wpiemu/sdk/testing/device_fixtures.h"
 #include "wpiemu/sdk/testing/fake_clock_logger.h"
 #include "wpiemu/sdk/testing/fake_mechanism_physics_coupling.h"
 #include "wpiemu/sdk/testing/fake_physics_world.h"
@@ -381,14 +382,14 @@ TEST_CASE("session: battery sags with total current, brownout latches with hyste
     CHECK(out.batteryVoltageV == doctest::Approx(0.0));
     CHECK(s.battery().brownedOut());
     auto snap = s.buildSnapshot(false, true);
-    CHECK(std::any_of(snap->warnings().begin(), snap->warnings().end(), [](const HubWarning& w) { return w.code == "brownout"; }));
+    CHECK(testing::hasWarning(snap->warnings(), "brownout"));
     CHECK(snap->batteryVoltageV() == doctest::Approx(0.0));
 
     s.hub().onActuatorFrame(outputs({{105, 0.0}, {101, 0.0}, {102, 0.0}, {103, 0.0}, {104, 0.0}}));
     s.tick(out, false);
     CHECK_FALSE(s.battery().brownedOut());  // recovered well above brownout + margin
     snap = s.buildSnapshot(false, true);
-    CHECK_FALSE(std::any_of(snap->warnings().begin(), snap->warnings().end(), [](const HubWarning& w) { return w.code == "brownout"; }));
+    CHECK_FALSE(testing::hasWarning(snap->warnings(), "brownout"));
     CHECK(s.battery().brownoutCount() == 1);
 }
 
@@ -549,7 +550,7 @@ TEST_CASE("session: snapshots carry chassis, wheels, mechanisms, devices, warnin
     SimulationSession& s = f.make(c, false);
     for (const auto& a : sampleDevices()) s.hub().onAnnounce(a);
     s.hub().onAnnounce([] {
-        auto extra = wpiemu::test_runtime::talonAnnounce(200, 33);  // not mapped anywhere
+        auto extra = wpiemu::sdk::testing::talonFxAnnounce(200, 33);  // not mapped anywhere
         return extra;
     }());
     proto::DsState ds;
@@ -572,7 +573,7 @@ TEST_CASE("session: snapshots carry chassis, wheels, mechanisms, devices, warnin
     CHECK(snap->mechanisms()[0].id == "intake");
     CHECK(snap->mechanisms()[0].active);
     CHECK(snap->devices().size() == 8);
-    CHECK(std::any_of(snap->warnings().begin(), snap->warnings().end(), [](const HubWarning& w) { return w.code == "unmapped_loopback"; }));
+    CHECK(testing::hasWarning(snap->warnings(), "unmapped_loopback"));
     CHECK(snap->driverStation().enabled);
     CHECK(snap->driverStation().mode == proto::RobotMode::Autonomous);
     CHECK(snap->batteryVoltageV() < 12.6);

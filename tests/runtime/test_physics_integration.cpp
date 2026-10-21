@@ -15,7 +15,7 @@ using namespace wpiemu::core::runtime;
 namespace physics = wpiemu::core::physics;
 using wpiemu::test_runtime::Registries;
 using wpiemu::test_runtime::sampleConfig;
-using wpiemu::test_runtime::talonAnnounce;
+using wpiemu::sdk::testing::talonFxAnnounce;
 
 TEST_CASE("integration: the session drives a real Box3D swerve robot from hub voltages") {
     Registries reg;  // brings the roller mechanism + plugin registry; drivetrains/tires come from core/physics
@@ -67,8 +67,8 @@ TEST_CASE("integration: the session drives a real Box3D swerve robot from hub vo
 
     // devices: drive talons 1..4 (runtime ids 101..104), steer talons 11..14 (111..114)
     for (std::uint32_t i = 0; i < 4; ++i) {
-        s.hub().onAnnounce(talonAnnounce(101 + i, static_cast<int>(i) + 1));
-        s.hub().onAnnounce(talonAnnounce(111 + i, static_cast<int>(i) + 11));
+        s.hub().onAnnounce(talonFxAnnounce(101 + i, static_cast<int>(i) + 1));
+        s.hub().onAnnounce(talonFxAnnounce(111 + i, static_cast<int>(i) + 11));
         s.hub().onAnnounce(
             wpiemu::test_runtime::cancoderAnnounce(121 + i, static_cast<int>(i) + 21));
     }
@@ -170,8 +170,8 @@ TEST_CASE("integration: two motors move and turn a six-contact linked tank in Bo
     slab.material = Material{0.8f, 0.f, 0.f};
     slab.category = layer::Field;
     REQUIRE(s.world().addShape(s.world().createBody(floor), slab).valid());
-    s.hub().onAnnounce(talonAnnounce(101, 1));
-    s.hub().onAnnounce(talonAnnounce(102, 2));
+    s.hub().onAnnounce(talonFxAnnounce(101, 1));
+    s.hub().onAnnounce(talonFxAnnounce(102, 2));
     proto::ActuatorFrame outputs;
     outputs.samples = {{DeviceId{101}, 1, 4.0}, {DeviceId{102}, 1, 4.0}};
     s.hub().onActuatorFrame(outputs);

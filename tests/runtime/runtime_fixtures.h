@@ -22,6 +22,7 @@
 #include "wpiemu/sdk/mechanisms/mechanism.h"
 #include "wpiemu/sdk/physics/drivetrain.h"
 #include "wpiemu/sdk/physics/tire_model.h"
+#include "wpiemu/sdk/testing/device_fixtures.h"
 #include "wpiemu/sdk/testing/fake_game_module.h"
 #include "wpiemu/sdk/testing/fake_physics_world.h"
 
@@ -260,36 +261,6 @@ private:
     std::filesystem::path path_;
 };
 
-// A TalonFX-like announce: signals 0 duty, 1 voltage, 2 torque (outputs); 3 rotorPos, 4 rotorVel, 5 rotorAccel, 6 forwardLimit (inputs).
-inline proto::DeviceAnnounce talonAnnounce(std::uint32_t runtimeId, int canId) {
-    proto::DeviceAnnounce a;
-    a.id = DeviceId{runtimeId};
-    a.descriptor.family = "phoenix6";
-    a.descriptor.type = "talonfx";
-    a.descriptor.id = canId;
-    a.descriptor.bus = kBusUnknown;
-    a.descriptor.capabilities = Capability::MotorOutput | Capability::RotorFeedback | Capability::PositionSensor;
-    auto s = [](const char* n, SignalDirection d) { return SignalSpec{n, d, SignalType::Double, ""}; };
-    a.signalSpecs = {s("dutyCycle", SignalDirection::Output),    s("motorVoltage", SignalDirection::Output),
-                     s("torqueCurrent", SignalDirection::Output), s("rotorPosition", SignalDirection::Input),
-                     s("rotorVelocity", SignalDirection::Input),  s("rotorAcceleration", SignalDirection::Input),
-                     s("forwardLimit", SignalDirection::Bidirectional)};
-    return a;
-}
-
-inline proto::DeviceAnnounce pigeonAnnounce(std::uint32_t runtimeId, int canId) {
-    proto::DeviceAnnounce a;
-    a.id = DeviceId{runtimeId};
-    a.descriptor.family = "phoenix6";
-    a.descriptor.type = "pigeon2";
-    a.descriptor.id = canId;
-    a.descriptor.bus = kBusUnknown;
-    a.descriptor.capabilities = CapabilitySet(Capability::Imu);
-    for (const char* n : {"yaw", "pitch", "roll", "angularVelX", "angularVelY", "angularVelZ", "accelX", "accelY", "accelZ"})
-        a.signalSpecs.push_back(SignalSpec{n, SignalDirection::Input, SignalType::Double, "rad"});
-    return a;
-}
-
 inline proto::DeviceAnnounce cancoderAnnounce(std::uint32_t runtimeId, int canId) {
     proto::DeviceAnnounce a;
     a.id = DeviceId{runtimeId};
@@ -308,9 +279,9 @@ inline proto::DeviceAnnounce cancoderAnnounce(std::uint32_t runtimeId, int canId
 inline std::vector<proto::DeviceAnnounce> sampleDevices() {
     std::vector<proto::DeviceAnnounce> out;
     std::uint32_t rid = 101;
-    for (int can : {1, 2, 3, 4, 10}) out.push_back(talonAnnounce(rid++, can));
+    for (int can : {1, 2, 3, 4, 10}) out.push_back(sdk::testing::talonFxAnnounce(rid++, can));
     out.push_back(cancoderAnnounce(rid++, 12));
-    out.push_back(pigeonAnnounce(rid++, 20));
+    out.push_back(sdk::testing::pigeon2Announce(rid++, 20, "rad"));
     return out;
 }
 

@@ -120,7 +120,7 @@ TEST_CASE("runner: robot outputs reach the mechanisms, sensors come back, announ
     rig.connect();
     rig.ext->hello();
     rig.ext->announceAll();
-    rig.ext->send(wpiemu::test_runtime::talonAnnounce(300, 77));  // a device nobody maps
+    rig.ext->send(wpiemu::sdk::testing::talonFxAnnounce(300, 77));  // a device nobody maps
     rig.ext->outputs = {{DeviceId{105}, 1, 6.0}};                 // intake motorVoltage = 6 V
     REQUIRE(rig.run([&] { return rig.runner->ticksSent() >= 5; }));
 
@@ -364,7 +364,7 @@ TEST_CASE("runner: robot logs are forwarded, stray and malformed traffic is igno
     Rig rig;
     rig.connect();
     rig.ext->send(proto::Goodbye{"early"});          // before Hello
-    rig.ext->send(wpiemu::test_runtime::talonAnnounce(1, 1));  // before Hello
+    rig.ext->send(wpiemu::sdk::testing::talonFxAnnounce(1, 1));  // before Hello
     rig.ext->hello();
     REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value(); }));
     CHECK(rig.session->hub().discovered().empty());

@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <span>
 #include <string>
 #include <vector>
 
@@ -11,6 +10,7 @@
 #include "wpiemu/sdk/devices/device_identity.h"
 #include "wpiemu/sdk/game/plugin_registry.h"
 #include "wpiemu/sdk/mechanisms/attachment.h"
+#include "wpiemu/sdk/testing/device_fixtures.h"
 #include "wpiemu/sdk/testing/fake_device_hub.h"
 #include "wpiemu/sdk/testing/fake_game_module.h"
 #include "wpiemu/sdk/testing/fake_mechanism_directory.h"
@@ -18,6 +18,7 @@
 #include "wpiemu/sdk/version.h"
 
 using namespace wpiemu::sdk;
+using wpiemu::sdk::testing::hasWarning;
 
 namespace {
 
@@ -25,19 +26,9 @@ bool hasCode(const std::vector<Issue>& issues, const char* code) {
     return std::any_of(issues.begin(), issues.end(), [&](const Issue& i) { return i.code == code; });
 }
 
-bool hasWarning(std::span<const HubWarning> warnings, const char* code) {
-    return std::any_of(warnings.begin(), warnings.end(), [&](const HubWarning& w) { return w.code == code; });
-}
-
+// These suites only need a motor controller, so unlike the full TalonFX it has no position-sensor capability.
 DeviceDescriptor talon(int id) {
-    DeviceDescriptor d;
-    d.family = "phoenix6";
-    d.type = "talonfx";
-    d.vendor = "ctre";
-    d.id = id;
-    d.bus = kBusUnknown;
-    d.capabilities = Capability::MotorOutput | Capability::RotorFeedback;
-    return d;
+    return testing::talonFxDescriptor(id, Capability::MotorOutput | Capability::RotorFeedback);
 }
 
 // A mechanism whose link poses the test scripts.

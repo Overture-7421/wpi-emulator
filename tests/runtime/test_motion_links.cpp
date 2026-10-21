@@ -126,8 +126,8 @@ TEST_CASE("motion links: linked wheels follow the source in the same tick withou
     c.motionLinks = tankMotionLinks(c).value();
     c.motionLinks[0].ratio = -2.0;
     auto s = rig.build(c);
-    s->hub().onAnnounce(wpiemu::test_runtime::talonAnnounce(101, 1));
-    s->hub().onAnnounce(wpiemu::test_runtime::talonAnnounce(102, 2));
+    s->hub().onAnnounce(wpiemu::sdk::testing::talonFxAnnounce(101, 1));
+    s->hub().onAnnounce(wpiemu::sdk::testing::talonFxAnnounce(102, 2));
     proto::ActuatorFrame outputs;
     outputs.samples = {{DeviceId{101}, 1, 4.0}, {DeviceId{102}, 1, 4.0}};
     s->hub().onActuatorFrame(outputs);
@@ -172,7 +172,7 @@ TEST_CASE(
     c.motionLinks = {{"linear", {"source", "axis"}, {"follower", "axis"}, 0.1},
                      {"reverse", {"follower", "axis"}, {"chained", "axis"}, -2.0}};
     auto s = rig.build(c);
-    s->hub().onAnnounce(wpiemu::test_runtime::talonAnnounce(101, 1));
+    s->hub().onAnnounce(wpiemu::sdk::testing::talonFxAnnounce(101, 1));
     s->hub().onAnnounce(wpiemu::test_runtime::cancoderAnnounce(104, 4));
     CHECK_FALSE(s->bindSlot({"follower", "motor"}, {"phoenix6", "talonfx", 5, "", -1}).ok());
     proto::ActuatorFrame outputs;
@@ -267,7 +267,7 @@ TEST_CASE("motion links: wheel and mechanism chains have no cross-owner tick del
         {"toWheel", {"source", "axis"}, {slot_owner::kDrivetrain, "left0.drive"}, 2},
         {"fromWheel", {slot_owner::kDrivetrain, "left0.drive"}, {"follower", "axis"}, -0.5}};
     auto s = rig.build(c);
-    s->hub().onAnnounce(wpiemu::test_runtime::talonAnnounce(103, 3));
+    s->hub().onAnnounce(wpiemu::sdk::testing::talonFxAnnounce(103, 3));
     proto::ActuatorFrame outputs;
     outputs.samples = {{DeviceId{103}, 1, 4.0}};
     s->hub().onActuatorFrame(outputs);
