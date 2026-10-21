@@ -8,7 +8,8 @@ robot feedback and reset placement.
 ## The robot.json contract
 
 [RobotConfig](../../sdk/include/wpiemu/sdk/config/robot_config.h) defines the model;
-[RobotConfigCodec](../../core/runtime/src/config/robot_config_codec.cpp) defines JSON spelling.
+[RobotConfigCodec](../../core/runtime/include/wpiemu/core/config/robot_config_codec.h) defines JSON spelling
+([decode](../../core/runtime/src/config/robot_config_decode.cpp), [encode](../../core/runtime/src/config/robot_config_encode.cpp)).
 The core schema is `1`: an omitted `schemaVersion` defaults to it; another version is
 rejected, not migrated. Selected plugin sections also use schema version `1`.
 
