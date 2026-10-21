@@ -25,7 +25,9 @@ Directions are from the simulator: Input is written to the robot, Output is read
 ## HAL families
 
 [ChannelFamilyBridge](../../sdk/include/wpiemu/sdk/devices/channel_family_bridge.h) discovers indexed
-HAL families by initialized-state polling and retires them when freed. The
+HAL families by initialized-state polling and retires them when freed. Each family in this module
+derives from [HalFamilyBridge or IndexedHalBridge](../../bridges/hal/src/hal_family_bridge.h), which own the
+HAL seam and default the read or write direction a family lacks. The
 [HAL API seam](../../bridges/hal/include/wpiemu/bridges/hal/hal_api.h) permits fake backends;
 the real [binding](../../bridges/hal/src/hal_sim_binding.cpp) obtains counts from HAL and bounds
 indices before calling HALSIM getters/setters. The
@@ -150,6 +152,8 @@ a default setting. Subscriber-only topics therefore must not be treated as robot
 Configure rebuilds camera state but does not sweep removed cameras' publishers. Reset republishes
 empty/no-target results immediately if initialized and available, otherwise on the next available
 tick. Stop unpublishes current camera-prefix topics; Photon root state is not swept by that loop.
+Both encoders keep this lifecycle (configure, lookup by `cameraIndex`, reset, heartbeat cadence) in the SDK's
+[CameraSet](../../sdk/include/wpiemu/sdk/vision/camera_bridge.h); topics and encodings stay in the bridge.
 
 ## Limelight interoperability
 

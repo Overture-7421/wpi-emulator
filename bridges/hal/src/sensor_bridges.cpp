@@ -15,12 +15,6 @@ using sdk::SignalType;
 
 // ---- AnalogIn ----------------------------------------------------------------------------------
 
-AnalogInBridge::AnalogInBridge(std::shared_ptr<IAnalogInHal> hal)
-    : ChannelFamilyBridge("hal.analog_in"), hal_(std::move(hal)) {}
-
-int AnalogInBridge::channelCount() const { return hal_->channelCount(); }
-bool AnalogInBridge::isInitialized(int channel) const { return hal_->initialized(channel); }
-
 sdk::DeviceDescriptor AnalogInBridge::describe(int channel) const {
     return makeDescriptor("analog_in", channel, -1, Capability::AnalogInput,
                           "HALSIM AnalogIn[" + std::to_string(channel) + "]", "Analog in " + std::to_string(channel));
@@ -33,12 +27,6 @@ std::vector<sdk::SignalSpec> AnalogInBridge::signalsOf(int) const {
 void AnalogInBridge::writeSignal(int channel, std::size_t, double value) { hal_->setVoltage(channel, value); }
 
 // ---- AnalogOut ---------------------------------------------------------------------------------
-
-AnalogOutBridge::AnalogOutBridge(std::shared_ptr<IAnalogOutHal> hal)
-    : ChannelFamilyBridge("hal.analog_out"), hal_(std::move(hal)) {}
-
-int AnalogOutBridge::channelCount() const { return hal_->channelCount(); }
-bool AnalogOutBridge::isInitialized(int channel) const { return hal_->initialized(channel); }
 
 sdk::DeviceDescriptor AnalogOutBridge::describe(int channel) const {
     return makeDescriptor("analog_out", channel, -1, sdk::CapabilitySet{},
@@ -56,12 +44,6 @@ double AnalogOutBridge::readSignal(int channel, std::size_t) const { return hal_
 namespace {
 enum EncoderSignal : std::size_t { kEncPosition, kEncVelocity, kEncCount, kEncChannelA, kEncChannelB, kEncDistancePerPulse, kEncReversed };
 }
-
-EncoderBridge::EncoderBridge(std::shared_ptr<IEncoderHal> hal, double countsPerRevolution)
-    : ChannelFamilyBridge("hal.encoder"), hal_(std::move(hal)), countsPerRevolution_(countsPerRevolution) {}
-
-int EncoderBridge::channelCount() const { return hal_->channelCount(); }
-bool EncoderBridge::isInitialized(int channel) const { return hal_->initialized(channel); }
 
 sdk::DeviceDescriptor EncoderBridge::describe(int channel) const {
     const std::string pair =
@@ -114,9 +96,6 @@ namespace {
 enum DutyCycleSignal : std::size_t { kDcPosition, kDcFrequency, kDcDigitalChannel };
 }
 
-DutyCycleBridge::DutyCycleBridge(std::shared_ptr<IDutyCycleHal> hal, int defaultFrequencyHz)
-    : ChannelFamilyBridge("hal.duty_cycle"), hal_(std::move(hal)), defaultFrequencyHz_(defaultFrequencyHz) {}
-
 sdk::Status DutyCycleBridge::start(sdk::IBridgeHost& host) {
     const auto n = static_cast<std::size_t>(channelCount());
     seen_.assign(n, false);
@@ -147,9 +126,6 @@ void DutyCycleBridge::stop() noexcept {
     defaulted_.clear();
     ChannelFamilyBridge::stop();
 }
-
-int DutyCycleBridge::channelCount() const { return hal_->channelCount(); }
-bool DutyCycleBridge::isInitialized(int channel) const { return hal_->initialized(channel); }
 
 sdk::DeviceDescriptor DutyCycleBridge::describe(int channel) const {
     return makeDescriptor("duty_cycle", channel, -1, Capability::PositionSensor,

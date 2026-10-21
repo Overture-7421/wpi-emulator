@@ -80,7 +80,8 @@ Plugins are built in with the host toolchain, not independently loaded shared li
    and link SDK plus permitted private backend dependencies.
 2. Choose [SimDeviceBridge](../sdk/include/wpiemu/sdk/devices/sim_device_bridge.h) plus a
    `SimDeviceRule` table, [ChannelFamilyBridge](../sdk/include/wpiemu/sdk/devices/channel_family_bridge.h)
-   for indexed HAL families, or implement [IDeviceBridge](../sdk/include/wpiemu/sdk/devices/device_bridge.h).
+   for indexed HAL families (the HAL module's `HalFamilyBridge`/`IndexedHalBridge` bases supply the seam and
+   channel plumbing), or implement [IDeviceBridge](../sdk/include/wpiemu/sdk/devices/device_bridge.h).
    Announce descriptors/capabilities, collect outputs, apply inputs, support unmapped loopback,
    retire freed devices and make shutdown idempotent.
 3. Bind [canonical signals](../sdk/include/wpiemu/sdk/devices/signals.h) with explicit units,
@@ -128,6 +129,7 @@ Plugins are built in with the host toolchain, not independently loaded shared li
 2. Implement [IVisionBridge](../sdk/include/wpiemu/sdk/vision/vision_bridge.h) with a unique name.
    Start the backend, configure only cameras of your kind idempotently, poll robot-written settings,
    publish the producer's due-only frames, reset stale published state and stop idempotently.
+   Keep the cameras in a [CameraSet](../sdk/include/wpiemu/sdk/vision/camera_bridge.h) of your `CameraState`.
 3. Register factories through `VisionBridgeRegistry::add`. Wire them through
    `registerBuiltinVisionBridges` in the aggregator, not extension internals.
    The existing real-ntcore entry point is `registerNtVisionBridges`; retain its real/fake-backend

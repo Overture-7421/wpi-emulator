@@ -10,6 +10,7 @@
 
 #include "nt_sink.h"
 #include "wpiemu/bridges/vision/vision_bridges.h"
+#include "wpiemu/sdk/vision/camera_bridge.h"
 #include "wpiemu/sdk/vision/vision_bridge.h"
 
 namespace wpiemu::bridges::vision {
@@ -43,25 +44,19 @@ public:
     void stop() noexcept override;
 
 private:
-    struct Cam {
-        sdk::CameraConfig config;
-        std::string root;  // "/photonvision/front"
-        bool initialized = false;
+    struct Cam : sdk::CameraState {
         std::int64_t pipelineIndex = 0;
         bool driverMode = false;
         std::int64_t fpsLimit = -1;
-        std::int64_t heartbeat = 0;
-        sdk::SimTimeUs nextHeartbeatUs = 0;
         std::int64_t sequence = 0;  // for synthetic (empty) results
     };
 
-    Cam* camera(std::uint32_t index);
     bool ensureInitialized(Cam& cam, std::int64_t ntNow);
     void publishFrame(Cam& cam, const sdk::CameraFrame* frame, std::int64_t ntNow);
 
     detail::NtSink sink_;
     VisionBridgeOptions options_;
-    std::vector<std::optional<Cam>> cams_;
+    sdk::CameraSet<Cam> cams_;
     std::string version_;
     bool enabled_ = true;
     std::string warnedVersion_;

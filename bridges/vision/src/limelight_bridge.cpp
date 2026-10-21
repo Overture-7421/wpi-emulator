@@ -79,21 +79,8 @@ void LimelightBridge::configure(const sdk::VisionSetup& setup) {
     fieldWidthM_ = setup.fieldWidthM;
     fieldSizeKnown_ = setup.hasFieldSize();
     fieldWarningLogged_ = false;
-    cams_.clear();
-    cams_.resize(setup.cameras.size());
-    for (std::size_t i = 0; i < setup.cameras.size(); ++i) {
-        const sdk::CameraConfig& c = setup.cameras[i].config;
-        if (c.kind != sdk::CameraKind::Limelight) continue;
-        Cam cam;
-        cam.config = c;
-        cam.root = c.name.empty() ? "/limelight" : "/limelight-" + c.name;
-        cams_[i] = std::move(cam);
-    }
-}
-
-LimelightBridge::Cam* LimelightBridge::camera(std::uint32_t index) {
-    if (index >= cams_.size() || !cams_[index]) return nullptr;
-    return &*cams_[index];
+    cams_.configure(setup, sdk::CameraKind::Limelight,
+                    [](const sdk::CameraConfig& c) { return c.name.empty() ? "/limelight" : "/limelight-" + c.name; });
 }
 
 // The robot pose in the field convention `origin`. Blue is our own frame; red and center need the field size, which
@@ -114,11 +101,10 @@ bool LimelightBridge::ensureInitialized(Cam& cam, std::int64_t ntNow) {
     if (cam.initialized) return true;
     if (!sink_.available()) return false;
     cam.initialized = true;
-    cam.heartbeat = 0;
-    cam.nextHeartbeatUs = 0;
+    cam.restartHeartbeat();
 
     publishFrame(cam, sdk::CameraFrame{}, ntNow, true);
-    sink_.putDouble(cam.root + "/hb", cam.heartbeat, ntNow);
+    sink_.putDouble(cam.root + "/hb", static_cast<double>(cam.heartbeat), ntNow);
     sink_.putDouble(cam.root + "/getpipe", cam.pipeline, ntNow);
     sink_.putString(cam.root + "/getpipetype", kPipelineType, ntNow);
     return true;
@@ -127,10 +113,8 @@ bool LimelightBridge::ensureInitialized(Cam& cam, std::int64_t ntNow) {
 void LimelightBridge::poll(sdk::SimTimeUs simTimeUs) {
     if (cams_.empty() || !sink_.available()) return;
     const std::int64_t ntNow = sink_.backend().nowUs();
-    for (std::optional<Cam>& slot : cams_) {
-        if (!slot) continue;
-        Cam& cam = *slot;
-        if (!ensureInitialized(cam, ntNow)) continue;
+    cams_.forEach([&](Cam& cam) {
+        if (!ensureInitialized(cam, ntNow)) return;
 
         const std::optional<double> pipeline = ntAsDouble(sink_.read(cam.root + "/pipeline"));
         if (pipeline && *pipeline != cam.pipeline) {
@@ -138,41 +122,31 @@ void LimelightBridge::poll(sdk::SimTimeUs simTimeUs) {
             sink_.putDouble(cam.root + "/getpipe", cam.pipeline, ntNow);
         }
 
-        if (simTimeUs >= cam.nextHeartbeatUs) {
-            cam.heartbeat += 1;
-            cam.nextHeartbeatUs = simTimeUs + options_.heartbeatPeriodUs;
-            sink_.putDouble(cam.root + "/hb", cam.heartbeat, ntNow);
-        }
-    }
+        if (cam.beat(simTimeUs, options_.heartbeatPeriodUs))
+            sink_.putDouble(cam.root + "/hb", static_cast<double>(cam.heartbeat), ntNow);
+    });
 }
 
 void LimelightBridge::apply(std::span<const sdk::CameraFrame> frames, sdk::SimTimeUs) {
     if (frames.empty() || !sink_.available()) return;
     const std::int64_t ntNow = sink_.backend().nowUs();
     for (const sdk::CameraFrame& frame : frames) {
-        Cam* cam = camera(frame.cameraIndex);
+        Cam* cam = cams_.find(frame.cameraIndex);
         if (cam == nullptr || !ensureInitialized(*cam, ntNow)) continue;
         publishFrame(*cam, frame, ntNow, false);
     }
 }
 
 void LimelightBridge::reset() {
-    for (std::optional<Cam>& slot : cams_) {
-        if (!slot) continue;
-        Cam& cam = *slot;
-        const bool wasInitialized = cam.initialized;
-        cam.initialized = false;
-        cam.nextHeartbeatUs = 0;
-        // Republish a "no target" state now when ntcore is up, otherwise on the first available tick.
-        if (wasInitialized && sink_.available()) ensureInitialized(cam, sink_.backend().nowUs());
-    }
+    // Republish a "no target" state now when ntcore is up, otherwise on the first available tick.
+    cams_.reset([this](Cam& cam) {
+        if (sink_.available()) ensureInitialized(cam, sink_.backend().nowUs());
+    });
 }
 
 void LimelightBridge::stop() noexcept {
     if (started_ && sink_.available()) {
-        for (const std::optional<Cam>& slot : cams_) {
-            if (slot) sink_.backend().unpublish(slot->root + "/");
-        }
+        cams_.forEach([this](const Cam& cam) { sink_.backend().unpublish(cam.root + "/"); });
     }
     cams_.clear();
     started_ = false;

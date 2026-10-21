@@ -15,11 +15,6 @@ using sdk::SignalType;
 
 // ---- PWM ---------------------------------------------------------------------------------------
 
-PwmBridge::PwmBridge(std::shared_ptr<IPwmHal> hal) : ChannelFamilyBridge("hal.pwm"), hal_(std::move(hal)) {}
-
-int PwmBridge::channelCount() const { return hal_->channelCount(); }
-bool PwmBridge::isInitialized(int channel) const { return hal_->initialized(channel); }
-
 sdk::DeviceDescriptor PwmBridge::describe(int channel) const {
     return makeDescriptor("pwm", channel, -1, Capability::MotorOutput | Capability::PwmOutput,
                           "HALSIM PWM[" + std::to_string(channel) + "]", "PWM " + std::to_string(channel));
@@ -46,11 +41,6 @@ double PwmBridge::readSignal(int channel, std::size_t signalIndex) const {
 
 // ---- DIO ---------------------------------------------------------------------------------------
 
-DioBridge::DioBridge(std::shared_ptr<IDioHal> hal) : ChannelFamilyBridge("hal.dio"), hal_(std::move(hal)) {}
-
-int DioBridge::channelCount() const { return hal_->channelCount(); }
-bool DioBridge::isInitialized(int channel) const { return hal_->initialized(channel); }
-
 sdk::DeviceDescriptor DioBridge::describe(int channel) const {
     const bool input = hal_->isInput(channel);
     return makeDescriptor("dio", channel, -1, input ? Capability::DigitalInput : Capability::DigitalOutput,
@@ -72,8 +62,6 @@ void DioBridge::writeSignal(int channel, std::size_t, double value) {
 }
 
 // ---- Relay -------------------------------------------------------------------------------------
-
-RelayBridge::RelayBridge(std::shared_ptr<IRelayHal> hal) : ChannelFamilyBridge("hal.relay"), hal_(std::move(hal)) {}
 
 int RelayBridge::channelCount() const { return hal_->headerCount() * 2; }
 
