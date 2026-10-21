@@ -12,39 +12,9 @@
 
 namespace wpiemu::app::editor {
 
-const char* slotTypeName(sdk::SlotType type) {
-    switch (type) {
-        case sdk::SlotType::Motor: return "motor";
-        case sdk::SlotType::PositionSensor: return "position sensor";
-        case sdk::SlotType::VelocitySensor: return "velocity sensor";
-        case sdk::SlotType::LimitSwitch: return "limit switch";
-        case sdk::SlotType::BeamBreak: return "beam break";
-        case sdk::SlotType::Imu: return "IMU";
-        case sdk::SlotType::AnalogSensor: return "analog sensor";
-        case sdk::SlotType::DistanceSensor:
-            return "distance sensor";
-        case sdk::SlotType::Solenoid: return "solenoid";
-        case sdk::SlotType::DigitalOutput: return "digital output";
-    }
-    return "device";
-}
+const char* slotTypeName(sdk::SlotType type) { return sdk::slotTypeInfo(type).shortName; }
 
-QString slotTypeLabel(sdk::SlotType type) {
-    switch (type) {
-        case sdk::SlotType::Motor: return ETR("Motor controller");
-        case sdk::SlotType::PositionSensor: return ETR("Position sensor");
-        case sdk::SlotType::VelocitySensor: return ETR("Velocity sensor");
-        case sdk::SlotType::LimitSwitch: return ETR("Limit switch");
-        case sdk::SlotType::BeamBreak: return ETR("Beam break");
-        case sdk::SlotType::Imu: return ETR("IMU");
-        case sdk::SlotType::AnalogSensor: return ETR("Analog sensor");
-        case sdk::SlotType::DistanceSensor:
-            return ETR("Distance sensor");
-        case sdk::SlotType::Solenoid: return ETR("Solenoid");
-        case sdk::SlotType::DigitalOutput: return ETR("Digital output");
-    }
-    return ETR("Device");
-}
+QString slotTypeLabel(sdk::SlotType type) { return ETR(sdk::slotTypeInfo(type).displayName); }
 
 QString mappedLabel(const SlotInfo& info) {
     if (!info.mapped) return {};

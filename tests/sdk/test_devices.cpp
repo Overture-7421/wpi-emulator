@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "wpiemu/sdk/devices/channel_family_bridge.h"
+#include "wpiemu/sdk/devices/device_catalog.h"
 #include "wpiemu/sdk/devices/signals.h"
 #include "wpiemu/sdk/devices/sim_device_bridge.h"
 #include "wpiemu/sdk/physics/drivetrain.h"
@@ -318,4 +319,17 @@ TEST_CASE("SimDeviceBridge keeps the rule bus when it is a fact of the family (d
     bridge.poll();
     REQUIRE(host.announced.size() == 1);
     CHECK(host.announced.begin()->second.descriptor.bus == "rio");
+}
+
+TEST_CASE("SDK slot and device catalogs supply canonical labels and capability sets") {
+    CHECK(std::string_view(slotTypeInfo(SlotType::Motor).shortName) == "motor");
+    CHECK(std::string_view(slotTypeInfo(SlotType::Motor).displayName) == "Motor controller");
+    CHECK(requiredCapabilities(SlotType::Imu) == CapabilitySet(Capability::Imu));
+
+    CHECK(deviceTypeDisplayName(device_type::kTalonFx) == "TalonFX");
+    CHECK(deviceTypeDisplayName(device_type::kCancoder) == "CANcoder");
+    CHECK(deviceTypeDisplayName("custom_dev") == "custom_dev");
+    CHECK(deviceTypeCapabilities(device_type::kTalonFx).has(Capability::MotorOutput));
+    CHECK(deviceTypeCapabilities(device_type::kPigeon2).has(Capability::Imu));
+    CHECK(findDeviceType("unknown_type") == nullptr);
 }

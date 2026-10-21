@@ -40,23 +40,30 @@ public:
         return backend_;
     }
 
-    std::unique_ptr<sdk::IDeviceBridge> makePhoenix6() {
+    VendorSimBridgeOptions baseOptions() const {
         VendorSimBridgeOptions o;
-        o.guard = ctre::phoenix6GuardOptions();
         o.timeSync = options_.timeSync;
+        return o;
+    }
+
+    std::unique_ptr<sdk::IDeviceBridge> makeBridge(std::string name, std::vector<sdk::SimDeviceRule> rules,
+                                                   VendorSimBridgeOptions o) {
+        auto b = backend(o.backendAvailable);
+        return std::make_unique<VendorSimDeviceBridge>(std::move(name), std::move(rules), std::move(b), std::move(o));
+    }
+
+    std::unique_ptr<sdk::IDeviceBridge> makePhoenix6() {
+        VendorSimBridgeOptions o = baseOptions();
+        o.guard = ctre::phoenix6GuardOptions();
         o.nativeProvider = options_.nativeProvider;
         o.onConfig = options_.onConfig;
         o.hooks = options_.hooks;
-        auto b = backend(o.backendAvailable);
-        return std::make_unique<VendorSimDeviceBridge>("ctre.phoenix6", ctre::phoenix6Rules(), std::move(b), std::move(o));
+        return makeBridge("ctre.phoenix6", ctre::phoenix6Rules(), std::move(o));
     }
 
     std::unique_ptr<sdk::IDeviceBridge> makePhoenix5() {
-        VendorSimBridgeOptions o;  // Phoenix 5: no config API, no integrated-input guard (not characterised)
-        o.timeSync = options_.timeSync;
-        auto b = backend(o.backendAvailable);
-        return std::make_unique<VendorSimDeviceBridge>("ctre.phoenix5", ctre::phoenix5Rules(options_.phoenix5),
-                                                       std::move(b), std::move(o));
+        // Phoenix 5: no config API, no integrated-input guard (not characterised)
+        return makeBridge("ctre.phoenix5", ctre::phoenix5Rules(options_.phoenix5), baseOptions());
     }
 
     const VendorBridgeOptions& options() const { return options_; }

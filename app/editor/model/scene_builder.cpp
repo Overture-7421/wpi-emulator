@@ -18,9 +18,6 @@ namespace {
 
 // Sizes (metres) and opacities of the markers, overlays and lines the editor adds around the robot's own shapes.
 constexpr float kHullOpacity = 0.9f;
-constexpr float kNoseLengthM = 0.024f;
-constexpr float kNoseMaxWidthM = 0.25f;
-constexpr float kNoseMinHeightM = 0.02f;
 constexpr float kComMarkerM = 0.05f;
 constexpr float kBareAnchorM = 0.1f;   // anchor of a mechanism without geometry
 constexpr float kAnchorM = 0.03f;
@@ -42,16 +39,17 @@ constexpr float kFrustumPlaneOpacity = 0.14f;
 
 SceneItem fromPrimitive(const sdk::PrimitiveSpec& p, const Pose3& frame, std::string id, const SelectionRef& ref,
                         const SelectionRef& group, const QColor& fallback) {
+    const ui::SceneBoxOrCylinder desc = ui::describePrimitive(p);
     SceneItem item;
     item.id = std::move(id);
     item.ref = ref;
     item.group = group;
     item.pickable = true;
     item.role = ItemRole::Shape;
-    item.world = frame * p.local;
-    item.shape = p.kind;
-    item.size = p.extentsM();
-    item.color = ui::parseColor(p.color, fallback);
+    item.world = frame * desc.local;
+    item.shape = desc.cylinder ? sdk::PrimitiveKind::Cylinder : sdk::PrimitiveKind::Box;
+    item.size = desc.sizeM;
+    item.color = ui::parseColor(desc.color, fallback);
     return item;
 }
 
@@ -76,11 +74,12 @@ SceneContent buildScene(const sdk::RobotConfig& c, const EditorCatalog& catalog,
 
     // Hull
     {
+        const Pose3 hullLocal = ui::chassisHullLocalPose(c.chassis);
         SceneItem hull;
         hull.id = "hull";
         hull.ref = hull.group = chassisRef;
         hull.role = ItemRole::Hull;
-        hull.world = ops::hullWorld(c.chassis);
+        hull.world = chassisFrame * hullLocal;
         hull.size = c.chassis.sizeM;
         hull.color = theme.hull;
         hull.opacity = kHullOpacity;
@@ -88,11 +87,12 @@ SceneContent buildScene(const sdk::RobotConfig& c, const EditorCatalog& catalog,
         out.items.push_back(hull);
 
         // A nose marker so the robot's forward (+X) is unmistakable.
+        const ui::SceneBoxOrCylinder noseDesc = ui::describeChassisNose(c.chassis, hullLocal.position.z);
         SceneItem nose;
         nose.id = "nose";
         nose.role = ItemRole::Marker;
-        nose.world = Pose3{Vec3{c.chassis.sizeM.x * 0.5f + kNoseLengthM * 0.5f, 0.f, hull.world.position.z}, Quat{}};
-        nose.size = Vec3{kNoseLengthM, std::min(kNoseMaxWidthM, c.chassis.sizeM.y * 0.5f), std::max(kNoseMinHeightM, c.chassis.sizeM.z * 0.5f)};
+        nose.world = chassisFrame * noseDesc.local;
+        nose.size = noseDesc.sizeM;
         nose.color = theme.accent;
         out.items.push_back(nose);
     }
@@ -108,8 +108,8 @@ SceneContent buildScene(const sdk::RobotConfig& c, const EditorCatalog& catalog,
         item.group = item.ref;
         item.role = ItemRole::Wheel;
         item.shape = sdk::PrimitiveKind::Cylinder;
-        item.world = Pose3{ops::wheelWorld(c.chassis, w).position, Quat::fromAxisAngle({1.f, 0.f, 0.f}, static_cast<float>(sdk::kPi * 0.5))};
-        item.size = Vec3{w.radiusM * 2.f, w.radiusM * 2.f, w.widthM};
+        item.world = chassisFrame * Pose3{ui::wheelHubLocalPosition(c.chassis, w), ui::kWheelAxisXToY};
+        item.size = ui::wheelCylinderSize(w);
         item.color = theme.wheel;
         item.pickable = true;
         out.items.push_back(item);

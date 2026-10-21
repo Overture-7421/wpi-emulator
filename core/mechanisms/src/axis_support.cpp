@@ -10,27 +10,43 @@ namespace wpiemu::core::mechanisms::detail {
 
 namespace {
 
+struct MotionInfo {
+    Motion motion;
+    const char* key;
+    const char* label;
+    sdk::PlantKind plantKind;
+};
+
+constexpr MotionInfo kMotionTable[] = {
+    {Motion::Rotary, "rotary", "Rotary", sdk::PlantKind::Angular},
+    {Motion::Arm, "arm", "Arm", sdk::PlantKind::Angular},
+    {Motion::Linear, "linear", "Linear", sdk::PlantKind::Linear},
+};
+
+const MotionInfo& motionInfo(Motion m) {
+    for (const MotionInfo& info : kMotionTable)
+        if (info.motion == m) return info;
+    return kMotionTable[0];
+}
+
 sdk::Error invalidProp(const std::string& key, const std::string& why) {
     return sdk::makeError(sdk::ErrorCode::InvalidArgument, "property '" + key + "' " + why);
 }
 
 bool parseMotion(const std::string& s, Motion& out) {
-    if (s == "rotary") out = Motion::Rotary;
-    else if (s == "arm") out = Motion::Arm;
-    else if (s == "linear") out = Motion::Linear;
-    else return false;
-    return true;
+    for (const MotionInfo& info : kMotionTable) {
+        if (s == info.key) {
+            out = info.motion;
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace
 
 const char* motionKey(Motion m) {
-    switch (m) {
-        case Motion::Rotary: return "rotary";
-        case Motion::Arm: return "arm";
-        case Motion::Linear: return "linear";
-    }
-    return "rotary";
+    return motionInfo(m).key;
 }
 
 AxisSlotNames axisSlotNames() {
@@ -101,8 +117,9 @@ std::vector<sdk::PropertySpec> axisProperties(const AxisOptions& o, const MotorC
     out.push_back(props::flag("reportMotorLimits", "Report limits on motor controller", gMotor, false,
                               "Also set the motor controller's forward/reverse limit signals at the stops."));
 
-    out.push_back(props::choice("motion", "Type", gDyn, motionKey(o.motion),
-                                {{"rotary", "Rotary"}, {"arm", "Arm"}, {"linear", "Linear"}},
+    std::vector<sdk::EnumOption> motionOptions;
+    for (const MotionInfo& info : kMotionTable) motionOptions.push_back({info.key, info.label});
+    out.push_back(props::choice("motion", "Type", gDyn, motionKey(o.motion), std::move(motionOptions),
                                 "Rotary spinner, gravity-loaded arm, or linear slide."));
     out.push_back(props::real("momentOfInertiaKgM2", "Moment of inertia", gDyn, o.inertiaKgM2, 0.0, 100.0, PropertyUnit::KgM2,
                               "About the rotation axis. Arm: 0 = uniform rod about its end, 1/3 m L^2."));
@@ -172,15 +189,14 @@ sdk::Result<AxisSettings> readAxisSettings(const AxisOptions& o, const sdk::Valu
     p.coulombFrictionNm = getDouble(props, "coulombFrictionNm", 0.0);
 
     const double massKg = getDouble(props, "massKg", o.massKg);
+    p.kind = motionInfo(s.motion).plantKind;
     switch (s.motion) {
         case Motion::Rotary:
             p.model = plant_model::kDcMotor;
-            p.kind = sdk::PlantKind::Angular;
             p.momentOfInertiaKgM2 = getDouble(props, "momentOfInertiaKgM2", o.inertiaKgM2);
             break;
         case Motion::Arm: {
             p.model = plant_model::kArm;
-            p.kind = sdk::PlantKind::Angular;
             p.massKg = massKg;
             const double length = getDouble(props, "lengthM", o.lengthM);
             const double inertia = getDouble(props, "momentOfInertiaKgM2", o.inertiaKgM2);
@@ -191,7 +207,6 @@ sdk::Result<AxisSettings> readAxisSettings(const AxisOptions& o, const sdk::Valu
         }
         case Motion::Linear:
             p.model = plant_model::kElevator;
-            p.kind = sdk::PlantKind::Linear;
             p.massKg = massKg;
             p.drumRadiusM = getDouble(props, "drumRadiusM", o.drumRadiusM);
             p.simulateGravity = getBool(props, "simulateGravity", o.gravity) && o.linearGravityEnabled;

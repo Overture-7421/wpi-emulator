@@ -1,6 +1,5 @@
-// Smoke test of the ntcore binding against the real ntcore, in-process (no robot, no HAL). The test executable
+// Smoke test of the ntcore binding against the real ntcore, in-process. The test executable
 // links ntcore, so the module is already loaded and the binding attaches to it exactly like it does in a robot.
-#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
 #include <cstdint>

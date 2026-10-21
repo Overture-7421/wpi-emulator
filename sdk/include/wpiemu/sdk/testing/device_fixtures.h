@@ -10,6 +10,7 @@
 #include <string_view>
 #include <utility>
 
+#include "wpiemu/sdk/devices/device_catalog.h"
 #include "wpiemu/sdk/devices/device_descriptor.h"
 #include "wpiemu/sdk/devices/device_hub.h"
 #include "wpiemu/sdk/devices/discovered_device.h"
@@ -31,8 +32,8 @@ inline constexpr CapabilitySet kTalonFxCapabilities =
 inline DeviceDescriptor talonFxDescriptor(int canId, CapabilitySet capabilities = kTalonFxCapabilities,
                                           std::string bus = kBusUnknown) {
     DeviceDescriptor d;
-    d.family = "phoenix6";
-    d.type = "talonfx";
+    d.family = device_family::kPhoenix6;
+    d.type = device_type::kTalonFx;
     d.vendor = "ctre";
     d.id = canId;
     d.bus = std::move(bus);

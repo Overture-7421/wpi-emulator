@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "wpiemu/sdk/devices/device_catalog.h"
 #include "wpiemu/sdk/devices/discovered_device.h"
 #include "wpiemu/sdk/devices/slot.h"
 
@@ -50,12 +51,8 @@ private:
 
 // "talonfx" -> "TalonFX"; unknown types are shown as-is.
 inline QString prettyType(const std::string& type) {
-    static const std::pair<const char*, const char*> known[] = {
-        {"talonfx", "TalonFX"}, {"cancoder", "CANcoder"}, {"pigeon2", "Pigeon 2"}, {"candle", "CANdle"}, {"talonsrx", "Talon SRX"},
-        {"victorspx", "Victor SPX"}, {"dio", "DIO"}, {"pwm", "PWM"}, {"analog", "Analog in"}, {"relay", "Relay"}, {"solenoid", "Solenoid"}};
-    for (const auto& [raw, nice] : known)
-        if (type == raw) return QString::fromLatin1(nice);
-    return QString::fromStdString(type);
+    const std::string_view label = sdk::deviceTypeDisplayName(type);
+    return QString::fromUtf8(label.data(), static_cast<int>(label.size()));
 }
 
 inline QString deviceLabel(const sdk::DeviceDescriptor& d) {

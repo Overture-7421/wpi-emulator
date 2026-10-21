@@ -8,16 +8,22 @@ endif()
 # Qt UI suites with their own executable and event loop (see app/runview/CMakeLists.txt).
 list(FILTER WPIEMU_TEST_SOURCES EXCLUDE REGEX "/tests/app_runview/")
 
+file(GLOB WPIEMU_HALSIM_EXT_TEST_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/halsim_ext/tests/test_*.cpp")
+list(APPEND WPIEMU_TEST_SOURCES
+    ${WPIEMU_HALSIM_EXT_TEST_SOURCES}
+    "${CMAKE_SOURCE_DIR}/app/host/tests/test_session_failures.cpp")
+
 add_executable(wpiemu_tests ${WPIEMU_TEST_SOURCES} $<TARGET_OBJECTS:wpiemu_sdk_header_check>)
 target_link_libraries(wpiemu_tests PRIVATE
-    wpiemu_sdk wpiemu_core wpiemu_ipc
+    wpiemu_sdk wpiemu_core wpiemu_ipc wpiemu_halsim_core wpiemu_app_host
     wpiemu_bridges_hal wpiemu_bridges_vendor wpiemu_bridges_vision
     wpiemu_plugin_game_2026 wpiemu_plugins_builtin)
 if(WPIEMU_BUILD_PLUGIN_TEMPLATE)
     target_link_libraries(wpiemu_tests PRIVATE wpiemu_plugin_template)
 endif()
 wpiemu_doctest_target(wpiemu_tests)
-target_include_directories(wpiemu_tests PRIVATE support)
+target_include_directories(wpiemu_tests PRIVATE support "${CMAKE_SOURCE_DIR}/halsim_ext/tests")
 target_compile_definitions(wpiemu_tests PRIVATE "WPIEMU_SAMPLES_DIR=\"${CMAKE_SOURCE_DIR}/samples\"")
 
 doctest_discover_tests(wpiemu_tests)

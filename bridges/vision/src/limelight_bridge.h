@@ -8,13 +8,19 @@
 #include <string_view>
 #include <vector>
 
-#include "nt_sink.h"
+#include "nt_vision_bridge.h"
 #include "vision_math.h"
 #include "wpiemu/bridges/vision/vision_bridges.h"
 #include "wpiemu/sdk/vision/camera_bridge.h"
 #include "wpiemu/sdk/vision/vision_bridge.h"
 
 namespace wpiemu::bridges::vision {
+
+struct LimelightCam : sdk::CameraState {
+    double pipeline = 0;
+    sdk::Pose3 robotToCamera;  // last captured, for camerapose_robotspace
+    bool hasRobotToCamera = false;
+};
 
 // Limelight (LLOS 2026 / LimelightHelpers v1.14) NetworkTables presentation of simulated AprilTag cameras.
 // Table: "limelight" (empty CameraConfig::name) or "limelight-<name>".
@@ -30,38 +36,30 @@ namespace wpiemu::bridges::vision {
 // Every few ticks of simulated time: hb. Mirrored from the robot: pipeline -> getpipe (all pipelines are
 // AprilTag pipelines). ledMode and robot_orientation_set are accepted and ignored: LEDs do not influence
 // fiducial detection and the simulated MegaTag2 result is the ground-truth pose estimate anyway.
-class LimelightBridge final : public sdk::IVisionBridge {
+class LimelightBridge final : public detail::NtVisionBridgeBase<LimelightBridge, LimelightCam> {
 public:
+    using Cam = LimelightCam;
+
     LimelightBridge(std::shared_ptr<INtBackend> backend, VisionBridgeOptions options);
 
     std::string_view name() const override { return "vision.limelight"; }
-    sdk::Status start(sdk::ILogger& logger) override;
     void configure(const sdk::VisionSetup& setup) override;
-    void poll(sdk::SimTimeUs simTimeUs) override;
-    void apply(std::span<const sdk::CameraFrame> frames, sdk::SimTimeUs simTimeUs) override;
-    void reset() override;
-    void stop() noexcept override;
 
 private:
-    struct Cam : sdk::CameraState {
-        double pipeline = 0;
-        sdk::Pose3 robotToCamera;  // last captured, for camerapose_robotspace
-        bool hasRobotToCamera = false;
-    };
+    friend class detail::NtVisionBridgeBase<LimelightBridge, LimelightCam>;
+
+    void onInitializeCamera(Cam& cam, std::int64_t ntNow);
+    void onPollCamera(Cam& cam, sdk::SimTimeUs simTimeUs, std::int64_t ntNow);
+    void onFrame(Cam& cam, const sdk::CameraFrame& frame, std::int64_t ntNow);
 
     std::optional<sdk::Pose3> poseInOrigin(const sdk::Pose3& blue, detail::FieldOrigin origin);
-    bool ensureInitialized(Cam& cam, std::int64_t ntNow);
     // synthetic: an empty no-target frame (initial state / reset), not a camera capture.
     void publishFrame(Cam& cam, const sdk::CameraFrame& frame, std::int64_t ntNow, bool synthetic);
 
-    detail::NtSink sink_;
-    VisionBridgeOptions options_;
     double fieldLengthM_ = 0.0;   // from VisionSetup; valid only while fieldSizeKnown_
     double fieldWidthM_ = 0.0;
     bool fieldSizeKnown_ = false;
     bool fieldWarningLogged_ = false;
-    sdk::CameraSet<Cam> cams_;
-    bool started_ = false;
 };
 
 }  // namespace wpiemu::bridges::vision

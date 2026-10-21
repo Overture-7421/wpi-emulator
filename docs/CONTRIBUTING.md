@@ -57,7 +57,7 @@ Merge one only with proof that it removes complexity without changing behavior o
 - Math: motor, tire and mechanism dynamics (analytic gearbox versus numeric `DcMotorModel`); the vision bridges'
   double-precision vendor math versus SDK float poses.
 - Hosts and shells: demo versus real runtime host, editor versus run-view lighting, POSIX versus Windows processes.
-- Targets and tests: `wpiemu_halsim_hal`, the physics library, per-boundary test harnesses, the shared
+- Targets and tests: `wpiemu_halsim_core`, `wpiemu_core`, per-boundary test harnesses, the shared
   `PluginRegistrar` and init-script seams, the core-only runtime sample config.
 
 ## Tests

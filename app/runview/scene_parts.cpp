@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 
+#include "ui/scene_support.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/mechanisms/attachment.h"
@@ -11,8 +12,6 @@
 
 namespace wpiemu::app::runview {
 namespace {
-
-constexpr float kHalfPi = static_cast<float>(sdk::kPi * 0.5);
 
 const sdk::MechanismState* findState(const sdk::ISimSnapshot* snapshot, std::string_view id) {
     if (snapshot == nullptr) return nullptr;
@@ -33,12 +32,13 @@ sdk::LinkPoseSource linkSource(const sdk::RobotConfig& config, const sdk::ISimSn
 }
 
 ScenePart partFromPrimitive(const sdk::PrimitiveSpec& p) {
+    const ui::SceneBoxOrCylinder desc = ui::describePrimitive(p);
     ScenePart part;
     part.name = p.name;
-    part.pose = p.local;
-    part.color = p.color;
-    part.shape = p.kind;
-    part.size = p.extentsM();
+    part.pose = desc.local;
+    part.color = desc.color;
+    part.shape = desc.cylinder ? sdk::PrimitiveKind::Cylinder : sdk::PrimitiveKind::Box;
+    part.size = desc.sizeM;
     return part;
 }
 
@@ -63,19 +63,20 @@ void RobotRig::setConfig(std::shared_ptr<const sdk::RobotConfig> config) {
         ScenePart frame;
         frame.name = "chassis";
         frame.size = ch.sizeM;
-        frame.pose.position = {-ch.comOffsetM.x, -ch.comOffsetM.y, ch.groundClearanceM + ch.sizeM.z * 0.5f - ch.comHeightM};
+        frame.pose = ui::chassisHullLocalPose(ch);
         frame.color = "#5d6b86";
         addStatic(std::move(frame));
     } else {
         for (const auto& p : ch.primitives) addStatic(partFromPrimitive(p));
     }
     {
+        const ui::SceneBoxOrCylinder frontDesc =
+            ui::describeChassisNose(ch, ch.groundClearanceM + ch.sizeM.z - ch.comHeightM + 0.012f, "#ffc933");
         ScenePart front;
         front.name = "front.marker";
-        front.size = {0.05f, ch.sizeM.y * 0.6f, 0.02f};
-        front.pose.position = {ch.sizeM.x * 0.5f - 0.04f - ch.comOffsetM.x, -ch.comOffsetM.y,
-                               ch.groundClearanceM + ch.sizeM.z - ch.comHeightM + 0.012f};
-        front.color = "#ffc933";
+        front.size = frontDesc.sizeM;
+        front.pose = frontDesc.local;
+        front.color = frontDesc.color;
         addStatic(std::move(front));
     }
     staticCount_ = parts_.size();
@@ -84,9 +85,9 @@ void RobotRig::setConfig(std::shared_ptr<const sdk::RobotConfig> config) {
         ScenePart tire;
         tire.name = w.name;
         tire.shape = sdk::PrimitiveKind::Cylinder;
-        tire.size = {w.radiusM * 2.f, w.radiusM * 2.f, w.widthM};
+        tire.size = ui::wheelCylinderSize(w);
         tire.color = "#20242b";
-        tire.pose.position = {w.positionM.x, w.positionM.y, w.positionM.z - ch.comHeightM};
+        tire.pose.position = ui::wheelHubLocalPosition(ch, w);
         ScenePart marker;
         marker.name = w.name + ".marker";
         marker.size = {w.radiusM * 1.8f, w.radiusM * 0.3f, w.widthM * 1.05f};
@@ -145,7 +146,7 @@ bool RobotRig::update(const sdk::ISimSnapshot* snapshot) {
                 }
                 next.position = hub;
                 // Cylinder axis (local Z) -> chassis +Y, steered about chassis Z, spun about its own axle.
-                next.rotation = sdk::Quat::fromYaw(steer) * sdk::Quat::fromAxisAngle({1.f, 0.f, 0.f}, -kHalfPi) *
+                next.rotation = sdk::Quat::fromYaw(steer) * ui::kWheelAxisXToY.conjugate() *
                                 sdk::Quat::fromAxisAngle({0.f, 0.f, 1.f}, spin);
                 break;
             }

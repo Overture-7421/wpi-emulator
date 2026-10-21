@@ -22,7 +22,6 @@
 #include <string>
 #include <vector>
 
-#define DOCTEST_CONFIG_IMPLEMENT
 #include <doctest/doctest.h>
 
 #include "host/robot_session.h"
@@ -311,23 +310,4 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     sdk::testing::waitUntil([&] { return !processAlive(pid); }, 10s, 100ms);
     CHECK_FALSE(processAlive(pid));
     std::printf("e2e: total %.1f s\n", std::chrono::duration<double>(Clock::now() - t0).count());
-}
-
-int main(int argc, char** argv) {
-    auto skip = [](const std::string& why) {
-        std::printf("SKIPPED e2e vision: %s\n", why.c_str());
-        return kSkipExitCode;
-    };
-    if (env("WPIEMU_E2E").empty()) return skip("set WPIEMU_E2E=1 to run the end-to-end test (needs WPILib 2026, Gradle and the vision sample)");
-    const fs::path project = !env("WPIEMU_E2E_VISION_PROJECT").empty() ? fs::path(env("WPIEMU_E2E_VISION_PROJECT"))
-                                                                        : fs::path(WPIEMU_E2E_VISION_DEFAULT_PROJECT);
-    std::error_code ec;
-    if (project.empty() || !fs::is_directory(project, ec)) return skip("vision sample not found: '" + project.string() + "' (set WPIEMU_E2E_VISION_PROJECT)");
-    const bool windows = fs::path::preferred_separator == '\\';
-    if (!fs::exists(project / (windows ? "gradlew.bat" : "gradlew"), ec)) return skip("the project has no Gradle wrapper: " + project.string());
-    if (!fs::exists(fs::path(WPIEMU_E2E_EXTENSION), ec)) return skip(std::string("the HALSim extension is not built: ") + WPIEMU_E2E_EXTENSION);
-    if (!core::launcher::findWpilibInstall(2026, {}) && env("JAVA_HOME").empty())
-        return skip("no WPILib 2026 installation (C:\\Users\\Public\\wpilib\\2026) and no JAVA_HOME");
-    doctest::Context context(argc, argv);
-    return context.run();
 }

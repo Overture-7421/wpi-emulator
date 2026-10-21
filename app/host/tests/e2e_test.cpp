@@ -50,6 +50,9 @@ using Clock = std::chrono::steady_clock;
 #ifndef WPIEMU_E2E_DEFAULT_PROJECT
 #define WPIEMU_E2E_DEFAULT_PROJECT ""
 #endif
+#ifndef WPIEMU_E2E_VISION_DEFAULT_PROJECT
+#define WPIEMU_E2E_VISION_DEFAULT_PROJECT ""
+#endif
 
 namespace {
 
@@ -493,7 +496,15 @@ int main(int argc, char** argv) {
         return kSkipExitCode;
     };
     if (env("WPIEMU_E2E").empty()) return skip("set WPIEMU_E2E=1 to run the end-to-end test (needs WPILib 2026, Gradle and a robot project)");
-    const fs::path project = !env("WPIEMU_E2E_PROJECT").empty() ? fs::path(env("WPIEMU_E2E_PROJECT")) : fs::path(WPIEMU_E2E_DEFAULT_PROJECT);
+    bool visionCase = false;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]).find("vision") != std::string::npos) visionCase = true;
+    }
+    const fs::path project = visionCase
+        ? (!env("WPIEMU_E2E_VISION_PROJECT").empty() ? fs::path(env("WPIEMU_E2E_VISION_PROJECT"))
+                                                     : fs::path(WPIEMU_E2E_VISION_DEFAULT_PROJECT))
+        : (!env("WPIEMU_E2E_PROJECT").empty() ? fs::path(env("WPIEMU_E2E_PROJECT"))
+                                              : fs::path(WPIEMU_E2E_DEFAULT_PROJECT));
     std::error_code ec;
     if (project.empty() || !fs::is_directory(project, ec)) return skip("robot project not found: '" + project.string() + "' (set WPIEMU_E2E_PROJECT)");
     const bool windows = fs::path::preferred_separator == '\\';

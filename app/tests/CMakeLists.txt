@@ -14,7 +14,7 @@ add_executable(wpiemu_app_tests
     test_shell_controller.cpp
     test_toolchain_checker.cpp
     test_wizard_view_model.cpp)
-target_link_libraries(wpiemu_app_tests PRIVATE wpiemu_app_shell Qt6::Test)
+target_link_libraries(wpiemu_app_tests PRIVATE wpiemu_app_common Qt6::Test)
 target_include_directories(wpiemu_app_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests/support")
 target_compile_definitions(wpiemu_app_tests PRIVATE "WPIEMU_SAMPLES_DIR=\"${CMAKE_SOURCE_DIR}/samples\"")
 wpiemu_doctest_target(wpiemu_app_tests)
