@@ -11,7 +11,7 @@
 #include "wpiemu/plugins/game_2026/game_values.h"
 #include "wpiemu/plugins/game_2026/plugin_info.h"
 #include "wpiemu/sdk/game/zone_activation.h"
-#include "wpiemu/sdk/ipc/messages.h"
+#include "wpiemu/sdk/ipc/driver_station.h"
 #include "wpiemu/sdk/mechanisms/mechanism.h"
 
 namespace wpiemu::plugins::game_2026 {

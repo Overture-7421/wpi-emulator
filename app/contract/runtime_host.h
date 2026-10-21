@@ -19,7 +19,7 @@
 #include "wpiemu/sdk/game/field.h"
 #include "wpiemu/sdk/game/game_module.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
-#include "wpiemu/sdk/ipc/messages.h"
+#include "wpiemu/sdk/ipc/driver_station.h"
 #include "wpiemu/sdk/telemetry/session_status.h"
 #include "wpiemu/sdk/telemetry/snapshot.h"
 

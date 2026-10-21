@@ -8,7 +8,7 @@
 // the current period, counting down); otherwise the clock integrates the sim step while the robot is
 // enabled in that mode. Test mode is a practice mode without a match structure.
 
-#include "wpiemu/sdk/ipc/messages.h"
+#include "wpiemu/sdk/ipc/driver_station.h"
 
 namespace wpiemu::plugins::game_2026 {
 

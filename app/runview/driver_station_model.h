@@ -10,7 +10,7 @@
 #include <array>
 #include <vector>
 
-#include "wpiemu/sdk/ipc/messages.h"
+#include "wpiemu/sdk/ipc/driver_station.h"
 
 namespace wpiemu::app::runview {
 

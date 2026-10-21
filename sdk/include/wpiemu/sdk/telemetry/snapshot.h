@@ -22,7 +22,7 @@
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/core/value.h"
 #include "wpiemu/sdk/devices/discovered_device.h"
-#include "wpiemu/sdk/ipc/messages.h"
+#include "wpiemu/sdk/ipc/driver_station.h"
 #include "wpiemu/sdk/mechanisms/mechanism_state.h"
 #include "wpiemu/sdk/physics/physics_types.h"
 

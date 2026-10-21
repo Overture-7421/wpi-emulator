@@ -76,7 +76,7 @@ listener and accept again for reconnect.
 
 ## Handshake and identity
 
-The [messages contract](../../sdk/include/wpiemu/sdk/ipc/messages.h) defines `Hello` and `HelloAck`.
+The [session messages](../../sdk/include/wpiemu/sdk/ipc/session_messages.h) define `Hello` and `HelloAck`.
 The extension reports robot identity, language, HAL port counts, watchdog preference, and
 `supportsArmed`. The emulator accepts/refuses it and assigns `sessionId`, `runEpoch`, `stepUs`,
 clock mode, watchdog policy/timeout, and whether this is a discovery-only Armed session.

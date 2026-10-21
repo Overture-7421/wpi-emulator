@@ -8,7 +8,7 @@
 #include "wpiemu/plugins/game_2026/match_clock.h"
 #include "wpiemu/plugins/game_2026/types.h"
 #include "wpiemu/sdk/core/rng.h"
-#include "wpiemu/sdk/ipc/messages.h"
+#include "wpiemu/sdk/ipc/driver_station.h"
 
 namespace wpiemu::plugins::game_2026 {
 

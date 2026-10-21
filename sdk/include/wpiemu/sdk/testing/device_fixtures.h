@@ -15,7 +15,7 @@
 #include "wpiemu/sdk/devices/discovered_device.h"
 #include "wpiemu/sdk/devices/signal.h"
 #include "wpiemu/sdk/devices/signals.h"
-#include "wpiemu/sdk/ipc/messages.h"
+#include "wpiemu/sdk/ipc/session_messages.h"
 
 namespace wpiemu::sdk::testing {
 

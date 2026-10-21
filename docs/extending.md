@@ -197,9 +197,9 @@ Plugins are built in with the host toolchain, not independently loaded shared li
   see [physics](reference/physics.md).
 - **Transport/codec:** implement `ITransport` / `IMessageCodec`, wire the composition roots and test
   both peers with round-trip/failure cases. Preserve the [lock-step contract](reference/extension-ipc.md).
-- **Message field:** add the member to its struct in [messages.h](../sdk/include/wpiemu/sdk/ipc/messages.h) and one
-  line to that struct's `fields` function in the [binary codec](../ipc/src/binary_codec.cpp), which encodes and
-  decodes. Put it after the `if (!c.more()) return;` guard so older peers still decode; extend the golden bytes.
+- **Message field:** add the member to its struct in the headers [messages.h](../sdk/include/wpiemu/sdk/ipc/messages.h)
+  lists and one line to that struct's `fields` function in the [binary codec](../ipc/src/binary_codec.cpp), which
+  encodes and decodes. Put it after the `if (!c.more()) return;` guard so older peers still decode; extend the golden bytes.
 
 ## Validate the extension
 
