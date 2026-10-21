@@ -96,14 +96,14 @@ struct Gearbox {
     double kv;  // rad/s/V
 };
 
-Gearbox gearbox(const sdk::MotorSpec& motor, int numMotors) {
-    // WPILib scales stall torque/current and free current by numMotors: Kt unchanged, R / n.
+Gearbox gearbox(sdk::MotorSpec motor, int numMotors) {
+    // WPILib's DCMotor aggregation: n identical motors scale the stall torque and both currents, so the gearbox
+    // has R / n and (up to rounding) the Kt and Kv of one motor. The motor spec stays the one place that defines them.
     const double n = static_cast<double>(numMotors);
-    const double stallCurrent = motor.stallCurrentA * n;
-    const double freeCurrent = motor.freeCurrentA * n;
-    const double r = motor.nominalVoltageV / stallCurrent;
-    return {motor.stallTorqueNm * n / stallCurrent, r,
-            motor.freeSpeedRadPerSec / (motor.nominalVoltageV - r * freeCurrent)};
+    motor.stallTorqueNm *= n;
+    motor.stallCurrentA *= n;
+    motor.freeCurrentA *= n;
+    return {motor.ktNmPerAmp(), motor.resistanceOhm(), motor.kvRadPerSecPerVolt()};
 }
 
 bool valid(const sdk::MotorSpec& motor, int numMotors, double a, double b) {

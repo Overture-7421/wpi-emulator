@@ -1,7 +1,10 @@
 #include <doctest/doctest.h>
 
 #include <cmath>
+#include <iomanip>
 #include <set>
+#include <sstream>
+#include <string>
 
 #include "wpiemu/core/mechanisms/linear_system.h"
 #include "wpiemu/core/mechanisms/mechanism_templates.h"
@@ -633,4 +636,130 @@ TEST_CASE("mechanism attachment: an arm mounted on the linear mover follows it")
     const auto mover = dir.linkPoseInChassis("p", "mover");
     REQUIRE(mover.has_value());
     CHECK(mover->position.z == doctest::Approx(0.9f).epsilon(1e-5));
+}
+
+namespace {
+
+constexpr const char* kPropertyTypeNames[] = {"Bool", "Int", "Double", "String", "Enum", "Vec3", "Pose3", "Box3", "Color"};
+constexpr const char* kPropertyUnitNames[] = {"None",   "Meters",  "MetersPerSecond", "Radians", "RadiansPerSecond", "Kilograms",
+                                              "Seconds", "Volts",   "Amps",            "Newtons", "NewtonMeters",     "KgM2",
+                                              "Ratio",   "Percent", "Count",           "Hertz"};
+constexpr const char* kSlotTypeNames[] = {"Motor",       "PositionSensor", "VelocitySensor", "LimitSwitch",    "BeamBreak",
+                                          "Imu",         "AnalogSensor",   "Solenoid",       "DigitalOutput", "DistanceSensor"};
+
+std::string scalar(const sdk::Value& v) {
+    std::ostringstream o;
+    o << std::setprecision(9);
+    if (v.isBool()) o << (v.asBool() ? "true" : "false");
+    else if (v.isInt()) o << v.asInt() << 'i';
+    else if (v.isDouble()) o << v.asDouble() << 'd';
+    else o << '"' << v.asString() << '"';
+    return o.str();
+}
+
+std::string describe(const sdk::PropertySpec& p) {
+    std::ostringstream o;
+    o << std::setprecision(9) << p.key << '|' << p.label << '|' << p.group << '|' << kPropertyTypeNames[static_cast<int>(p.type)]
+      << '|' << kPropertyUnitNames[static_cast<int>(p.unit)] << '|' << scalar(p.defaultValue) << '|';
+    if (p.min) o << *p.min;
+    else o << '-';
+    o << '|';
+    if (p.max) o << *p.max;
+    else o << '-';
+    o << '|' << (p.section == sdk::PropertySection::Drive ? "Drive" : "Configure") << '|' << p.axis;
+    if (!p.visibleWhenKey.empty()) o << "|when " << p.visibleWhenKey << '=' << scalar(p.visibleWhenEquals);
+    if (!p.options.empty()) {
+        o << "|options";
+        if (p.options.size() > 3) o << ' ' << p.options.size();
+        else
+            for (const sdk::EnumOption& option : p.options) o << ' ' << option.value;
+    }
+    o << '\n';
+    return o.str();
+}
+
+std::string describe(const sdk::SlotSpec& s) {
+    return s.name + "|" + s.label + "|" + kSlotTypeNames[static_cast<int>(s.type)] + "|" +
+           (s.required ? "required" : "optional") + "|" + s.countKey + "|" + std::to_string(s.ordinal) + "\n";
+}
+
+}  // namespace
+
+TEST_CASE("the template metadata is pinned: properties, slots, motion axis, link and geometry in order") {
+    Rig rig;
+    const sdk::MechanismTemplateInfo* info = rig.factory.templateInfo(kType);
+    REQUIRE(info != nullptr);
+
+    std::string properties;
+    for (const sdk::PropertySpec& p : info->properties.properties) {
+        properties += describe(p);
+        CHECK_MESSAGE(!p.description.empty(), p.key);
+    }
+    CHECK(properties ==
+          "motorModel|Motor model|Motor|Enum|None|\"kraken_x60\"|-|-|Drive|axis|options 19\n"
+          "motorCount|Motor count|Motor|Int|Count|1i|1|8|Drive|axis\n"
+          "gearRatio|Gear ratio|Motor|Double|Ratio|10d|0.01|10000|Drive|axis\n"
+          "neutralMode|Neutral mode|Motor|Enum|None|\"brake\"|-|-|Drive|axis|options coast brake\n"
+          "statorCurrentLimitA|Current limit|Motor|Double|Amps|0d|0|500|Drive|axis\n"
+          "efficiency|Efficiency|Motor|Double|Ratio|1d|0.05|1|Drive|axis\n"
+          "reportMotorLimits|Report limits on motor controller|Motor|Bool|None|false|-|-|Drive|axis\n"
+          "motion|Type|Dynamics|Enum|None|\"rotary\"|-|-|Configure||options rotary arm linear\n"
+          "momentOfInertiaKgM2|Moment of inertia|Dynamics|Double|KgM2|0.01d|0|100|Configure|\n"
+          "massKg|Mass|Dynamics|Double|Kilograms|2d|0.001|2000|Configure|\n"
+          "lengthM|Arm length|Dynamics|Double|Meters|0.3d|0.001|10|Configure||when motion=\"arm\"\n"
+          "drumRadiusM|Drum radius|Dynamics|Double|Meters|0.02d|0.0001|1|Configure||when motion=\"linear\"\n"
+          "simulateGravity|Simulate gravity|Dynamics|Bool|None|true|-|-|Configure|\n"
+          "comFraction|Centre of mass|Dynamics|Double|Ratio|0.5d|0|1|Configure||when motion=\"arm\"\n"
+          "viscousFrictionNmS|Viscous friction|Dynamics|Double|None|0.001d|0|1000|Configure|\n"
+          "coulombFrictionNm|Coulomb friction|Dynamics|Double|None|0d|0|1000|Configure|\n"
+          "minPosition|Minimum position|Limits|Double|None|0d|-10000|10000|Configure|\n"
+          "maxPosition|Maximum position|Limits|Double|None|0d|-10000|10000|Configure|\n"
+          "startPosition|Start position|Limits|Double|None|0d|-10000|10000|Configure|\n"
+          "limitMargin|Limit switch margin|Limits|Double|None|1e-06d|0|1|Configure|\n"
+          "limitPressedValue|Limit reads true when pressed|Limits|Bool|None|true|-|-|Configure|\n"
+          "sensorRatio|Sensor ratio|Sensors|Double|Ratio|1d|0.001|10000|Configure|\n"
+          "sensorInverted|Sensor inverted|Sensors|Bool|None|false|-|-|Configure|\n"
+          "sensorOffsetRot|Sensor offset|Sensors|Double|None|0d|-1000000|1000000|Configure|\n"
+          "axis|Axis (Rotary and Linear)|Motion|Enum|None|\"z\"|-|-|Configure||options x y z\n");
+
+    std::string slots;
+    for (const sdk::SlotSpec& s : info->slotSpecs) {
+        slots += describe(s);
+        CHECK_MESSAGE(!s.description.empty(), s.name);
+    }
+    CHECK(slots ==
+          "motor|Motor|Motor|required|motorCount|1\n"
+          "motor2|Motor 2|Motor|optional|motorCount|2\n"
+          "motor3|Motor 3|Motor|optional|motorCount|3\n"
+          "motor4|Motor 4|Motor|optional|motorCount|4\n"
+          "motor5|Motor 5|Motor|optional|motorCount|5\n"
+          "motor6|Motor 6|Motor|optional|motorCount|6\n"
+          "motor7|Motor 7|Motor|optional|motorCount|7\n"
+          "motor8|Motor 8|Motor|optional|motorCount|8\n"
+          "encoder|Position sensor|PositionSensor|optional||0\n"
+          "velocitySensor|Velocity sensor|VelocitySensor|optional||0\n"
+          "reverseLimit|Reverse limit switch|LimitSwitch|optional||0\n"
+          "forwardLimit|Forward limit switch|LimitSwitch|optional||0\n");
+
+    REQUIRE(info->motionAxes.size() == 1);
+    const sdk::MotionAxisSpec& axis = info->motionAxes[0];
+    std::string motors;
+    for (const std::string& m : axis.motorSlots) motors += (motors.empty() ? "" : ",") + m;
+    CHECK(axis.name == "axis");
+    CHECK(axis.kind == sdk::PlantKind::Angular);
+    CHECK(motors == "motor,motor2,motor3,motor4,motor5,motor6,motor7,motor8");
+    CHECK(axis.motionProperty == "motion");
+    CHECK(axis.enabledProperty.empty());
+
+    REQUIRE(info->links.size() == 1);
+    CHECK(info->links[0].name == "mover");
+    CHECK(info->links[0].label == "Moving part");
+    CHECK(info->links[0].local == sdk::Pose3{});
+    REQUIRE(info->defaultGeometry.size() == 1);
+    const sdk::PrimitiveSpec& body = info->defaultGeometry[0];
+    CHECK(body.name == "mover");
+    CHECK(body.kind == sdk::PrimitiveKind::Box);
+    CHECK(body.local.position == sdk::Vec3{0.10f, 0.f, 0.f});
+    CHECK(body.sizeM == sdk::Vec3{0.20f, 0.05f, 0.05f});
+    CHECK(body.color == "#9b59b6");
 }

@@ -26,8 +26,8 @@ The template publishes `position`, `velocity`, `voltage`, `current` and limit fl
 Defaults are rotary about Z, one `kraken_x60`, 10:1 motor/output gearing and brake neutral.
 Travel stops are disabled when minimum equals maximum; otherwise start position must
 lie within them. An arm with zero configured inertia derives a uniform-rod inertia.
-The full property defaults and ranges live in the
-[template](../../core/mechanisms/src/mechanism_family.cpp) and its
+The full property defaults and ranges live in the template's
+[axis defaults](../../core/mechanisms/src/axis_support.h) and
 [axis metadata](../../core/mechanisms/src/axis_support.cpp), not a second table here.
 
 `IMechanism` owns local plant state, reads commands and writes feedback through slots,
@@ -57,7 +57,8 @@ Plants do not own device addressing, supply saturation or neutral-mode policy.
 The built-ins are `dc_motor`, `turret`, `flywheel`, `arm` and `elevator`. Core owns the
 small WPILib-style system equations rather than linking WPILib native math:
 see [linear systems](../../core/mechanisms/src/linear_system.cpp) and
-[plant integration](../../core/mechanisms/src/plants.cpp).
+[plant integration](../../core/mechanisms/src/plants.cpp). The n-motor gearbox scales a copy of the SDK
+`MotorSpec`, so R, Kt and Kv are defined only there.
 Linear dynamics use exact matrix-exponential discretization. Nonlinear cases use
 rate-bounded RK4 or a stiff exponential-midpoint path; replacing them with one explicit
 Euler step is not equivalent. Stops clamp position and zero velocity, with no bounce.

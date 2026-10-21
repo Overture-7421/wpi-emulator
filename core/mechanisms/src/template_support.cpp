@@ -55,7 +55,7 @@ sdk::Result<std::unique_ptr<MechanismAxis>> buildAxis(const std::string& owner, 
     auto plant = deps.plants->createFor(settings.value().plant);
     if (!plant.ok()) return plant.error();
     MotorDrive drive(settings.value().plant.motor, settings.value().statorCurrentLimitA, settings.value().neutral);
-    return std::make_unique<MechanismAxis>(owner, options, settings.value(), std::move(plant).value(), std::move(drive));
+    return std::make_unique<MechanismAxis>(owner, settings.value(), std::move(plant).value(), std::move(drive));
 }
 
 AxisMechanismBase::AxisMechanismBase(const sdk::MechanismConfig& config) : id_(config.id), type_(config.type) {
