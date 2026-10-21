@@ -15,6 +15,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "ui/widget_support.h"
+
 namespace wpiemu::app::runview {
 namespace {
 
@@ -90,9 +92,7 @@ JoystickEditor::JoystickEditor(JoystickManager& manager, QWidget* parent) : QWid
     notice_ = new QLabel(this);
     notice_->setWordWrap(true);
     notice_->setVisible(false);
-    hint_ = new QLabel(tr("Click a binding, then press the key or move the control you want to use. Esc cancels."), this);
-    hint_->setWordWrap(true);
-    hint_->setEnabled(false);
+    hint_ = ui::mutedLabel(tr("Click a binding, then press the key or move the control you want to use. Esc cancels."), this);
 
     auto* header = new QHBoxLayout;
     header->addWidget(new QLabel(tr("Port"), this));

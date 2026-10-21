@@ -89,23 +89,8 @@ struct BridgeInfo {
 
 // Registry of bridge factories, owned by the extension's composition root. Each bridge module
 // exposes ONE free function `void registerXxxBridges(DeviceBridgeRegistry&)`; adding a vendor =
-// add a module + one call in the extension (no changes to existing bridges).
-class DeviceBridgeRegistry : public Registry<BridgeInfo, IDeviceBridge> {
-public:
-    Status registerBridge(std::string name, BridgeInfo info, Factory factory) {
-        return add(std::move(name), std::move(info), std::move(factory));
-    }
-
-    // Instantiates every registered bridge in registration order.
-    Result<std::vector<std::unique_ptr<IDeviceBridge>>> createAll() const {
-        std::vector<std::unique_ptr<IDeviceBridge>> out;
-        for (const std::string& key : keys()) {
-            Result<std::unique_ptr<IDeviceBridge>> b = create(key);
-            if (!b) return b.error();
-            out.push_back(std::move(b).value());
-        }
-        return out;
-    }
-};
+// add a module + one call in the extension (no changes to existing bridges). A distinct type (not an alias) so
+// builtin_bridges.h can forward-declare it.
+class DeviceBridgeRegistry : public Registry<BridgeInfo, IDeviceBridge> {};
 
 }  // namespace wpiemu::sdk

@@ -22,7 +22,7 @@ public:
     ConsoleModel& model() { return model_; }
     ConsoleFilterModel& filter() { return filter_; }
 
-    void append(const RunLogEntry& entry);
+    void append(const HostLogLine& entry);
     void clear();
     QString visibleText() const { return filter_.plainText(); }
     int visibleLineCount() const { return filter_.rowCount(); }

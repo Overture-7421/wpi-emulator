@@ -8,6 +8,7 @@
 #include "wpiemu/sdk/devices/channel_family_bridge.h"
 #include "wpiemu/sdk/devices/signals.h"
 #include "wpiemu/sdk/devices/sim_device_bridge.h"
+#include "wpiemu/sdk/physics/drivetrain.h"
 #include "wpiemu/sdk/testing/fake_bridge_host.h"
 #include "wpiemu/sdk/testing/fake_clock_logger.h"
 #include "wpiemu/sdk/testing/fake_device_hub.h"
@@ -186,8 +187,8 @@ TEST_CASE("ChannelFamilyBridge is safe to poll and collect after stop") {
 
 TEST_CASE("DeviceBridgeRegistry creates every registered bridge in order") {
     DeviceBridgeRegistry registry;
-    CHECK(registry.registerBridge("hal.dio", {"hal", "DIO", "wpilib"}, [] { return std::make_unique<FakeDioBridge>(); }).ok());
-    CHECK(registry.registerBridge("hal.dio", {}, [] { return std::make_unique<FakeDioBridge>(); }).error().code ==
+    CHECK(registry.add("hal.dio", {"hal", "DIO", "wpilib"}, [] { return std::make_unique<FakeDioBridge>(); }).ok());
+    CHECK(registry.add("hal.dio", {}, [] { return std::make_unique<FakeDioBridge>(); }).error().code ==
           ErrorCode::AlreadyExists);
     auto all = registry.createAll();
     REQUIRE(all.ok());
@@ -204,8 +205,62 @@ TEST_CASE("slot compatibility follows device capabilities") {
     CHECK(isCompatible(motorSlot, talon));
     CHECK_FALSE(isCompatible(motorSlot, dio));
     CHECK(isCompatible(SlotSpec{"lim", "Limit", SlotType::LimitSwitch, true, ""}, dio));
-    CHECK(defaultDirection(SlotType::Motor) == SlotDirection::ActuatorInput);
-    CHECK(defaultDirection(SlotType::BeamBreak) == SlotDirection::SensorOutput);
+}
+
+TEST_CASE("one steering rule and one traction slot generator serve every drivetrain consumer") {
+    WheelSpec fixed;
+    fixed.name = "a";
+    WheelSpec flagged;
+    flagged.name = "b";
+    flagged.steered = true;
+    WheelSpec module;
+    module.name = "c";
+    module.kind = WheelKind::Swerve;
+    module.driveMotorCount = 2;
+    CHECK_FALSE(isSteered(fixed));
+    CHECK(isSteered(flagged));
+    CHECK(isSteered(module));
+
+    DrivetrainSpec spec;
+    spec.wheels = {fixed, flagged, module};
+    const auto namesOf = [](const std::vector<SlotSpec>& slots) {
+        std::vector<std::string> out;
+        for (const SlotSpec& s : slots) out.push_back(s.name);
+        return out;
+    };
+    CHECK(namesOf(tractionSlotSpecs(spec, true)) ==
+          std::vector<std::string>{"a.drive", "b.drive", "b.steer", "b.steerEncoder", "c.drive", "c.drive2", "c.steer",
+                                   "c.steerEncoder"});
+    CHECK(namesOf(tractionSlotSpecs(spec, false)) == std::vector<std::string>{"a.drive", "b.drive", "c.drive", "c.drive2"});
+
+    const auto slots = tractionSlotSpecs(spec, true);
+    CHECK(slots[0].required);                    // first drive motor
+    CHECK_FALSE(slots[5].required);              // c.drive2
+    CHECK(slots[5].countKey == "c.driveMotorCount");
+    CHECK(slots[5].ordinal == 2);
+    CHECK(slots[6].required);                    // steer motor
+    CHECK_FALSE(slots[7].required);              // steer encoder
+    CHECK(slots[7].type == SlotType::PositionSensor);
+    CHECK(steerSlotName("fl") == "fl.steer");
+    CHECK(steerEncoderSlotName("fl") == "fl.steerEncoder");
+
+    CHECK(namesOf(drivetrainSlotSpecs(nullptr, spec)) == namesOf(tractionSlotSpecs(spec, true)));   // unknown kind: convention
+    DrivetrainInfo custom;
+    custom.slotSpecs = [](const DrivetrainSpec&) {
+        SlotSpec kiwi;
+        kiwi.name = "kiwi.motor";
+        kiwi.label = "Kiwi";
+        return std::vector<SlotSpec>{kiwi};
+    };
+    CHECK(namesOf(drivetrainSlotSpecs(&custom, spec)) == std::vector<std::string>{"kiwi.motor"});
+    const DrivetrainInfo none;
+    CHECK(namesOf(drivetrainSlotSpecs(&none, spec)) == namesOf(tractionSlotSpecs(spec, true)));   // no callback: convention
+
+    const auto robot = robotSlotSpecs();
+    REQUIRE(robot.size() == 1);
+    CHECK(robot[0].name == slot_owner::kRobotImuSlot);
+    CHECK(robot[0].type == SlotType::Imu);
+    CHECK_FALSE(robot[0].required);
 }
 
 TEST_CASE("FakeDeviceHub behaves like the real hub: unbound slots are neutral") {

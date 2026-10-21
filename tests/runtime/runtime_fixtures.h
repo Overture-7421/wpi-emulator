@@ -22,6 +22,7 @@
 #include "wpiemu/sdk/mechanisms/mechanism.h"
 #include "wpiemu/sdk/physics/drivetrain.h"
 #include "wpiemu/sdk/physics/tire_model.h"
+#include "wpiemu/sdk/testing/device_fixtures.h"
 #include "wpiemu/sdk/testing/fake_game_module.h"
 #include "wpiemu/sdk/testing/fake_physics_world.h"
 
@@ -98,7 +99,7 @@ public:
         : spec_(&a.spec), world_(&a.world), body_(a.chassisBody), states_(a.spec.wheels.size()) {}
     std::string_view kind() const override { return "test"; }
     const DrivetrainSpec& spec() const override { return *spec_; }
-    std::vector<SlotSpec> slotSpecs() const override { return core::config::drivetrainSlotSpecs(*spec_); }
+    std::vector<SlotSpec> slotSpecs() const override { return tractionSlotSpecs(*spec_, true); }
     void step(std::span<const WheelCommand> commands, float dt) override {
         float total = 0.f;
         for (std::size_t i = 0; i < commands.size() && i < states_.size(); ++i) {
@@ -147,7 +148,7 @@ struct Registries {
 
     explicit Registries(bool withFakePlugin = true) {
         (void)mechanisms.registerTemplate(rollerInfo(), [](const MechanismBuildContext& c) { return std::make_unique<TestRoller>(c); });
-        (void)drivetrains.registerDrivetrain("test", {"Test", ""}, [](const DrivetrainBuildArgs& a) { return std::make_unique<TestDrivetrain>(a); });
+        (void)drivetrains.registerDrivetrain("test", {"Test", "", nullptr}, [](const DrivetrainBuildArgs& a) { return std::make_unique<TestDrivetrain>(a); });
         (void)tires.registerModel("test", [] { return std::make_unique<TestTire>(); });
         if (withFakePlugin) {
             auto module = std::make_unique<testing::FakeGameModule>("fake_game", 2999);
@@ -157,14 +158,19 @@ struct Registries {
     }
 };
 
-// A game module with one AprilTag (id 3) 3 m ahead of the spawn point, 1 m high, facing back at the robot. Select it with
-// RobotConfig::gamePluginId = "tag_game".
+// A game module with one AprilTag (id 3) 3 m ahead of the spawn point, 1 m high, facing back at the robot, on a 10 m x 6 m
+// field. Select it with RobotConfig::gamePluginId = "tag_game".
+inline constexpr float kTagFieldLengthM = 10.f;
+inline constexpr float kTagFieldWidthM = 6.f;
+
 class TagGameModule final : public testing::FakeGameModule {
 public:
     TagGameModule() : FakeGameModule("tag_game", 2998) {}
     AprilTagLayout aprilTagLayout() const override {
         AprilTagLayout layout;
         layout.name = "tag-layout";
+        layout.fieldLengthM = kTagFieldLengthM;
+        layout.fieldWidthM = kTagFieldWidthM;
         AprilTag tag;
         tag.id = 3;
         tag.pose = Pose3{Vec3{3.f, 0.f, 1.f}, Quat::fromYaw(static_cast<float>(kPi))};
@@ -220,6 +226,23 @@ inline RobotConfig sampleConfig() {
     return c;
 }
 
+// A tank drivetrain with three wheels a side (left0..2, right0..2); only the middle wheels' drive slots are mapped (talons 1, 2).
+inline RobotConfig sixWheelTank() {
+    RobotConfig c;
+    c.drivetrain.spec.kind = drivetrain_kind::kTank;
+    for (const int side : {1, -1})
+        for (int i = 0; i < 3; ++i) {
+            WheelSpec w;
+            w.name = std::string(side > 0 ? "left" : "right") + std::to_string(i);
+            w.positionM = {0.2f * static_cast<float>(i - 1), 0.3f * static_cast<float>(side), w.radiusM};
+            c.drivetrain.spec.wheels.push_back(w);
+        }
+    c.drivetrain.mappings = {
+        {{slot_owner::kDrivetrain, "left1.drive"}, {"phoenix6", "talonfx", 1, "", -1}},
+        {{slot_owner::kDrivetrain, "right1.drive"}, {"phoenix6", "talonfx", 2, "", -1}}};
+    return c;
+}
+
 // A scratch directory under the current working directory (never the system temp dir), removed on destruction.
 class ScratchDir {
 public:
@@ -255,36 +278,6 @@ private:
     std::filesystem::path path_;
 };
 
-// A TalonFX-like announce: signals 0 duty, 1 voltage, 2 torque (outputs); 3 rotorPos, 4 rotorVel, 5 rotorAccel, 6 forwardLimit (inputs).
-inline proto::DeviceAnnounce talonAnnounce(std::uint32_t runtimeId, int canId) {
-    proto::DeviceAnnounce a;
-    a.id = DeviceId{runtimeId};
-    a.descriptor.family = "phoenix6";
-    a.descriptor.type = "talonfx";
-    a.descriptor.id = canId;
-    a.descriptor.bus = kBusUnknown;
-    a.descriptor.capabilities = Capability::MotorOutput | Capability::RotorFeedback | Capability::PositionSensor;
-    auto s = [](const char* n, SignalDirection d) { return SignalSpec{n, d, SignalType::Double, ""}; };
-    a.signalSpecs = {s("dutyCycle", SignalDirection::Output),    s("motorVoltage", SignalDirection::Output),
-                     s("torqueCurrent", SignalDirection::Output), s("rotorPosition", SignalDirection::Input),
-                     s("rotorVelocity", SignalDirection::Input),  s("rotorAcceleration", SignalDirection::Input),
-                     s("forwardLimit", SignalDirection::Bidirectional)};
-    return a;
-}
-
-inline proto::DeviceAnnounce pigeonAnnounce(std::uint32_t runtimeId, int canId) {
-    proto::DeviceAnnounce a;
-    a.id = DeviceId{runtimeId};
-    a.descriptor.family = "phoenix6";
-    a.descriptor.type = "pigeon2";
-    a.descriptor.id = canId;
-    a.descriptor.bus = kBusUnknown;
-    a.descriptor.capabilities = CapabilitySet(Capability::Imu);
-    for (const char* n : {"yaw", "pitch", "roll", "angularVelX", "angularVelY", "angularVelZ", "accelX", "accelY", "accelZ"})
-        a.signalSpecs.push_back(SignalSpec{n, SignalDirection::Input, SignalType::Double, "rad"});
-    return a;
-}
-
 inline proto::DeviceAnnounce cancoderAnnounce(std::uint32_t runtimeId, int canId) {
     proto::DeviceAnnounce a;
     a.id = DeviceId{runtimeId};
@@ -303,9 +296,9 @@ inline proto::DeviceAnnounce cancoderAnnounce(std::uint32_t runtimeId, int canId
 inline std::vector<proto::DeviceAnnounce> sampleDevices() {
     std::vector<proto::DeviceAnnounce> out;
     std::uint32_t rid = 101;
-    for (int can : {1, 2, 3, 4, 10}) out.push_back(talonAnnounce(rid++, can));
+    for (int can : {1, 2, 3, 4, 10}) out.push_back(sdk::testing::talonFxAnnounce(rid++, can));
     out.push_back(cancoderAnnounce(rid++, 12));
-    out.push_back(pigeonAnnounce(rid++, 20));
+    out.push_back(sdk::testing::pigeon2Announce(rid++, 20, "rad"));
     return out;
 }
 

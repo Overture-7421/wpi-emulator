@@ -8,11 +8,11 @@
 #include <vector>
 
 #include "console_panel.h"
+#include "contract/runtime_host.h"
 #include "driver_station_model.h"
 #include "driver_station_panel.h"
 #include "hud_model.h"
 #include "joystick_manager.h"
-#include "run_backend.h"
 #include "run_control.h"
 #include "run_viewport.h"
 #include "scene_model.h"
@@ -38,12 +38,12 @@ struct RunPageOptions {
 };
 
 // The run-time view: live 3D scene with game HUD, console and the built-in
-// Driver Station. All logic lives in view models; the page only wires them to an IRunBackend.
+// Driver Station. All logic lives in view models; the page only wires them to an IRuntimeHost.
 class RunPage : public QWidget {
     Q_OBJECT
 public:
-    explicit RunPage(IRunBackend& backend, QWidget* parent = nullptr);
-    RunPage(IRunBackend& backend, RunPageOptions options, QWidget* parent = nullptr);
+    explicit RunPage(IRuntimeHost& host, QWidget* parent = nullptr);
+    RunPage(IRuntimeHost& host, RunPageOptions options, QWidget* parent = nullptr);
     ~RunPage() override;
 
     // ---- collaborators (also used by tests and the demo) ----
@@ -65,7 +65,7 @@ public:
     QList<QAction*> viewActions() const;
     QComboBox* speedCombo() const { return speedCombo_; }
 
-    // Polls the backend once (normally driven by a ~144 Hz timer): snapshot -> view models.
+    // Polls the host once (normally driven by a ~144 Hz timer): snapshot -> view models.
     void pollNow();
     // Samples joysticks and publishes the DS state once (normally a 50 Hz timer).
     void publishDriverStation();
@@ -90,11 +90,12 @@ private:
     void rebuildZoneMenu();
     void rebuildStartMenu();
     void selectStartPosition(const QString& id);
-    void onSceneInfoChanged();
+    void onSceneChanged();
+    void applyProjectDefaults(const HostScene& scene);
     void setStateWindowVisible(bool visible);
     void saveStateWindowGeometry();
 
-    IRunBackend& backend_;
+    IRuntimeHost& host_;
     RunPageOptions options_;
     std::unique_ptr<QSettings> ownedSettings_;
     std::unique_ptr<IJoystickProvider> ownedProvider_;
@@ -131,6 +132,9 @@ private:
 
     qint64 lastLabelMs_ = 0;
     bool consoleAutoShown_ = false;
+    // The project (and its default station) last applied to the Driver Station panel.
+    QString defaultsProject_;
+    std::optional<sdk::proto::AllianceStation> defaultsStation_;
 };
 
 }  // namespace wpiemu::app::runview

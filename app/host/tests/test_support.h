@@ -1,7 +1,8 @@
 #pragma once
 
 // Shared fixtures for the host tests and the opt-in end-to-end tests: the registries a composition root builds, a
-// platform-neutral environment lookup, a process-liveness probe, scratch directories and robot-project copies.
+// platform-neutral environment lookup, a process-liveness probe, scratch directories, robot-project copies and the
+// robot console.
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -10,6 +11,7 @@
 #include <string>
 #include <system_error>
 #include <thread>
+#include <vector>
 
 #include <doctest/doctest.h>
 
@@ -19,6 +21,7 @@
 #include "wpiemu/core/config/robot_config_codec.h"
 #include "wpiemu/core/mechanisms/mechanism_templates.h"
 #include "wpiemu/core/physics/chassis_simulator.h"
+#include "wpiemu/sdk/core/environment.h"
 #include "wpiemu/sdk/devices/device_descriptor.h"
 #include "wpiemu/sdk/game/builtin_plugins.h"
 
@@ -33,19 +36,7 @@
 
 namespace wpiemu::app::host::testing {
 
-inline std::string env(const char* name) {
-#if defined(_WIN32)
-    char* value = nullptr;
-    size_t len = 0;
-    if (_dupenv_s(&value, &len, name) != 0 || value == nullptr) return {};
-    std::string out(value);
-    std::free(value);
-    return out;
-#else
-    const char* v = std::getenv(name);
-    return v != nullptr ? v : "";
-#endif
-}
+inline std::string env(const char* name) { return sdk::readEnvironment(name).value_or(std::string()); }
 
 inline bool processAlive(std::int64_t pid) {
     if (pid <= 0) return false;
@@ -107,6 +98,24 @@ inline void copyProject(const std::filesystem::path& from, const std::filesystem
         if (name == ".git" || name == "build" || name == ".gradle" || name == "logs" || name == "bin") continue;
         fs::copy(it->path(), to / name, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
     }
+}
+
+// Appends the session's new log lines to `console` ("[emu source] text" for emulator lines, "[robot] text" otherwise),
+// echoing them when `verbose`. Returns the entries for tests that parse them.
+inline std::vector<sdk::SessionLogEntry> drainConsole(RobotSession& session, std::vector<std::string>& console, bool verbose) {
+    std::vector<sdk::SessionLogEntry> entries = session.takeLogs(5000);
+    for (const sdk::SessionLogEntry& e : entries) {
+        const std::string line = (e.stream == sdk::LogStream::Emulator ? "[emu " + e.source + "] " : "[robot] ") + e.text;
+        console.push_back(line);
+        if (verbose) std::printf("%s\n", line.c_str());
+    }
+    return entries;
+}
+
+// Prints the tail of a failed run's console.
+inline void dumpConsole(const std::vector<std::string>& console, std::size_t lastLines = 80) {
+    const std::size_t from = console.size() > lastLines ? console.size() - lastLines : 0;
+    for (std::size_t i = from; i < console.size(); ++i) std::printf("    | %s\n", console[i].c_str());
 }
 
 // A Phoenix 6 device as the robot declares it; the bus is unknown because the firmware sim cannot tell CAN buses apart.

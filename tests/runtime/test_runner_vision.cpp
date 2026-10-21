@@ -43,6 +43,8 @@ TEST_CASE("runner: VisionSetup follows the HelloAck and precedes the first frame
         CHECK(setup.cameras[0].config.id == "front");
         CHECK(setup.photonVersion == "v2026.3.4");
         CHECK(setup.layoutName == "tag-layout");
+        CHECK(setup.fieldLengthM == wpiemu::test_runtime::kTagFieldLengthM);   // the plugin's field size reaches the extension
+        CHECK(setup.fieldWidthM == wpiemu::test_runtime::kTagFieldWidthM);
     }
 
     proto::SimControl reset;

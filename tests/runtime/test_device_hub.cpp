@@ -4,29 +4,16 @@
 
 #include "wpiemu/core/runtime/device_hub.h"
 #include "wpiemu/sdk/devices/signals.h"
+#include "wpiemu/sdk/testing/device_fixtures.h"
 
 using namespace wpiemu::sdk;
 using wpiemu::core::runtime::DeviceHub;
+using wpiemu::sdk::testing::doubleSignal;
+using wpiemu::sdk::testing::hasWarning;
+using wpiemu::sdk::testing::pigeon2Announce;
+using wpiemu::sdk::testing::talonFxAnnounce;
 
 namespace {
-
-SignalSpec sig(const char* name, SignalDirection dir) { return SignalSpec{name, dir, SignalType::Double, ""}; }
-
-// TalonFX-like: outputs duty/voltage/torque, inputs rotor + limits.
-proto::DeviceAnnounce talon(std::uint32_t id, int canId, const std::string& bus = kBusUnknown) {
-    proto::DeviceAnnounce a;
-    a.id = DeviceId{id};
-    a.descriptor.family = "phoenix6";
-    a.descriptor.type = "talonfx";
-    a.descriptor.id = canId;
-    a.descriptor.bus = bus;
-    a.descriptor.capabilities = Capability::MotorOutput | Capability::RotorFeedback | Capability::PositionSensor;
-    a.signalSpecs = {sig(signal::kDutyCycle, SignalDirection::Output),   sig(signal::kMotorVoltage, SignalDirection::Output),
-                     sig(signal::kTorqueCurrent, SignalDirection::Output), sig(signal::kRotorPosition, SignalDirection::Input),
-                     sig(signal::kRotorVelocity, SignalDirection::Input),  sig(signal::kRotorAcceleration, SignalDirection::Input),
-                     sig(signal::kForwardLimit, SignalDirection::Bidirectional)};
-    return a;
-}
 
 proto::DeviceAnnounce pwm(std::uint32_t id, int channel) {
     proto::DeviceAnnounce a;
@@ -36,21 +23,7 @@ proto::DeviceAnnounce pwm(std::uint32_t id, int channel) {
     a.descriptor.id = channel;
     a.descriptor.bus = "rio";
     a.descriptor.capabilities = CapabilitySet(Capability::MotorOutput) | CapabilitySet(Capability::PwmOutput);
-    a.signalSpecs = {sig(signal::kPwmSpeed, SignalDirection::Output)};
-    return a;
-}
-
-proto::DeviceAnnounce pigeon(std::uint32_t id, int canId) {
-    proto::DeviceAnnounce a;
-    a.id = DeviceId{id};
-    a.descriptor.family = "phoenix6";
-    a.descriptor.type = "pigeon2";
-    a.descriptor.id = canId;
-    a.descriptor.bus = kBusUnknown;
-    a.descriptor.capabilities = CapabilitySet(Capability::Imu);
-    for (const char* n : {signal::kYaw, signal::kPitch, signal::kRoll, signal::kAngularVelX, signal::kAngularVelY, signal::kAngularVelZ,
-                          signal::kAccelX, signal::kAccelY, signal::kAccelZ})
-        a.signalSpecs.push_back(sig(n, SignalDirection::Input));
+    a.signalSpecs = {doubleSignal(signal::kPwmSpeed, SignalDirection::Output)};
     return a;
 }
 
@@ -62,7 +35,7 @@ proto::DeviceAnnounce dio(std::uint32_t id, int channel) {
     a.descriptor.id = channel;
     a.descriptor.bus = "rio";
     a.descriptor.capabilities = CapabilitySet(Capability::DigitalInput) | CapabilitySet(Capability::DigitalOutput);
-    a.signalSpecs = {sig(signal::kDigitalIn, SignalDirection::Input), sig(signal::kDigitalOut, SignalDirection::Output)};
+    a.signalSpecs = {doubleSignal(signal::kDigitalIn, SignalDirection::Input), doubleSignal(signal::kDigitalOut, SignalDirection::Output)};
     return a;
 }
 
@@ -70,11 +43,6 @@ proto::ActuatorFrame frame(std::initializer_list<SignalSample> samples) {
     proto::ActuatorFrame f;
     f.samples = samples;
     return f;
-}
-
-bool hasWarning(const DeviceHub& hub, const char* code) {
-    const auto w = hub.warnings();
-    return std::any_of(w.begin(), w.end(), [&](const HubWarning& x) { return x.code == code; });
 }
 
 const DeviceKey kTalon1{"phoenix6", "talonfx", 1, "rio", -1};
@@ -85,7 +53,7 @@ const SlotAddress kSlotB{"arm", "encoder"};
 
 TEST_CASE("hub: an announced, unmapped device is looped back with a warning until it is bound") {
     DeviceHub hub;
-    hub.onAnnounce(talon(1, 1));
+    hub.onAnnounce(talonFxAnnounce(1, 1));
     REQUIRE(hub.discovered().size() == 1);
     CHECK_FALSE(hub.discovered()[0].mapped);
     CHECK(hub.loopbackSet().loopback == std::vector<DeviceId>{DeviceId{1}});
@@ -113,7 +81,7 @@ TEST_CASE("hub: a device no slot type can take (the roboRIO) never raises the un
     rio.descriptor.id = 0;
     rio.descriptor.bus = "rio";
     rio.descriptor.capabilities = CapabilitySet(Capability::SupplyVoltage);
-    rio.signalSpecs = {sig(signal::kSupplyVoltage, SignalDirection::Input)};
+    rio.signalSpecs = {doubleSignal(signal::kSupplyVoltage, SignalDirection::Input)};
     hub.onAnnounce(rio);
     REQUIRE(hub.discovered().size() == 1);
     CHECK_FALSE(isMappable(hub.discovered()[0].descriptor));
@@ -122,7 +90,7 @@ TEST_CASE("hub: a device no slot type can take (the roboRIO) never raises the un
 
 TEST_CASE("hub: the declared bus never takes part in resolving a device") {
     DeviceHub hub;
-    hub.onAnnounce(talon(7, 4));
+    hub.onAnnounce(talonFxAnnounce(7, 4));
     const DeviceKey onCanivore{"phoenix6", "talonfx", 4, "canivore", -1};
     const DeviceKey onRio{"phoenix6", "talonfx", 4, "rio", -1};
     REQUIRE(hub.find(onCanivore) != nullptr);
@@ -139,7 +107,7 @@ TEST_CASE("hub: saved mappings bind before the device exists and take effect whe
     REQUIRE(hub.bind(kSlotA, kTalon1).ok());
     CHECK_FALSE(hub.resolve(kSlotA).has_value());
     CHECK(hub.motorOutput(kSlotA).valid == false);
-    hub.onAnnounce(talon(3, 1));
+    hub.onAnnounce(talonFxAnnounce(3, 1));
     CHECK(hub.discovered()[0].mapped);
     CHECK(*hub.resolve(kSlotA) == DeviceId{3});
     CHECK(hub.loopbackSet().loopback.empty());
@@ -161,7 +129,7 @@ TEST_CASE("hub: one device, one slot, rebinding the same pair is a no-op") {
 
 TEST_CASE("hub: actuator frames become typed motor output (voltage falls back to duty x battery)") {
     DeviceHub hub;
-    hub.onAnnounce(talon(1, 1));
+    hub.onAnnounce(talonFxAnnounce(1, 1));
     hub.onAnnounce(pwm(2, 0));
     REQUIRE(hub.bind(kSlotA, kTalon1).ok());
     REQUIRE(hub.bind({"drive", "motor"}, DeviceKey{"hal", "pwm", 0, "rio", -1}).ok());
@@ -202,7 +170,7 @@ TEST_CASE("hub: digital and solenoid outputs") {
 
 TEST_CASE("hub: invalid actuator samples are dropped and counted, never crash") {
     DeviceHub hub;
-    hub.onAnnounce(talon(1, 1));
+    hub.onAnnounce(talonFxAnnounce(1, 1));
     REQUIRE(hub.bind(kSlotA, kTalon1).ok());
     hub.onActuatorFrame(frame({{DeviceId{42}, 0, 1.0},     // unknown device
                                {DeviceId{1}, 99, 1.0},     // signal index out of range
@@ -213,7 +181,7 @@ TEST_CASE("hub: invalid actuator samples are dropped and counted, never crash") 
 
 TEST_CASE("hub: sensor writes are delta-compressed, full frames resend everything written") {
     DeviceHub hub;
-    hub.onAnnounce(talon(1, 1));
+    hub.onAnnounce(talonFxAnnounce(1, 1));
     REQUIRE(hub.bind(kSlotA, kTalon1).ok());
 
     proto::SensorFrame out;
@@ -256,7 +224,7 @@ TEST_CASE("hub: sensor writes are delta-compressed, full frames resend everythin
 
 TEST_CASE("hub: writes to an unbound or undiscovered slot are ignored") {
     DeviceHub hub;
-    hub.onAnnounce(talon(1, 1));
+    hub.onAnnounce(talonFxAnnounce(1, 1));
     hub.writeMotorFeedback(kSlotA, MotorFeedback{});  // not bound
     REQUIRE(hub.bind(kSlotB, DeviceKey{"phoenix6", "talonfx", 8, "rio", -1}).ok());  // bound, device never appears
     hub.writeEncoder(kSlotB, EncoderFeedback{1.0, 1.0});
@@ -267,7 +235,7 @@ TEST_CASE("hub: writes to an unbound or undiscovered slot are ignored") {
 
 TEST_CASE("hub: epoch reset invalidates outputs and sends neutral feedback in a full frame") {
     DeviceHub hub;
-    hub.onAnnounce(talon(1, 1));
+    hub.onAnnounce(talonFxAnnounce(1, 1));
     hub.onAnnounce(dio(2, 3));
     REQUIRE(hub.bind(kSlotA, kTalon1).ok());
     const SlotAddress digital{"claw", "out"};
@@ -297,7 +265,7 @@ TEST_CASE("hub: epoch reset invalidates outputs and sends neutral feedback in a 
     CHECK(hub.mappingRevision() == revision);
     CHECK(hub.discoveryComplete());
     REQUIRE(hub.discovered().size() == 2);
-    CHECK(hub.find(DeviceId{1})->signalSpecs == talon(1, 1).signalSpecs);
+    CHECK(hub.find(DeviceId{1})->signalSpecs == talonFxAnnounce(1, 1).signalSpecs);
     hub.buildSensorFrame(out, false);
     CHECK(out.full);
     REQUIRE(out.samples.size() == 5);
@@ -321,7 +289,7 @@ TEST_CASE("hub: epoch reset invalidates outputs and sends neutral feedback in a 
 }
 TEST_CASE("hub: encoder / digital / analog / IMU writes land on the canonical signals") {
     DeviceHub hub;
-    hub.onAnnounce(pigeon(1, 20));
+    hub.onAnnounce(pigeon2Announce(1, 20, ""));
     hub.onAnnounce(dio(2, 4));
     REQUIRE(hub.bind({"robot", "imu"}, DeviceKey{"phoenix6", "pigeon2", 20, "rio", -1}).ok());
     REQUIRE(hub.bind({"intake", "beam"}, DeviceKey{"hal", "dio", 4, "rio", -1}).ok());
@@ -353,7 +321,7 @@ TEST_CASE("hub: distance slots accept CANrange and deliver metres rather than vo
     range.id = DeviceId{1};
     range.descriptor = {"phoenix6", "canrange", "ctre", 33, kBusUnknown};
     range.descriptor.capabilities = Capability::Distance;
-    range.signalSpecs = {sig(signal::kDistance, SignalDirection::Input)};
+    range.signalSpecs = {doubleSignal(signal::kDistance, SignalDirection::Input)};
     const SlotSpec sensor{"sensor", "Distance", SlotType::DistanceSensor, false, ""};
     hub.declareSlots("hopper", {sensor});
     hub.onAnnounce(range);
@@ -371,7 +339,7 @@ TEST_CASE("hub: distance slots accept CANrange and deliver metres rather than vo
 
 TEST_CASE("hub: aliases of one physical device mapped twice are disabled (conflict), one mapping is only a warning") {
     DeviceHub hub;
-    hub.onAnnounce(talon(1, 1));
+    hub.onAnnounce(talonFxAnnounce(1, 1));
     const DeviceKey onRio{"phoenix6", "talonfx", 1, "rio", -1};
     const DeviceKey onCanivore{"phoenix6", "talonfx", 1, "canivore", -1};
     REQUIRE(hub.bind(kSlotA, onRio).ok());
@@ -407,7 +375,7 @@ TEST_CASE("hub: declared aliases from the robot program give Aliased + bus misma
     REQUIRE(hub.bind({"a", "motor"}, DeviceKey{"hal", "pwm", 0, "rio", -1}).ok());
     CHECK(hub.find(DeviceId{1})->aliasState == AliasState::None);
 
-    hub.onAnnounce(talon(2, 9));
+    hub.onAnnounce(talonFxAnnounce(2, 9));
     REQUIRE(hub.bind({"b", "motor"}, DeviceKey{"phoenix6", "talonfx", 9, "rio", -1}).ok());
     hub.observeBus(DeviceId{2}, "canivore");
     CHECK(hub.find(DeviceId{2})->observedBus == "canivore");
@@ -424,12 +392,12 @@ TEST_CASE("hub: declared aliases from the robot program give Aliased + bus misma
     CHECK(hub.isMapped(DeviceId{1}));
 
     DeviceHub other;
-    other.onAnnounce(talon(5, 5));
+    other.onAnnounce(talonFxAnnounce(5, 5));
     other.observeBus(DeviceId{5}, "canivore");
     other.observeBus(DeviceId{404}, "x");  // unknown device: ignored
     CHECK(other.find(DeviceId{5})->observedBus == "canivore");
     other.onAnnounce([&] {
-        auto a = talon(5, 5);
+        auto a = talonFxAnnounce(5, 5);
         a.observedBus = "rio";
         return a;
     }());
@@ -438,7 +406,7 @@ TEST_CASE("hub: declared aliases from the robot program give Aliased + bus misma
 
 TEST_CASE("hub: retired devices leave the loopback set and stop resolving, re-announce revives them") {
     DeviceHub hub;
-    hub.onAnnounce(talon(1, 1));
+    hub.onAnnounce(talonFxAnnounce(1, 1));
     REQUIRE(hub.bind(kSlotA, kTalon1).ok());
     hub.onAnnounce(pwm(2, 0));
     CHECK(hub.loopbackSet().loopback == std::vector<DeviceId>{DeviceId{2}});
@@ -450,7 +418,7 @@ TEST_CASE("hub: retired devices leave the loopback set and stop resolving, re-an
     CHECK(hub.loopbackSet().loopback.empty());
     CHECK_FALSE(hasWarning(hub, "unmapped_loopback"));
 
-    auto retiredMapped = talon(1, 1);
+    auto retiredMapped = talonFxAnnounce(1, 1);
     retiredMapped.retired = true;
     hub.onAnnounce(retiredMapped);
     CHECK_FALSE(hub.resolve(kSlotA).has_value());
@@ -462,7 +430,7 @@ TEST_CASE("hub: retired devices leave the loopback set and stop resolving, re-an
 
 TEST_CASE("hub: clearDevices forgets the robot's devices but keeps the mappings, a new session id works") {
     DeviceHub hub;
-    hub.onAnnounce(talon(1, 1));
+    hub.onAnnounce(talonFxAnnounce(1, 1));
     REQUIRE(hub.bind(kSlotA, kTalon1).ok());
     hub.onActuatorFrame(frame({{DeviceId{1}, 0, 1.0}}));
     hub.clearDevices();
@@ -471,7 +439,7 @@ TEST_CASE("hub: clearDevices forgets the robot's devices but keeps the mappings,
     CHECK_FALSE(hub.motorOutput(kSlotA).valid);
     CHECK(hub.loopbackSet().loopback.empty());
 
-    hub.onAnnounce(talon(77, 1));  // robot restarted: same physical device, new runtime id
+    hub.onAnnounce(talonFxAnnounce(77, 1));  // robot restarted: same physical device, new runtime id
     CHECK(*hub.resolve(kSlotA) == DeviceId{77});
     CHECK_FALSE(hub.motorOutput(kSlotA).valid);  // outputs of the previous run are gone
     hub.onActuatorFrame(frame({{DeviceId{77}, 0, 0.3}}));
@@ -480,8 +448,8 @@ TEST_CASE("hub: clearDevices forgets the robot's devices but keeps the mappings,
 
 TEST_CASE("hub: a re-announce of the same physical device under a new id re-keys it in place") {
     DeviceHub hub;
-    hub.onAnnounce(talon(1, 1));
-    hub.onAnnounce(talon(9, 1));
+    hub.onAnnounce(talonFxAnnounce(1, 1));
+    hub.onAnnounce(talonFxAnnounce(9, 1));
     REQUIRE(hub.discovered().size() == 1);
     CHECK(hub.discovered()[0].id == DeviceId{9});
     CHECK(hub.find(DeviceId{1}) == nullptr);
@@ -494,7 +462,7 @@ TEST_CASE("hub: slot_missing_device only after discovery completed, slot_incompa
     hub.markDiscoveryComplete();
     CHECK(hub.discoveryComplete());
     CHECK(hasWarning(hub, "slot_missing_device"));
-    hub.onAnnounce(talon(1, 1));
+    hub.onAnnounce(talonFxAnnounce(1, 1));
     CHECK_FALSE(hasWarning(hub, "slot_missing_device"));
 
     hub.declareSlots("arm", {{"motor", "Motor", SlotType::Motor, true, ""}, {"encoder", "Enc", SlotType::LimitSwitch, false, ""}});
@@ -508,7 +476,7 @@ TEST_CASE("hub: slot_missing_device only after discovery completed, slot_incompa
 
 TEST_CASE("hub: persisted mappings round trip and the revision tracks loopback changes") {
     DeviceHub hub;
-    hub.onAnnounce(talon(1, 1));
+    hub.onAnnounce(talonFxAnnounce(1, 1));
     const std::uint64_t r0 = hub.mappingRevision();
     const std::vector<SlotMapping> saved = {{kSlotA, kTalon1}, {kSlotB, DeviceKey{"phoenix6", "talonfx", 2, "rio", -1}}};
     REQUIRE(hub.loadMappings(saved).ok());
@@ -531,8 +499,8 @@ TEST_CASE("hub: persisted mappings round trip and the revision tracks loopback c
 
 TEST_CASE("hub: a reversed motor slot flips its command and its rotor feedback") {
     DeviceHub hub;
-    hub.onAnnounce(talon(1, 1));
-    hub.onAnnounce(talon(2, 2));
+    hub.onAnnounce(talonFxAnnounce(1, 1));
+    hub.onAnnounce(talonFxAnnounce(2, 2));
     const SlotAddress second{"arm", "motor2"};
     const DeviceKey talon2{"phoenix6", "talonfx", 2, "rio", -1};
     REQUIRE(hub.loadMappings(std::vector<SlotMapping>{{kSlotA, kTalon1}, {second, talon2, true}}).ok());

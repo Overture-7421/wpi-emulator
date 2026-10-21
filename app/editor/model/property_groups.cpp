@@ -3,11 +3,11 @@
 #include <algorithm>
 
 #include "model/config_ops.h"
-#include "model/quat_utils.h"
 #include "model/spec_values.h"
 #include "model/tr.h"
 #include "model/units.h"
 #include "wpiemu/sdk/config/value_codec.h"
+#include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::app::editor {
 
@@ -605,7 +605,7 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
     const SelectionRef sel = formTargetOf(c, selIn);
     if (groupId == "robot") { spec::applyRobot(c, key, value); return true; }
     if (groupId == "chassis") { spec::applyChassis(c, catalog, key, value); return true; }
-    if (groupId == "drivetrain") { spec::applyDrivetrain(c, key, value); return true; }
+    if (groupId == "drivetrain") { spec::applyDrivetrain(c, catalog, key, value); return true; }
     if (groupId == "wheel" || groupId == "wheel.drive" || groupId == "wheel.placement") { spec::applyWheel(c, sel.sub, key, value); return true; }
     if (groupId == "primitive") {
         auto* list = ops::primitivesOf(c, sel.owner);
@@ -614,7 +614,7 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
         return true;
     }
     if (sel.kind == SelKind::Zone) {
-        sdk::ZoneConfig* z = ops::findZone(c, sel.owner);
+        sdk::ZoneConfig* z = c.findZone(sel.owner);
         if (z == nullptr) return false;
         if (groupId == "zone.general") return key == "label" ? (z->label = value.asString(z->label), true) : false;
         if (groupId == "zone.placement") {
@@ -632,7 +632,7 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
         return false;
     }
     if (sel.kind == SelKind::Camera) {
-        sdk::CameraConfig* cam = ops::findCamera(c, sel.owner);
+        sdk::CameraConfig* cam = c.findCamera(sel.owner);
         return cam != nullptr && applyCamera(c, catalog, *cam, groupId, key, value);
     }
     if (sel.kind == SelKind::Sensor) {
@@ -692,10 +692,10 @@ QString mechanismKindLabel(const sdk::MechanismConfig& m, const sdk::MechanismTe
 QString robotToCameraText(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam, UnitSystem units,
                           QString* tooltip) {
     const sdk::Pose3 p = ops::cameraRobotPose(c, catalog, cam);
-    const Euler e = toEuler(p.rotation);
+    const sdk::Euler e = p.rotation.toEuler();
     const UnitDisplay ud = unitDisplay(PropertyUnit::Meters, units);
     auto length = [&](float m) { return QString::number(static_cast<double>(m) * ud.factor, 'f', ud.decimals) + QString::fromUtf8(ud.suffix); };
-    auto degrees = [](float rad) { return QString::number(static_cast<double>(radToDegF(rad)), 'f', 1) + QStringLiteral("\xC2\xB0"); };
+    auto degrees = [](float rad) { return QString::number(static_cast<double>(sdk::radToDegF(rad)), 'f', 1) + QStringLiteral("\xC2\xB0"); };
     auto num = [](float v) { return QString::number(static_cast<double>(v), 'f', 4); };
     if (tooltip != nullptr)
         *tooltip = ETR("WPILib robot frame: origin on the floor below the hull centre, +X forward, +Y left, yaw counter-clockwise. "

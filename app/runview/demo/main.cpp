@@ -23,6 +23,15 @@ using namespace wpiemu::app::runview;
 
 namespace {
 
+// Time for the simulation to be running and drawn before a scenario acts on it.
+constexpr int kScenarioActionDelayMs = 1200;
+// Time before an injected startup failure; the page shows Starting until then.
+constexpr int kStartupFaultDelayMs = 300;
+// Startup delay that keeps the "starting" scenario in Starting for the whole capture.
+constexpr int kHeldStartupDelayMs = 60000;
+// Where --park moves the window: off every screen, so screenshots work on a real platform.
+constexpr int kParkedWindowX = -6000;
+
 QString argValue(const QStringList& args, const QString& name, const QString& fallback = {}) {
     const int i = args.indexOf(name);
     return i >= 0 && i + 1 < args.size() ? args[i + 1] : fallback;
@@ -45,7 +54,7 @@ int main(int argc, char* argv[]) {
     QSettings settings(settingsDir.filePath(QStringLiteral("demo.ini")), QSettings::IniFormat);
 
     FakeRunBackend::Options options;
-    options.startupDelayMs = scenario == QLatin1String("starting") ? 60000 : 350;
+    if (scenario == QLatin1String("starting")) options.startupDelayMs = kHeldStartupDelayMs;
     FakeRunBackend backend(options);
     FakeJoystickProvider gamepads;
     if (args.contains(QStringLiteral("--gamepad"))) gamepads.addGamepad(QStringLiteral("Demo Gamepad"));
@@ -60,7 +69,7 @@ int main(int argc, char* argv[]) {
     window.setCentralWidget(&page);   // QMainWindow takes ownership, but `page` lives on the stack: handed back before exit
     const QStringList wh = size.split(QLatin1Char('x'));
     window.resize(wh.value(0).toInt(), wh.value(1).toInt());
-    if (args.contains(QStringLiteral("--park"))) window.move(-6000, 100);   // real platform, window out of sight (screenshots)
+    if (args.contains(QStringLiteral("--park"))) window.move(kParkedWindowX, 100);   // real platform, window out of sight (screenshots)
     window.show();
 
     if (args.contains(QStringLiteral("--joysticks"))) page.driverStationPanel()->showSettings(1);
@@ -68,7 +77,7 @@ int main(int argc, char* argv[]) {
 
     if (scenario != QLatin1String("idle")) backend.startSimulation();
     if (scenario == QLatin1String("running")) {
-        QTimer::singleShot(1200, &app, [&] {
+        QTimer::singleShot(kScenarioActionDelayMs, &app, [&] {
             page.driverStation().setEnabled(true);
             page.handleKey(Qt::Key_W, true);
             page.handleKey(Qt::Key_D, true);
@@ -76,18 +85,18 @@ int main(int argc, char* argv[]) {
             page.handleKey(Qt::Key_A, false);
         });
     } else if (scenario == QLatin1String("practice")) {
-        QTimer::singleShot(1200, &app, [&] {
+        QTimer::singleShot(kScenarioActionDelayMs, &app, [&] {
             page.driverStation().setDsMode(DsMode::Practice);
             page.driverStation().setEnabled(true);
         });
     } else if (scenario == QLatin1String("crash")) {
-        QTimer::singleShot(1200, &app, [&] { backend.simulateCrash(1); });
+        QTimer::singleShot(kScenarioActionDelayMs, &app, [&] { backend.simulateCrash(1); });
     } else if (scenario == QLatin1String("timeout")) {
-        QTimer::singleShot(300, &app, [&] { backend.simulateHandshakeTimeout(); });
+        QTimer::singleShot(kStartupFaultDelayMs, &app, [&] { backend.simulateHandshakeTimeout(); });
     } else if (scenario == QLatin1String("mismatch")) {
-        QTimer::singleShot(300, &app, [&] { backend.simulateProtocolMismatch(QStringLiteral("Extension speaks an older protocol than this app supports.")); });
+        QTimer::singleShot(kStartupFaultDelayMs, &app, [&] { backend.simulateProtocolMismatch(QStringLiteral("Extension speaks an older protocol than this app supports.")); });
     } else if (scenario == QLatin1String("failed")) {
-        QTimer::singleShot(300, &app, [&] { backend.simulateFailedToStart(QStringLiteral("gradlew: command not found (JAVA_HOME is not set)")); });
+        QTimer::singleShot(kStartupFaultDelayMs, &app, [&] { backend.simulateFailedToStart(QStringLiteral("gradlew: command not found (JAVA_HOME is not set)")); });
     }
 
     if (!shot.isEmpty()) {

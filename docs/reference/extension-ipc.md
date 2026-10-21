@@ -26,8 +26,9 @@ Connection and handshake complete before lock-step pauses HAL timing and starts 
 | `1` | Attachment or initialization failed; the failure is reported to stderr. |
 | `-1` | The no-HAL stub reports that this library was built without WPILib HAL support. |
 
-The launcher passes `WPIEMU_IPC_ENDPOINT`. The
-[configuration contract](../../halsim_ext/include/wpiemu/halsim_ext/config.h) owns environment names,
+The launcher passes `WPIEMU_IPC_ENDPOINT`. The names the emulator and the extension share live in the
+[SDK environment header](../../sdk/include/wpiemu/sdk/core/environment.h); the
+[configuration contract](../../halsim_ext/include/wpiemu/halsim_ext/config.h) owns the extension-only names,
 aliases, defaults, and debugging switches; [parsing](../../halsim_ext/src/config.cpp) warns and keeps
 defaults for malformed settings. `WPIEMU_CLOCK=realtime` prevents HAL pausing even if the peer asks
 for lock-step. An inert real extension is different from the
@@ -55,10 +56,12 @@ handshake protocol are separate values, both currently `1`. Integers are little-
 values use IEEE-754 bit patterns, and booleans occupy one byte. Lengths/counts use bounded LEB128;
 device descriptors, signal specifications, and joystick records have a `u16` byte-length prefix.
 Signal samples encode `(u32 device, u16 signal index, f64 value)`, not C++ object memory.
-The encoder/decoder, rather than struct layout, owns field order and optional-tail handling.
+One `fields` function per struct in the codec drives both encoding and decoding, so it, rather than
+struct layout, owns field order and optional-tail handling. The scalar encodings are shared with the
+PhotonVision packets, whose layout is a different protocol ([byte_order.h](../../sdk/include/wpiemu/sdk/core/byte_order.h)).
 
 Default payload limit is 8 MiB, string limit 1 MiB; counts are also checked against remaining bytes
-and per-type caps. A malformed payload returns `ProtocolError`, another wire-format byte returns
+and per-type caps, and the encoder refuses a list above its cap rather than send a frame the peer rejects. A malformed payload returns `ProtocolError`, another wire-format byte returns
 `VersionMismatch`, and an unknown message type returns `Unsupported`. Only the last is the
 unknown-type skip case handled by `receiveSkippingUnknown` and the extension's receive loop.
 These decoder behaviors do not establish a multi-version SDK compatibility policy.
@@ -73,7 +76,7 @@ listener and accept again for reconnect.
 
 ## Handshake and identity
 
-The [messages contract](../../sdk/include/wpiemu/sdk/ipc/messages.h) defines `Hello` and `HelloAck`.
+The [session messages](../../sdk/include/wpiemu/sdk/ipc/session_messages.h) define `Hello` and `HelloAck`.
 The extension reports robot identity, language, HAL port counts, watchdog preference, and
 `supportsArmed`. The emulator accepts/refuses it and assigns `sessionId`, `runEpoch`, `stepUs`,
 clock mode, watchdog policy/timeout, and whether this is a discovery-only Armed session.
@@ -95,7 +98,9 @@ Identity rules are shared by the SDK's
   stale-frame isolation. Production traffic must carry the negotiated identity.
 
 `VisionSetup`, including an empty camera list, follows `HelloAck` and precedes the first sensor
-frame of each epoch. Its camera indices and encoder-specific contract are in [Bridges](bridges.md).
+frame of each epoch. It carries the cameras, the photonlib version, the layout name and the field size of the
+game's AprilTag layout (two trailing doubles; absent means unknown). Its camera indices and encoder-specific
+contract are in [Bridges](bridges.md).
 
 ## Tick readiness and commands
 
@@ -113,7 +118,9 @@ Constructor-time bridge polling is off by default; `WPIEMU_LIVE_DISCOVERY` is an
 
 At the extension boundary, a tick applies pending driver-station state, battery and device inputs,
 polls/applies vision, steps HAL by `stepUs`, then polls discovery and collects outputs.
-Announcements precede samples that reference them. Unmapped devices in `LoopbackSet` are handled
+Announcements precede samples that reference them. A `DeviceAnnounce` is the SDK's
+[DeviceRecord](../../sdk/include/wpiemu/sdk/devices/device_record.h) (id, descriptor, signal specifications,
+observed bus) plus a `retired` flag; the hub's `DiscoveredDevice` extends the same record with mapping state. Unmapped devices in `LoopbackSet` are handled
 locally and omitted from actuator samples; loopback may be a no-op for a device with nothing to echo.
 Outputs are delta-filtered, with a full baseline initially and after applied Reset/Begin.
 
@@ -133,7 +140,9 @@ sends Goodbye, and ends the connection rather than reconnecting.
 
 Bridge tick operations and HAL stepping belong to the clock thread. HAL callbacks on robot threads
 only record events; they must not step time or perform IPC I/O. The
-[IPC link](../../halsim_ext/src/ipc_link.cpp) has separate reader/writer threads and message queues.
+[IPC link](../../halsim_ext/src/ipc_link.cpp) has separate reader/writer threads and message queues. Its bounded inbound
+queue and the emulator's mailbox are SDK [BlockingQueues](../../sdk/include/wpiemu/sdk/core/blocking_queue.h): the link
+lets a closed queue drain, the mailbox discards its pending events. The outbound side keeps its own log-drop and flush accounting.
 Bridge startup happens during initialization, before the clock thread starts; normal shutdown stops
 bridges after joining it. Free-running modes permit concurrent robot execution, unlike lock-step's
 between-step quiescence. The watchdog never calls a bridge.

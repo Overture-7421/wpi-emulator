@@ -10,10 +10,14 @@
 
 #include "wpiemu/sdk/config/plugin_config.h"
 #include "wpiemu/sdk/config/property_schema.h"
+#include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/config/unit_display.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/byte_order.h"
+#include "wpiemu/sdk/core/environment.h"
+#include "wpiemu/sdk/core/geometry.h"
 #include "wpiemu/sdk/core/ids.h"
+#include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/core/math.h"
 #include "wpiemu/sdk/core/registry.h"
 #include "wpiemu/sdk/core/result.h"
@@ -22,6 +26,8 @@
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/core/value.h"
 #include "wpiemu/sdk/dynamics/motor_model.h"
+#include "wpiemu/sdk/physics/wheel_layout.h"
+#include "wpiemu/sdk/testing/environment.h"
 #include "wpiemu/sdk/testing/fake_game_module.h"
 
 using namespace wpiemu::sdk;
@@ -72,6 +78,87 @@ TEST_CASE("units convert to SI") {
     CHECK(rpmToRadPerSec(60.0) == doctest::Approx(kTwoPi));
     CHECK(secondsToUs(0.005) == 5000);
     CHECK(usToSeconds(5000) == doctest::Approx(0.005));
+    CHECK(msToUs(40.0) == 40000);
+    CHECK(msToUs(0.0006) == 1);                 // rounds to the nearest microsecond
+    CHECK(usToMs(1500) == doctest::Approx(1.5));
+    CHECK(frequencyToUs(200.0) == kDefaultStepUs);
+    CHECK(frequencyToUs(30.0) == 33333);
+    CHECK(kDefaultWheelRadiusM == doctest::Approx(inchesToMeters(2.0)));   // a 4 in wheel
+}
+
+TEST_CASE("angles wrap to the half-open range around zero and convert in float") {
+    CHECK(wrapAngleRad(0.5) == doctest::Approx(0.5));
+    CHECK(wrapAngleRad(3.0 * kPi) == doctest::Approx(kPi));
+    CHECK(wrapAngleRad(-kPi) == doctest::Approx(kPi));
+    CHECK(wrapAngleRad(kPi + 0.1) == doctest::Approx(-kPi + 0.1));
+    CHECK(wrapAngleDeg(540.0) == doctest::Approx(180.0));
+    CHECK(wrapAngleDeg(-180.0) == doctest::Approx(180.0));
+    CHECK(wrapAngleDeg(190.0) == doctest::Approx(-170.0));
+    CHECK(wrapAngleDeg(-190.0) == doctest::Approx(170.0));
+    CHECK(degToRadF(180.f) == doctest::Approx(kPiF));
+    CHECK(radToDegF(kPiF) == doctest::Approx(180.f));
+}
+
+TEST_CASE("Euler extraction inverts fromEuler, ignores scale and stays finite at gimbal lock") {
+    for (float roll : {-0.7f, 0.f, 0.3f})
+        for (float pitch : {-0.9f, 0.f, 0.4f})
+            for (float yaw : {-3.0f, 0.f, 2.0f}) {
+                const Quat q = Quat::fromEuler(roll, pitch, yaw);
+                const Euler e = q.toEuler();
+                CHECK(e.rollRad == doctest::Approx(roll).epsilon(1e-4));
+                CHECK(e.pitchRad == doctest::Approx(pitch).epsilon(1e-4));
+                CHECK(e.yawRad == doctest::Approx(yaw).epsilon(1e-4));
+                CHECK(Quat{q.x * 3.f, q.y * 3.f, q.z * 3.f, q.w * 3.f}.toEuler().yawRad == doctest::Approx(yaw).epsilon(1e-4));
+            }
+    CHECK(Quat::fromEuler(Euler{0.1f, -0.2f, 0.3f}) == Quat::fromEuler(0.1f, -0.2f, 0.3f));
+    const Euler lock = Quat::fromEuler(0.1f, 0.5f * kPiF, 0.2f).toEuler();
+    CHECK(finite(lock.pitchRad));
+    CHECK(finite(lock.rollRad));
+    CHECK(lock.pitchRad == doctest::Approx(0.5f * kPiF).epsilon(1e-3));
+}
+
+TEST_CASE("rotationFromX takes +X onto any non-zero direction and defines the degenerate cases") {
+    const auto maps = [](const Vec3& direction, const Vec3& expected, float tolerance = 1e-5f) {
+        const Vec3 r = rotationFromX(direction).rotate({1.f, 0.f, 0.f});
+        return length(r - expected) < tolerance;
+    };
+    CHECK(maps({0.f, 1.f, 0.f}, {0.f, 1.f, 0.f}));
+    CHECK(maps({0.f, 0.f, 5.f}, {0.f, 0.f, 1.f}));                    // length does not matter
+    CHECK(maps(normalized({1.f, -2.f, 3.f}), normalized({1.f, -2.f, 3.f})));
+    CHECK(maps({1e-4f, 1e-4f, 0.f}, normalized({1e-4f, 1e-4f, 0.f})));  // tiny but non-zero
+    CHECK(rotationFromX({1.f, 0.f, 0.f}) == Quat{});
+    CHECK(maps({-1.f, 0.f, 0.f}, {-1.f, 0.f, 0.f}, 1e-3f));             // antiparallel: half turn about +Z
+    CHECK(maps({-1.f, 1e-6f, 0.f}, {-1.f, 0.f, 0.f}, 1e-3f));
+    CHECK(rotationFromX({0.f, 0.f, 0.f}) == Quat{});
+    CHECK(rotationFromX({std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f}) == Quat{});
+    CHECK(rotationFromX({std::numeric_limits<float>::infinity(), 0.f, 0.f}) == Quat{});
+}
+
+TEST_CASE("primitive extents are the box size or the cylinder diameter, diameter and height") {
+    PrimitiveSpec box;
+    box.sizeM = {0.2f, 0.3f, 0.4f};
+    CHECK(box.extentsM() == Vec3{0.2f, 0.3f, 0.4f});
+
+    PrimitiveSpec cylinder;
+    cylinder.kind = PrimitiveKind::Cylinder;
+    cylinder.radiusM = 0.05f;
+    cylinder.heightM = 0.7f;
+    CHECK(cylinder.extentsM() == Vec3{0.1f, 0.1f, 0.7f});
+}
+
+TEST_CASE("finite rejects NaN and infinity in any component of a vector, quaternion or pose") {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    CHECK(finite(1.f));
+    CHECK_FALSE(finite(inf));
+    CHECK(finite(Vec3{1.f, 2.f, 3.f}));
+    CHECK_FALSE(finite(Vec3{1.f, nan, 3.f}));
+    CHECK(finite(Quat{}));
+    CHECK_FALSE(finite(Quat{0.f, 0.f, inf, 1.f}));
+    CHECK_FALSE(finite(Quat{0.f, 0.f, 0.f, nan}));
+    CHECK(finite(Pose3{}));
+    CHECK_FALSE(finite(Pose3{{0.f, 0.f, inf}, Quat{}}));
+    CHECK_FALSE(finite(Pose3{{}, Quat{nan, 0.f, 0.f, 1.f}}));
 }
 
 TEST_CASE("DC motor model matches WPILib equations") {
@@ -157,10 +244,83 @@ TEST_CASE("little-endian helpers write the least significant byte first and read
     CHECK(raw == std::vector<std::uint8_t>{0xCD, 0xAB, 0xFF});
 }
 
+TEST_CASE("little-endian writer appends each scalar type with its two's complement or IEEE-754 bytes") {
+    std::vector<std::uint8_t> out;
+    LittleEndianWriter<std::uint8_t> w(out);
+    w.u8(0xFE);
+    w.u16(0x0102);
+    w.i16(-2);
+    w.u32(0x01020304u);
+    w.i32(-2);
+    w.u64(0x0102030405060708ull);
+    w.i64(-2);
+    w.f32(1.0f);
+    w.f64(-2.0);
+    w.boolean(true);
+    w.boolean(false);
+    CHECK(out == std::vector<std::uint8_t>{0xFE,                                      // u8
+                                           0x02, 0x01,                                // u16
+                                           0xFE, 0xFF,                                // i16
+                                           0x04, 0x03, 0x02, 0x01,                    // u32
+                                           0xFE, 0xFF, 0xFF, 0xFF,                    // i32
+                                           0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01,  // u64
+                                           0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,  // i64
+                                           0x00, 0x00, 0x80, 0x3F,                    // f32 1.0
+                                           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0,  // f64 -2.0
+                                           0x01, 0x00});                              // booleans
+
+    std::vector<std::byte> bytes;
+    LittleEndianWriter<std::byte> wb(bytes);
+    wb.u16(0xABCD);
+    CHECK(bytes == std::vector<std::byte>{std::byte{0xCD}, std::byte{0xAB}});
+}
+
 TEST_CASE("asciiLower lowers A-Z only") {
     CHECK(asciiLower("Blue LEFT 123-_") == "blue left 123-_");
     CHECK(asciiLower("\xC3\x84") == "\xC3\x84");   // non-ASCII bytes stay as they are, whatever the locale
     CHECK(asciiLower("").empty());
+}
+
+TEST_CASE("asciiTrim strips whitespace and NUL padding from both ends only") {
+    CHECK(asciiTrim("  a b\t\r\n") == "a b");
+    CHECK(asciiTrim(std::string_view("12\0\0", 4)) == "12");
+    CHECK(asciiTrim(" \t\n").empty());
+    CHECK(asciiTrim("").empty());
+    CHECK(asciiTrim("\xC2\xA0x") == "\xC2\xA0x");   // a non-ASCII space is not whitespace here
+}
+
+TEST_CASE("parseBool and parseInteger accept only complete unambiguous text") {
+    CHECK(parseBool(" Yes ") == std::optional<bool>(true));
+    CHECK(parseBool("ON") == std::optional<bool>(true));
+    CHECK(parseBool("0") == std::optional<bool>(false));
+    CHECK(parseBool("False") == std::optional<bool>(false));
+    CHECK_FALSE(parseBool("maybe").has_value());
+    CHECK_FALSE(parseBool("").has_value());
+
+    CHECK(parseInteger<int>("-42") == std::optional<int>(-42));
+    CHECK(parseInteger<std::uint32_t>("4294967295") == std::optional<std::uint32_t>(4294967295u));
+    CHECK_FALSE(parseInteger<std::uint32_t>("4294967296").has_value());   // overflow
+    CHECK_FALSE(parseInteger<std::uint32_t>("-5").has_value());
+    CHECK_FALSE(parseInteger<int>("12x").has_value());
+    CHECK_FALSE(parseInteger<int>(" 12").has_value());
+    CHECK_FALSE(parseInteger<int>("").has_value());
+}
+
+TEST_CASE("log levels print as console names and parse case-insensitively with warning accepted") {
+    for (const LogLevel level : {LogLevel::Trace, LogLevel::Debug, LogLevel::Info, LogLevel::Warn, LogLevel::Error})
+        CHECK(parseLogLevel(logLevelName(level)) == std::optional<LogLevel>(level));
+    CHECK(logLevelName(LogLevel::Warn) == "WARN");
+    CHECK(parseLogLevel(" Warning ") == std::optional<LogLevel>(LogLevel::Warn));
+    CHECK_FALSE(parseLogLevel("loud").has_value());
+}
+
+TEST_CASE("the process environment reads unset and empty variables as absent and a fixed one is injectable") {
+    CHECK_FALSE(readEnvironment("WPIEMU_SURELY_UNSET_VARIABLE").has_value());
+    CHECK(readEnvironment("PATH").has_value());   // set on every machine that can run the tests
+
+    const EnvLookup fixed = testing::envOf({{"A", "1"}});
+    CHECK(fixed("A") == std::optional<std::string>("1"));
+    CHECK_FALSE(fixed("B").has_value());
 }
 
 TEST_CASE("Value: types, objects keep insertion order, deep equality") {
@@ -213,6 +373,89 @@ TEST_CASE("Registry: ordered, rejects duplicates, creates by key") {
     CHECK(reg.create("one").value()->n() == 1);
     CHECK(reg.create("two").error().code == ErrorCode::NotFound);
     CHECK(reg.keys() == std::vector<std::string>{"one"});
+
+    struct Two final : Thing { int n() const override { return 2; } };
+    CHECK(reg.add("two", {}, [] { return std::make_unique<Two>(); }).ok());
+    const auto all = reg.createAll();
+    REQUIRE(all.ok());
+    REQUIRE(all.value().size() == 2);
+    CHECK(all.value()[0]->n() == 1);   // registration order
+    CHECK(all.value()[1]->n() == 2);
+    CHECK(reg.add("broken", {}, [] { return std::unique_ptr<Thing>(); }).ok());
+    CHECK(reg.createAll().error().code == ErrorCode::Internal);   // a null product stops the batch
+}
+
+TEST_CASE("wheel kinds round trip through their persisted keys") {
+    for (const WheelKind kind : {WheelKind::Standard, WheelKind::Omni, WheelKind::Mecanum, WheelKind::Swerve})
+        CHECK(parseWheelKind(wheelKindName(kind)) == std::optional<WheelKind>(kind));
+    CHECK(std::string_view(wheelKindName(WheelKind::Swerve)) == "swerve");
+    CHECK_FALSE(parseWheelKind("treads").has_value());
+    CHECK_FALSE(parseWheelKind("").has_value());
+}
+
+TEST_CASE("default wheels and layouts follow the drivetrain kind") {
+    CHECK(drivetrainWheel(drivetrain_kind::kSwerve).kind == WheelKind::Swerve);
+    CHECK(drivetrainWheel(drivetrain_kind::kSwerve).steered);
+    CHECK(drivetrainWheel(drivetrain_kind::kMecanum).kind == WheelKind::Mecanum);
+    CHECK_FALSE(drivetrainWheel(drivetrain_kind::kMecanum).steered);
+    CHECK(drivetrainWheel(drivetrain_kind::kTank).kind == WheelKind::Standard);
+    CHECK(drivetrainWheel("kiwi").kind == WheelKind::Standard);   // an unknown kind gets the plain wheel
+
+    WheelSpec base;
+    base.radiusM = 0.08f;
+    base.driveMotorCount = 2;
+    base.driveGearRatio = 9.f;
+    const auto names = [](const std::vector<WheelSpec>& wheels) {
+        std::vector<std::string> out;
+        for (const WheelSpec& w : wheels) out.push_back(w.name);
+        return out;
+    };
+
+    const std::vector<WheelSpec> swerve = swerveWheels(base, 0.3f, 0.2f);
+    CHECK(names(swerve) == std::vector<std::string>{"fl", "fr", "bl", "br"});
+    CHECK(swerve[0].positionM == Vec3{0.3f, 0.2f, 0.08f});   // the hub is one radius above the floor
+    CHECK(swerve[3].positionM == Vec3{-0.3f, -0.2f, 0.08f});
+    for (const WheelSpec& w : swerve) {
+        CHECK(isSteered(w));
+        CHECK(w.driveMotorCount == 2);   // everything else comes from `base`
+        CHECK(w.driveGearRatio == 9.f);
+    }
+
+    const std::vector<WheelSpec> mecanum = mecanumWheels(base, 0.3f, 0.2f);
+    CHECK(names(mecanum) == names(swerve));
+    CHECK(mecanum[0].positionM == swerve[0].positionM);
+    CHECK(mecanum[0].tire.tractionAngleRad == -mecanum[1].tire.tractionAngleRad);
+    CHECK(mecanum[0].tire.tractionAngleRad == mecanum[3].tire.tractionAngleRad);
+    CHECK(mecanum[0].tire.tractionAngleRad > 0.f);
+    CHECK(mecanum[0].kind == WheelKind::Mecanum);
+
+    const std::vector<WheelSpec> tank = tankWheels(base, 3, 0.3f, 0.2f);
+    CHECK(names(tank) == std::vector<std::string>{"left0", "left1", "left2", "right0", "right1", "right2"});
+    CHECK(tank[0].positionM == Vec3{-0.3f, 0.2f, 0.08f});   // rear to front on the left side
+    CHECK(tank[1].positionM.x == 0.f);
+    CHECK(tank[5].positionM == Vec3{0.3f, -0.2f, 0.08f});
+    CHECK_FALSE(isSteered(tank[0]));
+    CHECK(tankWheels(base, 1, 0.3f, 0.2f)[0].positionM.x == 0.f);   // a lone wheel sits at the centre
+}
+
+TEST_CASE("RobotConfig finds entries by id and hands out mutable ones from a mutable config") {
+    RobotConfig c;
+    c.mechanisms.push_back({});
+    c.mechanisms.back().id = "arm";
+    c.zones.push_back({});
+    c.zones.back().id = "pickup";
+    c.cameras.push_back({});
+    c.cameras.back().id = "front";
+    c.findMechanism("arm")->label = "Arm";
+    c.findZone("pickup")->kind = "box";
+    c.findCamera("front")->name = "cam";
+    const RobotConfig& view = c;
+    CHECK(view.findMechanism("arm")->label == "Arm");
+    CHECK(view.findZone("pickup")->kind == "box");
+    CHECK(view.findCamera("front")->name == "cam");
+    CHECK(view.findMechanism("nope") == nullptr);
+    CHECK(c.findZone("nope") == nullptr);
+    CHECK(view.findSensor("nope") == nullptr);
 }
 
 TEST_CASE("Rng is deterministic for a seed") {

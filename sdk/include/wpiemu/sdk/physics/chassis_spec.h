@@ -2,7 +2,9 @@
 
 // Static descriptions of the chassis and drivetrain (also the persisted config shape).
 
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "wpiemu/sdk/core/geometry.h"
@@ -28,15 +30,32 @@ struct ChassisSpec {
 
 enum class WheelKind { Standard, Omni, Mecanum, Swerve };
 
+// The persisted key of a wheel kind ("standard", "omni", "mecanum", "swerve") and its inverse; nullopt for an unknown key.
+inline const char* wheelKindName(WheelKind kind) {
+    switch (kind) {
+        case WheelKind::Standard: return "standard";
+        case WheelKind::Omni: return "omni";
+        case WheelKind::Mecanum: return "mecanum";
+        case WheelKind::Swerve: return "swerve";
+    }
+    return "standard";
+}
+
+inline std::optional<WheelKind> parseWheelKind(std::string_view key) {
+    for (const WheelKind kind : {WheelKind::Standard, WheelKind::Omni, WheelKind::Mecanum, WheelKind::Swerve})
+        if (key == wheelKindName(kind)) return kind;
+    return std::nullopt;
+}
+
 struct WheelSpec {
     std::string name;                // unique within the drivetrain: "fl", "fr", "left0", ...
     WheelKind kind = WheelKind::Standard;
     Vec3 positionM;                  // wheel hub in the chassis frame (z = hub height above the floor in the rest pose)
-    float radiusM = 0.0508f;         // 4 in
+    float radiusM = static_cast<float>(kDefaultWheelRadiusM);   // 4 in
     float widthM = 0.038f;
     float inertiaKgM2 = 1.5e-3f;     // wheel + rotating hardware
     TireParams tire;
-    bool steered = false;            // swerve azimuth
+    bool steered = false;            // swerve azimuth; see isSteered()
 
     MotorSpec driveMotor = motors::krakenX60();
     int driveMotorCount = 1;
@@ -48,6 +67,10 @@ struct WheelSpec {
     float steerGearRatio = 12.8f;
     float steerInertiaKgM2 = 0.004f;
 };
+
+// True for a wheel with an azimuth motor: flagged `steered` or a swerve module. The single rule shared by the
+// validator, the session, the traction drivetrain and the editor.
+inline bool isSteered(const WheelSpec& wheel) { return wheel.steered || wheel.kind == WheelKind::Swerve; }
 
 namespace drivetrain_kind {
 inline constexpr const char* kSwerve = "swerve";

@@ -60,13 +60,8 @@ std::optional<TransformTarget> readTransform(const sdk::RobotConfig& c, const Ed
             out.parentWorld = sel.owner == ops::kChassisOwner ? ops::chassisFrameWorld(c.chassis) : ops::mechanismRootWorld(c, catalog, sel.owner);
             t.local = p.local;
             t.canScale = true;
-            if (p.kind == sdk::PrimitiveKind::Box) {
-                t.size = p.sizeM;
-                t.sizeKind = SizeKind::Box;
-            } else {
-                t.size = Vec3{p.radiusM * 2.f, p.radiusM * 2.f, p.heightM};
-                t.sizeKind = SizeKind::Cylinder;
-            }
+            t.size = p.extentsM();
+            t.sizeKind = p.kind == sdk::PrimitiveKind::Box ? SizeKind::Box : SizeKind::Cylinder;
             return out;
         }
         case SelKind::Mechanism: {
@@ -161,14 +156,14 @@ bool writeTransform(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sel
             return false;
         }
         case SelKind::Zone: {
-            sdk::ZoneConfig* z = ops::findZone(c, sel.owner);
+            sdk::ZoneConfig* z = c.findZone(sel.owner);
             if (z == nullptr) return false;
             z->local = Pose3{t.local.position, t.local.rotation.normalized()};
             if (old.canScale) z->sizeM = size;
             return true;
         }
         case SelKind::Camera: {
-            sdk::CameraConfig* cam = ops::findCamera(c, sel.owner);
+            sdk::CameraConfig* cam = c.findCamera(sel.owner);
             if (cam == nullptr) return false;
             cam->local = Pose3{t.local.position, t.local.rotation.normalized()};
             return true;

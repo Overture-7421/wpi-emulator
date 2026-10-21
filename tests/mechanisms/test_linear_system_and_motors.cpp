@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cmath>
 
 #include "wpiemu/core/mechanisms/linear_system.h"
@@ -90,6 +91,41 @@ TEST_CASE("the motor count scales Kt/R like WPILib's DCMotor aggregation") {
     const LinearSystem four = dcMotorSystem(neo, 4, 0.01, 1.0);
     CHECK(four.B(1, 0) == doctest::Approx(4.0 * one.B(1, 0)).epsilon(1e-12));
     CHECK(four.A(1, 1) == doctest::Approx(4.0 * one.A(1, 1)).epsilon(1e-12));
+}
+
+TEST_CASE("every gearbox system equals WPILib's n-motor DCMotor equations for every catalog motor") {
+    double worst = 0.0;
+    const auto compare = [&](double actual, double expected) {
+        worst = std::max(worst, std::abs(actual - expected) / std::abs(expected));
+    };
+    const MotorCatalog catalog = MotorCatalog::builtin();
+    for (const MotorCatalogEntry& entry : catalog.entries()) {
+        const sdk::MotorSpec& m = entry.spec;
+        for (const int n : {1, 2, 3, 4, 8}) {
+            // DCMotor(V, tau*n, I*n, Ifree*n, w): R = V / I, Kt = tau / I, Kv = w / (V - R*Ifree)
+            const double stall = m.stallCurrentA * n;
+            const double r = m.nominalVoltageV / stall;
+            const double kt = m.stallTorqueNm * n / stall;
+            const double kv = m.freeSpeedRadPerSec / (m.nominalVoltageV - r * m.freeCurrentA * n);
+            for (const double gearing : {0.5, 1.0, 7.5, 100.0})
+                for (const double inertiaOrMass : {1e-4, 0.01, 3.0}) {
+                    const double j = inertiaOrMass;
+                    const LinearSystem flywheel = flywheelSystem(m, n, j, gearing);
+                    compare(flywheel.A(0, 0), -gearing * gearing * kt / (kv * r * j));
+                    compare(flywheel.B(0, 0), gearing * kt / (r * j));
+                    const LinearSystem dc = dcMotorSystem(m, n, j, gearing);
+                    CHECK(dc.A(0, 1) == 1.0);
+                    compare(dc.A(1, 1), -gearing * gearing * kt / (kv * r * j));
+                    compare(dc.B(1, 0), gearing * kt / (r * j));
+                    for (const double radius : {0.01, 0.05}) {
+                        const LinearSystem elevator = elevatorSystem(m, n, j, radius, gearing);
+                        compare(elevator.A(1, 1), -gearing * gearing * kt / (r * radius * radius * j * kv));
+                        compare(elevator.B(1, 0), gearing * kt / (r * radius * j));
+                    }
+                }
+        }
+    }
+    CHECK(worst < 1e-12);
 }
 
 TEST_CASE("motor catalog carries the WPILib DCMotor table") {

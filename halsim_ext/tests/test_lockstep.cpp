@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "fakes.h"
+#include "wpiemu/sdk/testing/fake_emulator.h"
 
 using namespace wpiemu;
 using namespace wpiemu::halsim;
@@ -51,7 +52,7 @@ TEST_CASE("lockstep: devices are announced before program_started, and frames wa
 
     const auto history = rig.emulator->history();
     const auto announce = std::find(history.begin(), history.end(), static_cast<int>(proto::MessageType::DeviceAnnounce));
-    const auto started = std::find(history.begin(), history.end(), FakeEmulator::kHistoryLifecycle);
+    const auto started = std::find(history.begin(), history.end(), sdk::testing::FakeEmulator::kHistoryLifecycle);
     REQUIRE(announce != history.end());
     REQUIRE(started != history.end());
     CHECK(announce < started);

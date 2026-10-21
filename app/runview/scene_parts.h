@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "wpiemu/sdk/config/robot_config.h"
+#include "wpiemu/sdk/core/geometry.h"
 #include "wpiemu/sdk/game/field.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
 #include "wpiemu/sdk/game/zone_kind.h"
@@ -19,14 +20,12 @@
 
 namespace wpiemu::app::runview {
 
-enum class PartShape { Box, Cylinder };
-
 struct ScenePart {
     std::string name;
-    PartShape shape = PartShape::Box;
+    sdk::PrimitiveKind shape = sdk::PrimitiveKind::Box;
     sdk::Pose3 pose;          // parent frame (chassis frame for robot parts, world frame for field parts)
     sdk::Vec3 size{1.f, 1.f, 1.f};  // Box: full extents; Cylinder: (diameter, diameter, height), axis = local Z
-    std::string color = "#808080";
+    std::string color = sdk::kDefaultPrimitiveColor;
     bool translucent = false;
     float opacity = 0.28f;      // alpha when translucent
     bool highlighted = false;   // drawn brighter (an active zone)
@@ -121,7 +120,7 @@ private:
 struct TagOverlay {
     int id = 0;
     sdk::Pose3 pose;     // field frame, +X out of the face
-    float sizeM = 0.1651f;
+    float sizeM = static_cast<float>(sdk::kFrcAprilTagSizeM);
     bool seen = false;
 };
 
@@ -153,12 +152,16 @@ private:
     std::vector<char> changed_;
 };
 
+// The floor drawn when a project has no plugin field: an FRC-field-sized placeholder, not any season's field.
+inline constexpr float kGenericFieldLengthM = 16.46f;
+inline constexpr float kGenericFieldWidthM = 8.23f;
+
 // Static field parts (floor + visuals) and the XY centre of the playing area.
 struct FieldParts {
     std::vector<ScenePart> parts;
     sdk::Vec3 center;       // z = 0
-    float lengthM = 16.46f;
-    float widthM = 8.23f;
+    float lengthM = kGenericFieldLengthM;
+    float widthM = kGenericFieldWidthM;
 };
 FieldParts buildFieldParts(const sdk::FieldDescription* field);
 

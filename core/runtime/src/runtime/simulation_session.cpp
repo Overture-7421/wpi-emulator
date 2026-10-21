@@ -198,7 +198,7 @@ Status SimulationSession::build(SessionParts& parts) {
 
     // 3. slots and persisted mappings
     if (drivetrain_) hub_.declareSlots(slot_owner::kDrivetrain, drivetrain_->slotSpecs());
-    hub_.declareSlots(slot_owner::kRobot, config::robotSlotSpecs());
+    hub_.declareSlots(slot_owner::kRobot, robotSlotSpecs());
     for (const SensorConfig& s : config_.sensors)
         if (!s.id.empty()) hub_.declareSlots(s.id, {sensorSlotSpec(s.kind)});
     for (MechanismConfig& m : config_.mechanisms)
@@ -319,12 +319,13 @@ void SimulationSession::stepDrivetrain(double dt, double& currentA) {
         drive.rotorVelocityRps = radToRot(st.driveWheelOmegaRadPerSec) * w.driveGearRatio;
         for (int m = 0; m < std::clamp(w.driveMotorCount, 1, kMaxMotorsPerAxis); ++m)
             hub_.writeMotorFeedback({slot_owner::kDrivetrain, driveSlotName(w.name, m)}, drive);
-        if (w.steered || w.kind == WheelKind::Swerve) {
+        const SlotAddress steerSlot{slot_owner::kDrivetrain, steerSlotName(w.name)};
+        if (hub_.isDeclared(steerSlot)) {   // only what the drivetrain declared: tank and mecanum have no steer slots
             MotorFeedback steer;
             steer.rotorPositionRot = radToRot(st.steerAngleRad) * w.steerGearRatio;
             steer.rotorVelocityRps = radToRot(st.steerOmegaRadPerSec) * w.steerGearRatio;
-            hub_.writeMotorFeedback({slot_owner::kDrivetrain, w.name + ".steer"}, steer);
-            hub_.writeEncoder({slot_owner::kDrivetrain, w.name + ".steerEncoder"},
+            hub_.writeMotorFeedback(steerSlot, steer);
+            hub_.writeEncoder({slot_owner::kDrivetrain, steerEncoderSlotName(w.name)},
                               {radToRot(st.steerAngleRad), radToRot(st.steerOmegaRadPerSec)});
         }
     }
@@ -343,7 +344,7 @@ void SimulationSession::writeImu(double dt) {
     const Vec3 accelWorld = dt > 0.0 ? (v - lastVelocity_) / static_cast<float>(dt) : Vec3{};
     lastVelocity_ = v;
     imu.accelerationMps2 = toBody.rotate(accelWorld - config_.sim.physics.gravity);  // proper acceleration (reads +g at rest)
-    hub_.writeImu({slot_owner::kRobot, "imu"}, imu);
+    hub_.writeImu({slot_owner::kRobot, slot_owner::kRobotImuSlot}, imu);
 }
 
 void SimulationSession::updateBrownoutWarning() {

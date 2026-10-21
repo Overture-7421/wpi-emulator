@@ -12,7 +12,7 @@
 
 #include "wpiemu/sdk/devices/device_descriptor.h"
 #include "wpiemu/sdk/devices/signal.h"
-#include "wpiemu/sdk/ipc/messages.h"
+#include "wpiemu/sdk/ipc/session_messages.h"
 
 namespace wpiemu::halsim {
 

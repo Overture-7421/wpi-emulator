@@ -46,22 +46,9 @@ void PhotonBridge::configure(const sdk::VisionSetup& setup) {
         }
     }
 
-    cams_.clear();
-    cams_.resize(setup.cameras.size());
     rootInitialized_ = false;
-    for (std::size_t i = 0; i < setup.cameras.size(); ++i) {
-        const sdk::CameraConfig& c = setup.cameras[i].config;
-        if (c.kind != sdk::CameraKind::PhotonVision) continue;
-        Cam cam;
-        cam.config = c;
-        cam.root = "/photonvision/" + c.name;
-        cams_[i] = std::move(cam);
-    }
-}
-
-PhotonBridge::Cam* PhotonBridge::camera(std::uint32_t index) {
-    if (!enabled_ || index >= cams_.size() || !cams_[index]) return nullptr;
-    return &*cams_[index];
+    cams_.configure(setup, sdk::CameraKind::PhotonVision,
+                    [](const sdk::CameraConfig& c) { return "/photonvision/" + c.name; });
 }
 
 // ntcore may not be ready until the robot constructor ran; callers retry on the next tick.
@@ -86,8 +73,7 @@ bool PhotonBridge::ensureInitialized(Cam& cam, std::int64_t ntNow) {
     sink_.putBool(cam.root + "/driverMode", cam.driverMode, ntNow);
     sink_.putInt(cam.root + "/fpsLimit", cam.fpsLimit, ntNow);
     sink_.putDouble(cam.root + "/fps", c.fps, ntNow);
-    cam.heartbeat = 0;
-    cam.nextHeartbeatUs = 0;
+    cam.restartHeartbeat();
     sink_.putInt(cam.root + "/heartbeat", cam.heartbeat, ntNow);
     // The first (empty) result creates the rawBytes topic with its type string, which PhotonLib's version check reads
     // together with the message_uuid property (PacketPublisher sets it as a JSON string).
@@ -102,10 +88,8 @@ void PhotonBridge::poll(sdk::SimTimeUs simTimeUs) {
     if (!enabled_ || cams_.empty() || !sink_.available()) return;
     const std::int64_t ntNow = sink_.backend().nowUs();
     bool any = false;
-    for (std::optional<Cam>& slot : cams_) {
-        if (!slot) continue;
-        Cam& cam = *slot;
-        if (!ensureInitialized(cam, ntNow)) continue;
+    cams_.forEach([&](Cam& cam) {
+        if (!ensureInitialized(cam, ntNow)) return;
         any = true;
 
         if (const auto v = ntAsInt(sink_.read(cam.root + "/pipelineIndexRequest")); v && *v != cam.pipelineIndex) {
@@ -120,12 +104,8 @@ void PhotonBridge::poll(sdk::SimTimeUs simTimeUs) {
             cam.fpsLimit = *v;
             sink_.putInt(cam.root + "/fpsLimit", cam.fpsLimit, ntNow);
         }
-        if (simTimeUs >= cam.nextHeartbeatUs) {
-            ++cam.heartbeat;
-            cam.nextHeartbeatUs = simTimeUs + options_.heartbeatPeriodUs;
-            sink_.putInt(cam.root + "/heartbeat", cam.heartbeat, ntNow);
-        }
-    }
+        if (cam.beat(simTimeUs, options_.heartbeatPeriodUs)) sink_.putInt(cam.root + "/heartbeat", cam.heartbeat, ntNow);
+    });
     if (any) {
         if (const auto v = ntAsInt(sink_.read("/photonvision/ledModeRequest")); v && *v != ledMode_) {
             ledMode_ = *v;
@@ -138,29 +118,22 @@ void PhotonBridge::apply(std::span<const sdk::CameraFrame> frames, sdk::SimTimeU
     if (!enabled_ || frames.empty() || !sink_.available()) return;
     const std::int64_t ntNow = sink_.backend().nowUs();
     for (const sdk::CameraFrame& frame : frames) {
-        Cam* cam = camera(frame.cameraIndex);
+        Cam* cam = cams_.find(frame.cameraIndex);
         if (cam == nullptr || !ensureInitialized(*cam, ntNow)) continue;
         publishFrame(*cam, &frame, ntNow);
     }
 }
 
 void PhotonBridge::reset() {
-    for (std::optional<Cam>& slot : cams_) {
-        if (!slot) continue;
-        Cam& cam = *slot;
-        const bool wasInitialized = cam.initialized;
-        cam.initialized = false;
-        cam.nextHeartbeatUs = 0;
-        // Republish an empty result now when ntcore is up, otherwise on the first available tick.
-        if (wasInitialized && enabled_ && sink_.available()) ensureInitialized(cam, sink_.backend().nowUs());
-    }
+    // Republish an empty result now when ntcore is up, otherwise on the first available tick.
+    cams_.reset([this](Cam& cam) {
+        if (enabled_ && sink_.available()) ensureInitialized(cam, sink_.backend().nowUs());
+    });
 }
 
 void PhotonBridge::stop() noexcept {
     if (started_ && sink_.available()) {
-        for (const std::optional<Cam>& slot : cams_) {
-            if (slot) sink_.backend().unpublish(slot->root + "/");
-        }
+        cams_.forEach([this](const Cam& cam) { sink_.backend().unpublish(cam.root + "/"); });
     }
     cams_.clear();
     started_ = false;

@@ -1,6 +1,6 @@
 #pragma once
 
-// Reference state machines for the lock-step rules (messages.h, docs/ARCHITECTURE.md), shared by
+// Reference state machines for the lock-step rules (protocol_rules.h, docs/ARCHITECTURE.md), shared by
 // both ends so they cannot drift apart. Pure bookkeeping: no I/O, no clocks, no threads (call from
 // the thread that owns the channel's receive side). Wall-clock watchdog timing stays with the
 // caller, which tells these classes when it expired.

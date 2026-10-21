@@ -25,7 +25,7 @@ permissions:
 
 env:
   QT_VERSION: "6.8.3"
-  WPILIB_VERSION: "2026.2.1"   # must match WPIEMU_WPILIB_VERSION in halsim_ext/cmake/WpiEmuWpilib.cmake
+  WPILIB_VERSION: "2026.2.1"
   QT_QPA_PLATFORM: offscreen
   ALLOW_STUB_EXTENSION: ${{ inputs.allow_stub_extension && 'true' || 'false' }}
 

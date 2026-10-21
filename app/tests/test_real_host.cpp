@@ -6,15 +6,19 @@
 #include <QFile>
 #include <QSignalSpy>
 
+#include <optional>
+
 #include "common/real_runtime_host.h"
-#include "common/robot_basics.h"
+#include "contract/start_position_selection.h"
 #include "gui_support.h"
+#include "scoped_env.h"
 #include "shell/main_window.h"
 #include "shell/page_factory.h"
 #include "shell/shell_controller.h"
 
 using namespace wpiemu::app;
 using namespace wpiemu::app::testing;
+using wpiemu::test_support::ScopedEnv;
 namespace sdk = wpiemu::sdk;
 
 namespace {
@@ -38,7 +42,7 @@ struct RealFixture {
     TestProject project;
     QTemporaryDir extensionDir;
     QStringList logs;
-    QByteArray previousExtensionEnv = qgetenv("WPIEMU_EXTENSION");
+    ScopedEnv extensionEnv{"WPIEMU_EXTENSION", std::nullopt};
 
     explicit RealFixture(const char* script) {
         writeFile(project.path() + kWrapper, script);
@@ -48,23 +52,20 @@ struct RealFixture {
         env.addProject(project);
         const QString extension = extensionDir.path() + "/halsim_wpiemu_fake";
         writeFile(extension, "x");
-        qputenv("WPIEMU_EXTENSION", extension.toUtf8());
+        extensionEnv.set(extension.toStdString());
 
         REQUIRE(controller.openProject(project.path()) == OpenOutcome::NeedsSetup);
         ProjectSession& session = env.services->session();
-        const sdk::RobotConfig config = buildRobotConfig(defaultBasicsFor(sdk::drivetrain_kind::kSwerve), env.services->buildContext(session.inspection()));
-        REQUIRE(session.commit(config, session.prefs()).ok());
+        REQUIRE(session.commit(defaultRobotConfig(*env.services), session.prefs()).ok());
         QObject::connect(&env.services->runtime(), &IRuntimeHost::logLine, [this](const HostLogLine& l) { logs << l.text; });
     }
     ~RealFixture() {
         env.services->runtime().stop();
         waitFor([&] { return !env.services->runtime().status().active(); }, 15000);
-        if (previousExtensionEnv.isEmpty()) qunsetenv("WPIEMU_EXTENSION");
-        else qputenv("WPIEMU_EXTENSION", previousExtensionEnv);
     }
 
     IRuntimeHost& host() { return env.services->runtime(); }
-    bool waitProcess(HostProcessState state, int timeoutMs = 20000) {
+    bool waitProcess(sdk::ProcessState state, int timeoutMs = 20000) {
         return waitFor([&] { return host().status().process == state; }, timeoutMs);
     }
     bool logged(const QString& fragment) const {
@@ -79,20 +80,20 @@ struct RealFixture {
 TEST_CASE("the default runtime is the real host, not the 'no runtime' placeholder") {
     TestEnvironment env(true, true);
     CHECK(dynamic_cast<RealRuntimeHost*>(&env.services->runtime()) != nullptr);
-    CHECK(env.services->runtime().status().process == HostProcessState::Idle);
+    CHECK(env.services->runtime().status().process == sdk::ProcessState::Idle);
 }
 
 TEST_CASE("real host: pending Run intent belongs to the project across config edits and relaunches") {
     // No configured model: launch fails synchronously, without starting a robot or an IPC worker.
     RealRuntimeHost host({});
-    host.setProject(QStringLiteral("A"), {}, nullptr);
+    host.setProject({QStringLiteral("A"), {}});
     host.startSimulation();
     REQUIRE(host.simulationStartPending());
     host.restart();
     CHECK(host.simulationStartPending());
-    host.setProject(QStringLiteral("A"), std::make_shared<const sdk::RobotConfig>(), nullptr);
+    host.setProject({QStringLiteral("A"), std::make_shared<const sdk::RobotConfig>()});
     CHECK(host.simulationStartPending());
-    host.setProject(QStringLiteral("B"), {}, nullptr);
+    host.setProject({QStringLiteral("B"), {}});
     CHECK_FALSE(host.simulationStartPending());
     host.startSimulation();
     CHECK(host.simulationStartPending());
@@ -108,18 +109,18 @@ TEST_CASE("real host: the selected start position belongs to the project and its
     };
     RealRuntimeHost host({});
     QSignalSpy changed(&host, &IRuntimeHost::startPositionChanged);
-    host.setProject(QStringLiteral("A"), withPositions({"a", "b"}), nullptr);
+    host.setProject({QStringLiteral("A"), withPositions({"a", "b"})});
     host.setStartPosition(QStringLiteral("a"));
     CHECK(host.startPosition() == QStringLiteral("a"));
     host.setStartPosition(QStringLiteral("missing"));
     CHECK(host.startPosition().isEmpty());
     host.setStartPosition(QStringLiteral("a"));
-    host.setProject(QStringLiteral("A"), withPositions({"a"}), nullptr);   // an edit that keeps it
+    host.setProject({QStringLiteral("A"), withPositions({"a"})});   // an edit that keeps it
     CHECK(host.startPosition() == QStringLiteral("a"));
-    host.setProject(QStringLiteral("A"), withPositions({"b"}), nullptr);   // deleted
+    host.setProject({QStringLiteral("A"), withPositions({"b"})});   // deleted
     CHECK(host.startPosition().isEmpty());
     host.setStartPosition(QStringLiteral("b"));
-    host.setProject(QStringLiteral("B"), withPositions({"b"}), nullptr);   // another project
+    host.setProject({QStringLiteral("B"), withPositions({"b"})});   // another project
     CHECK(host.startPosition().isEmpty());
     CHECK(changed.count() == 6);
 }
@@ -140,6 +141,40 @@ TEST_CASE("Run intent: readiness consumes only the current project's deliberate 
     CHECK(intent.takeWhenReady(true));
 }
 
+TEST_CASE("start position selection: accepts only known ids and is dropped with its project or entry") {
+    sdk::RobotConfig config;
+    config.startPositions.push_back({"a", "A", sdk::Alliance::Red, {1.f, 2.f, 0.f}});
+    config.startPositions.push_back({"b", "B", sdk::Alliance::Blue, {3.f, 4.f, 0.f}});
+    sdk::RobotConfig edited;
+    edited.startPositions.push_back({"b", "B", sdk::Alliance::Blue, {3.f, 4.f, 0.f}});
+
+    StartPositionSelection selection;
+    CHECK(selection.find(&config) == nullptr);
+    CHECK_FALSE(selection.reconcile(&config, true));   // nothing selected, nothing to drop
+    CHECK_FALSE(selection.select(&config, QStringLiteral("missing")));
+    CHECK_FALSE(selection.select(nullptr, QStringLiteral("a")));
+
+    CHECK(selection.select(&config, QStringLiteral("a")));
+    CHECK_FALSE(selection.select(&config, QStringLiteral("a")));   // unchanged
+    REQUIRE(selection.find(&config) != nullptr);
+    CHECK(selection.find(&config)->pose.xM == 1.f);
+    CHECK(selection.find(nullptr) == nullptr);
+    CHECK(selection.find(&edited) == nullptr);
+
+    CHECK_FALSE(selection.reconcile(&config, true));   // an edit that keeps the entry
+    CHECK(selection.id() == QStringLiteral("a"));
+    CHECK(selection.reconcile(&edited, true));         // the entry vanished
+    CHECK(selection.id().isEmpty());
+
+    CHECK(selection.select(&config, QStringLiteral("b")));
+    CHECK(selection.reconcile(&config, false));        // another project, even if the id exists there
+    CHECK(selection.id().isEmpty());
+
+    CHECK(selection.select(&config, QStringLiteral("b")));
+    CHECK(selection.select(&config, QStringLiteral("missing")));   // an unknown id clears the selection
+    CHECK(selection.id().isEmpty());
+}
+
 TEST_CASE("real host: a project whose build fails is reported as FailedToStart with the console tail") {
     RealFixture f(kFailScript);
     REQUIRE(dynamic_cast<RealRuntimeHost*>(&f.host()) != nullptr);
@@ -148,7 +183,7 @@ TEST_CASE("real host: a project whose build fails is reported as FailedToStart w
     CHECK(f.host().scene().field != nullptr);   // the field the plugin builds, for the viewport
 
     f.controller.launchRobot();
-    REQUIRE(f.waitProcess(HostProcessState::FailedToStart));
+    REQUIRE(f.waitProcess(sdk::ProcessState::FailedToStart));
     const HostStatus s = f.host().status();
     CHECK(s.exitCode == 3);
     CHECK(s.detail.contains("BUILD FAILED"));
@@ -157,7 +192,7 @@ TEST_CASE("real host: a project whose build fails is reported as FailedToStart w
     CHECK(f.logged("fake gradle: BUILD FAILED"));
     // the user can try again after fixing the project
     f.controller.rescanDevices();
-    REQUIRE(f.waitProcess(HostProcessState::FailedToStart));
+    REQUIRE(f.waitProcess(sdk::ProcessState::FailedToStart));
 }
 
 TEST_CASE("real host: the JDK folder chosen in Settings is what Gradle is launched with") {
@@ -167,14 +202,14 @@ TEST_CASE("real host: the JDK folder chosen in Settings is what Gradle is launch
     f.env.services->settings().update(chosen);
 
     f.controller.launchRobot();
-    REQUIRE(f.waitProcess(HostProcessState::FailedToStart));
+    REQUIRE(f.waitProcess(sdk::ProcessState::FailedToStart));
     CHECK(f.logged("gradle JAVA_HOME=/chosen/jdk"));
 }
 
 TEST_CASE("real host: Stop ends a starting robot and the process tree, restart starts a fresh run") {
     RealFixture f(kWaitScript);
     f.host().launch();
-    CHECK(f.host().status().process == HostProcessState::Starting);
+    CHECK(f.host().status().process == sdk::ProcessState::Starting);
     CHECK(f.host().status().active());
     CHECK(f.controller.runtimeLabel() == QStringLiteral("Starting robot…"));
     CHECK(f.host().latestSnapshot() != nullptr);   // an idle model snapshot is available right away
@@ -182,19 +217,19 @@ TEST_CASE("real host: Stop ends a starting robot and the process tree, restart s
     QSignalSpy spy(&f.host(), &IRuntimeHost::statusChanged);
     REQUIRE(waitFor([&] { return f.logged("fake gradle started"); }));   // the shell has to start before Stop can end its output
     f.host().stop();
-    CHECK(f.host().status().process == HostProcessState::Stopping);
-    REQUIRE(f.waitProcess(HostProcessState::Exited));
+    CHECK(f.host().status().process == sdk::ProcessState::Stopping);
+    REQUIRE(f.waitProcess(sdk::ProcessState::Exited));
     CHECK(spy.count() >= 1);
     CHECK(f.logged("fake gradle started"));
 
     f.host().launch();   // after a stop a new run starts cleanly
-    CHECK(f.host().status().process == HostProcessState::Starting);
+    CHECK(f.host().status().process == sdk::ProcessState::Starting);
     f.host().launch();   // launching twice keeps the one instance
-    CHECK(f.host().status().process == HostProcessState::Starting);
+    CHECK(f.host().status().process == sdk::ProcessState::Starting);
     f.host().restart();
-    CHECK(f.host().status().process == HostProcessState::Starting);
+    CHECK(f.host().status().process == sdk::ProcessState::Starting);
     f.host().stop();
-    REQUIRE(f.waitProcess(HostProcessState::Exited));
+    REQUIRE(f.waitProcess(sdk::ProcessState::Exited));
 }
 
 TEST_CASE("real host: the window shows a failed start and closing the project stops the robot") {
@@ -205,7 +240,7 @@ TEST_CASE("real host: the window shows a failed start and closing the project st
     CHECK(f.host().status().active());
     f.controller.closeProject();
     REQUIRE(waitFor([&] { return !f.host().status().active(); }));
-    CHECK(f.host().status().process == HostProcessState::Idle);   // no project: nothing to report
+    CHECK(f.host().status().process == sdk::ProcessState::Idle);   // no project: nothing to report
     CHECK(window.currentPage() == MainWindow::PageId::Welcome);
 }
 
@@ -237,7 +272,7 @@ TEST_CASE("real host e2e (opt-in): the shell discovers the devices of a real rob
         MESSAGE("skipped: no robot project at " << original.toStdString());
         return;
     }
-    qunsetenv("WPIEMU_EXTENSION");   // exercise the real lookup (install layout, then the build-tree fallback)
+    const ScopedEnv noExtensionOverride("WPIEMU_EXTENSION", std::nullopt);   // exercise the real lookup (install layout, then the build-tree fallback)
 
     GuiEnvironment env(true, true);
     ShellController controller(*env.services);
@@ -247,8 +282,7 @@ TEST_CASE("real host e2e (opt-in): the shell discovers the devices of a real rob
     env.probe->files.insert(QDir::cleanPath(project + "/gradlew"));
     REQUIRE(controller.openProject(project) == OpenOutcome::NeedsSetup);
     ProjectSession& session = env.services->session();
-    const sdk::RobotConfig config = buildRobotConfig(defaultBasicsFor(sdk::drivetrain_kind::kSwerve), env.services->buildContext(session.inspection()));
-    REQUIRE(session.commit(config, session.prefs()).ok());
+    REQUIRE(session.commit(defaultRobotConfig(*env.services), session.prefs()).ok());
     IRuntimeHost& host = env.services->runtime();
     int discovered = 0;
     QObject::connect(&host, &IRuntimeHost::snapshotPublished, [&] {
@@ -258,11 +292,11 @@ TEST_CASE("real host e2e (opt-in): the shell discovers the devices of a real rob
     controller.launchRobot();
     REQUIRE_MESSAGE(waitFor([&] { return discovered >= 16 || !host.status().active(); }, 240000), host.status().detail.toStdString());
     CHECK(discovered >= 16);
-    CHECK(host.status().process == HostProcessState::Running);
-    CHECK(host.status().link == HostLinkState::Connected);
+    CHECK(host.status().process == sdk::ProcessState::Running);
+    CHECK(host.status().link == sdk::LinkState::Connected);
     host.stop();
     REQUIRE(waitFor([&] { return !host.status().active(); }, 30000));
-    CHECK(host.status().process == HostProcessState::Exited);
+    CHECK(host.status().process == sdk::ProcessState::Exited);
 
     sdk::proto::DsState ds;
     ds.enabled = true;
@@ -281,8 +315,8 @@ TEST_CASE("real host e2e (opt-in): the shell discovers the devices of a real rob
     CHECK(snap->robotConnected());
     CHECK(snap->simTimeUs() > 3'000'000);
     CHECK(snap->driverStation().enabled);
-    CHECK(host.status().link == HostLinkState::Connected);
+    CHECK(host.status().link == sdk::LinkState::Connected);
     host.stop();
     REQUIRE(waitFor([&] { return !host.status().active(); }, 30000));
-    CHECK(host.status().process == HostProcessState::Exited);
+    CHECK(host.status().process == sdk::ProcessState::Exited);
 }

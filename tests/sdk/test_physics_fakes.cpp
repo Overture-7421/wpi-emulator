@@ -170,7 +170,7 @@ private:
 
 TEST_CASE("DrivetrainRegistry builds an IDrivetrain from injected dependencies") {
     DrivetrainRegistry registry;
-    CHECK(registry.registerDrivetrain(drivetrain_kind::kTank, {"Tank", ""}, [](const DrivetrainBuildArgs& a) {
+    CHECK(registry.registerDrivetrain(drivetrain_kind::kTank, {"Tank", "", nullptr}, [](const DrivetrainBuildArgs& a) {
                      return std::make_unique<StubDrivetrain>(a);
                  }).ok());
 

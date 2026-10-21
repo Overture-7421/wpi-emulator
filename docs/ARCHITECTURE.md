@@ -25,6 +25,7 @@ and the dependencies listed below; tests may combine modules to exercise their c
 | Each `plugins/<name>` | SDK only | One game's field, entities, rules and metadata |
 | Plugin aggregator (`plugins/`) | SDK and game plugins | Built-in plugin registration |
 | `app` | SDK, core, IPC, plugin aggregator, Qt | Desktop composition, host, editor and run view |
+| `app/contract`, `app/ui`, `app/editor`, `app/runview` | SDK and Qt only (run view also the host contract; both page libraries also `app/ui`) | Host seam, shared Qt support (3D scene, text, small widgets) and the page libraries |
 
 There is no Qt in SDK, core, IPC, bridges or plugins. Box3D and robot-process backend headers never
 leak into the SDK. The physics adapter is separately built and linked by core; public physics
@@ -38,7 +39,8 @@ The only built-in aggregation seams are:
   the extension uses `registerBuiltinBridges` and `registerBuiltinVisionBridges`, never an individual
   bridge module. Bridges do not depend on one another.
 
-[The boundary checker](../tools/check_boundaries.py) checks includes and CMake links/target ownership.
+[The boundary checker](../tools/check_boundaries.py) checks includes, CMake links/target ownership and that each
+plugin and bridge directory is added, linked and registered through its aggregator and each test source is built.
 Dependency changes need an explicit contract, not an exception that bypasses an aggregator.
 Header conventions belong in [Contributing](CONTRIBUTING.md#coding-conventions); rationale lives in the
 [decision index](decisions/README.md).
@@ -66,6 +68,8 @@ Ownership is deliberately narrow:
   During lock-step, bridge operations happen between robot steps while the robot is quiescent.
 - **Transport workers:** move messages between processes and queues; they do not mutate the world.
   The extension also has an independent watchdog thread that can recover without a bridge lock.
+  Hand-off queues and joinable workers are the SDK's [BlockingQueue](../sdk/include/wpiemu/sdk/core/blocking_queue.h)
+  and [StoppableThread](../sdk/include/wpiemu/sdk/core/stoppable_thread.h); overflow and drop policy stays with the owner.
 
 The [runtime contract](reference/runtime.md) describes construction and configuration ownership;
 the [extension/IPC contract](reference/extension-ipc.md) describes robot startup and worker lifetimes.

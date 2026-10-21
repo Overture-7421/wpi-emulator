@@ -12,7 +12,20 @@
 
 namespace wpiemu::bridges::hal::testing {
 
-class FakePwmHal final : public IPwmHal {
+// Out-of-range indices read as a neutral value and ignore writes, like the guards of the real binding.
+class ArrayAccess {
+protected:
+    template <class T, std::size_t N>
+    static T at(const std::array<T, N>& values, int index) {
+        return index >= 0 && static_cast<std::size_t>(index) < N ? values[static_cast<std::size_t>(index)] : T{};
+    }
+    template <class T, std::size_t N>
+    static void set(std::array<T, N>& values, int index, T value) {
+        if (index >= 0 && static_cast<std::size_t>(index) < N) values[static_cast<std::size_t>(index)] = value;
+    }
+};
+
+class FakePwmHal final : public IPwmHal, private ArrayAccess {
 public:
     int channelCount() const override { return static_cast<int>(init.size()); }
     bool initialized(int channel) const override { return at(init, channel); }
@@ -24,15 +37,9 @@ public:
     std::array<double, 20> spd{};
     std::array<double, 20> pos{};
     std::array<int, 20> pulse{};
-
-private:
-    template <class T, std::size_t N>
-    static T at(const std::array<T, N>& values, int index) {
-        return index >= 0 && static_cast<std::size_t>(index) < N ? values[static_cast<std::size_t>(index)] : T{};
-    }
 };
 
-class FakeDioHal final : public IDioHal {
+class FakeDioHal final : public IDioHal, private ArrayAccess {
 public:
     int channelCount() const override { return static_cast<int>(init.size()); }
     bool initialized(int channel) const override { return at(init, channel); }
@@ -47,19 +54,9 @@ public:
         return values;
     }();
     std::array<bool, 26> val{};
-
-private:
-    template <std::size_t N>
-    static bool at(const std::array<bool, N>& values, int index) {
-        return index >= 0 && static_cast<std::size_t>(index) < N ? values[static_cast<std::size_t>(index)] : false;
-    }
-    template <std::size_t N>
-    static void set(std::array<bool, N>& values, int index, bool value) {
-        if (index >= 0 && static_cast<std::size_t>(index) < N) values[static_cast<std::size_t>(index)] = value;
-    }
 };
 
-class FakeAnalogInHal final : public IAnalogInHal {
+class FakeAnalogInHal final : public IAnalogInHal, private ArrayAccess {
 public:
     int channelCount() const override { return static_cast<int>(init.size()); }
     bool initialized(int channel) const override { return at(init, channel); }
@@ -68,19 +65,9 @@ public:
 
     std::array<bool, 8> init{};
     std::array<double, 8> volts{};
-
-private:
-    template <class T, std::size_t N>
-    static T at(const std::array<T, N>& values, int index) {
-        return index >= 0 && static_cast<std::size_t>(index) < N ? values[static_cast<std::size_t>(index)] : T{};
-    }
-    template <class T, std::size_t N>
-    static void set(std::array<T, N>& values, int index, T value) {
-        if (index >= 0 && static_cast<std::size_t>(index) < N) values[static_cast<std::size_t>(index)] = value;
-    }
 };
 
-class FakeAnalogOutHal final : public IAnalogOutHal {
+class FakeAnalogOutHal final : public IAnalogOutHal, private ArrayAccess {
 public:
     int channelCount() const override { return static_cast<int>(init.size()); }
     bool initialized(int channel) const override { return at(init, channel); }
@@ -88,15 +75,9 @@ public:
 
     std::array<bool, 8> init{};
     std::array<double, 8> volts{};
-
-private:
-    template <class T, std::size_t N>
-    static T at(const std::array<T, N>& values, int index) {
-        return index >= 0 && static_cast<std::size_t>(index) < N ? values[static_cast<std::size_t>(index)] : T{};
-    }
 };
 
-class FakeEncoderHal final : public IEncoderHal {
+class FakeEncoderHal final : public IEncoderHal, private ArrayAccess {
 public:
     int channelCount() const override { return static_cast<int>(init.size()); }
     bool initialized(int index) const override { return at(init, index); }
@@ -117,19 +98,9 @@ public:
     std::array<int, 8> cnt{};
     std::array<double, 8> per{};
     std::array<bool, 8> dir{};
-
-private:
-    template <class T, std::size_t N>
-    static T at(const std::array<T, N>& values, int index) {
-        return index >= 0 && static_cast<std::size_t>(index) < N ? values[static_cast<std::size_t>(index)] : T{};
-    }
-    template <class T, std::size_t N>
-    static void set(std::array<T, N>& values, int index, T value) {
-        if (index >= 0 && static_cast<std::size_t>(index) < N) values[static_cast<std::size_t>(index)] = value;
-    }
 };
 
-class FakeDutyCycleHal final : public IDutyCycleHal {
+class FakeDutyCycleHal final : public IDutyCycleHal, private ArrayAccess {
 public:
     int channelCount() const override { return static_cast<int>(init.size()); }
     bool initialized(int index) const override { return at(init, index); }
@@ -143,19 +114,9 @@ public:
     std::array<int, 8> chan{};
     std::array<double, 8> out{};
     std::array<int, 8> freq{};
-
-private:
-    template <class T, std::size_t N>
-    static T at(const std::array<T, N>& values, int index) {
-        return index >= 0 && static_cast<std::size_t>(index) < N ? values[static_cast<std::size_t>(index)] : T{};
-    }
-    template <class T, std::size_t N>
-    static void set(std::array<T, N>& values, int index, T value) {
-        if (index >= 0 && static_cast<std::size_t>(index) < N) values[static_cast<std::size_t>(index)] = value;
-    }
 };
 
-class FakeRelayHal final : public IRelayHal {
+class FakeRelayHal final : public IRelayHal, private ArrayAccess {
 public:
     int headerCount() const override { return static_cast<int>(fwdInit.size()); }
     bool forwardInitialized(int header) const override { return at(fwdInit, header); }
@@ -167,15 +128,9 @@ public:
     std::array<bool, 8> revInit{};
     std::array<bool, 8> fwd{};
     std::array<bool, 8> rev{};
-
-private:
-    template <std::size_t N>
-    static bool at(const std::array<bool, N>& values, int index) {
-        return index >= 0 && static_cast<std::size_t>(index) < N ? values[static_cast<std::size_t>(index)] : false;
-    }
 };
 
-class FakePneumaticsHal final : public IPneumaticsHal {
+class FakePneumaticsHal final : public IPneumaticsHal, private ArrayAccess {
 public:
     explicit FakePneumaticsHal(int channels) : channels_(channels) {}
 
@@ -206,19 +161,11 @@ private:
     bool valid(int module, int channel) const {
         return module >= 0 && static_cast<std::size_t>(module) < init.size() && channel >= 0 && channel < channels_;
     }
-    template <class T, std::size_t N>
-    static T at(const std::array<T, N>& values, int index) {
-        return index >= 0 && static_cast<std::size_t>(index) < N ? values[static_cast<std::size_t>(index)] : T{};
-    }
-    template <class T, std::size_t N>
-    static void set(std::array<T, N>& values, int index, T value) {
-        if (index >= 0 && static_cast<std::size_t>(index) < N) values[static_cast<std::size_t>(index)] = value;
-    }
 
     int channels_;
 };
 
-class FakePowerDistributionHal final : public IPowerDistributionHal {
+class FakePowerDistributionHal final : public IPowerDistributionHal, private ArrayAccess {
 public:
     int moduleCount() const override { return static_cast<int>(init.size()); }
     int channelCount() const override { return 24; }
@@ -243,17 +190,9 @@ private:
     bool valid(int module, int channel) const {
         return module >= 0 && static_cast<std::size_t>(module) < init.size() && channel >= 0 && channel < channelCount();
     }
-    template <class T, std::size_t N>
-    static T at(const std::array<T, N>& values, int index) {
-        return index >= 0 && static_cast<std::size_t>(index) < N ? values[static_cast<std::size_t>(index)] : T{};
-    }
-    template <class T, std::size_t N>
-    static void set(std::array<T, N>& values, int index, T value) {
-        if (index >= 0 && static_cast<std::size_t>(index) < N) values[static_cast<std::size_t>(index)] = value;
-    }
 };
 
-class FakeAddressableLedHal final : public IAddressableLedHal {
+class FakeAddressableLedHal final : public IAddressableLedHal, private ArrayAccess {
 public:
     int channelCount() const override { return static_cast<int>(init.size()); }
     bool initialized(int index) const override { return at(init, index); }
@@ -270,12 +209,6 @@ public:
     std::array<int, 8> len{};
     std::array<bool, 8> run{};
     std::array<std::vector<LedPixel>, 8> pixels{};
-
-private:
-    template <class T, std::size_t N>
-    static T at(const std::array<T, N>& values, int index) {
-        return index >= 0 && static_cast<std::size_t>(index) < N ? values[static_cast<std::size_t>(index)] : T{};
-    }
 };
 
 class FakeRoboRioHal final : public IRoboRioHal {

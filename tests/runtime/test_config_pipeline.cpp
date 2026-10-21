@@ -56,14 +56,14 @@ TEST_CASE("validator: start positions need unique ids and finite poses") {
     Registries reg;
     RobotConfig c = sampleConfig();
     c.startPositions = {{"a", "A", Alliance::Blue, {1.f, 2.f, 0.f}}};
-    CHECK_FALSE(hasIssue(validate(c, reg), issue_code::kStartPositionIdDuplicate));
+    CHECK_FALSE(hasIssue(validate(c, reg), validation_code::kStartPositionIdDuplicate));
     c.startPositions.push_back({"a", "A2", Alliance::Red, {1.f, 2.f, 0.f}});
     c.startPositions.push_back({"", "no id", Alliance::Red, {1.f, 2.f, 0.f}});
     c.startPositions.push_back({"nan", "nan", Alliance::Red, {std::numeric_limits<float>::infinity(), 2.f, 0.f}});
     const auto issues = validate(c, reg);
-    CHECK(hasIssue(issues, issue_code::kStartPositionIdDuplicate));
-    CHECK(hasIssue(issues, issue_code::kStartPositionIdInvalid));
-    CHECK(hasIssue(issues, issue_code::kStartPositionInvalid));
+    CHECK(hasIssue(issues, validation_code::kStartPositionIdDuplicate));
+    CHECK(hasIssue(issues, validation_code::kStartPositionIdInvalid));
+    CHECK(hasIssue(issues, validation_code::kStartPositionInvalid));
 }
 
 TEST_CASE("validator: tire and motor parameters must be finite and physically meaningful") {
@@ -226,6 +226,29 @@ TEST_CASE("validator: slots - unknown, owner mismatch, required, duplicates") {
     CHECK(hasIssue(issues, issue_code::kDeviceDuplicateMapping));
 }
 
+TEST_CASE("validator: drivetrain slots come from the registered kind, so a tank declares no steer slots") {
+    Registries reg;
+    REQUIRE(reg.drivetrains
+                .registerDrivetrain("tank",
+                                    {"Tank", "", [](const DrivetrainSpec& spec) { return tractionSlotSpecs(spec, false); }},
+                                    [](const DrivetrainBuildArgs& a) { return std::make_unique<wpiemu::test_runtime::TestDrivetrain>(a); })
+                .ok());
+    RobotConfig c = sampleConfig();
+    c.drivetrain.spec.wheels[0].steered = true;
+    c.drivetrain.mappings.clear();
+    const std::string wheelName = c.drivetrain.spec.wheels[0].name;
+    c.drivetrain.mappings.push_back({{slot_owner::kDrivetrain, steerSlotName(wheelName)}, DeviceKey{"hal", "pwm", 5, "rio", -1}});
+
+    c.drivetrain.spec.kind = "tank";   // steered=true is ignored: there is no such slot
+    CHECK(hasIssue(validate(c, reg), issue_code::kSlotUnknown, Severity::Error));
+    c.drivetrain.spec.kind = "test";   // a kind without a callback follows the traction convention, which steers flagged wheels
+    CHECK_FALSE(hasIssue(validate(c, reg), issue_code::kSlotUnknown));
+    c.drivetrain.spec.kind = "hover";  // an unknown kind is reported once and its mappings still validate by convention
+    const auto issues = validate(c, reg);
+    CHECK(hasIssue(issues, issue_code::kDrivetrainKindUnknown));
+    CHECK_FALSE(hasIssue(issues, issue_code::kSlotUnknown));
+}
+
 TEST_CASE("validator: motor counts, inactive motor slots and the reversed flag") {
     Registries reg;
     RobotConfig c = sampleConfig();
@@ -345,14 +368,14 @@ TEST_CASE("validator: zone ids, attachments, kinds and geometry") {
             return i.code == code && i.severity == Severity::Error && i.path.find(pathPart) != std::string::npos;
         });
     };
-    CHECK(count(issue_code::kZoneIdInvalid, "zones[0].id") == 1);
-    CHECK(count(issue_code::kZoneIdDuplicate, "zones[2].id") == 1);
-    CHECK(count(issue_code::kZoneIdDuplicate, "zones[3].id") == 1);
+    CHECK(count(validation_code::kZoneIdInvalid, "zones[0].id") == 1);
+    CHECK(count(validation_code::kZoneIdDuplicate, "zones[2].id") == 1);
+    CHECK(count(validation_code::kZoneIdDuplicate, "zones[3].id") == 1);
     CHECK(count(validation_code::kAttachmentParentMissing, "zones[4].attachment") == 1);
     CHECK(count(validation_code::kAttachmentLinkMissing, "zones[5].attachment") == 1);
-    CHECK(count(issue_code::kZoneKindNotOwned, "zones[6].kind") == 1);
-    CHECK(count(issue_code::kZoneGeometryInvalid, "zones[7].sizeM") == 1);
-    CHECK(count(issue_code::kZoneGeometryInvalid, "zones[8].local") == 1);
+    CHECK(count(validation_code::kZoneKindNotOwned, "zones[6].kind") == 1);
+    CHECK(count(validation_code::kZoneGeometryInvalid, "zones[7].sizeM") == 1);
+    CHECK(count(validation_code::kZoneGeometryInvalid, "zones[8].local") == 1);
 }
 
 namespace {
@@ -426,19 +449,19 @@ TEST_CASE("validator: camera ids, names, attachments, geometry and optics") {
             return i.code == code && i.severity == Severity::Error && i.path == path;
         });
     };
-    CHECK(count(issue_code::kCameraIdInvalid, "cameras[0].id") == 1);
-    CHECK(count(issue_code::kCameraIdDuplicate, "cameras[2].id") == 1);
-    CHECK(count(issue_code::kCameraIdDuplicate, "cameras[3].id") == 1);
-    CHECK(count(issue_code::kCameraIdDuplicate, "cameras[4].id") == 1);
-    CHECK(count(issue_code::kZoneIdDuplicate, "zones[0].id") == 1);  // flagged from the zone side too
-    CHECK(count(issue_code::kCameraNameDuplicate, "cameras[6].name") == 1);
-    CHECK(count(issue_code::kCameraNameDuplicate, "cameras[7].name") == 0);
+    CHECK(count(validation_code::kCameraIdInvalid, "cameras[0].id") == 1);
+    CHECK(count(validation_code::kCameraIdDuplicate, "cameras[2].id") == 1);
+    CHECK(count(validation_code::kCameraIdDuplicate, "cameras[3].id") == 1);
+    CHECK(count(validation_code::kCameraIdDuplicate, "cameras[4].id") == 1);
+    CHECK(count(validation_code::kZoneIdDuplicate, "zones[0].id") == 1);  // flagged from the zone side too
+    CHECK(count(validation_code::kCameraNameDuplicate, "cameras[6].name") == 1);
+    CHECK(count(validation_code::kCameraNameDuplicate, "cameras[7].name") == 0);
     CHECK(count(validation_code::kAttachmentParentMissing, "cameras[8].attachment") == 1);
     CHECK(count(validation_code::kAttachmentLinkMissing, "cameras[9].attachment") == 1);
-    CHECK(count(issue_code::kCameraGeometryInvalid, "cameras[10].pose") == 1);
+    CHECK(count(validation_code::kCameraGeometryInvalid, "cameras[10].pose") == 1);
     for (const char* field : {"hFovDeg", "vFovDeg", "maxRangeM", "maxIncidenceDeg", "fps", "latencyMs", "widthPx", "heightPx",
                               "positionNoiseM", "yawNoiseDeg"})
-        CHECK_MESSAGE(count(issue_code::kCameraOpticsInvalid, std::string("cameras[11].") + field) == 1, field);
+        CHECK_MESSAGE(count(validation_code::kCameraOpticsInvalid, std::string("cameras[11].") + field) == 1, field);
     for (const Issue& i : issues) CHECK_MESSAGE(i.path.find("cameras[12]") == std::string::npos, i.path);
 }
 
@@ -447,7 +470,7 @@ TEST_CASE("validator: a zone that shares a camera id is rejected") {
     RobotConfig c = sampleConfig();
     c.cameras.push_back(camera("shared"));
     c.zones.push_back(zone("shared"));
-    CHECK(hasIssue(validate(c, reg), issue_code::kZoneIdDuplicate));
+    CHECK(hasIssue(validate(c, reg), validation_code::kZoneIdDuplicate));
 }
 
 TEST_CASE("validator: zones need a game plugin and are checked against its kind schema") {
@@ -455,16 +478,16 @@ TEST_CASE("validator: zones need a game plugin and are checked against its kind 
     c.zones.push_back(zone("pickup"));
     {
         Registries none(false);
-        CHECK(hasIssue(validate(c, none), issue_code::kZoneKindNotOwned));
+        CHECK(hasIssue(validate(c, none), validation_code::kZoneKindNotOwned));
     }
     Registries reg;
     c.zones[0].properties["capacity"] = 1000;  // schema max 100
-    CHECK(hasIssue(validate(c, reg), issue_code::kZonePropertyInvalid));
+    CHECK(hasIssue(validate(c, reg), validation_code::kZonePropertyInvalid));
     c.zones[0].properties["capacity"] = 5;
     CHECK_FALSE(ConfigValidator::hasErrors(validate(c, reg)));
     // owned prefix but not declared: warning only, properties cannot be checked
     c.zones[0].kind = "fake_game.mystery";
-    CHECK(hasIssue(validate(c, reg), issue_code::kZoneKindUnknown, Severity::Warning));
+    CHECK(hasIssue(validate(c, reg), validation_code::kZoneKindUnknown, Severity::Warning));
     CHECK_FALSE(ConfigValidator::hasErrors(validate(c, reg)));
 }
 
@@ -476,9 +499,9 @@ TEST_CASE("validator: zone activation conditions") {
     z.activation.conditions.push_back({"intake", "", ConditionOp::Above, 1.0, 0.1, true});
     c.zones.push_back(z);
     const auto issues = validate(c, reg);
-    CHECK(hasIssue(issues, issue_code::kZoneConditionMechanismUnknown, Severity::Warning));
-    CHECK(hasIssue(issues, issue_code::kZoneConditionInvalid));
-    CHECK(std::count_if(issues.begin(), issues.end(), [](const Issue& i) { return i.code == issue_code::kZoneConditionMechanismUnknown; }) == 1);
+    CHECK(hasIssue(issues, validation_code::kZoneConditionMechanismUnknown, Severity::Warning));
+    CHECK(hasIssue(issues, validation_code::kZoneConditionInvalid));
+    CHECK(std::count_if(issues.begin(), issues.end(), [](const Issue& i) { return i.code == validation_code::kZoneConditionMechanismUnknown; }) == 1);
 }
 
 TEST_CASE("validator: schema version must match") {

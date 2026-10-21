@@ -20,6 +20,18 @@ void run(IPhysicsWorld& w, int steps) {
     for (int i = 0; i < steps; ++i) w.step(kDt);
 }
 
+// A dynamic body that never sleeps, carrying a 0.4 m box; the caller sets its mass properties.
+BodyId addAwakeBox(IPhysicsWorld& w) {
+    BodyDesc bd;
+    bd.type = BodyType::Dynamic;
+    bd.allowSleep = false;
+    const BodyId b = w.createBody(bd);
+    ShapeDesc s;
+    s.geometry = BoxShape{{0.2f, 0.2f, 0.2f}};
+    w.addShape(b, s);
+    return b;
+}
+
 }  // namespace
 
 TEST_CASE("box3d world: creation, version and bad configuration") {
@@ -304,13 +316,7 @@ TEST_CASE("box3d world: forces last one step, point forces create torque, impuls
 
 TEST_CASE("box3d world: explicit mass properties survive adding shapes later") {
     auto w = makeWorld(zeroG());
-    BodyDesc bd;
-    bd.type = BodyType::Dynamic;
-    bd.allowSleep = false;
-    const BodyId b = w->createBody(bd);
-    ShapeDesc s;
-    s.geometry = BoxShape{{0.2f, 0.2f, 0.2f}};
-    w->addShape(b, s);
+    const BodyId b = addAwakeBox(*w);
     w->setMassProperties(b, MassProperties{10.f, {}, {1.f, 1.f, 1.f}});
     ShapeDesc pad;
     pad.geometry = SphereShape{0.1f};
@@ -329,13 +335,7 @@ TEST_CASE("box3d world: explicit mass properties survive adding shapes later") {
 
 TEST_CASE("box3d world: a mass centre offset makes a centre force produce a turning moment about the origin pose") {
     auto w = makeWorld(zeroG());
-    BodyDesc bd;
-    bd.type = BodyType::Dynamic;
-    bd.allowSleep = false;
-    const BodyId b = w->createBody(bd);
-    ShapeDesc s;
-    s.geometry = BoxShape{{0.2f, 0.2f, 0.2f}};
-    w->addShape(b, s);
+    const BodyId b = addAwakeBox(*w);
     w->setMassProperties(b, MassProperties{10.f, {0.5f, 0.f, 0.f}, {1.f, 1.f, 1.f}});
     // Force through the body origin (not the COM) at +y produces torque about the COM at x = 0.5.
     w->applyForce(b, {0.f, 10.f, 0.f}, w->worldPoint(b, {}));

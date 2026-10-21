@@ -118,15 +118,16 @@ RobotPage::RobotPage(WizardViewModel& model, const UiResources& ui, QWidget* par
 
     nameEdit_->setPlaceholderText(tr("My robot"));
     nameEdit_->setAccessibleName(tr("Robot name"));
-    wheelsPerSide_->setRange(2, 4);
-    motorsPerWheel_->setRange(1, 4);
-    driveRatio_->setRange(0.5, 100.0);
-    steerRatio_->setRange(0.5, 200.0);
+    wheelsPerSide_->setRange(basics_limits::kWheelsPerSide.min, basics_limits::kWheelsPerSide.max);
+    motorsPerWheel_->setRange(basics_limits::kMotorsPerWheel.min, basics_limits::kMotorsPerWheel.max);
+    driveRatio_->setRange(basics_limits::kDriveRatio.min, basics_limits::kDriveRatio.max);
+    steerRatio_->setRange(basics_limits::kSteerRatio.min, basics_limits::kSteerRatio.max);
     for (const MotorChoice& m : motorCatalog()) {
         driveMotor_->addItem(m.label, m.key);
         steerMotor_->addItem(m.label, m.key);
     }
-    for (int s = 1; s <= 3; ++s) station_->addItem(tr("Driver station %1").arg(s), s);
+    for (int s = basics_limits::kStation.min; s <= basics_limits::kStation.max; ++s)
+        station_->addItem(tr("Driver station %1").arg(s), s);
 
     auto* root = new QHBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
@@ -211,12 +212,13 @@ void RobotPage::applyUnits() {
         s->setSingleStep(step);
         s->setSuffix(u.lengthSuffix());
     }
-    setRoundedRange(length_, u.lengthToDisplay(0.25), u.lengthToDisplay(1.5));
-    setRoundedRange(width_, u.lengthToDisplay(0.25), u.lengthToDisplay(1.5));
-    setRoundedRange(bumper_, 0.0, u.lengthToDisplay(0.15));
-    setRoundedRange(wheelDiameter_, u.lengthToDisplay(0.04), u.lengthToDisplay(0.25));
+    namespace limits = basics_limits;
+    setRoundedRange(length_, u.lengthToDisplay(limits::kFrameM.min), u.lengthToDisplay(limits::kFrameM.max));
+    setRoundedRange(width_, u.lengthToDisplay(limits::kFrameM.min), u.lengthToDisplay(limits::kFrameM.max));
+    setRoundedRange(bumper_, u.lengthToDisplay(limits::kBumperM.min), u.lengthToDisplay(limits::kBumperM.max));
+    setRoundedRange(wheelDiameter_, u.lengthToDisplay(limits::kWheelDiameterM.min), u.lengthToDisplay(limits::kWheelDiameterM.max));
     mass_->setSuffix(u.massSuffix());
-    setRoundedRange(mass_, u.massToDisplay(5.0), u.massToDisplay(120.0));
+    setRoundedRange(mass_, u.massToDisplay(limits::kMassKg.min), u.massToDisplay(limits::kMassKg.max));
     mass_->setSingleStep(imperial ? 1.0 : 0.5);
     driveRatio_->setSingleStep(0.05);
     steerRatio_->setSingleStep(0.1);

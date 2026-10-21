@@ -4,11 +4,16 @@
 #include "run_control.h"
 
 using namespace wpiemu::app::runview;
+using wpiemu::app::HostLogLine;
+using wpiemu::app::HostStatus;
+using wpiemu::sdk::LinkState;
 using wpiemu::sdk::LogLevel;
+using wpiemu::sdk::LogStream;
+using wpiemu::sdk::ProcessState;
 
 namespace {
-RunStatus status(RobotProcessState p, LinkState l = LinkState::Disconnected, int code = 0, bool started = false, bool simulating = false) {
-    RunStatus s;
+HostStatus status(ProcessState p, LinkState l = LinkState::Disconnected, int code = 0, bool started = false, bool simulating = false) {
+    HostStatus s;
     s.process = p;
     s.link = l;
     s.exitCode = code;
@@ -19,89 +24,80 @@ RunStatus status(RobotProcessState p, LinkState l = LinkState::Disconnected, int
 }  // namespace
 
 TEST_CASE("control state follows the robot and simulation lifecycle") {
-    const auto idle = deriveControlState(status(RobotProcessState::Idle), false);
+    const auto idle = deriveControlState(status(ProcessState::Idle), false);
     CHECK(idle.canRestart);
     CHECK_FALSE(idle.simulating);
 
-    const auto starting = deriveControlState(status(RobotProcessState::Starting, LinkState::Connecting), false);
+    const auto starting = deriveControlState(status(ProcessState::Starting, LinkState::Connecting), false);
     CHECK(starting.canRestart);
     CHECK_FALSE(starting.simulating);
 
-    const auto armed = deriveControlState(status(RobotProcessState::Running, LinkState::Connected, 0, true), false);
+    const auto armed = deriveControlState(status(ProcessState::Running, LinkState::Connected, 0, true), false);
     CHECK(armed.canRestart);
     CHECK_FALSE(armed.simulating);
 
-    const auto running = deriveControlState(status(RobotProcessState::Running, LinkState::Connected, 0, true, true), false);
+    const auto running = deriveControlState(status(ProcessState::Running, LinkState::Connected, 0, true, true), false);
     CHECK(running.canRestart);
     CHECK(running.simulating);
 
-    const auto paused = deriveControlState(status(RobotProcessState::Running, LinkState::Connected, 0, true, true), true);
+    const auto paused = deriveControlState(status(ProcessState::Running, LinkState::Connected, 0, true, true), true);
     CHECK(paused.paused);
 
-    for (auto p : {RobotProcessState::Exited, RobotProcessState::Crashed, RobotProcessState::FailedToStart}) CHECK(deriveControlState(status(p), false).canRestart);
-    CHECK_FALSE(deriveControlState(status(RobotProcessState::Stopping), false).canRestart);
+    for (auto p : {ProcessState::Exited, ProcessState::Crashed, ProcessState::FailedToStart}) CHECK(deriveControlState(status(p), false).canRestart);
+    CHECK_FALSE(deriveControlState(status(ProcessState::Stopping), false).canRestart);
 }
 
 TEST_CASE("status presentation covers empty, loading and error states") {
-    const auto idle = presentStatus(status(RobotProcessState::Idle), false);
+    const auto idle = presentStatus(status(ProcessState::Idle), false);
     CHECK(idle.showOverlay);
     CHECK(idle.offerRestart);
 
-    const auto starting = presentStatus(status(RobotProcessState::Starting), false);
+    const auto starting = presentStatus(status(ProcessState::Starting), false);
     CHECK(starting.tone == Tone::Info);
     CHECK(starting.showOverlay);
     CHECK_FALSE(starting.offerRestart);
 
-    const auto initializing = presentStatus(status(RobotProcessState::Running, LinkState::Connected), false);
+    const auto initializing = presentStatus(status(ProcessState::Running, LinkState::Connected), false);
     CHECK(initializing.tone == Tone::Info);
     CHECK(initializing.showOverlay);
 
-    const auto armed = presentStatus(status(RobotProcessState::Running, LinkState::Connected, 0, true), false);
+    const auto armed = presentStatus(status(ProcessState::Running, LinkState::Connected, 0, true), false);
     CHECK(armed.tone == Tone::Success);
     CHECK_FALSE(armed.showOverlay);
     CHECK(armed.chipText.contains(QStringLiteral("ready")));
 
-    const auto ok = presentStatus(status(RobotProcessState::Running, LinkState::Connected, 0, true, true), true);
+    const auto ok = presentStatus(status(ProcessState::Running, LinkState::Connected, 0, true, true), true);
     CHECK(ok.tone == Tone::Success);
     CHECK_FALSE(ok.showOverlay);
     CHECK(ok.chipText == QStringLiteral("Simulating"));
 
-    const auto waiting = presentStatus(status(RobotProcessState::Running, LinkState::Connecting), false);
+    const auto waiting = presentStatus(status(ProcessState::Running, LinkState::Connecting), false);
     CHECK(waiting.showOverlay);
     CHECK(waiting.tone == Tone::Info);
 
-    const auto timeout = presentStatus(status(RobotProcessState::Running, LinkState::HandshakeTimeout), false);
+    const auto timeout = presentStatus(status(ProcessState::Running, LinkState::HandshakeTimeout), false);
     CHECK(timeout.tone == Tone::Error);
     CHECK(timeout.offerRestart);
     CHECK(timeout.offerShowConsole);
 
-    const auto mismatch = presentStatus(status(RobotProcessState::Running, LinkState::ProtocolMismatch), false);
+    const auto mismatch = presentStatus(status(ProcessState::Running, LinkState::ProtocolMismatch), false);
     CHECK(mismatch.tone == Tone::Error);
     CHECK(mismatch.offerRestart);
 
-    const auto stalled = presentStatus(status(RobotProcessState::Running, LinkState::Stalled), true);
+    const auto stalled = presentStatus(status(ProcessState::Running, LinkState::Stalled), true);
     CHECK(stalled.tone == Tone::Warning);
     CHECK_FALSE(stalled.showOverlay);
 
-    const auto crashed = presentStatus(status(RobotProcessState::Crashed, LinkState::Disconnected, 137), false);
+    const auto crashed = presentStatus(status(ProcessState::Crashed, LinkState::Disconnected, 137), false);
     CHECK(crashed.tone == Tone::Error);
     CHECK(crashed.offerRestart);
     CHECK(crashed.chipText.contains(QStringLiteral("137")));
 
-    RunStatus failed = status(RobotProcessState::FailedToStart);
+    HostStatus failed = status(ProcessState::FailedToStart);
     failed.detail = QStringLiteral("gradlew missing");
     const auto f = presentStatus(failed, false);
     CHECK(f.detail == QStringLiteral("gradlew missing"));
     CHECK(f.tone == Tone::Error);
-}
-
-TEST_CASE("log level guessing from raw robot output") {
-    CHECK(guessLogLevel(QStringLiteral("ERROR 1 something"), LogStream::Stdout) == LogLevel::Error);
-    CHECK(guessLogLevel(QStringLiteral("Warning at frc.robot.Robot: x"), LogStream::Stdout) == LogLevel::Warn);
-    CHECK(guessLogLevel(QStringLiteral("    at frc.robot.Robot.run(Robot.java:3)"), LogStream::Stderr) == LogLevel::Error);
-    CHECK(guessLogLevel(QStringLiteral("hello"), LogStream::Stdout) == LogLevel::Info);
-    CHECK(guessLogLevel(QStringLiteral("hello"), LogStream::Stderr) == LogLevel::Warn);
-    CHECK(guessLogLevel(QStringLiteral("DEBUG x"), LogStream::Stdout) == LogLevel::Debug);
 }
 
 TEST_CASE("console model is bounded and filterable") {
@@ -110,7 +106,7 @@ TEST_CASE("console model is bounded and filterable") {
     filter.setSourceModel(&model);
 
     auto entry = [](LogLevel l, LogStream s, const QString& text) {
-        RunLogEntry e;
+        HostLogLine e;
         e.level = l;
         e.stream = s;
         e.text = text;

@@ -17,7 +17,7 @@
 #   WPIEMU_WPILIB_ROOT      either layout (or the year dir containing maven/). Also read from the
 #                           environment variable of the same name. Default search for a maven cache:
 #                           <PUBLIC|HOME|USERPROFILE>/wpilib/2026/maven.
-#   WPIEMU_WPILIB_VERSION   WPILib version of hal-cpp / wpiutil-cpp (default 2026.2.1, docs/reference/extension-ipc.md).
+#   WPIEMU_WPILIB_VERSION   WPILib version of hal-cpp / wpiutil-cpp (default: `wpilib` in versions.json).
 #   WPIEMU_WPILIB_DOWNLOAD  OFF by default. ON: fetch missing zips from frcmaven (CI on a clean machine).
 #
 # Outputs:
@@ -31,9 +31,11 @@
 # Nothing is defined (and configure still succeeds) when WPILib is not available.
 
 include_guard(GLOBAL)
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/WpiEmuVersions.cmake")
 
 set(WPIEMU_WPILIB_ROOT "" CACHE PATH "WPILib HAL root: extracted layout or Maven cache; empty = auto-detect")
-set(WPIEMU_WPILIB_VERSION "2026.2.1" CACHE STRING "WPILib version of hal-cpp/wpiutil-cpp to link against")
+wpiemu_pinned_version(_wpiemu_wpilib_pinned wpilib)
+set(WPIEMU_WPILIB_VERSION "${_wpiemu_wpilib_pinned}" CACHE STRING "WPILib version of hal-cpp/wpiutil-cpp to link against")
 option(WPIEMU_WPILIB_DOWNLOAD "Download missing WPILib HAL/wpiutil zips from frcmaven" OFF)
 
 set(WPIEMU_WPILIB_FOUND FALSE)

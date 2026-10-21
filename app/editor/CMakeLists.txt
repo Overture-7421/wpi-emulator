@@ -1,5 +1,5 @@
 # Robot editor (UI stream "ui-editor"): EditorPage + IEditorBackend + a fake backend for tests/demos.
-# Static library linking only the SDK and Qt; the shell supplies the real IEditorBackend adapter.
+# Static library linking only the SDK, the shared app/ui scene support (SDK + Qt) and Qt; the shell supplies the real IEditorBackend adapter.
 # Layout: model/ (document, undo, pure edit ops), viewmodel/ (Qt item models, viewport controller),
 # views/ (widgets), qml/ (Qt Quick 3D viewport). Models/view-models never include views.
 # Build only this module with app/editor/standalone/CMakeLists.txt (see the comment in that file).
@@ -11,7 +11,15 @@ set(WPIEMU_EDITOR_SOURCES
     editor_backend.cpp
     editor_page.cpp
     fake_editor_backend.cpp
-    model/config_ops.cpp
+    model/config_ops_cameras.cpp
+    model/config_ops_chassis.cpp
+    model/config_ops_frames.cpp
+    model/config_ops_mechanisms.cpp
+    model/config_ops_sensors.cpp
+    model/config_ops_slots.cpp
+    model/config_ops_start_positions.cpp
+    model/config_ops_volumes.cpp
+    model/config_ops_zones.cpp
     model/editor_document.cpp
     model/motion_links.cpp
     model/property_groups.cpp
@@ -38,6 +46,7 @@ set(WPIEMU_EDITOR_SOURCES
     views/property_form.cpp
     views/section_card.cpp
     views/toast_overlay.cpp
+    views/tree_context_menu.cpp
     views/viewport_widget.cpp
 )
 
@@ -47,7 +56,7 @@ qt_add_resources(wpiemu_app_editor wpiemu_editor_qml
     FILES qml/Viewport3D.qml)
 target_include_directories(wpiemu_app_editor PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(wpiemu_app_editor
-    PUBLIC wpiemu_sdk Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::QuickWidgets Qt6::Quick3D)
+    PUBLIC wpiemu_sdk wpiemu_app_ui Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::QuickWidgets Qt6::Quick3D)
 wpiemu_target_defaults(wpiemu_app_editor)
 target_compile_definitions(wpiemu_app_editor PRIVATE QT_NO_KEYWORDS)
 
@@ -67,19 +76,9 @@ if(WPIEMU_BUILD_TESTS AND TARGET doctest::doctest)
     file(GLOB WPIEMU_EDITOR_TEST_SOURCES CONFIGURE_DEPENDS "${WPIEMU_EDITOR_REPO_ROOT}/tests/app_editor/*.cc")
     if(WPIEMU_EDITOR_TEST_SOURCES)
         add_executable(wpiemu_app_editor_tests ${WPIEMU_EDITOR_TEST_SOURCES})
-        target_link_libraries(wpiemu_app_editor_tests PRIVATE wpiemu_app_editor doctest::doctest)
-        target_compile_definitions(wpiemu_app_editor_tests PRIVATE DOCTEST_CONFIG_USE_STD_HEADERS)
-        wpiemu_target_defaults(wpiemu_app_editor_tests)
-        enable_testing()
+        target_link_libraries(wpiemu_app_editor_tests PRIVATE wpiemu_app_editor)
+        wpiemu_doctest_target(wpiemu_app_editor_tests)
         add_test(NAME app_editor.tests COMMAND wpiemu_app_editor_tests)
-        set_tests_properties(app_editor.tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-        if(WIN32)
-            get_target_property(_qt_core_loc Qt6::Core IMPORTED_LOCATION_RELEASE)
-            if(NOT _qt_core_loc)
-                get_target_property(_qt_core_loc Qt6::Core LOCATION)
-            endif()
-            get_filename_component(_qt_bin_dir "${_qt_core_loc}" DIRECTORY)
-            set_property(TEST app_editor.tests APPEND PROPERTY ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
-        endif()
+        wpiemu_qt_test_environment(app_editor.tests HEADLESS)
     endif()
 endif()

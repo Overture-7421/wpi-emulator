@@ -22,9 +22,6 @@ constexpr std::size_t kPdTemperature = 1;
 constexpr std::size_t kPdFirstCurrent = 2;
 }  // namespace
 
-PowerDistributionBridge::PowerDistributionBridge(std::shared_ptr<IPowerDistributionHal> hal)
-    : ChannelFamilyBridge("hal.power_distribution"), hal_(std::move(hal)) {}
-
 int PowerDistributionBridge::channelCount() const { return hal_->moduleCount(); }
 bool PowerDistributionBridge::isInitialized(int module) const { return hal_->initialized(module); }
 
@@ -61,8 +58,6 @@ namespace {
 enum RioSignal : std::size_t { kRioSupplyVoltage, kRioVInCurrent, kRioBrownout };
 }
 
-RoboRioBridge::RoboRioBridge(std::shared_ptr<IRoboRioHal> hal) : ChannelFamilyBridge("hal.roborio"), hal_(std::move(hal)) {}
-
 sdk::DeviceDescriptor RoboRioBridge::describe(int) const {
     return makeDescriptor("roborio", 0, -1, Capability::SupplyVoltage, "HALSIM RoboRIO", "roboRIO");
 }
@@ -85,9 +80,6 @@ void RoboRioBridge::writeSignal(int, std::size_t signalIndex, double value) {
 }
 
 // ---- accelerometer -----------------------------------------------------------------------------
-
-AccelerometerBridge::AccelerometerBridge(std::shared_ptr<IAccelerometerHal> hal)
-    : ChannelFamilyBridge("hal.accelerometer"), hal_(std::move(hal)) {}
 
 bool AccelerometerBridge::isInitialized(int) const { return hal_->active(); }
 

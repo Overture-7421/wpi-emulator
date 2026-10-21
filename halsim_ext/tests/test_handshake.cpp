@@ -1,6 +1,8 @@
 #include <doctest/doctest.h>
 
 #include "fakes.h"
+#include "wpiemu/sdk/testing/fake_emulator.h"
+#include "wpiemu/sdk/testing/in_memory_transport.h"
 
 using namespace wpiemu;
 using namespace wpiemu::halsim;
@@ -80,9 +82,9 @@ TEST_CASE("handshake: no HelloAck within the timeout fails cleanly") {
     cfg.handshakeTimeout = 150ms;
     Rig rig(defaultAck(), cfg);
     auto pair = sdk::testing::makeInMemoryTransportPair();
-    QueueClient silent;
+    sdk::testing::QueuedTransportClient silent;
     silent.push(std::move(pair.b));
-    FakeEmulator mute(std::move(pair.a), rig.codec);
+    sdk::testing::FakeEmulator mute(std::move(pair.a), rig.codec);
 
     RuntimeDeps deps{cfg, rig.robot, HalPorts{rig.clock, rig.ds, rig.power, rig.process}, silent, rig.codec, {}, {}};
     ExtensionRuntime runtime(std::move(deps));
@@ -95,7 +97,7 @@ TEST_CASE("handshake: no HelloAck within the timeout fails cleanly") {
 TEST_CASE("handshake: nobody listening fails after the connect timeout") {
     ExtensionConfig cfg = Rig::defaultConfig();
     cfg.connectTimeout = 50ms;
-    QueueClient nobody;
+    sdk::testing::QueuedTransportClient nobody;
     Rig rig(defaultAck(), cfg);
     RuntimeDeps deps{cfg, rig.robot, HalPorts{rig.clock, rig.ds, rig.power, rig.process}, nobody, rig.codec, {}, {}};
     ExtensionRuntime runtime(std::move(deps));
@@ -108,9 +110,9 @@ TEST_CASE("handshake: nobody listening fails after the connect timeout") {
 TEST_CASE("handshake: an emulator Goodbye instead of HelloAck aborts") {
     Rig rig;
     auto pair = sdk::testing::makeInMemoryTransportPair();
-    QueueClient client;
+    sdk::testing::QueuedTransportClient client;
     client.push(std::move(pair.b));
-    FakeEmulator emu(std::move(pair.a), rig.codec);
+    sdk::testing::FakeEmulator emu(std::move(pair.a), rig.codec);
     std::thread answer([&] {
         const auto hello = emu.take<proto::Hello>(1000ms);
         if (hello) emu.send(proto::Message(proto::Goodbye{"emulator is shutting down"}));

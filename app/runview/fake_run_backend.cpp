@@ -8,17 +8,18 @@
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/physics/physics_types.h"
+#include "wpiemu/sdk/physics/wheel_layout.h"
+#include "wpiemu/sdk/testing/demo_game.h"
 
 namespace wpiemu::app::runview {
+
+namespace demo = sdk::testing::demo_game;
+
 namespace {
 
-constexpr double kDt = 0.005;
-constexpr float kFieldL = 16.46f;
-constexpr float kFieldW = 8.23f;
+constexpr double kDt = sdk::kDefaultStepSeconds;
 constexpr int kCapacity = 30;
 constexpr float kBallR = 0.075f;
-constexpr float kHubX[2] = {4.6f, 11.86f};
-constexpr float kHubY = 4.115f;
 
 const sdk::Quat kCylToY = sdk::Quat::fromAxisAngle({1.f, 0.f, 0.f}, -1.5707963f);
 
@@ -60,18 +61,8 @@ sdk::RobotConfig FakeRunBackend::makeDemoConfig() {
     prims.push_back(box("bumper.right", {0.f, -0.40f, -0.10f}, {0.76f, 0.05f, 0.12f}, "#c0392b"));
     prims.push_back(box("battery", {-0.18f, 0.f, -0.045f}, {0.18f, 0.17f, 0.07f}, "#1f2937"));
 
-    const char* names[4] = {"fl", "fr", "bl", "br"};
-    const float xs[4] = {0.3f, 0.3f, -0.3f, -0.3f};
-    const float ys[4] = {0.3f, -0.3f, 0.3f, -0.3f};
     c.drivetrain.spec.kind = sdk::drivetrain_kind::kSwerve;
-    for (int i = 0; i < 4; ++i) {
-        sdk::WheelSpec w;
-        w.name = names[i];
-        w.kind = sdk::WheelKind::Swerve;
-        w.positionM = {xs[i], ys[i], w.radiusM};
-        w.steered = true;
-        c.drivetrain.spec.wheels.push_back(w);
-    }
+    c.drivetrain.spec.wheels = sdk::swerveWheels({}, 0.3f, 0.3f);
 
     sdk::MechanismConfig intake;
     intake.id = "intake";
@@ -105,7 +96,7 @@ sdk::RobotConfig FakeRunBackend::makeDemoConfig() {
     hopper.id = "hopper_sensor";
     hopper.label = "Hopper sensor";
     hopper.kind = sdk::SensorKind::Distance;
-    hopper.source = "demo.fuel.count";
+    hopper.source = demo::kFuelCount;
     hopper.properties["threshold"] = 6.0;
     hopper.properties["nearM"] = 0.1;
     hopper.properties["farM"] = 1.0;
@@ -115,13 +106,13 @@ sdk::RobotConfig FakeRunBackend::makeDemoConfig() {
     feed.id = "feed_sensor";
     feed.label = "Feed sensor";
     feed.kind = sdk::SensorKind::BeamBreak;
-    feed.source = "demo.fuel.count";
+    feed.source = demo::kFuelCount;
     feed.properties["threshold"] = 1.0;
     c.sensors.push_back(std::move(feed));
 
     sdk::ZoneConfig pickup;
     pickup.id = "pickup";
-    pickup.kind = "demo_game.pickup";
+    pickup.kind = demo::kPickupZone;
     pickup.label = "Intake zone";
     pickup.attachment = {"intake", sdk::kRootLink};
     pickup.local.position = {0.4f, 0.f, -0.02f};
@@ -130,7 +121,7 @@ sdk::RobotConfig FakeRunBackend::makeDemoConfig() {
 
     sdk::ZoneConfig shooter;
     shooter.id = "shooter";
-    shooter.kind = "demo_game.shooter";
+    shooter.kind = demo::kShooterZone;
     shooter.label = "Shooter zone";
     shooter.attachment = {"turret", "yaw"};
     shooter.local.position = {0.38f, 0.f, 0.12f};
@@ -159,113 +150,19 @@ sdk::RobotConfig FakeRunBackend::makeDemoConfig() {
     c.cameras.push_back(std::move(turretCam));
     c.startPositions = {{"blue_left", "Blue left", sdk::Alliance::Blue, {2.5f, 6.5f, 0.f}},
                         {"blue_right", "Blue right", sdk::Alliance::Blue, {2.5f, 1.7f, 0.f}},
-                        {"red_left", "Red left", sdk::Alliance::Red, {kFieldL - 2.5f, 1.7f, sdk::kPiF}}};
+                        {"red_left", "Red left", sdk::Alliance::Red, {demo::kFieldLengthM - 2.5f, 1.7f, sdk::kPiF}}};
     return c;
 }
 
-sdk::AprilTagLayout FakeRunBackend::makeDemoTags() {
-    sdk::AprilTagLayout layout;
-    layout.name = "demo";
-    layout.fieldLengthM = kFieldL;
-    layout.fieldWidthM = kFieldW;
-    const float pi = static_cast<float>(sdk::kPi);
-    auto add = [&](int id, sdk::Vec3 pos, float yaw) {
-        sdk::AprilTag t;
-        t.id = id;
-        t.pose = {pos, sdk::Quat::fromYaw(yaw)};
-        layout.tags.push_back(t);
-    };
-    // Blue wall (+X out of the face points into the field), red wall, then the two long walls.
-    add(1, {0.f, 2.6f, 1.2f}, 0.f);
-    add(2, {0.f, kHubY, 1.2f}, 0.f);
-    add(3, {0.f, 5.6f, 1.2f}, 0.f);
-    add(4, {kFieldL, 2.6f, 1.2f}, pi);
-    add(5, {kFieldL, kHubY, 1.2f}, pi);
-    add(6, {kFieldL, 5.6f, 1.2f}, pi);
-    add(7, {5.0f, 0.f, 1.0f}, pi * 0.5f);
-    add(8, {11.5f, kFieldW, 1.0f}, -pi * 0.5f);
-    return layout;
-}
-
-std::vector<sdk::ZoneKindInfo> FakeRunBackend::makeZoneKinds() {
-    sdk::ZoneKindInfo pickup;
-    pickup.kind = "demo_game.pickup";
-    pickup.displayName = "Pickup";
-    pickup.shape = sdk::ZoneShape::Volume;
-    pickup.color = "#22c55e";
-    sdk::ZoneKindInfo shooter;
-    shooter.kind = "demo_game.shooter";
-    shooter.displayName = "Shooter";
-    shooter.shape = sdk::ZoneShape::Muzzle;
-    shooter.color = "#f43f5e";
-    return {pickup, shooter};
-}
-
-sdk::FieldDescription FakeRunBackend::makeDemoField() {
-    sdk::FieldDescription f;
-    f.name = "Demo field";
-    f.lengthM = kFieldL;
-    f.widthM = kFieldW;
-    auto add = [&](const char* name, sdk::FieldVisual::Kind kind, sdk::Vec3 pos, sdk::Vec3 size, const char* color) {
-        sdk::FieldVisual v;
-        v.name = name;
-        v.kind = kind;
-        v.pose.position = pos;
-        v.sizeM = size;
-        v.color = color;
-        f.visuals.push_back(std::move(v));
-    };
-    using K = sdk::FieldVisual::Kind;
-    add("zone.blue", K::Box, {1.5f, kFieldW / 2, 0.001f}, {3.0f, kFieldW, 0.002f}, "#1e3a8a");
-    add("zone.red", K::Box, {kFieldL - 1.5f, kFieldW / 2, 0.001f}, {3.0f, kFieldW, 0.002f}, "#7f1d1d");
-    add("line.center", K::Box, {kFieldL / 2, kFieldW / 2, 0.002f}, {0.06f, kFieldW, 0.002f}, "#e2e8f0");
-    add("wall.south", K::Box, {kFieldL / 2, -0.05f, 0.3f}, {kFieldL + 0.2f, 0.1f, 0.6f}, "#475569");
-    add("wall.north", K::Box, {kFieldL / 2, kFieldW + 0.05f, 0.3f}, {kFieldL + 0.2f, 0.1f, 0.6f}, "#475569");
-    add("wall.blue", K::Box, {-0.05f, kFieldW / 2, 0.45f}, {0.1f, kFieldW, 0.9f}, "#334155");
-    add("wall.red", K::Box, {kFieldL + 0.05f, kFieldW / 2, 0.45f}, {0.1f, kFieldW, 0.9f}, "#334155");
-    add("hub.blue", K::Cylinder, {kHubX[0], kHubY, 0.9f}, {1.2f, 1.2f, 1.8f}, "#2563eb");
-    add("hub.red", K::Cylinder, {kHubX[1], kHubY, 0.9f}, {1.2f, 1.2f, 1.8f}, "#dc2626");
-    add("bump.a", K::Box, {kFieldL / 2 - 2.2f, 1.6f, 0.08f}, {1.4f, 1.4f, 0.16f}, "#64748b");
-    add("bump.b", K::Box, {kFieldL / 2 + 2.2f, kFieldW - 1.6f, 0.08f}, {1.4f, 1.4f, 0.16f}, "#64748b");
-    return f;
-}
-
-FakeRunBackend::FakeRunBackend(Options options, QObject* parent) : IRunBackend(parent), options_(options), timer_(this) {
-    registerRunViewMetaTypes();
+FakeRunBackend::FakeRunBackend(Options options, QObject* parent) : IRuntimeHost(parent), options_(options), timer_(this) {
     scene_.config = std::make_shared<const sdk::RobotConfig>(makeDemoConfig());
-    scene_.field = std::make_shared<const sdk::FieldDescription>(makeDemoField());
-    scene_.gameName = QStringLiteral("Demo game");
-    scene_.tags = makeDemoTags();
+    scene_.field = std::make_shared<const sdk::FieldDescription>(demo::field());
+    scene_.gameName = QString::fromUtf8(demo::kDisplayName);
+    scene_.tags = demo::aprilTags();
     if (options_.withGameContent) {
-        using sdk::HudAnchor;
-        using sdk::HudWidgetKind;
-        auto hud = [](const char* id, const char* title, HudWidgetKind kind, const char* key, HudAnchor anchor, int order) {
-            sdk::HudWidgetDescriptor d;
-            d.id = id;
-            d.title = title;
-            d.kind = kind;
-            d.valueKey = key;
-            d.anchor = anchor;
-            d.order = order;
-            return d;
-        };
-        auto fuel = hud("demo_game.fuel", "Fuel", HudWidgetKind::Meter, "demo.fuel.count", HudAnchor::BottomCenter, 0);
-        fuel.maxKey = "demo.fuel.capacity";
-        fuel.color = "#facc15";
-        auto timer = hud("demo_game.match", "Match", HudWidgetKind::Timer, "demo.match_time", HudAnchor::TopCenter, 1);
-        auto hub = hud("demo_game.hub", "Hub", HudWidgetKind::Badge, "demo.hub.active", HudAnchor::TopCenter, 2);
-        auto scoreboard = hud("demo_game.scoreboard", "Scoreboard", HudWidgetKind::Scoreboard, "demo.phase", HudAnchor::TopCenter, 0);
-        scoreboard.sides = {{"BLUE", "demo.score.blue", "demo.hub.blue.status", "#1a73e8"},
-                            {"RED", "demo.score.red", "demo.hub.red.status", "#d93025"}};
-        auto message = hud("demo_game.message", "Game data", HudWidgetKind::Text, "demo.message", HudAnchor::TopRight, 1);
-        scene_.hud = {fuel, scoreboard, timer, hub, message};
-        scene_.zoneKinds = makeZoneKinds();
-        sdk::GameValueInfo fuelCount;
-        fuelCount.id = "demo.fuel.count";
-        fuelCount.label = "Fuel held";
-        fuelCount.description = "Fuel pieces the robot currently holds";
-        fuelCount.unit = sdk::PropertyUnit::Count;
-        scene_.gameValues = {fuelCount};
+        scene_.hud = demo::hud();
+        scene_.zoneKinds = demo::zoneKinds();
+        scene_.gameValues = demo::gameValues();
     }
     ds_.dsAttached = true;
     resetWorld();
@@ -282,7 +179,7 @@ void FakeRunBackend::scatterBalls() {
     while (static_cast<int>(balls_.size()) < options_.ballCount) {
         const sdk::Vec3 p{rx(rng_), ry(rng_), kBallR};
         bool nearHub = false;
-        for (float hx : kHubX) nearHub = nearHub || std::hypot(p.x - hx, p.y - kHubY) < 0.9f;
+        for (float hx : demo::kHubXM) nearHub = nearHub || std::hypot(p.x - hx, p.y - demo::kHubYM) < 0.9f;
         if (!nearHub) balls_.push_back({p, {}, false});
     }
 }
@@ -290,7 +187,7 @@ void FakeRunBackend::scatterBalls() {
 void FakeRunBackend::resetWorld() {
     pos_ = {2.0f, 4.1f, 0.2f};
     yaw_ = 0.f;
-    if (const sdk::StartPosition* p = scene_.config ? scene_.config->findStartPosition(startPositionId_.toStdString()) : nullptr) {
+    if (const sdk::StartPosition* p = startSelection_.find(scene_.config.get())) {
         pos_.x = p->pose.xM;
         pos_.y = p->pose.yM;
         yaw_ = p->pose.headingRad;
@@ -307,13 +204,18 @@ void FakeRunBackend::resetWorld() {
     scatterBalls();
 }
 
-void FakeRunBackend::setStatus(RobotProcessState process, LinkState link, int exitCode, const QString& detail) {
-    const bool live = process == RobotProcessState::Running && link == LinkState::Connected;
-    if (!live) {
+void FakeRunBackend::setStatus(sdk::ProcessState process, sdk::LinkState link, int exitCode, const QString& detail) {
+    if (!sdk::isLive(process, link)) {
         programStarted_ = false;
         simulating_ = false;
     }
-    const RunStatus next{process, link, exitCode, detail, programStarted_, simulating_};
+    HostStatus next;
+    next.process = process;
+    next.link = link;
+    next.exitCode = exitCode;
+    next.detail = detail;
+    next.programStarted = programStarted_;
+    next.simulating = simulating_;
     if (next == status_) return;
     status_ = next;
     emit statusChanged();
@@ -332,28 +234,28 @@ void FakeRunBackend::beginTransition(int delayMs, std::function<void()> fn) {
     });
 }
 
-void FakeRunBackend::emitLog(sdk::LogLevel level, LogStream stream, const QString& source, const QString& text) {
-    emit logEntry({QDateTime::currentMSecsSinceEpoch(), level, stream, source, text});
+void FakeRunBackend::emitLog(sdk::LogLevel level, sdk::LogStream stream, const QString& source, const QString& text) {
+    emit logLine({QDateTime::currentMSecsSinceEpoch(), level, stream, source, text});
 }
 
-void FakeRunBackend::launchRobot() {
-    if (status_.process == RobotProcessState::Starting || status_.process == RobotProcessState::Running) return;
+void FakeRunBackend::launch() {
+    if (status_.process == sdk::ProcessState::Starting || status_.process == sdk::ProcessState::Running) return;
     ++startCount_;
     ++transitionGeneration_;
     slot_.publish(nullptr);
-    setStatus(RobotProcessState::Starting, LinkState::Disconnected);
-    emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Starting robot: gradlew simulateJava"));
-    emitLog(sdk::LogLevel::Info, LogStream::Stdout, QStringLiteral("gradle"), QStringLiteral("> Task :compileJava UP-TO-DATE"));
-    emitLog(sdk::LogLevel::Info, LogStream::Stdout, QStringLiteral("gradle"), QStringLiteral("> Task :simulateJava"));
+    setStatus(sdk::ProcessState::Starting, sdk::LinkState::Disconnected);
+    emitLog(sdk::LogLevel::Info, sdk::LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Starting robot: gradlew simulateJava"));
+    emitLog(sdk::LogLevel::Info, sdk::LogStream::Stdout, QStringLiteral("gradle"), QStringLiteral("> Task :compileJava UP-TO-DATE"));
+    emitLog(sdk::LogLevel::Info, sdk::LogStream::Stdout, QStringLiteral("gradle"), QStringLiteral("> Task :simulateJava"));
     beginTransition(options_.startupDelayMs, [this] {
-        setStatus(RobotProcessState::Running, LinkState::Connecting);
-        emitLog(sdk::LogLevel::Info, LogStream::Stdout, QStringLiteral("robot"), QStringLiteral("********** Robot program starting **********"));
+        setStatus(sdk::ProcessState::Running, sdk::LinkState::Connecting);
+        emitLog(sdk::LogLevel::Info, sdk::LogStream::Stdout, QStringLiteral("robot"), QStringLiteral("********** Robot program starting **********"));
         beginTransition(options_.startupDelayMs, [this] {
             resetWorld();
-            setStatus(RobotProcessState::Running, LinkState::Connected);
+            setStatus(sdk::ProcessState::Running, sdk::LinkState::Connected);
             programStarted_ = true;
             refreshFlags();
-            emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("extension"), QStringLiteral("Extension connected"));
+            emitLog(sdk::LogLevel::Info, sdk::LogStream::Emulator, QStringLiteral("extension"), QStringLiteral("Extension connected"));
             publish();
             beginIfReady();
         });
@@ -361,61 +263,61 @@ void FakeRunBackend::launchRobot() {
 }
 
 void FakeRunBackend::startSimulation() {
-    beginWhenReady_ = true;
-    if (status_.process != RobotProcessState::Starting && status_.process != RobotProcessState::Running) launchRobot();
+    beginIntent_.request();
+    if (status_.process != sdk::ProcessState::Starting && status_.process != sdk::ProcessState::Running) launch();
     beginIfReady();
 }
 
 void FakeRunBackend::beginIfReady() {
-    if (!beginWhenReady_ || !programStarted_) return;
-    beginWhenReady_ = false;
-    if (simulating_) return;
+    if (!beginIntent_.takeWhenReady(programStarted_) || simulating_) return;
     resetWorld();
     timeAccum_ = 0.0;
     simulating_ = true;
     refreshFlags();
-    emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Simulation started (lock-step, t = 0)"));
+    emitLog(sdk::LogLevel::Info, sdk::LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Simulation started (lock-step, t = 0)"));
     publish();
 }
 
 void FakeRunBackend::stopSimulation() {
-    beginWhenReady_ = false;
+    beginIntent_.cancel();
     if (!simulating_) return;
     simulating_ = false;
     refreshFlags();
-    emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Simulation stopped; the robot keeps running"));
+    emitLog(sdk::LogLevel::Info, sdk::LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Simulation stopped; the robot keeps running"));
 }
 
-void FakeRunBackend::restartRobot() {
+void FakeRunBackend::stop() {
     ++transitionGeneration_;
-    const bool resume = simulating_ || beginWhenReady_;
-    if (status_.process == RobotProcessState::Starting || status_.process == RobotProcessState::Running) {
+    beginIntent_.cancel();
+    if (status_.process == sdk::ProcessState::Starting || status_.process == sdk::ProcessState::Running) {
         slot_.publish(nullptr);
-        setStatus(RobotProcessState::Exited, LinkState::Disconnected, 0);
+        setStatus(sdk::ProcessState::Exited, sdk::LinkState::Disconnected, 0);
     }
-    launchRobot();
-    beginWhenReady_ = resume;
+}
+
+void FakeRunBackend::restart() {
+    const bool resume = simulating_ || beginIntent_.pending();
+    stop();
+    launch();
+    if (resume) beginIntent_.request();
 }
 
 void FakeRunBackend::resetSimulation() {
-    if (status_.process != RobotProcessState::Running) return;
+    if (status_.process != sdk::ProcessState::Running) return;
     ++resetCount_;
     resetWorld();
-    emitLog(sdk::LogLevel::Info, LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Simulation reset (epoch advanced)"));
+    emitLog(sdk::LogLevel::Info, sdk::LogStream::Emulator, QStringLiteral("emulator"), QStringLiteral("Simulation reset (epoch advanced)"));
     publish();
 }
 
 void FakeRunBackend::setStartPosition(const QString& id) {
-    const QString next = scene_.config && scene_.config->findStartPosition(id.toStdString()) != nullptr ? id : QString();
-    if (next == startPositionId_) return;
-    startPositionId_ = next;
-    emit startPositionChanged();
+    if (startSelection_.select(scene_.config.get(), id)) emit startPositionChanged();
 }
 
 void FakeRunBackend::setPaused(bool paused) {
     paused_ = paused;
     pendingSteps_ = 0;
-    if (status_.process == RobotProcessState::Running) publish();
+    if (status_.process == sdk::ProcessState::Running) publish();
 }
 
 void FakeRunBackend::stepTicks(int ticks) {
@@ -426,7 +328,7 @@ void FakeRunBackend::setTimeScale(double scale) { timeScale_ = std::clamp(scale,
 
 void FakeRunBackend::setDriverStation(const sdk::proto::DsState& state) {
     if (state.enabled != ds_.enabled)
-        emitLog(sdk::LogLevel::Info, LogStream::Stdout, QStringLiteral("robot"),
+        emitLog(sdk::LogLevel::Info, sdk::LogStream::Stdout, QStringLiteral("robot"),
                 state.enabled ? QStringLiteral("Robot enabled") : QStringLiteral("Robot disabled"));
     ds_ = state;
 }
@@ -434,41 +336,47 @@ void FakeRunBackend::setDriverStation(const sdk::proto::DsState& state) {
 void FakeRunBackend::simulateCrash(int exitCode, const QString& detail) {
     ++transitionGeneration_;
     slot_.publish(nullptr);
-    emitLog(sdk::LogLevel::Error, LogStream::Stderr, QStringLiteral("robot"),
+    emitLog(sdk::LogLevel::Error, sdk::LogStream::Stderr, QStringLiteral("robot"),
             QStringLiteral("Exception in thread \"main\" java.lang.NullPointerException"));
-    emitLog(sdk::LogLevel::Error, LogStream::Stderr, QStringLiteral("robot"), QStringLiteral("    at frc.robot.Robot.robotPeriodic(Robot.java:42)"));
-    setStatus(RobotProcessState::Crashed, LinkState::Disconnected, exitCode, detail);
+    emitLog(sdk::LogLevel::Error, sdk::LogStream::Stderr, QStringLiteral("robot"), QStringLiteral("    at frc.robot.Robot.robotPeriodic(Robot.java:42)"));
+    setStatus(sdk::ProcessState::Crashed, sdk::LinkState::Disconnected, exitCode, detail);
 }
 
 void FakeRunBackend::simulateHandshakeTimeout() {
     ++transitionGeneration_;
-    setStatus(RobotProcessState::Running, LinkState::HandshakeTimeout);
+    setStatus(sdk::ProcessState::Running, sdk::LinkState::HandshakeTimeout);
 }
 
 void FakeRunBackend::simulateProtocolMismatch(const QString& detail) {
     ++transitionGeneration_;
-    setStatus(RobotProcessState::Running, LinkState::ProtocolMismatch, 0, detail);
+    setStatus(sdk::ProcessState::Running, sdk::LinkState::ProtocolMismatch, 0, detail);
 }
 
-void FakeRunBackend::simulateStall() { setStatus(RobotProcessState::Running, LinkState::Stalled); }
+void FakeRunBackend::simulateStall() { setStatus(sdk::ProcessState::Running, sdk::LinkState::Stalled); }
 
 void FakeRunBackend::simulateFailedToStart(const QString& detail) {
     ++transitionGeneration_;
-    setStatus(RobotProcessState::FailedToStart, LinkState::Disconnected, 1, detail);
+    setStatus(sdk::ProcessState::FailedToStart, sdk::LinkState::Disconnected, 1, detail);
 }
 
 void FakeRunBackend::setLinkSettled() {
     ++transitionGeneration_;
     resetWorld();
-    setStatus(RobotProcessState::Running, LinkState::Connected);
+    setStatus(sdk::ProcessState::Running, sdk::LinkState::Connected);
     programStarted_ = true;
     simulating_ = true;
     refreshFlags();
     publish();
 }
 
+void FakeRunBackend::setProjectDefaults(const QString& projectPath, sdk::proto::AllianceStation station) {
+    scene_.projectPath = projectPath;
+    scene_.defaultStation = station;
+    emit sceneChanged();
+}
+
 void FakeRunBackend::onTimer() {
-    if (!simulating_ || status_.process != RobotProcessState::Running || status_.link != LinkState::Connected) return;
+    if (!simulating_ || !status_.live()) return;
     int steps = 0;
     if (paused_) {
         steps = pendingSteps_;
@@ -484,7 +392,7 @@ void FakeRunBackend::onTimer() {
 }
 
 void FakeRunBackend::tickOnce() {
-    if (!simulating_ || status_.process != RobotProcessState::Running || status_.link != LinkState::Connected) return;
+    if (!simulating_ || !status_.live()) return;
     stepWorld();
     publish();
 }
@@ -492,7 +400,7 @@ void FakeRunBackend::tickOnce() {
 void FakeRunBackend::stepWorld() {
     const float dt = static_cast<float>(kDt);
     ++tick_;
-    simUs_ += 5000;
+    simUs_ += sdk::kDefaultStepUs;
 
     const auto& js = ds_.joysticks[0];
     const bool enabled = ds_.enabled && !ds_.eStop;
@@ -513,22 +421,21 @@ void FakeRunBackend::stepWorld() {
     vel_.y = approach(vel_.y, targetVy, 9.f * dt);
     omega_ = approach(omega_, targetW, 20.f * dt);
 
-    yaw_ = static_cast<float>(std::remainder(static_cast<double>(yaw_ + omega_ * dt), sdk::kTwoPi));
+    yaw_ = static_cast<float>(sdk::wrapAngleRad(static_cast<double>(yaw_ + omega_ * dt)));
     const float c = std::cos(yaw_), s = std::sin(yaw_);
     pos_.x += (vel_.x * c - vel_.y * s) * dt;
     pos_.y += (vel_.x * s + vel_.y * c) * dt;
     const float margin = 0.55f;
-    if (pos_.x < margin || pos_.x > kFieldL - margin) { pos_.x = std::clamp(pos_.x, margin, kFieldL - margin); vel_.x = 0.f; }
-    if (pos_.y < margin || pos_.y > kFieldW - margin) { pos_.y = std::clamp(pos_.y, margin, kFieldW - margin); vel_.y = 0.f; }
+    if (pos_.x < margin || pos_.x > demo::kFieldLengthM - margin) { pos_.x = std::clamp(pos_.x, margin, demo::kFieldLengthM - margin); vel_.x = 0.f; }
+    if (pos_.y < margin || pos_.y > demo::kFieldWidthM - margin) { pos_.y = std::clamp(pos_.y, margin, demo::kFieldWidthM - margin); vel_.y = 0.f; }
 
-    static constexpr float kWx[4] = {0.3f, 0.3f, -0.3f, -0.3f};
-    static constexpr float kWy[4] = {0.3f, -0.3f, 0.3f, -0.3f};
-    for (int i = 0; i < 4; ++i) {
-        const float wx = vel_.x - omega_ * kWy[i];
-        const float wy = vel_.y + omega_ * kWx[i];
+    const std::vector<sdk::WheelSpec>& wheels = scene_.config->drivetrain.spec.wheels;
+    for (std::size_t i = 0; i < wheels.size(); ++i) {
+        const float wx = vel_.x - omega_ * wheels[i].positionM.y;
+        const float wy = vel_.y + omega_ * wheels[i].positionM.x;
         const float speed = std::hypot(wx, wy);
         if (speed > 0.05f) steer_[i] = std::atan2(wy, wx);
-        spin_[i] += (speed * (std::cos(steer_[i]) * wx + std::sin(steer_[i]) * wy >= 0.f ? 1.f : -1.f)) / 0.0508f * dt;
+        spin_[i] += (speed * (std::cos(steer_[i]) * wx + std::sin(steer_[i]) * wy >= 0.f ? 1.f : -1.f)) / static_cast<float>(sdk::kDefaultWheelRadiusM) * dt;
     }
 
     armAngle_ = approach(armAngle_, buttonA ? 1.45f : 0.f, 3.f * dt);
@@ -574,8 +481,8 @@ void FakeRunBackend::stepWorld() {
             if (!b.flying) continue;
             b.vel.z -= sdk::kDefaultGravityMps2 * dt;
             b.pos += b.vel * dt;
-            for (float hx : kHubX) {
-                if (std::hypot(b.pos.x - hx, b.pos.y - kHubY) < 0.6f && b.pos.z < 1.9f && b.pos.z > 1.7f && b.vel.z < 0.f) {
+            for (float hx : demo::kHubXM) {
+                if (std::hypot(b.pos.x - hx, b.pos.y - demo::kHubYM) < 0.6f && b.pos.z < 1.9f && b.pos.z > 1.7f && b.vel.z < 0.f) {
                     ++score_;
                     balls_[i] = balls_.back();
                     balls_.pop_back();
@@ -595,10 +502,10 @@ void FakeRunBackend::stepWorld() {
     if (logTimer_ >= 3.0) {
         logTimer_ = 0.0;
         if (enabled) {
-            emitLog(sdk::LogLevel::Info, LogStream::Stdout, QStringLiteral("robot"),
+            emitLog(sdk::LogLevel::Info, sdk::LogStream::Stdout, QStringLiteral("robot"),
                     QStringLiteral("Drive: vx=%1 vy=%2").arg(static_cast<double>(vel_.x), 0, 'f', 2).arg(static_cast<double>(vel_.y), 0, 'f', 2));
         } else {
-            emitLog(sdk::LogLevel::Warn, LogStream::Stdout, QStringLiteral("robot"), QStringLiteral("Warning at frc.robot.Robot: robot is disabled"));
+            emitLog(sdk::LogLevel::Warn, sdk::LogStream::Stdout, QStringLiteral("robot"), QStringLiteral("Warning at frc.robot.Robot: robot is disabled"));
         }
     }
 }
@@ -609,19 +516,17 @@ void FakeRunBackend::publish() {
     d.tick = tick_;
     d.simTimeUs = simUs_;
     d.paused = paused_;
-    d.robotConnected = status_.link == LinkState::Connected;
+    d.robotConnected = status_.link == sdk::LinkState::Connected;
     d.chassis.name = "chassis";
     d.chassis.pose = {pos_, sdk::Quat::fromYaw(yaw_)};
     d.chassis.linearVelocity = {vel_.x * std::cos(yaw_) - vel_.y * std::sin(yaw_), vel_.x * std::sin(yaw_) + vel_.y * std::cos(yaw_), 0.f};
     d.chassis.angularVelocity = {0.f, 0.f, omega_};
 
-    static constexpr const char* kNames[4] = {"fl", "fr", "bl", "br"};
-    static constexpr float kWx[4] = {0.3f, 0.3f, -0.3f, -0.3f};
-    static constexpr float kWy[4] = {0.3f, -0.3f, 0.3f, -0.3f};
-    for (int i = 0; i < 4; ++i) {
+    const std::vector<sdk::WheelSpec>& wheels = scene_.config->drivetrain.spec.wheels;
+    for (std::size_t i = 0; i < wheels.size(); ++i) {
         sdk::WheelSample w;
-        w.name = kNames[i];
-        w.contactPoint = d.chassis.pose.transformPoint({kWx[i], kWy[i], -0.2f});
+        w.name = wheels[i].name;
+        w.contactPoint = d.chassis.pose.transformPoint({wheels[i].positionM.x, wheels[i].positionM.y, -0.2f});
         w.contactPoint.z = 0.f;
         w.steerAngleRad = steer_[i];
         w.spinAngleRad = spin_[i];
@@ -689,18 +594,18 @@ void FakeRunBackend::publish() {
         fuel.positions.reserve(balls_.size());
         for (const auto& b : balls_) fuel.positions.push_back(b.pos);
         d.entityGroups.push_back(std::move(fuel));
-        d.hud.push_back({"demo.fuel.count", fuelHeld_});
-        d.hud.push_back({"demo.fuel.capacity", kCapacity});
-        d.hud.push_back({"demo.hub.active", static_cast<int>(sdk::usToSeconds(simUs_) / 10.0) % 2 == 0});
-        d.hud.push_back({"demo.score.blue", score_});
-        d.hud.push_back({"demo.score.red", score_ / 2 + 3});
+        d.hud.push_back({demo::kFuelCount, fuelHeld_});
+        d.hud.push_back({demo::kFuelCapacity, kCapacity});
+        d.hud.push_back({demo::kHubActive, static_cast<int>(sdk::usToSeconds(simUs_) / 10.0) % 2 == 0});
+        d.hud.push_back({demo::kScoreBlue, score_});
+        d.hud.push_back({demo::kScoreRed, score_ / 2 + 3});
         if (ds_.matchTimeS >= 0.0) {
-            d.hud.push_back({"demo.match_time", ds_.matchTimeS});
-            d.hud.push_back({"demo.phase", std::string(ds_.matchTimeS > 20.0 ? "SHIFT 1" : "AUTO")});
-            d.hud.push_back({"demo.hub.blue.status", std::string("Active 0:18")});
-            d.hud.push_back({"demo.hub.red.status", std::string("Inactive")});
+            d.hud.push_back({demo::kMatchTime, ds_.matchTimeS});
+            d.hud.push_back({demo::kPhase, std::string(ds_.matchTimeS > 20.0 ? "SHIFT 1" : "AUTO")});
+            d.hud.push_back({demo::kHubBlueStatus, std::string("Active 0:18")});
+            d.hud.push_back({demo::kHubRedStatus, std::string("Inactive")});
         }
-        d.hud.push_back({"demo.message", ds_.gameSpecificMessage.empty() ? std::string("—") : ds_.gameSpecificMessage});
+        d.hud.push_back({demo::kMessage, ds_.gameSpecificMessage.empty() ? std::string("—") : ds_.gameSpecificMessage});
     }
 
     d.batteryVoltageV = sdk::kNominalBatteryVoltageV - 0.9 * (std::hypot(static_cast<double>(vel_.x), static_cast<double>(vel_.y)) / 3.5) - (flywheel_ > 1.f ? 0.5 : 0.0);
@@ -710,6 +615,7 @@ void FakeRunBackend::publish() {
     d.physicsStats.contacts = 4;
     d.physicsStats.lastStepMs = 0.35;
     slot_.publish(builder.build());
+    emit snapshotPublished();
 }
 
 }  // namespace wpiemu::app::runview

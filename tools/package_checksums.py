@@ -4,6 +4,8 @@ import argparse
 import hashlib
 from pathlib import Path
 
+import common
+
 
 def digest(path: Path) -> str:
     result = hashlib.sha256()
@@ -27,7 +29,7 @@ def main() -> None:
         expected = f"{digest(artifact)}  {artifact.name}\n"
         if not args.verify:
             sidecar.write_bytes(expected.encode("utf-8"))
-        if sidecar.read_text(encoding="utf-8") != expected:
+        if common.read_text(sidecar) != expected:
             raise SystemExit(f"checksum mismatch: {artifact}")
         print(f"checksum: {artifact.name}: ok")
 

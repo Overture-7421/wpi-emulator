@@ -37,10 +37,16 @@ inline sdk::CameraConfig makeCamera(sdk::CameraKind kind, std::string name) {
     return c;
 }
 
+// The field size a test layout would carry (the 2026 field); VisionSetup::fieldLengthM/WidthM come from the plugin's layout.
+inline constexpr double kTestFieldLengthM = 16.541;
+inline constexpr double kTestFieldWidthM = 8.069;
+
 inline sdk::VisionSetup makeSetup(std::vector<sdk::CameraConfig> cameras, std::string photonVersion = {}) {
     sdk::VisionSetup s;
     for (auto& c : cameras) s.cameras.push_back(sdk::CameraSetup{std::move(c)});
     s.photonVersion = std::move(photonVersion);
+    s.fieldLengthM = kTestFieldLengthM;
+    s.fieldWidthM = kTestFieldWidthM;
     return s;
 }
 
@@ -75,6 +81,12 @@ inline sdk::CameraFrame makeFrame(std::uint32_t cameraIndex, std::vector<sdk::Ta
         f.tagSpanM = f.tags.size() > 1 ? 1.25 : 0.0;
     }
     return f;
+}
+
+// Camera 0's frame with tags 3 and 7 in view (makeFrame's pose and timing).
+inline std::vector<sdk::CameraFrame> twoTagFrame() {
+    return {makeFrame(0, {makeTag(3, 1.0, -10.0, 1.0, {3.f, -0.5f, 0.1f}),
+                          makeTag(7, 2.0, 5.0, -3.0, {2.f, 0.2f, 0.f})})};
 }
 
 struct Rig {

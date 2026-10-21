@@ -250,4 +250,13 @@ private:
     std::vector<std::unique_ptr<ScriptedMechanism>> scripted_;
 };
 
+// Section with no staged fuel on the field, so tests only see the fuel they create. `capacity` and `preload` default to
+// the plugin's defaults; pass others for the fuel meter.
+inline void emptyField(Session& s, int capacity = 30, int preload = 8) {
+    s.section()["neutralFuel"] = 0;
+    s.section()["depotFuel"] = 0;
+    s.section()["capacity"] = capacity;
+    s.section()["preloadFuel"] = preload;
+}
+
 }  // namespace g26test

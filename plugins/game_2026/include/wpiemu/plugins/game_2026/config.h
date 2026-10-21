@@ -1,13 +1,12 @@
 #pragma once
 
 // Plugin section "game_2026" of robot.json: parsing, defaults and the PropertySchema the generic
-// inspector renders. Per-intake / per-shooter parameters are NOT here: they are properties of the
-// robot zones (fuel_zones.h) so several of each can exist.
+// inspector renders, all from one sdk::ConfigBindings table (config.cpp). Per-intake / per-shooter parameters are NOT
+// here: they are properties of the robot zones (fuel_zones.h) so several of each can exist.
 
 #include <string>
 
 #include "wpiemu/sdk/config/plugin_config.h"
-#include "wpiemu/sdk/config/property_schema.h"
 #include "wpiemu/sdk/core/value.h"
 
 namespace wpiemu::plugins::game_2026 {
@@ -47,14 +46,11 @@ struct GameConfig {
 };
 
 // All plugin config properties with defaults, ranges and groups.
-sdk::PropertySchema configPropertySchema();
 sdk::PluginConfigSchema configSchema();
 
 // Missing keys take defaults; out-of-range values are clamped to the schema range. Never fails.
 GameConfig parseConfig(const sdk::Value& data);
+// Every key, in schema order.
 sdk::Value toValue(const GameConfig& config);
-
-const char* firstInactiveName(FirstInactiveMode mode);
-const char* humanPlayerName(HumanPlayerMode mode);
 
 }  // namespace wpiemu::plugins::game_2026

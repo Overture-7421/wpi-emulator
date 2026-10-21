@@ -7,15 +7,7 @@ using namespace wpiemu::halsim;
 using namespace wpiemu::halsim::testing;
 
 namespace {
-struct Started {
-    explicit Started(proto::HelloAck ack = defaultAck(), ExtensionConfig cfg = Rig::defaultConfig()) : rig(std::move(ack), std::move(cfg)) {
-        REQUIRE(rig.start());
-        rig.clock.started = true;
-        REQUIRE(rig.emulator->waitForLifecycle(2000ms));
-    }
-    Rig rig;
-};
-
+// Parks console writes once enabled, so a test can hold the console (and the logger mutex behind it) at a chosen moment.
 struct ConsoleGate {
     void write(std::string_view) {
         std::unique_lock lock(mutex);
@@ -23,6 +15,14 @@ struct ConsoleGate {
         entered = true;
         cv.notify_all();
         cv.wait(lock, [&] { return released; });
+    }
+    void enable() {
+        std::lock_guard lock(mutex);
+        enabled = true;
+    }
+    bool waitEntered(std::chrono::milliseconds timeout = 1000ms) {
+        std::unique_lock lock(mutex);
+        return cv.wait_for(lock, timeout, [&] { return entered; });
     }
     void release() {
         std::lock_guard lock(mutex);
@@ -34,6 +34,31 @@ struct ConsoleGate {
     bool enabled = false;
     bool entered = false;
     bool released = false;
+};
+
+proto::HelloAck terminatingAck() {
+    proto::HelloAck ack = defaultAck();
+    ack.watchdogPolicy = proto::WatchdogPolicy::Terminate;
+    return ack;
+}
+
+struct Started {
+    explicit Started(proto::HelloAck ack = defaultAck(), ExtensionConfig cfg = Rig::defaultConfig()) : rig(std::move(ack), std::move(cfg)) {
+        startAndAwaitLifecycle();
+    }
+    // The robot's console writes go through `gate`, which must outlive the rig.
+    explicit Started(ConsoleGate& gate, proto::HelloAck ack = defaultAck()) : rig(std::move(ack)) {
+        rig.console = [&gate](std::string_view line) { gate.write(line); };
+        startAndAwaitLifecycle();
+    }
+    Rig rig;
+
+private:
+    void startAndAwaitLifecycle() {
+        REQUIRE(rig.start());
+        rig.clock.started = true;
+        REQUIRE(rig.emulator->waitForLifecycle(2000ms));
+    }
 };
 }  // namespace
 
@@ -120,9 +145,7 @@ TEST_CASE("watchdog: the timeout is the negotiated one and WPIEMU_WATCHDOG=off d
 }
 
 TEST_CASE("watchdog: Terminate policy ends the robot process instead of resuming time") {
-    proto::HelloAck ack = defaultAck();
-    ack.watchdogPolicy = proto::WatchdogPolicy::Terminate;
-    Started t(ack);
+    Started t(terminatingAck());
     REQUIRE(t.rig.emulator->tick());
     REQUIRE(waitUntil([&] { return t.rig.process.calls > 0; }, 2500ms));
     CHECK(t.rig.process.lastCode == 0);
@@ -140,9 +163,7 @@ TEST_CASE("disconnect: losing the emulator resumes HAL timing immediately and en
 }
 
 TEST_CASE("disconnect: Terminate policy ends the process on a lost connection") {
-    proto::HelloAck ack = defaultAck();
-    ack.watchdogPolicy = proto::WatchdogPolicy::Terminate;
-    Started t(ack);
+    Started t(terminatingAck());
     t.rig.emulator->disconnect();
     REQUIRE(t.rig.runtime->waitFinished(2000ms));
     CHECK(t.rig.process.calls == 1);
@@ -162,38 +183,28 @@ TEST_CASE("watchdog: recovery never waits for a blocked console or logger mutex"
         terminate = holdLogger = true;
     }
     ConsoleGate gate;
-    auto ack = defaultAck();
-    if (terminate) ack.watchdogPolicy = proto::WatchdogPolicy::Terminate;
-    Rig rig(ack);
-    rig.console = [&](std::string_view line) { gate.write(line); };
-    REQUIRE(rig.start());
-    rig.clock.started = true;
-    REQUIRE(rig.emulator->waitForLifecycle(2000ms));
-    rig.clock.blockNextStep = true;
+    Started t(gate, terminate ? terminatingAck() : defaultAck());
+    t.rig.clock.blockNextStep = true;
     proto::SensorFrame frame;
     frame.tick = 1;
     frame.sessionId = 7;
     frame.runEpoch = 1;
-    REQUIRE(rig.emulator->send(proto::Message(frame)));
-    REQUIRE(waitUntil([&] { return rig.clock.blockedSteps == 1; }));
-    {
-        std::lock_guard lock(gate.mutex);
-        gate.enabled = true;
-    }
+    REQUIRE(t.rig.emulator->send(proto::Message(frame)));
+    REQUIRE(waitUntil([&] { return t.rig.clock.blockedSteps == 1; }));
+    gate.enable();
     std::thread writer;
     if (holdLogger) {
-        writer = std::thread([&] { rig.runtime->logger().warn("test", "console is blocked"); });
-        std::unique_lock lock(gate.mutex);
-        CHECK(gate.cv.wait_for(lock, 1000ms, [&] { return gate.entered; }));
+        writer = std::thread([&] { t.rig.runtime->logger().warn("test", "console is blocked"); });
+        CHECK(gate.waitEntered());
     }
-    CHECK(waitUntil([&] { return terminate ? rig.process.calls > 0 : rig.clock.resumeCalls > 0; },
+    CHECK(waitUntil([&] { return terminate ? t.rig.process.calls > 0 : t.rig.clock.resumeCalls > 0; },
                     2500ms));
     // Always release before any failing assertion can unwind borrowed service lifetimes.
     gate.release();
     if (writer.joinable()) writer.join();
-    rig.clock.release();
-    rig.runtime->stop();
-    CHECK(rig.runtime->finished());
+    t.rig.clock.release();
+    t.rig.runtime->stop();
+    CHECK(t.rig.runtime->finished());
 }
 
 TEST_CASE("disconnect: recovery precedes diagnostics even while the console owns the logger") {
@@ -203,57 +214,35 @@ TEST_CASE("disconnect: recovery precedes diagnostics even while the console owns
         terminate = true;
     }
     ConsoleGate gate;
-    auto ack = defaultAck();
-    if (terminate) ack.watchdogPolicy = proto::WatchdogPolicy::Terminate;
-    Rig rig(ack);
-    rig.console = [&](std::string_view line) { gate.write(line); };
-    REQUIRE(rig.start());
-    rig.clock.started = true;
-    REQUIRE(rig.emulator->waitForLifecycle(2000ms));
-    {
-        std::lock_guard lock(gate.mutex);
-        gate.enabled = true;
-    }
-    std::thread writer([&] { rig.runtime->logger().warn("test", "console is blocked"); });
-    {
-        std::unique_lock lock(gate.mutex);
-        CHECK(gate.cv.wait_for(lock, 1000ms, [&] { return gate.entered; }));
-    }
-    rig.emulator->disconnect();
-    CHECK(waitUntil([&] { return terminate ? rig.process.calls > 0 : rig.clock.resumeCalls > 0; },
+    Started t(gate, terminate ? terminatingAck() : defaultAck());
+    gate.enable();
+    std::thread writer([&] { t.rig.runtime->logger().warn("test", "console is blocked"); });
+    CHECK(gate.waitEntered());
+    t.rig.emulator->disconnect();
+    CHECK(waitUntil([&] { return terminate ? t.rig.process.calls > 0 : t.rig.clock.resumeCalls > 0; },
                     2000ms));
     gate.release();
     writer.join();
-    CHECK(rig.runtime->waitFinished(2000ms));
+    CHECK(t.rig.runtime->waitFinished(2000ms));
 }
 
 TEST_CASE("stop(): bounded detach does not log through a blocked console") {
     ConsoleGate gate;
-    Rig rig;
-    rig.console = [&](std::string_view line) { gate.write(line); };
-    REQUIRE(rig.start());
-    rig.clock.started = true;
-    REQUIRE(rig.emulator->waitForLifecycle(2000ms));
-    {
-        std::lock_guard lock(gate.mutex);
-        gate.enabled = true;
-    }
-    std::thread writer([&] { rig.runtime->logger().warn("test", "console is blocked"); });
-    {
-        std::unique_lock lock(gate.mutex);
-        CHECK(gate.cv.wait_for(lock, 1000ms, [&] { return gate.entered; }));
-    }
+    Started t(gate);
+    gate.enable();
+    std::thread writer([&] { t.rig.runtime->logger().warn("test", "console is blocked"); });
+    CHECK(gate.waitEntered());
     std::atomic<bool> stopped{false};
     std::thread stopper([&] {
-        rig.runtime->stop();
+        t.rig.runtime->stop();
         stopped = true;
     });
     CHECK(waitUntil([&] { return stopped.load(); }, 4500ms));
-    CHECK_FALSE(rig.clock.paused);
+    CHECK_FALSE(t.rig.clock.paused);
     gate.release();
     writer.join();
     stopper.join();
-    CHECK(rig.runtime->waitFinished(2000ms));
+    CHECK(t.rig.runtime->waitFinished(2000ms));
 }
 
 TEST_CASE("disconnect before the robot program started still unfreezes the robot") {

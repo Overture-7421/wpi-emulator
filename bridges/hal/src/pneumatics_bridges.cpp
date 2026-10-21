@@ -16,9 +16,6 @@ enum ModuleSignal : std::size_t { kCompressorOn, kClosedLoop, kPressureSwitch, k
 
 // ---- module ------------------------------------------------------------------------------------
 
-PneumaticsModuleBridge::PneumaticsModuleBridge(std::shared_ptr<IPneumaticsHal> hal, PneumaticsKind kind)
-    : ChannelFamilyBridge(kind.bridgeName), hal_(std::move(hal)), kind_(std::move(kind)) {}
-
 int PneumaticsModuleBridge::channelCount() const { return hal_->moduleCount(); }
 bool PneumaticsModuleBridge::isInitialized(int module) const { return hal_->moduleInitialized(module); }
 
@@ -51,12 +48,6 @@ void PneumaticsModuleBridge::writeSignal(int module, std::size_t signalIndex, do
 }
 
 // ---- solenoids ---------------------------------------------------------------------------------
-
-SolenoidBridge::SolenoidBridge(std::shared_ptr<IPneumaticsHal> hal, PneumaticsKind kind, bool announceAll)
-    : ChannelFamilyBridge(kind.bridgeName + ".solenoid"),
-      hal_(std::move(hal)),
-      kind_(std::move(kind)),
-      announceAll_(announceAll) {}
 
 int SolenoidBridge::channelsPerModule() const { return hal_->solenoidChannelCount(); }
 

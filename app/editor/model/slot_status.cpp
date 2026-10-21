@@ -295,6 +295,7 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
             static const char* const kFields[] = {"id", "label", "name", "kind", "hFovDeg", "vFovDeg", "maxRangeM", "maxIncidenceDeg",
                                                   "fps", "latencyMs", "widthPx", "heightPx", "positionNoiseM", "yawNoiseDeg", "local"};
             if (field.rfind("attachment", 0) == 0) loc.fieldKey = "parent";
+            else if (field == "pose") loc.fieldKey = "local";  // the validator's path of the mount pose
             else if (std::find(std::begin(kFields), std::end(kFields), field) != std::end(kFields)) loc.fieldKey = field;
         }
         return loc;
@@ -309,7 +310,7 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
         const auto dot = path.find('.');
         if (dot != std::string::npos) {
             const std::string slot = path.substr(dot + 1);
-            for (const auto& spec : ops::drivetrainSlotSpecs(c.drivetrain.spec))
+            for (const auto& spec : ops::slotSpecsFor(c, catalog, sdk::slot_owner::kDrivetrain))
                 if (spec.name == slot) {
                     loc.selection = SelectionRef::slot(sdk::slot_owner::kDrivetrain, slot);
                     return loc;

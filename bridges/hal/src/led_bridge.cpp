@@ -16,9 +16,6 @@ namespace {
 enum LedSignal : std::size_t { kRunning, kLength, kOutputPort, kAvgR, kAvgG, kAvgB, kFirstRgb };
 }
 
-AddressableLedBridge::AddressableLedBridge(std::shared_ptr<IAddressableLedHal> hal)
-    : ChannelFamilyBridge("hal.addressable_led"), hal_(std::move(hal)) {}
-
 sdk::Status AddressableLedBridge::start(sdk::IBridgeHost& host) {
     summaries_.assign(static_cast<std::size_t>(channelCount()), Summary{});
     return ChannelFamilyBridge::start(host);
@@ -47,9 +44,6 @@ void AddressableLedBridge::collectOutputs(std::vector<sdk::SignalSample>& out) {
     }
     ChannelFamilyBridge::collectOutputs(out);
 }
-
-int AddressableLedBridge::channelCount() const { return hal_->channelCount(); }
-bool AddressableLedBridge::isInitialized(int index) const { return hal_->initialized(index); }
 
 sdk::DeviceDescriptor AddressableLedBridge::describe(int index) const {
     return makeDescriptor("addressable_led", index, -1, Capability::Led, "HALSIM AddressableLED[" + std::to_string(index) + "]",

@@ -42,15 +42,10 @@ sdk::Pose3 translationAlong(AxisName a, double distanceM) {
     return {unitVector(a) * static_cast<float>(distanceM), sdk::Quat{}};
 }
 
-double wrapAngle(double angleRad) {
-    const double wrapped = std::remainder(angleRad, sdk::kTwoPi);   // [-pi, pi]
-    return wrapped <= -sdk::kPi ? wrapped + sdk::kTwoPi : wrapped;
-}
-
 sdk::PropertySpec axisEnumProp(const std::string& key, const std::string& label, AxisName def,
                                const std::string& group) {
-    return enumProp(key, label, "Axis in the mechanism frame (+X forward, +Y left, +Z up).", axisKey(def),
-                    {{"x", "X"}, {"y", "Y"}, {"z", "Z"}}, group);
+    return sdk::props::choice(key, label, group, axisKey(def), {{"x", "X"}, {"y", "Y"}, {"z", "Z"}},
+                              "Axis in the mechanism frame (+X forward, +Y left, +Z up).");
 }
 
 sdk::Result<std::unique_ptr<MechanismAxis>> buildAxis(const std::string& owner, const AxisOptions& options,
@@ -60,7 +55,7 @@ sdk::Result<std::unique_ptr<MechanismAxis>> buildAxis(const std::string& owner, 
     auto plant = deps.plants->createFor(settings.value().plant);
     if (!plant.ok()) return plant.error();
     MotorDrive drive(settings.value().plant.motor, settings.value().statorCurrentLimitA, settings.value().neutral);
-    return std::make_unique<MechanismAxis>(owner, options, settings.value(), std::move(plant).value(), std::move(drive));
+    return std::make_unique<MechanismAxis>(owner, settings.value(), std::move(plant).value(), std::move(drive));
 }
 
 AxisMechanismBase::AxisMechanismBase(const sdk::MechanismConfig& config) : id_(config.id), type_(config.type) {

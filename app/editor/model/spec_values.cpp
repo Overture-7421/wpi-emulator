@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "model/config_ops.h"
+#include "wpiemu/sdk/config/property_builders.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/dynamics/motor_model.h"
 
@@ -13,54 +14,17 @@ using sdk::PropertySpec;
 using sdk::PropertyType;
 using sdk::PropertyUnit;
 using sdk::Value;
+using sdk::props::makeSpec;
+using sdk::props::withRange;
 
 namespace {
 
-PropertySpec makeSpec(std::string key, std::string label, PropertyType type, PropertyUnit unit, Value def,
-                      std::string group, std::string description = {}) {
-    PropertySpec s;
-    s.key = std::move(key);
-    s.label = std::move(label);
-    s.type = type;
-    s.unit = unit;
-    s.defaultValue = std::move(def);
-    s.group = std::move(group);
-    s.description = std::move(description);
-    return s;
-}
-
-PropertySpec& withRange(PropertySpec& s, double min, double max, double step = 0.0) {
-    s.min = min;
-    s.max = max;
-    s.step = step;
-    return s;
-}
-
-double num(const Value& v, double fallback) { return v.isNumber() ? v.asDouble() : fallback; }
-float numF(const Value& v, float fallback) { return static_cast<float>(num(v, static_cast<double>(fallback))); }
+float numF(const Value& v, float fallback) { return static_cast<float>(v.asDouble(static_cast<double>(fallback))); }
 
 sdk::Vec3 vec(const Value& v, const sdk::Vec3& fallback) {
     sdk::Vec3 out = fallback;
     sdk::fromValue(v, out);
     return out;
-}
-
-const char* wheelKindKey(sdk::WheelKind k) {
-    switch (k) {
-        case sdk::WheelKind::Standard: return "standard";
-        case sdk::WheelKind::Omni: return "omni";
-        case sdk::WheelKind::Mecanum: return "mecanum";
-        case sdk::WheelKind::Swerve: return "swerve";
-    }
-    return "standard";
-}
-
-sdk::WheelKind wheelKindFrom(const std::string& s, sdk::WheelKind fallback) {
-    if (s == "standard") return sdk::WheelKind::Standard;
-    if (s == "omni") return sdk::WheelKind::Omni;
-    if (s == "mecanum") return sdk::WheelKind::Mecanum;
-    if (s == "swerve") return sdk::WheelKind::Swerve;
-    return fallback;
 }
 
 void motorOptions(PropertySpec& spec, const sdk::MotorSpec& current) {
@@ -121,10 +85,10 @@ Value robotValues(const sdk::RobotConfig& c) {
 
 void applyRobot(sdk::RobotConfig& c, const std::string& key, const Value& v) {
     if (key == "name") c.name = v.asString(c.name);
-    else if (key == "batteryNominalV") c.battery.nominalVoltageV = num(v, c.battery.nominalVoltageV);
+    else if (key == "batteryNominalV") c.battery.nominalVoltageV = v.asDouble(c.battery.nominalVoltageV);
     else if (key == "batteryResistanceMilliOhm")
-        c.battery.internalResistanceOhm = num(v, c.battery.internalResistanceOhm * 1000.0) / 1000.0;
-    else if (key == "brownoutV") c.battery.brownoutVoltageV = num(v, c.battery.brownoutVoltageV);
+        c.battery.internalResistanceOhm = v.asDouble(c.battery.internalResistanceOhm * 1000.0) / 1000.0;
+    else if (key == "brownoutV") c.battery.brownoutVoltageV = v.asDouble(c.battery.brownoutVoltageV);
     else if (key == "customStartPose") {
         if (v.asBool())
             c.startPose = c.startPose.value_or(sdk::RobotStartPose{});
@@ -231,8 +195,8 @@ Value drivetrainValues(const sdk::DrivetrainSpec& s) {
     return o;
 }
 
-void applyDrivetrain(sdk::RobotConfig& c, const std::string& key, const Value& v) {
-    if (key == "kind") ops::setDrivetrainKind(c, v.asString(c.drivetrain.spec.kind));
+void applyDrivetrain(sdk::RobotConfig& c, const EditorCatalog& catalog, const std::string& key, const Value& v) {
+    if (key == "kind") ops::setDrivetrainKind(c, catalog, v.asString(c.drivetrain.spec.kind));
     else if (key == "tireModel") c.drivetrain.spec.tireModel = v.asString(c.drivetrain.spec.tireModel);
     else if (key == "loadTransferTauS") c.drivetrain.spec.loadTransferTauS = numF(v, c.drivetrain.spec.loadTransferTauS);
 }
@@ -243,8 +207,11 @@ PropertySchema wheelSchema(const sdk::WheelSpec& wheel) {
     const sdk::WheelSpec d;
     s.properties.push_back(makeSpec("name", "Name", PropertyType::String, PropertyUnit::None, "wheel", "Wheel",
                                     "Unique within the drivetrain; used in the slot names (<name>.drive)."));
-    auto kind = makeSpec("kind", "Type", PropertyType::Enum, PropertyUnit::None, "standard", "Wheel");
-    kind.options = {{"standard", "Standard"}, {"omni", "Omni"}, {"mecanum", "Mecanum"}, {"swerve", "Swerve module"}};
+    auto kind = makeSpec("kind", "Type", PropertyType::Enum, PropertyUnit::None, sdk::wheelKindName(sdk::WheelKind::Standard), "Wheel");
+    kind.options = {{sdk::wheelKindName(sdk::WheelKind::Standard), "Standard"},
+                    {sdk::wheelKindName(sdk::WheelKind::Omni), "Omni"},
+                    {sdk::wheelKindName(sdk::WheelKind::Mecanum), "Mecanum"},
+                    {sdk::wheelKindName(sdk::WheelKind::Swerve), "Swerve module"}};
     s.properties.push_back(kind);
     s.properties.push_back(makeSpec("position", "Hub position (z = height above floor)", PropertyType::Vec3, PropertyUnit::Meters,
                                     sdk::toValue(sdk::Vec3{}), "Wheel"));
@@ -294,7 +261,7 @@ PropertySchema wheelSchema(const sdk::WheelSpec& wheel) {
 Value wheelValues(const sdk::WheelSpec& w) {
     Value o = Value::makeObject();
     o["name"] = w.name;
-    o["kind"] = wheelKindKey(w.kind);
+    o["kind"] = sdk::wheelKindName(w.kind);
     o["position"] = sdk::toValue(w.positionM);
     o["radius"] = w.radiusM;
     o["width"] = w.widthM;
@@ -318,14 +285,14 @@ void applyWheel(sdk::RobotConfig& c, const std::string& wheelName, const std::st
     sdk::WheelSpec* w = ops::findWheel(c, wheelName);
     if (w == nullptr) return;
     if (key == "kind") {
-        w->kind = wheelKindFrom(v.asString(), w->kind);
+        w->kind = sdk::parseWheelKind(v.asString()).value_or(w->kind);
         w->steered = w->kind == sdk::WheelKind::Swerve;
         if (!w->steered) {
             auto& maps = c.drivetrain.mappings;
             maps.erase(std::remove_if(maps.begin(), maps.end(),
                                       [&](const sdk::SlotMapping& m) {
-                                          return m.slot.slot == w->name + ".steer" ||
-                                                 m.slot.slot == w->name + ".steerEncoder";
+                                          return m.slot.slot == sdk::steerSlotName(w->name) ||
+                                                 m.slot.slot == sdk::steerEncoderSlotName(w->name);
                                       }),
                        maps.end());
         }
@@ -344,8 +311,8 @@ void applyWheel(sdk::RobotConfig& c, const std::string& wheelName, const std::st
                                       for (int i = 0; i < w->driveMotorCount; ++i)
                                           if (m.slot.slot == sdk::driveSlotName(w->name, i)) return false;
                                       return ops::wheelOfSlot(m.slot.slot) == w->name &&
-                                             m.slot.slot != w->name + ".steer" &&
-                                             m.slot.slot != w->name + ".steerEncoder";
+                                             m.slot.slot != sdk::steerSlotName(w->name) &&
+                                             m.slot.slot != sdk::steerEncoderSlotName(w->name);
                                   }),
                    maps.end());
     }
@@ -377,7 +344,7 @@ PropertySchema primitiveSchema() {
     height.visibleWhenKey = "kind";
     height.visibleWhenEquals = "cylinder";
     s.properties.push_back(withRange(height, 0.001, 2.0, 0.005));
-    s.properties.push_back(makeSpec("color", "Colour", PropertyType::Color, PropertyUnit::None, "#808080", "Appearance"));
+    s.properties.push_back(makeSpec("color", "Colour", PropertyType::Color, PropertyUnit::None, sdk::kDefaultPrimitiveColor, "Appearance"));
     s.properties.push_back(makeSpec("collides", "Collides with the world", PropertyType::Bool, PropertyUnit::None, false, "Appearance",
                                     "Adds a collision shape to the owning body (bumpers, frame rails)."));
     auto mass = makeSpec("massKg", "Mass (informational)", PropertyType::Double, PropertyUnit::Kilograms, 0.0, "Appearance",

@@ -25,7 +25,9 @@ Directions are from the simulator: Input is written to the robot, Output is read
 ## HAL families
 
 [ChannelFamilyBridge](../../sdk/include/wpiemu/sdk/devices/channel_family_bridge.h) discovers indexed
-HAL families by initialized-state polling and retires them when freed. The
+HAL families by initialized-state polling and retires them when freed. Each family in this module
+derives from [HalFamilyBridge or IndexedHalBridge](../../bridges/hal/src/hal_family_bridge.h), which own the
+HAL seam and default the read or write direction a family lacks. The
 [HAL API seam](../../bridges/hal/include/wpiemu/bridges/hal/hal_api.h) permits fake backends;
 the real [binding](../../bridges/hal/src/hal_sim_binding.cpp) obtains counts from HAL and bounds
 indices before calling HALSIM getters/setters. The
@@ -120,6 +122,9 @@ hull center, with yaw only, not the chassis COM frame. `robotToCamera` follows t
 and tilt relative to that robot frame. Tag +X is face-outward; bearing is positive right, elevation
 positive up, and image pixels run right/down from the top-left.
 Visibility tests tag centers for FOV, range, and facing; there is no occlusion or optical distortion.
+Limelight red-origin and center-origin pose arrays are derived from the blue-origin pose with the field size in
+`VisionSetup` (the plugin's AprilTag layout). If that size is missing or not finite and positive, those arrays are
+left empty, only the blue-origin array is published, and the bridge warns once per configuration.
 Detections have zero ambiguity; coprocessor robot poses are ground truth plus configured noise,
 not a perspective solve. Robot-side estimators can still solve from the encoded detections.
 
@@ -147,6 +152,8 @@ a default setting. Subscriber-only topics therefore must not be treated as robot
 Configure rebuilds camera state but does not sweep removed cameras' publishers. Reset republishes
 empty/no-target results immediately if initialized and available, otherwise on the next available
 tick. Stop unpublishes current camera-prefix topics; Photon root state is not swept by that loop.
+Both encoders keep this lifecycle (configure, lookup by `cameraIndex`, reset, heartbeat cadence) in the SDK's
+[CameraSet](../../sdk/include/wpiemu/sdk/vision/camera_bridge.h); topics and encodings stay in the bridge.
 
 ## Limelight interoperability
 
@@ -159,9 +166,8 @@ Largest area is primary; no-target pose arrays are empty, not a zero pose.
 MegaTag 2 arrays carry the same simulated estimate, not an orientation-conditioned solve.
 
 Blue arrays preserve blue-origin poses; red uses the opposite corner with a half-turn, and bare
-`botpose` uses field-center origin. Conversion dimensions come from
-[VisionBridgeOptions](../../bridges/vision/include/wpiemu/bridges/vision/vision_bridges.h), not the
-layout name. Geometry arrays use [pose6](../../bridges/vision/src/vision_math.h) directly in NWU;
+`botpose` uses field-center origin. Conversion dimensions come from the `VisionSetup` field size
+(the plugin's AprilTag layout), not the layout name. Geometry arrays use [pose6](../../bridges/vision/src/vision_math.h) directly in NWU;
 there is no extra optical-axis remapping. `camerapose_robotspace` comes from model frames, not a
 robot-written transform request. Pipeline index is mirrored; LED/orientation/crop settings do not
 change detections. The encoder is AprilTag-only, not a complete Limelight firmware implementation.

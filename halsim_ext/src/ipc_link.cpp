@@ -45,14 +45,12 @@ bool IpcLink::postDroppable(sdk::proto::Message message) {
 }
 
 IpcLink::PopResult IpcLink::pop(sdk::proto::Message& out, std::chrono::milliseconds timeout) {
-    std::unique_lock lock(mutex_);
-    inboundCv_.wait_for(lock, timeout, [&] { return !inbound_.empty() || closed_.load(std::memory_order_acquire); });
-    if (!inbound_.empty()) {
-        out = std::move(inbound_.front());
-        inbound_.pop_front();
-        return PopResult::Message;
+    switch (inbound_.pop(out, timeout)) {
+        case InboundQueue::PopResult::Item: return PopResult::Message;
+        case InboundQueue::PopResult::Closed: return PopResult::Closed;
+        case InboundQueue::PopResult::Timeout: break;
     }
-    return closed_.load(std::memory_order_acquire) ? PopResult::Closed : PopResult::Timeout;
+    return PopResult::Timeout;
 }
 
 void IpcLink::close(std::string reason) {
@@ -62,7 +60,7 @@ void IpcLink::close(std::string reason) {
         reason_ = reason.empty() ? "closed" : std::move(reason);
     }
     channel_->close();
-    inboundCv_.notify_all();
+    inbound_.close();
     outboundCv_.notify_all();
     drainedCv_.notify_all();
 }
@@ -99,17 +97,13 @@ void IpcLink::readerLoop() {
         }
         if (!got.value()) continue;  // timeout
         decodeErrors = 0;
-        bool overflow = false;
-        {
-            std::lock_guard lock(mutex_);
-            if (inbound_.size() >= kMaxInbound) overflow = true;
-            else inbound_.push_back(std::move(message));
+        switch (inbound_.push(std::move(message))) {
+            case InboundQueue::PushResult::Pushed: break;
+            case InboundQueue::PushResult::Full:
+                close("inbound queue overflow: the clock thread is not keeping up");
+                return;
+            case InboundQueue::PushResult::Closed: return;
         }
-        if (overflow) {
-            close("inbound queue overflow: the clock thread is not keeping up");
-            return;
-        }
-        inboundCv_.notify_one();
     }
 }
 

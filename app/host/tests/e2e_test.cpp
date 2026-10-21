@@ -27,7 +27,6 @@
 #include <filesystem>
 #include <map>
 #include <string>
-#include <thread>
 
 #define DOCTEST_CONFIG_IMPLEMENT
 #include <doctest/doctest.h>
@@ -37,6 +36,7 @@
 #include "wpiemu/core/config/config_store.h"
 #include "wpiemu/core/launcher/project_inspector.h"
 #include "wpiemu/sdk/mechanisms/motion_config.h"
+#include "wpiemu/sdk/testing/wait.h"
 
 namespace fs = std::filesystem;
 using namespace wpiemu;
@@ -102,8 +102,8 @@ sdk::RobotConfig mappedConfig(const fs::path& project) {
         w.steerMotor = sdk::motors::falcon500();
         c.drivetrain.spec.wheels.push_back(w);
         c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, w.name + ".drive"}, phoenixKey("talonfx", m.driveId)});
-        c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, w.name + ".steer"}, phoenixKey("talonfx", m.steerId)});
-        c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, w.name + ".steerEncoder"},
+        c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, sdk::steerSlotName(w.name)}, phoenixKey("talonfx", m.steerId)});
+        c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, sdk::steerEncoderSlotName(w.name)},
                                          phoenixKey("cancoder", m.encoderId)});
     }
     c.robotMappings.push_back({{sdk::slot_owner::kRobot, "imu"}, phoenixKey("pigeon2", kPigeonId)});
@@ -153,26 +153,18 @@ bool hasDevice(const sdk::ISimSnapshot& snap, const char* type, int id) {
 
 // Pumps status() / logs until `done`, a terminal state or the timeout. Robot console lines are echoed when WPIEMU_E2E_VERBOSE is set.
 template <class Done>
-bool waitFor(app::host::RobotSession& s, std::chrono::seconds timeout, Done&& done, app::host::SessionStatus& last, std::vector<std::string>& console) {
-    const auto deadline = Clock::now() + timeout;
+bool waitFor(app::host::RobotSession& s, std::chrono::seconds timeout, Done&& done, sdk::SessionStatus& last, std::vector<std::string>& console) {
     const bool verbose = !env("WPIEMU_E2E_VERBOSE").empty();
-    while (Clock::now() < deadline) {
-        for (const app::host::LogEntry& e : s.takeLogs(5000)) {
-            const std::string line = (e.stream == app::host::LogStream::Emulator ? "[emu " + e.source + "] " : "[robot] ") + e.text;
-            console.push_back(line);
-            if (verbose) std::printf("%s\n", line.c_str());
-        }
-        last = s.status();
-        if (done(last)) return true;
-        if (!last.active()) return false;   // crashed / failed / exited
-        std::this_thread::sleep_for(50ms);
-    }
-    return false;
-}
-
-void dumpConsole(const std::vector<std::string>& console) {
-    const std::size_t from = console.size() > 80 ? console.size() - 80 : 0;
-    for (std::size_t i = from; i < console.size(); ++i) std::printf("    | %s\n", console[i].c_str());
+    bool reached = false;
+    sdk::testing::waitUntil(
+        [&] {
+            drainConsole(s, console, verbose);
+            last = s.status();
+            reached = done(last);
+            return reached || !last.active();   // crashed / failed / exited
+        },
+        timeout, 50ms);
+    return reached;
 }
 
 }  // namespace
@@ -196,17 +188,17 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
     base.scratchDir = scratch.root / "scratch";
     base.launchMode = direct ? core::launcher::LaunchMode::ExternalDirect : core::launcher::LaunchMode::GradleInitScript;
     base.handshakeTimeout = 8min;
-    base.extraEnv["WPIEMU_LOG_LEVEL"] = "info";
+    base.extraEnv[sdk::env_names::kLogLevel] = "info";
 
     std::vector<std::string> console;
-    app::host::SessionStatus st;
+    sdk::SessionStatus st;
 
     // ---------------------------------------------------------------- phase 1: discovery
     std::printf("e2e: phase 1 - Detect devices\n");
     std::int64_t discoveryRobotPid = 0;
     {
         app::host::Options o = base;
-        o.mode = app::host::Mode::Armed;
+        o.mode = sdk::SessionMode::Armed;
         const Clock::time_point t = Clock::now();
         auto started = app::host::RobotSession::start(registries.view(), baseConfig(project), o);
         REQUIRE_MESSAGE(started.ok(), (started.ok() ? "" : started.error().message));
@@ -216,8 +208,8 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
         double tConnected = -1, tProgram = -1;
         const bool ok = waitFor(
             session, 480s,
-            [&](const app::host::SessionStatus& s) {
-                if (tConnected < 0 && s.link == app::host::LinkState::Connected) tConnected = seconds(t, Clock::now());
+            [&](const sdk::SessionStatus& s) {
+                if (tConnected < 0 && s.link == sdk::LinkState::Connected) tConnected = seconds(t, Clock::now());
                 if (tProgram < 0 && s.programStarted) tProgram = seconds(t, Clock::now());
                 return s.programStarted;
             },
@@ -228,7 +220,7 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
         }
         REQUIRE_MESSAGE(ok, st.detail);
         // Let the announce messages that follow the lifecycle signal arrive.
-        waitFor(session, 2s, [](const app::host::SessionStatus&) { return false; }, st, console);
+        waitFor(session, 2s, [](const sdk::SessionStatus&) { return false; }, st, console);
         const auto snap = session.latestSnapshot();
         REQUIRE(snap != nullptr);
         std::printf("e2e:   connected after %.1f s, program started after %.1f s, %zu devices announced\n", tConnected, tProgram, snap->devices().size());
@@ -251,8 +243,8 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
         session.requestStop();
         session.waitUntilFinished();
         std::printf("e2e:   stopped in %.2f s\n", seconds(tStop, Clock::now()));
-        CHECK(session.status().process == app::host::ProcessState::Exited);
-        for (int i = 0; i < 100 && processAlive(discoveryRobotPid); ++i) std::this_thread::sleep_for(100ms);
+        CHECK(session.status().process == sdk::ProcessState::Exited);
+        sdk::testing::waitUntil([&] { return !processAlive(discoveryRobotPid); }, 10s, 100ms);
         CHECK_FALSE(processAlive(discoveryRobotPid));
     }
 
@@ -260,7 +252,7 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
     std::printf("e2e: phase 2 - run with a generated RobotConfig\n");
     {
         app::host::Options o = base;
-        o.mode = app::host::Mode::Run;
+        o.mode = sdk::SessionMode::Run;
         o.timeScale = 1.0;
         sdk::proto::DsState& ds = o.driverStation;
         ds.enabled = true;
@@ -277,7 +269,7 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
         app::host::RobotSession& session = *started.value();
         for (const sdk::Issue& i : session.configIssues()) std::printf("e2e:   config issue [%s] %s\n", i.code.c_str(), i.message.c_str());
 
-        bool ok = waitFor(session, 480s, [](const app::host::SessionStatus& s) { return s.programStarted; }, st, console);
+        bool ok = waitFor(session, 480s, [](const sdk::SessionStatus& s) { return s.programStarted; }, st, console);
         if (!ok) {
             std::printf("e2e: run failed to start: %s\n", st.detail.c_str());
             dumpConsole(console);
@@ -296,8 +288,8 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
         std::vector<std::pair<double, double>> pace;   // (wall s, sim s) once per wall second: shows start-up hiccups
         ok = waitFor(
             session, 90s,
-            [&](const app::host::SessionStatus& s) {
-                stalled |= s.link == app::host::LinkState::Stalled;
+            [&](const sdk::SessionStatus& s) {
+                stalled |= s.link == sdk::LinkState::Stalled;
                 const double wall = seconds(runStart, Clock::now());
                 if (pace.empty() || wall - pace.back().first >= 1.0) pace.emplace_back(wall, simSeconds());
                 return simSeconds() >= kRealtimeSimS;
@@ -313,8 +305,8 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
         const double simAtContinue = simSeconds();
         ok = waitFor(
             session, 120s,
-            [&](const app::host::SessionStatus& s) {
-                stalled |= s.link == app::host::LinkState::Stalled;
+            [&](const sdk::SessionStatus& s) {
+                stalled |= s.link == sdk::LinkState::Stalled;
                 return simSeconds() >= kRealtimeSimS + kContinuedSimS;
             },
             st, console);
@@ -327,7 +319,7 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
         sdk::proto::SimControl pause;
         pause.command = sdk::proto::SimCommand::Pause;
         session.controller().control(pause);
-        waitFor(session, 1s, [](const app::host::SessionStatus&) { return false; }, st, console);
+        waitFor(session, 1s, [](const sdk::SessionStatus&) { return false; }, st, console);
 
         const auto snap = session.latestSnapshot();
         REQUIRE(snap != nullptr);
@@ -386,7 +378,7 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
             rollerSeen |= m.id == "intake_roller";
             if (m.id == "intake_pivot")
                 for (const sdk::NamedValue& v : m.values)
-                    if (v.name == "position") pivotPosition = v.value;
+                    if (v.name == sdk::value_name::kPosition) pivotPosition = v.value;
         }
         CHECK(rollerSeen);
         CHECK(std::abs(pivotPosition - 114.0 * sdk::kPi / 180.0) < sdk::kPi / 180.0);
@@ -401,7 +393,7 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
         std::printf("e2e:   stopped in %.2f s\n", seconds(tStop, Clock::now()));
         std::int64_t pid = 0;
         if (const auto hello = session.runner().robotHello()) pid = hello->pid;
-        for (int i = 0; i < 100 && processAlive(pid); ++i) std::this_thread::sleep_for(100ms);
+        sdk::testing::waitUntil([&] { return !processAlive(pid); }, 10s, 100ms);
         CHECK_FALSE(processAlive(pid));
     }
     std::printf("e2e: total %.1f s\n", seconds(t0, Clock::now()));
@@ -447,7 +439,7 @@ TEST_CASE("e2e: saved tank robot keeps its two mappings and drives six linked wh
     options.driverStation.joysticks[0].axes = {0.f, 0.f, 0.f, 0.f, 0.f, -0.8f};
     options.driverStation.joysticks[0].buttonCount = 10;
     options.driverStation.joysticks[0].povs = {-1};
-    app::host::SessionStatus status;
+    sdk::SessionStatus status;
     std::vector<std::string> console;
     std::int64_t firstPid = 0;
     for (int run = 0; run < 2; ++run) {
@@ -457,7 +449,7 @@ TEST_CASE("e2e: saved tank robot keeps its two mappings and drives six linked wh
         auto& session = *started.value();
         const bool ready = waitFor(
             session, 480s,
-            [&](const app::host::SessionStatus& s) {
+            [&](const sdk::SessionStatus& s) {
                 const auto snapshot = session.latestSnapshot();
                 return s.programStarted && snapshot &&
                        snapshot->simTimeUs() >= (run == 0 ? 2000000 : 20000);

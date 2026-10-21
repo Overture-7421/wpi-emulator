@@ -6,15 +6,15 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenu>
-#include <QPointer>
 #include <QSplitter>
 #include <QToolButton>
 #include <QUndoStack>
 #include <QVBoxLayout>
 
+#include <functional>
 #include <optional>
-#include "model/config_ops.h"
 #include "model/tr.h"
+#include "ui/widget_support.h"
 #include "viewmodel/detected_devices_model.h"
 #include "viewmodel/editor_controller.h"
 #include "viewmodel/issue_model.h"
@@ -26,6 +26,7 @@
 #include "views/inspector_panel.h"
 #include "views/project_tree_view.h"
 #include "views/toast_overlay.h"
+#include "views/tree_context_menu.h"
 #include "views/viewport_widget.h"
 
 namespace wpiemu::app::editor {
@@ -37,13 +38,7 @@ QWidget* titled(const QString& title, QWidget* body, QWidget* parent) {
     auto* v = new QVBoxLayout(box);
     v->setContentsMargins(0, 0, 0, 0);
     v->setSpacing(0);
-    auto* label = new QLabel(title.toUpper(), box);
-    QFont f = label->font();
-    f.setBold(true);
-    f.setPointSizeF(f.pointSizeF() * 0.8);
-    f.setLetterSpacing(QFont::PercentageSpacing, 108);
-    label->setFont(f);
-    label->setEnabled(false);
+    auto* label = ui::headingLabel(title, box);
     label->setContentsMargins(10, 8, 10, 4);
     v->addWidget(label);
     v->addWidget(body, 1);
@@ -88,12 +83,36 @@ struct EditorPage::Impl {
 };
 
 EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(parent), d(std::make_unique<Impl>(backend)) {
-    Impl& s = *d;
-    EditorController& c = s.controller;
-
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
+
+    createActions();
+    buildTopBar(root);
+    buildPanes(root);
+    connectTree();
+    connectTreeDrops();
+    connectController();
+    connectValidationButton();
+
+    d->tree->selectRef(d->controller.selection().current());
+    d->saveState->setText(d->controller.saveStatusText());
+    d->status->setText(ETR("Pick a part in the viewport or the tree. Drag detected devices onto slots to map them."));
+}
+
+EditorPage::~EditorPage() {
+    // The views reference models and controllers owned by Impl: destroy them first.
+    delete d->toasts;
+    delete d->inspector;
+    delete d->bottom;
+    delete d->viewport;
+    delete d->devices;
+    delete d->tree;
+}
+
+void EditorPage::createActions() {
+    Impl& s = *d;
+    EditorController& c = s.controller;
 
     // ---- actions ----
     s.undo = c.document().undoStack()->createUndoAction(this, ETR("Undo"));
@@ -132,6 +151,10 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
     connect(s.detect, &QAction::triggered, this, [this] { d->controller.toggleDetection(); });
     connect(s.duplicate, &QAction::triggered, this, [this] { d->controller.duplicateSelection(); });
     connect(s.remove, &QAction::triggered, this, [this] { d->controller.deleteSelection(); });
+}
+
+void EditorPage::buildTopBar(QVBoxLayout* root) {
+    Impl& s = *d;
 
     // ---- top bar ----
     auto* bar = new QWidget(this);
@@ -166,6 +189,11 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
     s.validation->setToolTip(ETR("Open the validation list"));
     barLayout->addWidget(s.validation);
     root->addWidget(bar);
+}
+
+void EditorPage::buildPanes(QVBoxLayout* root) {
+    Impl& s = *d;
+    EditorController& c = s.controller;
 
     // ---- left column ----
     s.tree = new ProjectTreeView(s.treeModel, s.icons, this);
@@ -206,6 +234,11 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
     root->addWidget(main, 1);
 
     s.toasts = new ToastOverlay(s.viewport);
+}
+
+void EditorPage::connectTree() {
+    Impl& s = *d;
+    EditorController& c = s.controller;
 
     // ---- wiring: model -> views ----
     auto refreshTree = [this] { d->treeModel.refresh(); };
@@ -219,224 +252,13 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
     });
     connect(s.tree, &ProjectTreeView::refSelected, this, [this](const SelectionRef& ref) { d->controller.selection().set(ref); });
     connect(s.tree, &ProjectTreeView::contextMenuRequestedFor, this, [this](const SelectionRef& ref, const QPoint& global) {
-        const sdk::RobotConfig& cfg = d->controller.document().config();
-        const EditorCatalog& cat = d->controller.document().catalog();
-        QMenu menu(this);
-        // Core templates only; the game plugin's own templates are added from the plugin node.
-        // A core template with a `motion` choice is offered once per choice (Rotary / Arm / Linear).
-        using AddFn = std::function<void(const QString&, const ops::MechanismVariant&)>;
-        auto addTemplates = [&](QMenu* into, const AddFn& fn, bool plugin = false) {
-            for (const auto& t : cat.mechanismTemplates) {
-                if (plugin ? t.origin != cat.pluginId : t.origin != "core") continue;
-                const QString type = QString::fromStdString(t.type);
-                const QColor color = IconFactory::colorForCategory(QString::fromStdString(t.category));
-                const sdk::PropertySpec* motion = nullptr;
-                for (const auto& p : t.properties.properties)
-                    if (!plugin && p.key == "motion" && p.type == sdk::PropertyType::Enum) motion = &p;
-                if (motion == nullptr) {
-                    QAction* a = into->addAction(d->icons.glyph(QString::fromStdString(t.displayName).left(1).toUpper(), color), QString::fromStdString(t.displayName));
-                    connect(a, &QAction::triggered, this, [fn, type] { fn(type, {}); });
-                    continue;
-                }
-                for (const auto& o : motion->options) {
-                    QAction* a = into->addAction(d->icons.glyph(QString::fromStdString(o.label).left(1).toUpper(), color), QString::fromStdString(o.label));
-                    connect(a, &QAction::triggered, this, [fn, type, key = motion->key, value = o.value] { fn(type, {key, value}); });
-                }
-            }
-        };
-        auto addZoneKinds = [&](QMenu* into, const sdk::MechanismAttachment& att) {
-            for (const auto& k : cat.zoneKinds) {
-                QAction* a = into->addAction(d->icons.node(NodeKind::Zone), ETR("Add %1").arg(QString::fromStdString(k.displayName)));
-                connect(a, &QAction::triggered, this, [this, kind = QString::fromStdString(k.kind), att] { d->controller.addZone(kind, att); });
-            }
-        };
-        auto addCameraMenu = [&](QMenu* into, const sdk::MechanismAttachment& att) {
-            QMenu* sub = into->addMenu(d->icons.node(NodeKind::Camera), ETR("Add camera"));
-            for (const auto kind : {sdk::CameraKind::Limelight, sdk::CameraKind::PhotonVision}) {
-                const QString name = kind == sdk::CameraKind::PhotonVision ? QStringLiteral("PhotonVision") : QStringLiteral("Limelight");
-                connect(sub->addAction(name), &QAction::triggered, this, [this, kind, att] { d->controller.addCamera(kind, att); });
-            }
-        };
-        // Sensors have no pose: they are driven by a game value.
-        auto addSensorMenu = [&](QMenu* into) {
-            QMenu* sub = into->addMenu(d->icons.node(NodeKind::Sensor), ETR("Add sensor"));
-            for (const auto& k : sdk::sensorKinds())
-                connect(sub->addAction(QString::fromUtf8(k.displayName)), &QAction::triggered, this,
-                        [this, kind = k.kind] { d->controller.addSensor(kind); });
-        };
-        auto addStartPositionAction = [&](QMenu* into) {
-            into->addAction(d->icons.node(NodeKind::StartPosition), ETR("Add start position"), this, [this] { d->controller.addStartPosition(); });
-        };
-        // "Attach to" for something hanging on the chassis or a mechanism link (zones, cameras).
-        using AttachFn = std::function<void(const QString& parent, const QString& link)>;
-        auto addAttachMenu = [&](QMenu* into, const AttachFn& attach) {
-            auto* sub = into->addMenu(ETR("Attach to"));
-            sub->addAction(ETR("Chassis"), this, [attach] { attach(QStringLiteral("chassis"), QStringLiteral("root")); });
-            for (const auto& m : cfg.mechanisms) {
-                const auto* info = cat.findTemplate(m.type);
-                const QString name = QString::fromStdString(ops::displayNameFor(m, cat));
-                const QString mechId = QString::fromStdString(m.id);
-                if (info == nullptr || info->links.empty()) {
-                    sub->addAction(name, this, [attach, mechId] { attach(mechId, QStringLiteral("root")); });
-                    continue;
-                }
-                auto* links = sub->addMenu(name);
-                links->addAction(ETR("Origin"), this, [attach, mechId] { attach(mechId, QStringLiteral("root")); });
-                for (const auto& l : info->links)
-                    links->addAction(QString::fromStdString(l.label.empty() ? l.name : l.label), this,
-                                     [attach, mechId, link = QString::fromStdString(l.name)] { attach(mechId, link); });
-            }
-        };
-        switch (ref.kind) {
-            case SelKind::Camera: {
-                d->controller.selection().set(ref);
-                menu.addAction(ETR("Duplicate"), this, [this] { d->controller.duplicateSelection(); });
-                menu.addAction(ETR("Delete"), this, [this] { d->controller.deleteSelection(); });
-                menu.addSeparator();
-                const QString cameraId = QString::fromStdString(ref.owner);
-                addAttachMenu(&menu, [this, cameraId](const QString& parent, const QString& link) {
-                    d->controller.document().reattachCamera(cameraId, parent, link);
-                });
-                break;
-            }
-            case SelKind::StartPosition: {
-                d->controller.selection().set(ref);
-                menu.addAction(ETR("Duplicate"), this, [this] { d->controller.duplicateSelection(); });
-                menu.addAction(ETR("Delete"), this, [this] { d->controller.deleteSelection(); });
-                const bool hasSymmetry = cat.fieldFrame.symmetry != sdk::FieldSymmetry::None;
-                const sdk::StartPosition* p = cfg.findStartPosition(ref.owner);
-                QAction* copy = menu.addAction(p != nullptr && p->alliance == sdk::Alliance::Red ? ETR("Copy to Blue") : ETR("Copy to Red"), this,
-                                               [this] { d->controller.copySelectedStartPositionToOtherAlliance(); });
-                copy->setEnabled(hasSymmetry);
-                menu.addSeparator();
-                addStartPositionAction(&menu);
-                break;
-            }
-            case SelKind::Sensor:
-                d->controller.selection().set(ref);
-                menu.addAction(ETR("Duplicate"), this, [this] { d->controller.duplicateSelection(); });
-                menu.addAction(ETR("Delete"), this, [this] { d->controller.deleteSelection(); });
-                menu.addSeparator();
-                addSensorMenu(&menu);
-                break;
-            case SelKind::Zone: {
-                d->controller.selection().set(ref);
-                menu.addAction(ETR("Duplicate"), this, [this] { d->controller.duplicateSelection(); });
-                menu.addAction(ETR("Delete"), this, [this] { d->controller.deleteSelection(); });
-                menu.addSeparator();
-                const QString zoneId = QString::fromStdString(ref.owner);
-                auto* attach = menu.addMenu(ETR("Attach to"));
-                attach->addAction(ETR("Chassis"), this, [this, zoneId] { d->controller.document().reattachZone(zoneId, QStringLiteral("chassis")); });
-                for (const auto& m : cfg.mechanisms) {
-                    const auto* info = cat.findTemplate(m.type);
-                    const QString name = QString::fromStdString(ops::displayNameFor(m, cat));
-                    const QString mechId = QString::fromStdString(m.id);
-                    if (info == nullptr || info->links.empty()) {
-                        attach->addAction(name, this, [this, zoneId, mechId] { d->controller.document().reattachZone(zoneId, mechId); });
-                        continue;
-                    }
-                    auto* sub = attach->addMenu(name);
-                    sub->addAction(ETR("Origin"), this, [this, zoneId, mechId] { d->controller.document().reattachZone(zoneId, mechId); });
-                    for (const auto& l : info->links)
-                        sub->addAction(QString::fromStdString(l.label.empty() ? l.name : l.label), this,
-                                       [this, zoneId, mechId, link = QString::fromStdString(l.name)] { d->controller.document().reattachZone(zoneId, mechId, link); });
-                }
-                break;
-            }
-            case SelKind::Mechanism: {
-                d->controller.selection().set(ref);
-                menu.addAction(ETR("Duplicate"), this, [this] { d->controller.duplicateSelection(); });
-                menu.addAction(ETR("Delete"), this, [this] { d->controller.deleteSelection(); });
-                menu.addSeparator();
-                auto* attach = menu.addMenu(ETR("Attach to"));
-                attach->addAction(ETR("Chassis"), this, [this, ref] { d->controller.document().reparentMechanism(QString::fromStdString(ref.owner), QStringLiteral("chassis")); });
-                for (const auto& m : cfg.mechanisms) {
-                    if (!ops::canReparent(cfg, ref.owner, m.id) || m.id == ref.owner) continue;
-                    const auto* info = cat.findTemplate(m.type);
-                    const QString name = QString::fromStdString(ops::displayNameFor(m, cat));
-                    if (info == nullptr || info->links.empty()) {
-                        attach->addAction(name, this, [this, ref, id = m.id] { d->controller.document().reparentMechanism(QString::fromStdString(ref.owner), QString::fromStdString(id)); });
-                        continue;
-                    }
-                    auto* sub = attach->addMenu(name);
-                    sub->addAction(ETR("Origin"), this, [this, ref, id = m.id] { d->controller.document().reparentMechanism(QString::fromStdString(ref.owner), QString::fromStdString(id)); });
-                    for (const auto& l : info->links)
-                        sub->addAction(QString::fromStdString(l.label.empty() ? l.name : l.label), this, [this, ref, id = m.id, link = l.name] {
-                            d->controller.document().reparentMechanism(QString::fromStdString(ref.owner), QString::fromStdString(id), QString::fromStdString(link));
-                        });
-                }
-                addTemplates(menu.addMenu(ETR("Add attached mechanism")), [this](const QString& type, const ops::MechanismVariant& v) { d->controller.addMechanismToSelection(type, v); });
-                if (!cat.zoneKinds.empty()) {
-                    menu.addSeparator();
-                    sdk::MechanismAttachment onMechanism;
-                    onMechanism.parentMechanismId = ref.owner;
-                    addZoneKinds(&menu, onMechanism);
-                }
-                {
-                    sdk::MechanismAttachment onMechanism;
-                    onMechanism.parentMechanismId = ref.owner;
-                    menu.addSeparator();
-                    addCameraMenu(&menu, onMechanism);
-                }
-                break;
-            }
-            case SelKind::Slot:
-                d->controller.selection().set(ref);
-                if (ops::findMapping(cfg, {ref.owner, ref.sub}) != nullptr)
-                    menu.addAction(ETR("Unmap device"), this, [this, ref] { d->controller.clearSlot({ref.owner, ref.sub}); });
-                break;
-            case SelKind::Primitive:
-                d->controller.selection().set(ref);
-                menu.addAction(ETR("Duplicate"), this, [this] { d->controller.duplicateSelection(); });
-                menu.addAction(ETR("Delete"), this, [this] { d->controller.deleteSelection(); });
-                break;
-            case SelKind::Wheel:
-                d->controller.selection().set(ref);
-                menu.addAction(ETR("Add wheel"), this, [this] {
-                    const QString n = d->controller.document().addWheel();
-                    if (!n.isEmpty()) d->controller.selection().set(SelectionRef::wheel(n.toStdString()));
-                });
-                menu.addAction(ETR("Delete wheel"), this, [this] { d->controller.deleteSelection(); });
-                break;
-            case SelKind::Drivetrain:
-                menu.addAction(ETR("Add wheel"), this, [this] {
-                    const QString n = d->controller.document().addWheel();
-                    if (!n.isEmpty()) d->controller.selection().set(SelectionRef::wheel(n.toStdString()));
-                });
-                break;
-            case SelKind::Chassis:
-                addTemplates(menu.addMenu(ETR("Add mechanism")), [this](const QString& type, const ops::MechanismVariant& v) {
-                    d->controller.addMechanism(type, sdk::MechanismAttachment{}, v);
-                });
-                menu.addSeparator();
-                for (auto kind : {sdk::PrimitiveKind::Box, sdk::PrimitiveKind::Cylinder})
-                    menu.addAction(kind == sdk::PrimitiveKind::Box ? ETR("Add box") : ETR("Add cylinder"), this, [this, kind] {
-                        const int i = d->controller.document().addPrimitive(QString::fromLatin1(ops::kChassisOwner), kind);
-                        if (i >= 0) d->controller.selection().set(SelectionRef::primitive(ops::kChassisOwner, i));
-                    });
-                if (!cat.zoneKinds.empty()) {
-                    menu.addSeparator();
-                    addZoneKinds(&menu, sdk::MechanismAttachment{});
-                }
-                menu.addSeparator();
-                addCameraMenu(&menu, sdk::MechanismAttachment{});
-                addSensorMenu(&menu);
-                break;
-            case SelKind::Plugin:
-                addTemplates(&menu, [this](const QString& type, const ops::MechanismVariant& v) { d->controller.addMechanism(type, sdk::MechanismAttachment{}, v); }, true);
-                addZoneKinds(&menu, sdk::MechanismAttachment{});
-                break;
-            default:
-                addTemplates(menu.addMenu(ETR("Add mechanism")), [this](const QString& type, const ops::MechanismVariant& v) {
-                    d->controller.addMechanism(type, sdk::MechanismAttachment{}, v);
-                });
-                addCameraMenu(&menu, sdk::MechanismAttachment{});
-                addSensorMenu(&menu);
-                addStartPositionAction(&menu);
-                break;
-        }
-        if (!menu.isEmpty()) menu.exec(global);
+        showTreeContextMenu(this, d->controller, d->icons, ref, global);
     });
+}
+
+void EditorPage::connectTreeDrops() {
+    Impl& s = *d;
+
     connect(&s.treeModel, &ProjectTreeModel::deviceDropped, this, [this](const SelectionRef& target, const sdk::DeviceKey& key, quint32 caps) {
         const QString err = d->controller.mapDevice(target, key, sdk::CapabilitySet{caps});
         if (!err.isEmpty()) d->toasts->showToast(ETR("Cannot map the device"), err, 1);
@@ -464,6 +286,10 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
     connect(&s.treeModel, &ProjectTreeModel::cameraDropped, this, [this, chooseLink](const QString& id, const sdk::MechanismAttachment& att) {
         if (const auto link = chooseLink(att)) d->controller.document().reattachCamera(id, QString::fromStdString(att.parentMechanismId), *link);
     });
+}
+
+void EditorPage::connectController() {
+    EditorController& c = d->controller;
 
     connect(&c, &EditorController::deviceToast, this, [this](const QString& title, const QString& detail) { d->toasts->showToast(title, detail, 0); });
     connect(&c, &EditorController::statusMessage, this, [this](const QString& text, int severity) {
@@ -484,6 +310,11 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
         const int index = d->units->findData(static_cast<int>(d->controller.settings().units()));
         if (index >= 0) d->units->setCurrentIndex(index);
     });
+}
+
+void EditorPage::connectValidationButton() {
+    Impl& s = *d;
+    EditorController& c = s.controller;
 
     auto updateValidationButton = [this] {
         d->issueModel.setIssues(d->controller.issues());
@@ -495,20 +326,6 @@ EditorPage::EditorPage(IEditorBackend& backend, QWidget* parent) : QWidget(paren
     connect(&c, &EditorController::issuesUpdated, this, updateValidationButton);
     connect(s.validation, &QToolButton::clicked, this, [this] { d->bottom->showValidation(); });
     updateValidationButton();
-
-    d->tree->selectRef(c.selection().current());
-    d->saveState->setText(c.saveStatusText());
-    d->status->setText(ETR("Pick a part in the viewport or the tree. Drag detected devices onto slots to map them."));
-}
-
-EditorPage::~EditorPage() {
-    // The views reference models and controllers owned by Impl: destroy them first.
-    delete d->toasts;
-    delete d->inspector;
-    delete d->bottom;
-    delete d->viewport;
-    delete d->devices;
-    delete d->tree;
 }
 
 QUndoStack* EditorPage::undoStack() const { return d->controller.document().undoStack(); }

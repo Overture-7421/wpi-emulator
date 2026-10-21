@@ -4,6 +4,7 @@
 #include <thread>
 
 #include "runner_rig.h"
+#include "wpiemu/sdk/testing/wait.h"
 
 // SessionRunner, part 1: the connection lifecycle and the lock-step protocol - handshake, ticks, Reset, the watchdog,
 // reconnects and Stop. Parts 2 and 3 (test_runner_control.cpp, test_runner_vision.cpp) cover run control and cameras.
@@ -11,6 +12,8 @@
 using namespace wpiemu::sdk;
 using namespace wpiemu::core::runtime;
 using namespace std::chrono_literals;
+using wpiemu::sdk::testing::waitUntil;
+using wpiemu::test_runtime::Reply;
 using wpiemu::test_runtime::Rig;
 
 TEST_CASE("runner: handshake assigns session, epoch, step and the negotiated watchdog") {
@@ -83,7 +86,7 @@ TEST_CASE("runner: lock-step - consecutive ticks, one outstanding, identity on e
     Rig rig;
     rig.ext = nullptr;
     rig.handshake();
-    rig.ext->autoAck = false;
+    rig.ext->reply = Reply::Hold;
     rig.ext->pending.reset();
     // the first tick was auto-acked during the handshake; from here every tick needs an explicit answer
     const std::size_t base = rig.ext->sensorFrames.size();
@@ -118,7 +121,7 @@ TEST_CASE("runner: robot outputs reach the mechanisms, sensors come back, announ
     rig.connect();
     rig.ext->hello();
     rig.ext->announceAll();
-    rig.ext->send(wpiemu::test_runtime::talonAnnounce(300, 77));  // a device nobody maps
+    rig.ext->send(wpiemu::sdk::testing::talonFxAnnounce(300, 77));  // a device nobody maps
     rig.ext->outputs = {{DeviceId{105}, 1, 6.0}};                 // intake motorVoltage = 6 V
     REQUIRE(rig.run([&] { return rig.runner->ticksSent() >= 5; }));
 
@@ -144,7 +147,7 @@ TEST_CASE("runner: Reset bumps the epoch, resets the sim, restarts tick numbers 
     const int resets = intake->resets;
 
     // hold the extension: the next tick stays unanswered while Reset is issued
-    rig.ext->autoAck = false;
+    rig.ext->reply = Reply::Hold;
     rig.ext->pending.reset();
     REQUIRE(rig.run([&] { return rig.ext->pending.has_value(); }));
     const proto::SensorFrame inFlight = *rig.ext->pending;
@@ -175,7 +178,7 @@ TEST_CASE("runner: Reset bumps the epoch, resets the sim, restarts tick numbers 
     CHECK(rig.session->hub().motorOutput({"intake", "motor"}).valid == false);
 
     // ticks resume in the new epoch from 0, after the extension acknowledged the Reset
-    rig.ext->autoAck = true;
+    rig.ext->reply = Reply::Answer;
     if (rig.ext->pending) rig.ext->answer(*rig.ext->pending);
     rig.ext->pending.reset();
     auto newEpochFrames = [&] {
@@ -228,7 +231,7 @@ TEST_CASE("runner: no ticks are sent until the extension acknowledges a Reset") 
 TEST_CASE("runner: watchdog expiry stalls lock-step, late frames are ignored, Reset recovers") {
     Rig rig;
     rig.handshake(500);
-    rig.ext->autoAck = false;
+    rig.ext->reply = Reply::Hold;
     rig.ext->pending.reset();
     REQUIRE(rig.run([&] { return rig.ext->pending.has_value(); }));
     const proto::SensorFrame outstanding = *rig.ext->pending;
@@ -258,7 +261,7 @@ TEST_CASE("runner: watchdog expiry stalls lock-step, late frames are ignored, Re
     CHECK(rig.runner->state() == RunnerState::RobotStalled);
 
     // Reset opens a new epoch and recovery
-    rig.ext->autoAck = true;
+    rig.ext->reply = Reply::Answer;
     proto::SimControl reset;
     reset.command = proto::SimCommand::Reset;
     rig.runner->control(reset);
@@ -270,7 +273,7 @@ TEST_CASE("runner: watchdog expiry stalls lock-step, late frames are ignored, Re
 TEST_CASE("runner: a RobotStalled answer from the extension suspends lock-step") {
     Rig rig;
     rig.handshake();
-    rig.ext->nextResult = proto::TickResult::RobotStalled;
+    rig.ext->reply = Reply::Stall;
     REQUIRE(rig.run([&] { return rig.runner->state() == RunnerState::RobotStalled; }));
     const std::uint64_t sent = rig.runner->ticksSent();
     for (int i = 0; i < 20; ++i) {
@@ -315,10 +318,7 @@ TEST_CASE("runner: a new connection replaces the old one") {
     REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value(); }));
     CHECK(rig.ext->helloAck->sessionId == 2);
     // the first link was closed by the runner
-    for (int i = 0; i < 100 && !first->disconnected; ++i) {
-        first->pump();
-        std::this_thread::sleep_for(5ms);
-    }
+    waitUntil([&] { return first->disconnected; }, 500ms, 5ms, [&] { first->pump(); });
     CHECK(first->disconnected);
 }
 
@@ -365,7 +365,7 @@ TEST_CASE("runner: robot logs are forwarded, stray and malformed traffic is igno
     Rig rig;
     rig.connect();
     rig.ext->send(proto::Goodbye{"early"});          // before Hello
-    rig.ext->send(wpiemu::test_runtime::talonAnnounce(1, 1));  // before Hello
+    rig.ext->send(wpiemu::sdk::testing::talonFxAnnounce(1, 1));  // before Hello
     rig.ext->hello();
     REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value(); }));
     CHECK(rig.session->hub().discovered().empty());
@@ -390,7 +390,7 @@ TEST_CASE("runner: robot logs are forwarded, stray and malformed traffic is igno
 TEST_CASE("runner: an unsolicited ActuatorFrame is a protocol error and closes the connection") {
     Rig rig;
     rig.handshake();
-    rig.ext->autoAck = false;
+    rig.ext->reply = Reply::Hold;
     rig.ext->pending.reset();
     REQUIRE(rig.run([&] { return rig.ext->pending.has_value(); }));
     proto::ActuatorFrame bogus;  // wrong tick for the one in flight, current identity
@@ -419,15 +419,12 @@ TEST_CASE("runner: runs on its own thread against a robot thread, then stops cle
             std::this_thread::sleep_for(1ms);
         }
     });
-    const auto deadline = std::chrono::steady_clock::now() + 5s;
-    while (rig.runner->ticksSent() < 100 && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(1ms);
-    CHECK(rig.runner->ticksSent() >= 100);
+    CHECK(waitUntil([&] { return rig.runner->ticksSent() >= 100; }, 5s, 1ms));
 
     proto::SimControl stop;
     stop.command = proto::SimCommand::Stop;
     rig.runner->control(stop);
-    while (rig.runner->state() != RunnerState::Stopped && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(1ms);
-    CHECK(rig.runner->state() == RunnerState::Stopped);
+    CHECK(waitUntil([&] { return rig.runner->state() == RunnerState::Stopped; }, 5s, 1ms));
     stopRobot = true;
     robot.join();
     rig.runner->stop();  // joins the already-finished thread

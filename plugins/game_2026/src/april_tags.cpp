@@ -14,7 +14,6 @@ namespace wpiemu::plugins::game_2026 {
 namespace {
 
 constexpr float kRootHalf = 0.70710678f;
-constexpr float kTagSizeM = 0.1651f;
 
 struct TagRow {
     int id;
@@ -71,7 +70,7 @@ sdk::AprilTagLayout game2026AprilTagLayout() {
         sdk::AprilTag tag;
         tag.id = r.id;
         tag.pose = sdk::Pose3({r.x, r.y, r.z}, {r.qx, r.qy, r.qz, r.qw});
-        tag.sizeM = kTagSizeM;
+        tag.sizeM = sdk::kFrcAprilTagSizeM;
         layout.tags.push_back(tag);
     }
     return layout;

@@ -15,18 +15,6 @@ namespace {
 
 const QString kDash = QStringLiteral("—");
 
-const sdk::MechanismConfig* findMech(const sdk::RobotConfig* c, const std::string& id) {
-    return c != nullptr ? c->findMechanism(id) : nullptr;
-}
-
-template <typename T>
-const T* findById(const std::vector<T>* items, const std::string& id) {
-    if (items == nullptr) return nullptr;
-    for (const T& t : *items)
-        if (t.id == id) return &t;
-    return nullptr;
-}
-
 QString labelOf(const std::string& label, const std::string& id) {
     return QString::fromStdString(label.empty() ? id : label);
 }
@@ -69,7 +57,7 @@ QString StateModel::formatNumber(double value, const QString& unit) {
     return text;
 }
 
-void StateModel::setScene(const RunSceneInfo& info) {
+void StateModel::setScene(const HostScene& info) {
     info_ = info;
     update(nullptr);
 }
@@ -102,7 +90,7 @@ StateModel::Node StateModel::build(const sdk::ISimSnapshot* snapshot) const {
 
     std::vector<Node> mechanisms;
     for (const sdk::MechanismState& m : snapshot->mechanisms()) {
-        const sdk::MechanismConfig* mc = findMech(cfg, m.id);
+        const sdk::MechanismConfig* mc = cfg != nullptr ? cfg->findMechanism(m.id) : nullptr;
         Node n;
         n.key = QStringLiteral("mechanism:") + QString::fromStdString(m.id);
         n.name = labelOf(mc != nullptr ? mc->label : std::string(), m.id);
@@ -159,7 +147,7 @@ StateModel::Node StateModel::build(const sdk::ISimSnapshot* snapshot) const {
 
     std::vector<Node> zones;
     for (const sdk::ZoneState& z : snapshot->zones()) {
-        const sdk::ZoneConfig* zc = findById(cfg != nullptr ? &cfg->zones : nullptr, z.id);
+        const sdk::ZoneConfig* zc = cfg != nullptr ? cfg->findZone(z.id) : nullptr;
         Node n;
         n.key = QStringLiteral("zone:") + QString::fromStdString(z.id);
         n.name = labelOf(zc != nullptr ? zc->label : std::string(), z.id);
@@ -178,7 +166,7 @@ StateModel::Node StateModel::build(const sdk::ISimSnapshot* snapshot) const {
 
     std::vector<Node> cameras;
     for (const sdk::CameraState& c : snapshot->cameras()) {
-        const sdk::CameraConfig* cc = findById(cfg != nullptr ? &cfg->cameras : nullptr, c.id);
+        const sdk::CameraConfig* cc = cfg != nullptr ? cfg->findCamera(c.id) : nullptr;
         Node n;
         n.key = QStringLiteral("camera:") + QString::fromStdString(c.id);
         n.name = labelOf(cc != nullptr ? cc->label : std::string(), c.id);

@@ -2,7 +2,6 @@
 
 #include "test_support.h"
 #include "common/orbit_camera.h"
-#include "model/quat_utils.h"
 #include "model/scene_builder.h"
 #include "model/transform_access.h"
 #include "viewmodel/editor_controller.h"
@@ -60,9 +59,9 @@ TEST_CASE("orbit camera: rays and projection agree") {
 TEST_CASE("orbit camera: orbit, pan, zoom and presets") {
     OrbitCamera cam;
     cam.orbit(0.f, 100000.f);
-    CHECK(cam.pitchRad <= OrbitCamera::degToRad(89.f) + 1e-4f);
+    CHECK(cam.pitchRad <= sdk::degToRadF(89.f) + 1e-4f);
     cam.orbit(0.f, -100000.f);
-    CHECK(cam.pitchRad >= OrbitCamera::degToRad(-89.f) - 1e-4f);
+    CHECK(cam.pitchRad >= sdk::degToRadF(-89.f) - 1e-4f);
     for (int i = 0; i < 100; ++i) cam.zoom(5.f);
     CHECK(cam.distance >= 0.25f);
     for (int i = 0; i < 100; ++i) cam.zoom(-5.f);
@@ -103,14 +102,6 @@ TEST_CASE("gizmo math: closest point on an axis and plane intersection") {
     CHECK(approx(snapValue(0.123f, 0.f), 0.123f));
 }
 
-TEST_CASE("euler helpers round-trip") {
-    const Euler e{0.2f, -0.4f, 1.1f};
-    const Euler back = toEuler(fromEuler(e));
-    CHECK(approx(back.rollRad, e.rollRad, 1e-4f));
-    CHECK(approx(back.pitchRad, e.pitchRad, 1e-4f));
-    CHECK(approx(back.yawRad, e.yawRad, 1e-4f));
-}
-
 // ---- scene -------------------------------------------------------------------------------------------
 
 TEST_CASE("scene builder: hull, wheels, COM, mechanism shapes and overlays are all present") {
@@ -142,7 +133,7 @@ TEST_CASE("scene builder: placement follows the display frame (floor at z = 0)")
     CHECK(approx(hull->world.position.z, c.chassis.groundClearanceM + c.chassis.sizeM.z * 0.5f));
     const auto* wheel = scene.find("wheel:fl");
     CHECK(approx(wheel->world.position, {0.28f, 0.28f, 0.0508f}));
-    CHECK(wheel->shape == ItemShape::Cylinder);
+    CHECK(wheel->shape == sdk::PrimitiveKind::Cylinder);
     // The wheel axis (cylinder local Z) lies along the robot's Y axis.
     CHECK(approx(wheel->world.rotation.rotate({0.f, 0.f, 1.f}).y * wheel->world.rotation.rotate({0.f, 0.f, 1.f}).y, 1.f, 1e-3f));
     const auto* com = scene.find("com");
@@ -164,13 +155,6 @@ TEST_CASE("scene builder: overlay opacity and picking flags") {
     CHECK(scene.find("nose")->ref.isNone());       // decorations are not pickable
     CHECK_FALSE(scene.find("nose")->pickable);
     CHECK(scene.find("wheel:fl")->pickable);
-}
-
-TEST_CASE("scene builder: link lines point from the parent to the child") {
-    const auto q = rotationFromX({0.f, 1.f, 0.f});
-    CHECK(approx(q.rotate({1.f, 0.f, 0.f}), {0.f, 1.f, 0.f}, 1e-3f));
-    CHECK(approx(rotationFromX({1.f, 0.f, 0.f}).rotate({1.f, 0.f, 0.f}), {1.f, 0.f, 0.f}));
-    CHECK(approx(rotationFromX({-1.f, 0.f, 0.f}).rotate({1.f, 0.f, 0.f}), {-1.f, 0.f, 0.f}, 1e-3f));
 }
 
 // ---- viewport controller ----------------------------------------------------------------------------
@@ -256,7 +240,7 @@ TEST_CASE("viewport: rotating around Z turns the mechanism") {
     const QPointF p1 = f.screen(o + sdk::Vec3{0.f, 0.3f, 0.f});   // a quarter turn counter-clockwise seen from above
     f.view.updateGizmoDrag(p1.x(), p1.y(), false);
     f.view.endGizmoDrag();
-    const auto yaw = toEuler(f.editor.document().config().findMechanism("intake")->mount.rotation).yawRad;
+    const auto yaw = f.editor.document().config().findMechanism("intake")->mount.rotation.toEuler().yawRad;
     CHECK(approx(yaw, static_cast<float>(sdk::kPi * 0.5), 0.05f));
 }
 
@@ -341,7 +325,7 @@ TEST_CASE("viewport: numeric entry edits the selection in the active mode") {
 
     f.view.setGizmoMode(GizmoMode::Rotate);
     CHECK(f.view.setTransformComponent(2, 90.0));
-    CHECK(approx(toEuler(f.editor.document().config().findMechanism("intake")->mount.rotation).yawRad, static_cast<float>(sdk::kPi * 0.5), 1e-3f));
+    CHECK(approx(f.editor.document().config().findMechanism("intake")->mount.rotation.toEuler().yawRad, static_cast<float>(sdk::kPi * 0.5), 1e-3f));
     CHECK(approx(f.view.transformFields().value.z, 90.f, 0.05f));
 
     f.editor.selection().set(SelectionRef::chassis());

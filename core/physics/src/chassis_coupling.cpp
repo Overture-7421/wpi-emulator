@@ -8,9 +8,6 @@ namespace {
 
 using namespace sdk;
 
-bool finite(float v) { return std::isfinite(v); }
-bool finite(const Vec3& v) { return finite(v.x) && finite(v.y) && finite(v.z); }
-
 bool samePayload(const PayloadMass& a, const PayloadMass& b) {
     return a.massKg == b.massKg && a.comChassisLocal == b.comChassisLocal &&
            a.inertiaDiagAboutComKgM2 == b.inertiaDiagAboutComKgM2;

@@ -9,15 +9,6 @@
 
 namespace wpiemu::app {
 
-namespace {
-QLabel* valueLabel() {
-    auto* l = new QLabel;
-    l->setWordWrap(true);
-    l->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    return l;
-}
-}  // namespace
-
 ProjectPage::ProjectPage(WizardViewModel& model, RecentProjects& recent, const UiResources& ui, QWidget* parent)
     : WizardPage(parent),
       model_(model),
@@ -29,11 +20,11 @@ ProjectPage::ProjectPage(WizardViewModel& model, RecentProjects& recent, const U
       browseButton_(new QPushButton(tr("Browse…"))),
       banner_(new Banner(ui)),
       detailsCard_(makeCard()),
-      seasonValue_(valueLabel()),
-      languageValue_(valueLabel()),
-      teamValue_(valueLabel()),
-      vendorValue_(valueLabel()),
-      setupValue_(valueLabel()),
+      seasonValue_(makeValueLabel()),
+      languageValue_(makeValueLabel()),
+      teamValue_(makeValueLabel()),
+      vendorValue_(makeValueLabel()),
+      setupValue_(makeValueLabel()),
       recentTitle_(makeLabel(tr("Recent projects"), "section")),
       recentList_(new QListWidget) {
     auto* root = new QVBoxLayout(this);

@@ -46,7 +46,8 @@ when configuring, not when building. Windows Ninja needs vcvars and CMake in one
 Use focused doctest/Qt selectors; CTest sets the UI environment. Offscreen checks do not
 validate Quick 3D rendering. SDK headers receive automatic self-contained include checks.
 Boundary and documentation checks are `python tools\check_boundaries.py`,
-its `--self-test`, and `python tools\check_docs.py`.
+its `--self-test`, and `python tools\check_docs.py`; `python tools\check_versions.py` verifies
+the version pins that `versions.json` owns.
 
 Keep one home per fact: recipes in Extending, contracts in the owning reference,
 user behavior in the User guide, rationale in decisions. Link instead of copying.

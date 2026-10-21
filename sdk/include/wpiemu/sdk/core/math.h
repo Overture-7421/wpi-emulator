@@ -14,8 +14,11 @@
 //  * Quaternions are (x, y, z, w), unit length, Hamilton convention.
 //  * The Qt Quick 3D renderer is Y-up: conversion happens ONLY inside the UI view layer.
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+
+#include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::sdk {
 
@@ -49,6 +52,12 @@ inline Vec3 normalized(const Vec3& v) {
     return l > 0.f ? v / l : Vec3{};
 }
 
+struct Euler {
+    float rollRad = 0.f;
+    float pitchRad = 0.f;
+    float yawRad = 0.f;
+};
+
 struct Quat {
     float x = 0.f;
     float y = 0.f;
@@ -74,6 +83,17 @@ struct Quat {
         const float cy = std::cos(yawRad * 0.5f), sy = std::sin(yawRad * 0.5f);
         return {sr * cp * cy - cr * sp * sy, cr * sp * cy + sr * cp * sy,
                 cr * cp * sy - sr * sp * cy, cr * cp * cy + sr * sp * sy};
+    }
+    static Quat fromEuler(const Euler& e) { return fromEuler(e.rollRad, e.pitchRad, e.yawRad); }
+
+    // Inverse of fromEuler for any non-zero quaternion; the pitch is clamped at +-pi/2, so gimbal lock stays finite.
+    Euler toEuler() const {
+        const Quat q = normalized();
+        Euler e;
+        e.rollRad = std::atan2(2.f * (q.w * q.x + q.y * q.z), 1.f - 2.f * (q.x * q.x + q.y * q.y));
+        e.pitchRad = std::asin(std::clamp(2.f * (q.w * q.y - q.z * q.x), -1.f, 1.f));
+        e.yawRad = std::atan2(2.f * (q.w * q.z + q.x * q.y), 1.f - 2.f * (q.y * q.y + q.z * q.z));
+        return e;
     }
 
     constexpr Quat conjugate() const { return {-x, -y, -z, w}; }
@@ -116,5 +136,19 @@ struct Pose3 {
     Pose3 operator*(const Pose3& b) const { return {transformPoint(b.position), rotation * b.rotation}; }
     constexpr bool operator==(const Pose3&) const = default;
 };
+
+inline bool finite(float v) { return std::isfinite(v); }
+inline bool finite(const Vec3& v) { return finite(v.x) && finite(v.y) && finite(v.z); }
+inline bool finite(const Quat& q) { return finite(q.x) && finite(q.y) && finite(q.z) && finite(q.w); }
+inline bool finite(const Pose3& p) { return finite(p.position) && finite(p.rotation); }
+
+// Shortest-arc rotation taking +X onto `direction` (any non-zero length). A zero or non-finite direction gives the
+// identity; the antiparallel direction is a half turn about +Z.
+inline Quat rotationFromX(const Vec3& direction) {
+    const Vec3 d = normalized(direction);
+    if (!(length(d) > 0.5f)) return Quat{};
+    if (d.x < -0.999999f) return Quat::fromAxisAngle({0.f, 0.f, 1.f}, kPiF);
+    return Quat{0.f, -d.z, d.y, 1.f + d.x}.normalized();
+}
 
 }  // namespace wpiemu::sdk

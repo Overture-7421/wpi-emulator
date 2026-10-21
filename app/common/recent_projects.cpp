@@ -1,22 +1,13 @@
 #include "common/recent_projects.h"
 
-#include <QDir>
 #include <QFileInfo>
+
+#include "common/project_path.h"
 
 namespace wpiemu::app {
 
 namespace {
 constexpr auto kKey = "projects/recent";
-
-QString normalise(const QString& path) { return QDir::cleanPath(QFileInfo(path).absoluteFilePath()); }
-
-bool samePath(const QString& a, const QString& b) {
-#ifdef Q_OS_WIN
-    return a.compare(b, Qt::CaseInsensitive) == 0;
-#else
-    return a == b;
-#endif
-}
 }  // namespace
 
 RecentProjects::RecentProjects(IKeyValueStore& store, QObject* parent) : QObject(parent), store_(store) {
@@ -25,20 +16,20 @@ RecentProjects::RecentProjects(IKeyValueStore& store, QObject* parent) : QObject
 }
 
 void RecentProjects::touch(const QString& path) {
-    const QString clean = normalise(path);
+    const QString clean = normalizedProjectPath(path);
     if (clean.isEmpty()) return;
     for (qsizetype i = paths_.size() - 1; i >= 0; --i)
-        if (samePath(paths_[i], clean)) paths_.removeAt(i);
+        if (sameProjectPath(paths_[i], clean)) paths_.removeAt(i);
     paths_.prepend(clean);
     while (paths_.size() > kMaxEntries) paths_.removeLast();
     save();
 }
 
 void RecentProjects::remove(const QString& path) {
-    const QString clean = normalise(path);
+    const QString clean = normalizedProjectPath(path);
     const auto before = paths_.size();
     for (qsizetype i = paths_.size() - 1; i >= 0; --i)
-        if (samePath(paths_[i], clean)) paths_.removeAt(i);
+        if (sameProjectPath(paths_[i], clean)) paths_.removeAt(i);
     if (paths_.size() != before) save();
 }
 

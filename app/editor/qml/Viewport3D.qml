@@ -1,9 +1,10 @@
 import QtQuick
 import QtQuick3D
+import "qrc:/wpiemu/ui/qml"
 
 // Thin renderer for the editor viewport: every list, colour and camera value comes from the C++
 // ViewportController (`ctl`), and pointer input is forwarded back to it. World content lives under a
-// node rotated -90 degrees about X so it can be expressed directly in the SDK's Z-up frame.
+// ZUpWorld node so it can be expressed directly in the SDK's Z-up frame.
 Item {
     id: root
     property var ctl: editorCtl
@@ -78,10 +79,7 @@ Item {
             brightness: 0.4
         }
 
-        Node {
-            id: world
-            eulerRotation.x: -90
-
+        ZUpWorld {
             PerspectiveCamera {
                 id: cam
                 position: root.ctl.cameraPosition

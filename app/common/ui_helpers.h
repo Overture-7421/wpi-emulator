@@ -16,6 +16,8 @@ namespace wpiemu::app {
 QFrame* makeCard(QWidget* parent = nullptr);
 // Label styled by role: title, subtitle, section, muted, error, warning, success.
 QLabel* makeLabel(const QString& text, const char* role, QWidget* parent = nullptr, bool wrap = false);
+// Selectable, word-wrapped label for a read-only value; its text is set later.
+QLabel* makeValueLabel();
 // Re-applies the style sheet after a dynamic property changed.
 void repolish(QWidget* widget);
 

@@ -72,7 +72,7 @@ public:
     }
 
     // 1. season-specific mechanism templates. Keys MUST be prefixed with the plugin id ("<id>.<name>") so the
-    //    ownership rule (sdk::ownsMechanismType) holds. Prefer wrapping the generic core mechanisms through the
+    //    ownership rule (sdk::ownsPluginId) holds. Prefer wrapping the generic core mechanisms through the
     //    values they publish (see zones in plugins/game_2026/include/.../fuel_zones.h) over re-implementing them.
     sdk::Status registerMechanisms(sdk::MechanismFactory& /*factory*/) override { return sdk::okStatus(); }
 
@@ -88,7 +88,8 @@ public:
 
     // 4. config fields shown by the generic inspector and persisted under RobotConfig::plugins[<id>].
     //    The SDK stays at version 1 until release: a section with another schemaVersion is rejected (no migration).
-    //    TODO(new season): describe your fields with PropertySpec (key, label, type, default, range, group).
+    //    TODO(new season): describe your fields with PropertySpec (key, label, type, default, range, group), bound to a
+    //    typed config struct through sdk::ConfigBindings (see plugins/game_2026/src/config.cpp): one table, no repeats.
     sdk::PluginConfigSchema contributeConfigSchema() const override {
         sdk::PluginConfigSchema schema;
         schema.schemaVersion = 1;
@@ -107,6 +108,7 @@ public:
     }
 
     // 6. optional: the season's AprilTag layout for the simulated vision cameras (default: empty = no tags).
+    //    Set fieldLengthM/fieldWidthM too: Limelight red- and center-origin poses are not published without them.
     //    Poses are in the field frame; a tag's +X points out of its face (WPILib convention). See
     //    plugins/game_2026/src/april_tags.cpp for a table copied from the official WPILib JSON.
     // sdk::AprilTagLayout aprilTagLayout() const override;

@@ -1,11 +1,10 @@
 #pragma once
 
-// PRIVATE to core/mechanisms: the shared building blocks of the generic mechanism templates.
+// PRIVATE to core/mechanisms: the building blocks of the generic mechanism template.
 //
-//   AxisOptions   how a template configures one actuated degree of freedom (defaults, which
-//                 properties/slots exist)
+//   AxisOptions   the defaults of the one actuated degree of freedom
 //   axisProperties / axisSlots / readAxisSettings
-//                 property schema, slot specs and typed settings of one axis
+//                 property schema, slot specs and typed settings of the axis
 //   MechanismAxis one DOF at runtime: motors -> voltage -> IPlant -> encoders / limit switches
 
 #include <memory>
@@ -17,6 +16,7 @@
 #include "wpiemu/core/mechanisms/motor_drive.h"
 #include "wpiemu/core/mechanisms/plants.h"
 #include "wpiemu/core/mechanisms/sensor_models.h"
+#include "wpiemu/sdk/config/property_builders.h"
 #include "wpiemu/sdk/config/property_schema.h"
 #include "wpiemu/sdk/core/sim_context.h"
 #include "wpiemu/sdk/devices/device_hub.h"
@@ -29,31 +29,23 @@ enum class Motion { Rotary, Arm, Linear };
 
 const char* motionKey(Motion m);
 
+// The defaults of the one core template's axis, plus the one per-instance adjustment, `linearGravityEnabled`.
 struct AxisOptions {
-    Motion motion = Motion::Rotary;
-    bool selectableMotion = false;   // expose a `motion` enum property
-    const char* rotaryModel = plant_model::kFlywheel;  // plant key used when motion == Rotary
-    bool limits = false;             // min/max/start properties
-    bool limitSwitchSlots = false;   // forward/reverse limit switch slots (need limits)
-    bool encoderSlots = true;        // position + velocity sensor slots
-    bool motorRequired = true;       // primary motor slot is `required`
+    Motion motion = Motion::Rotary;  // default of the `motion` property
 
-    // defaults
     std::string motorModel = "kraken_x60";
     int motorCount = 1;
-    double gearRatio = 1.0;
+    double gearRatio = 10.0;
     double efficiency = 1.0;
-    bool brake = false;
-    double inertiaKgM2 = 0.002;      // Rotary; Arm: 0 = uniform rod about the pivot
+    bool brake = true;
+    double inertiaKgM2 = 0.01;       // Rotary; Arm: 0 = uniform rod about the pivot
     double massKg = 2.0;             // Arm / Linear
     double lengthM = 0.3;            // Arm: pivot to tip
     double comFraction = 0.5;        // Arm: centre of mass as a fraction of lengthM
-    double drumRadiusM = 0.02;       // Linear
-    bool gravity = false;
-    bool armGravityEnabled = true;
+    double drumRadiusM = sdk::kDefaultDrumRadiusM;       // Linear
+    bool gravity = true;             // acts on Arm and Linear only
     bool linearGravityEnabled = true;
-    double gravityAngleOffsetRad = 0.0;
-    double viscousFrictionNmS = 0.0; // output-side damping default (N*m*s/rad or N*s/m)
+    double viscousFrictionNmS = 0.001;   // bearing drag, so that a coasting rotary mechanism spins down
     double minPosition = 0.0;
     double maxPosition = 0.0;
     double startPosition = 0.0;
@@ -67,8 +59,8 @@ struct AxisSlotNames {
     std::string forwardLimit;          // upper stop
 };
 AxisSlotNames axisSlotNames();
-std::vector<sdk::SlotSpec> axisSlots(const AxisOptions& options);
-sdk::MotionAxisSpec axisMotionSpec(const AxisOptions& options);
+std::vector<sdk::SlotSpec> axisSlots();
+sdk::MotionAxisSpec axisMotionSpec();
 std::vector<sdk::PropertySpec> axisProperties(const AxisOptions& options, const MotorCatalog& motors);
 
 struct AxisSettings {
@@ -79,7 +71,7 @@ struct AxisSettings {
     bool reportMotorLimits = false;
     EncoderModel encoder;
     bool limited = false;
-    double limitMargin = 1e-6;
+    double limitMargin = kDefaultLimitMargin;
     bool limitPressedValue = true;
     double startPosition = 0.0;
 };
@@ -88,23 +80,10 @@ struct AxisSettings {
 sdk::Result<AxisSettings> readAxisSettings(const AxisOptions& options, const sdk::Value& props,
                                            const MotorCatalog& motors);
 
-// Reading helpers shared with the templates (missing / wrongly typed keys fall back).
-double getDouble(const sdk::Value& props, const std::string& key, double fallback);
-bool getBool(const sdk::Value& props, const std::string& key, bool fallback);
-std::string getString(const sdk::Value& props, const std::string& key, const std::string& fallback);
-
-// PropertySpec builders.
-sdk::PropertySpec doubleProp(std::string key, std::string label, std::string description, sdk::PropertyUnit unit,
-                             double def, std::string group, double min, double max);
-sdk::PropertySpec boolProp(std::string key, std::string label, std::string description, bool def, std::string group);
-sdk::PropertySpec enumProp(std::string key, std::string label, std::string description, std::string def,
-                           std::vector<sdk::EnumOption> options, std::string group);
-
 // One DOF at runtime. Owns its plant; reads the motor slots of `owner`, writes the sensor slots.
 class MechanismAxis {
 public:
-    MechanismAxis(std::string owner, AxisOptions options, AxisSettings settings, std::unique_ptr<sdk::IPlant> plant,
-                  MotorDrive drive);
+    MechanismAxis(std::string owner, AxisSettings settings, std::unique_ptr<sdk::IPlant> plant, MotorDrive drive);
 
     void tick(sdk::SimContext& ctx, double dtSeconds);
     void reset();
@@ -129,7 +108,6 @@ private:
     void writeFeedback(sdk::ISensorWriter& hub, double previousVelocity, double dt);
 
     std::string owner_;
-    AxisOptions options_;
     AxisSettings settings_;
     AxisSlotNames slots_;
     std::unique_ptr<sdk::IPlant> plant_;

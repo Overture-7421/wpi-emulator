@@ -13,6 +13,7 @@
 #endif
 
 #include "launcher_test_support.h"
+#include "wpiemu/sdk/testing/wait.h"
 
 // The process layer: line splitting, environment and command-line building, PATH lookup, and real child processes.
 
@@ -80,6 +81,22 @@ TEST_CASE("environment merge: overrides, unsets, Windows case-insensitivity, odd
     auto posix = mergeEnvironment(base, spec, false);  // case-sensitive: both Path and PATH survive
     CHECK(std::find(posix.begin(), posix.end(), "PATH=C:\\old") != posix.end());
     CHECK(std::find(posix.begin(), posix.end(), "Path=C:\\new") != posix.end());
+}
+
+TEST_CASE("environment lookup matches names the way the merge does, with the same odd entries") {
+    const std::vector<std::string> env = {"Path=C:\\win", "PATH=/posix", "EMPTY=", "=C:=C:\\dir", "garbage", "WITH=EQ=UALS"};
+    CHECK(lookupEnvironment(env, "Path", true) == std::optional<std::string>("C:\\win"));      // Windows: the first spelling wins
+    CHECK(lookupEnvironment(env, "PATH", true) == std::optional<std::string>("C:\\win"));
+    CHECK(lookupEnvironment(env, "path", true) == std::optional<std::string>("C:\\win"));
+    CHECK(lookupEnvironment(env, "PATH", false) == std::optional<std::string>("/posix"));      // POSIX: exact case only
+    CHECK_FALSE(lookupEnvironment(env, "path", false).has_value());
+    CHECK(lookupEnvironment(env, "EMPTY", false) == std::optional<std::string>(""));
+    CHECK(lookupEnvironment(env, "WITH", false) == std::optional<std::string>("EQ=UALS"));     // only the first '=' separates
+    CHECK(lookupEnvironment(env, "=C:", true) == std::optional<std::string>("C:\\dir"));       // a name that starts with '='
+    CHECK_FALSE(lookupEnvironment(env, "garbage", false).has_value());
+    CHECK_FALSE(lookupEnvironment(env, "PAT", false).has_value());                             // no prefix matches
+    CHECK_FALSE(lookupEnvironment(env, "", false).has_value());
+    CHECK_FALSE(lookupEnvironment({}, "PATH", true).has_value());
 }
 
 TEST_CASE("Windows argument quoting follows CommandLineToArgvW") {
@@ -332,7 +349,7 @@ TEST_CASE("process: requestStop sends SIGTERM to the group") {
     CollectingSink sink;
     auto p = createSystemProcess();
     REQUIRE(p->start(shell("trap 'echo got term; exit 7' TERM; echo ready; while :; do sleep 0.1; done"), sink).ok());
-    for (int i = 0; i < 100 && !sink.has(OutputStream::Stdout, "ready"); ++i) std::this_thread::sleep_for(20ms);
+    wpiemu::sdk::testing::waitUntil([&] { return sink.has(OutputStream::Stdout, "ready"); }, 2s, 20ms);
     p->requestStop();
     REQUIRE(p->waitForExit(5s));
     CHECK(p->exitInfo()->exitCode == 7);

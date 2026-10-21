@@ -1,8 +1,11 @@
 cmake_minimum_required(VERSION 3.25)
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/WpiEmuVersions.cmake")
+
 # Set before project()/compiler initialization; presets, releases and the bundle share this default.
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum supported macOS version")
+    wpiemu_pinned_version(_wpiemu_macos_deployment macosDeployment)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "${_wpiemu_macos_deployment}" CACHE STRING "Minimum supported macOS version")
 endif()
 
 # Qt otherwise forces the deprecated OLD behavior of CMP0156 and warns about it.
@@ -12,7 +15,7 @@ if(POLICY CMP0156)
 endif()
 
 project(wpi-emulator
-    VERSION 0.0.1
+    VERSION 0.0.2
     DESCRIPTION "Cross-platform emulator for unmodified WPILib robot projects"
     LANGUAGES C CXX)
 
@@ -33,9 +36,9 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 option(WPIEMU_BUILD_APP "Build the Qt application (requires Qt 6)" ON)
 option(WPIEMU_BUILD_TESTS "Build unit tests and register CTest checks" ON)
 option(WPIEMU_BUILD_PLUGIN_TEMPLATE "Build plugins/_template to keep the template compiling" ON)
-option(WPIEMU_WARNINGS_AS_ERRORS "Treat warnings in first-party code as errors" OFF)
 
 include(WpiEmuDefaults)
+wpiemu_option_warnings_as_errors(OFF)
 include(WpiEmuDependencies)
 
 add_subdirectory(sdk)
@@ -50,7 +53,6 @@ if(WPIEMU_BUILD_APP)
 endif()
 
 if(WPIEMU_BUILD_TESTS)
-    enable_testing()
     add_subdirectory(tests)
 endif()
 

@@ -2,7 +2,6 @@
 
 #include <QSignalSpy>
 
-#include "common/robot_basics.h"
 #include "shell/shell_controller.h"
 #include "test_support.h"
 
@@ -14,7 +13,7 @@ namespace {
 // Saves a model for the project so it opens straight into the editor.
 void configure(AppServices& s, const TestProject& project) {
     REQUIRE(s.session().open(project.path()).ok());
-    REQUIRE(s.session().commit(buildRobotConfig(RobotBasics{}, s.buildContext(s.session().inspection())), ProjectPrefs{}).ok());
+    REQUIRE(s.session().commit(defaultRobotConfig(s), ProjectPrefs{}).ok());
     REQUIRE(s.session().close().ok());
 }
 }  // namespace
@@ -41,6 +40,24 @@ TEST_CASE("controller distinguishes opened, needs-setup and invalid projects") {
     CHECK(controller.openProject(notAProject.path()) == OpenOutcome::Invalid);
     CHECK(errors.count() == 1);
     CHECK(controller.projectName() == QFileInfo(configured.path()).fileName());   // still on the previous project
+}
+
+TEST_CASE("the wizard's Driver Station choice and the open project reach the runtime scene") {
+    TestEnvironment env;
+    ShellController controller(*env.services);
+    TestProject p;
+    AppServices& s = *env.services;
+    REQUIRE(s.session().open(p.path()).ok());
+    ProjectPrefs prefs;
+    prefs.alliance = sdk::Alliance::Blue;
+    prefs.station = 3;
+    REQUIRE(s.session().commit(defaultRobotConfig(s), prefs).ok());
+    REQUIRE(s.session().close().ok());
+
+    REQUIRE(controller.openProject(p.path()) == OpenOutcome::Opened);
+    CHECK(env.demo->scene().projectPath == s.session().path());
+    CHECK(env.demo->scene().defaultStation == sdk::proto::AllianceStation::Blue3);
+    CHECK(env.demo->scene().config != nullptr);
 }
 
 TEST_CASE("run mode needs a robot model") {
@@ -120,7 +137,7 @@ TEST_CASE("opening a project launches the robot, which detects the demo devices 
         const auto snap = env.demo->latestSnapshot();
         return snap && snap->devices().size() == expected;
     }));
-    CHECK(env.demo->status().link == HostLinkState::Connected);
+    CHECK(env.demo->status().link == sdk::LinkState::Connected);
     CHECK(env.demo->status().programStarted);
     CHECK(controller.runtimeLabel().contains(QStringLiteral("ready")));
 

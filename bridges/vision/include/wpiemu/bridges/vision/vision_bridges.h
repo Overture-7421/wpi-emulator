@@ -12,10 +12,6 @@ namespace wpiemu::bridges::vision {
 std::string_view bridgeFamily();  // "vision"
 
 struct VisionBridgeOptions {
-    // Field size used to derive the red-origin and center-origin Limelight pose arrays from our blue-origin field
-    // frame (the FRC field of the current game; the 2026 field is 16.541 m x 8.069 m).
-    double fieldLengthM = 16.541;
-    double fieldWidthM = 8.069;
     // Period (simulated time) of the Limelight "hb" / PhotonVision "heartbeat" counters.
     sdk::SimTimeUs heartbeatPeriodUs = 100'000;
 };

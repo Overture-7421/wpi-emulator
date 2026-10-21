@@ -14,6 +14,7 @@
 #include <memory>
 
 #include "model/units.h"
+#include "wpiemu/sdk/core/geometry.h"
 #include "wpiemu/sdk/core/math.h"
 #include "wpiemu/sdk/config/property_schema.h"
 
@@ -106,7 +107,7 @@ private:
     void pick();
     void paint();
     QPushButton* button_;
-    QString color_ = QStringLiteral("#808080");
+    QString color_ = QString::fromLatin1(sdk::kDefaultPrimitiveColor);
 };
 
 // n spin boxes in a row (Vec3, or position / rotation / size parts of Pose3 and Box3).

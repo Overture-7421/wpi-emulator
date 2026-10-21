@@ -11,12 +11,13 @@
 
 #include "model/config_ops.h"
 #include "model/tr.h"
+#include "ui/qt_text.h"
 
 namespace wpiemu::app::editor {
 
 namespace {
 
-QString qs(const std::string& s) { return QString::fromStdString(s); }
+using ui::qs;
 
 bool hasFocusWithin(const QWidget* w) {
     const QWidget* focused = QApplication::focusWidget();

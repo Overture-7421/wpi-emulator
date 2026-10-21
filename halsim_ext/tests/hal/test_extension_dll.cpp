@@ -1,7 +1,6 @@
 #include <doctest/doctest.h>
 
 #include <atomic>
-#include <cstdlib>
 #include <thread>
 
 #include "fakes.h"
@@ -9,9 +8,11 @@
 #include "hal/Extensions.h"
 #include "hal/simulation/DriverStationData.h"
 #include "hal/simulation/MockHooks.h"
+#include "scoped_env.h"
 #include "wpiemu/ipc/binary_codec.h"
 #include "wpiemu/ipc/endpoint.h"
 #include "wpiemu/ipc/local_ipc.h"
+#include "wpiemu/sdk/testing/fake_emulator.h"
 
 // Loads the REAL halsim_wpiemu shared library through the HAL's own extension loader (exactly what
 // HALSIM_EXTENSIONS does in a robot process), connects it to a fake emulator over a real named pipe /
@@ -19,16 +20,9 @@
 
 using namespace wpiemu;
 using namespace wpiemu::halsim::testing;
+using wpiemu::test_support::ScopedEnv;
 
 namespace {
-
-void setEnv(const char* name, const std::string& value) {
-#if defined(_WIN32)
-    _putenv_s(name, value.c_str());
-#else
-    setenv(name, value.c_str(), 1);
-#endif
-}
 
 class DllRobot {
 public:
@@ -76,19 +70,19 @@ TEST_CASE("real extension library: loads through the HAL extension loader and ru
     REQUIRE(server.value()->listen());
 
     auto codec = std::make_shared<ipc::BinaryMessageCodec>();
-    std::unique_ptr<FakeEmulator> emulator;
+    std::unique_ptr<sdk::testing::FakeEmulator> emulator;
     std::thread accepting([&] {
         auto transport = server.value()->accept(std::chrono::seconds(20));
         if (transport && transport.value()) {
-            emulator = std::make_unique<FakeEmulator>(std::move(transport).value(), codec);
+            emulator = std::make_unique<sdk::testing::FakeEmulator>(std::move(transport).value(), codec);
             proto::HelloAck ack = defaultAck();
             ack.watchdogTimeoutMs = 5000;
             emulator->autoAck(ack);
         }
     });
 
-    setEnv("WPIEMU_IPC_ENDPOINT", endpoint.address());
-    setEnv("WPIEMU_LOG_LEVEL", "debug");
+    const ScopedEnv endpointVar("WPIEMU_IPC_ENDPOINT", endpoint.address());
+    const ScopedEnv logLevelVar("WPIEMU_LOG_LEVEL", "debug");
     const int rc = HAL_LoadOneExtension(WPIEMU_EXTENSION_PATH);
     accepting.join();
     REQUIRE(rc == 0);

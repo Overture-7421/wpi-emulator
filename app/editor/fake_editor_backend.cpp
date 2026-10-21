@@ -1,12 +1,17 @@
 #include "fake_editor_backend.h"
 
 #include <algorithm>
+#include <string_view>
 
+#include "wpiemu/sdk/config/config_checks.h"
+#include "wpiemu/sdk/config/property_builders.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/devices/device_identity.h"
 #include "wpiemu/sdk/dynamics/motor_model.h"
 #include "wpiemu/sdk/mechanisms/attachment.h"
+#include "wpiemu/sdk/physics/wheel_layout.h"
+#include "wpiemu/sdk/testing/demo_game.h"
 
 namespace wpiemu::app::editor {
 
@@ -18,76 +23,14 @@ using sdk::PropertyUnit;
 
 namespace {
 
-PropertySpec num(const char* key, const char* label, const char* group, PropertyUnit unit, double def, double min, double max,
-                 double step = 0.0, const char* description = "") {
-    PropertySpec s;
-    s.key = key;
-    s.label = label;
-    s.group = group;
-    s.unit = unit;
-    s.type = PropertyType::Double;
-    s.defaultValue = def;
-    s.min = min;
-    s.max = max;
-    s.step = step;
-    s.description = description;
-    return s;
-}
-
-PropertySpec integer(const char* key, const char* label, const char* group, int def, int min, int max, const char* description = "") {
-    PropertySpec s;
-    s.key = key;
-    s.label = label;
-    s.group = group;
-    s.unit = PropertyUnit::Count;
-    s.type = PropertyType::Int;
-    s.defaultValue = def;
-    s.min = min;
-    s.max = max;
-    s.description = description;
-    return s;
-}
-
-PropertySpec flag(const char* key, const char* label, const char* group, bool def, const char* description = "") {
-    PropertySpec s;
-    s.key = key;
-    s.label = label;
-    s.group = group;
-    s.type = PropertyType::Bool;
-    s.defaultValue = def;
-    s.description = description;
-    return s;
-}
-
-PropertySpec choice(const char* key, const char* label, const char* group, const char* def,
-                    std::vector<sdk::EnumOption> options, const char* description = "") {
-    PropertySpec s;
-    s.key = key;
-    s.label = label;
-    s.group = group;
-    s.type = PropertyType::Enum;
-    s.defaultValue = def;
-    s.options = std::move(options);
-    s.description = description;
-    return s;
-}
-
-PropertySpec volume(const char* key, const char* label, const char* group, const sdk::Box3& def, const char* description = "") {
-    PropertySpec s;
-    s.key = key;
-    s.label = label;
-    s.group = group;
-    s.type = PropertyType::Box3;
-    s.unit = PropertyUnit::Meters;
-    s.defaultValue = sdk::toValue(def);
-    s.description = description;
-    return s;
-}
+using sdk::props::box;
+using sdk::props::choice;
+using sdk::props::integer;
+using sdk::props::real;
 
 PropertySpec intCount(const char* key, const char* label, const char* group, int def, int max) {
-    PropertySpec p = num(key, label, group, PropertyUnit::Count, def, 1.0, max, 1.0);
-    p.type = PropertyType::Int;
-    p.defaultValue = def;
+    PropertySpec p = integer(key, label, group, def, 1, max);
+    p.step = 1.0;
     return p;
 }
 
@@ -174,6 +117,20 @@ sdk::LinkSpec link(const char* name, const char* label, sdk::Vec3 pos) {
 const CapabilitySet kTalon = Capability::MotorOutput | Capability::RotorFeedback | Capability::PositionSensor |
                              Capability::VelocitySensor | Capability::LimitInputs | Capability::SupplyVoltage;
 
+// The editor's catalog as the shared zone / camera / sensor checks see it (sdk/config/config_checks.h).
+class EditorConfigCatalog final : public sdk::IConfigCatalog {
+public:
+    explicit EditorConfigCatalog(const EditorCatalog& catalog) : catalog_(catalog) {}
+
+    const sdk::MechanismTemplateInfo* mechanismTemplate(std::string_view type) const override { return catalog_.findTemplate(type); }
+    std::string_view gamePluginId() const override { return catalog_.pluginId; }
+    const sdk::ZoneKindInfo* zoneKind(std::string_view kind) const override { return catalog_.findZoneKind(kind); }
+    const sdk::GameValueInfo* gameValue(std::string_view id) const override { return catalog_.findGameValue(id); }
+
+private:
+    const EditorCatalog& catalog_;
+};
+
 }  // namespace
 
 sdk::DiscoveredDevice FakeEditorBackend::makeDevice(const std::string& family, const std::string& type, int id, const std::string& bus,
@@ -207,11 +164,11 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
         {choice("motion", "Type", kMech, "rotary", {{"rotary", "Rotary"}, {"arm", "Arm"}, {"linear", "Linear"}}),
          intCount("motorCount", "Motor count", kMotor, 1, 3),
          choice("motorType", "Motor model", kMotor, "Kraken X60", motorChoices()),
-         num("gearRatio", "Gear ratio", kMotor, PropertyUnit::Ratio, 10.0, 0.1, 500.0, 0.5),
-         num("inertiaKgM2", "Moment of inertia", kMech, PropertyUnit::KgM2, 0.01, 0.0001, 10.0, 0.001),
-         num("massKg", "Mass", kMech, PropertyUnit::Kilograms, 2.0, 0.01, 100.0, 0.1),
-         num("minPosition", "Minimum position", kMech, PropertyUnit::None, 0.0, -10.0, 10.0, 0.01),
-         num("maxPosition", "Maximum position", kMech, PropertyUnit::None, 0.0, -10.0, 10.0, 0.01)},
+         real("gearRatio", "Gear ratio", kMotor, 10.0, 0.1, 500.0, PropertyUnit::Ratio, {}, 0.5),
+         real("inertiaKgM2", "Moment of inertia", kMech, 0.01, 0.0001, 10.0, PropertyUnit::KgM2, {}, 0.001),
+         real("massKg", "Mass", kMech, 2.0, 0.01, 100.0, PropertyUnit::Kilograms, {}, 0.1),
+         real("minPosition", "Minimum position", kMech, 0.0, -10.0, 10.0, PropertyUnit::None, {}, 0.01),
+         real("maxPosition", "Maximum position", kMech, 0.0, -10.0, 10.0, PropertyUnit::None, {}, 0.01)},
         {prim("mover", sdk::PrimitiveKind::Box, {0.10f, 0.f, 0.f}, {0.20f, 0.05f, 0.05f}, "#9b59b6")},
         {link("mover", "Moving part", {0.f, 0.f, 0.05f})}));
     // ---- sample mechanisms with a plugin-scope volume (a mechanism property of type Box3) ----
@@ -222,10 +179,11 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
         "sample.intake", "Roller intake", "Intake", "Roller with a deploy arm and a reach volume.",
         {slot("motor", "Roller motor", sdk::SlotType::Motor, true), slot("deploy", "Deploy motor", sdk::SlotType::Motor, false),
          slot("deployEncoder", "Deploy encoder", sdk::SlotType::PositionSensor, false)},
-        {volume("pickupZone", "Pickup zone", "Reach", zone, "Where the roller reaches (a Box3 property: gizmo-editable)."),
-         integer("capacity", "Capacity", "Reach", 30, 1, 100), num("gearRatio", "Gear ratio", kMotor, PropertyUnit::Ratio, 3.0, 0.5, 60.0, 0.1),
+        {box("pickupZone", "Pickup zone", "Reach", zone, "Where the roller reaches (a Box3 property: gizmo-editable)."),
+         integer("capacity", "Capacity", "Reach", 30, 1, 100),
+         real("gearRatio", "Gear ratio", kMotor, 3.0, 0.5, 60.0, PropertyUnit::Ratio, {}, 0.1),
          choice("motorType", "Motor", kMotor, "NEO", motorChoices()),
-         num("activeThresholdRpm", "Active above", "Reach", PropertyUnit::RadiansPerSecond, 20.0, 0.0, 600.0, 1.0)},
+         real("activeThresholdRpm", "Active above", "Reach", 20.0, 0.0, 600.0, PropertyUnit::RadiansPerSecond, {}, 1.0)},
         {prim("roller", sdk::PrimitiveKind::Cylinder, {0.f, 0.f, 0.f}, {}, "#ffb347", 0.03f, 0.55f, true),
          prim("frame", sdk::PrimitiveKind::Box, {-0.06f, 0.f, 0.02f}, {0.1f, 0.55f, 0.05f}, "#9aa5b1")}));
 
@@ -233,79 +191,31 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
         "sample.shooter", "Flywheel shooter", "Shooter", "Flywheel with a feeder and an exit link.",
         {slot("flywheel", "Flywheel motor", sdk::SlotType::Motor, true), slot("feeder", "Feeder motor", sdk::SlotType::Motor, true),
          slot("encoder", "Flywheel encoder", sdk::SlotType::VelocitySensor, false)},
-        {num("wheelDiameterM", "Wheel diameter", "Flywheel", PropertyUnit::Meters, 0.1016, 0.03, 0.3, 0.005),
-         num("efficiency", "Launch efficiency", "Flywheel", PropertyUnit::Ratio, 0.8, 0.1, 1.0, 0.01),
-         num("fireRateHz", "Fire rate", "Feeding", PropertyUnit::Hertz, 8.0, 0.5, 30.0, 0.5),
-         num("feedThresholdRpm", "Feeding above", "Feeding", PropertyUnit::RadiansPerSecond, 30.0, 0.0, 600.0, 1.0),
+        {real("wheelDiameterM", "Wheel diameter", "Flywheel", 0.1016, 0.03, 0.3, PropertyUnit::Meters, {}, 0.005),
+         real("efficiency", "Launch efficiency", "Flywheel", 0.8, 0.1, 1.0, PropertyUnit::Ratio, {}, 0.01),
+         real("fireRateHz", "Fire rate", "Feeding", 8.0, 0.5, 30.0, PropertyUnit::Hertz, {}, 0.5),
+         real("feedThresholdRpm", "Feeding above", "Feeding", 30.0, 0.0, 600.0, PropertyUnit::RadiansPerSecond, {}, 1.0),
          choice("motorType", "Motor", kMotor, "Kraken X60", motorChoices())},
         {prim("flywheel", sdk::PrimitiveKind::Cylinder, {0.f, 0.f, 0.f}, {}, "#d1495b", 0.05f, 0.12f, true),
          prim("housing", sdk::PrimitiveKind::Box, {-0.06f, 0.f, 0.f}, {0.14f, 0.2f, 0.12f}, "#9aa5b1")},
         {link("exit", "Exit point", {0.1f, 0.f, 0.f})}));
 
-    cat.drivetrains = {{"swerve", {"Swerve", "Independently steered and driven modules."}},
-                       {"tank", {"Tank", "Left / right skid steer."}},
-                       {"mecanum", {"Mecanum", "Four mecanum wheels."}}};
+    const auto traction = [](bool steerable) {
+        return [steerable](const sdk::DrivetrainSpec& spec) { return sdk::tractionSlotSpecs(spec, steerable); };
+    };
+    cat.drivetrains = {{"swerve", {"Swerve", "Independently steered and driven modules.", traction(true)}},
+                       {"tank", {"Tank", "Left / right skid steer.", traction(false)}},
+                       {"mecanum", {"Mecanum", "Four mecanum wheels.", traction(false)}}};
 
-    // ---- plugin config ----
-    cat.pluginId = "game_2026";
-    cat.pluginDisplayName = "REBUILT (2026)";
-    cat.pluginSchema.schemaVersion = 1;
-    cat.pluginSchema.properties.properties = {
-        integer("preloadFuel", "Preloaded fuel", "Robot", 8, 0, 100, "Fuel the robot starts a match with."),
-        num("fuelDiameterM", "Fuel diameter", "Fuel", PropertyUnit::Meters, 0.15, 0.05, 0.4, 0.005)};
-
-    // ---- zone kinds the plugin owns ----
-    sdk::ZoneKindInfo pickup;
-    pickup.kind = "game_2026.pickup";
-    pickup.displayName = "Pickup";
-    pickup.description = "Absorbs field fuel inside its volume while it is active.";
-    pickup.shape = sdk::ZoneShape::Volume;
-    pickup.properties.properties = {integer("capacity", "Capacity (fuel)", "Pickup", 30, 1, 100),
-                                    num("absorbRateHz", "Absorb rate", "Pickup", PropertyUnit::Hertz, 10.0, 0.5, 60.0, 0.5)};
-    pickup.defaultSizeM = {0.4f, 0.6f, 0.25f};
-    pickup.defaultLocal.position = {0.3f, 0.f, 0.f};
-    pickup.color = "#ff9944";
-    cat.zoneKinds.push_back(pickup);
-
-    sdk::ZoneKindInfo shooter;
-    shooter.kind = "game_2026.shooter";
-    shooter.displayName = "Shooter";
-    shooter.description = "Launches fuel from its muzzle along +X while it is active.";
-    shooter.shape = sdk::ZoneShape::Muzzle;
-    shooter.properties.properties = {num("fireRateHz", "Fire rate", "Shooter", PropertyUnit::Hertz, 8.0, 0.5, 30.0, 0.5),
-                                     num("exitSpeedMps", "Exit speed", "Shooter", PropertyUnit::MetersPerSecond, 10.0, 1.0, 30.0, 0.5),
-                                     num("spreadRad", "Spread", "Shooter", PropertyUnit::Radians, 0.05, 0.0, 0.5, 0.01)};
-    shooter.defaultLocal.position = {0.1f, 0.f, 0.f};
-    shooter.color = "#d1495b";
-    cat.zoneKinds.push_back(shooter);
-
-    cat.gameValues.push_back({"game_2026.fuel.count", "Fuel in robot", "Fuel currently held by the robot.", PropertyUnit::Count});
-    cat.gameValues.push_back({"game_2026.fuel.capacity", "Fuel capacity", "How much fuel the robot can hold.", PropertyUnit::Count});
-    cat.gameValues.push_back({"game_2026.fuel.fraction", "Fuel fill", "Held fuel divided by capacity (0 to 1).", PropertyUnit::Ratio});
-    cat.fieldFrame = {16.541f, 8.069f, sdk::FieldSymmetry::Rotational};
-    sdk::Box3 hopper;
-    hopper.pose.position = {-0.05f, 0.f, 0.f};
-    hopper.sizeM = {0.4f, 0.5f, 0.3f};
-
-    sdk::EditorPanelDescriptor hopperPanel;
-    hopperPanel.id = "game_2026.hopper";
-    hopperPanel.title = "Fuel hopper";
-    hopperPanel.scope = sdk::PanelScope::PluginConfig;
-    hopperPanel.properties.properties = {integer("capacity", "Fuel capacity", "Hopper", 40, 1, 200, "The fuel meter shows this as 100%."),
-                                         volume("hopperVolume", "Hopper volume", "Hopper", hopper, "Where stored fuel is drawn (chassis frame).")};
-    hopperPanel.overlays.push_back({"hopperVolume", "Hopper", "#44cc88", true});
-    hopperPanel.order = 1;
-    cat.pluginPanels.push_back(hopperPanel);
-
-    // A mechanism-scope panel: only mechanisms of the listed templates get it.
-    sdk::EditorPanelDescriptor aiming;
-    aiming.id = "game_2026.aiming";
-    aiming.title = "Aiming";
-    aiming.scope = sdk::PanelScope::Mechanism;
-    aiming.mechanismTypes = {"sample.shooter"};
-    aiming.properties.properties = {num("hoodAngleRad", "Hood angle", "Aiming", PropertyUnit::Radians, 0.7, 0.0, 1.5, 0.01)};
-    aiming.order = 2;
-    cat.pluginPanels.push_back(aiming);
+    // ---- the neutral demo game (shared with the run-view fake) ----
+    namespace demo = sdk::testing::demo_game;
+    cat.pluginId = demo::kPluginId;
+    cat.pluginDisplayName = demo::kDisplayName;
+    cat.pluginSchema = demo::configSchema();
+    cat.pluginPanels = demo::editorPanels("sample.shooter");
+    cat.zoneKinds = demo::zoneKinds();
+    cat.gameValues = demo::gameValues();
+    cat.fieldFrame = demo::fieldFrame();
     return cat;
 }
 
@@ -313,8 +223,7 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
     sdk::RobotConfig c;
     c.name = "Sample Robot";
     c.project.language = "java";
-    c.project.wpilibYear = 2026;
-    c.gamePluginId = "game_2026";
+    c.gamePluginId = sdk::testing::demo_game::kPluginId;
     c.chassis.sizeM = {0.76f, 0.76f, 0.1f};
     c.chassis.massKg = 52.f;
     c.chassis.comHeightM = 0.22f;
@@ -324,18 +233,12 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
     c.chassis.primitives.push_back(prim("bumper_rear", sdk::PrimitiveKind::Box, {-0.40f, 0.f, -0.1f}, {0.06f, 0.88f, 0.12f}, "#c0392b"));
 
     c.drivetrain.spec.kind = "swerve";
-    const struct { const char* name; float x; float y; } modules[] = {{"fl", 0.28f, 0.28f}, {"fr", 0.28f, -0.28f}, {"bl", -0.28f, 0.28f}, {"br", -0.28f, -0.28f}};
+    c.drivetrain.spec.wheels = sdk::swerveWheels({}, 0.28f, 0.28f);
     int canId = 1;
-    for (const auto& m : modules) {
-        sdk::WheelSpec w;
-        w.name = m.name;
-        w.kind = sdk::WheelKind::Swerve;
-        w.steered = true;
-        w.positionM = {m.x, m.y, w.radiusM};
-        c.drivetrain.spec.wheels.push_back(w);
+    for (const sdk::WheelSpec& w : c.drivetrain.spec.wheels) {
         for (const char* what : {"drive", "steer"}) {
             sdk::DeviceKey key{"phoenix6", "talonfx", canId++, "canivore", -1};
-            c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, std::string(m.name) + "." + what}, key});
+            c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, w.name + "." + what}, key});
         }
     }
     c.robotMappings.push_back({{sdk::slot_owner::kRobot, "imu"}, {"phoenix6", "pigeon2", 13, "canivore", -1}});
@@ -381,7 +284,7 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
     };
     sdk::ZoneConfig pickup;
     pickup.id = "pickup";
-    pickup.kind = "game_2026.pickup";
+    pickup.kind = sdk::testing::demo_game::kPickupZone;
     pickup.label = "Pickup";
     pickup.attachment.parentMechanismId = "intake";
     pickup.local.position = {0.25f, 0.f, 0.f};
@@ -392,7 +295,7 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
 
     sdk::ZoneConfig muzzle;
     muzzle.id = "muzzle";
-    muzzle.kind = "game_2026.shooter";
+    muzzle.kind = sdk::testing::demo_game::kShooterZone;
     muzzle.label = "Shooter muzzle";
     muzzle.attachment.parentMechanismId = "turret";
     muzzle.attachment.parentLink = "mover";
@@ -424,7 +327,7 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
     hopper.id = "hopper_sensor";
     hopper.label = "Hopper sensor";
     hopper.kind = sdk::SensorKind::Distance;
-    hopper.source = "game_2026.fuel.count";
+    hopper.source = sdk::testing::demo_game::kFuelCount;
     for (const auto& p : sdk::sensorResponseSchema(hopper.kind).properties) hopper.properties[p.key] = p.defaultValue;
     hopper.properties[sdk::sensor_prop::kThreshold] = 1.0;
     c.sensors.push_back(std::move(hopper));
@@ -433,7 +336,7 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
     feed.id = "feed_sensor";
     feed.label = "Feed beam break";
     feed.kind = sdk::SensorKind::BeamBreak;
-    feed.source = "game_2026.fuel.fraction";
+    feed.source = sdk::testing::demo_game::kFuelFraction;
     for (const auto& p : sdk::sensorResponseSchema(feed.kind).properties) feed.properties[p.key] = p.defaultValue;
     c.sensors.push_back(std::move(feed));
     return c;
@@ -526,113 +429,13 @@ std::vector<sdk::Issue> FakeEditorBackend::validate(const sdk::RobotConfig& c) c
             if (issue.severity == sdk::Severity::Error || issue.message != "unknown property") out.push_back(std::move(issue));
     }
     for (auto& issue : sdk::validateMechanismAttachments(c, factory_)) out.push_back(std::move(issue));
-    for (auto& issue : validateZones(c)) out.push_back(std::move(issue));
-    for (auto& issue : validateCameras(c)) out.push_back(std::move(issue));
-    for (auto& issue : validateSensors(c)) out.push_back(std::move(issue));
+    const EditorConfigCatalog catalog(catalog_);
+    sdk::validateZones(c, catalog, out);
+    sdk::validateCameras(c, catalog, out);
+    sdk::validateSensors(c, catalog, out);
+    sdk::validateStartPositions(c, out);
     for (auto& issue : sdk::validateDeviceAliases(c.allMappings())) out.push_back(std::move(issue));
     if (c.chassis.massKg < 10.f) out.push_back({sdk::Severity::Warning, "chassis.massKg", "chassis mass below 10 kg is unusual for an FRC robot", {}});
-    return out;
-}
-
-std::vector<sdk::Issue> FakeEditorBackend::validateZones(const sdk::RobotConfig& c) const {
-    std::vector<sdk::Issue> out;
-    for (std::size_t i = 0; i < c.zones.size(); ++i) {
-        const sdk::ZoneConfig& z = c.zones[i];
-        const std::string base = "zones[" + std::to_string(i) + "]";
-        if (z.id.empty() || c.findMechanism(z.id) != nullptr || c.findCamera(z.id) != nullptr)
-            out.push_back({sdk::Severity::Error, base + ".id", "zone id must be unique and not a mechanism id", "zone_id_duplicate"});
-        const sdk::MechanismAttachment att = z.attachment;
-        if (!att.onChassis()) {
-            const sdk::MechanismConfig* parent = c.findMechanism(att.parentMechanismId);
-            const sdk::MechanismTemplateInfo* info = parent != nullptr ? catalog_.findTemplate(parent->type) : nullptr;
-            if (parent == nullptr)
-                out.push_back({sdk::Severity::Error, base + ".attachment", "parent mechanism '" + att.parentMechanismId + "' does not exist",
-                               sdk::validation_code::kAttachmentParentMissing});
-            else if (info != nullptr && !sdk::hasLink(*info, att.parentLink))
-                out.push_back({sdk::Severity::Error, base + ".attachment", "mechanism '" + parent->id + "' has no link '" + att.parentLink + "'",
-                               sdk::validation_code::kAttachmentLinkMissing});
-        } else if (att.parentLink != sdk::kRootLink) {
-            out.push_back({sdk::Severity::Error, base + ".attachment", "the chassis only exposes the link 'root'", sdk::validation_code::kAttachmentLinkMissing});
-        }
-        const sdk::ZoneKindInfo* kind = catalog_.findZoneKind(z.kind);
-        if (kind == nullptr)
-            out.push_back({sdk::Severity::Warning, base + ".kind", "unknown zone kind '" + z.kind + "'", "zone_kind_unknown"});
-        else
-            for (auto& issue : sdk::validateProperties(kind->properties, z.properties, base + ".properties"))
-                if (issue.severity == sdk::Severity::Error || issue.message != "unknown property") {
-                    if (issue.code.empty()) issue.code = "zone_property_invalid";
-                    out.push_back(std::move(issue));
-                }
-        for (std::size_t j = 0; j < z.activation.conditions.size(); ++j)
-            if (c.findMechanism(z.activation.conditions[j].mechanismId) == nullptr)
-                out.push_back({sdk::Severity::Warning, base + ".activation.conditions[" + std::to_string(j) + "].mechanism",
-                               "condition mechanism '" + z.activation.conditions[j].mechanismId + "' does not exist", "zone_condition_mechanism_unknown"});
-    }
-    return out;
-}
-
-std::vector<sdk::Issue> FakeEditorBackend::validateSensors(const sdk::RobotConfig& c) const {
-    // Mirrors the real validator's sensor source checks (core: config_validator.h, issue_code::kSensor*).
-    std::vector<sdk::Issue> out;
-    for (std::size_t i = 0; i < c.sensors.size(); ++i) {
-        const sdk::SensorConfig& s = c.sensors[i];
-        const std::string base = "sensors[" + std::to_string(i) + "]";
-        if (s.source.empty())
-            out.push_back({sdk::Severity::Warning, base + ".source", "sensor has no source; it reads as idle", "sensor_source_missing"});
-        else if (catalog_.findGameValue(s.source) == nullptr)
-            out.push_back({sdk::Severity::Warning, base + ".source", "the game plugin does not publish '" + s.source + "'", "sensor_source_unknown"});
-    }
-    return out;
-}
-
-std::vector<sdk::Issue> FakeEditorBackend::validateCameras(const sdk::RobotConfig& c) const {
-    // Mirrors the real validator's camera checks (core: config_validator.h, issue_code::kCamera*).
-    std::vector<sdk::Issue> out;
-    auto finite = [](double v) { return std::isfinite(v); };
-    for (std::size_t i = 0; i < c.cameras.size(); ++i) {
-        const sdk::CameraConfig& cam = c.cameras[i];
-        const std::string base = "cameras[" + std::to_string(i) + "]";
-        if (cam.id.empty())
-            out.push_back({sdk::Severity::Error, base + ".id", "camera id must not be empty", "camera_id_invalid"});
-        else if (c.findMechanism(cam.id) != nullptr || c.findZone(cam.id) != nullptr ||
-                 std::count_if(c.cameras.begin(), c.cameras.end(), [&](const sdk::CameraConfig& o) { return o.id == cam.id; }) > 1)
-            out.push_back({sdk::Severity::Error, base + ".id", "camera id must be unique and not a mechanism or zone id", "camera_id_duplicate"});
-        if (std::any_of(c.cameras.begin(), c.cameras.begin() + static_cast<std::ptrdiff_t>(i),
-                        [&](const sdk::CameraConfig& o) { return o.kind == cam.kind && o.name == cam.name; }))
-            out.push_back({sdk::Severity::Error, base + ".name", "another camera of this type already uses the name '" + cam.name + "'",
-                           "camera_name_duplicate"});
-        const sdk::MechanismAttachment att = cam.attachment;
-        if (!att.onChassis()) {
-            const sdk::MechanismConfig* parent = c.findMechanism(att.parentMechanismId);
-            const sdk::MechanismTemplateInfo* info = parent != nullptr ? catalog_.findTemplate(parent->type) : nullptr;
-            if (parent == nullptr)
-                out.push_back({sdk::Severity::Error, base + ".attachment", "parent mechanism '" + att.parentMechanismId + "' does not exist",
-                               sdk::validation_code::kAttachmentParentMissing});
-            else if (info != nullptr && !sdk::hasLink(*info, att.parentLink))
-                out.push_back({sdk::Severity::Error, base + ".attachment", "mechanism '" + parent->id + "' has no link '" + att.parentLink + "'",
-                               sdk::validation_code::kAttachmentLinkMissing});
-        } else if (att.parentLink != sdk::kRootLink) {
-            out.push_back({sdk::Severity::Error, base + ".attachment", "the chassis only exposes the link 'root'", sdk::validation_code::kAttachmentLinkMissing});
-        }
-        const sdk::Vec3 p = cam.local.position;
-        const sdk::Quat q = cam.local.rotation;
-        if (!(finite(p.x) && finite(p.y) && finite(p.z) && finite(q.x) && finite(q.y) && finite(q.z) && finite(q.w)))
-            out.push_back({sdk::Severity::Error, base + ".local", "camera pose must be finite", "camera_geometry_invalid"});
-        auto optics = [&](const char* key, bool ok, const char* what) {
-            if (!ok) out.push_back({sdk::Severity::Error, base + "." + key, what, "camera_optics_invalid"});
-        };
-        optics("hFovDeg", finite(cam.hFovDeg) && cam.hFovDeg > 0.0 && cam.hFovDeg < 180.0, "horizontal field of view must be in (0, 180) degrees");
-        optics("vFovDeg", finite(cam.vFovDeg) && cam.vFovDeg > 0.0 && cam.vFovDeg < 180.0, "vertical field of view must be in (0, 180) degrees");
-        optics("maxRangeM", finite(cam.maxRangeM) && cam.maxRangeM > 0.0, "max range must be positive");
-        optics("maxIncidenceDeg", finite(cam.maxIncidenceDeg) && cam.maxIncidenceDeg > 0.0 && cam.maxIncidenceDeg <= 90.0,
-               "max incidence must be in (0, 90] degrees");
-        optics("fps", finite(cam.fps) && cam.fps > 0.0, "frame rate must be positive");
-        optics("latencyMs", finite(cam.latencyMs) && cam.latencyMs >= 0.0, "latency must not be negative");
-        optics("widthPx", cam.widthPx > 0, "resolution must be positive");
-        optics("heightPx", cam.heightPx > 0, "resolution must be positive");
-        optics("positionNoiseM", finite(cam.positionNoiseM) && cam.positionNoiseM >= 0.0, "noise must not be negative");
-        optics("yawNoiseDeg", finite(cam.yawNoiseDeg) && cam.yawNoiseDeg >= 0.0, "noise must not be negative");
-    }
     return out;
 }
 

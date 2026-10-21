@@ -32,7 +32,7 @@ using namespace wpiemu;
 // WPIEMU_DISABLE_BRIDGES=ctre,hal.can : comma-separated bridge-name prefixes to leave out (debugging aid
 // when one family misbehaves inside a particular robot process).
 void dropDisabledBridges(std::vector<std::unique_ptr<sdk::IDeviceBridge>>& bridges) {
-    const std::optional<std::string> spec = halsim::processEnvironment("WPIEMU_DISABLE_BRIDGES");
+    const std::optional<std::string> spec = sdk::readEnvironment("WPIEMU_DISABLE_BRIDGES");
     if (!spec || spec->empty()) return;
     std::vector<std::string> prefixes;
     for (std::size_t start = 0; start <= spec->size();) {
@@ -125,7 +125,7 @@ extern "C" WPIEMU_EXPORT int HALSIM_InitExtension(void) {
         if (g_host != nullptr) return 0;
 
         std::vector<std::string> warnings;
-        halsim::ExtensionConfig config = halsim::parseExtensionConfig(&halsim::processEnvironment, &warnings);
+        halsim::ExtensionConfig config = halsim::parseExtensionConfig(&sdk::readEnvironment, &warnings);
         for (const std::string& w : warnings) std::fprintf(stderr, "[wpiemu] WARN extension: %s\n", w.c_str());
         if (config.disabled || config.endpoint.empty()) {
             std::fprintf(stderr, "[wpiemu] INFO extension: inert (%s); the robot runs normally\n",

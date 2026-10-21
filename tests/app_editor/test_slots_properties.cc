@@ -146,8 +146,8 @@ TEST_CASE("issues are merged without duplicates and located back to selections")
     CHECK(at("robot.imu").selection == SelectionRef::slot("robot", "imu"));
     CHECK(at("chassis.massKg").selection == SelectionRef::chassis());
     CHECK(at("chassis.massKg").fieldKey == "massKg");
-    CHECK(at("plugins.game_2026.data.preloadFuel").selection == SelectionRef::plugin());
-    CHECK(at("plugins.game_2026.data.preloadFuel").fieldKey == "preloadFuel");
+    CHECK(at("plugins.demo_game.data.preloadFuel").selection == SelectionRef::plugin());
+    CHECK(at("plugins.demo_game.data.preloadFuel").fieldKey == "preloadFuel");
     CHECK(at("device:phoenix6/talonfx[7]").selection == SelectionRef::device("phoenix6/talonfx[7]"));
     CHECK(at("totally.unknown").selection.isNone());
 }
@@ -173,17 +173,17 @@ TEST_CASE("property groups: generic schema forms for chassis, wheels, mechanisms
     auto shooter = propertyGroupsFor(c, cat, SelectionRef::slot("shooter", "flywheel"));
     std::vector<std::string> ids;
     for (const auto& g : shooter) ids.push_back(g.id);
-    CHECK(ids == std::vector<std::string>{"mech.drive:axis", "mech.props", "mech.placement", "panel:game_2026.aiming"});
+    CHECK(ids == std::vector<std::string>{"mech.drive:axis", "mech.props", "mech.placement", "panel:demo_game.aiming"});
     CHECK(formTargetOf(c, SelectionRef::slot("shooter", "flywheel")) == SelectionRef::mechanism("shooter"));
     CHECK(formTargetOf(c, SelectionRef::slot("drivetrain", "fl.drive")) == SelectionRef::wheel("fl"));
     CHECK(formTargetOf(c, SelectionRef::slot("robot", "imu")) == SelectionRef::robot());
     CHECK(formTargetOf(c, SelectionRef::overlay("", "hopperVolume")) == SelectionRef::plugin());
 
     // Plugin panels reach matching templates only, plus the plugin section.
-    for (const auto& g : propertyGroupsFor(c, cat, SelectionRef::mechanism("indexer"))) CHECK(g.id != "panel:game_2026.aiming");
+    for (const auto& g : propertyGroupsFor(c, cat, SelectionRef::mechanism("indexer"))) CHECK(g.id != "panel:demo_game.aiming");
     auto plugin = propertyGroupsFor(c, cat, SelectionRef::plugin());
     bool hopper = false;
-    for (const auto& g : plugin) hopper = hopper || g.id == "panel:game_2026.hopper";
+    for (const auto& g : plugin) hopper = hopper || g.id == "panel:demo_game.hopper";
     CHECK(hopper);
     CHECK(propertyGroupsFor(c, cat, SelectionRef::mechanism("nobody")).empty());
 }
@@ -241,9 +241,9 @@ TEST_CASE("property edits write through to the right place") {
     CHECK(approx(c.findMechanism("turret")->mount.position, {0.1f, 0.2f, 0.3f}));
 
     CHECK(applyProperty(c, cat, SelectionRef::plugin(), "plugin", "preloadFuel", sdk::Value(12)));
-    CHECK(c.findPlugin("game_2026")->data.find("preloadFuel")->asInt() == 12);
-    CHECK(applyProperty(c, cat, SelectionRef::plugin(), "panel:game_2026.hopper", "capacity", sdk::Value(55)));
-    CHECK(c.findPlugin("game_2026")->data.find("capacity")->asInt() == 55);
+    CHECK(c.findPlugin("demo_game")->data.find("preloadFuel")->asInt() == 12);
+    CHECK(applyProperty(c, cat, SelectionRef::plugin(), "panel:demo_game.hopper", "capacity", sdk::Value(55)));
+    CHECK(c.findPlugin("demo_game")->data.find("capacity")->asInt() == 55);
 
     CHECK(applyProperty(c, cat, SelectionRef::wheel("fl"), "wheel", "radius", sdk::Value(0.05)));
     CHECK(approx(ops::findWheel(c, "fl")->radiusM, 0.05f));

@@ -12,20 +12,13 @@
 using namespace wpiemu;
 using namespace wpiemu::plugins::game_2026;
 using g26test::above;
+using g26test::emptyField;
 using g26test::makeZone;
 using g26test::ScriptedMechanism;
 using g26test::Session;
 using g26test::within;
 
 namespace {
-
-// Session with no staged fuel on the field, so tests only see the fuel they create.
-void emptyField(Session& s, int capacity = 30, int preload = 8) {
-    s.section()["neutralFuel"] = 0;
-    s.section()["depotFuel"] = 0;
-    s.section()["capacity"] = capacity;
-    s.section()["preloadFuel"] = preload;
-}
 
 // Pickup zone (0.30 x 0.60 x 0.40 m, centre 0.45 m ahead of the chassis) active while `roller` spins.
 sdk::ZoneConfig pickupZone(const std::string& id = "intake", const char* roller = "roller") {

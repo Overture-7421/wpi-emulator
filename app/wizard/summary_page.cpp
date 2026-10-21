@@ -6,24 +6,15 @@
 
 namespace wpiemu::app {
 
-namespace {
-QLabel* valueLabel() {
-    auto* l = new QLabel;
-    l->setWordWrap(true);
-    l->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    return l;
-}
-}  // namespace
-
 SummaryPage::SummaryPage(WizardViewModel& model, const UiResources& ui, QWidget* parent)
     : WizardPage(parent),
       model_(model),
       ui_(ui),
-      projectValue_(valueLabel()),
-      gameValue_(valueLabel()),
-      toolchainValue_(valueLabel()),
-      robotValue_(valueLabel()),
-      locationValue_(valueLabel()),
+      projectValue_(makeValueLabel()),
+      gameValue_(makeValueLabel()),
+      toolchainValue_(makeValueLabel()),
+      robotValue_(makeValueLabel()),
+      locationValue_(makeValueLabel()),
       detectCheck_(new QCheckBox(tr("Detect devices now"))),
       detectHint_(makeLabel({}, "muted", nullptr, true)) {
     auto* root = new QVBoxLayout(this);

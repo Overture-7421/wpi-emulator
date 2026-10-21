@@ -75,21 +75,25 @@ sdk::Status LimelightBridge::start(sdk::ILogger& logger) {
 }
 
 void LimelightBridge::configure(const sdk::VisionSetup& setup) {
-    cams_.clear();
-    cams_.resize(setup.cameras.size());
-    for (std::size_t i = 0; i < setup.cameras.size(); ++i) {
-        const sdk::CameraConfig& c = setup.cameras[i].config;
-        if (c.kind != sdk::CameraKind::Limelight) continue;
-        Cam cam;
-        cam.config = c;
-        cam.root = c.name.empty() ? "/limelight" : "/limelight-" + c.name;
-        cams_[i] = std::move(cam);
-    }
+    fieldLengthM_ = setup.fieldLengthM;
+    fieldWidthM_ = setup.fieldWidthM;
+    fieldSizeKnown_ = setup.hasFieldSize();
+    fieldWarningLogged_ = false;
+    cams_.configure(setup, sdk::CameraKind::Limelight,
+                    [](const sdk::CameraConfig& c) { return c.name.empty() ? "/limelight" : "/limelight-" + c.name; });
 }
 
-LimelightBridge::Cam* LimelightBridge::camera(std::uint32_t index) {
-    if (index >= cams_.size() || !cams_[index]) return nullptr;
-    return &*cams_[index];
+// The robot pose in the field convention `origin`. Blue is our own frame; red and center need the field size, which
+// comes from the game plugin's AprilTag layout. Without it those two are not published (nullopt) rather than guessed.
+std::optional<sdk::Pose3> LimelightBridge::poseInOrigin(const sdk::Pose3& blue, FieldOrigin origin) {
+    if (origin != FieldOrigin::Blue && !fieldSizeKnown_) {
+        if (!fieldWarningLogged_) {
+            fieldWarningLogged_ = true;
+            sink_.warn("the game's AprilTag layout has no field size; only the blue-origin Limelight pose is published");
+        }
+        return std::nullopt;
+    }
+    return detail::inFieldOrigin(blue, origin, fieldLengthM_, fieldWidthM_);
 }
 
 // ntcore may not be ready until the robot constructor ran; callers retry on the next tick.
@@ -97,11 +101,10 @@ bool LimelightBridge::ensureInitialized(Cam& cam, std::int64_t ntNow) {
     if (cam.initialized) return true;
     if (!sink_.available()) return false;
     cam.initialized = true;
-    cam.heartbeat = 0;
-    cam.nextHeartbeatUs = 0;
+    cam.restartHeartbeat();
 
     publishFrame(cam, sdk::CameraFrame{}, ntNow, true);
-    sink_.putDouble(cam.root + "/hb", cam.heartbeat, ntNow);
+    sink_.putDouble(cam.root + "/hb", static_cast<double>(cam.heartbeat), ntNow);
     sink_.putDouble(cam.root + "/getpipe", cam.pipeline, ntNow);
     sink_.putString(cam.root + "/getpipetype", kPipelineType, ntNow);
     return true;
@@ -110,10 +113,8 @@ bool LimelightBridge::ensureInitialized(Cam& cam, std::int64_t ntNow) {
 void LimelightBridge::poll(sdk::SimTimeUs simTimeUs) {
     if (cams_.empty() || !sink_.available()) return;
     const std::int64_t ntNow = sink_.backend().nowUs();
-    for (std::optional<Cam>& slot : cams_) {
-        if (!slot) continue;
-        Cam& cam = *slot;
-        if (!ensureInitialized(cam, ntNow)) continue;
+    cams_.forEach([&](Cam& cam) {
+        if (!ensureInitialized(cam, ntNow)) return;
 
         const std::optional<double> pipeline = ntAsDouble(sink_.read(cam.root + "/pipeline"));
         if (pipeline && *pipeline != cam.pipeline) {
@@ -121,41 +122,31 @@ void LimelightBridge::poll(sdk::SimTimeUs simTimeUs) {
             sink_.putDouble(cam.root + "/getpipe", cam.pipeline, ntNow);
         }
 
-        if (simTimeUs >= cam.nextHeartbeatUs) {
-            cam.heartbeat += 1;
-            cam.nextHeartbeatUs = simTimeUs + options_.heartbeatPeriodUs;
-            sink_.putDouble(cam.root + "/hb", cam.heartbeat, ntNow);
-        }
-    }
+        if (cam.beat(simTimeUs, options_.heartbeatPeriodUs))
+            sink_.putDouble(cam.root + "/hb", static_cast<double>(cam.heartbeat), ntNow);
+    });
 }
 
 void LimelightBridge::apply(std::span<const sdk::CameraFrame> frames, sdk::SimTimeUs) {
     if (frames.empty() || !sink_.available()) return;
     const std::int64_t ntNow = sink_.backend().nowUs();
     for (const sdk::CameraFrame& frame : frames) {
-        Cam* cam = camera(frame.cameraIndex);
+        Cam* cam = cams_.find(frame.cameraIndex);
         if (cam == nullptr || !ensureInitialized(*cam, ntNow)) continue;
         publishFrame(*cam, frame, ntNow, false);
     }
 }
 
 void LimelightBridge::reset() {
-    for (std::optional<Cam>& slot : cams_) {
-        if (!slot) continue;
-        Cam& cam = *slot;
-        const bool wasInitialized = cam.initialized;
-        cam.initialized = false;
-        cam.nextHeartbeatUs = 0;
-        // Republish a "no target" state now when ntcore is up, otherwise on the first available tick.
-        if (wasInitialized && sink_.available()) ensureInitialized(cam, sink_.backend().nowUs());
-    }
+    // Republish a "no target" state now when ntcore is up, otherwise on the first available tick.
+    cams_.reset([this](Cam& cam) {
+        if (sink_.available()) ensureInitialized(cam, sink_.backend().nowUs());
+    });
 }
 
 void LimelightBridge::stop() noexcept {
     if (started_ && sink_.available()) {
-        for (const std::optional<Cam>& slot : cams_) {
-            if (slot) sink_.backend().unpublish(slot->root + "/");
-        }
+        cams_.forEach([this](const Cam& cam) { sink_.backend().unpublish(cam.root + "/"); });
     }
     cams_.clear();
     started_ = false;
@@ -197,8 +188,9 @@ void LimelightBridge::publishFrame(Cam& cam, const sdk::CameraFrame& frame, std:
     const bool havePose = valid && frame.hasRobotPose;
     auto poseArray = [&](FieldOrigin origin) {
         if (!havePose) return std::vector<double>{};
-        std::vector<double> a = pose6(detail::inFieldOrigin(frame.robotPoseField, origin, options_.fieldLengthM,
-                                                            options_.fieldWidthM));
+        const std::optional<sdk::Pose3> pose = poseInOrigin(frame.robotPoseField, origin);
+        if (!pose) return std::vector<double>{};
+        std::vector<double> a = pose6(*pose);
         a.push_back(latencyMs);
         a.push_back(static_cast<double>(tags.size()));
         a.push_back(frame.tagSpanM);
@@ -301,9 +293,9 @@ void LimelightBridge::publishFrame(Cam& cam, const sdk::CameraFrame& frame, std:
     j.raw(",").key("txnc").num(valid ? primary->yawDeg : 0.0).raw(",").key("tync").num(valid ? primary->pitchDeg : 0.0);
     j.raw(",").key("ta").num(valid ? primary->areaPercent : 0.0);
     auto pose6OrZeros = [&](FieldOrigin origin) {
-        return havePose ? pose6(detail::inFieldOrigin(frame.robotPoseField, origin, options_.fieldLengthM,
-                                                      options_.fieldWidthM))
-                        : zeros(6);
+        if (!havePose) return zeros(6);
+        const std::optional<sdk::Pose3> pose = poseInOrigin(frame.robotPoseField, origin);
+        return pose ? pose6(*pose) : zeros(6);
     };
     j.raw(",").key("botpose").array(pose6OrZeros(FieldOrigin::Center));
     j.raw(",").key("botpose_wpired").array(pose6OrZeros(FieldOrigin::Red));

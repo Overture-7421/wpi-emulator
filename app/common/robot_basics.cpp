@@ -1,19 +1,19 @@
 #include "common/robot_basics.h"
 
-#include <QCoreApplication>
-
 #include <algorithm>
 #include <cmath>
 
+#include "ui/qt_text.h"
 #include "wpiemu/sdk/config/property_schema.h"
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/mechanisms/motion_config.h"
+#include "wpiemu/sdk/physics/wheel_layout.h"
 
 namespace wpiemu::app {
 
 namespace {
 
-QString tr(const char* text) { return QCoreApplication::translate("RobotBasics", text); }
+constexpr ui::Tr tr{"RobotBasics"};
 
 constexpr float kFrameHeightM = 0.10f;
 constexpr float kComHeightM = 0.20f;
@@ -26,64 +26,29 @@ constexpr double kMaxLegalMassKg = 56.7;        // 125 lb robot weight limit
 constexpr const char* kRedBumper = "#c0392b";
 constexpr const char* kBlueBumper = "#2b5fd0";
 
-sdk::WheelSpec baseWheel(const RobotBasics& b, const char* name) {
+sdk::WheelSpec baseWheel(const RobotBasics& b) {
     sdk::WheelSpec w;
-    w.name = name;
     w.radiusM = static_cast<float>(b.wheelDiameterM / 2.0);
-    w.driveMotor = findMotor(b.driveMotor) ? findMotor(b.driveMotor)->spec : sdk::motors::krakenX60();
+    const MotorChoice* drive = findMotor(b.driveMotor);
+    w.driveMotor = drive != nullptr ? drive->spec : sdk::motors::krakenX60();
     w.driveMotorCount = std::max(1, b.motorsPerWheel);
     w.driveGearRatio = static_cast<float>(b.driveGearRatio);
     return w;
 }
 
-void addSwerveWheels(const RobotBasics& b, std::vector<sdk::WheelSpec>& out) {
-    const float x = static_cast<float>(b.frameLengthM) / 2.f - kModuleInsetM;
-    const float y = static_cast<float>(b.frameWidthM) / 2.f - kModuleInsetM;
-    struct Corner { const char* name; float sx, sy; };
-    for (const Corner& c : {Corner{"fl", 1, 1}, Corner{"fr", 1, -1}, Corner{"bl", -1, 1}, Corner{"br", -1, -1}}) {
-        sdk::WheelSpec w = baseWheel(b, c.name);
-        w.kind = sdk::WheelKind::Swerve;
-        w.steered = true;
-        w.positionM = {c.sx * x, c.sy * y, w.radiusM};
-        w.steerMotor = findMotor(b.steerMotor) ? findMotor(b.steerMotor)->spec : sdk::motors::neo550();
-        w.steerGearRatio = static_cast<float>(b.steerGearRatio);
-        out.push_back(std::move(w));
+std::vector<sdk::WheelSpec> drivetrainWheels(const RobotBasics& b) {
+    sdk::WheelSpec base = baseWheel(b);
+    const float halfLength = static_cast<float>(b.frameLengthM) / 2.f - kModuleInsetM;
+    const float halfWidth = static_cast<float>(b.frameWidthM) / 2.f;
+    if (b.isSwerve()) {
+        const MotorChoice* steer = findMotor(b.steerMotor);
+        base.steerMotor = steer != nullptr ? steer->spec : sdk::motors::neo550();
+        base.steerGearRatio = static_cast<float>(b.steerGearRatio);
+        return sdk::swerveWheels(base, halfLength, halfWidth - kModuleInsetM);
     }
-}
-
-void addTankWheels(const RobotBasics& b, std::vector<sdk::WheelSpec>& out) {
-    const int n = std::max(2, b.wheelsPerSide);
-    const float halfSpan = static_cast<float>(b.frameLengthM) / 2.f - kModuleInsetM;
-    const float y = static_cast<float>(b.frameWidthM) / 2.f - kTankWheelInsetM;
-    for (const char* side : {"left", "right"}) {
-        const float sy = side[0] == 'l' ? 1.f : -1.f;
-        for (int i = 0; i < n; ++i) {
-            const std::string name = std::string(side) + std::to_string(i);
-            sdk::WheelSpec w = baseWheel(b, name.c_str());
-            w.kind = sdk::WheelKind::Standard;
-            const float t = n == 1 ? 0.f : (static_cast<float>(i) / static_cast<float>(n - 1)) * 2.f - 1.f;
-            w.positionM = {t * halfSpan, sy * y, w.radiusM};
-            out.push_back(std::move(w));
-        }
-    }
-}
-
-void addMecanumWheels(const RobotBasics& b, std::vector<sdk::WheelSpec>& out) {
-    const float x = static_cast<float>(b.frameLengthM) / 2.f - kModuleInsetM;
-    const float y = static_cast<float>(b.frameWidthM) / 2.f - kTankWheelInsetM;
-    constexpr float kQuarterPi = 0.78539816339f;
-    // X layout: the roller traction axes of FL/BR point +45 deg, FR/BL point -45 deg.
-    struct Corner { const char* name; float sx, sy, angle; };
-    for (const Corner& c : {Corner{"fl", 1, 1, kQuarterPi}, Corner{"fr", 1, -1, -kQuarterPi},
-                            Corner{"bl", -1, 1, -kQuarterPi}, Corner{"br", -1, -1, kQuarterPi}}) {
-        sdk::WheelSpec w = baseWheel(b, c.name);
-        w.kind = sdk::WheelKind::Mecanum;
-        w.positionM = {c.sx * x, c.sy * y, w.radiusM};
-        w.widthM = 0.05f;
-        w.tire.tractionAngleRad = c.angle;
-        w.tire.lateralScale = 0.15f;
-        out.push_back(std::move(w));
-    }
+    if (b.isMecanum()) return sdk::mecanumWheels(base, halfLength, halfWidth - kTankWheelInsetM);
+    const int perSide = std::max(basics_limits::kWheelsPerSide.min, b.wheelsPerSide);
+    return sdk::tankWheels(base, perSide, halfLength, halfWidth - kTankWheelInsetM);
 }
 
 sdk::PrimitiveSpec bumper(const char* name, sdk::Vec3 centre, sdk::Vec3 size, const char* color) {
@@ -121,7 +86,7 @@ const MotorChoice* findMotorBySpec(const sdk::MotorSpec& spec) {
     return nullptr;
 }
 
-int RobotBasics::wheelCount() const { return isTank() ? 2 * std::max(2, wheelsPerSide) : 4; }
+int RobotBasics::wheelCount() const { return isTank() ? 2 * std::max(basics_limits::kWheelsPerSide.min, wheelsPerSide) : 4; }
 
 const char* bumperColorFor(sdk::Alliance alliance) { return alliance == sdk::Alliance::Red ? kRedBumper : kBlueBumper; }
 
@@ -158,29 +123,29 @@ std::vector<sdk::Issue> validateBasics(const RobotBasics& b) {
         out.push_back({s, path, message.toStdString(), {}});
     };
     if (b.name.trimmed().isEmpty()) add(sdk::Severity::Error, "name", tr("Give the robot a name."));
-    if (b.frameLengthM < 0.25 || b.frameLengthM > 1.5 || b.frameWidthM < 0.25 || b.frameWidthM > 1.5)
+    if (basics_limits::kFrameM.excludes(b.frameLengthM) || basics_limits::kFrameM.excludes(b.frameWidthM))
         add(sdk::Severity::Error, "frame", tr("The frame must be between 10 in and 59 in on each side."));
     else if (b.frameLengthM > 0.8128 || b.frameWidthM > 0.8128)
         add(sdk::Severity::Warning, "frame", tr("Frames over 32 in are larger than an FRC frame perimeter allows."));
-    if (b.massKg < 5.0 || b.massKg > 120.0)
+    if (basics_limits::kMassKg.excludes(b.massKg))
         add(sdk::Severity::Error, "mass", tr("The mass must be between 5 kg and 120 kg."));
     else if (b.massKg > kMaxLegalMassKg)
         add(sdk::Severity::Warning, "mass", tr("Over the 125 lb robot weight limit. Allowed in the simulator."));
-    if (b.wheelDiameterM < 0.04 || b.wheelDiameterM > 0.25)
+    if (basics_limits::kWheelDiameterM.excludes(b.wheelDiameterM))
         add(sdk::Severity::Error, "wheel", tr("The wheel diameter must be between 1.6 in and 9.8 in."));
-    if (b.driveGearRatio < 0.5 || b.driveGearRatio > 100.0)
+    if (basics_limits::kDriveRatio.excludes(b.driveGearRatio))
         add(sdk::Severity::Error, "gearing", tr("The drive gear ratio must be between 0.5 and 100."));
-    if (b.isSwerve() && (b.steerGearRatio < 0.5 || b.steerGearRatio > 200.0))
+    if (b.isSwerve() && basics_limits::kSteerRatio.excludes(b.steerGearRatio))
         add(sdk::Severity::Error, "steerGearing", tr("The steer gear ratio must be between 0.5 and 200."));
-    if (b.motorsPerWheel < 1 || b.motorsPerWheel > 4)
+    if (basics_limits::kMotorsPerWheel.excludes(b.motorsPerWheel))
         add(sdk::Severity::Error, "motors", tr("Use between 1 and 4 motors per wheel."));
-    if (b.isTank() && (b.wheelsPerSide < 2 || b.wheelsPerSide > 4))
+    if (b.isTank() && basics_limits::kWheelsPerSide.excludes(b.wheelsPerSide))
         add(sdk::Severity::Error, "wheels", tr("A tank drive has between 2 and 4 wheels per side."));
     if (!findMotor(b.driveMotor)) add(sdk::Severity::Error, "driveMotor", tr("Choose a drive motor."));
     if (b.isSwerve() && !findMotor(b.steerMotor)) add(sdk::Severity::Error, "steerMotor", tr("Choose a steer motor."));
-    if (b.bumperThicknessM < 0.0 || b.bumperThicknessM > 0.15)
+    if (basics_limits::kBumperM.excludes(b.bumperThicknessM))
         add(sdk::Severity::Error, "bumper", tr("The bumper thickness must be between 0 and 5.9 in."));
-    if (b.station < 1 || b.station > 3) add(sdk::Severity::Error, "station", tr("The driver station is 1, 2 or 3."));
+    if (basics_limits::kStation.excludes(b.station)) add(sdk::Severity::Error, "station", tr("The driver station is 1, 2 or 3."));
     return out;
 }
 
@@ -213,9 +178,7 @@ sdk::RobotConfig buildRobotConfig(const RobotBasics& b, const RobotBuildContext&
 
     sdk::DrivetrainSpec& spec = config.drivetrain.spec;
     spec.kind = b.drivetrain;
-    if (b.isSwerve()) addSwerveWheels(b, spec.wheels);
-    else if (b.isMecanum()) addMecanumWheels(b, spec.wheels);
-    else addTankWheels(b, spec.wheels);
+    spec.wheels = drivetrainWheels(b);
     if (b.isTank()) {
         auto links = sdk::tankMotionLinks(config);
         if (links) config.motionLinks = std::move(links).value();
@@ -310,14 +273,14 @@ RobotBasics basicsFromConfig(const sdk::RobotConfig& config) {
         const auto source =
             std::find_if(spec.wheels.begin(), spec.wheels.end(), [&](const auto& wheel) {
                 return sdk::motionLinkTo(config, {sdk::slot_owner::kDrivetrain,
-                                                  wheel.name + ".drive"}) == nullptr;
+                                                  sdk::driveSlotName(wheel.name, 0)}) == nullptr;
             });
         const sdk::WheelSpec& w = source == spec.wheels.end() ? spec.wheels.front() : *source;
         b.wheelDiameterM = static_cast<double>(w.radiusM) * 2.0;
         b.driveGearRatio = w.driveGearRatio;
         b.motorsPerWheel = std::max(1, w.driveMotorCount);
         if (const MotorChoice* m = findMotorBySpec(w.driveMotor)) b.driveMotor = m->key;
-        if (w.steered) {
+        if (sdk::isSteered(w)) {
             b.steerGearRatio = w.steerGearRatio;
             if (const MotorChoice* m = findMotorBySpec(w.steerMotor)) b.steerMotor = m->key;
         }

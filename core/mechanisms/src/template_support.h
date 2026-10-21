@@ -25,7 +25,6 @@ bool parseAxis(const std::string& text, AxisName& out);
 sdk::Vec3 unitVector(AxisName a);
 sdk::Pose3 rotationAbout(AxisName a, double angleRad);
 sdk::Pose3 translationAlong(AxisName a, double distanceM);
-double wrapAngle(double angleRad);   // to (-pi, pi]
 sdk::PropertySpec axisEnumProp(const std::string& key, const std::string& label, AxisName def, const std::string& group);
 
 // Builds one axis from the properties (motor catalog + plant factory lookups).

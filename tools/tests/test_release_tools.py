@@ -1,35 +1,21 @@
 """Dependency-free release-tool regressions, with no macOS commands or CMake execution."""
 import contextlib
-import importlib.util
 import io
-import os
 import plistlib
-import shutil
 import sys
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
+from support import load, scratch_directory
 
-REPO = Path(__file__).resolve().parents[2]
+import package_checksums as CHECKSUMS
 
-
-def load(name, relative):
-    spec = importlib.util.spec_from_file_location(name, REPO / relative)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-CHECKSUMS = load("package_checksums", "tools/package_checksums.py")
 MINIMUM_OS = load("check_minimum_os", "packaging/macos/check_minimum_os.py")
 
 
 class ReleaseToolsTests(unittest.TestCase):
     def setUp(self):
-        self.directory = REPO / "build" / f"release-tools-test-{os.getpid()}"
-        self.directory.mkdir(parents=True, exist_ok=False)
-        self.addCleanup(shutil.rmtree, self.directory)
+        self.directory = scratch_directory(self, "release-tools-test-")
 
     def checksums(self, *options):
         with patch.object(sys, "argv", ["package_checksums.py", str(self.directory), *options]):

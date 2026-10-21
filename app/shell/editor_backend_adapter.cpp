@@ -57,14 +57,13 @@ std::vector<sdk::Issue> EditorBackendAdapter::validate(const sdk::RobotConfig& c
 
 bool EditorBackendAdapter::detecting() const {
     const HostStatus s = services_.runtime().status();
-    return s.process == HostProcessState::Starting || (s.process == HostProcessState::Running && !s.programStarted);
+    return s.process == sdk::ProcessState::Starting || (s.process == sdk::ProcessState::Running && !s.programStarted);
 }
 
 void EditorBackendAdapter::submitConfig(const sdk::RobotConfig& config) {
     pending_ = config;
     pendingProject_ = services_.session().path();
-    services_.runtime().setProject(services_.session().path(), std::make_shared<const sdk::RobotConfig>(config),
-                                   services_.session().gameModule());
+    services_.bindRuntime(std::make_shared<const sdk::RobotConfig>(config));
 }
 
 sdk::Status EditorBackendAdapter::saveConfig() {

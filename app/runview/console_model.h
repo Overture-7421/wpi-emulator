@@ -5,7 +5,7 @@
 
 #include <deque>
 
-#include "run_backend.h"
+#include "contract/runtime_host.h"
 
 namespace wpiemu::app::runview {
 
@@ -20,15 +20,15 @@ public:
     int rowCount(const QModelIndex& parent = {}) const override;
     QVariant data(const QModelIndex& index, int role) const override;
 
-    void append(const RunLogEntry& entry);
+    void append(const HostLogLine& entry);
     void clear();
-    const RunLogEntry& at(int row) const { return entries_[static_cast<std::size_t>(row)]; }
+    const HostLogLine& at(int row) const { return entries_[static_cast<std::size_t>(row)]; }
     int capacity() const { return capacity_; }
 
-    static QString formatLine(const RunLogEntry& entry);
+    static QString formatLine(const HostLogLine& entry);
 
 private:
-    std::deque<RunLogEntry> entries_;
+    std::deque<HostLogLine> entries_;
     int capacity_;
 };
 
@@ -42,7 +42,7 @@ public:
     sdk::LogLevel minimumLevel() const { return minimumLevel_; }
 
     void setMinimumLevel(sdk::LogLevel level);
-    void setStreamEnabled(LogStream stream, bool enabled);
+    void setStreamEnabled(sdk::LogStream stream, bool enabled);
     void setSearchText(const QString& text);
 
     // Text of the given proxy rows (all visible rows when empty), one formatted line each.

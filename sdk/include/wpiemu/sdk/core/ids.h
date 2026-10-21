@@ -26,8 +26,6 @@ struct StrongId {
 // Opaque physics handles. Their bit layout is private to the IPhysicsWorld implementation.
 using BodyId = StrongId<struct BodyIdTag>;
 using ShapeId = StrongId<struct ShapeIdTag>;
-// Game-plugin entity (fuel ball, hub, ...). Assigned by the plugin; unique per game state.
-using EntityId = StrongId<struct EntityIdTag>;
 // Runtime device handle assigned by the extension when a device is announced (stable for one session).
 using DeviceId = StrongId<struct DeviceIdTag, std::uint32_t>;
 

@@ -1,12 +1,14 @@
 cmake_minimum_required(VERSION 3.25)
 project(wpilib_root_fixture LANGUAGES CXX)
+include("${WPIEMU_FIXTURE_REPO}/cmake/WpiEmuVersions.cmake")
+wpiemu_pinned_version(_wpilib_version wpilib)
 
 function(wpiemu_target_defaults target)
 endfunction()
 
 add_subdirectory(discovery)
 if(WPIEMU_FIXTURE_LAYOUT STREQUAL "maven")
-    set(_expected_root "${CMAKE_BINARY_DIR}/_wpilib/2026.2.1")
+    set(_expected_root "${CMAKE_BINARY_DIR}/_wpilib/${_wpilib_version}")
 else()
     set(_expected_root "${WPIEMU_FIXTURE_ROOT}")
 endif()

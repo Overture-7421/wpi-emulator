@@ -14,7 +14,7 @@ std::string halsimExtensionFileName() {
 #endif
 }
 
-std::vector<fs::path> halsimExtensionCandidates(const fs::path& appDir, const config::EnvLookup& getenv, const fs::path& buildTreeFallback) {
+std::vector<fs::path> halsimExtensionCandidates(const fs::path& appDir, const sdk::EnvLookup& getenv, const fs::path& buildTreeFallback) {
     const std::string lib = halsimExtensionFileName();
     const auto env = [&](const char* name) -> std::string { return getenv ? getenv(name).value_or(std::string()) : std::string(); };
     std::vector<fs::path> out;
@@ -29,7 +29,7 @@ std::vector<fs::path> halsimExtensionCandidates(const fs::path& appDir, const co
     return out;
 }
 
-fs::path locateHalsimExtension(const fs::path& appDir, const config::EnvLookup& getenv, const fs::path& buildTreeFallback,
+fs::path locateHalsimExtension(const fs::path& appDir, const sdk::EnvLookup& getenv, const fs::path& buildTreeFallback,
                                std::vector<fs::path>* searched) {
     const std::vector<fs::path> candidates = halsimExtensionCandidates(appDir, getenv, buildTreeFallback);
     if (searched != nullptr) *searched = candidates;

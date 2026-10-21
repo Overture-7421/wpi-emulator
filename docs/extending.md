@@ -22,15 +22,17 @@ the linked reference pages own detailed behavior. Do not add season/vendor switc
    keys, zone kinds and game-value IDs start with the plugin ID plus `.`; plugin config belongs only
    to its own section. Follow the [game-plugin contract](reference/game-plugin.md).
 4. Return Qt-free editor/HUD descriptors when needed; publish every HUD key they bind to.
-   Supply `aprilTagLayout()` for simulated tag visibility and `fieldFrame()` for alliance-copy
-   start positions. Empty/default implementations intentionally provide neither feature.
+   Supply `aprilTagLayout()` (tags plus `fieldLengthM`/`fieldWidthM`, which Limelight red and
+   center poses need) for simulated tag visibility and `fieldFrame()` for alliance-copy start
+   positions. Empty/default implementations intentionally provide neither feature.
 5. Place `WPIEMU_REGISTER_GAME_PLUGIN(YourModule)` **inside the plugin's namespace**. It defines
    `registerPlugin`; declare that function in the plugin's public header.
 6. In [plugins/CMakeLists.txt](../plugins/CMakeLists.txt), add the subdirectory and link its target
    into `wpiemu_plugins_builtin`. Include the public header and call its namespaced `registerPlugin`
    in [the aggregator](../plugins/builtin_plugins.cpp), preserving registration errors.
    The target links only `wpiemu_sdk`; no core/app or another plugin changes for season logic.
-   Conventionally named plugin targets/aliases are recognized by the boundary checker.
+   Conventionally named plugin targets/aliases are recognized by the boundary checker, which also fails a plugin
+   directory that is not added, linked and registered here.
 7. Add tests alongside the new plugin's source-mirroring test directory. If they include plugin
    headers, link the test executable to the new plugin in [test wiring](../tests/CMakeLists.txt).
    Exercise registration, defaults/ownership, field cleanup, rules, reset and HUD publication.
@@ -78,22 +80,25 @@ Plugins are built in with the host toolchain, not independently loaded shared li
    and link SDK plus permitted private backend dependencies.
 2. Choose [SimDeviceBridge](../sdk/include/wpiemu/sdk/devices/sim_device_bridge.h) plus a
    `SimDeviceRule` table, [ChannelFamilyBridge](../sdk/include/wpiemu/sdk/devices/channel_family_bridge.h)
-   for indexed HAL families, or implement [IDeviceBridge](../sdk/include/wpiemu/sdk/devices/device_bridge.h).
+   for indexed HAL families (the HAL module's `HalFamilyBridge`/`IndexedHalBridge` bases supply the seam and
+   channel plumbing), or implement [IDeviceBridge](../sdk/include/wpiemu/sdk/devices/device_bridge.h).
    Announce descriptors/capabilities, collect outputs, apply inputs, support unmapped loopback,
    retire freed devices and make shutdown idempotent.
 3. Bind [canonical signals](../sdk/include/wpiemu/sdk/devices/signals.h) with explicit units,
    directions and conversions. Preserve [identity/alias and neutral-feedback rules](reference/bridges.md):
    a CAN-vendor rule with no observed bus uses `busIsStatic = false`, not an invented bus label.
 4. Expose a module registration function that registers factories with
-   `DeviceBridgeRegistry::registerBridge`. Add its subdirectory and link it into
+   `DeviceBridgeRegistry::add`. Add its subdirectory and link it into
    `wpiemu_bridges_builtin` in [bridge build wiring](../bridges/CMakeLists.txt); call the function
-   from [the bridge aggregator](../bridges/builtin_bridges.cpp). The extension does not change.
+   from [the bridge aggregator](../bridges/builtin_bridges.cpp). The extension does not change, and the boundary
+   checker fails a module that is not added, linked and called there.
 5. For a new bridge module, update `ALLOWED`, `MODULE_OWNERS` and `TARGET_OWNERS` in
    [the boundary checker](../tools/check_boundaries.py), including the aggregator's outgoing edge
    and any aliases/binding targets. Do not allow a direct extension-to-module dependency.
 6. Test discovery/update/retirement, capabilities, direction/scale, missing values, loopback and
    input-history reset through fake backends. Link new-module tests explicitly to that module
-   in [test wiring](../tests/CMakeLists.txt), or register a dedicated test target: source discovery
+   in [test wiring](../tests/CMakeLists.txt), or register a dedicated test target (`wpiemu_doctest_target(<target>)`
+   applies the doctest and warning settings): source discovery
    does not extend the fixed test-library list. Add the actual contract to the [bridge reference](reference/bridges.md).
 
 ## Add a vendor rule set
@@ -124,7 +129,8 @@ Plugins are built in with the host toolchain, not independently loaded shared li
 2. Implement [IVisionBridge](../sdk/include/wpiemu/sdk/vision/vision_bridge.h) with a unique name.
    Start the backend, configure only cameras of your kind idempotently, poll robot-written settings,
    publish the producer's due-only frames, reset stale published state and stop idempotently.
-3. Register factories through `VisionBridgeRegistry::registerBridge`. Wire them through
+   Keep the cameras in a [CameraSet](../sdk/include/wpiemu/sdk/vision/camera_bridge.h) of your `CameraState`.
+3. Register factories through `VisionBridgeRegistry::add`. Wire them through
    `registerBuiltinVisionBridges` in the aggregator, not extension internals.
    The existing real-ntcore entry point is `registerNtVisionBridges`; retain its real/fake-backend
    selection when adding to the built-in vision module.
@@ -163,6 +169,11 @@ Plugins are built in with the host toolchain, not independently loaded shared li
    [PropertySchema](../sdk/include/wpiemu/sdk/config/property_schema.h). Set a stable key, type,
    label/description, default, unit, ranges/options and grouping. Use `section`/`axis` for Drive
    placement and visibility metadata for dependent controls. Generic forms need no new widget.
+   Build entries with the [`props::` builders](../sdk/include/wpiemu/sdk/config/property_builders.h)
+   and read stored values with `getDouble/getBool/getString/getFiniteDouble` from the SDK
+   [`Value`](../sdk/include/wpiemu/sdk/core/value.h); do not write a per-module builder or reader.
+   A plugin's typed config section binds each spec to its member once with
+   [`ConfigBindings`](../sdk/include/wpiemu/sdk/config/config_bindings.h), which supplies schema, decode and encode.
 2. Implement consumption and validation in the owning module. Test defaults, an invalid value and
    persistence round-trip; use Qt-free editor/HUD descriptors for plugin presentation.
 3. For a new structural robot field, update the SDK model, codec/defaults and validator together.
@@ -176,7 +187,9 @@ Plugins are built in with the host toolchain, not independently loaded shared li
 
 - **Drivetrain:** implement `IDrivetrain`, register with `DrivetrainRegistry::registerDrivetrain`
   and include it in [built-in registration](../core/physics/include/wpiemu/core/physics/drivetrains.h).
-  Supply slot metadata and feedback; never step the world from a drivetrain.
+  Declare its slots once: `DrivetrainInfo::slotSpecs` is a pure function of the spec, shared by the validator,
+  the editor and `IDrivetrain::slotSpecs()` (use `tractionSlotSpecs`, `isSteered` and the `steerSlotName`
+  helpers). Never step the world from a drivetrain.
 - **Tires:** implement stateless `ITireModel::solve`, register with `TireModelRegistry::registerModel`
   and the [tire registration](../core/physics/include/wpiemu/core/physics/tire_models.h).
   Check affected config selectors/editor choices when introducing a new strategy key.
@@ -188,6 +201,9 @@ Plugins are built in with the host toolchain, not independently loaded shared li
   see [physics](reference/physics.md).
 - **Transport/codec:** implement `ITransport` / `IMessageCodec`, wire the composition roots and test
   both peers with round-trip/failure cases. Preserve the [lock-step contract](reference/extension-ipc.md).
+- **Message field:** add the member to its struct in the headers [messages.h](../sdk/include/wpiemu/sdk/ipc/messages.h)
+  lists and one line to that struct's `fields` function in the [binary codec](../ipc/src/binary_codec.cpp), which
+  encodes and decodes. Put it after the `if (!c.more()) return;` guard so older peers still decode; extend the golden bytes.
 
 ## Validate the extension
 

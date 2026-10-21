@@ -32,14 +32,14 @@ sdk::Status registerVisionBridges(sdk::VisionBridgeRegistry& registry, std::shar
                                   VisionBridgeOptions options) {
     if (!backend) return sdk::makeError(sdk::ErrorCode::InvalidArgument, "registerVisionBridges: null INtBackend");
 
-    sdk::Status s = registry.registerBridge(
+    sdk::Status s = registry.add(
         "vision.limelight",
         sdk::BridgeInfo{"vision", "Limelight AprilTag camera (LimelightHelpers NetworkTables)", "limelight"},
         [backend, options]() -> std::unique_ptr<sdk::IVisionBridge> {
             return std::make_unique<LimelightBridge>(backend, options);
         });
     if (!s.ok()) return s;
-    return registry.registerBridge(
+    return registry.add(
         "vision.photonvision",
         sdk::BridgeInfo{"vision", "PhotonVision AprilTag camera (PhotonLib NetworkTables)", "photonvision"},
         [backend, options]() -> std::unique_ptr<sdk::IVisionBridge> {

@@ -11,17 +11,25 @@ Build and test commands belong to [Building](../BUILDING.md); controls belong to
 [`AppServices`](../../app/common/app_services.h) is the application composition root.
 It owns the registries, persistence/model services, project session, and injected runtime host;
 `main()` passes it to the shell by reference. Built-in games enter through the plugin
-aggregator, not direct season dependencies.
+aggregator, not direct season dependencies. Inside `app/` the boundary checker also enforces the
+layering: the host contract, the shared Qt support (`ui`) and the page libraries (editor, run view) include
+and link only the SDK (the page libraries also `ui`, the run view also the contract) plus two shared Qt-free
+headers; `common`, `host`, `wizard` and `shell` compose them.
 
-[`IRuntimeHost`](../../app/common/runtime_host.h) is the UI-thread seam for project selection,
-robot-process and link status, scene descriptions, immutable snapshots, logs, and commands.
-`EditorBackendAdapter` and `RunBackendAdapter` share the same host: discovery and the run view
-refer to the same robot instance.
+[`IRuntimeHost`](../../app/contract/runtime_host.h) is the UI-thread seam for robot-process and
+link status, scene descriptions, immutable snapshots, logs, and run commands. It lives in the
+SDK+Qt `wpiemu_app_contract` target, so the run view consumes it without core. The editor adapter
+and `RunPage` share the same host: discovery and the run view refer to the same robot instance.
+Selecting the open project is a separate interface, `IProjectBinding`, reached only through
+`AppServices::bindRuntime`; hosts implement both (`IProjectRuntimeHost`).
 
 Normal startup constructs `RealRuntimeHost`, which delegates process/session work to the
 Qt-free [`RobotSession`](../../app/host/robot_session.h). That host builds the configured
 simulation, serves IPC through the runner, launches unmodified robot code through Gradle, and
 owns teardown. Keep Qt event-loop adaptation in `RealRuntimeHost`, not in `RobotSession`.
+Process and link state, session mode and console entries use one vocabulary,
+[`session_status.h`](../../sdk/include/wpiemu/sdk/telemetry/session_status.h), from session to
+UI; `HostStatus`/`HostLogLine` only add Qt strings through `toHostStatus`/`toHostLogLine`.
 Session construction belongs to [runtime](runtime.md); injection and robot-process behavior
 belong to [extension/IPC](extension-ipc.md).
 
@@ -29,7 +37,9 @@ Launching robot code is different from beginning simulation. The live robot can 
 for discovery; starting and stopping simulation enter and leave lock-step without a reboot.
 Restarting robot code relaunches it; resetting simulation does not. A same-project config edit
 applies to the next run and may require relaunch. Deferred start intent survives same-project
-relaunches but is canceled when the project changes.
+relaunches but is canceled when the project changes. The selected start position follows the same
+rule in every host through [`StartPositionSelection`](../../app/contract/start_position_selection.h):
+it accepts only an id the config has and is dropped on a project switch or when its entry disappears.
 
 Keep process state, link state, `programStarted`, and `simulating` distinct when enabling UI
 actions. `HostStatus::runGeneration` changes for robot launches, not physics resets.
@@ -38,7 +48,11 @@ without erasing user mappings. Declared addresses are not physical identities; s
 
 `--demo` selects `DemoRuntimeHost`, a scripted host without a robot process.
 `FakeEditorBackend` and `FakeRunBackend` are separate page-level implementations for tests and
-standalone demos; they do not exercise the real host, launcher, or IPC.
+standalone demos; they do not exercise the real host, launcher, or IPC. The fake editor backend
+validates with the same SDK config checks as core, over its own `EditorCatalog` ([runtime](runtime.md)).
+Both play the neutral [demo game](../../sdk/include/wpiemu/sdk/testing/demo_game.h): its plugin id, zone
+kinds, game values, HUD, panels, field and tags are defined once there, every id starting with `demo_game.`,
+and only the two demo robots differ. Season data belongs to a game plugin, never to a fake or a page library.
 
 ## Shell, wizard, and persistence
 
@@ -46,6 +60,9 @@ The shell coordinates the selected project through `ProjectSession` and `ShellCo
 the setup pages edit `WizardViewModel`. The wizard's `updateRobotConfig()` merges robot basics
 into the existing model rather than replacing mechanisms, mappings, and plugin sections.
 Do not build a fresh model over an edited robot merely to update wizard fields.
+The wizard's wheels come from the SDK's [wheel layouts](../../sdk/include/wpiemu/sdk/physics/wheel_layout.h).
+`basics_limits` holds the ranges its spin boxes offer and `validateBasics()` reports; they are presentation
+limits, tighter than the physical validity [core validates](runtime.md), and a test keeps them inside it.
 
 `ConfigRepository` adapts core's `ProjectConfigRepository`; widgets do not own persistence.
 The authoritative app-data save and the shareable project export are separate outcomes.
@@ -123,17 +140,22 @@ Placement/reset behavior belongs to [runtime](runtime.md), not viewport coordina
 
 ## Run-view snapshots and commands
 
-`RunPage` consumes [`IRunBackend`](../../app/runview/run_backend.h).
-`sceneInfo()` supplies immutable config/field copies and game presentation descriptors;
+`RunPage` consumes [`IRuntimeHost`](../../app/contract/runtime_host.h) directly.
+`scene()` supplies immutable config/field copies and game presentation descriptors;
 `latestSnapshot()` supplies the latest immutable `ISimSnapshot`, which can be null before a tick.
 The view may miss intermediate snapshots; do not treat its repaint rate as simulation timing.
 
-`IRunBackend` exposes lifecycle, pause/step, speed, placement and Driver Station capabilities.
+`IRuntimeHost` exposes lifecycle, pause/step, speed, placement and Driver Station capabilities.
 Current Run controls request reset/restart, speed, placement and Driver Station changes;
 the shell starts simulation automatically on entry, with no start/stop/pause/step buttons.
-The real adapter reaches `ISimController` through the shared host, never mutable simulation
-objects. Backend methods and delivered signals belong to the UI thread; worker-originated
-Qt signals require queued delivery.
+The real host reaches `ISimController` through `RobotSession`, never mutable simulation
+objects. Host methods and delivered signals belong to the UI thread; worker-originated
+Qt signals require queued delivery (`HostLogLine` and `DsState` are registered once, by the
+`IRuntimeHost` constructor).
+
+`HostScene` carries the open project's path and the wizard's Driver Station choice. `RunPage`
+applies that station to its Driver Station panel when the project (or the choice) changes and
+never on a same-project config edit, so a later change made in the panel is kept.
 
 The Driver Station's timed sequence advances from snapshot simulation time, not wall time.
 Its manual game-message text is a fallback when the game provides FMS data.
@@ -162,13 +184,19 @@ rules belong in their renderer.
 Both viewports are thin QML renderers fed by C++ presentation objects. The owning CMake resource
 lists compile QML under `/wpiemu/editor` and `/wpiemu/runview`; load resource URLs rather than
 assuming a source checkout or working directory. Keep new assets in those resource lists.
+Scene plumbing both viewports need lives in the SDK+Qt `wpiemu_app_ui` target ([`app/ui`](../../app/ui)):
+SDK-to-Qt conversions, Qt Quick 3D's built-in mesh conventions, colour parsing and the `ZUpWorld` QML
+component under `/wpiemu/ui`. Add scene code there only when the editor and run view both use it. The same target
+holds the text and widget helpers any layer shares: `qs()` string conversion, the `Tr` translation-context helper
+(`ETR` is its `"Editor"` instance), clock text and small label recipes.
 The widget modules disable AUTOUIC because
 `sdk/include/wpiemu/sdk/game/ui_descriptors.h` matches its generated-header pattern.
 
-Keep SDK NWU Z-up data unchanged in config, physics, and C++ scene models.
+Keep SDK NWU Z-up data unchanged in config, physics, and C++ scene models. The one conversion to
+Qt's Y-up scene is the -90-degree X rotation of [`ZUpWorld.qml`](../../app/ui/qml/ZUpWorld.qml), which
 [`Viewport3D.qml`](../../app/editor/qml/Viewport3D.qml) and
-[`RunScene.qml`](../../app/runview/qml/RunScene.qml) each apply one -90-degree X rotation at
-their `world` node to reach Qt's Y-up scene. Do not pre-convert persisted poses or convert again
+[`RunScene.qml`](../../app/runview/qml/RunScene.qml) use as the parent of all SDK-frame content; lights
+and other Y-up content stay outside it. Do not pre-convert persisted poses or convert again
 in an adapter. The editor's display floor origin is below the hull center, not at its COM.
 
 QML context objects must outlive the view using them. In particular, `RunPage` destroys its
@@ -181,7 +209,8 @@ to [Releasing](../releasing.md). Translation extraction must recognize editor `E
 ## Tests and visual checks
 
 [Shell/wizard tests](../../app/tests), [editor tests](../../tests/app_editor), and
-[run-view tests](../../tests/app_runview) exercise models, edit operations, adapters, and GUI smoke
+[run-view tests](../../tests/app_runview) (which also cover the shared `app/ui` helpers) exercise models,
+edit operations, adapters, and GUI smoke
 behavior. Their CTest suites are `app.ui_tests`, `app_editor.tests`, and `runview.ui_tests`;
 use [Building](../BUILDING.md) for invocation and environment setup.
 Editor test sources use `.cc` to stay outside the Qt-free `.cpp` test glob.

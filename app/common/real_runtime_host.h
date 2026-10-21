@@ -6,7 +6,8 @@
 #include <functional>
 #include <memory>
 
-#include "common/runtime_host.h"
+#include "contract/runtime_host.h"
+#include "contract/start_position_selection.h"
 #include "host/robot_session.h"
 
 namespace wpiemu::app {
@@ -33,7 +34,7 @@ struct RealRuntimeOptions {
 //
 // Environment (advanced / diagnostics): WPIEMU_EXTENSION, WPIEMU_EXTENSION_DIR, WPIEMU_LAUNCH_MODE=gradle|direct, WPIEMU_GRADLE_OFFLINE=1,
 // WPIEMU_PRESTART_POLLING=1 (poll vendor bridges while the robot constructor runs; crashes the JVM with CTRE, off by default).
-class RealRuntimeHost final : public IRuntimeHost {
+class RealRuntimeHost final : public IProjectRuntimeHost {
     Q_OBJECT
 public:
     RealRuntimeHost(host::Registries registries, RealRuntimeOptions options = {}, QObject* parent = nullptr);
@@ -42,8 +43,8 @@ public:
     HostStatus status() const override { return status_; }
     HostScene scene() const override { return scene_; }
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const override;
-    QString startPosition() const override { return startPositionId_; }
-    void setProject(const QString& projectPath, std::shared_ptr<const sdk::RobotConfig> config, const sdk::IGameModule* game) override;
+    QString startPosition() const override { return startSelection_.id(); }
+    void setProject(const HostProject& project) override;
 
     // The extension that would be launched (empty when it cannot be found).
     std::filesystem::path extensionPath() const;
@@ -70,7 +71,6 @@ private:
     void emitLog(sdk::LogLevel level, const QString& source, const QString& text);
     void releaseSession();
     std::optional<sdk::RobotStartPose> resolveStartPlacement() const;
-    static HostStatus map(const host::SessionStatus& s);
 
     host::Registries registries_;
     RealRuntimeOptions options_;
@@ -85,7 +85,7 @@ private:
     std::string gamePluginId_;
     std::shared_ptr<const sdk::FieldDescription> field_;
     std::string fieldPluginId_;
-    QString startPositionId_;
+    StartPositionSelection startSelection_;
 
     std::unique_ptr<host::RobotSession> session_;
     std::shared_ptr<const sdk::ISimSnapshot> lastSnapshot_;

@@ -30,13 +30,13 @@ protected:
         out.active = std::abs(a.velocity()) > kMovingSpeed;
         const double p = a.position();
         out.links.push_back({kMoverLink, linear ? translationAlong(axisName_, p)
-                                                : rotationAbout(axisName_, sign_ * (a.settings().limited ? p : wrapAngle(p)))});
-        out.values.push_back(namedValue("position", p, posUnit));
-        out.values.push_back(namedValue("velocity", a.velocity(), velUnit));
-        out.values.push_back(namedValue("voltage", a.appliedVoltageV(), "V"));
-        out.values.push_back(namedValue("current", a.motorCurrentA(), "A"));
-        out.values.push_back(namedValue("atLowerLimit", a.atLowerLimit() ? 1.0 : 0.0, ""));
-        out.values.push_back(namedValue("atUpperLimit", a.atUpperLimit() ? 1.0 : 0.0, ""));
+                                                : rotationAbout(axisName_, sign_ * (a.settings().limited ? p : sdk::wrapAngleRad(p)))});
+        out.values.push_back(namedValue(sdk::value_name::kPosition, p, posUnit));
+        out.values.push_back(namedValue(sdk::value_name::kVelocity, a.velocity(), velUnit));
+        out.values.push_back(namedValue(sdk::value_name::kVoltage, a.appliedVoltageV(), "V"));
+        out.values.push_back(namedValue(sdk::value_name::kCurrent, a.motorCurrentA(), "A"));
+        out.values.push_back(namedValue(sdk::value_name::kAtLowerLimit, a.atLowerLimit() ? 1.0 : 0.0, ""));
+        out.values.push_back(namedValue(sdk::value_name::kAtUpperLimit, a.atUpperLimit() ? 1.0 : 0.0, ""));
     }
 
 private:
@@ -44,24 +44,6 @@ private:
     AxisName axisName_;
     double sign_;
 };
-
-AxisOptions mechanismAxis() {
-    AxisOptions o;
-    o.motion = Motion::Rotary;
-    o.selectableMotion = true;
-    o.rotaryModel = plant_model::kDcMotor;
-    o.limits = true;
-    o.limitSwitchSlots = true;
-    o.motorModel = "kraken_x60";
-    o.brake = true;
-    o.gearRatio = 10.0;
-    o.inertiaKgM2 = 0.01;
-    o.massKg = 2.0;
-    o.lengthM = 0.3;
-    o.gravity = true;                 // acts on Arm and Linear only
-    o.viscousFrictionNmS = 0.001;     // bearing drag, so that a coasting rotary mechanism spins down
-    return o;
-}
 
 sdk::PrimitiveSpec bodyPrimitive() {
     sdk::PrimitiveSpec p;
@@ -74,7 +56,7 @@ sdk::PrimitiveSpec bodyPrimitive() {
 }
 
 sdk::MechanismTemplateInfo makeInfo(const MotorCatalog& motors) {
-    const AxisOptions axis = mechanismAxis();
+    const AxisOptions axis;
     sdk::MechanismTemplateInfo info;
     info.type = mechanism_type::kMechanism;
     info.displayName = "Mechanism";
@@ -82,8 +64,8 @@ sdk::MechanismTemplateInfo makeInfo(const MotorCatalog& motors) {
     info.description =
         "One motor-driven degree of freedom. Motion Rotary: flywheel, roller, belt or turret (stops optional). "
         "Arm: hood, pivot or wrist with gravity. Linear: elevator, climber or slide with gravity.";
-    info.slotSpecs = axisSlots(axis);
-    info.motionAxes = {axisMotionSpec(axis)};
+    info.slotSpecs = axisSlots();
+    info.motionAxes = {axisMotionSpec()};
     info.properties.properties = axisProperties(axis, motors);
     info.properties.properties.push_back(
         axisEnumProp("axis", "Axis (Rotary and Linear)", AxisName::Z, kMotionGroup));
@@ -101,7 +83,7 @@ sdk::Status registerMechanism(sdk::MechanismFactory& factory, const TemplateDeps
         factory, makeInfo(*deps.motors),
         [deps](const sdk::MechanismConfig& config,
                const sdk::Value& props) -> sdk::Result<std::unique_ptr<sdk::IMechanism>> {
-            AxisOptions options = mechanismAxis();
+            AxisOptions options;
             AxisName moveAxis = AxisName::Z;
             if (!parseAxis(getString(props, "axis", "z"), moveAxis))
                 return sdk::makeError(sdk::ErrorCode::InvalidArgument, "property 'axis' has unknown value");
@@ -109,7 +91,6 @@ sdk::Status registerMechanism(sdk::MechanismFactory& factory, const TemplateDeps
             // against gravity along Z.
             const bool arm = getString(props, "motion", "rotary") == "arm";
             if (arm) moveAxis = AxisName::Y;
-            options.armGravityEnabled = true;
             options.linearGravityEnabled = moveAxis == AxisName::Z;
             auto axis = buildAxis(config.id, options, props, deps);
             if (!axis.ok()) return axis.error();

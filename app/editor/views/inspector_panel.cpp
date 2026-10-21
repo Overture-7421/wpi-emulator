@@ -17,6 +17,8 @@
 #include "model/motion_links.h"
 #include "model/property_groups.h"
 #include "model/tr.h"
+#include "ui/qt_text.h"
+#include "ui/widget_support.h"
 #include "views/activation_card.h"
 #include "views/drive_card.h"
 
@@ -24,14 +26,8 @@ namespace wpiemu::app::editor {
 
 namespace {
 
-QString qs(const std::string& s) { return QString::fromStdString(s); }
-
-QLabel* mutedLabel(const QString& text, QWidget* parent, bool wrap = true) {
-    auto* l = new QLabel(text, parent);
-    l->setWordWrap(wrap);
-    l->setEnabled(false);
-    return l;
-}
+using ui::mutedLabel;
+using ui::qs;
 
 QString capabilityText(sdk::CapabilitySet caps) {
     struct Cap { sdk::Capability c; const char* name; };
@@ -46,6 +42,74 @@ QString capabilityText(sdk::CapabilitySet caps) {
     for (const auto& c : all)
         if (caps.has(c.c)) names << QString::fromLatin1(c.name);
     return names.join(QStringLiteral(", "));
+}
+
+struct HeaderText {
+    QString title;
+    QString subtitle;
+    NodeKind icon = NodeKind::Robot;
+};
+
+// What the header shows for `target`: its title, the muted line under it and its icon.
+HeaderText headerText(const sdk::RobotConfig& c, const EditorCatalog& cat, const SelectionRef& target) {
+    HeaderText h;
+    h.title = describeSelection(c, cat, target);
+    switch (target.kind) {
+        case SelKind::None:
+        case SelKind::Robot: h.subtitle = ETR("Robot overview"); h.icon = NodeKind::Robot; break;
+        case SelKind::Chassis:
+        case SelKind::ChassisCom: h.subtitle = ETR("Frame, mass, centre of mass"); h.icon = NodeKind::Chassis; break;
+        case SelKind::Drivetrain: h.subtitle = ETR("Type and traction model"); h.icon = NodeKind::Drivetrain; break;
+        case SelKind::Wheel:
+            if (const auto* w = ops::findWheel(c, target.sub)) h.subtitle = qs(w->driveMotor.name);
+            h.icon = NodeKind::Wheel;
+            break;
+        case SelKind::Mechanism:
+            if (const auto* m = c.findMechanism(target.owner))
+                // The Type (Rotary / Arm / Linear) is edited in Configure; only a plugin template needs naming here.
+                if (const auto* info = cat.findTemplate(m->type); info != nullptr && info->origin != "core") h.subtitle = qs(info->displayName);
+            h.icon = NodeKind::Mechanism;
+            break;
+        case SelKind::Primitive: {
+            const QString owner = target.owner == ops::kChassisOwner ? ETR("chassis")
+                                  : c.findMechanism(target.owner) != nullptr ? qs(ops::displayNameFor(*c.findMechanism(target.owner), cat))
+                                                                              : qs(target.owner);
+            h.subtitle = ETR("Shape of %1").arg(owner);
+            h.icon = NodeKind::Shape;
+            break;
+        }
+        case SelKind::Plugin: h.subtitle = ETR("Game rules and configuration"); h.icon = NodeKind::Plugin; break;
+        case SelKind::Zone:
+            if (const auto* z = c.findZone(target.owner)) {
+                const auto* kind = cat.findZoneKind(z->kind);
+                h.title = kind != nullptr ? qs(kind->displayName) : ETR("Zone");
+                h.subtitle = kind != nullptr ? qs(kind->description) : qs(z->kind) + QStringLiteral(" ") + ETR("(unknown zone kind)");
+            }
+            h.icon = NodeKind::Zone;
+            break;
+        case SelKind::Camera:
+            if (const auto* cam = c.findCamera(target.owner)) {
+                h.subtitle = qs(cam->kind == sdk::CameraKind::PhotonVision ? "PhotonVision" : "Limelight");
+                if (!cam->name.empty()) h.subtitle += QStringLiteral(" \xC2\xB7 \"%1\"").arg(qs(cam->name));
+            }
+            h.icon = NodeKind::Camera;
+            break;
+        case SelKind::Sensor:
+            if (const auto* s = c.findSensor(target.owner)) {
+                h.subtitle = QString::fromUtf8(sdk::sensorKindInfo(s->kind).displayName);
+                if (const auto* v = cat.findGameValue(s->source)) h.subtitle += QStringLiteral(" \xC2\xB7 ") + qs(v->label.empty() ? v->id : v->label);
+            }
+            h.icon = NodeKind::Sensor;
+            break;
+        case SelKind::StartPosition:
+            if (const auto* p = c.findStartPosition(target.owner))
+                h.subtitle = (p->alliance == sdk::Alliance::Blue ? ETR("Blue alliance") : ETR("Red alliance")) + QStringLiteral(" \xC2\xB7 ") + ETR("ID: %1").arg(qs(p->id));
+            h.icon = NodeKind::StartPosition;
+            break;
+        case SelKind::Device: h.title = ETR("Detected device"); h.icon = NodeKind::Robot; break;
+        default: break;
+    }
+    return h;
 }
 
 }  // namespace
@@ -156,71 +220,14 @@ void InspectorPanel::commitName(const SelectionRef& target, const QString& text)
 void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<PropertyGroup>& /*groups*/) {
     const sdk::RobotConfig& c = controller_.document().config();
     const EditorCatalog& cat = controller_.document().catalog();
-    QString title = describeSelection(c, cat, target);
-    QString subtitle;
-    NodeKind icon = NodeKind::Robot;
-    switch (target.kind) {
-        case SelKind::None:
-        case SelKind::Robot: subtitle = ETR("Robot overview"); icon = NodeKind::Robot; break;
-        case SelKind::Chassis:
-        case SelKind::ChassisCom: subtitle = ETR("Frame, mass, centre of mass"); icon = NodeKind::Chassis; break;
-        case SelKind::Drivetrain: subtitle = ETR("Type and traction model"); icon = NodeKind::Drivetrain; break;
-        case SelKind::Wheel:
-            if (const auto* w = ops::findWheel(c, target.sub)) subtitle = qs(w->driveMotor.name);
-            icon = NodeKind::Wheel;
-            break;
-        case SelKind::Mechanism:
-            if (const auto* m = c.findMechanism(target.owner))
-                // The Type (Rotary / Arm / Linear) is edited in Configure; only a plugin template needs naming here.
-                if (const auto* info = cat.findTemplate(m->type); info != nullptr && info->origin != "core") subtitle = qs(info->displayName);
-            icon = NodeKind::Mechanism;
-            break;
-        case SelKind::Primitive: {
-            const QString owner = target.owner == ops::kChassisOwner ? ETR("chassis")
-                                  : c.findMechanism(target.owner) != nullptr ? qs(ops::displayNameFor(*c.findMechanism(target.owner), cat))
-                                                                              : qs(target.owner);
-            subtitle = ETR("Shape of %1").arg(owner);
-            icon = NodeKind::Shape;
-            break;
-        }
-        case SelKind::Plugin: subtitle = ETR("Game rules and configuration"); icon = NodeKind::Plugin; break;
-        case SelKind::Zone:
-            if (const auto* z = c.findZone(target.owner)) {
-                const auto* kind = cat.findZoneKind(z->kind);
-                title = kind != nullptr ? qs(kind->displayName) : ETR("Zone");
-                subtitle = kind != nullptr ? qs(kind->description) : qs(z->kind) + QStringLiteral(" ") + ETR("(unknown zone kind)");
-            }
-            icon = NodeKind::Zone;
-            break;
-        case SelKind::Camera:
-            if (const auto* cam = c.findCamera(target.owner)) {
-                subtitle = qs(cam->kind == sdk::CameraKind::PhotonVision ? "PhotonVision" : "Limelight");
-                if (!cam->name.empty()) subtitle += QStringLiteral(" \xC2\xB7 \"%1\"").arg(qs(cam->name));
-            }
-            icon = NodeKind::Camera;
-            break;
-        case SelKind::Sensor:
-            if (const auto* s = c.findSensor(target.owner)) {
-                subtitle = QString::fromUtf8(sdk::sensorKindInfo(s->kind).displayName);
-                if (const auto* v = cat.findGameValue(s->source)) subtitle += QStringLiteral(" \xC2\xB7 ") + qs(v->label.empty() ? v->id : v->label);
-            }
-            icon = NodeKind::Sensor;
-            break;
-        case SelKind::StartPosition:
-            if (const auto* p = c.findStartPosition(target.owner))
-                subtitle = (p->alliance == sdk::Alliance::Blue ? ETR("Blue alliance") : ETR("Red alliance")) + QStringLiteral(" \xC2\xB7 ") + ETR("ID: %1").arg(qs(p->id));
-            icon = NodeKind::StartPosition;
-            break;
-        case SelKind::Device: title = ETR("Detected device"); icon = NodeKind::Robot; break;
-        default: break;
-    }
+    const HeaderText header = headerText(c, cat, target);
 
     auto* head = new QWidget(content_);
     auto* h = new QHBoxLayout(head);
     h->setContentsMargins(0, 0, 0, 0);
     h->setSpacing(10);
     auto* iconLabel = new QLabel(head);
-    iconLabel->setPixmap(icons_.node(icon).pixmap(28, 28));
+    iconLabel->setPixmap(icons_.node(header.icon).pixmap(28, 28));
     iconLabel->setFixedSize(28, 28);
     iconLabel->setScaledContents(true);
     h->addWidget(iconLabel, 0, Qt::AlignTop);
@@ -241,12 +248,12 @@ void InspectorPanel::addHeader(const SelectionRef& target, const std::vector<Pro
         });
         texts->addWidget(nameEdit_);
     } else {
-        title_ = new QLabel(title, head);
+        title_ = new QLabel(header.title, head);
         title_->setFont(f);
         title_->setWordWrap(true);
         texts->addWidget(title_);
     }
-    if (!subtitle.isEmpty()) texts->addWidget(mutedLabel(subtitle, head));
+    if (!header.subtitle.isEmpty()) texts->addWidget(mutedLabel(header.subtitle, head));
     if (target.kind == SelKind::Primitive && target.owner != ops::kChassisOwner && c.findMechanism(target.owner) != nullptr) {
         const std::string owner = target.owner;
         texts->addWidget(linkButton(ETR("\xE2\x86\x90 Back to mechanism"), [this, owner] { controller_.selection().set(SelectionRef::mechanism(owner)); }));
@@ -448,9 +455,9 @@ void InspectorPanel::addPartCards(const SelectionRef& target, const std::vector<
         if (g.id == "mech.props" || g.id == "wheel") cv->addWidget(makeForm(g, configure));
     // A swerve module steers: its steer controller sits with the rest of what makes the wheel a swerve module.
     if (wheel)
-        if (const auto* w = ops::findWheel(c, target.sub); w != nullptr && w->steered)
+        if (const auto* w = ops::findWheel(c, target.sub); w != nullptr && sdk::isSteered(*w))
             for (const SlotInfo& info : slotInfos(c, cat, controller_.devices(), owner))
-                if (info.address.slot == target.sub + ".steer") {
+                if (info.address.slot == sdk::steerSlotName(target.sub)) {
                     auto* row = makeRow(info, configure);
                     row->setLabel(ETR("Steer motor"));
                     cv->addWidget(row);

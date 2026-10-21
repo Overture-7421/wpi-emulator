@@ -7,9 +7,9 @@ Prerequisites: a checkout and a terminal at the repository root.
 
 - Git, Python 3, CMake 3.25+, and a C++20 compiler. Windows uses MSVC 2022;
   Linux/macOS use GCC/Clang or Apple Clang. Non-Visual-Studio presets also require Ninja.
-- A matching Qt 6.8 kit with Quick 3D and Shader Tools; the Windows examples use
-  `C:\Qt\6.8.3\msvc2022_64`. Omit Qt for a Qt-free build using the option below.
-- CMake fetches pinned Box3D and doctest sources; see [dependency declarations](../cmake/WpiEmuDependencies.cmake).
+- A Qt kit matching the [version pins](releasing.md#version-pins) with Quick 3D and Shader Tools; the Windows
+  examples use `C:\Qt\6.8.3\msvc2022_64`. Omit Qt for a Qt-free build using the option below.
+- CMake fetches pinned [Box3D](../cmake/WpiEmuDependencies.cmake) and [doctest](../cmake/WpiEmuTests.cmake) sources.
 - WPILib desktop HAL/wpiutil artifacts enable the real extension. CMake searches the installer's
   Maven cache (`C:\Users\Public\wpilib\2026\maven` or `~/wpilib/2026/maven`).
   Supply another Maven/extracted root with `WPIEMU_WPILIB_ROOT`, or enable downloads below.
@@ -60,7 +60,7 @@ Pass these to configuration, not to `cmake --build`.
 | `WPIEMU_WARNINGS_AS_ERRORS` | OFF | Promote first-party warnings to errors |
 | `WPIEMU_BUILD_UI_DEMOS` | ON | Build editor/run-view visual demos |
 | `WPIEMU_WPILIB_ROOT` | auto | Maven cache, year directory or extracted artifacts; also read from the environment |
-| `WPIEMU_WPILIB_VERSION` | 2026.2.1 | WPILib artifact version |
+| `WPIEMU_WPILIB_VERSION` | the `wpilib` [pin](releasing.md#version-pins) | WPILib artifact version |
 | `WPIEMU_WPILIB_DOWNLOAD` | OFF | Fetch missing WPILib artifacts from frcmaven |
 | `WPIEMU_RUNVIEW_SDL2` | ON | SDL2 gamepads when available; keyboard input works without SDL2 |
 | `WPIEMU_RUNVIEW_FETCH_SDL2` | ON | Fetch SDL2 if no system package is found; OFF avoids that download |
@@ -75,15 +75,15 @@ ctest --preset windows-vs2022-release -R "^(app[.]ui_tests|app_editor[.]tests|ru
 python tools\check_boundaries.py
 python tools\check_boundaries.py --self-test
 python tools\check_docs.py
+python tools\check_versions.py
 python tools\check_wpilib_configure.py --generator "Visual Studio 17 2022" --architecture x64
 ```
-The last command checks WPILib discovery offline with synthetic artifacts, without a build.
-On Linux/macOS use `--generator Ninja` instead and omit `--architecture x64`.
+The last command checks WPILib discovery offline with synthetic artifacts, no build; on Linux/macOS pass only `--generator Ninja`.
 The Qt-free doctest executable discovers `tests/**/*.cpp`, excluding the separate run-view suite.
 Editor tests use `tests/app_editor/*.cc` to avoid that glob. Reconfigure after adding tests;
 each discovered `TEST_CASE` becomes a CTest entry. Names must be unique and contain **no semicolons**.
 SDK public headers automatically get stand-alone include checks.
-CTest supplies offscreen Qt settings and the Windows Qt DLL path for UI suites. Direct Qt test
+CTest supplies offscreen Qt settings and the Windows Qt DLL path for UI suites (`wpiemu_qt_test_environment(<test>)`). Direct Qt test
 binaries need `QT_QPA_PLATFORM=offscreen` and the kit's `bin` on `PATH`; doctest accepts
 `--test-case="exact case name"`. Offscreen does **not** validate Quick 3D rendering: use
 `wpiemu_editor_demo` or `wpiemu_runview_demo` interactively. For source-writing conventions see

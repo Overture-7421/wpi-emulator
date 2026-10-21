@@ -21,7 +21,7 @@ void ForwardingLogger::log(sdk::LogLevel level, std::string_view category, std::
     if (level < minLevel_) return;
     if (console_) {
         std::string line = "[wpiemu] ";
-        line += toString(level);
+        line += sdk::logLevelName(level);
         line += ' ';
         line += category;
         line += ": ";

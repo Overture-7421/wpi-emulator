@@ -2,11 +2,12 @@
 
 #include <cmath>
 
-#include "common/robot_basics.h"
+#include "test_support.h"
 #include "wpiemu/sdk/game/builtin_plugins.h"
 #include "wpiemu/sdk/game/plugin_registry.h"
 
 using namespace wpiemu::app;
+using namespace wpiemu::app::testing;
 namespace sdk = wpiemu::sdk;
 
 namespace {
@@ -230,6 +231,87 @@ TEST_CASE("re-running the wizard keeps mechanisms, mappings and hand-made primit
     }
     CHECK(bumpers == 4);
     CHECK(extras == 1);
+}
+
+TEST_CASE("default wizard wheels sit at golden hubs for every drivetrain kind") {
+    struct Hub {
+        const char* name;
+        float x;
+        float y;
+    };
+    const auto check = [](const sdk::RobotConfig& c, std::initializer_list<Hub> hubs, sdk::WheelKind kind, bool steered) {
+        REQUIRE(c.drivetrain.spec.wheels.size() == hubs.size());
+        std::size_t i = 0;
+        for (const Hub& hub : hubs) {
+            const sdk::WheelSpec& w = c.drivetrain.spec.wheels[i++];
+            INFO(hub.name);
+            CHECK(w.name == hub.name);
+            CHECK(w.kind == kind);
+            CHECK(w.steered == steered);
+            CHECK(w.positionM.x == doctest::Approx(hub.x));
+            CHECK(w.positionM.y == doctest::Approx(hub.y));
+            CHECK(w.positionM.z == doctest::Approx(w.radiusM));
+        }
+    };
+
+    const sdk::RobotConfig swerve = buildRobotConfig(defaultBasicsFor(sdk::drivetrain_kind::kSwerve), {});
+    check(swerve, {{"fl", 0.2794f, 0.2794f}, {"fr", 0.2794f, -0.2794f}, {"bl", -0.2794f, 0.2794f}, {"br", -0.2794f, -0.2794f}},
+          sdk::WheelKind::Swerve, true);
+    for (const auto& w : swerve.drivetrain.spec.wheels) CHECK(w.tire.tractionAngleRad == 0.f);
+
+    const sdk::RobotConfig tank = buildRobotConfig(defaultBasicsFor(sdk::drivetrain_kind::kTank), {});
+    check(tank,
+          {{"left0", -0.3175f, 0.2902f}, {"left1", 0.f, 0.2902f}, {"left2", 0.3175f, 0.2902f},
+           {"right0", -0.3175f, -0.2902f}, {"right1", 0.f, -0.2902f}, {"right2", 0.3175f, -0.2902f}},
+          sdk::WheelKind::Standard, false);
+
+    const sdk::RobotConfig mecanum = buildRobotConfig(defaultBasicsFor(sdk::drivetrain_kind::kMecanum), {});
+    check(mecanum, {{"fl", 0.2921f, 0.3156f}, {"fr", 0.2921f, -0.3156f}, {"bl", -0.2921f, 0.3156f}, {"br", -0.2921f, -0.3156f}},
+          sdk::WheelKind::Mecanum, false);
+    const float angles[] = {0.7853982f, -0.7853982f, -0.7853982f, 0.7853982f};
+    for (std::size_t i = 0; i < 4; ++i) {
+        const auto& w = mecanum.drivetrain.spec.wheels[i];
+        CHECK(w.tire.tractionAngleRad == doctest::Approx(angles[i]));
+        CHECK(w.tire.lateralScale == doctest::Approx(0.15f));
+        CHECK(w.widthM == doctest::Approx(0.05f));
+    }
+}
+
+TEST_CASE("every value the wizard accepts builds a model core validates") {
+    using namespace basics_limits;
+    TestEnvironment env;
+    const auto validates = [&env](const RobotBasics& b, const std::string& label) {
+        INFO(label);
+        CHECK_FALSE(hasErrors(validateBasics(b)));
+        const auto issues = env.services->validator().validate(buildRobotConfig(b, {}), env.services->mechanisms(),
+                                                               env.services->drivetrains(), env.services->plugins());
+        for (const sdk::Issue& issue : issues) CHECK_MESSAGE(issue.severity != sdk::Severity::Error, issue.path, ": ", issue.message);
+    };
+
+    for (const char* kind : {sdk::drivetrain_kind::kSwerve, sdk::drivetrain_kind::kTank, sdk::drivetrain_kind::kMecanum}) {
+        const RobotBasics base = defaultBasicsFor(kind);
+        for (const bool high : {false, true}) {
+            const auto pick = [high](const auto& range) { return high ? range.max : range.min; };
+            RobotBasics extreme = base;
+            extreme.frameLengthM = pick(kFrameM);
+            extreme.frameWidthM = pick(kFrameM);
+            extreme.massKg = pick(kMassKg);
+            extreme.wheelDiameterM = pick(kWheelDiameterM);
+            extreme.driveGearRatio = pick(kDriveRatio);
+            extreme.steerGearRatio = pick(kSteerRatio);
+            extreme.bumperThicknessM = pick(kBumperM);
+            extreme.wheelsPerSide = pick(kWheelsPerSide);
+            extreme.motorsPerWheel = pick(kMotorsPerWheel);
+            extreme.station = pick(kStation);
+            validates(extreme, std::string(kind) + (high ? " at the upper limits" : " at the lower limits"));
+        }
+        for (const MotorChoice& m : motorCatalog()) {
+            RobotBasics b = base;
+            b.driveMotor = m.key;
+            b.steerMotor = m.key;
+            validates(b, std::string(kind) + " with " + m.key.toStdString());
+        }
+    }
 }
 
 TEST_CASE("motor catalog lookup") {

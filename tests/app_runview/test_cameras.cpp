@@ -9,22 +9,15 @@
 #include "fake_run_backend.h"
 #include "scene_model.h"
 #include "scene_parts.h"
+#include "test_support.h"
+#include "wpiemu/sdk/testing/demo_game.h"
 
 using namespace wpiemu::app::runview;
+using namespace runview_test;
 namespace sdk = wpiemu::sdk;
+namespace demo = wpiemu::sdk::testing::demo_game;
 
 namespace {
-
-constexpr float kEps = 1e-3f;
-
-bool near(const sdk::Vec3& a, const sdk::Vec3& b, float eps = kEps) { return sdk::length(a - b) < eps; }
-
-sdk::SimSnapshotData baseSnapshot() {
-    sdk::SimSnapshotData d;
-    d.chassis.pose = {{3.f, 2.f, 0.2f}, sdk::Quat::fromYaw(0.f)};
-    d.robotConnected = true;
-    return d;
-}
 
 sdk::CameraState cameraState(const char* id, std::vector<int> tags) {
     sdk::CameraState c;
@@ -39,7 +32,7 @@ sdk::CameraState cameraState(const char* id, std::vector<int> tags) {
 
 TEST_CASE("tag rig draws a plate per tag and highlights the union of the cameras' visible ids") {
     TagRig rig;
-    rig.setLayout(FakeRunBackend::makeDemoTags());
+    rig.setLayout(demo::aprilTags());
     REQUIRE(rig.tags().size() == 8);
     CHECK(rig.parts().size() == 8);
     // +X out of the face: the panel is thin along X and sits just behind the tag pose.
@@ -105,7 +98,7 @@ TEST_CASE("scene model emits tag changes only when a tag switches state") {
     opts.autoRun = false;
     FakeRunBackend backend(opts);
     SceneModel scene;
-    scene.setSceneInfo(backend.sceneInfo());
+    scene.setSceneInfo(backend.scene());
     auto& tags = *static_cast<PartListModel*>(scene.tags());
     CHECK(tags.rowCount() == 8);
     auto& markers = *static_cast<TagMarkerModel*>(scene.tagMarkers());
@@ -144,8 +137,8 @@ TEST_CASE("fake backend cameras see tags and the visible set changes as the robo
     opts.autoRun = false;
     opts.startupDelayMs = 0;
     FakeRunBackend backend(opts);
-    CHECK(backend.sceneInfo().tags.tags.size() == 8);
-    CHECK(backend.sceneInfo().config->cameras.size() == 2);
+    CHECK(backend.scene().tags.tags.size() == 8);
+    CHECK(backend.scene().config->cameras.size() == 2);
 
     backend.startSimulation();
     backend.tick(1);
@@ -189,7 +182,7 @@ TEST_CASE("tag images: ids 1-32 are embedded 36h11 markers and ids without an im
     CHECK(seen.size() == 32);
 
     TagRig rig;
-    sdk::AprilTagLayout layout = FakeRunBackend::makeDemoTags();
+    sdk::AprilTagLayout layout = demo::aprilTags();
     sdk::AprilTag extra;
     extra.id = 999;
     layout.tags.push_back(extra);

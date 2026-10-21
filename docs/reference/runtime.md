@@ -8,7 +8,8 @@ robot feedback and reset placement.
 ## The robot.json contract
 
 [RobotConfig](../../sdk/include/wpiemu/sdk/config/robot_config.h) defines the model;
-[RobotConfigCodec](../../core/runtime/src/config/robot_config_codec.cpp) defines JSON spelling.
+[RobotConfigCodec](../../core/runtime/include/wpiemu/core/config/robot_config_codec.h) defines JSON spelling
+([decode](../../core/runtime/src/config/robot_config_decode.cpp), [encode](../../core/runtime/src/config/robot_config_encode.cpp)).
 The core schema is `1`: an omitted `schemaVersion` defaults to it; another version is
 rejected, not migrated. Selected plugin sections also use schema version `1`.
 
@@ -52,8 +53,14 @@ Decode failures, failed plugin registration and an unsupported selected-plugin s
 version return an error. Semantic problems return `LoadedConfig` with issues:
 successful loading alone does **not** imply `valid()`. Validation does not mutate the
 model. Keep stable issue codes and paths; the authoritative rules are in
-[ConfigValidator](../../core/runtime/src/config/config_validator.cpp) and the
-[SDK validation keys](../../sdk/include/wpiemu/sdk/config/validation_codes.h).
+[ConfigValidator](../../core/runtime/src/config/config_validator.cpp), which sequences the steps of
+`config_validator_robot.cpp` (chassis, drivetrain, sim, battery) and `config_validator_slots.cpp`
+(mechanisms and slot mappings), and the
+[SDK validation keys](../../sdk/include/wpiemu/sdk/config/validation_codes.h). The start-position,
+zone, camera and sensor rules exist once, in
+[config_checks.h](../../sdk/include/wpiemu/sdk/config/config_checks.h); they ask an `IConfigCatalog`
+for mechanism templates, the selected plugin id, zone kinds and game values, so the validator and
+the editor's fake backend apply identical checks.
 
 Required unmapped mechanism slots are errors; missing drivetrain mappings are warnings.
 Motion-link followers are exempt from motor requirements. Device-capability checking
@@ -134,6 +141,8 @@ the project season's WPILib JDK (all-users or this-user install, or the Settings
 `java` on `PATH`. Both the session launch and the wizard's toolchain check follow it. The host requests protocol Stop
 before cleanup; cancellation remains latched through startup and escalates to whole-tree kill
 after the grace deadline. Destruction joins the worker and cleans up the process tree.
+Robot console lines get a level from [`classifyOutputLine`](../../core/runtime/include/wpiemu/core/launcher/output_level.h)
+(`ERROR`/`Exception`/stack frames, `Warning`, `DEBUG`, `TRACE` as whole words; plain stderr defaults to Warn).
 
 ## Device feedback and game-fed sensors
 
@@ -145,7 +154,9 @@ Per-motor mounting orientation is applied only at this boundary; see
 [multi-motor actuation](mechanisms.md#motor-commands-and-multiple-controllers).
 
 Drivetrain motor slots receive rotor-side turns and turns/s, including their gearing.
-Every steered wheel also exposes optional `<wheel>.steerEncoder`: output-side azimuth
+Only drivetrains whose registered slots include a wheel's steer slots (swerve) expose
+`<wheel>.steer` and the optional `<wheel>.steerEncoder`; tank and mecanum never do, whatever
+`WheelSpec::steered` says. `steerEncoder` reports output-side azimuth
 in rotations and rotations/s, with no steer gear ratio. A remote/fused steering encoder
 belongs there, not on the steer motor slot. Generic mechanism feedback conversions are
 specified in [Mechanisms](mechanisms.md#feedback-units).

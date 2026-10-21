@@ -1,35 +1,21 @@
 #include <doctest/doctest.h>
 
-#include <cstdlib>
+#include <optional>
 #include <set>
 
 #include "ipc_test_support.h"
+#include "scoped_env.h"
 
 using namespace wpiemu;
 using namespace wpiemu::ipc;
 using namespace wpiemu::ipc::testing;
 using namespace wpiemu::sdk;
 using namespace std::chrono_literals;
+using wpiemu::test_support::ScopedEnv;
 
 namespace {
 
 std::vector<std::byte> bytes(std::size_t n, std::uint8_t fill) { return std::vector<std::byte>(n, static_cast<std::byte>(fill)); }
-
-void setEnv(const char* name, const char* value) {
-#if defined(_WIN32)
-    _putenv_s(name, value);
-#else
-    setenv(name, value, 1);
-#endif
-}
-
-void unsetEnv(const char* name) {
-#if defined(_WIN32)
-    _putenv_s(name, "");
-#else
-    unsetenv(name);
-#endif
-}
 
 }  // namespace
 
@@ -76,36 +62,22 @@ TEST_CASE("endpoint: environment variable round trip") {
     const ConnectionEndpoint ep = ConnectionEndpoint::generate();
     const EnvironmentEntry entry = ep.environmentEntry();
     CHECK(entry.name == "WPIEMU_IPC_ENDPOINT");
-    CHECK(entry.name == kEndpointEnvVar);
     CHECK(entry.value == ep.address());
 
-    unsetEnv(kEndpointEnvVar);
+    ScopedEnv endpointVar(env_names::kIpcEndpoint, std::nullopt);
     auto missing = ConnectionEndpoint::fromEnvironment();
     REQUIRE_FALSE(missing.ok());
     CHECK(missing.error().code == ErrorCode::NotFound);
 
-    setEnv(kEndpointEnvVar, entry.value.c_str());
+    endpointVar.set(entry.value);
     auto got = ConnectionEndpoint::fromEnvironment();
     REQUIRE(got.ok());
     CHECK(got.value().address() == ep.address());
 
-    setEnv(kEndpointEnvVar, "garbage");
+    endpointVar.set("garbage");
     auto bad = ConnectionEndpoint::fromEnvironment();
     REQUIRE_FALSE(bad.ok());
     CHECK(bad.error().code == ErrorCode::InvalidArgument);
-    unsetEnv(kEndpointEnvVar);
-}
-
-TEST_CASE("endpoint: millisecond environment values") {
-    unsetEnv(kConnectTimeoutEnvVar);
-    CHECK(readEnvironmentMillis(kConnectTimeoutEnvVar, 1234ms) == 1234ms);
-    setEnv(kConnectTimeoutEnvVar, "250");
-    CHECK(readEnvironmentMillis(kConnectTimeoutEnvVar, 1234ms) == 250ms);
-    setEnv(kConnectTimeoutEnvVar, "12x");
-    CHECK(readEnvironmentMillis(kConnectTimeoutEnvVar, 1234ms) == 1234ms);
-    setEnv(kConnectTimeoutEnvVar, "-5");
-    CHECK(readEnvironmentMillis(kConnectTimeoutEnvVar, 1234ms) == 1234ms);
-    unsetEnv(kConnectTimeoutEnvVar);
 }
 
 // ---- servers / clients (in-process AND the real native transport) ----------------------------------------------

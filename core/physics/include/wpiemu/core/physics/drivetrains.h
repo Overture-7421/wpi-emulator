@@ -94,8 +94,8 @@ private:
                       std::optional<sdk::PlantState> motion = std::nullopt);
 
     std::string kind_;
-    const sdk::DrivetrainSpec* spec_;
-    sdk::ChassisSpec chassis_;
+    bool steerable_ = false;   // the layout steers its isSteered wheels (swerve); tank and mecanum never do
+    const sdk::DrivetrainSpec* spec_;    sdk::ChassisSpec chassis_;
     sdk::IPhysicsWorld* world_;
     sdk::BodyId body_;
     const sdk::ITireModel* tire_;

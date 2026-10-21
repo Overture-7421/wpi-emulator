@@ -135,8 +135,8 @@ inline Result<std::vector<MotionLink>> tankMotionLinks(const RobotConfig& config
         for (const auto* wheel : wheels)
             if (wheel != source)
                 links.push_back({wheel->name + "_drive",
-                                 {slot_owner::kDrivetrain, source->name + ".drive"},
-                                 {slot_owner::kDrivetrain, wheel->name + ".drive"},
+                                 {slot_owner::kDrivetrain, driveSlotName(source->name, 0)},
+                                 {slot_owner::kDrivetrain, driveSlotName(wheel->name, 0)},
                                  1.0});
     }
     return links;

@@ -61,11 +61,11 @@ TEST_CASE("sensor property groups: the source lists game values and flags an una
     REQUIRE(source != nullptr);
     CHECK(source->options.size() == cat.gameValues.size() + 1);
 
-    CHECK(applyProperty(c, cat, sel, "sensor.source", "source", sdk::Value("game_2026.gone")));
+    CHECK(applyProperty(c, cat, sel, "sensor.source", "source", sdk::Value("demo_game.gone")));
     groups = propertyGroupsFor(c, cat, sel);
     const auto& options = groups[1].schema.find("source")->options;
     CHECK(options.size() == cat.gameValues.size() + 2);
-    CHECK(options.back().value == "game_2026.gone");
+    CHECK(options.back().value == "demo_game.gone");
     CHECK(options.back().label.find("(unavailable)") != std::string::npos);
 }
 

@@ -20,7 +20,6 @@
 #include <set>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <vector>
 
 #define DOCTEST_CONFIG_IMPLEMENT
@@ -30,6 +29,7 @@
 #include "test_support.h"
 #include "wpiemu/core/launcher/project_inspector.h"
 #include "wpiemu/sdk/core/units.h"
+#include "wpiemu/sdk/testing/wait.h"
 
 namespace fs = std::filesystem;
 using namespace wpiemu;
@@ -124,12 +124,6 @@ bool flag(const std::map<std::string, std::string>& m, const char* key) {
     return it != m.end() && (it->second == "true" || it->second == "1");
 }
 
-double wrapDeg(double d) {
-    while (d > 180.0) d -= 360.0;
-    while (d < -180.0) d += 360.0;
-    return d;
-}
-
 using Fields = std::map<std::string, std::string>;
 
 struct Collected {
@@ -139,10 +133,7 @@ struct Collected {
 };
 
 void drain(app::host::RobotSession& s, Collected& out, bool verbose) {
-    for (const app::host::LogEntry& e : s.takeLogs(5000)) {
-        const std::string line = (e.stream == app::host::LogStream::Emulator ? "[emu " + e.source + "] " : "[robot] ") + e.text;
-        out.console.push_back(line);
-        if (verbose) std::printf("%s\n", line.c_str());
+    for (const sdk::SessionLogEntry& e : drainConsole(s, out.console, verbose)) {
         if (const auto f = parseVision(e.text)) {
             if ((*f).at("camera") == "limelight") out.limelight.push_back(*f);
             else if ((*f).at("camera") == "photon") out.photon.push_back(*f);
@@ -150,10 +141,7 @@ void drain(app::host::RobotSession& s, Collected& out, bool verbose) {
     }
 }
 
-void dumpConsole(const std::vector<std::string>& console) {
-    const std::size_t from = console.size() > 60 ? console.size() - 60 : 0;
-    for (std::size_t i = from; i < console.size(); ++i) std::printf("    | %s\n", console[i].c_str());
-}
+constexpr std::size_t kConsoleTailLines = 60;
 
 }  // namespace
 
@@ -176,9 +164,9 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     o.scratchDir = scratch.root / "scratch";
     o.launchMode = core::launcher::LaunchMode::GradleInitScript;
     o.handshakeTimeout = 10min;
-    o.mode = app::host::Mode::Run;
+    o.mode = sdk::SessionMode::Run;
     o.timeScale = 1.0;
-    o.extraEnv["WPIEMU_LOG_LEVEL"] = "info";
+    o.extraEnv[sdk::env_names::kLogLevel] = "info";
     sdk::proto::DsState& ds = o.driverStation;
     ds.enabled = true;
     ds.mode = sdk::proto::RobotMode::Autonomous;
@@ -198,28 +186,29 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     // Pumps logs/status until `done`, a terminal state or the timeout; samples the camera states as they change.
     std::set<int> everVisible[2];
     auto pump = [&](std::chrono::seconds timeout, auto&& done) {
-        const auto deadline = Clock::now() + timeout;
-        while (Clock::now() < deadline) {
-            drain(session, got, verbose);
-            if (const auto snap = session.latestSnapshot()) {
-                const auto cams = snap->cameras();
-                for (std::size_t i = 0; i < cams.size(); ++i) {
-                    const int slot = cams[i].id == "front" ? 0 : 1;
-                    for (int id : cams[i].visibleTagIds) everVisible[slot].insert(id);
+        bool reached = false;
+        sdk::testing::waitUntil(
+            [&] {
+                drain(session, got, verbose);
+                if (const auto snap = session.latestSnapshot()) {
+                    const auto cams = snap->cameras();
+                    for (std::size_t i = 0; i < cams.size(); ++i) {
+                        const int slot = cams[i].id == "front" ? 0 : 1;
+                        for (int id : cams[i].visibleTagIds) everVisible[slot].insert(id);
+                    }
                 }
-            }
-            const app::host::SessionStatus st = session.status();
-            if (done(st)) return true;
-            if (!st.active()) return false;
-            std::this_thread::sleep_for(20ms);
-        }
-        return false;
+                const sdk::SessionStatus st = session.status();
+                reached = done(st);
+                return reached || !st.active();
+            },
+            timeout, 20ms);
+        return reached;
     };
 
-    bool ok = pump(600s, [](const app::host::SessionStatus& s) { return s.programStarted; });
+    bool ok = pump(600s, [](const sdk::SessionStatus& s) { return s.programStarted; });
     if (!ok) {
         std::printf("e2e: robot did not start: %s\n", session.status().detail.c_str());
-        dumpConsole(got.console);
+        dumpConsole(got.console, kConsoleTailLines);
     }
     REQUIRE_MESSAGE(ok, session.status().detail);
     std::printf("e2e: robot program started after %.1f s\n", std::chrono::duration<double>(Clock::now() - t0).count());
@@ -229,21 +218,21 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     fast.command = sdk::proto::SimCommand::SetTimeScale;
     fast.timeScale = 0.0;
     session.controller().control(fast);
-    ok = pump(240s, [&](const app::host::SessionStatus&) { return simSeconds() >= 6.0; });
-    if (!ok) dumpConsole(got.console);
+    ok = pump(240s, [&](const sdk::SessionStatus&) { return simSeconds() >= 6.0; });
+    if (!ok) dumpConsole(got.console, kConsoleTailLines);
     REQUIRE(ok);
 
     // Stop the robot (disabled) and let the pose estimators settle while the chassis coasts to rest.
     ds.enabled = false;
     session.controller().setDriverStation(ds);
     const double stopAt = simSeconds();
-    ok = pump(240s, [&](const app::host::SessionStatus&) { return simSeconds() >= stopAt + 3.0; });
-    if (!ok) dumpConsole(got.console);
+    ok = pump(240s, [&](const sdk::SessionStatus&) { return simSeconds() >= stopAt + 3.0; });
+    if (!ok) dumpConsole(got.console, kConsoleTailLines);
     REQUIRE(ok);
     sdk::proto::SimControl pause;
     pause.command = sdk::proto::SimCommand::Pause;
     session.controller().control(pause);
-    pump(2s, [](const app::host::SessionStatus&) { return false; });
+    pump(2s, [](const sdk::SessionStatus&) { return false; });
     drain(session, got, verbose);
 
     const auto snap = session.latestSnapshot();
@@ -302,7 +291,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
                     num(*f, "botposeYawDeg"), truth.x, truth.y, truthYawDeg);
         CHECK(std::abs(num(*f, "botposeX") - truth.x) < 0.02);
         CHECK(std::abs(num(*f, "botposeY") - truth.y) < 0.02);
-        CHECK(std::abs(wrapDeg(num(*f, "botposeYawDeg") - truthYawDeg)) < 2.0);
+        CHECK(std::abs(sdk::wrapAngleDeg(num(*f, "botposeYawDeg") - truthYawDeg)) < 2.0);
     }
     if (const Fields* f = lastWithPose(got.photon, "hasTargets")) {
         std::printf("e2e:   photon pose (%.3f, %.3f) yaw %.1f vs truth (%.3f, %.3f) yaw %.1f\n", num(*f, "poseX"), num(*f, "poseY"),
@@ -311,7 +300,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
             // PhotonLib solves the pose from the true (pitched) camera pose, so a few cm of chassis pitch show up here.
             CHECK(std::abs(num(*f, "poseX") - truth.x) < 0.04);
             CHECK(std::abs(num(*f, "poseY") - truth.y) < 0.04);
-            CHECK(std::abs(wrapDeg(num(*f, "poseYawDeg") - truthYawDeg)) < 2.0);
+            CHECK(std::abs(sdk::wrapAngleDeg(num(*f, "poseYawDeg") - truthYawDeg)) < 2.0);
         }
     }
 
@@ -319,7 +308,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     session.waitUntilFinished();
     std::int64_t pid = 0;
     if (const auto hello = session.runner().robotHello()) pid = hello->pid;
-    for (int i = 0; i < 100 && processAlive(pid); ++i) std::this_thread::sleep_for(100ms);
+    sdk::testing::waitUntil([&] { return !processAlive(pid); }, 10s, 100ms);
     CHECK_FALSE(processAlive(pid));
     std::printf("e2e: total %.1f s\n", std::chrono::duration<double>(Clock::now() - t0).count());
 }

@@ -18,12 +18,10 @@
 #include <vector>
 
 #include "common/orbit_camera.h"
-#include "run_backend.h"
+#include "contract/runtime_host.h"
 #include "scene_parts.h"
 
 namespace wpiemu::app::runview {
-
-QColor parseColor(const std::string& css, const QColor& fallback = QColor(QStringLiteral("#808080")));
 
 // Draws N identical entities (fuel) from one position array using GPU instancing.
 class EntityInstancing : public QQuick3DInstancing {
@@ -203,7 +201,7 @@ class SceneModel : public QObject {
 public:
     explicit SceneModel(QObject* parent = nullptr);
 
-    void setSceneInfo(const RunSceneInfo& info);
+    void setSceneInfo(const HostScene& info);
     void update(const sdk::ISimSnapshot* snapshot);
 
     QObject* fieldParts() { return &field_; }
@@ -267,7 +265,7 @@ private:
     RobotRig rig_;
     OrbitCamera camera_;
     float viewHeightPx_ = 720.f;
-    RunSceneInfo info_;
+    HostScene info_;
     ZoneRig zoneRig_;
     TagRig tagRig_;
     QStringList zoneLabels_;
@@ -278,8 +276,8 @@ private:
     QVector3D cameraPosition_;
     QQuaternion cameraRotation_;
     float cameraFov_ = 45.f;
-    float fieldLength_ = 16.46f;
-    float fieldWidth_ = 8.23f;
+    float fieldLength_ = kGenericFieldLengthM;
+    float fieldWidth_ = kGenericFieldWidthM;
     QVector3D fieldCenter_{8.2f, 4.1f, 0.f};
     bool zonesVisible_ = true;
     bool tagsVisible_ = true;

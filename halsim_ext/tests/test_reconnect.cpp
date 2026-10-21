@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "fakes.h"
+#include "wpiemu/sdk/testing/fake_emulator.h"
 
 using namespace wpiemu;
 using namespace wpiemu::halsim;
@@ -24,7 +25,7 @@ TEST_CASE("reconnect: after the emulator restarts the extension re-handshakes, r
     proto::HelloAck second = defaultAck();
     second.sessionId = 8;
     second.runEpoch = 5;
-    std::unique_ptr<FakeEmulator> first = std::move(rig.emulator);
+    std::unique_ptr<sdk::testing::FakeEmulator> first = std::move(rig.emulator);
     rig.connectNext(second);
     first->disconnect();
 

@@ -23,40 +23,11 @@
 #include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/game/plugin_registry.h"
+#include "wpiemu/sdk/telemetry/session_status.h"
 #include "wpiemu/sdk/telemetry/snapshot.h"
 
 namespace wpiemu::app::host {
 
-// Run: lock-step from the first tick (refuses an invalid model). Armed: the one long-lived robot instance of the app:
-// devices are announced and the robot runs in real time until BeginLockstep (see SimCommand::BeginLockstep); an invalid
-// model only warns so devices can still be detected.
-enum class Mode { Run, Armed };
-enum class ProcessState { Idle, Starting, Running, Stopping, Exited, Crashed, FailedToStart };
-enum class LinkState { Disconnected, Connecting, Connected, HandshakeTimeout, ProtocolMismatch, Stalled };
-enum class LogStream { Stdout, Stderr, Emulator };
-
-struct LogEntry {
-    std::int64_t timestampMs = 0;   // wall clock, ms since the epoch
-    sdk::LogLevel level = sdk::LogLevel::Info;
-    LogStream stream = LogStream::Stdout;
-    std::string source;
-    std::string text;
-};
-
-struct SessionStatus {
-    Mode mode = Mode::Run;
-    ProcessState process = ProcessState::Idle;
-    LinkState link = LinkState::Disconnected;
-    int exitCode = 0;
-    std::string detail;            // human readable reason / progress
-    bool programStarted = false;   // the robot constructor finished (devices announced, lock-step may start)
-    bool simulating = false;       // lock-step is running (always true in Mode::Run once connected; false while armed)
-
-    bool active() const { return process == ProcessState::Starting || process == ProcessState::Running || process == ProcessState::Stopping; }
-    bool operator==(const SessionStatus&) const = default;
-};
-
-// Collaborators owned by the composition root (non-owning; they outlive every session).
 struct Registries {
     const sdk::GamePluginRegistry* plugins = nullptr;
     sdk::MechanismFactory* mechanisms = nullptr;
@@ -68,7 +39,7 @@ struct Registries {
 };
 
 struct Options {
-    Mode mode = Mode::Run;
+    sdk::SessionMode mode = sdk::SessionMode::Run;
     std::filesystem::path projectDir;
     std::filesystem::path extensionLibrary;               // halsim_wpiemu.{dll,so,dylib}
     core::launcher::LaunchMode launchMode = core::launcher::LaunchMode::GradleInitScript;
@@ -113,8 +84,8 @@ public:
     RobotSession& operator=(const RobotSession&) = delete;
 
     // Recomputes and returns the state (call periodically).
-    SessionStatus status();
-    std::vector<LogEntry> takeLogs(std::size_t maxEntries = 2000);
+    sdk::SessionStatus status();
+    std::vector<sdk::SessionLogEntry> takeLogs(std::size_t maxEntries = 2000);
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const { return slot_.latest(); }
 
     sdk::ISimController& controller() { return *runner_; }
@@ -139,7 +110,7 @@ private:
     void beginTeardown(bool protocolStop);
     void teardown();
     std::string outputTail() const;
-    void fail(ProcessState process, LinkState link, std::string detail);
+    void fail(sdk::ProcessState process, sdk::LinkState link, std::string detail);
 
     Options options_;
     std::unique_ptr<LogQueue> logs_;
@@ -162,7 +133,7 @@ private:
     std::atomic<bool> teardownDone_{false};
     std::thread teardownThread_;
     std::mutex statusMutex_;
-    SessionStatus status_;
+    sdk::SessionStatus status_;
     bool seenConnection_ = false;
     bool failed_ = false;
 };

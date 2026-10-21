@@ -134,7 +134,7 @@ TEST_CASE("camera ops: ids stay distinct from mechanism, zone and camera ids in 
 
 TEST_CASE("camera ops: duplicate copies the setup with a fresh id and name, remove deletes") {
     auto c = robot();
-    ops::findCamera(c, "photon")->hFovDeg = 90.0;
+    c.findCamera("photon")->hFovDeg = 90.0;
     const std::string copy = ops::duplicateCamera(c, "photon");
     CHECK(copy == "photon_2");
     const auto* z = c.findCamera(copy);
@@ -472,6 +472,7 @@ TEST_CASE("camera validation: issue paths are located to their camera and field"
     CHECK(at("cameras[0].hFovDeg").fieldKey == "hFovDeg");
     CHECK(at("cameras[0].name").fieldKey == "name");
     CHECK(at("cameras[0].local").fieldKey == "local");
+    CHECK(at("cameras[0].pose").fieldKey == "local");   // the shared validator reports the mount pose as ".pose"
     CHECK(at("cameras[0].id").fieldKey == "id");
     CHECK(at("cameras[9].attachment").selection.isNone());
 }
@@ -480,9 +481,9 @@ TEST_CASE("camera validation: the editor backend reports duplicate names and bad
     FakeEditorBackend backend;
     const auto cat = catalog();
     auto c = robot();
-    ops::findCamera(c, "photon")->kind = sdk::CameraKind::Limelight;   // the other Limelight is named "" too
-    ops::findCamera(c, "photon")->name = "";
-    ops::findCamera(c, "limelight")->vFovDeg = 0.0;
+    c.findCamera("photon")->kind = sdk::CameraKind::Limelight;   // the other Limelight is named "" too
+    c.findCamera("photon")->name = "";
+    c.findCamera("limelight")->vFovDeg = 0.0;
     std::vector<std::string> codes;
     for (const auto& issue : backend.validate(c)) {
         codes.push_back(issue.code);
@@ -496,7 +497,7 @@ TEST_CASE("camera validation: the editor backend reports duplicate names and bad
     CHECK(std::count(codes.begin(), codes.end(), "camera_optics_invalid") == 1);
 
     auto d = robot();
-    ops::findCamera(d, "photon")->id = "intake";   // collides with a mechanism
+    d.findCamera("photon")->id = "intake";   // collides with a mechanism
     bool clash = false;
     for (const auto& issue : backend.validate(d)) clash = clash || issue.code == "camera_id_duplicate";
     CHECK(clash);
@@ -519,11 +520,20 @@ TEST_CASE("camera scene: a body marker, eight frustum edges and a translucent fa
     CHECK(scene.find("camera:photon")->color == theme.photonVision);   // distinct per kind
     CHECK(theme.limelight != theme.photonVision);
 
-    for (int i = 0; i < 8; ++i) {
+    const auto& cam = *c.findCamera("limelight");
+    const wpiemu::app::FrustumGeometry g = wpiemu::app::cameraFrustum(cam);
+    const sdk::Pose3 camWorld = ops::cameraWorld(c, cat, cam);
+
+    for (std::size_t i = 0; i < wpiemu::app::kFrustumEdges.size(); ++i) {
         const auto* edge = scene.find("camera:limelight:edge:" + std::to_string(i));
         REQUIRE(edge != nullptr);
         CHECK(edge->group == SelectionRef::camera("limelight"));
         CHECK(edge->role == ItemRole::Link);
+        const auto [from, to] = wpiemu::app::kFrustumEdges[i];
+        const sdk::Vec3 a = camWorld.transformPoint(g.pts[from]);
+        const sdk::Vec3 b = camWorld.transformPoint(g.pts[to]);
+        CHECK(approx(edge->world.position, (a + b) * 0.5f, 1e-3f));                              // centred on the segment
+        CHECK(approx(edge->world.transformVector({edge->size.x, 0.f, 0.f}), b - a, 1e-3f));    // and runs from a to b
     }
     CHECK(scene.find("camera:limelight:edge:8") == nullptr);
 
@@ -532,10 +542,8 @@ TEST_CASE("camera scene: a body marker, eight frustum edges and a translucent fa
     CHECK(plane->role == ItemRole::Overlay);
     CHECK(plane->opacity < 0.5f);
     CHECK(plane->pickable);
-    const auto& cam = *c.findCamera("limelight");
-    const wpiemu::app::FrustumGeometry g = wpiemu::app::cameraFrustum(cam);
     // The far plane lies along the optical axis (+X of the camera) at the frustum length.
-    CHECK(approx(plane->world.position, ops::cameraWorld(c, cat, cam).transformPoint({g.lengthM, 0.f, 0.f})));
+    CHECK(approx(plane->world.position, camWorld.transformPoint({g.lengthM, 0.f, 0.f})));
     CHECK(approx(plane->size.y, 2.f * g.pts[wpiemu::app::kFrustumTopLeft].y, 1e-3f));
 
     // Moving the turret moves the camera that rides on it.

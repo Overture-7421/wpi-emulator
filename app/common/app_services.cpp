@@ -16,7 +16,7 @@ namespace {
 
 std::filesystem::path defaultAppDataRoot() {
     using namespace core::config;
-    if (auto root = appDataRoot(currentPlatform(), systemEnv()); root) return root.value();
+    if (auto root = appDataRoot(currentPlatform(), &sdk::readEnvironment); root) return root.value();
     return std::filesystem::path(QDir::homePath().toStdU16String()) / ".wpiemu";
 }
 
@@ -71,6 +71,15 @@ AppServices::AppServices(AppServicesOptions options)
 }
 
 AppServices::~AppServices() = default;
+
+void AppServices::bindRuntime(std::shared_ptr<const sdk::RobotConfig> config) {
+    HostProject project;
+    project.path = session_->path();
+    project.config = std::move(config);
+    project.game = session_->gameModule();
+    project.defaultStation = sdk::proto::stationOf(session_->prefs().alliance, session_->prefs().station);
+    runtime_->setProject(project);
+}
 
 RobotBuildContext AppServices::buildContext(const ProjectInspection& inspection) const {
     RobotBuildContext ctx;

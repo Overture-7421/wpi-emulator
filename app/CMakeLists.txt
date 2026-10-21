@@ -4,6 +4,11 @@ find_package(Qt6 REQUIRED COMPONENTS Svg)
 
 option(WPIEMU_BUILD_UI_DEMOS "Build the standalone UI demo executables (wpiemu_editor_demo, wpiemu_runview_demo)" ON)
 
+# The host seam every page and the shell share (SDK + Qt only); declared before the pages that link it.
+add_subdirectory(contract)
+# The Qt scene support both page libraries share (SDK + Qt only), declared before them for the same reason.
+add_subdirectory(ui)
+
 # Page libraries owned by the editor / run view streams; optional so the shell builds without them.
 foreach(_page editor runview)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${_page}/CMakeLists.txt")
@@ -64,6 +69,5 @@ if(WIN32 AND PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
 endif()
 
 if(WPIEMU_BUILD_TESTS)
-    enable_testing()   # the root enables it after this directory; tests registered here need it earlier
     add_subdirectory(tests)
 endif()

@@ -30,7 +30,7 @@ void applyChassis(sdk::RobotConfig& c, const EditorCatalog& catalog, const std::
 // ---- drivetrain ----
 sdk::PropertySchema drivetrainSchema(const EditorCatalog& catalog);
 sdk::Value drivetrainValues(const sdk::DrivetrainSpec& s);
-void applyDrivetrain(sdk::RobotConfig& c, const std::string& key, const sdk::Value& v);
+void applyDrivetrain(sdk::RobotConfig& c, const EditorCatalog& catalog, const std::string& key, const sdk::Value& v);
 
 // ---- wheel ----
 sdk::PropertySchema wheelSchema(const sdk::WheelSpec& wheel);

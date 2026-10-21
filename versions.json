@@ -1,0 +1,12 @@
+{
+  "wpilib": "2026.2.1",
+  "qt": {
+    "release": "6.8.3",
+    "ci": "6.8.*"
+  },
+  "python": "3.12",
+  "cmake": "3.25",
+  "ubuntu": "22.04",
+  "macosRunner": "14",
+  "macosDeployment": "13.0"
+}

@@ -14,9 +14,12 @@
 
 #include "wpiemu/sdk/core/interface.h"
 #include "wpiemu/sdk/core/registry.h"
+#include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/dynamics/motor_model.h"
 
 namespace wpiemu::sdk {
+
+inline constexpr double kDefaultDrumRadiusM = 0.02;   // linear plants: the drum that converts rotation to translation
 
 enum class PlantKind { Linear, Angular };
 
@@ -35,7 +38,7 @@ struct PlantSpec {
     // Inertia / mass
     double momentOfInertiaKgM2 = 0.01; // angular models
     double massKg = 5.0;               // linear models (carriage) / arm mass
-    double drumRadiusM = 0.02;         // linear: converts rotation to translation
+    double drumRadiusM = kDefaultDrumRadiusM;   // linear: converts rotation to translation
     double armLengthM = 0.5;           // arm: pivot to centre of mass
     bool simulateGravity = false;
     double gravityAngleOffsetRad = 0.0;// arm: angle at which gravity torque is maximal reference (0 = horizontal)
@@ -49,7 +52,7 @@ struct PlantSpec {
 struct PlantInput {
     double voltageV = 0.0;     // across the motor(s)
     double externalLoad = 0.0; // N or N*m at the mechanism output (disturbances: fuel mass, contact)
-    double dtSeconds = 0.005;
+    double dtSeconds = kDefaultStepSeconds;
 };
 
 class IPlant {

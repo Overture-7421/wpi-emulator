@@ -33,8 +33,7 @@ sdk::CapabilitySet talonCaps() {
 
 }  // namespace
 
-DemoRuntimeHost::DemoRuntimeHost(QObject* parent) : IRuntimeHost(parent) {
-    qRegisterMetaType<wpiemu::app::HostLogLine>();
+DemoRuntimeHost::DemoRuntimeHost(QObject* parent) : IProjectRuntimeHost(parent) {
     startupTimer_.setSingleShot(true);
     connect(&startupTimer_, &QTimer::timeout, this, &DemoRuntimeHost::advanceStartup);
     simTimer_.setInterval(kSimIntervalMs);
@@ -49,7 +48,7 @@ std::vector<sdk::DiscoveredDevice> DemoRuntimeHost::demoDevicesFor(const sdk::Ro
     int encoderId = 21;
     for (const auto& w : config.drivetrain.spec.wheels) {
         out.push_back(makeDevice(next++, "talonfx", "ctre", driveId++, talonCaps(), "phoenix6"));
-        if (w.steered) {
+        if (sdk::isSteered(w)) {
             out.push_back(makeDevice(next++, "talonfx", "ctre", steerId++, talonCaps(), "phoenix6"));
             out.push_back(makeDevice(next++, "cancoder", "ctre", encoderId++,
                                      sdk::Capability::PositionSensor | sdk::Capability::VelocitySensor, "phoenix6"));
@@ -61,8 +60,9 @@ std::vector<sdk::DiscoveredDevice> DemoRuntimeHost::demoDevicesFor(const sdk::Ro
     return out;
 }
 
-void DemoRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<const sdk::RobotConfig> config,
-                                 const sdk::IGameModule* game) {
+void DemoRuntimeHost::setProject(const HostProject& project) {
+    const QString& projectPath = project.path;
+    const sdk::IGameModule* game = project.game;
     // A different project invalidates the run; edits of the same project are applied live.
     if (projectPath != projectPath_) {
         beginIntent_.projectReplaced();
@@ -71,11 +71,10 @@ void DemoRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<con
     const bool sameProject = projectPath == projectPath_;
     projectPath_ = projectPath;
     scene_ = {};
-    scene_.config = std::move(config);
-    if (!startPositionId_.isEmpty() && (!sameProject || scene_.config == nullptr || scene_.config->findStartPosition(startPositionId_.toStdString()) == nullptr)) {
-        startPositionId_.clear();
-        emit startPositionChanged();
-    }
+    scene_.config = project.config;
+    scene_.projectPath = projectPath;
+    scene_.defaultStation = project.defaultStation;
+    if (startSelection_.reconcile(scene_.config.get(), sameProject)) emit startPositionChanged();
     if (game != nullptr) {
         scene_.hud = game->contributeHud();
         scene_.panels = game->contributeEditorPanels();
@@ -92,7 +91,7 @@ void DemoRuntimeHost::setProject(const QString& projectPath, std::shared_ptr<con
     emit sceneChanged();
 }
 
-void DemoRuntimeHost::setStatus(HostProcessState process, HostLinkState link, const QString& detail) {
+void DemoRuntimeHost::setStatus(sdk::ProcessState process, sdk::LinkState link, const QString& detail) {
     HostStatus next = status_;
     next.process = process;
     next.link = link;
@@ -103,19 +102,13 @@ void DemoRuntimeHost::setStatus(HostProcessState process, HostLinkState link, co
 }
 
 void DemoRuntimeHost::log(sdk::LogLevel level, const QString& source, const QString& text) {
-    HostLogLine line;
-    line.timestampMs = QDateTime::currentMSecsSinceEpoch();
-    line.level = level;
-    line.stream = HostLogStream::Emulator;
-    line.source = source;
-    line.text = text;
-    emit logLine(line);
+    emit logLine(emulatorLogLine(level, source, text));
 }
 
 void DemoRuntimeHost::launch() {
     if (status_.active()) return;
     if (!scene_.config) {
-        setStatus(HostProcessState::FailedToStart, HostLinkState::Disconnected, tr("No robot configuration loaded."));
+        setStatus(sdk::ProcessState::FailedToStart, sdk::LinkState::Disconnected, tr("No robot configuration loaded."));
         return;
     }
     status_.exitCode = 0;
@@ -124,7 +117,7 @@ void DemoRuntimeHost::launch() {
     startupStage_ = 0;
     announced_.clear();
     ++status_.runGeneration;
-    setStatus(HostProcessState::Starting, HostLinkState::Disconnected);
+    setStatus(sdk::ProcessState::Starting, sdk::LinkState::Disconnected);
     log(sdk::LogLevel::Info, QStringLiteral("demo"), tr("Demo: launching robot"));
     startupTimer_.start(startupMs_);
 }
@@ -155,12 +148,12 @@ void DemoRuntimeHost::stopSimulation() {
 void DemoRuntimeHost::advanceStartup() {
     switch (startupStage_++) {
         case 0:
-            setStatus(HostProcessState::Running, HostLinkState::Connecting);
+            setStatus(sdk::ProcessState::Running, sdk::LinkState::Connecting);
             startupTimer_.start(startupMs_);
             break;
         case 1:
             status_.programStarted = true;
-            setStatus(HostProcessState::Running, HostLinkState::Connected);
+            setStatus(sdk::ProcessState::Running, sdk::LinkState::Connected);
             log(sdk::LogLevel::Info, QStringLiteral("extension"), tr("Demo: HALSim extension connected"));
             simTimer_.start();
             startupTimer_.start(announceMs_);
@@ -195,7 +188,7 @@ void DemoRuntimeHost::stop() {
     simTimer_.stop();
     status_.simulating = false;
     status_.programStarted = false;
-    setStatus(HostProcessState::Exited, HostLinkState::Disconnected);
+    setStatus(sdk::ProcessState::Exited, sdk::LinkState::Disconnected);
     log(sdk::LogLevel::Info, QStringLiteral("demo"), tr("Demo: robot stopped"));
     publish();
 }
@@ -210,12 +203,11 @@ void DemoRuntimeHost::restart() {
 
 void DemoRuntimeHost::resetSimulation() {
     x_ = y_ = yaw_ = 0.0;
-    if (scene_.config)
-        if (const sdk::StartPosition* p = scene_.config->findStartPosition(startPositionId_.toStdString())) {
-            x_ = static_cast<double>(p->pose.xM);
-            y_ = static_cast<double>(p->pose.yM);
-            yaw_ = static_cast<double>(p->pose.headingRad);
-        }
+    if (const sdk::StartPosition* p = startSelection_.find(scene_.config.get())) {
+        x_ = static_cast<double>(p->pose.xM);
+        y_ = static_cast<double>(p->pose.yM);
+        yaw_ = static_cast<double>(p->pose.headingRad);
+    }
     vx_ = vy_ = omega_ = 0.0;
     wheelSpin_ = 0.0;
     tick_ = 0;
@@ -223,10 +215,7 @@ void DemoRuntimeHost::resetSimulation() {
 }
 
 void DemoRuntimeHost::setStartPosition(const QString& id) {
-    const QString next = scene_.config && scene_.config->findStartPosition(id.toStdString()) != nullptr ? id : QString();
-    if (next == startPositionId_) return;
-    startPositionId_ = next;
-    emit startPositionChanged();
+    if (startSelection_.select(scene_.config.get(), id)) emit startPositionChanged();
 }
 
 void DemoRuntimeHost::setPaused(bool paused) {
@@ -236,7 +225,7 @@ void DemoRuntimeHost::setPaused(bool paused) {
 
 void DemoRuntimeHost::stepTicks(int ticks) {
     if (!paused_) return;
-    for (int i = 0; i < std::max(1, ticks); ++i) integrate(0.005);
+    for (int i = 0; i < std::max(1, ticks); ++i) integrate(sdk::kDefaultStepSeconds);
     publish();
 }
 
@@ -285,9 +274,9 @@ void DemoRuntimeHost::integrate(double dt) {
 void DemoRuntimeHost::publish() {
     sdk::SimSnapshotData data;
     data.tick = tick_;
-    data.simTimeUs = static_cast<sdk::SimTimeUs>(tick_) * 5000;
+    data.simTimeUs = static_cast<sdk::SimTimeUs>(tick_) * sdk::kDefaultStepUs;
     data.paused = paused_;
-    data.robotConnected = status_.link == HostLinkState::Connected;
+    data.robotConnected = status_.link == sdk::LinkState::Connected;
     data.driverStation = ds_;
     data.devices = announced_;
 

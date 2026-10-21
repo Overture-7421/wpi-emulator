@@ -91,6 +91,9 @@ private:
 // Environment of the child: `base` (name=value) + spec.env overrides - spec.unsetEnv. Windows names are matched
 // case-insensitively. Result sorted by name (Windows requires a sorted block).
 std::vector<std::string> mergeEnvironment(const std::vector<std::string>& base, const ProcessSpec& spec, bool caseInsensitiveNames);
+// The value of `name` in a name=value list such as the one mergeEnvironment() returns; nullopt when absent. Same name
+// matching as mergeEnvironment (case-insensitive on Windows).
+std::optional<std::string> lookupEnvironment(const std::vector<std::string>& env, std::string_view name, bool caseInsensitiveNames);
 
 // CommandLineToArgvW-compatible quoting of one argument.
 std::string quoteWindowsArgument(std::string_view arg);

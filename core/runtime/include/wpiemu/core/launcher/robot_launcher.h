@@ -20,14 +20,9 @@
 
 namespace wpiemu::core::launcher {
 
-// Environment variables of the emulator <-> extension contract (names owned by halsim_ext/ipc; duplicated here because
-// core may not include them).
+// Environment variables only the core launcher knows; the emulator <-> extension contract is sdk::env_names.
 namespace env_var {
 inline constexpr const char* kExtension = "WPIEMU_EXT";             // consumed by the generated init script
-inline constexpr const char* kEndpoint = "WPIEMU_IPC_ENDPOINT";      // authoritative (docs/reference/extension-ipc.md)
-inline constexpr const char* kEndpointAlias = "WPIEMU_ENDPOINT";
-inline constexpr const char* kClock = "WPIEMU_CLOCK";                // "master" (lock-step) | "realtime"
-inline constexpr const char* kProgramName = "WPIEMU_PROGRAM_NAME";
 inline constexpr const char* kHalExtensions = "HALSIM_EXTENSIONS";
 }  // namespace env_var
 
@@ -51,7 +46,7 @@ struct LaunchRequest {
     std::map<std::string, std::string> extraEnv;  // wins over everything above
     // Where the host environment is read from for the packaged-app sanitising below and for the library path; empty =
     // the real process environment (tests inject one).
-    config::EnvLookup hostEnv;
+    sdk::EnvLookup hostEnv;
 };
 
 // ---- packaged-app environment ---------------------------------------------------------------------------------------------
@@ -60,7 +55,7 @@ struct LaunchRequest {
 // code must not inherit it. Adds to `spec`: unsetEnv QT_PLUGIN_PATH, QML2_IMPORT_PATH, QT_QPA_PLATFORM_PLUGIN_PATH, and
 // rewrites LD_LIBRARY_PATH, PATH, XDG_DATA_DIRS (effective value = spec.env, else hostEnv) without the entries that lie
 // under $APPDIR (an emptied LD_LIBRARY_PATH / XDG_DATA_DIRS is unset). No-op when WPIEMU_PACKAGED is unset/empty.
-void sanitizePackagedEnvironment(ProcessSpec& spec, const config::EnvLookup& hostEnv, bool windows);
+void sanitizePackagedEnvironment(ProcessSpec& spec, const sdk::EnvLookup& hostEnv, bool windows);
 
 // ---- planning (pure apart from the init script file; unit-tested) -----------------------------------------------------
 
@@ -83,7 +78,7 @@ sdk::Result<ProcessSpec> planExternalDescribe(const LaunchRequest& request, bool
 // build/libs; native: {launchfile, libpaths, environment, extensions[]}). `macos` adds -XstartOnFirstThread for the JVM.
 // `hostEnv` is only used to find JAVA_HOME when the request has none.
 sdk::Result<ProcessSpec> planExternalLaunch(const LaunchRequest& request, std::string_view descriptorJson, const sdk::IValueTextCodec& json,
-                                            const config::EnvLookup& hostEnv, bool windows, bool macos);
+                                            const sdk::EnvLookup& hostEnv, bool windows, bool macos);
 
 // ---- execution ------------------------------------------------------------------------------------------------------------
 

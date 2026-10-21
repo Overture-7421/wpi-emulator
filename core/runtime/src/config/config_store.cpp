@@ -25,25 +25,6 @@ namespace wpiemu::core::config {
 using namespace wpiemu::sdk;
 namespace fs = std::filesystem;
 
-EnvLookup systemEnv() {
-    return [](std::string_view name) -> std::optional<std::string> {
-        const std::string key(name);
-#ifdef _WIN32
-        char* buffer = nullptr;
-        std::size_t length = 0;
-        if (_dupenv_s(&buffer, &length, key.c_str()) != 0 || buffer == nullptr) return std::nullopt;
-        std::string value(buffer);
-        std::free(buffer);
-        if (value.empty()) return std::nullopt;
-        return value;
-#else
-        const char* v = std::getenv(key.c_str());  // NOLINT(concurrency-mt-unsafe): read-only lookup at startup
-        if (v == nullptr || *v == '\0') return std::nullopt;
-        return std::string(v);
-#endif
-    };
-}
-
 Platform currentPlatform() {
 #if defined(_WIN32)
     return Platform::Windows;

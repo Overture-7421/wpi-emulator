@@ -17,6 +17,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include "platform_common.h"
 #include "platform_ipc.h"
 #include "wpiemu/ipc/byte_stream.h"
 
@@ -35,9 +36,7 @@ Error errnoError(ErrorCode code, const std::string& what, int e) { return makeEr
 
 bool isPeerGone(int e) { return e == EPIPE || e == ECONNRESET || e == ENOTCONN || e == EBADF || e == ECONNABORTED; }
 
-int pollMs(std::chrono::steady_clock::time_point deadline) {
-    return static_cast<int>(std::min<long long>(proto::timeLeft(deadline).count(), 0x7FFFFFFF));
-}
+int pollMs(std::chrono::steady_clock::time_point deadline) { return static_cast<int>(boundedWaitMs(deadline)); }
 
 bool setNonBlockingCloexec(int fd) {
     const int fl = fcntl(fd, F_GETFL, 0);
@@ -138,7 +137,7 @@ public:
         closing_ = true;
         wake_.wake();
         if (fd_ >= 0) ::shutdown(fd_, SHUT_RDWR);  // the peer sees EOF immediately
-        while (inflight_.load() != 0) std::this_thread::sleep_for(std::chrono::microseconds(50));
+        Inflight::waitUntilIdle(inflight_);
         if (fd_ >= 0) {
             ::close(fd_);
             fd_ = -1;
@@ -149,14 +148,6 @@ public:
     std::string describe() const override { return label_; }
 
 private:
-    struct Inflight {
-        explicit Inflight(std::atomic<int>& n) : n_(n) { ++n_; }
-        ~Inflight() { --n_; }
-        Inflight(const Inflight&) = delete;
-        Inflight& operator=(const Inflight&) = delete;
-        std::atomic<int>& n_;
-    };
-
     int fd_;
     std::string label_;
     WakePipe wake_;
@@ -313,10 +304,8 @@ public:
     explicit UnixSocketClient(FramedTransportOptions options) : options_(options) {}
 
     Result<std::unique_ptr<ITransport>> connect(const std::string& endpoint, std::chrono::milliseconds timeout) override {
-        Result<ConnectionEndpoint> parsed = ConnectionEndpoint::parse(endpoint);
+        const sdk::Result<ConnectionEndpoint> parsed = parseEndpointOfKind(endpoint, EndpointKind::UnixSocket, "unix-socket");
         if (!parsed) return parsed.error();
-        if (parsed.value().kind() != EndpointKind::UnixSocket)
-            return makeError(ErrorCode::InvalidArgument, "not a unix-socket endpoint: " + endpoint);
 
         const sockaddr_un addr = makeAddress(endpoint);
         const auto deadline = std::chrono::steady_clock::now() + timeout;
@@ -338,9 +327,8 @@ public:
             // Not listening yet / backlog full: keep trying until the deadline.
             if (e != ENOENT && e != ECONNREFUSED && e != EAGAIN && e != EINTR)
                 return errnoError(ErrorCode::IoError, "cannot connect to " + endpoint, e);
-            if (std::chrono::steady_clock::now() >= deadline)
-                return makeError(ErrorCode::Timeout, "timed out connecting to " + endpoint);
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            if (std::chrono::steady_clock::now() >= deadline) return connectTimedOut(endpoint);
+            std::this_thread::sleep_for(kConnectRetryInterval);
         }
     }
 
@@ -356,7 +344,7 @@ std::string nativeAddressFor(const std::string& token) {
     // Short, private base directory: sun_path is only 104 bytes on macOS.
     std::string base = "/tmp";
     for (const char* var : {"XDG_RUNTIME_DIR", "TMPDIR"}) {
-        const std::optional<std::string> value = readEnvironment(var);
+        const std::optional<std::string> value = sdk::readEnvironment(var);
         if (value && value->front() == '/') {
             std::string candidate = *value;
             while (candidate.size() > 1 && candidate.back() == '/') candidate.pop_back();

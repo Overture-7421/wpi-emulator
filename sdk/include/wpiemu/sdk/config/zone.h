@@ -21,11 +21,11 @@
 #include "wpiemu/sdk/config/mechanism_attachment.h"
 #include "wpiemu/sdk/core/math.h"
 #include "wpiemu/sdk/core/value.h"
+#include "wpiemu/sdk/mechanisms/mechanism_state.h"
 
 namespace wpiemu::sdk {
 
-enum class ConditionOp {
-    Above,   // v > threshold (|v| when `absolute`)
+enum class ConditionOp {    Above,   // v > threshold (|v| when `absolute`)
     Below,   // v < threshold (|v| when `absolute`)
     Within,  // |v - threshold| <= tolerance
 };
@@ -33,7 +33,7 @@ enum class ConditionOp {
 // One test on a value a mechanism publishes. The value is read in SI (see readMechanismValue).
 struct ZoneCondition {
     std::string mechanismId;             // MechanismConfig::id of the observed mechanism
-    std::string value = "velocity";      // published value name (NamedValue::name) of that mechanism
+    std::string value = value_name::kVelocity;   // published value name (NamedValue::name) of that mechanism
     ConditionOp op = ConditionOp::Above;
     double threshold = 0.0;              // SI (m, rad, m/s, rad/s, ...)
     double tolerance = 0.1;              // Within: |v - threshold| <= tolerance (SI)

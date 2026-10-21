@@ -45,21 +45,8 @@ public:
     virtual void stop() noexcept = 0;
 };
 
-// One registry for vision bridges; each module exposes `registerVisionBridges(VisionBridgeRegistry&)`.
-class VisionBridgeRegistry : public Registry<BridgeInfo, IVisionBridge> {
-public:
-    Status registerBridge(std::string name, BridgeInfo info, Factory factory) {
-        return add(std::move(name), std::move(info), std::move(factory));
-    }
-    Result<std::vector<std::unique_ptr<IVisionBridge>>> createAll() const {
-        std::vector<std::unique_ptr<IVisionBridge>> out;
-        for (const std::string& key : keys()) {
-            Result<std::unique_ptr<IVisionBridge>> b = create(key);
-            if (!b) return b.error();
-            out.push_back(std::move(b).value());
-        }
-        return out;
-    }
-};
+// One registry for vision bridges; each module exposes `registerVisionBridges(VisionBridgeRegistry&)`. A distinct type
+// (not an alias) so builtin_bridges.h can forward-declare it.
+class VisionBridgeRegistry : public Registry<BridgeInfo, IVisionBridge> {};
 
 }  // namespace wpiemu::sdk

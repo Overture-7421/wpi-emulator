@@ -2,7 +2,8 @@
 
 // Pure edit operations on a RobotConfig (no Qt, no undo): the vocabulary the editor's commands are
 // built from. Each function either performs the edit and returns success, or leaves the config
-// untouched. They are the unit-tested heart of the editor model.
+// untouched. They are the unit-tested heart of the editor model. Each section below is implemented
+// in its own config_ops_<domain>.cpp.
 //
 // Display frame (shared with the viewport): world origin on the floor below the HULL CENTRE, Z up.
 // The chassis frame (origin = COM, docs/reference/physics.md) is at (comOffset.xy, comHeight). Wheel `positionM.z` is a
@@ -24,7 +25,7 @@ namespace wpiemu::app::editor::ops {
 inline constexpr const char* kChassisOwner = "chassis";   // owner string of chassis primitives
 
 // ---- naming -----------------------------------------------------------------------------------
-std::string baseIdForType(std::string_view mechanismType);                 // "game_2026.fuel_intake" -> "fuel_intake"
+std::string baseIdForType(std::string_view mechanismType);                 // "demo_game.fuel_intake" -> "fuel_intake"
 std::string uniqueMechanismId(const sdk::RobotConfig& c, std::string base);
 std::string uniqueWheelName(const sdk::RobotConfig& c, std::string base);
 std::string displayNameFor(const sdk::MechanismConfig& m, const EditorCatalog& catalog);
@@ -81,7 +82,6 @@ std::string duplicateZone(sdk::RobotConfig& c, std::string_view id);
 // Re-attaches a zone to another parent / link; with `keepWorldPose` its local pose is recomputed so it does not move.
 bool reattachZone(sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view id, const std::string& newParent,
                   const std::string& newLink, bool keepWorldPose = true);
-sdk::ZoneConfig* findZone(sdk::RobotConfig& c, std::string_view id);
 // Activation edits. Conditions keep their mechanism id even when the mechanism is later deleted (the validator warns).
 // addZoneCondition appends a condition on the first mechanism (empty id when there is none) and returns its index, -1 when
 // the zone is unknown.
@@ -111,7 +111,6 @@ std::string duplicateCamera(sdk::RobotConfig& c, std::string_view id);
 // Re-attaches a camera to another parent / link; with `keepWorldPose` its local pose is recomputed so it does not move.
 bool reattachCamera(sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view id, const std::string& newParent,
                     const std::string& newLink, bool keepWorldPose = true);
-sdk::CameraConfig* findCamera(sdk::RobotConfig& c, std::string_view id);
 // The robot-code name no other camera of the kind uses, derived from `base` ("" is the Limelight default name).
 std::string uniqueCameraName(const sdk::RobotConfig& c, sdk::CameraKind kind, std::string base, std::string_view exceptId = {});
 
@@ -151,9 +150,7 @@ bool setMappingReversed(sdk::RobotConfig& c, const sdk::SlotAddress& slot, bool 
 std::vector<sdk::SlotAddress> slotsUsing(const sdk::RobotConfig& c, const sdk::PhysicalDeviceId& device);
 
 // ---- slots ------------------------------------------------------------------------------------
-std::vector<sdk::SlotSpec> robotSlotSpecs();
-std::vector<sdk::SlotSpec> drivetrainSlotSpecs(const sdk::DrivetrainSpec& spec);
-// Owners in tree order: robot, drivetrain, then mechanisms.
+// Owners in tree order: robot, drivetrain, then mechanisms. The drivetrain's slots come from its kind's registered callback.
 std::vector<sdk::SlotSpec> slotSpecsFor(const sdk::RobotConfig& c, const EditorCatalog& catalog, std::string_view owner);
 std::vector<std::string> slotOwners(const sdk::RobotConfig& c);
 // A gearbox with several motors: one row per motor, the count lives in a mechanism property (`countKey`) or in
@@ -179,7 +176,7 @@ std::string slotDisplayName(const sdk::RobotConfig& c, const EditorCatalog& cata
 // primitives, chassis-attached mounts) is re-expressed so the robot looks the same.
 void setCom(sdk::RobotConfig& c, float offsetX, float offsetY, float height, bool compensate = true,
             const EditorCatalog* catalog = nullptr);
-void setDrivetrainKind(sdk::RobotConfig& c, const std::string& kind);
+void setDrivetrainKind(sdk::RobotConfig& c, const EditorCatalog& catalog, const std::string& kind);
 std::string addWheel(sdk::RobotConfig& c);
 bool removeWheel(sdk::RobotConfig& c, const std::string& name);
 bool renameWheel(sdk::RobotConfig& c, const std::string& oldName, const std::string& newName);

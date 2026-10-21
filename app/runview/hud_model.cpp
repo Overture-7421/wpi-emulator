@@ -1,16 +1,17 @@
 #include "hud_model.h"
 
-#include <QCoreApplication>
 #include <QVariantList>
 #include <QVariantMap>
 
 #include <algorithm>
 #include <cmath>
 
+#include "ui/qt_text.h"
+
 namespace wpiemu::app::runview {
 namespace {
 
-QString tr(const char* s) { return QCoreApplication::translate("Hud", s); }
+constexpr ui::Tr tr{"Hud"};
 
 QString formatNumber(double v) {
     if (std::fabs(v - std::round(v)) < 1e-9) return QString::number(static_cast<qlonglong>(std::llround(v)));

@@ -7,7 +7,7 @@
 
 #include "wpiemu/halsim_ext/config.h"
 #include "wpiemu/sdk/core/logger.h"
-#include "wpiemu/sdk/ipc/messages.h"
+#include "wpiemu/sdk/ipc/session_messages.h"
 
 namespace wpiemu::halsim {
 

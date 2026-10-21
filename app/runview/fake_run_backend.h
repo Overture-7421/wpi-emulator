@@ -1,19 +1,21 @@
 #pragma once
 
-// Complete in-process IRunBackend: a synthetic holonomic robot with mechanism links, instanced "fuel",
-// HUD values, log output and an injectable robot-process lifecycle. Used by tests, the demo
-// executable and screenshots; the shell supplies the real adapter.
+// Complete in-process IRuntimeHost: a synthetic holonomic robot with mechanism links, instanced "fuel",
+// HUD values, log output and an injectable robot-process lifecycle. The game it plays is the SDK's neutral
+// demo game (sdk/testing/demo_game.h), shared with the editor's fake. Used by tests, the demo
+// executable and screenshots; the shell supplies the real host.
 
 #include <QTimer>
 
 #include <functional>
 #include <random>
 
-#include "run_backend.h"
+#include "contract/runtime_host.h"
+#include "contract/start_position_selection.h"
 
 namespace wpiemu::app::runview {
 
-class FakeRunBackend : public IRunBackend {
+class FakeRunBackend : public IRuntimeHost {
     Q_OBJECT
 public:
     struct Options {
@@ -26,10 +28,10 @@ public:
     explicit FakeRunBackend(QObject* parent = nullptr) : FakeRunBackend(Options{}, parent) {}
     explicit FakeRunBackend(Options options, QObject* parent = nullptr);
 
-    RunStatus status() const override { return status_; }
-    RunSceneInfo sceneInfo() const override { return scene_; }
+    HostStatus status() const override { return status_; }
+    HostScene scene() const override { return scene_; }
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const override { return slot_.latest(); }
-    QString startPositionId() const override { return startPositionId_; }
+    QString startPosition() const override { return startSelection_.id(); }
 
     // ---- test / demo hooks ----
     void tickOnce();                              // advance one 5 ms sim tick and publish a snapshot
@@ -39,7 +41,7 @@ public:
     bool paused() const { return paused_; }
     int startCount() const { return startCount_; }
     int resetCount() const { return resetCount_; }
-    void emitLog(sdk::LogLevel level, LogStream stream, const QString& source, const QString& text);
+    void emitLog(sdk::LogLevel level, sdk::LogStream stream, const QString& source, const QString& text);
 
     void simulateCrash(int exitCode = 1, const QString& detail = {});
     void simulateHandshakeTimeout();
@@ -47,17 +49,17 @@ public:
     void simulateStall();
     void simulateFailedToStart(const QString& detail);
     void setLinkSettled();                        // jump straight to Running + Connected
+    // As if the shell had opened `projectPath` whose wizard chose `station` (the page applies it to its Driver Station).
+    void setProjectDefaults(const QString& projectPath, sdk::proto::AllianceStation station);
 
-    static sdk::RobotConfig makeDemoConfig();
-    static std::vector<sdk::ZoneKindInfo> makeZoneKinds();   // demo_game.pickup (Volume), demo_game.shooter (Muzzle)
-    static sdk::AprilTagLayout makeDemoTags();               // 8 tags on the demo field's walls
-    static sdk::FieldDescription makeDemoField();
+    static sdk::RobotConfig makeDemoConfig();   // the demo robot; its zones and sensors use the demo game's ids
 
 public slots:
-    void launchRobot() override;
+    void launch() override;
     void startSimulation() override;
     void stopSimulation() override;
-    void restartRobot() override;
+    void stop() override;
+    void restart() override;
     void resetSimulation() override;
     void setStartPosition(const QString& id) override;
     void setPaused(bool paused) override;
@@ -72,7 +74,7 @@ private:
         bool flying = false;
     };
 
-    void setStatus(RobotProcessState process, LinkState link, int exitCode = 0, const QString& detail = {});
+    void setStatus(sdk::ProcessState process, sdk::LinkState link, int exitCode = 0, const QString& detail = {});
     void refreshFlags();
     void beginIfReady();
     void beginTransition(int delayMs, std::function<void()> fn);
@@ -85,16 +87,16 @@ private:
     Options options_;
     QTimer timer_;
     std::mt19937 rng_{1};
-    RunStatus status_;
-    RunSceneInfo scene_;
+    HostStatus status_;
+    HostScene scene_;
     sdk::LatestSnapshotSlot slot_;
     sdk::proto::DsState ds_;
 
-    QString startPositionId_;
+    StartPositionSelection startSelection_;
     bool paused_ = false;
     bool programStarted_ = false;
     bool simulating_ = false;
-    bool beginWhenReady_ = false;
+    SimulationStartIntent beginIntent_;
     int pendingSteps_ = 0;
     double timeScale_ = 1.0;
     double timeAccum_ = 0.0;

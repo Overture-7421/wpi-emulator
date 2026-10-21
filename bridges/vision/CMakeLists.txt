@@ -29,15 +29,11 @@ if(TARGET wpiemu_wpilib_ntcore AND TARGET wpiemu_wpilib_hal)
     if(WPIEMU_BUILD_TESTS)
         # Smoke test of the binding against the real ntcore in-process. It links ntcore (a robot process has it
         # loaded) so the binding attaches to the already loaded module, like in a robot.
-        # The root enables testing only after its subdirectories; do it here so this test is registered.
-        enable_testing()
-        include(doctest)
         add_executable(wpiemu_bridges_vision_nt_tests tests/ntcore_smoke_tests.cpp)
         target_include_directories(wpiemu_bridges_vision_nt_tests SYSTEM PRIVATE ${_wpiemu_nt_include})
         target_link_libraries(wpiemu_bridges_vision_nt_tests PRIVATE
-            doctest::doctest wpiemu_bridges_vision_nt wpiemu_wpilib_ntcore wpiemu_sdk)
-        target_compile_definitions(wpiemu_bridges_vision_nt_tests PRIVATE DOCTEST_CONFIG_USE_STD_HEADERS)
-        wpiemu_target_defaults(wpiemu_bridges_vision_nt_tests)
+            wpiemu_bridges_vision_nt wpiemu_wpilib_ntcore wpiemu_sdk)
+        wpiemu_doctest_target(wpiemu_bridges_vision_nt_tests)
         # The ntcore/wpinet/wpiutil DLLs are not copied next to the binary: the test finds them through PATH.
         add_test(NAME bridges_vision.ntcore_smoke COMMAND wpiemu_bridges_vision_nt_tests)
         set_tests_properties(bridges_vision.ntcore_smoke PROPERTIES

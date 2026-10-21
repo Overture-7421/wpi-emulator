@@ -8,31 +8,41 @@
 #include "fake_run_backend.h"
 #include "scene_model.h"
 #include "scene_parts.h"
+#include "test_support.h"
+#include "wpiemu/sdk/testing/demo_game.h"
 
 using namespace wpiemu::app::runview;
+using namespace runview_test;
+using wpiemu::app::HostScene;
 namespace sdk = wpiemu::sdk;
+namespace demo = wpiemu::sdk::testing::demo_game;
 
 namespace {
 
-constexpr float kEps = 1e-3f;
-
-bool near(const sdk::Vec3& a, const sdk::Vec3& b, float eps = kEps) { return sdk::length(a - b) < eps; }
-
 std::shared_ptr<const sdk::RobotConfig> demoConfig() {
     return std::make_shared<const sdk::RobotConfig>(FakeRunBackend::makeDemoConfig());
-}
-
-sdk::SimSnapshotData baseSnapshot() {
-    sdk::SimSnapshotData d;
-    d.chassis.pose = {{3.f, 2.f, 0.2f}, sdk::Quat::fromYaw(0.f)};
-    d.robotConnected = true;
-    return d;
 }
 
 const ScenePart* findPart(const RobotRig& rig, const std::string& name) {
     for (const auto& p : rig.parts())
         if (p.name == name) return &p;
     return nullptr;
+}
+
+// The demo intake with its arm raised 90 degrees about -Y.
+sdk::MechanismState intakeArmRaised() {
+    sdk::MechanismState intake;
+    intake.id = "intake";
+    intake.links.push_back({"arm", sdk::Pose3{{}, sdk::Quat::fromAxisAngle({0.f, 1.f, 0.f}, -1.5707963f)}});
+    return intake;
+}
+
+// The demo turret turned 90 degrees about Z.
+sdk::MechanismState turretQuarterTurn() {
+    sdk::MechanismState turret;
+    turret.id = "turret";
+    turret.links.push_back({"yaw", sdk::Pose3{{}, sdk::Quat::fromYaw(1.5707963f)}});
+    return turret;
 }
 
 }  // namespace
@@ -74,7 +84,7 @@ TEST_CASE("rig places wheels from the physics contact points") {
     const ScenePart* tire = findPart(rig, "fl");
     REQUIRE(tire != nullptr);
     CHECK(near(tire->pose.position, {0.3f, 0.3f, 0.0508f - 0.2f}));
-    CHECK(tire->shape == PartShape::Cylinder);
+    CHECK(tire->shape == sdk::PrimitiveKind::Cylinder);
     // The cylinder axis (local Z) must point along the chassis Y axis (wheel axle) when steer = spin = 0.
     sdk::WheelSample straight = w;
     straight.steerAngleRad = 0.0;
@@ -92,14 +102,8 @@ TEST_CASE("mechanism primitives follow their link pose") {
     rig.setConfig(demoConfig());
 
     sdk::SimSnapshotData d = baseSnapshot();
-    sdk::MechanismState intake;
-    intake.id = "intake";
-    intake.links.push_back({"arm", sdk::Pose3{{}, sdk::Quat::fromAxisAngle({0.f, 1.f, 0.f}, -1.5707963f)}});
-    d.mechanisms.push_back(intake);
-    sdk::MechanismState turret;
-    turret.id = "turret";
-    turret.links.push_back({"yaw", sdk::Pose3{{}, sdk::Quat::fromYaw(1.5707963f)}});
-    d.mechanisms.push_back(turret);
+    d.mechanisms.push_back(intakeArmRaised());
+    d.mechanisms.push_back(turretQuarterTurn());
     const sdk::SimSnapshot snap(d);
     rig.update(&snap);
 
@@ -127,10 +131,7 @@ TEST_CASE("every shape of a mechanism follows its first link, whatever the shape
     RobotRig rig;
     rig.setConfig(cfg);
     sdk::SimSnapshotData d = baseSnapshot();
-    sdk::MechanismState intake;
-    intake.id = "intake";
-    intake.links.push_back({"arm", sdk::Pose3{{}, sdk::Quat::fromAxisAngle({0.f, 1.f, 0.f}, -1.5707963f)}});
-    d.mechanisms.push_back(intake);
+    d.mechanisms.push_back(intakeArmRaised());
     const sdk::SimSnapshot snap(d);
     rig.update(&snap);
     const ScenePart* part = findPart(rig, "plate");
@@ -173,7 +174,7 @@ TEST_CASE("zone overlays resolve through plugin sections and mechanism propertie
 
 TEST_CASE("robot zones resolve to chassis-frame poses with the kind's shape and colour") {
     const auto cfg = demoConfig();
-    const auto kinds = FakeRunBackend::makeZoneKinds();
+    const auto kinds = demo::zoneKinds();
     const auto zones = resolveRobotZones(*cfg, kinds, nullptr);
     REQUIRE(zones.size() == 2);
 
@@ -182,13 +183,13 @@ TEST_CASE("robot zones resolve to chassis-frame poses with the kind's shape and 
     CHECK(zones[0].label == "Intake zone");
     CHECK_FALSE(zones[0].muzzle);
     CHECK(zones[0].tracksState);
-    CHECK(zones[0].color == "#22c55e");
+    CHECK(zones[0].color == kinds[0].color);
     CHECK(near(zones[0].pose.position, {0.78f, 0.f, -0.08f}));
     CHECK(near(zones[0].size, {0.5f, 0.7f, 0.2f}));
 
     // Muzzle zone: on the turret's yaw link at rest, direction along local +X
     CHECK(zones[1].muzzle);
-    CHECK(zones[1].color == "#f43f5e");
+    CHECK(zones[1].color == kinds[1].color);
     CHECK(near(zones[1].pose.position, {-0.1f + 0.38f, 0.f, 0.12f}));
 }
 
@@ -196,28 +197,22 @@ TEST_CASE("robot zones follow the pose of the attached mechanism link") {
     auto cfg = std::make_shared<sdk::RobotConfig>(FakeRunBackend::makeDemoConfig());
     sdk::ZoneConfig onArm;
     onArm.id = "arm.zone";
-    onArm.kind = "demo_game.pickup";
+    onArm.kind = demo::kPickupZone;
     onArm.attachment = {"intake", "arm"};
     onArm.local.position = {0.17f, 0.f, 0.f};
     cfg->zones.push_back(onArm);
     sdk::ZoneConfig onChassis;
     onChassis.id = "chassis.zone";
-    onChassis.kind = "demo_game.pickup";
+    onChassis.kind = demo::kPickupZone;
     onChassis.local.position = {0.1f, 0.2f, 0.3f};
     cfg->zones.push_back(onChassis);
 
     sdk::SimSnapshotData d = baseSnapshot();
-    sdk::MechanismState intake;
-    intake.id = "intake";
-    intake.links.push_back({"arm", sdk::Pose3{{}, sdk::Quat::fromAxisAngle({0.f, 1.f, 0.f}, -1.5707963f)}});
-    d.mechanisms.push_back(intake);
-    sdk::MechanismState turret;
-    turret.id = "turret";
-    turret.links.push_back({"yaw", sdk::Pose3{{}, sdk::Quat::fromYaw(1.5707963f)}});
-    d.mechanisms.push_back(turret);
+    d.mechanisms.push_back(intakeArmRaised());
+    d.mechanisms.push_back(turretQuarterTurn());
     const sdk::SimSnapshot snap(d);
 
-    const auto zones = resolveRobotZones(*cfg, FakeRunBackend::makeZoneKinds(), &snap);
+    const auto zones = resolveRobotZones(*cfg, demo::zoneKinds(), &snap);
     REQUIRE(zones.size() == 4);
     CHECK(near(zones[2].pose.position, {0.38f, 0.f, -0.06f + 0.17f}));   // arm raised 90 deg, same as arm.bar
     CHECK(near(zones[3].pose.position, {0.1f, 0.2f, 0.3f}));              // chassis frame, no link involved
@@ -232,13 +227,13 @@ TEST_CASE("robot zones of an unknown kind are ignored") {
     other.id = "other";
     other.kind = "another_game.thing";
     cfg->zones.push_back(other);
-    CHECK(resolveRobotZones(*cfg, FakeRunBackend::makeZoneKinds(), nullptr).size() == 2);
+    CHECK(resolveRobotZones(*cfg, demo::zoneKinds(), nullptr).size() == 2);
     CHECK(resolveRobotZones(*cfg, {}, nullptr).empty());
 }
 
 TEST_CASE("robot zone active flag comes from the snapshot zones") {
     const auto cfg = demoConfig();
-    const auto kinds = FakeRunBackend::makeZoneKinds();
+    const auto kinds = demo::zoneKinds();
     for (const auto& z : resolveRobotZones(*cfg, kinds, nullptr)) CHECK_FALSE(z.active);
 
     sdk::SimSnapshotData d = baseSnapshot();
@@ -261,7 +256,7 @@ TEST_CASE("robot zone active flag comes from the snapshot zones") {
 
 TEST_CASE("zone rig builds a marker and an arrow for muzzles and highlights active zones") {
     ZoneRig rig;
-    rig.setScene(demoConfig(), {}, FakeRunBackend::makeZoneKinds());
+    rig.setScene(demoConfig(), {}, demo::zoneKinds());
     REQUIRE(rig.parts().size() == 3);   // pickup box, muzzle marker, muzzle arrow
     CHECK(rig.labels()[0] == "Intake zone");
     CHECK(rig.labels()[1] == "Shooter zone");
@@ -285,7 +280,7 @@ TEST_CASE("zone rig builds a marker and an arrow for muzzles and highlights acti
 }
 
 TEST_CASE("field parts centre the floor on the visuals") {
-    const auto field = FakeRunBackend::makeDemoField();
+    const auto field = demo::field();
     const FieldParts fp = buildFieldParts(&field);
     CHECK(fp.parts.size() == field.visuals.size() + 1);
     CHECK(fp.parts.front().name == "field.floor");
@@ -313,9 +308,9 @@ TEST_CASE("run view camera uses the editor's orbit camera around a field-framed 
     CHECK(scene.camera().distance / home == doctest::Approx(editorLike.distance / 2.8f));   // same zoom step
 
     scene.orbit(0.f, 100000.f);   // pitch is clamped like the editor's, never flipped over the pole
-    CHECK(scene.camera().pitchRad <= wpiemu::app::OrbitCamera::degToRad(89.f) + 1e-4f);
+    CHECK(scene.camera().pitchRad <= wpiemu::sdk::degToRadF(89.f) + 1e-4f);
     scene.orbit(0.f, -100000.f);
-    CHECK(scene.camera().pitchRad >= wpiemu::app::OrbitCamera::degToRad(-89.f) - 1e-4f);
+    CHECK(scene.camera().pitchRad >= wpiemu::sdk::degToRadF(-89.f) - 1e-4f);
 
     const sdk::Vec3 target = scene.camera().target;
     scene.setViewHeight(600.f);
@@ -335,7 +330,7 @@ TEST_CASE("part list model converts SDK primitives to Qt Quick 3D transforms") {
     box.color = "#ff0000";
     ScenePart cyl;
     cyl.name = "c";
-    cyl.shape = PartShape::Cylinder;
+    cyl.shape = sdk::PrimitiveKind::Cylinder;
     cyl.size = {0.2f, 0.2f, 0.5f};
     cyl.translucent = true;
     model.setParts({box, cyl});
@@ -382,7 +377,7 @@ TEST_CASE("scene model follows the snapshot and exposes zone toggles") {
     opts.startupDelayMs = 0;
     FakeRunBackend backend(opts);
     SceneModel scene;
-    scene.setSceneInfo(backend.sceneInfo());
+    scene.setSceneInfo(backend.scene());
     CHECK_FALSE(scene.robotVisible());
     CHECK(scene.zoneLabels().contains(QStringLiteral("Intake zone")));
     CHECK(scene.zoneLabels().contains(QStringLiteral("Shooter zone")));
@@ -408,9 +403,9 @@ TEST_CASE("scene model follows the snapshot and exposes zone toggles") {
 
 TEST_CASE("scene model draws zones and updates their parts only when something changed") {
     SceneModel scene;
-    RunSceneInfo info;
+    HostScene info;
     info.config = demoConfig();
-    info.zoneKinds = FakeRunBackend::makeZoneKinds();
+    info.zoneKinds = demo::zoneKinds();
     scene.setSceneInfo(info);
     PartListModel& zones = *static_cast<PartListModel*>(scene.zones());
     CHECK(zones.rowCount() == 3);   // pickup volume + muzzle marker + muzzle arrow
@@ -455,7 +450,7 @@ TEST_CASE("fake backend publishes zone states that follow the intake arm and the
     opts.autoRun = false;
     opts.startupDelayMs = 0;
     FakeRunBackend backend(opts);
-    const RunSceneInfo info = backend.sceneInfo();
+    const HostScene info = backend.scene();
     CHECK(info.zoneKinds.size() == 2);
     CHECK(info.config->zones.size() == 2);
 

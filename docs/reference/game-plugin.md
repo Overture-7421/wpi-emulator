@@ -35,6 +35,9 @@ that id plus `.`. `registerMechanisms()` contributes those templates through `Me
 `contributeConfigSchema()` describes the plugin section. The config pipeline supplies defaults
 and checks its declared schema version and properties; a mismatched section version is rejected.
 Keep other plugins' sections intact. Persistence and loading rules are in [runtime](runtime.md).
+A typed section is declared once with [`ConfigBindings`](../../sdk/include/wpiemu/sdk/config/config_bindings.h):
+each `PropertySpec` is bound to its config member, and that one table yields the schema, the decode
+(a missing, mistyped or NaN key keeps the struct's default; numbers clamp to the spec range) and the encode.
 
 `contributeZoneKinds()` declares owned `ZoneKindInfo` metadata, and `contributeGameValues()`
 declares available numeric sensor sources. Kind and value ids start with the selected plugin id
@@ -43,9 +46,11 @@ a warning. Do not silently reinterpret another season's configuration.
 
 `contributeEditorPanels()` and `contributeHud()` return SDK descriptors, never Qt widgets.
 `fieldFrame()` supplies field dimensions and alliance symmetry for start-position copying.
-`aprilTagLayout()` supplies field-frame tags; an empty layout gives simulated cameras no tags
-to observe. Vision computation and robot-side publishing are not season code; see
-[bridges](bridges.md). The [app contract](app.md) explains descriptor presentation.
+`aprilTagLayout()` supplies field-frame tags and the field size (`fieldLengthM`/`fieldWidthM`, finite and positive
+whenever the layout has tags); an empty layout gives simulated cameras no tags to observe. The size travels in
+`VisionSetup`; the bridges never assume a season's field. Tags default to the FRC-wide `kFrcAprilTagSizeM`
+(6.5 in); set `AprilTag::sizeM` only for a different tag. Vision computation and robot-side publishing are not
+season code; see [bridges](bridges.md). The [app contract](app.md) explains descriptor presentation.
 
 ## Robot zones and game-fed sensors
 

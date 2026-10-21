@@ -29,17 +29,17 @@ struct PickupParams {
 
 struct ShooterParams {
     std::string flywheelMechanism;
-    std::string flywheelValue = "velocity";
+    std::string flywheelValue = sdk::value_name::kVelocity;
     double flywheelRadiusM = 0.0508;
     double efficiency = 0.6;
     double fixedExitSpeedMps = 0.0;  // > 0: ignore the flywheel and use this speed
     double minExitSpeedMps = 2.0;
     std::string hoodMechanism;
-    std::string hoodValue = "position";
+    std::string hoodValue = sdk::value_name::kPosition;
     double hoodGain = 1.0;
     double hoodAngleRad = 1.0471975512;  // elevation above the muzzle X axis (offset when a hood is named)
     std::string turretMechanism;
-    std::string turretValue = "position";
+    std::string turretValue = sdk::value_name::kPosition;
     double turretGain = 1.0;
     double turretYawOffsetRad = 0.0;
     double fireRateHz = 10.0;

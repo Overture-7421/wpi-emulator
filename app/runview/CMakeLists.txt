@@ -1,5 +1,5 @@
-# Run-time view (UI stream "ui-run"): RunPage + IRunBackend + FakeRunBackend, built as a static library.
-# Links only the SDK and Qt; the shell supplies the real IRunBackend adapter.
+# Run-time view (UI stream "ui-run"): RunPage + FakeRunBackend, built as a static library.
+# Links only the SDK, the host contract and the shared scene support (both SDK + Qt) and Qt; the shell hands RunPage the shared IRuntimeHost.
 # Layout: scene/camera/HUD/console/DS logic in plain classes + view models, widgets on top, qml/ for the
 # Qt Quick 3D viewport (compiled into the library as resources).
 
@@ -10,7 +10,6 @@ option(WPIEMU_RUNVIEW_FETCH_SDL2 "Download and build SDL2 when no system SDL2 is
 set(CMAKE_AUTOUIC OFF)
 
 set(WPIEMU_RUNVIEW_SOURCES
-    run_backend.cpp
     fake_run_backend.cpp
     run_control.cpp
     console_model.cpp
@@ -36,7 +35,7 @@ set(WPIEMU_RUNVIEW_SOURCES
 qt_add_library(wpiemu_app_runview STATIC ${WPIEMU_RUNVIEW_SOURCES})
 target_include_directories(wpiemu_app_runview PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(wpiemu_app_runview
-    PUBLIC wpiemu_sdk Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::QuickWidgets Qt6::Quick3D)
+    PUBLIC wpiemu_sdk wpiemu_app_contract wpiemu_app_ui Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::QuickWidgets Qt6::Quick3D)
 wpiemu_target_defaults(wpiemu_app_runview)
 set_target_properties(wpiemu_app_runview PROPERTIES AUTOMOC ON)
 
@@ -95,7 +94,6 @@ endif()
 
 # ---- tests (sources live in tests/app_runview; excluded from the Qt-free wpiemu_tests glob) ----
 if(WPIEMU_BUILD_TESTS AND EXISTS "${PROJECT_SOURCE_DIR}/tests/app_runview/CMakeLists.txt")
-    enable_testing()   # this directory is configured before the root enable_testing(); ctest must still descend here
     add_subdirectory("${PROJECT_SOURCE_DIR}/tests/app_runview" "${CMAKE_CURRENT_BINARY_DIR}/tests")
 endif()
 

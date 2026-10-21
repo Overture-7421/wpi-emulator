@@ -1,4 +1,5 @@
 #include <cmath>
+#include <limits>
 #include <string>
 
 #include "vision_test_rig.h"
@@ -14,11 +15,6 @@ const std::string kLL = "/limelight";
 
 std::vector<sdk::CameraFrame> oneTagFrame() {
     return {makeFrame(0, {makeTag(7, 2.0, 5.0, -3.0, {2.f, 0.2f, 0.f})})};
-}
-
-std::vector<sdk::CameraFrame> twoTagFrame() {
-    return {makeFrame(0, {makeTag(3, 1.0, -10.0, 1.0, {3.f, -0.5f, 0.1f}),
-                          makeTag(7, 2.0, 5.0, -3.0, {2.f, 0.2f, 0.f})})};
 }
 
 void configureLimelight(Rig& rig, const std::string& name = "") {
@@ -125,8 +121,8 @@ TEST_CASE("vision limelight: blue red and center pose arrays follow the field co
     CHECK(blue[9] == Approx(2.5));   // average distance
     CHECK(blue[10] == Approx(1.5));  // average area
 
-    checkPose(rig.nt->lastDoubles(kLL + "/botpose_wpired"), 16.541 - 2.0, 8.069 - 3.0, 0.0, 0.0, 0.0, -90.0);
-    checkPose(rig.nt->lastDoubles(kLL + "/botpose"), 2.0 - 16.541 / 2.0, 3.0 - 8.069 / 2.0, 0.0, 0.0, 0.0, 90.0);
+    checkPose(rig.nt->lastDoubles(kLL + "/botpose_wpired"), kTestFieldLengthM - 2.0, kTestFieldWidthM - 3.0, 0.0, 0.0, 0.0, -90.0);
+    checkPose(rig.nt->lastDoubles(kLL + "/botpose"), 2.0 - kTestFieldLengthM / 2.0, 3.0 - kTestFieldWidthM / 2.0, 0.0, 0.0, 0.0, 90.0);
 
     // MegaTag2 arrays carry the same estimate.
     CHECK(rig.nt->lastDoubles(kLL + "/botpose_orb_wpiblue") == blue);
@@ -134,14 +130,41 @@ TEST_CASE("vision limelight: blue red and center pose arrays follow the field co
     CHECK(rig.nt->lastDoubles(kLL + "/botpose_orb") == rig.nt->lastDoubles(kLL + "/botpose"));
 }
 
-TEST_CASE("vision limelight: the field size is configurable") {
-    vis::VisionBridgeOptions options;
-    options.fieldLengthM = 10.0;
-    options.fieldWidthM = 6.0;
-    Rig rig(options);
-    configureLimelight(rig);
+TEST_CASE("vision limelight: the red and center origins use the field size the setup carries") {
+    Rig rig;
+    sdk::VisionSetup setup = makeSetup({makeCamera(sdk::CameraKind::Limelight, "")});
+    setup.fieldLengthM = 10.0;
+    setup.fieldWidthM = 6.0;
+    rig.configure(setup);
     rig.apply(oneTagFrame(), 1'040'000);
     checkPose(rig.nt->lastDoubles(kLL + "/botpose_wpired"), 8.0, 3.0, 0.0, 0.0, 0.0, -90.0);
+    checkPose(rig.nt->lastDoubles(kLL + "/botpose"), -3.0, 0.0, 0.0, 0.0, 0.0, 90.0);
+    CHECK(rig.logger.count(sdk::LogLevel::Warn) == 0);
+}
+
+TEST_CASE("vision limelight: without a field size only the blue-origin pose is published, with one warning") {
+    for (const double bad : {0.0, -1.0, std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity()}) {
+        INFO("field length " << bad);
+        Rig rig;
+        sdk::VisionSetup setup = makeSetup({makeCamera(sdk::CameraKind::Limelight, "")});
+        setup.fieldLengthM = bad;
+        CHECK_FALSE(setup.hasFieldSize());
+        rig.configure(setup);
+        rig.apply(oneTagFrame(), 1'040'000);
+        rig.apply(oneTagFrame(), 1'060'000);
+
+        checkPose(rig.nt->lastDoubles(kLL + "/botpose_wpiblue"), 2.0, 3.0, 0.0, 0.0, 0.0, 90.0);   // needs no field size
+        CHECK(rig.nt->lastDoubles(kLL + "/botpose_wpired").empty());
+        CHECK(rig.nt->lastDoubles(kLL + "/botpose").empty());
+        CHECK(rig.nt->lastDoubles(kLL + "/botpose_orb_wpired").empty());
+        CHECK(rig.nt->lastDoubles(kLL + "/botpose_orb").empty());
+        CHECK(rig.nt->lastDouble(kLL + "/tv") == 1.0);                                              // the target itself is still seen
+        const std::string* json = rig.nt->lastAs<std::string>(kLL + "/json");
+        REQUIRE(json != nullptr);
+        CHECK(json->find("nan") == std::string::npos);
+        CHECK(rig.logger.count(sdk::LogLevel::Warn) == 1);                                          // once, not per frame
+        CHECK(rig.logger.count(sdk::LogLevel::Error) == 0);
+    }
 }
 
 TEST_CASE("vision limelight: rawfiducials use stride 7 and the largest tag is primary") {

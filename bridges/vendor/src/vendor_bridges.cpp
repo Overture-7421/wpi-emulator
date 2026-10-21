@@ -74,7 +74,7 @@ private:
 sdk::Status registerVendorBridgesChecked(sdk::DeviceBridgeRegistry& registry, VendorBridgeOptions options) {
     auto setup = std::make_shared<SharedSetup>(std::move(options));
     if (setup->options().enablePhoenix6) {
-        sdk::Status st = registry.registerBridge(
+        sdk::Status st = registry.add(
             "ctre.phoenix6",
             sdk::BridgeInfo{ctre::kFamilyPhoenix6, "CTRE Phoenix 6 SimDevices (TalonFX/FXS, CANcoder, Pigeon 2, CANdle, CANrange, CANdi)",
                             ctre::kVendor},
@@ -82,7 +82,7 @@ sdk::Status registerVendorBridgesChecked(sdk::DeviceBridgeRegistry& registry, Ve
         if (!st) return st;
     }
     if (setup->options().enablePhoenix5) {
-        sdk::Status st = registry.registerBridge(
+        sdk::Status st = registry.add(
             "ctre.phoenix5",
             sdk::BridgeInfo{ctre::kFamilyPhoenix5, "CTRE Phoenix 5 SimDevices (Talon SRX, Victor SPX, Pigeon IMU)", ctre::kVendor},
             [setup] { return setup->makePhoenix5(); });

@@ -7,6 +7,8 @@
 #include <QTreeView>
 #include <QVBoxLayout>
 
+#include "ui/widget_support.h"
+
 namespace wpiemu::app::runview {
 
 StateWindow::StateWindow(const ViewportTheme& theme, QWidget* parent) : QWidget(parent, Qt::Window) {
@@ -28,11 +30,9 @@ StateWindow::StateWindow(const ViewportTheme& theme, QWidget* parent) : QWidget(
     tree_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     tree_->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
 
-    empty_ = new QLabel(this);
+    empty_ = ui::mutedLabel({}, this);
     empty_->setObjectName(QStringLiteral("runview.stateEmpty"));
     empty_->setAlignment(Qt::AlignCenter);
-    empty_->setWordWrap(true);
-    empty_->setEnabled(false);
 
     footer_ = new QLabel(this);
     footer_->setObjectName(QStringLiteral("runview.stateFooter"));

@@ -1,5 +1,10 @@
 #pragma once
 
+// The seam between the UI (run view, editor adapter, shell) and whatever runs the simulation.
+// Links only the SDK and Qt, so the run view can consume it without core: the real host and the scripted
+// stand-ins live elsewhere and implement these interfaces.
+
+#include <QDateTime>
 #include <QMetaType>
 #include <QObject>
 #include <QString>
@@ -14,14 +19,11 @@
 #include "wpiemu/sdk/game/field.h"
 #include "wpiemu/sdk/game/game_module.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
-#include "wpiemu/sdk/ipc/messages.h"
+#include "wpiemu/sdk/ipc/driver_station.h"
+#include "wpiemu/sdk/telemetry/session_status.h"
 #include "wpiemu/sdk/telemetry/snapshot.h"
 
 namespace wpiemu::app {
-
-enum class HostProcessState { Idle, Starting, Running, Stopping, Exited, Crashed, FailedToStart };
-enum class HostLinkState { Disconnected, Connecting, Connected, HandshakeTimeout, ProtocolMismatch, Stalled };
-enum class HostLogStream { Stdout, Stderr, Emulator };
 
 // Run intent belongs to the project, not the robot-code instance: config relaunches retain it.
 class SimulationStartIntent {
@@ -42,8 +44,8 @@ private:
 };
 
 struct HostStatus {
-    HostProcessState process = HostProcessState::Idle;
-    HostLinkState link = HostLinkState::Disconnected;
+    sdk::ProcessState process = sdk::ProcessState::Idle;
+    sdk::LinkState link = sdk::LinkState::Disconnected;
     int exitCode = 0;
     QString detail;
     // The robot program finished its constructor: devices are announced and the simulation may start.
@@ -53,22 +55,54 @@ struct HostStatus {
     // Changes for every robot-code launch, not for a physics reset or same-project config edit.
     std::uint64_t runGeneration = 0;
 
-    bool active() const {
-        return process == HostProcessState::Starting || process == HostProcessState::Running ||
-               process == HostProcessState::Stopping;
-    }
+    bool active() const { return sdk::isActive(process); }
+    // Robot alive and connected.
+    bool live() const { return sdk::isLive(process, link); }
     // Robot alive and connected, simulation idle: the state in which devices are detected.
-    bool armed() const { return process == HostProcessState::Running && link != HostLinkState::Disconnected && !simulating; }
+    bool armed() const { return sdk::isArmed(process, link, simulating); }
     bool operator==(const HostStatus&) const = default;
 };
 
 struct HostLogLine {
     qint64 timestampMs = 0;
     sdk::LogLevel level = sdk::LogLevel::Info;
-    HostLogStream stream = HostLogStream::Stdout;
+    sdk::LogStream stream = sdk::LogStream::Stdout;
     QString source;
     QString text;
 };
+
+// The one place the session's std::string vocabulary becomes Qt presentation data.
+inline HostStatus toHostStatus(const sdk::SessionStatus& s) {
+    HostStatus out;
+    out.process = s.process;
+    out.link = s.link;
+    out.exitCode = s.exitCode;
+    out.detail = QString::fromStdString(s.detail);
+    out.programStarted = s.programStarted;
+    out.simulating = s.simulating;
+    return out;
+}
+
+inline HostLogLine toHostLogLine(const sdk::SessionLogEntry& e) {
+    HostLogLine out;
+    out.timestampMs = e.timestampMs;
+    out.level = e.level;
+    out.stream = e.stream;
+    out.source = QString::fromStdString(e.source);
+    out.text = QString::fromStdString(e.text);
+    return out;
+}
+
+// A line the emulator itself writes to the console (as opposed to the robot's output).
+inline HostLogLine emulatorLogLine(sdk::LogLevel level, const QString& source, const QString& text) {
+    HostLogLine out;
+    out.timestampMs = QDateTime::currentMSecsSinceEpoch();
+    out.level = level;
+    out.stream = sdk::LogStream::Emulator;
+    out.source = source;
+    out.text = text;
+    return out;
+}
 
 // What a viewport needs to draw the loaded project.
 struct HostScene {
@@ -80,29 +114,39 @@ struct HostScene {
     std::vector<sdk::GameValueInfo> gameValues;           // the game module's contributeGameValues() (labels/units for sensor sources)
     sdk::AprilTagLayout tags;                             // the game module's aprilTagLayout()
     QString gameName;
+    QString projectPath;                                  // empty = no project; a different path means a project switch
+    // Where the emulated Driver Station sits for this project (the wizard's choice); the run view applies it once per
+    // project switch and the user can move it from there.
+    sdk::proto::AllianceStation defaultStation = sdk::proto::AllianceStation::Red1;
 };
 
-// Everything that actually runs the simulation, as the shell sees it. Real implementation: launches
-// the robot with the HALSim extension and drives the sim thread (core). DemoRuntimeHost: scripted
-// stand-in used by `--demo` and tests. The editor and run view adapters share ONE host, so a device
-// discovered in the editor is the same device the run view sees.
+// What the shell tells a host about the open project.
+struct HostProject {
+    QString path;
+    std::shared_ptr<const sdk::RobotConfig> config;
+    const sdk::IGameModule* game = nullptr;
+    sdk::proto::AllianceStation defaultStation = sdk::proto::AllianceStation::Red1;
+};
+
+// Everything that actually runs the simulation, as the UI sees it. Real implementation: launches the robot with the
+// HALSim extension and drives the sim thread (core). DemoRuntimeHost: scripted stand-in used by `--demo` and tests.
+// The editor and the run view share ONE host, so a device discovered in the editor is the same device the run view
+// sees. Pages consume this interface only; selecting the project is IProjectBinding.
 //
 // Threading: UI thread only; implementations marshal their own worker threads.
 class IRuntimeHost : public QObject {
     Q_OBJECT
 public:
-    using QObject::QObject;
+    // Registers the metatypes of the queued signals, so every implementation is covered.
+    explicit IRuntimeHost(QObject* parent = nullptr);
 
     virtual HostStatus status() const = 0;
     virtual HostScene scene() const = 0;
+    // Latest published snapshot; may be null before the first tick. Cheap: call at UI frame rate.
     virtual std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const = 0;
     // Id of the selected RobotConfig::startPositions entry; empty = the robot setup's default start. The host keeps it
     // across robot-code restarts and clears it on a project switch or when the entry disappears.
     virtual QString startPosition() const = 0;
-
-    // The shell calls this whenever the open project or its (saved/edited) model changes.
-    virtual void setProject(const QString& projectPath, std::shared_ptr<const sdk::RobotConfig> config,
-                            const sdk::IGameModule* game) = 0;
 
 public slots:
     // launch(): starts the robot code once (idempotent while one is alive). The single instance detects devices
@@ -131,6 +175,23 @@ signals:
     void logLine(const wpiemu::app::HostLogLine& line);
 };
 
+// Selecting the open project is the shell's job, not the pages': AppServices is the only caller.
+class IProjectBinding {
+public:
+    virtual ~IProjectBinding() = default;
+    // Called whenever the open project or its (saved/edited) model changes.
+    virtual void setProject(const HostProject& project) = 0;
+};
+
+// What the composition root owns: the interface the pages see plus the project binding.
+class IProjectRuntimeHost : public IRuntimeHost, public IProjectBinding {
+public:
+    using IRuntimeHost::IRuntimeHost;
+};
+
+void registerHostMetaTypes();
+
 }  // namespace wpiemu::app
 
 Q_DECLARE_METATYPE(wpiemu::app::HostLogLine)
+Q_DECLARE_METATYPE(wpiemu::sdk::proto::DsState)

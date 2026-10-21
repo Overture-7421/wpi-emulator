@@ -20,6 +20,7 @@
 #include <windows.h>
 #include <sddl.h>
 
+#include "platform_common.h"
 #include "platform_ipc.h"
 #include "wpiemu/ipc/byte_stream.h"
 
@@ -49,9 +50,7 @@ Error ioError(const char* op, DWORD e) {
                          : windowsError(ErrorCode::IoError, std::string("pipe ") + op + " failed", e);
 }
 
-DWORD waitMs(std::chrono::steady_clock::time_point deadline) {
-    return static_cast<DWORD>(std::min<long long>(proto::timeLeft(deadline).count(), 0x7FFFFFFF));
-}
+DWORD waitMs(std::chrono::steady_clock::time_point deadline) { return static_cast<DWORD>(boundedWaitMs(deadline)); }
 
 HANDLE makeEvent() { return CreateEventW(nullptr, TRUE, FALSE, nullptr); }
 
@@ -176,7 +175,7 @@ public:
         std::lock_guard lock(closeMutex_);
         closing_ = true;
         SetEvent(wake_);
-        while (inflight_.load() != 0) std::this_thread::sleep_for(std::chrono::microseconds(50));
+        Inflight::waitUntilIdle(inflight_);
         if (handle_ == INVALID_HANDLE_VALUE) return;
         if (readPending_) {
             CancelIoEx(handle_, &readOverlapped_);
@@ -192,14 +191,6 @@ public:
     std::string describe() const override { return label_; }
 
 private:
-    struct Inflight {
-        explicit Inflight(std::atomic<int>& n) : n_(n) { ++n_; }
-        ~Inflight() { --n_; }
-        Inflight(const Inflight&) = delete;
-        Inflight& operator=(const Inflight&) = delete;
-        std::atomic<int>& n_;
-    };
-
     PipeStream(HANDLE pipe, std::string label)
         : handle_(pipe), label_(std::move(label)), readBuffer_(kPipeBufferBytes), wake_(makeEvent()),
           readEvent_(makeEvent()), writeEvent_(makeEvent()) {}
@@ -350,10 +341,8 @@ public:
     explicit NamedPipeClient(FramedTransportOptions options) : options_(options) {}
 
     Result<std::unique_ptr<ITransport>> connect(const std::string& endpoint, std::chrono::milliseconds timeout) override {
-        Result<ConnectionEndpoint> parsed = ConnectionEndpoint::parse(endpoint);
+        const sdk::Result<ConnectionEndpoint> parsed = parseEndpointOfKind(endpoint, EndpointKind::NamedPipe, "named-pipe");
         if (!parsed) return parsed.error();
-        if (parsed.value().kind() != EndpointKind::NamedPipe)
-            return makeError(ErrorCode::InvalidArgument, "not a named-pipe endpoint: " + endpoint);
 
         const std::wstring name = widen(endpoint);
         const auto deadline = std::chrono::steady_clock::now() + timeout;
@@ -372,12 +361,11 @@ public:
             if (e == ERROR_PIPE_BUSY) {
                 WaitNamedPipeW(name.c_str(), std::min<DWORD>(waitMs(deadline), 50));
             } else if (e == ERROR_FILE_NOT_FOUND) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(5));  // the server is not listening yet
+                std::this_thread::sleep_for(kConnectRetryInterval);  // the server is not listening yet
             } else {
                 return windowsError(ErrorCode::IoError, "cannot open " + endpoint, e);
             }
-            if (std::chrono::steady_clock::now() >= deadline)
-                return makeError(ErrorCode::Timeout, "timed out connecting to " + endpoint);
+            if (std::chrono::steady_clock::now() >= deadline) return connectTimedOut(endpoint);
         }
     }
 

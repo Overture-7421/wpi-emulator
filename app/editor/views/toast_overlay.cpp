@@ -10,6 +10,8 @@
 
 #include <algorithm>
 
+#include "ui/widget_support.h"
+
 namespace wpiemu::app::editor {
 
 namespace {
@@ -52,12 +54,7 @@ void ToastOverlay::showToast(const QString& title, const QString& detail, int se
     f.setBold(true);
     t->setFont(f);
     v->addWidget(t);
-    if (!detail.isEmpty()) {
-        auto* d = new QLabel(detail, frame);
-        d->setWordWrap(true);
-        d->setEnabled(false);
-        v->addWidget(d);
-    }
+    if (!detail.isEmpty()) v->addWidget(ui::mutedLabel(detail, frame));
     frame->setFixedWidth(300);
     frame->adjustSize();
     toasts_.push_back(frame);

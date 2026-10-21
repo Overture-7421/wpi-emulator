@@ -6,7 +6,6 @@
 // Not to be confused with device signals (devices/signals.h) or HUD keys (presentation, not per tick).
 
 #include <string>
-#include <string_view>
 
 #include "wpiemu/sdk/config/property_schema.h"
 
@@ -18,11 +17,5 @@ struct GameValueInfo {
     std::string description;
     PropertyUnit unit = PropertyUnit::None;
 };
-
-// A plugin owns the values whose id starts with its id + '.'.
-inline bool ownsGameValue(std::string_view pluginId, std::string_view valueId) {
-    return !pluginId.empty() && valueId.size() > pluginId.size() + 1 && valueId.compare(0, pluginId.size(), pluginId) == 0 &&
-           valueId[pluginId.size()] == '.';
-}
 
 }  // namespace wpiemu::sdk

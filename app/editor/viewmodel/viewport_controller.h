@@ -17,6 +17,7 @@
 #include "common/orbit_camera.h"
 #include "model/scene_theme.h"
 #include "model/transform_access.h"
+#include "ui/scene_support.h"
 #include "viewmodel/editor_controller.h"
 #include "viewmodel/gizmo_math.h"
 #include "viewmodel/scene_model.h"
@@ -54,8 +55,8 @@ public:
 
     // ---- QML-facing ----
     QObject* sceneModelObject() { return &scene_; }
-    QVector3D cameraPosition() const { return SceneModel::toQt(camera_.position()); }
-    QQuaternion cameraRotation() const { return SceneModel::toQt(camera_.rotation()); }
+    QVector3D cameraPosition() const { return ui::toQt(camera_.position()); }
+    QQuaternion cameraRotation() const { return ui::toQt(camera_.rotation()); }
     qreal fieldOfView() const { return static_cast<qreal>(camera_.fovDeg); }
     QVariantList gizmoHandles() const { return gizmo_; }
     QVariantList selectionEdges() const { return edges_; }

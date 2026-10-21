@@ -2,11 +2,11 @@
 
 #include <QCoreApplication>
 #include <QDir>
-#include <QElapsedTimer>
 #include <QFile>
 #include <QSet>
 #include <QTemporaryDir>
 
+#include <chrono>
 #include <functional>
 #include <map>
 #include <memory>
@@ -14,19 +14,16 @@
 #include "common/app_services.h"
 #include "common/demo_runtime_host.h"
 #include "common/key_value_store.h"
+#include "common/robot_basics.h"
 #include "common/system_probe.h"
+#include "wpiemu/sdk/testing/wait.h"
 
 namespace wpiemu::app::testing {
 
 // Runs the event loop until `done()` or the timeout; true when `done()` became true.
 inline bool waitFor(const std::function<bool()>& done, int timeoutMs = 8000) {
-    QElapsedTimer timer;
-    timer.start();
-    while (!done()) {
-        if (timer.elapsed() > timeoutMs) return false;
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-    }
-    return true;
+    return sdk::testing::waitUntil(done, std::chrono::milliseconds(timeoutMs), std::chrono::milliseconds::zero(),
+                                   [] { QCoreApplication::processEvents(QEventLoop::AllEvents, 20); });
 }
 
 inline void writeFile(const QString& path, const QByteArray& content) {
@@ -136,5 +133,16 @@ struct TestEnvironment {
         if (withWrapper) probe->files.insert(QDir::cleanPath(project.path() + "/gradlew"));
     }
 };
+
+// The robot model the wizard builds for an inspected project from its starting values for `drivetrainKind`.
+inline sdk::RobotConfig defaultRobotConfig(const AppServices& services, const ProjectInspection& inspection,
+                                           const std::string& drivetrainKind = sdk::drivetrain_kind::kSwerve) {
+    return buildRobotConfig(defaultBasicsFor(drivetrainKind), services.buildContext(inspection));
+}
+
+// The same for the project that is open in `services`.
+inline sdk::RobotConfig defaultRobotConfig(AppServices& services) {
+    return defaultRobotConfig(services, services.session().inspection());
+}
 
 }  // namespace wpiemu::app::testing

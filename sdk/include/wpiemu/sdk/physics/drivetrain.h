@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -44,7 +45,7 @@ inline WheelCommand wheelCommandFromHub(const IActuatorReader& hub, const WheelS
     }
     cmd.driveMotors = count;
     cmd.driveVoltageV = cmd.driveMotorVoltagesV[0];
-    const MotorOutput steer = hub.motorOutput({slot_owner::kDrivetrain, wheel.name + ".steer"});
+    const MotorOutput steer = hub.motorOutput({slot_owner::kDrivetrain, steerSlotName(wheel.name)});
     cmd.steerVoltageV = steer.valid ? steer.voltageV : 0.0;
     return cmd;
 }
@@ -89,8 +90,8 @@ class IDrivetrain {
 public:
     virtual std::string_view kind() const = 0;
     virtual const DrivetrainSpec& spec() const = 0;
-    // Motors ("<wheel>.drive[N]" / "<wheel>.steer") and optional azimuth position sensor
-    // ("<wheel>.steerEncoder"), owner = slot_owner::kDrivetrain.
+    // Motors ("<wheel>.drive[N]" / steerSlotName) and optional azimuth position sensor (steerEncoderSlotName),
+    // owner = slot_owner::kDrivetrain. Must equal DrivetrainInfo::slotSpecs for this spec.
     virtual std::vector<SlotSpec> slotSpecs() const = 0;
 
     // commands.size() == spec().wheels.size(), same order.
@@ -106,7 +107,53 @@ public:
 struct DrivetrainInfo {
     std::string displayName;
     std::string description;
+    // The slots a drivetrain of this kind declares for `spec`. Pure (no world or body needed), so the validator and the
+    // editor can ask the registry; it must match IDrivetrain::slotSpecs() of the instance built from the same spec. Null =
+    // the traction convention (tractionSlotSpecs with steering).
+    std::function<std::vector<SlotSpec>(const DrivetrainSpec&)> slotSpecs;
 };
+
+// The slots of a drivetrain whose wheels are driven by one or more motors each: "<wheel>.drive[N]" (the first required)
+// and, when `steerable`, "<wheel>.steer" (required) and "<wheel>.steerEncoder" for every steered wheel.
+inline std::vector<SlotSpec> tractionSlotSpecs(const DrivetrainSpec& spec, bool steerable) {
+    std::vector<SlotSpec> out;
+    for (const WheelSpec& w : spec.wheels) {
+        for (int i = 0; i < std::clamp(w.driveMotorCount, 1, kMaxMotorsPerAxis); ++i) {
+            SlotSpec drive;
+            drive.name = driveSlotName(w.name, i);
+            drive.label = w.name + " drive" + (i > 0 ? " " + std::to_string(i + 1) : std::string());
+            drive.type = SlotType::Motor;
+            drive.required = i == 0;
+            drive.description = i == 0 ? "Motor controller driving wheel '" + w.name + "'."
+                                       : "Additional motor controller on the gearbox of wheel '" + w.name + "'.";
+            drive.countKey = w.name + ".driveMotorCount";
+            drive.ordinal = i + 1;
+            out.push_back(std::move(drive));
+        }
+        if (steerable && isSteered(w)) {
+            SlotSpec steer;
+            steer.name = steerSlotName(w.name);
+            steer.label = w.name + " steer";
+            steer.type = SlotType::Motor;
+            steer.description = "Motor controller steering module '" + w.name + "'.";
+            out.push_back(std::move(steer));
+            SlotSpec encoder;
+            encoder.name = steerEncoderSlotName(w.name);
+            encoder.label = w.name + " steer encoder";
+            encoder.type = SlotType::PositionSensor;
+            encoder.required = false;
+            encoder.description = "Azimuth encoder of module '" + w.name + "'.";
+            out.push_back(std::move(encoder));
+        }
+    }
+    return out;
+}
+
+// The slots `spec` declares for its kind: the registered callback, else the traction convention (also for an unknown kind,
+// which the validator reports separately).
+inline std::vector<SlotSpec> drivetrainSlotSpecs(const DrivetrainInfo* info, const DrivetrainSpec& spec) {
+    return info != nullptr && info->slotSpecs ? info->slotSpecs(spec) : tractionSlotSpecs(spec, true);
+}
 
 // "swerve", "tank", "mecanum", ... Add a drivetrain type = register a factory.
 class DrivetrainRegistry : public Registry<DrivetrainInfo, IDrivetrain, const DrivetrainBuildArgs&> {

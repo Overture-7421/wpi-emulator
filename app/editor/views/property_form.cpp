@@ -5,25 +5,20 @@
 #include <QLabel>
 #include <QScrollArea>
 #include <QScopedValueRollback>
-#include <QTimer>
 #include <QVBoxLayout>
 
 #include "model/tr.h"
+#include "ui/qt_text.h"
+#include "ui/widget_support.h"
 
 namespace wpiemu::app::editor {
 
 namespace {
 
-QString qs(const std::string& s) { return QString::fromStdString(s); }
+using ui::qs;
 
 QLabel* subheading(const QString& text, QWidget* parent) {
-    auto* l = new QLabel(text.toUpper(), parent);
-    QFont f = l->font();
-    f.setBold(true);
-    f.setPointSizeF(f.pointSizeF() * 0.8);
-    f.setLetterSpacing(QFont::PercentageSpacing, 108);
-    l->setFont(f);
-    l->setEnabled(false);
+    QLabel* l = ui::headingLabel(text, parent);
     l->setContentsMargins(0, 6, 0, 0);
     return l;
 }
@@ -172,8 +167,7 @@ bool PropertyFormWidget::focusField(const QString& key) {
                 break;
             }
         QWidget* container = r.container;
-        container->setStyleSheet(QStringLiteral("background: rgba(255, 190, 0, 70); border-radius: 4px;"));
-        QTimer::singleShot(1400, container, [container] { container->setStyleSheet(QString()); });
+        ui::flashWidget(container, QStringLiteral("background: rgba(255, 190, 0, 70); border-radius: 4px;"));
         return true;
     }
     return false;

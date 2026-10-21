@@ -5,7 +5,7 @@
 //
 //   frame = u8 wireFormat | u16 messageType | body
 //
-// Evolution rules (match sdk/ipc/messages.h): fields are appended at the END of a message or
+// Evolution rules (match sdk/ipc/protocol_rules.h): fields are appended at the END of a message or
 // record; a decoder defaults absent trailing fields (older peer) and ignores unread trailing bytes
 // (newer peer). Nested records (DeviceDescriptor, SignalSpec, JoystickState) are length-prefixed so
 // they can grow too. Decoding is bounds-checked and allocation-limited: it never trusts a length.

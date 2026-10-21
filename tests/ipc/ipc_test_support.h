@@ -1,7 +1,7 @@
 #pragma once
 
-// Shared helpers for the ipc tests: transport "links" over every transport kind, a scripted fake
-// extension (HALSim side, LockstepFollower) and an emulator-side driver (LockstepWindow).
+// Shared helpers for the ipc tests: transport "links" over every transport kind, the fake extension (HALSim side) on a driver
+// thread and an emulator-side driver (LockstepWindow).
 
 #include <atomic>
 #include <chrono>
@@ -20,6 +20,8 @@
 #include "wpiemu/ipc/in_process.h"
 #include "wpiemu/ipc/local_ipc.h"
 #include "wpiemu/sdk/ipc/lockstep.h"
+#include "wpiemu/sdk/testing/fake_extension.h"
+#include "wpiemu/sdk/testing/wait.h"
 
 namespace wpiemu::ipc::testing {
 
@@ -83,117 +85,62 @@ inline std::shared_ptr<const proto::IMessageCodec> codec() { return std::make_sh
 
 // ---- extension side -------------------------------------------------------------------------------------
 
-class FakeExtension {
+// The shared protocol double on a driver thread: it says Hello at once and answers every sample doubled until it leaves
+// lock-step (Stop, Goodbye, a dropped connection) or is stopped. Counters and the identity it adopted are readable
+// from the test thread.
+class FakeExtension : public sdk::testing::FakeExtension {
 public:
-    enum class Act { Answer, Ignore, Disconnect, AnswerStalled };
-    using SensorHook = std::function<Act(const proto::SensorFrame&, FakeExtension&)>;
+    using SensorHook = std::function<Reply(const proto::SensorFrame&, FakeExtension&)>;
 
     FakeExtension(std::unique_ptr<proto::ITransport> transport, SensorHook hook = {}, std::uint32_t proposedWatchdogMs = 0)
-        : channel_(std::move(transport), codec()), hook_(std::move(hook)), proposedWatchdogMs_(proposedWatchdogMs) {
-        thread_ = std::thread([this] { run(); });
+        : sdk::testing::FakeExtension(std::move(transport), codec()), hook_(std::move(hook)) {
+        leaveOnStop = true;
+        onFrame = [this](const proto::SensorFrame& sf, sdk::testing::FakeExtension&) {
+            const Reply decided = hook_ ? hook_(sf, *this) : Reply::Answer;
+            outputs.clear();
+            for (const sdk::SignalSample& s : sf.samples) outputs.push_back({s.device, s.signal, s.value * 2.0});
+            return decided;
+        };
+        thread_ = std::thread([this, proposedWatchdogMs] { run(proposedWatchdogMs); });
     }
     ~FakeExtension() { stop(); }
 
     void stop() {
         stop_ = true;
-        channel_.close();
+        ch.close();
         if (thread_.joinable()) thread_.join();
     }
 
     // Extension-thread API for hooks.
-    proto::MessageChannel& channel() { return channel_; }
-    proto::LockstepFollower& follower() { return follower_; }
+    proto::MessageChannel& channel() { return ch; }
 
     bool waitHandshaken(std::chrono::milliseconds timeout) const {
-        const auto end = std::chrono::steady_clock::now() + timeout;
-        while (!handshaken_ && !handshakeFailed_ && std::chrono::steady_clock::now() < end) std::this_thread::sleep_for(1ms);
+        sdk::testing::waitUntil([&] { return handshaken_ || finished_; }, timeout, 1ms);
         return handshaken_;
     }
 
-    std::atomic<int> stepped{0};
-    std::atomic<int> droppedSensor{0};
-    std::atomic<int> droppedDs{0};
-    std::atomic<int> acceptedDs{0};
-    std::atomic<int> controls{0};
     std::atomic<std::uint64_t> epoch{0};
     std::atomic<std::uint32_t> watchdogMs{0};
 
 private:
-    void run() {
-        runBody();
-        channel_.close();  // the extension leaving lock-step drops the connection
+    void run(std::uint32_t proposedWatchdogMs) {
+        hello(proposedWatchdogMs);
+        while (!stop_ && !disconnected) {
+            pump(20ms);
+            epoch = follower.runEpoch();
+            if (!helloAck) continue;
+            watchdogMs = helloAck->watchdogTimeoutMs;
+            if (!helloAck->accepted) break;
+            handshaken_ = true;
+        }
+        ch.close();  // the extension leaving lock-step drops the connection
+        finished_ = true;
     }
 
-    void runBody() {
-        proto::Hello hello;
-        hello.language = proto::RobotLanguage::Cpp;
-        hello.programName = "fake-robot";
-        hello.proposedWatchdogMs = proposedWatchdogMs_;
-        auto ack = performClientHandshake(channel_, hello, 5000ms);
-        if (!ack) {
-            handshakeFailed_ = true;
-            return;
-        }
-        follower_.begin(ack.value().sessionId, ack.value().runEpoch);
-        epoch = follower_.runEpoch();
-        watchdogMs = ack.value().watchdogTimeoutMs;
-        handshaken_ = true;
-
-        while (!stop_) {
-            proto::Message m;
-            auto got = receiveSkippingUnknown(channel_, m, 20ms);
-            if (!got) return;  // disconnected
-            if (!got.value()) continue;
-            if (!handle(m)) return;
-            epoch = follower_.runEpoch();
-        }
-    }
-
-    bool handle(const proto::Message& m) {
-        if (const auto* sf = std::get_if<proto::SensorFrame>(&m)) {
-            const proto::FollowerAction action = follower_.onSensorFrame(*sf);
-            if (action == proto::FollowerAction::Drop) {
-                ++droppedSensor;
-                return true;
-            }
-            if (action == proto::FollowerAction::ProtocolError)
-                return channel_.send(follower_.makeAck(*sf, proto::TickResult::ProtocolError)).ok();
-            Act act = hook_ ? hook_(*sf, *this) : Act::Answer;
-            if (act == Act::Disconnect) {
-                channel_.close();
-                return false;
-            }
-            if (act == Act::Ignore) return true;
-            proto::ActuatorFrame af =
-                follower_.makeAck(*sf, act == Act::Answer ? proto::TickResult::Completed : proto::TickResult::RobotStalled);
-            for (const sdk::SignalSample& s : sf->samples) af.samples.push_back({s.device, s.signal, s.value * 2.0});
-            ++stepped;
-            return channel_.send(af).ok();
-        }
-        if (const auto* ctl = std::get_if<proto::SimControl>(&m)) {
-            ++controls;
-            const proto::ControlDecision d = follower_.onControl(*ctl);
-            if (d.sendAck && !channel_.send(d.ack).ok()) return false;
-            return !(d.apply && ctl->command == proto::SimCommand::Stop);
-        }
-        if (const auto* ds = std::get_if<proto::DsState>(&m)) {
-            if (proto::classifyFrame(ds->sessionId, ds->runEpoch, follower_.sessionId(), follower_.runEpoch()) ==
-                proto::FrameDisposition::Accept)
-                ++acceptedDs;
-            else
-                ++droppedDs;
-            return true;
-        }
-        return !std::holds_alternative<proto::Goodbye>(m);
-    }
-
-    proto::MessageChannel channel_;
-    proto::LockstepFollower follower_;
     SensorHook hook_;
-    std::uint32_t proposedWatchdogMs_;
     std::atomic<bool> stop_{false};
     std::atomic<bool> handshaken_{false};
-    std::atomic<bool> handshakeFailed_{false};
+    std::atomic<bool> finished_{false};
     std::thread thread_;
 };
 

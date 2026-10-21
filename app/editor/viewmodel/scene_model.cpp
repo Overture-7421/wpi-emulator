@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "ui/scene_support.h"
+
 namespace wpiemu::app::editor {
 
 void SceneModel::setContent(const SceneContent& content, const QColor& accent) {
@@ -54,17 +56,10 @@ QVariant SceneModel::data(const QModelIndex& index, int role) const {
     const SceneItem& it = items_[static_cast<std::size_t>(index.row())];
     switch (role) {
         case IdRole: return QString::fromStdString(it.id);
-        case SourceRole: return it.shape == ItemShape::Box ? QStringLiteral("#Cube") : QStringLiteral("#Cylinder");
-        case PosRole: return toQt(it.world.position);
-        case RotRole: {
-            QQuaternion q = toQt(it.world.rotation);
-            // Qt Quick 3D's #Cylinder has its axis on Y; SDK cylinders use local Z.
-            if (it.shape == ItemShape::Cylinder) q = q * QQuaternion::fromAxisAndAngle(1.f, 0.f, 0.f, 90.f);
-            return q;
-        }
-        case SclRole:
-            return it.shape == ItemShape::Box ? QVector3D(it.size.x / 100.f, it.size.y / 100.f, it.size.z / 100.f)
-                                              : QVector3D(it.size.x / 100.f, it.size.z / 100.f, it.size.y / 100.f);
+        case SourceRole: return it.shape == sdk::PrimitiveKind::Box ? QStringLiteral("#Cube") : QStringLiteral("#Cylinder");
+        case PosRole: return ui::toQt(it.world.position);
+        case RotRole: return ui::meshRotation(it.shape, it.world.rotation);
+        case SclRole: return ui::meshScale(it.shape, it.size);
         case ColorRole: return shade(it);
         case OpacityRole: return static_cast<double>(it.opacity);
         case PickableRole: return it.pickable;

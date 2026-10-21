@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include "wpiemu/core/config/config_validator.h"
+#include "wpiemu/core/launcher/output_level.h"
 #include "wpiemu/core/launcher/project_inspector.h"
 #include "wpiemu/core/physics/box3d_world.h"
 #include "wpiemu/core/runtime/physics_wiring.h"
@@ -56,7 +57,7 @@ fs::path pickJdkHome(const Options& options, int wpilibYear) {
     std::optional<launcher::WpilibInstall> install;
     if (!options.wpilibHome.empty()) install = launcher::wpilibInstallAt(options.wpilibHome, wpilibYear);
     else if (wpilibYear > 0) install = launcher::findWpilibInstall(wpilibYear, {});
-    const std::optional<std::string> javaHomeEnv = core::config::systemEnv()("JAVA_HOME");
+    const std::optional<std::string> javaHomeEnv = sdk::readEnvironment("JAVA_HOME");
     for (const launcher::JdkSource source : launcher::kJdkSources) {
         switch (source) {
             case launcher::JdkSource::Setting:
@@ -80,7 +81,7 @@ fs::path pickJdkHome(const Options& options, int wpilibYear) {
 
 class RobotSession::LogQueue {
 public:
-    void add(LogEntry entry) {
+    void add(SessionLogEntry entry) {
         std::lock_guard lock(mutex_);
         if (entry.stream != LogStream::Emulator) {
             tail_.push_back(entry.text);
@@ -92,13 +93,13 @@ public:
             ++dropped_;
         }
     }
-    std::vector<LogEntry> take(std::size_t max) {
+    std::vector<SessionLogEntry> take(std::size_t max) {
         std::lock_guard lock(mutex_);
-        std::vector<LogEntry> out;
+        std::vector<SessionLogEntry> out;
         const std::size_t n = std::min(max, queue_.size());
         out.reserve(n + 1);
         if (dropped_ > 0) {
-            LogEntry note;
+            SessionLogEntry note;
             note.timestampMs = wallMs();
             note.level = LogLevel::Warn;
             note.stream = LogStream::Emulator;
@@ -122,7 +123,7 @@ public:
 
 private:
     mutable std::mutex mutex_;
-    std::deque<LogEntry> queue_;
+    std::deque<SessionLogEntry> queue_;
     std::deque<std::string> tail_;
     std::size_t dropped_ = 0;
 };
@@ -131,10 +132,10 @@ class RobotSession::OutputSink final : public launcher::ILogSink {
 public:
     explicit OutputSink(LogQueue& queue) : queue_(queue) {}
     void line(launcher::OutputStream stream, std::string_view text) override {
-        LogEntry e;
+        SessionLogEntry e;
         e.timestampMs = wallMs();
         e.stream = stream == launcher::OutputStream::Stderr ? LogStream::Stderr : LogStream::Stdout;
-        e.level = stream == launcher::OutputStream::Stderr ? LogLevel::Warn : LogLevel::Info;
+        e.level = launcher::classifyOutputLine(stream, text);
         e.source = stream == launcher::OutputStream::Stderr ? "robot.stderr" : "robot";
         e.text = std::string(text);
         queue_.add(std::move(e));
@@ -149,7 +150,7 @@ public:
     explicit QueueLogger(LogQueue& queue) : queue_(queue) {}
     void log(LogLevel level, std::string_view category, std::string_view message) override {
         if (level == LogLevel::Trace) return;
-        LogEntry e;
+        SessionLogEntry e;
         e.timestampMs = wallMs();
         e.level = level;
         e.stream = LogStream::Emulator;
@@ -254,7 +255,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     self->issues_ = loaded.value().issues;
     RobotConfig cfg = std::move(loaded.value().config);
     if (!loaded.value().valid()) {
-        if (options.mode == Mode::Run)
+        if (options.mode == SessionMode::Run)
             return makeError(ErrorCode::InvalidState, "The robot configuration has errors that must be fixed before the robot can run:" +
                                                           describeIssues(self->issues_, 5));
         log.warn("config", "the robot configuration has errors; discovery runs anyway:" + describeIssues(self->issues_, 5));
@@ -275,7 +276,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     // ---- simulation session ----
     const std::shared_ptr<const FieldDescription> field = describeField(module);
     auto built = buildSession(reg, cfg, log, module, field.get());
-    if (!built && options.mode == Mode::Armed) {
+    if (!built && options.mode == SessionMode::Armed) {
         // An armed session only needs the device hub until the simulation starts: fall back to the bare chassis when the full model cannot be built.
         log.warn("session", "the robot model could not be built (" + built.error().message + "); discovering with an empty model");
         RobotConfig bare = cfg;
@@ -301,7 +302,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     runtime::RunnerOptions ro;
     ro.timeScale = options.timeScale;
     ro.startPaused = options.startPaused;
-    ro.discoveryOnly = options.mode == Mode::Armed;
+    ro.discoveryOnly = options.mode == SessionMode::Armed;
     ro.awaitProgramStart = true;
     ro.preferredWatchdogMs = options.watchdogMs;
     // The inspection is read-only and optional: without it PhotonVision cameras use the extension's default version.
@@ -322,14 +323,14 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     req.javaHome = pickJdkHome(options, cfg.project.wpilibYear);
     req.gradleOffline = options.gradleOffline;
     req.extraGradleArgs = options.extraGradleArgs;
-    req.extraEnv["WPIEMU_LIVE_DISCOVERY"] = options.preStartPolling ? "1" : "0";
+    req.extraEnv[sdk::env_names::kLiveDiscovery] = options.preStartPolling ? "1" : "0";
     for (const auto& [k, v] : options.extraEnv) req.extraEnv[k] = v;
     fs::create_directories(req.scratchDir, ec);
 
     self->launcher_ = std::make_unique<launcher::RobotLauncher>(launcher::systemProcessFactory(), *reg.json, log);
     self->startedAt_ = std::chrono::steady_clock::now();
     if (Status s = self->launcher_->launch(req, *self->sink_); !s) return makeError(s.error().code, "The robot could not be launched: " + s.error().message);
-    log.info("session", std::string(options.mode == Mode::Armed ? "launching the robot (armed)" : "starting the robot") + " (" + req.language + ", " +
+    log.info("session", std::string(options.mode == SessionMode::Armed ? "launching the robot (armed)" : "starting the robot") + " (" + req.language + ", " +
                             (req.mode == launcher::LaunchMode::GradleInitScript ? "gradle simulate task" : "simulateExternal direct launch") + ")");
     self->status_.process = ProcessState::Starting;
     self->status_.link = LinkState::Connecting;
@@ -341,7 +342,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
 
 std::string RobotSession::outputTail() const { return logs_->tail(); }
 
-std::vector<LogEntry> RobotSession::takeLogs(std::size_t maxEntries) { return logs_->take(maxEntries); }
+std::vector<SessionLogEntry> RobotSession::takeLogs(std::size_t maxEntries) { return logs_->take(maxEntries); }
 
 void RobotSession::fail(ProcessState process, LinkState link, std::string detail) {
     status_.process = process;

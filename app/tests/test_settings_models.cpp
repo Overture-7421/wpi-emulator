@@ -5,6 +5,7 @@
 
 #include "common/app_settings.h"
 #include "common/key_value_store.h"
+#include "common/project_path.h"
 #include "common/project_prefs.h"
 #include "common/recent_projects.h"
 #include "common/unit_system.h"
@@ -96,6 +97,36 @@ TEST_CASE("recent projects are most-recent-first, unique and capped") {
     recent.clear();
     CHECK(recent.paths().isEmpty());
     CHECK(changes > 0);
+}
+
+TEST_CASE("project path identity is lexical, absolute and case-folded only where the platform is case-insensitive") {
+    QTemporaryDir root;
+    const QString base = QDir::cleanPath(root.path());
+    CHECK(normalizedProjectPath(base + QStringLiteral("/a/./b/../p1/")) == base + QStringLiteral("/a/p1"));
+    CHECK(normalizedProjectPath(QStringLiteral("rel/dir")) == QDir::cleanPath(QDir::currentPath() + QStringLiteral("/rel/dir")));
+    CHECK(sameProjectPath(base + QStringLiteral("/p1"), normalizedProjectPath(base + QStringLiteral("/x/../p1"))));
+    CHECK_FALSE(sameProjectPath(base + QStringLiteral("/p1"), base + QStringLiteral("/p2")));
+    const QString upper = base + QStringLiteral("/P1");
+    const QString lower = base + QStringLiteral("/p1");
+#ifdef Q_OS_WIN
+    CHECK(sameProjectPath(upper, lower));
+    CHECK(projectPathKeyText(upper) == projectPathKeyText(lower));
+    CHECK(projectPathKeyText(upper) == normalizedProjectPath(upper).toLower());
+#else
+    CHECK_FALSE(sameProjectPath(upper, lower));
+    CHECK(projectPathKeyText(upper) != projectPathKeyText(lower));
+    CHECK(projectPathKeyText(upper) == normalizedProjectPath(upper));
+#endif
+}
+
+TEST_CASE("project prefs keys do not depend on how the same folder was spelled") {
+    MemoryKeyValueStore store;
+    ProjectPrefsStore prefs(store);
+    QTemporaryDir dir;
+    QDir().mkpath(dir.filePath(QStringLiteral("p1")));
+    prefs.save(dir.filePath(QStringLiteral("p1")), ProjectPrefs{sdk::Alliance::Blue, 3});
+    CHECK(prefs.load(dir.filePath(QStringLiteral("x/../p1/"))).alliance == sdk::Alliance::Blue);
+    CHECK(prefs.load(dir.filePath(QStringLiteral("x/../p1/"))).station == 3);
 }
 
 TEST_CASE("project prefs are stored per project") {

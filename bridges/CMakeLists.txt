@@ -1,8 +1,3 @@
-if(WPIEMU_BUILD_TESTS)
-    # The root enables testing only after its subdirectories; bridges/vision registers a CTest of its own.
-    enable_testing()
-endif()
-
 add_subdirectory(hal)
 add_subdirectory(vendor)
 add_subdirectory(vision)

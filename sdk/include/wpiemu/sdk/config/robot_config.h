@@ -28,6 +28,16 @@
 
 namespace wpiemu::sdk {
 
+namespace detail {
+// The entry of `items` whose `id` is `id`, or nullptr; const-ness follows the container.
+template <class Items>
+auto* findById(Items& items, std::string_view id) {
+    for (auto& item : items)
+        if (item.id == id) return &item;
+    return static_cast<decltype(&*items.begin())>(nullptr);
+}
+}  // namespace detail
+
 // Version of the CORE schema (chassis/drivetrain/mechanisms/mappings). The SDK stays at version 1 until
 // release (docs/CONTRIBUTING.md): files with any other version are rejected, there is no migration.
 inline constexpr int kRobotConfigSchemaVersion = 1;
@@ -112,31 +122,15 @@ struct RobotConfig {
     // Game-fed sensors (config/sensor.h): a game value in, a device reading out.
     std::vector<SensorConfig> sensors;
 
-    const SensorConfig* findSensor(std::string_view id) const {
-        for (const auto& s : sensors)
-            if (s.id == id) return &s;
-        return nullptr;
-    }
-    const StartPosition* findStartPosition(std::string_view id) const {
-        for (const auto& p : startPositions)
-            if (p.id == id) return &p;
-        return nullptr;
-    }
-    const CameraConfig* findCamera(std::string_view id) const {
-        for (const auto& c : cameras)
-            if (c.id == id) return &c;
-        return nullptr;
-    }
-    const MechanismConfig* findMechanism(std::string_view id) const {
-        for (const auto& m : mechanisms)
-            if (m.id == id) return &m;
-        return nullptr;
-    }
-    const ZoneConfig* findZone(std::string_view id) const {
-        for (const auto& z : zones)
-            if (z.id == id) return &z;
-        return nullptr;
-    }
+    // Lookups by id; the non-const overloads let editors mutate the entry in place.
+    const SensorConfig* findSensor(std::string_view id) const { return detail::findById(sensors, id); }
+    const StartPosition* findStartPosition(std::string_view id) const { return detail::findById(startPositions, id); }
+    const CameraConfig* findCamera(std::string_view id) const { return detail::findById(cameras, id); }
+    CameraConfig* findCamera(std::string_view id) { return detail::findById(cameras, id); }
+    const MechanismConfig* findMechanism(std::string_view id) const { return detail::findById(mechanisms, id); }
+    MechanismConfig* findMechanism(std::string_view id) { return detail::findById(mechanisms, id); }
+    const ZoneConfig* findZone(std::string_view id) const { return detail::findById(zones, id); }
+    ZoneConfig* findZone(std::string_view id) { return detail::findById(zones, id); }
     const PluginSection* findPlugin(std::string_view id) const {
         const auto it = plugins.find(id);
         return it == plugins.end() ? nullptr : &it->second;

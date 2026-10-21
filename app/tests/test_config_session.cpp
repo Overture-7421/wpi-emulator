@@ -3,18 +3,11 @@
 #include <QFile>
 #include <QFileInfo>
 
-#include "common/robot_basics.h"
 #include "test_support.h"
 
 using namespace wpiemu::app;
 using namespace wpiemu::app::testing;
 namespace sdk = wpiemu::sdk;
-
-namespace {
-sdk::RobotConfig sampleConfig(AppServices& s, const ProjectInspection& in) {
-    return buildRobotConfig(RobotBasics{}, s.buildContext(in));
-}
-}  // namespace
 
 TEST_CASE("session opens a project, reports the missing setup and records it as recent") {
     TestEnvironment env;
@@ -57,7 +50,7 @@ TEST_CASE("commit writes the app-data copy and the project export, and reopening
     ProjectSession& session = env.services->session();
     REQUIRE(session.open(project.path()).ok());
 
-    sdk::RobotConfig config = sampleConfig(*env.services, session.inspection());
+    sdk::RobotConfig config = defaultRobotConfig(*env.services);
     config.name = "Saved robot";
     const SaveOutcome outcome = session.commit(config, ProjectPrefs{sdk::Alliance::Blue, 1});
     CHECK(outcome.ok());
@@ -81,7 +74,7 @@ TEST_CASE("the project export alone is enough to reopen (shared via version cont
     TestProject project;
     ProjectSession& session = env.services->session();
     REQUIRE(session.open(project.path()).ok());
-    const SaveOutcome outcome = session.commit(sampleConfig(*env.services, session.inspection()), ProjectPrefs{});
+    const SaveOutcome outcome = session.commit(defaultRobotConfig(*env.services), ProjectPrefs{});
     REQUIRE(outcome.ok());
     REQUIRE(session.close().ok());
     REQUIRE(QFile::remove(outcome.appDataPath));
@@ -94,7 +87,7 @@ TEST_CASE("an unreadable stored model asks for setup instead of crashing") {
     TestProject project;
     ProjectSession& session = env.services->session();
     REQUIRE(session.open(project.path()).ok());
-    const SaveOutcome outcome = session.commit(sampleConfig(*env.services, session.inspection()), ProjectPrefs{});
+    const SaveOutcome outcome = session.commit(defaultRobotConfig(*env.services), ProjectPrefs{});
     REQUIRE(outcome.ok());
     REQUIRE(session.close().ok());
     writeFile(outcome.appDataPath, "{ this is not json");
@@ -111,7 +104,7 @@ TEST_CASE("read-only project folder only downgrades the save to a warning") {
     REQUIRE(session.open(project.path()).ok());
     // a regular file where the export folder should be makes the export impossible
     writeFile(project.path() + "/.wpiemu", "blocker");
-    const SaveOutcome outcome = session.commit(sampleConfig(*env.services, session.inspection()), ProjectPrefs{});
+    const SaveOutcome outcome = session.commit(defaultRobotConfig(*env.services), ProjectPrefs{});
     CHECK(outcome.ok());
     CHECK(outcome.hasWarning());
     CHECK(!outcome.exportError.isEmpty());

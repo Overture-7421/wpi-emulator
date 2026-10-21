@@ -3,7 +3,7 @@
 #include "wpiemu/sdk/core/sim_context.h"
 #include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/game/null_objects.h"
-#include "wpiemu/sdk/ipc/messages.h"
+#include "wpiemu/sdk/ipc/driver_station.h"
 #include "wpiemu/sdk/testing/fake_clock_logger.h"
 #include "wpiemu/sdk/testing/fake_device_hub.h"
 #include "wpiemu/sdk/testing/fake_mechanism_physics_coupling.h"

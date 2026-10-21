@@ -11,13 +11,14 @@
 #include "model/motion_links.h"
 #include "model/property_groups.h"
 #include "model/tr.h"
+#include "ui/qt_text.h"
 #include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::app::editor {
 
 namespace {
 
-QString qs(const std::string& s) { return QString::fromStdString(s); }
+using ui::qs;
 
 bool needsAttention(SlotState s) {
     return s == SlotState::Unmapped || s == SlotState::Incompatible || s == SlotState::AliasConflict;
@@ -225,7 +226,7 @@ std::unique_ptr<ProjectTreeModel::Node> ProjectTreeModel::makeWheelNode(const sd
     n.follower = om.followsAll;
     QStringList parts;
     // A wheel whose only slot is its drive motor shows that motor on the wheel row itself.
-    if (slots.size() == 1 && slots.front().spec.name == w.name + ".drive") {
+    if (slots.size() == 1 && slots.front().spec.name == sdk::driveSlotName(w.name, 0)) {
         const SlotInfo& s = slots.front();
         parts << (s.mapped ? mappedLabel(s) : (s.spec.required ? ETR("not mapped") : ETR("optional")));
         n.state = static_cast<int>(s.state);

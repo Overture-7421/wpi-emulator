@@ -9,9 +9,11 @@
 
 #include <cmath>
 
-#include "model/quat_utils.h"
 #include "model/tr.h"
+#include "ui/scene_support.h"
+#include "ui/widget_support.h"
 #include "wpiemu/sdk/config/value_codec.h"
+#include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::app::editor {
 
@@ -132,12 +134,12 @@ void ColorEditor::paint() {
     button_->setText(color_);
     button_->setStyleSheet(QStringLiteral("QPushButton { text-align: left; padding: 3px 8px; }"));
     QPixmap pm(16, 16);
-    pm.fill(c.isValid() ? c : QColor("#808080"));
+    pm.fill(c.isValid() ? c : ui::defaultColor());
     button_->setIcon(QIcon(pm));
 }
 
 void ColorEditor::setValue(const sdk::Value& value) {
-    color_ = QString::fromStdString(value.asString("#808080"));
+    color_ = QString::fromStdString(value.asString(sdk::kDefaultPrimitiveColor));
     paint();
 }
 
@@ -183,10 +185,10 @@ void VectorEditor::setValue(const sdk::Value& value) {
         quat_ = sdk::Quat{};
         sdk::fromValue(value, quat_);
         rotDirty_ = false;
-        const Euler e = toEuler(quat_);
-        spins_[0]->setValue(radToDegF(e.rollRad));
-        spins_[1]->setValue(radToDegF(e.pitchRad));
-        spins_[2]->setValue(radToDegF(e.yawRad));
+        const sdk::Euler e = quat_.toEuler();
+        spins_[0]->setValue(sdk::radToDegF(e.rollRad));
+        spins_[1]->setValue(sdk::radToDegF(e.pitchRad));
+        spins_[2]->setValue(sdk::radToDegF(e.yawRad));
         return;
     }
     sdk::Vec3 v;
@@ -199,9 +201,9 @@ void VectorEditor::setValue(const sdk::Value& value) {
 sdk::Value VectorEditor::value() const {
     if (rotation_) {
         if (!rotDirty_) return sdk::toValue(quat_);
-        const Euler e{degToRadF(static_cast<float>(spins_[0]->value())), degToRadF(static_cast<float>(spins_[1]->value())),
-                      degToRadF(static_cast<float>(spins_[2]->value()))};
-        return sdk::toValue(fromEuler(e));
+        const sdk::Euler e{sdk::degToRadF(static_cast<float>(spins_[0]->value())), sdk::degToRadF(static_cast<float>(spins_[1]->value())),
+                           sdk::degToRadF(static_cast<float>(spins_[2]->value()))};
+        return sdk::toValue(sdk::Quat::fromEuler(e));
     }
     return sdk::toValue(sdk::Vec3{static_cast<float>(fromDisplay(spins_[0]->value(), unit_, units_)),
                                   static_cast<float>(fromDisplay(spins_[1]->value(), unit_, units_)),
@@ -214,14 +216,7 @@ CompositeEditor::CompositeEditor(sdk::PropertyType type, sdk::PropertyUnit unit,
     l->setContentsMargins(0, 0, 0, 0);
     l->setSpacing(2);
     const QStringList xyz{QStringLiteral("X"), QStringLiteral("Y"), QStringLiteral("Z")};
-    auto caption = [&](const QString& text) {
-        auto* c = new QLabel(text, this);
-        c->setEnabled(false);
-        QFont f = c->font();
-        f.setPointSizeF(f.pointSizeF() * 0.85);
-        c->setFont(f);
-        l->addWidget(c);
-    };
+    auto caption = [&](const QString& text) { l->addWidget(ui::captionLabel(text, this)); };
     caption(ETR("Position"));
     position_ = new VectorEditor(unit == sdk::PropertyUnit::None ? sdk::PropertyUnit::Meters : unit, units, xyz, this);
     l->addWidget(position_);
