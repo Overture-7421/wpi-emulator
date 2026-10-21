@@ -50,6 +50,8 @@ add_subdirectory(plugins)
 
 if(WPIEMU_BUILD_APP)
     add_subdirectory(app)
+else()
+    add_subdirectory(app/host)
 endif()
 
 if(WPIEMU_BUILD_TESTS)
