@@ -50,6 +50,9 @@ devices, the mappings, the drive, the steering and the pivot angle with expectat
 editor config. Set `WPIEMU_E2E_PROJECT` to run another robot with the same CAN layout. With `WPIEMU_E2E=1`,
 the `app.ui_tests` suite also runs the Qt shell against this project.
 Missing opt-in/project/wrapper/extension/JDK prerequisites can return **Skipped** (77), not a pass.
+The Windows wrapper build and real-HAL check have been exercised: forward driving, near-zero
+steering/yaw, 16 mapped devices and the intake pivot reaching 114° all pass. This is not
+Linux/macOS execution evidence.
 Retain FIRST/WPILib notices and helper attributions; the shared notice is [WPILib-License.md](../WPILib-License.md).
 
 Next: [User guide](../../docs/USER_GUIDE.md) for the wizard and the Driver Station.

@@ -215,6 +215,15 @@ public class Vision {
     SmartDashboard.putBoolean("Vision/photon/connected", photonConnected);
 
     Pose2d fused = getEstimatedPose();
+    System.out.printf(
+        java.util.Locale.ROOT,
+        "VISION drivetrain leftMeters=%.3f rightMeters=%.3f fusedX=%.3f fusedY=%.3f"
+            + " fusedYawDeg=%.2f%n",
+        m_leftMeters,
+        m_rightMeters,
+        fused.getX(),
+        fused.getY(),
+        fused.getRotation().getDegrees());
     SmartDashboard.putNumber("Vision/fused/x", fused.getX());
     SmartDashboard.putNumber("Vision/fused/y", fused.getY());
     SmartDashboard.putNumber("Vision/fused/yawDeg", fused.getRotation().getDegrees());

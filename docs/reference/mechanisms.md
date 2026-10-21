@@ -5,6 +5,9 @@ and sensor feedback without coupling a mechanism to a device vendor.
 **Prerequisites:** [Runtime](runtime.md) for loading and ownership;
 [Contributing](../CONTRIBUTING.md) for units and conventions.
 
+For an implementation walkthrough, use the [mechanism guide](../guides/mechanisms.md).
+For adding physical motor data rather than a mechanism class, use [Motors](../guides/motors.md).
+
 ## Template and property contract
 
 [MechanismTemplateInfo](../../sdk/include/wpiemu/sdk/mechanisms/mechanism.h) describes

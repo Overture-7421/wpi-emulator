@@ -168,6 +168,12 @@ void Vision::PublishAndPrint(units::second_t now) {
   SmartDashboard::PutBoolean("Vision/photon/connected", photonConnected);
 
   const frc::Pose2d fused = GetEstimatedPose();
+  std::printf(
+      "VISION drivetrain leftMeters=%.3f rightMeters=%.3f fusedX=%.3f fusedY=%.3f "
+      "fusedYawDeg=%.2f\n",
+      m_left.value(), m_right.value(), fused.X().value(), fused.Y().value(),
+      fused.Rotation().Degrees().value());
+  std::fflush(stdout);
   SmartDashboard::PutNumber("Vision/fused/x", fused.X().value());
   SmartDashboard::PutNumber("Vision/fused/y", fused.Y().value());
   SmartDashboard::PutNumber("Vision/fused/yawDeg", fused.Rotation().Degrees().value());

@@ -136,6 +136,42 @@ TEST_CASE("vendor rules: TalonFX: tree grouped into one device with canonical si
     CHECK(rig.backend.get(t.motor, "motorVoltage") == doctest::Approx(7.5));
 }
 
+TEST_CASE("vendor rules: Phoenix Java and C++ motor roots bind outputs with their rotor children") {
+    bool cppMotorName = false;
+    SUBCASE("Java motor root") {}
+    SUBCASE("C++ motor root") {
+        cppMotorName = true;
+    }
+    for (const char* model : {"Talon FX", "Talon FXS"}) {
+        CAPTURE(model);
+        Rig rig(ctre::phoenix6Rules());
+        const auto tree = addTalonFx(rig.backend, 1, model, cppMotorName);
+        rig.start();
+        rig.bridge->poll();
+        REQUIRE(rig.host.announced.size() == 1);
+        const auto& [id, announcement] = *rig.host.announced.begin();
+        CHECK(announcement.descriptor.bus == wpiemu::sdk::kBusUnknown);
+        CHECK(announcement.descriptor.nativeName ==
+              std::string(cppMotorName ? "CANMotor: " : "CANMotor:") + model + " (v6)[1]");
+        REQUIRE(rig.host.signalSpec(id, sg::kMotorVoltage) != nullptr);
+        REQUIRE(rig.host.signalSpec(id, sg::kDutyCycle) != nullptr);
+        REQUIRE(rig.host.signalSpec(id, sg::kRotorPosition) != nullptr);
+        rig.backend.poke(tree.motor, "motorVoltage", 3.0);
+        rig.backend.poke(tree.motor, "dutyCycle", 0.25);
+        std::vector<SignalSample> outputs;
+        rig.bridge->collectOutputs(outputs);
+        CHECK(outputOf(outputs, rig.host, id, sg::kMotorVoltage) == doctest::Approx(3.0));
+        CHECK(outputOf(outputs, rig.host, id, sg::kDutyCycle) == doctest::Approx(0.25));
+        const std::vector<SignalSample> inputs{
+            {id, rig.host.signalIndex(id, sg::kRotorPosition), 2.0},
+            {id, rig.host.signalIndex(id, sg::kSupplyVoltage), 11.4},
+        };
+        rig.bridge->applyInputs(inputs);
+        CHECK(rig.backend.get(tree.rotor, "rawPositionInput") == doctest::Approx(2.0));
+        CHECK(rig.backend.get(tree.motor, "supplyVoltage") == doctest::Approx(11.4));
+    }
+}
+
 TEST_CASE("vendor rules: TalonFX loopback echoes motor voltage to rotor velocity") {
     Rig rig(ctre::phoenix6Rules());
     const auto t = addTalonFx(rig.backend, 9);

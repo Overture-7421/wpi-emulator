@@ -29,7 +29,7 @@ For Ninja/MSVC, keep environment setup and all commands in the **same `cmd.exe` 
 Change `Professional` to your installed edition:
 ```powershell
 $env:QT_ROOT_DIR = "C:\Qt\6.8.3\msvc2022_64"
-cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat" >nul && cmake --preset windows-ninja && cmake --build --preset windows-ninja-release --parallel && ctest --preset windows-ninja-release'
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat" >nul && cmake --preset windows-ninja -DWPIEMU_WARNINGS_AS_ERRORS=ON && cmake --build --preset windows-ninja-release --parallel && ctest --preset windows-ninja-release'
 ```
 
 ## Linux and macOS
@@ -61,7 +61,7 @@ Pass these to configuration, not to `cmake --build`.
 | `WPIEMU_BUILD_UI_DEMOS` | ON | Build editor/run-view visual demos |
 | `WPIEMU_WPILIB_ROOT` | auto | Maven cache, year directory or extracted artifacts; also read from the environment |
 | `WPIEMU_WPILIB_VERSION` | the `wpilib` [pin](releasing.md#version-pins) | WPILib artifact version |
-| `WPIEMU_WPILIB_DOWNLOAD` | OFF | Fetch missing WPILib artifacts from frcmaven |
+| `WPIEMU_WPILIB_DOWNLOAD` | OFF; presets ON | Fetch missing WPILib artifacts; on Windows, [may also copy a local JDK](../halsim_ext/cmake/WpiEmuWpilib.cmake) into the public WPILib year folder, omitting bundled VC++ runtime DLLs |
 | `WPIEMU_RUNVIEW_SDL2` | ON | SDL2 gamepads when available; keyboard input works without SDL2 |
 | `WPIEMU_RUNVIEW_FETCH_SDL2` | ON | Fetch SDL2 if no system package is found; OFF avoids that download |
 
@@ -76,6 +76,7 @@ python tools\check_boundaries.py
 python tools\check_boundaries.py --self-test
 python tools\check_docs.py
 python tools\check_versions.py
+python -B -m unittest discover -s tools\tests -v
 python tools\check_wpilib_configure.py --generator "Visual Studio 17 2022" --architecture x64
 ```
 The last command checks WPILib discovery offline with synthetic artifacts, no build; on Linux/macOS pass only `--generator Ninja`.
@@ -106,7 +107,6 @@ Set `JAVA_HOME` to the WPILib JDK if discovery fails; `WPIEMU_E2E_VERBOSE=1` sho
 Without opt-in/prerequisites these tests report skipped; a skip does not verify integration.
 
 ## Linux in Docker
-
 With Docker and PowerShell, [the Linux tool](../tools/docker/linux/run.ps1) builds/tests, installs and
 packages in a container. The checkout is read-only; incremental output stays in `wpiemu-linux-build`.
 ```powershell

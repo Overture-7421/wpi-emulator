@@ -2,7 +2,8 @@
 
 **Read this when:** implementing season rules or connecting a robot mechanism to game behavior.
 **Prerequisites:** [Architecture](../ARCHITECTURE.md), [runtime](runtime.md), and [mechanisms](mechanisms.md).
-The [extension recipes](../extending.md) own all add-a-season, zone-kind, and game-value procedures.
+The [game-year guide](../guides/game-years.md) owns the add-a-season procedure;
+[game interactions](../guides/game-interactions.md) covers zones and game-fed sensors.
 
 ## Module contract and registration
 

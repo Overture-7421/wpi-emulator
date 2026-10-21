@@ -3,6 +3,10 @@
 Read this when locating installer and bundle inputs.
 Prerequisites: [release preparation](../docs/releasing.md).
 
+This directory supplies deployable app resources, not robot toolchains or Wiki output.
+For packaging failures, follow [Releasing](../docs/releasing.md); for simulation failures,
+use [Maintenance](../docs/guides/maintenance.md).
+
 - [icons](icons): original artwork, generated PNG/ICO/ICNS assets and their generator.
 - [windows](windows): executable icon/version resource template.
 - [macos](macos): bundle metadata, entitlements, signing, notarization and minimum-OS checks.

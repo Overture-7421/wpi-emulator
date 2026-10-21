@@ -7,6 +7,31 @@ WPI Emulator runs unmodified robot code in a separate process. The desktop app o
 world; a HALSim extension inside the robot process exchanges device data with it. Game plugins
 supply season-specific worlds and rules without teaching the core or UI about a season.
 
+```text
+Desktop app                            Robot process (unmodified WPILib project)
+  UI -> queued commands                  robot code -> HAL / vendor simulation
+          |                                           |
+  SessionRunner <------- local IPC -------> HALSim extension
+          |                                           |
+  SimulationSession                         built-in device / vision bridges
+    mechanisms -> drivetrain -> physics
+    game plugin -> sensors -> snapshot
+```
+
+The arrows show data flow, not permission to link modules. A motor controller bridge translates
+robot-facing signals; a mechanism or drivetrain models the physical load. Their shared SDK types
+do not make them the same responsibility.
+
+## Terms used here
+
+| Term | Meaning |
+|---|---|
+| HAL | WPILib's hardware abstraction layer, used by robot code instead of real hardware during simulation |
+| HALSim | Simulation APIs for observing and writing the robot process's HAL state |
+| SimDevice | A named tree of simulated device values exposed by WPILib or a vendor library |
+| IPC | Inter-process communication: the messages exchanged between the app and robot process |
+| SDK | The shared C++ interfaces and value types used by emulator modules |
+
 ## Modules and dependencies
 
 This is the dependency rule for first-party production code. An owner may use its own implementation
@@ -28,8 +53,8 @@ and the dependencies listed below; tests may combine modules to exercise their c
 | `app/contract`, `app/ui`, `app/editor`, `app/runview` | SDK and Qt only (run view also the host contract; both page libraries also `app/ui`) | Host seam, shared Qt support (3D scene, text, small widgets) and the page libraries |
 
 There is no Qt in SDK, core, IPC, bridges or plugins. Box3D and robot-process backend headers never
-leak into the SDK. The physics adapter is separately built and linked by core; public physics
-contracts remain SDK interfaces.
+leak into the SDK. The physics adapter is compiled into `wpiemu_core`, with Box3D linked privately;
+public physics contracts remain SDK interfaces.
 
 The only built-in aggregation seams are:
 
@@ -117,7 +142,8 @@ the [extension/IPC contract](reference/extension-ipc.md).
 
 ## Extension points
 
-Use the [extension recipes](extending.md), not special cases in unrelated modules:
+Use the [extension decision guide](extending.md) and its linked walkthroughs, not special cases
+in unrelated modules:
 
 - [Season plugins](extending.md#add-a-season-plugin), [zones](extending.md#add-a-zone-kind) and
   [game-fed sensors](extending.md#add-a-game-fed-sensor) contribute game content through SDK metadata.

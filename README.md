@@ -29,12 +29,14 @@ before relying on a device, season or platform.
 
 ## Documentation
 
-Users: [USER_GUIDE](docs/USER_GUIDE.md). Maintainers: [releasing](docs/releasing.md).
+Start with the [documentation home](docs/README.md) for task-based reading paths, extension guides,
+working examples, and subsystem references. The same reviewed content is published to the
+[GitHub Wiki](https://github.com/Overture-7421/wpi-emulator/wiki) when Wiki publishing is configured;
+repository Markdown remains authoritative.
 
-Developer reading path: [Architecture](docs/ARCHITECTURE.md) →
-[Building](docs/BUILDING.md) → [Contributing](docs/CONTRIBUTING.md) →
-[Extending](docs/extending.md) → [reference manuals](docs/reference/runtime.md).
-The reference set covers runtime, mechanisms, physics, extension IPC, bridges, game plugins and the app.
-Rationale belongs in the [decision index](docs/decisions/README.md).
+Users: [User guide](docs/USER_GUIDE.md). Developers: [Building](docs/BUILDING.md),
+[Architecture](docs/ARCHITECTURE.md), and [extension guides](docs/extending.md).
+Maintainers: [troubleshooting](docs/guides/maintenance.md) and [releasing](docs/releasing.md).
+Design rationale belongs in the [decision index](docs/decisions/README.md).
 
 Next: [Architecture](docs/ARCHITECTURE.md), or [the user guide](docs/USER_GUIDE.md) to run a robot.

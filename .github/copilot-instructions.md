@@ -6,10 +6,11 @@ Season behavior belongs in game plugins, never core or UI.
 
 ## Read before changing code
 
+- [Documentation home](../docs/README.md): reading paths and task guides.
 - [Architecture](../docs/ARCHITECTURE.md): dependency graph, ownership and tick order.
 - [Building](../docs/BUILDING.md): prerequisites, presets, focused tests and opt-in integration.
 - [Contributing](../docs/CONTRIBUTING.md): errors, units, formatting, tests and documentation policy.
-- [Extending](../docs/extending.md): the single home for add-a-feature recipes.
+- [Extending](../docs/extending.md): choose a seam, then follow its owning `docs/guides` recipe.
 - [Runtime](../docs/reference/runtime.md), [mechanisms](../docs/reference/mechanisms.md),
   [physics](../docs/reference/physics.md), [extension/IPC](../docs/reference/extension-ipc.md),
   [bridges](../docs/reference/bridges.md), [games](../docs/reference/game-plugin.md) and
@@ -49,6 +50,6 @@ Boundary and documentation checks are `python tools\check_boundaries.py`,
 its `--self-test`, and `python tools\check_docs.py`; `python tools\check_versions.py` verifies
 the version pins that `versions.json` owns.
 
-Keep one home per fact: recipes in Extending, contracts in the owning reference,
+Keep one home per fact: recipes in the guide linked from Extending, contracts in the owning reference,
 user behavior in the User guide, rationale in decisions. Link instead of copying.
 Verify named APIs, paths and commands; keep links current and remove obsolete material.

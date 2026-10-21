@@ -5,6 +5,9 @@ loads without leaking an engine dependency into models.
 **Prerequisites:** [Architecture](../ARCHITECTURE.md) for tick ownership;
 [Mechanisms](mechanisms.md) for plants and modeled motion axes.
 
+Use [Simulation strategies](../guides/simulation-strategies.md) for drivetrain, tire, and backend
+implementation steps; this page defines the physical contract they must preserve.
+
 ## Rigid-body boundary
 
 [IPhysicsWorld](../../sdk/include/wpiemu/sdk/physics/physics_world.h) is the engine-neutral

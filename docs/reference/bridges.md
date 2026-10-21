@@ -3,8 +3,8 @@
 Read this when extending a device adapter or camera encoder, or diagnosing robot-facing feedback.
 Prerequisites: [Architecture](../ARCHITECTURE.md) for module boundaries and
 [Extension and IPC](extension-ipc.md) for clock-thread, epoch, and recovery rules.
-All add-a-bridge/vendor recipes live in [Extending](../extending.md); camera setup is in the
-[User guide](../USER_GUIDE.md).
+Follow [Devices](../guides/devices.md) for bridge/vendor procedures or
+[Vision](../guides/vision.md) for camera encoders; camera setup is in the [User guide](../USER_GUIDE.md).
 
 ## Registration and device contract
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check that every version pin the build cannot read from versions.json repeats its value.
 
-versions.json is the single home of the repository's version pins (docs/BUILDING.md#version-pins). CMake and the
+versions.json is the single home of the repository's version pins (docs/releasing.md#version-pins). CMake and the
 Python tools read it directly; the workflows, the Docker image, the AppImage script and the documentation cannot, so
 each copy listed in PINS is matched against it and any disagreement is reported as file:line.
 Run:  check_versions.py [--root DIR]

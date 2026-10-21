@@ -2,8 +2,9 @@
 
 Read this when changing robot-process integration, a transport, or lock-step lifecycle behavior.
 Prerequisites: [Architecture](../ARCHITECTURE.md) for process ownership and the global tick pipeline,
-and [Building](../BUILDING.md) for HAL dependencies and test commands. Extension recipes belong in
-[Extending](../extending.md); robot-project setup belongs in the [User guide](../USER_GUIDE.md).
+and [Building](../BUILDING.md) for HAL dependencies and test commands. Transport/message recipes belong
+in [Simulation strategies](../guides/simulation-strategies.md); robot-project setup belongs in the
+[User guide](../USER_GUIDE.md).
 
 ## Injection and initialization
 

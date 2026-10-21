@@ -1,14 +1,20 @@
 // End-to-end test of the vision feature (opt-in, label `e2e`):
 //
-//   copy of samples/vision_robot/<java|cpp> (an ordinary WPILib project that reads a Limelight and a PhotonVision
-//   camera) -> gradle simulate with the real halsim_wpiemu -> IPC -> real SessionRunner with two simulated cameras
+//   copy of samples/vision_robot/<java|cpp> (an ordinary WPILib project that reads a Limelight and
+//   a PhotonVision camera) -> gradle simulate with the real halsim_wpiemu -> IPC -> real
+//   SessionRunner with two simulated cameras
 //   -> the robot's own `VISION ...` console lines are compared with the emulator's ground truth.
 //
 //   $env:WPIEMU_E2E = "1"; $env:WPIEMU_E2E_VISION_PROJECT = "<repo>\samples\vision_robot\java"
 //   ctest -C Release -R e2e.vision -V
 //
-// Skipped (exit code 77, CTest SKIP_RETURN_CODE) with a clear message when WPIEMU_E2E is not set or a prerequisite is
-// missing. WPIEMU_E2E_KEEP / WPIEMU_E2E_VERBOSE behave as in e2e_test.cpp; WPIEMU_E2E_VISION_LANG = java (default) | cpp.
+// Skipped (exit code 77, CTest SKIP_RETURN_CODE) with a clear message when WPIEMU_E2E is not set or
+// a prerequisite is missing. WPIEMU_E2E_KEEP / WPIEMU_E2E_VERBOSE behave as in e2e_test.cpp;
+// WPIEMU_E2E_VISION_LANG = java (default) | cpp. Optional desktop compiler selection for this test
+// only:
+//   $env:WPIEMU_E2E_VISION_GRADLE_INIT = (Resolve-Path build\desktop-toolchain.init.gradle).Path
+// The existing script is passed as Gradle's --init-script; leave unset for normal toolchain
+// discovery.
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -129,6 +135,7 @@ struct Collected {
     std::vector<std::string> console;
     std::vector<Fields> limelight;
     std::vector<Fields> photon;
+    std::vector<Fields> drivetrain;
 };
 
 void drain(app::host::RobotSession& s, Collected& out, bool verbose) {
@@ -136,6 +143,8 @@ void drain(app::host::RobotSession& s, Collected& out, bool verbose) {
         if (const auto f = parseVision(e.text)) {
             if ((*f).at("camera") == "limelight") out.limelight.push_back(*f);
             else if ((*f).at("camera") == "photon") out.photon.push_back(*f);
+            else if ((*f).at("camera") == "drivetrain")
+                out.drivetrain.push_back(*f);
         }
     }
 }
@@ -162,6 +171,11 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     o.extensionLibrary = WPIEMU_E2E_EXTENSION;
     o.scratchDir = scratch.root / "scratch";
     o.launchMode = core::launcher::LaunchMode::GradleInitScript;
+    if (const auto init = env("WPIEMU_E2E_VISION_GRADLE_INIT"); !init.empty()) {
+        REQUIRE_MESSAGE(fs::is_regular_file(init),
+                        "WPIEMU_E2E_VISION_GRADLE_INIT must name a Gradle init script");
+        o.extraGradleArgs = {"--init-script", init};
+    }
     o.handshakeTimeout = 10min;
     o.mode = sdk::SessionMode::Run;
     o.timeScale = 1.0;
@@ -254,8 +268,18 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     CHECK(flag(got.photon.back(), "connected"));
     CHECK(snap->cameras().size() == 2);
 
-    // The Java sample drives forward in autonomous (the Phoenix 6 C++ drive path is unverified, docs/reference/bridges.md: only vision is checked there).
-    if (language != "cpp") CHECK(truth.x > 2.0 + 0.5);
+    // Both ordinary robot projects must drive, not merely read stationary cameras.
+    CHECK(truth.x > 2.0 + 0.5);
+    REQUIRE(got.drivetrain.size() >= 8);
+    const Fields& drive = got.drivetrain.back();
+    std::printf("e2e:   drivetrain left %.3f m, right %.3f m, fused (%.3f, %.3f) yaw %.1f deg\n",
+                num(drive, "leftMeters"), num(drive, "rightMeters"), num(drive, "fusedX"),
+                num(drive, "fusedY"), num(drive, "fusedYawDeg"));
+    CHECK(num(drive, "leftMeters") > 0.5);
+    CHECK(num(drive, "rightMeters") > 0.5);
+    CHECK(std::abs(num(drive, "fusedX") - truth.x) < 0.04);
+    CHECK(std::abs(num(drive, "fusedY") - truth.y) < 0.04);
+    CHECK(std::abs(sdk::wrapAngleDeg(num(drive, "fusedYawDeg") - truthYawDeg)) < 2.0);
     // ---- tags were seen by the robot code wherever the emulator says a camera saw them ------------------------
     const bool llSaw = std::any_of(got.limelight.begin(), got.limelight.end(), [](const Fields& f) { return flag(f, "tv") && num(f, "tags") >= 1; });
     const bool phSaw = std::any_of(got.photon.begin(), got.photon.end(), [](const Fields& f) { return flag(f, "hasTargets") && num(f, "tags") >= 1; });

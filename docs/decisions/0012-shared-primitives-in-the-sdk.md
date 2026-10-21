@@ -16,8 +16,8 @@ and edge behavior.
 What several modules need and can express with the standard library is defined once in the
 header-only SDK and derived from there. Test doubles and helpers that need no platform call
 live in the SDK testing headers; ones that do, such as the environment guard, live in
-`tests/support`; Qt code shared by the page libraries lives in `app/ui`. Wire structs list their
-fields once and one description drives both encode and decode. Validation rules take a small
+`tests/support`; Qt code shared by the page libraries lives in `app/ui`. Each wire struct's field
+order is described once in the codec, driving both encode and decode. Validation rules take a small
 catalog interface so core and the editor run the same code.
 
 Policy stays local: queue and thread primitives are shared, but watchdogs, drop rules and

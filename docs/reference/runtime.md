@@ -5,6 +5,9 @@ robot feedback and reset placement.
 **Prerequisites:** [Architecture](../ARCHITECTURE.md) for ownership and tick order;
 [Contributing](../CONTRIBUTING.md) for conventions.
 
+Follow [Editor properties](../guides/editor-properties.md) when adding a model field, or
+[Maintenance](../guides/maintenance.md) when tracing a load, launch, or feedback failure.
+
 ## The robot.json contract
 
 [RobotConfig](../../sdk/include/wpiemu/sdk/config/robot_config.h) defines the model;
@@ -138,7 +141,9 @@ the simulation target, then starts its JVM/native binary. Neither edits sources/
 adds nothing of its own. The JDK Gradle runs with is chosen in one order,
 [`kJdkSources`](../../core/runtime/include/wpiemu/core/launcher/project_inspector.h): the Settings JDK folder,
 the project season's WPILib JDK (all-users or this-user install, or the Settings WPILib folder), `JAVA_HOME`, then
-`java` on `PATH`. Both the session launch and the wizard's toolchain check follow it. The host requests protocol Stop
+`java` on `PATH`. An inherited `JAVA_HOME` without a Java executable is ignored; an explicitly chosen
+Settings folder is not silently replaced. Both the session launch and the wizard's toolchain check
+follow the shared source order. The host requests protocol Stop
 before cleanup; cancellation remains latched through startup and escalates to whole-tree kill
 after the grace deadline. Destruction joins the worker and cleans up the process tree.
 Robot console lines get a level from [`classifyOutputLine`](../../core/runtime/include/wpiemu/core/launcher/output_level.h)

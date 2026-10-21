@@ -10,6 +10,10 @@ The launcher injects a HALSim extension through Gradle without rewriting your ro
 build configuration or vendordeps. Normal Gradle outputs/caches and the editor's separate
 `.wpiemu\robot.json` configuration are still written.
 
+For a first run, the [swerve](../samples/swerve_robot/README.md) and
+[vision](../samples/vision_robot/README.md) samples provide known device layouts and expected output.
+To change the emulator rather than a robot model, start with the [developer guides](extending.md).
+
 ## Install and launch
 
 Windows: run the NSIS installer, or extract the **whole** portable ZIP. The installed executable
@@ -179,6 +183,8 @@ reopening the last project. The folders apply to the next toolchain check and ro
 empty, Gradle runs with WPILib's JDK for the project's season (all-users or this-user install),
 then `JAVA_HOME`, then `java` on `PATH`. The physics-rate setting
 is copied into the model when the wizard finishes: rerun setup to apply a changed rate.
+An inherited `JAVA_HOME` that has no Java executable is ignored; an explicitly selected JDK
+folder must be corrected in Settings rather than silently falling back to another JDK.
 
 Edits autosave; **Save** / `Ctrl+S` saves immediately. Closing, switching projects or rerunning
 setup first saves pending edits. An app-data save failure cancels that transition and leaves
@@ -211,7 +217,9 @@ but the bundled extension targets WPILib 2026; another year is not a compatibili
 There is no suspension model. Field geometry and game rules are approximations.
 HAL and CTRE bridges are supplied, not universal vendor support: REV motor controllers lack
 a vendor bridge, and Phoenix 5 rules are not characterized against the real library.
-C++ Phoenix 6 driving in the sample remains unverified.
+The [vision sample checks](../samples/vision_robot/README.md#end-to-end-check) exercise Phoenix 6
+driving, wheel feedback and camera results in both Java and C++ on Windows; this does not characterize
+every Phoenix model or control mode.
 Vision models AprilTags using geometry, latency and optional noise, not image processing:
 no occlusion, lens distortion, lighting, object detection or video streams; reported robot pose uses truth plus noise.
 
@@ -219,4 +227,4 @@ Windows is the locally exercised workflow. Linux/macOS source, presets and CI/pa
 but do not establish native robot-process HAL loading or interactive 3D validation on those platforms.
 Headless smoke tests are not visual tests; validate real sessions on the target platform.
 
-Next: [Building](BUILDING.md) for developer setup, or [runtime reference](reference/runtime.md) for file contracts.
+Next: [documentation home](README.md) for task guides, or [runtime](reference/runtime.md) for file contracts.

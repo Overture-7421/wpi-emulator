@@ -41,10 +41,11 @@ struct TalonFxTree {
     SimDeviceHandle motor, rotor, fwd, rev;
 };
 
-inline TalonFxTree addTalonFx(FakeSimBackend& b, int id, const char* model = "Talon FX") {
+inline TalonFxTree addTalonFx(FakeSimBackend& b, int id, const char* model = "Talon FX",
+                              bool cppMotorName = false) {
     const std::string base = std::string(model) + " (v6)[" + std::to_string(id) + "]";
     TalonFxTree t;
-    t.motor = b.addDevice("CANMotor:" + base,
+    t.motor = b.addDevice(std::string(cppMotorName ? "CANMotor: " : "CANMotor:") + base,
                           {{"supplyVoltage", kIn, SignalType::Double, 12.0},
                            {"dutyCycle", kOut},
                            {"motorVoltage", kOut},
