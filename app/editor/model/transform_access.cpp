@@ -60,13 +60,8 @@ std::optional<TransformTarget> readTransform(const sdk::RobotConfig& c, const Ed
             out.parentWorld = sel.owner == ops::kChassisOwner ? ops::chassisFrameWorld(c.chassis) : ops::mechanismRootWorld(c, catalog, sel.owner);
             t.local = p.local;
             t.canScale = true;
-            if (p.kind == sdk::PrimitiveKind::Box) {
-                t.size = p.sizeM;
-                t.sizeKind = SizeKind::Box;
-            } else {
-                t.size = Vec3{p.radiusM * 2.f, p.radiusM * 2.f, p.heightM};
-                t.sizeKind = SizeKind::Cylinder;
-            }
+            t.size = p.extentsM();
+            t.sizeKind = p.kind == sdk::PrimitiveKind::Box ? SizeKind::Box : SizeKind::Cylinder;
             return out;
         }
         case SelKind::Mechanism: {

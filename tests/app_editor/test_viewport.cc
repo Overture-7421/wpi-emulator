@@ -133,7 +133,7 @@ TEST_CASE("scene builder: placement follows the display frame (floor at z = 0)")
     CHECK(approx(hull->world.position.z, c.chassis.groundClearanceM + c.chassis.sizeM.z * 0.5f));
     const auto* wheel = scene.find("wheel:fl");
     CHECK(approx(wheel->world.position, {0.28f, 0.28f, 0.0508f}));
-    CHECK(wheel->shape == ItemShape::Cylinder);
+    CHECK(wheel->shape == sdk::PrimitiveKind::Cylinder);
     // The wheel axis (cylinder local Z) lies along the robot's Y axis.
     CHECK(approx(wheel->world.rotation.rotate({0.f, 0.f, 1.f}).y * wheel->world.rotation.rotate({0.f, 0.f, 1.f}).y, 1.f, 1e-3f));
     const auto* com = scene.find("com");

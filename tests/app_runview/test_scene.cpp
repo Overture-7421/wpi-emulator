@@ -77,7 +77,7 @@ TEST_CASE("rig places wheels from the physics contact points") {
     const ScenePart* tire = findPart(rig, "fl");
     REQUIRE(tire != nullptr);
     CHECK(near(tire->pose.position, {0.3f, 0.3f, 0.0508f - 0.2f}));
-    CHECK(tire->shape == PartShape::Cylinder);
+    CHECK(tire->shape == sdk::PrimitiveKind::Cylinder);
     // The cylinder axis (local Z) must point along the chassis Y axis (wheel axle) when steer = spin = 0.
     sdk::WheelSample straight = w;
     straight.steerAngleRad = 0.0;
@@ -338,7 +338,7 @@ TEST_CASE("part list model converts SDK primitives to Qt Quick 3D transforms") {
     box.color = "#ff0000";
     ScenePart cyl;
     cyl.name = "c";
-    cyl.shape = PartShape::Cylinder;
+    cyl.shape = sdk::PrimitiveKind::Cylinder;
     cyl.size = {0.2f, 0.2f, 0.5f};
     cyl.translucent = true;
     model.setParts({box, cyl});

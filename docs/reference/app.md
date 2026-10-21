@@ -12,9 +12,9 @@ Build and test commands belong to [Building](../BUILDING.md); controls belong to
 It owns the registries, persistence/model services, project session, and injected runtime host;
 `main()` passes it to the shell by reference. Built-in games enter through the plugin
 aggregator, not direct season dependencies. Inside `app/` the boundary checker also enforces the
-layering: the host contract and the page libraries (editor, run view) include and link only the
-SDK (and, for the run view, the contract) plus two shared Qt-free headers; `common`, `host`, `wizard`
-and `shell` compose them.
+layering: the host contract, the shared scene support and the page libraries (editor, run view) include
+and link only the SDK (the page libraries also `ui`, the run view also the contract) plus two shared Qt-free
+headers; `common`, `host`, `wizard` and `shell` compose them.
 
 [`IRuntimeHost`](../../app/contract/runtime_host.h) is the UI-thread seam for robot-process and
 link status, scene descriptions, immutable snapshots, logs, and run commands. It lives in the
@@ -181,13 +181,17 @@ rules belong in their renderer.
 Both viewports are thin QML renderers fed by C++ presentation objects. The owning CMake resource
 lists compile QML under `/wpiemu/editor` and `/wpiemu/runview`; load resource URLs rather than
 assuming a source checkout or working directory. Keep new assets in those resource lists.
+Scene plumbing both viewports need lives in the SDK+Qt `wpiemu_app_ui` target ([`app/ui`](../../app/ui)):
+SDK-to-Qt conversions, Qt Quick 3D's built-in mesh conventions, colour parsing and the `ZUpWorld` QML
+component under `/wpiemu/ui`. Add scene code there only when the editor and run view both use it.
 The widget modules disable AUTOUIC because
 `sdk/include/wpiemu/sdk/game/ui_descriptors.h` matches its generated-header pattern.
 
-Keep SDK NWU Z-up data unchanged in config, physics, and C++ scene models.
+Keep SDK NWU Z-up data unchanged in config, physics, and C++ scene models. The one conversion to
+Qt's Y-up scene is the -90-degree X rotation of [`ZUpWorld.qml`](../../app/ui/qml/ZUpWorld.qml), which
 [`Viewport3D.qml`](../../app/editor/qml/Viewport3D.qml) and
-[`RunScene.qml`](../../app/runview/qml/RunScene.qml) each apply one -90-degree X rotation at
-their `world` node to reach Qt's Y-up scene. Do not pre-convert persisted poses or convert again
+[`RunScene.qml`](../../app/runview/qml/RunScene.qml) use as the parent of all SDK-frame content; lights
+and other Y-up content stay outside it. Do not pre-convert persisted poses or convert again
 in an adapter. The editor's display floor origin is below the hull center, not at its COM.
 
 QML context objects must outlive the view using them. In particular, `RunPage` destroys its
@@ -200,7 +204,8 @@ to [Releasing](../releasing.md). Translation extraction must recognize editor `E
 ## Tests and visual checks
 
 [Shell/wizard tests](../../app/tests), [editor tests](../../tests/app_editor), and
-[run-view tests](../../tests/app_runview) exercise models, edit operations, adapters, and GUI smoke
+[run-view tests](../../tests/app_runview) (which also cover the shared `app/ui` helpers) exercise models,
+edit operations, adapters, and GUI smoke
 behavior. Their CTest suites are `app.ui_tests`, `app_editor.tests`, and `runview.ui_tests`;
 use [Building](../BUILDING.md) for invocation and environment setup.
 Editor test sources use `.cc` to stay outside the Qt-free `.cpp` test glob.

@@ -10,6 +10,7 @@
 #include <cmath>
 
 #include "model/tr.h"
+#include "ui/scene_support.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/units.h"
 
@@ -132,12 +133,12 @@ void ColorEditor::paint() {
     button_->setText(color_);
     button_->setStyleSheet(QStringLiteral("QPushButton { text-align: left; padding: 3px 8px; }"));
     QPixmap pm(16, 16);
-    pm.fill(c.isValid() ? c : QColor("#808080"));
+    pm.fill(c.isValid() ? c : ui::defaultColor());
     button_->setIcon(QIcon(pm));
 }
 
 void ColorEditor::setValue(const sdk::Value& value) {
-    color_ = QString::fromStdString(value.asString("#808080"));
+    color_ = QString::fromStdString(value.asString(sdk::kDefaultPrimitiveColor));
     paint();
 }
 

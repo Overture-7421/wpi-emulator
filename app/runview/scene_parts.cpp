@@ -37,13 +37,8 @@ ScenePart partFromPrimitive(const sdk::PrimitiveSpec& p) {
     part.name = p.name;
     part.pose = p.local;
     part.color = p.color;
-    if (p.kind == sdk::PrimitiveKind::Cylinder) {
-        part.shape = PartShape::Cylinder;
-        part.size = {p.radiusM * 2.f, p.radiusM * 2.f, p.heightM};
-    } else {
-        part.shape = PartShape::Box;
-        part.size = p.sizeM;
-    }
+    part.shape = p.kind;
+    part.size = p.extentsM();
     return part;
 }
 
@@ -88,7 +83,7 @@ void RobotRig::setConfig(std::shared_ptr<const sdk::RobotConfig> config) {
     for (const auto& w : config_->drivetrain.spec.wheels) {
         ScenePart tire;
         tire.name = w.name;
-        tire.shape = PartShape::Cylinder;
+        tire.shape = sdk::PrimitiveKind::Cylinder;
         tire.size = {w.radiusM * 2.f, w.radiusM * 2.f, w.widthM};
         tire.color = "#20242b";
         tire.pose.position = {w.positionM.x, w.positionM.y, w.positionM.z - ch.comHeightM};
@@ -446,7 +441,7 @@ FieldParts buildFieldParts(const sdk::FieldDescription* field) {
         p.pose = v.pose;
         p.color = v.color;
         if (v.kind == sdk::FieldVisual::Kind::Mesh) continue;  // mesh assets are not loaded yet; colliders still exist
-        p.shape = v.kind == sdk::FieldVisual::Kind::Cylinder ? PartShape::Cylinder : PartShape::Box;
+        p.shape = v.kind == sdk::FieldVisual::Kind::Cylinder ? sdk::PrimitiveKind::Cylinder : sdk::PrimitiveKind::Box;
         p.size = v.sizeM;
         const float ex = std::max(v.sizeM.x, v.sizeM.y) * 0.5f;
         minX = std::min(minX, v.pose.position.x - ex);

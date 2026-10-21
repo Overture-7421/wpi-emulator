@@ -1,8 +1,9 @@
 import QtQuick
 import QtQuick3D
+import "qrc:/wpiemu/ui/qml"
 
-// Live run-view scene. Everything below the "world" node is expressed in SDK coordinates (Z-up, NWU);
-// the node's -90 degree X rotation converts to Qt Quick 3D's Y-up space in this one place.
+// Live run-view scene. Everything inside the ZUpWorld node is expressed in SDK coordinates (Z-up, NWU); that node
+// converts to Qt Quick 3D's Y-up space, so no other place does.
 Item {
     id: root
 
@@ -18,10 +19,7 @@ Item {
             antialiasingQuality: SceneEnvironment.Medium
         }
 
-        Node {
-            id: world
-            eulerRotation.x: -90
-
+        ZUpWorld {
             PerspectiveCamera {
                 id: cam
                 position: scene.cameraPosition

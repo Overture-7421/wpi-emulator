@@ -1,5 +1,5 @@
 # Robot editor (UI stream "ui-editor"): EditorPage + IEditorBackend + a fake backend for tests/demos.
-# Static library linking only the SDK and Qt; the shell supplies the real IEditorBackend adapter.
+# Static library linking only the SDK, the shared app/ui scene support (SDK + Qt) and Qt; the shell supplies the real IEditorBackend adapter.
 # Layout: model/ (document, undo, pure edit ops), viewmodel/ (Qt item models, viewport controller),
 # views/ (widgets), qml/ (Qt Quick 3D viewport). Models/view-models never include views.
 # Build only this module with app/editor/standalone/CMakeLists.txt (see the comment in that file).
@@ -47,7 +47,7 @@ qt_add_resources(wpiemu_app_editor wpiemu_editor_qml
     FILES qml/Viewport3D.qml)
 target_include_directories(wpiemu_app_editor PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(wpiemu_app_editor
-    PUBLIC wpiemu_sdk Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::QuickWidgets Qt6::Quick3D)
+    PUBLIC wpiemu_sdk wpiemu_app_ui Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::QuickWidgets Qt6::Quick3D)
 wpiemu_target_defaults(wpiemu_app_editor)
 target_compile_definitions(wpiemu_app_editor PRIVATE QT_NO_KEYWORDS)
 

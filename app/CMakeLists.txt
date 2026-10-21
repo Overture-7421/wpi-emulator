@@ -6,6 +6,8 @@ option(WPIEMU_BUILD_UI_DEMOS "Build the standalone UI demo executables (wpiemu_e
 
 # The host seam every page and the shell share (SDK + Qt only); declared before the pages that link it.
 add_subdirectory(contract)
+# The Qt scene support both page libraries share (SDK + Qt only), declared before them for the same reason.
+add_subdirectory(ui)
 
 # Page libraries owned by the editor / run view streams; optional so the shell builds without them.
 foreach(_page editor runview)

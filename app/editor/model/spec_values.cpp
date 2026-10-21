@@ -344,7 +344,7 @@ PropertySchema primitiveSchema() {
     height.visibleWhenKey = "kind";
     height.visibleWhenEquals = "cylinder";
     s.properties.push_back(withRange(height, 0.001, 2.0, 0.005));
-    s.properties.push_back(makeSpec("color", "Colour", PropertyType::Color, PropertyUnit::None, "#808080", "Appearance"));
+    s.properties.push_back(makeSpec("color", "Colour", PropertyType::Color, PropertyUnit::None, sdk::kDefaultPrimitiveColor, "Appearance"));
     s.properties.push_back(makeSpec("collides", "Collides with the world", PropertyType::Bool, PropertyUnit::None, false, "Appearance",
                                     "Adds a collision shape to the owning body (bumpers, frame rails)."));
     auto mass = makeSpec("massKg", "Mass (informational)", PropertyType::Double, PropertyUnit::Kilograms, 0.0, "Appearance",

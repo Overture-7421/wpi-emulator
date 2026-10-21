@@ -5,8 +5,6 @@
 
 #include <QAbstractListModel>
 #include <QColor>
-#include <QQuaternion>
-#include <QVector3D>
 
 #include <vector>
 
@@ -41,9 +39,6 @@ public:
     int rowCount(const QModelIndex& parent = {}) const override { return parent.isValid() ? 0 : static_cast<int>(items_.size()); }
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     QHash<int, QByteArray> roleNames() const override;
-
-    static QVector3D toQt(const sdk::Vec3& v) { return {v.x, v.y, v.z}; }
-    static QQuaternion toQt(const sdk::Quat& q) { return {q.w, q.x, q.y, q.z}; }
 
 private:
     QColor shade(const SceneItem& item) const;

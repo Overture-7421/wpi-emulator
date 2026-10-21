@@ -15,6 +15,7 @@
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/byte_order.h"
 #include "wpiemu/sdk/core/environment.h"
+#include "wpiemu/sdk/core/geometry.h"
 #include "wpiemu/sdk/core/ids.h"
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/core/math.h"
@@ -130,6 +131,18 @@ TEST_CASE("rotationFromX takes +X onto any non-zero direction and defines the de
     CHECK(rotationFromX({0.f, 0.f, 0.f}) == Quat{});
     CHECK(rotationFromX({std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f}) == Quat{});
     CHECK(rotationFromX({std::numeric_limits<float>::infinity(), 0.f, 0.f}) == Quat{});
+}
+
+TEST_CASE("primitive extents are the box size or the cylinder diameter, diameter and height") {
+    PrimitiveSpec box;
+    box.sizeM = {0.2f, 0.3f, 0.4f};
+    CHECK(box.extentsM() == Vec3{0.2f, 0.3f, 0.4f});
+
+    PrimitiveSpec cylinder;
+    cylinder.kind = PrimitiveKind::Cylinder;
+    cylinder.radiusM = 0.05f;
+    cylinder.heightM = 0.7f;
+    CHECK(cylinder.extentsM() == Vec3{0.1f, 0.1f, 0.7f});
 }
 
 TEST_CASE("finite rejects NaN and infinity in any component of a vector, quaternion or pose") {

@@ -1,4 +1,4 @@
-# Builds ONLY the robot editor (+ its tests and the demo) against the SDK, without the rest of the
+# Builds ONLY the robot editor (+ its tests and the demo) against the SDK and app/ui, without the rest of the
 # tree (core, ipc, wizard, run view...). Handy for UI work and for CI jobs that only touch app/editor:
 #
 #   cmake -S app/editor/standalone -B build/ui-editor -G Ninja -DCMAKE_PREFIX_PATH=C:/Qt/6.8.3/msvc2022_64
@@ -48,4 +48,5 @@ if(WPIEMU_BUILD_TESTS)
     enable_testing()
 endif()
 
+add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../ui" ui)
 add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/.." editor)

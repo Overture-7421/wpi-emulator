@@ -7,21 +7,12 @@
 #include <cmath>
 #include <cstring>
 
+#include "ui/scene_support.h"
+
 namespace wpiemu::app::runview {
-namespace {
 
-constexpr float kUnit = 100.f;  // size of Qt Quick 3D's built-in #Cube / #Cylinder / #Sphere
-const QQuaternion kCylinderToZ = QQuaternion::fromAxisAndAngle(1.f, 0.f, 0.f, 90.f);
-
-QVector3D toQt(const sdk::Vec3& v) { return {v.x, v.y, v.z}; }
-QQuaternion toQt(const sdk::Quat& q) { return {q.w, q.x, q.y, q.z}; }
-
-}  // namespace
-
-QColor parseColor(const std::string& css, const QColor& fallback) {
-    const QColor c(QString::fromStdString(css));
-    return c.isValid() ? c : fallback;
-}
+using ui::parseColor;
+using ui::toQt;
 
 // ---- EntityInstancing --------------------------------------------------------------------------
 EntityInstancing::EntityInstancing(QObject* parent) : QQuick3DInstancing(nullptr) { setParent(parent); }
@@ -47,15 +38,10 @@ PartListModel::PartListModel(QObject* parent) : QAbstractListModel(parent) {}
 PartListModel::Item PartListModel::makeItem(const ScenePart& part) {
     Item it;
     it.name = QString::fromStdString(part.name);
-    it.shape = part.shape == PartShape::Cylinder ? 1 : 0;
+    it.shape = part.shape == sdk::PrimitiveKind::Cylinder ? 1 : 0;
     it.position = toQt(part.pose.position);
-    if (part.shape == PartShape::Cylinder) {
-        it.rotation = toQt(part.pose.rotation) * kCylinderToZ;
-        it.scale = {part.size.x / kUnit, part.size.z / kUnit, part.size.y / kUnit};
-    } else {
-        it.rotation = toQt(part.pose.rotation);
-        it.scale = {part.size.x / kUnit, part.size.y / kUnit, part.size.z / kUnit};
-    }
+    it.rotation = ui::meshRotation(part.shape, part.pose.rotation);
+    it.scale = ui::meshScale(part.shape, part.size);
     it.color = parseColor(part.color);
     if (part.highlighted) it.color = it.color.lighter(140);
     if (part.translucent) it.color.setAlphaF(part.opacity);
@@ -190,8 +176,8 @@ int EntityGroupModel::totalInstances() const {
 
 void EntityGroupModel::update(std::span<const sdk::EntityGroupSample> groups) {
     auto scaleOf = [](const sdk::EntityGroupSample& s) {
-        return s.shape == "box" ? QVector3D(s.halfExtentsM.x * 2.f, s.halfExtentsM.y * 2.f, s.halfExtentsM.z * 2.f) / kUnit
-                                : QVector3D(1, 1, 1) * (s.radiusM * 2.f / kUnit);
+        return s.shape == "box" ? ui::meshScale(sdk::PrimitiveKind::Box, s.halfExtentsM * 2.f)
+                                : QVector3D(1, 1, 1) * (s.radiusM * 2.f / ui::kBuiltinMeshSize);
     };
     bool structural = groups.size() != groups_.size();
     for (std::size_t i = 0; !structural && i < groups.size(); ++i)

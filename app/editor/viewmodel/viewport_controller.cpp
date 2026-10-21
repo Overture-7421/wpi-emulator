@@ -18,7 +18,40 @@ using sdk::Vec3;
 
 namespace {
 
-QVector3D q3(const Vec3& v) { return SceneModel::toQt(v); }
+// Floor, grid and world axes drawn under the robot (metres).
+constexpr float kFloorSizeM = 14.f;
+constexpr float kFloorThicknessM = 0.02f;
+constexpr float kFloorCenterZM = -0.011f;   // just below z = 0 so the grid lies on top
+constexpr int kGridHalfLines = 10;          // lines at -10..10 steps from the origin
+constexpr int kGridMajorEvery = 2;
+constexpr float kGridStepM = 0.5f;
+constexpr float kGridLengthM = 2.f * static_cast<float>(kGridHalfLines) * kGridStepM;
+constexpr float kGridMajorWidthM = 0.008f;
+constexpr float kGridMinorWidthM = 0.004f;
+constexpr float kGridLineHeightM = 0.002f;
+constexpr float kGridLineZM = 0.001f;
+constexpr float kAxisLengthM = 0.9f;
+constexpr float kAxisWidthM = 0.016f;
+constexpr float kAxisZM = 0.004f;
+
+// Selection outline, gizmo and drag limits. Gizmo proportions are fractions of its length, which is a fraction of the
+// camera distance so the gizmo keeps its on-screen size.
+constexpr float kOutlineWidthM = 0.006f;
+constexpr float kGizmoMinLengthM = 0.08f;
+constexpr float kGizmoCameraFraction = 0.16f;
+constexpr float kGizmoRebuildTolerance = 0.04f;
+constexpr float kMoveShaftEnd = 0.8f;
+constexpr float kMoveShaftWidth = 0.05f;
+constexpr float kMoveConeWidth = 0.17f;
+constexpr float kScaleStem = 0.35f;
+constexpr float kScaleStemWidth = 0.04f;
+constexpr float kScaleHandle = 0.13f;
+constexpr int kRotateSegments = 40;
+constexpr float kRotateRadius = 0.85f;
+constexpr float kRotateWidth = 0.035f;
+constexpr float kMinPartSizeM = 0.005f;
+constexpr float kFrameMinRadiusM = 0.25f;
+const QColor kGizmoActiveColor(255, 220, 80);
 
 float component(const Vec3& v, int axis) { return axis == 0 ? v.x : axis == 1 ? v.y : v.z; }
 
@@ -81,7 +114,7 @@ QVariantMap ViewportController::entry(const QString& source, const Vec3& center,
                                       const QColor& color, double opacity, const QString& pickId) const {
     QVariantMap m;
     m.insert(QStringLiteral("source3d"), source);
-    m.insert(QStringLiteral("pos"), q3(center));
+    m.insert(QStringLiteral("pos"), ui::toQt(center));
     m.insert(QStringLiteral("rot"), rotation);
     m.insert(QStringLiteral("scl"), scale);
     m.insert(QStringLiteral("tint"), color);
@@ -92,8 +125,8 @@ QVariantMap ViewportController::entry(const QString& source, const Vec3& center,
 
 QVariantMap ViewportController::boxEntry(const Vec3& center, const Quat& rotation, const Vec3& size, const QColor& color, double opacity,
                                          const QString& pickId) const {
-    return entry(QStringLiteral("#Cube"), center, SceneModel::toQt(rotation), QVector3D(size.x / 100.f, size.y / 100.f, size.z / 100.f), color,
-                 opacity, pickId);
+    return entry(QStringLiteral("#Cube"), center, ui::toQt(rotation), ui::meshScale(sdk::PrimitiveKind::Box, size), color, opacity,
+                 pickId);
 }
 
 QVariantMap ViewportController::lineEntry(const Vec3& a, const Vec3& b, float thickness, const QColor& color, double opacity,
@@ -101,32 +134,35 @@ QVariantMap ViewportController::lineEntry(const Vec3& a, const Vec3& b, float th
     return boxEntry((a + b) * 0.5f, rotationFromX(b - a), Vec3{sdk::length(b - a), thickness, thickness}, color, opacity, pickId);
 }
 
+// #Cylinder and #Cone have their axis on Y, so `scale` is (diameter, length, diameter) in mesh space.
 QVariantMap ViewportController::cylinderEntry(const Vec3& a, const Vec3& b, float diameter, const QColor& color, const QString& pickId) const {
     const float len = sdk::length(b - a);
-    const QQuaternion rot = QQuaternion::rotationTo(QVector3D(0.f, 1.f, 0.f), q3(sdk::normalized(b - a)));
-    return entry(QStringLiteral("#Cylinder"), (a + b) * 0.5f, rot, QVector3D(diameter / 100.f, len / 100.f, diameter / 100.f), color, 1.0, pickId);
+    const QQuaternion rot = QQuaternion::rotationTo(QVector3D(0.f, 1.f, 0.f), ui::toQt(sdk::normalized(b - a)));
+    return entry(QStringLiteral("#Cylinder"), (a + b) * 0.5f, rot, QVector3D(diameter, len, diameter) / ui::kBuiltinMeshSize, color, 1.0,
+                 pickId);
 }
 
 QVariantMap ViewportController::coneEntry(const Vec3& base, const Vec3& tip, float diameter, const QColor& color, const QString& pickId) const {
     const float len = sdk::length(tip - base);
-    const QQuaternion rot = QQuaternion::rotationTo(QVector3D(0.f, 1.f, 0.f), q3(sdk::normalized(tip - base)));
-    return entry(QStringLiteral("#Cone"), (base + tip) * 0.5f, rot, QVector3D(diameter / 100.f, len / 100.f, diameter / 100.f), color, 1.0, pickId);
+    const QQuaternion rot = QQuaternion::rotationTo(QVector3D(0.f, 1.f, 0.f), ui::toQt(sdk::normalized(tip - base)));
+    return entry(QStringLiteral("#Cone"), (base + tip) * 0.5f, rot, QVector3D(diameter, len, diameter) / ui::kBuiltinMeshSize, color, 1.0,
+                 pickId);
 }
 
 void ViewportController::rebuildDecor() {
     decor_.clear();
-    decor_.push_back(boxEntry({0.f, 0.f, -0.011f}, Quat{}, {14.f, 14.f, 0.02f}, theme_.floor));
-    for (int i = -10; i <= 10; ++i) {
-        const float p = static_cast<float>(i) * 0.5f;
-        const bool major = i % 2 == 0;
+    decor_.push_back(boxEntry({0.f, 0.f, kFloorCenterZM}, Quat{}, {kFloorSizeM, kFloorSizeM, kFloorThicknessM}, theme_.floor));
+    for (int i = -kGridHalfLines; i <= kGridHalfLines; ++i) {
+        const float p = static_cast<float>(i) * kGridStepM;
+        const bool major = i % kGridMajorEvery == 0;
         const QColor c = major ? theme_.gridMajor : theme_.gridMinor;
-        const float w = major ? 0.008f : 0.004f;
-        decor_.push_back(boxEntry({0.f, p, 0.001f}, Quat{}, {10.f, w, 0.002f}, c));
-        decor_.push_back(boxEntry({p, 0.f, 0.001f}, Quat{}, {w, 10.f, 0.002f}, c));
+        const float w = major ? kGridMajorWidthM : kGridMinorWidthM;
+        decor_.push_back(boxEntry({0.f, p, kGridLineZM}, Quat{}, {kGridLengthM, w, kGridLineHeightM}, c));
+        decor_.push_back(boxEntry({p, 0.f, kGridLineZM}, Quat{}, {w, kGridLengthM, kGridLineHeightM}, c));
     }
-    decor_.push_back(lineEntry({0.f, 0.f, 0.004f}, {0.9f, 0.f, 0.004f}, 0.016f, theme_.axisX));
-    decor_.push_back(lineEntry({0.f, 0.f, 0.004f}, {0.f, 0.9f, 0.004f}, 0.016f, theme_.axisY));
-    decor_.push_back(lineEntry({0.f, 0.f, 0.004f}, {0.f, 0.f, 0.9f}, 0.016f, theme_.axisZ));
+    decor_.push_back(lineEntry({0.f, 0.f, kAxisZM}, {kAxisLengthM, 0.f, kAxisZM}, kAxisWidthM, theme_.axisX));
+    decor_.push_back(lineEntry({0.f, 0.f, kAxisZM}, {0.f, kAxisLengthM, kAxisZM}, kAxisWidthM, theme_.axisY));
+    decor_.push_back(lineEntry({0.f, 0.f, kAxisZM}, {0.f, 0.f, kAxisLengthM}, kAxisWidthM, theme_.axisZ));
 }
 
 // ---- gizmo ---------------------------------------------------------------------------------------
@@ -166,12 +202,12 @@ void ViewportController::setGizmoMode(GizmoMode mode) {
 }
 
 float ViewportController::gizmoLength(const Vec3& origin) const {
-    return std::max(0.08f, sdk::length(origin - camera_.position()) * 0.16f);
+    return std::max(kGizmoMinLengthM, sdk::length(origin - camera_.position()) * kGizmoCameraFraction);
 }
 
 QColor ViewportController::axisColor(int axis, bool active) const {
     const QColor base = axis == 0 ? theme_.axisX : axis == 1 ? theme_.axisY : theme_.axisZ;
-    return active ? QColor(255, 220, 80) : base;
+    return active ? kGizmoActiveColor : base;
 }
 
 void ViewportController::rebuildGizmo() {
@@ -187,9 +223,9 @@ void ViewportController::rebuildGizmo() {
         };
         for (int s1 = -1; s1 <= 1; s1 += 2)
             for (int s2 = -1; s2 <= 1; s2 += 2) {
-                edges_.push_back(lineEntry(corner(-1, s1, s2), corner(1, s1, s2), 0.006f, theme_.accent));
-                edges_.push_back(lineEntry(corner(s1, -1, s2), corner(s1, 1, s2), 0.006f, theme_.accent));
-                edges_.push_back(lineEntry(corner(s1, s2, -1), corner(s1, s2, 1), 0.006f, theme_.accent));
+                edges_.push_back(lineEntry(corner(-1, s1, s2), corner(1, s1, s2), kOutlineWidthM, theme_.accent));
+                edges_.push_back(lineEntry(corner(s1, -1, s2), corner(s1, 1, s2), kOutlineWidthM, theme_.accent));
+                edges_.push_back(lineEntry(corner(s1, s2, -1), corner(s1, s2, 1), kOutlineWidthM, theme_.accent));
             }
     }
 
@@ -209,25 +245,24 @@ void ViewportController::rebuildGizmo() {
             const bool active = drag_.kind == DragKind::Gizmo && drag_.handle == id;
             const QColor color = axisColor(i, active);
             if (*mode == GizmoMode::Move) {
-                gizmo_.push_back(cylinderEntry(origin, origin + axis * (L * 0.8f), L * 0.05f, color, id));
-                gizmo_.push_back(coneEntry(origin + axis * (L * 0.8f), origin + axis * L, L * 0.17f, color, id));
+                gizmo_.push_back(cylinderEntry(origin, origin + axis * (L * kMoveShaftEnd), L * kMoveShaftWidth, color, id));
+                gizmo_.push_back(coneEntry(origin + axis * (L * kMoveShaftEnd), origin + axis * L, L * kMoveConeWidth, color, id));
             } else if (*mode == GizmoMode::Scale) {
                 const float reach = target->transform.size.x > 0.f ? std::max(component(target->transform.size, i) * 0.5f, 0.f) : 0.f;
-                const Vec3 handle = origin + axis * (reach + L * 0.35f);
-                gizmo_.push_back(cylinderEntry(origin + axis * reach, handle, L * 0.04f, color, id));
-                gizmo_.push_back(boxEntry(handle, frame, Vec3{L * 0.13f, L * 0.13f, L * 0.13f}, color, 1.0, id));
+                const Vec3 handle = origin + axis * (reach + L * kScaleStem);
+                gizmo_.push_back(cylinderEntry(origin + axis * reach, handle, L * kScaleStemWidth, color, id));
+                gizmo_.push_back(boxEntry(handle, frame, Vec3{L * kScaleHandle, L * kScaleHandle, L * kScaleHandle}, color, 1.0, id));
             } else {
                 // Ring in the plane perpendicular to the axis: a polygon of short boxes.
                 Vec3 u = std::fabs(axis.z) < 0.9f ? sdk::normalized(sdk::cross(axis, Vec3{0.f, 0.f, 1.f})) : Vec3{1.f, 0.f, 0.f};
                 const Vec3 v = sdk::cross(axis, u);
-                const int segments = 40;
-                const float radius = L * 0.85f;
-                for (int s = 0; s < segments; ++s) {
-                    const float a0 = 2.f * sdk::kPiF * static_cast<float>(s) / segments;
-                    const float a1 = 2.f * sdk::kPiF * static_cast<float>(s + 1) / segments;
+                const float radius = L * kRotateRadius;
+                for (int s = 0; s < kRotateSegments; ++s) {
+                    const float a0 = 2.f * sdk::kPiF * static_cast<float>(s) / kRotateSegments;
+                    const float a1 = 2.f * sdk::kPiF * static_cast<float>(s + 1) / kRotateSegments;
                     const Vec3 p0 = origin + (u * std::cos(a0) + v * std::sin(a0)) * radius;
                     const Vec3 p1 = origin + (u * std::cos(a1) + v * std::sin(a1)) * radius;
-                    gizmo_.push_back(lineEntry(p0, p1, L * 0.035f, color, 1.0, id));
+                    gizmo_.push_back(lineEntry(p0, p1, L * kRotateWidth, color, 1.0, id));
                 }
             }
         }
@@ -256,7 +291,7 @@ QVariantList ViewportController::axisIndicator() const {
 void ViewportController::refreshGizmoScale() {
     if (!gizmoActive_) return;
     const float L = gizmoLength(gizmoOrigin_);
-    if (std::fabs(L - gizmoLength_) > 0.04f * gizmoLength_) rebuildGizmo();
+    if (std::fabs(L - gizmoLength_) > kGizmoRebuildTolerance * gizmoLength_) rebuildGizmo();
 }
 
 void ViewportController::setView(const QString& preset) {
@@ -293,7 +328,7 @@ void ViewportController::frameSelection() {
     (void)c;
     if (!any) return;
     const Vec3 center = (lo + hi) * 0.5f;
-    camera_.frame(center, std::max(0.25f, sdk::length(hi - lo) * 0.5f));
+    camera_.frame(center, std::max(kFrameMinRadiusM, sdk::length(hi - lo) * 0.5f));
     Q_EMIT cameraChanged();
     refreshGizmoScale();
 }
@@ -446,7 +481,7 @@ void ViewportController::updateGizmoDrag(qreal x, qreal y, bool snapToggle) {
             if (snap) value = snapValue(value, step);
             setComponent(t.local.position, drag_.axis, value);
         } else {
-            float value = std::max(0.005f, component(drag_.initial.transform.size, drag_.axis) + 2.f * delta);
+            float value = std::max(kMinPartSizeM, component(drag_.initial.transform.size, drag_.axis) + 2.f * delta);
             if (snap) value = std::max(step, snapValue(value, step));
             setComponent(t.size, drag_.axis, value);
         }
@@ -489,7 +524,7 @@ bool ViewportController::setTransformComponent(int axis, double value) {
     EditableTransform t = target->transform;
     const float v = static_cast<float>(value);
     if (*mode == GizmoMode::Move) setComponent(t.local.position, axis, v);
-    else if (*mode == GizmoMode::Scale) setComponent(t.size, axis, std::max(v, 0.005f));
+    else if (*mode == GizmoMode::Scale) setComponent(t.size, axis, std::max(v, kMinPartSizeM));
     else {
         sdk::Euler e = t.local.rotation.toEuler();
         if (axis == 0) e.rollRad = sdk::degToRadF(v);

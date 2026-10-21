@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "wpiemu/sdk/config/robot_config.h"
+#include "wpiemu/sdk/core/geometry.h"
 #include "wpiemu/sdk/game/field.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
 #include "wpiemu/sdk/game/zone_kind.h"
@@ -19,14 +20,12 @@
 
 namespace wpiemu::app::runview {
 
-enum class PartShape { Box, Cylinder };
-
 struct ScenePart {
     std::string name;
-    PartShape shape = PartShape::Box;
+    sdk::PrimitiveKind shape = sdk::PrimitiveKind::Box;
     sdk::Pose3 pose;          // parent frame (chassis frame for robot parts, world frame for field parts)
     sdk::Vec3 size{1.f, 1.f, 1.f};  // Box: full extents; Cylinder: (diameter, diameter, height), axis = local Z
-    std::string color = "#808080";
+    std::string color = sdk::kDefaultPrimitiveColor;
     bool translucent = false;
     float opacity = 0.28f;      // alpha when translucent
     bool highlighted = false;   // drawn brighter (an active zone)

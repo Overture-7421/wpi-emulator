@@ -11,8 +11,9 @@ Rules (see docs/ARCHITECTURE.md):
   * The distinct bridges/ seam may see bridge modules; only halsim_ext may link it.
     Unknown first-party targets fail closed, including implementation subtargets.
   * Non-app headers must not use identifiers that Qt turns into macros (signals, slots, emit, foreach).
-  * Inside app/, the host contract and the page libraries (editor, run view) see only the SDK, the contract
-    and the shared Qt-free headers; the shell, wizard and common layers sit above them.
+  * Inside app/, the host contract, the shared UI scene support and the page libraries (editor, run view) see only
+    the SDK, their allowed siblings (the page libraries link app/ui; the run view also the contract) and the shared
+    Qt-free headers; the shell, wizard and common layers sit above them.
 
 Owners are directories; ALLOWED maps an owner to the owners it may depend on.
 Run:  check_boundaries.py [--root DIR]     |     check_boundaries.py --self-test
@@ -34,9 +35,10 @@ CMAKE_EXTS = {".cmake"}
 IGNORED_TOP = {"docs", "spikes", "packaging", "tools", "cmake", "build", "out", "node_modules"}
 IGNORED_PARTS = {"_deps", ".fetchcontent-cache", ".git", ".github", ".vs", ".idea"}
 
-# app/ is split by directory so its internal layering is enforced too (see docs/reference/app.md): the host contract and
-# the page libraries link only the SDK (plus Qt), common/host/wizard/shell compose them.
-APP_DIRS = ("common", "host", "shell", "wizard", "editor", "runview", "contract")
+# app/ is split by directory so its internal layering is enforced too (see docs/reference/app.md): the host contract,
+# the shared scene support (ui) and the page libraries link only the SDK (plus Qt and, for pages, ui and the contract);
+# common/host/wizard/shell compose them.
+APP_DIRS = ("common", "host", "shell", "wizard", "editor", "runview", "contract", "ui")
 APP_ALL = {f"app/{d}" for d in APP_DIRS}
 # Qt-free header-only helpers that live in app/common but are shared with the page libraries; they are checked as
 # their own owner (SDK only) and every app layer may include them.
@@ -57,12 +59,14 @@ ALLOWED: dict[str, set[str]] = {
     "app": {"sdk", "core", "ipc", "plugins", SHARED_APP} | APP_ALL,
     SHARED_APP: {"sdk"},
     "app/contract": {"sdk"},
-    "app/editor": {"sdk", SHARED_APP},
-    "app/runview": {"sdk", "app/contract", SHARED_APP},
+    "app/ui": {"sdk"},
+    "app/editor": {"sdk", "app/ui", SHARED_APP},
+    "app/runview": {"sdk", "app/contract", "app/ui", SHARED_APP},
     "app/host": {"sdk", "core", "ipc", "plugins"},
-    "app/common": {"sdk", "core", "ipc", "plugins", "app/host", "app/contract", SHARED_APP},
-    "app/wizard": {"sdk", "core", "ipc", "app/common", "app/contract", SHARED_APP},
-    "app/shell": {"sdk", "core", "ipc", "app/common", "app/contract", "app/editor", "app/runview", "app/wizard", SHARED_APP},
+    "app/common": {"sdk", "core", "ipc", "plugins", "app/host", "app/contract", "app/ui", SHARED_APP},
+    "app/wizard": {"sdk", "core", "ipc", "app/common", "app/contract", "app/ui", SHARED_APP},
+    "app/shell": {"sdk", "core", "ipc", "app/common", "app/contract", "app/editor", "app/runview", "app/ui", "app/wizard",
+                  SHARED_APP},
 }
 # Any plugin ("plugins/<name>") may reference only these (plus itself).
 PLUGIN_ALLOWED = {"sdk"}
@@ -116,6 +120,7 @@ TARGET_OWNERS = {
     "wpiemu_app": "app",
     "wpiemu_app_common": "app/common",
     "wpiemu_app_contract": "app/contract",
+    "wpiemu_app_ui": "app/ui",
     "wpiemu_app_host": "app/host",
     "wpiemu_app_shell": "app/shell",
     "wpiemu_app_editor": "app/editor",
@@ -378,6 +383,7 @@ def self_test() -> int:
         "plugins/builtin_plugins.cpp",
         "bridges/builtin_bridges.cpp",
         "app/contract/runtime_host.h",
+        "app/ui/scene_support.h",
         "app/common/app_services.h",
         "app/common/orbit_camera.h",
         "app/common/camera_frustum.h",
@@ -440,6 +446,18 @@ def self_test() -> int:
         ("app/main.cpp", '#include "shell/page_factory.h"\n#include "common/app_services.h"\n', 0),
         ("app/common/orbit_camera.h", '#include "wpiemu/sdk/a.h"\n', 0),
         ("app/common/orbit_camera.h", '#include "contract/runtime_host.h"\n', 1),
+        # shared scene support: the page libraries (and the layers above them) may use it, it sees the SDK only
+        ("app/runview/scene_model.cpp", '#include "ui/scene_support.h"\n#include "contract/runtime_host.h"\n', 0),
+        ("app/editor/viewmodel/scene_model.cpp", '#include "ui/scene_support.h"\n#include "model/config_ops.h"\n', 0),
+        ("app/common/app_services.cpp", '#include "ui/scene_support.h"\n', 0),
+        ("app/wizard/wizard_dialog.cpp", '#include "ui/scene_support.h"\n', 0),
+        ("app/shell/page_factory.cpp", '#include "ui/scene_support.h"\n', 0),
+        ("app/ui/scene_support.cpp", '#include "ui/scene_support.h"\n#include <wpiemu/sdk/a.h>\n', 0),
+        ("app/ui/scene_support.cpp", '#include "common/app_services.h"\n#include "contract/runtime_host.h"\n', 2),
+        ("app/ui/scene_support.cpp", '#include "common/orbit_camera.h"\n#include "editor/editor_page.h"\n#include "runview/run_page.h"\n', 3),
+        ("app/ui/scene_support.cpp", '#include "wpiemu/core/c.h"\n', 1),
+        ("app/contract/runtime_host.cpp", '#include "ui/scene_support.h"\n', 1),
+        ("app/host/robot_session.cpp", '#include "ui/scene_support.h"\n', 1),
     ]
     failures = 0
     for rel, text, expected in cases:
@@ -565,6 +583,22 @@ def self_test() -> int:
          "target_link_libraries(wpiemu_app_shell PUBLIC wpiemu_app_common wpiemu_app_editor wpiemu_app_runview)\n", 0),
         ("app/runview/CMakeLists.txt",
          "add_library(wpiemu_app_editor STATIC a.cpp)\n", 1),
+        ("app/ui/CMakeLists.txt",
+         "qt_add_library(wpiemu_app_ui STATIC scene_support.cpp)\ntarget_link_libraries(wpiemu_app_ui PUBLIC wpiemu_sdk Qt6::Core Qt6::Gui)\n", 0),
+        ("app/ui/CMakeLists.txt",
+         "target_link_libraries(wpiemu_app_ui PUBLIC wpiemu_sdk wpiemu_app_contract wpiemu_core wpiemu_app_runview)\n", 3),
+        ("app/editor/CMakeLists.txt",
+         "target_link_libraries(wpiemu_app_editor PUBLIC wpiemu_sdk wpiemu_app_ui Qt6::Core)\n", 0),
+        ("app/runview/CMakeLists.txt",
+         "target_link_libraries(wpiemu_app_runview PUBLIC wpiemu_sdk wpiemu_app_contract wpiemu_app_ui Qt6::Core)\n", 0),
+        ("app/contract/CMakeLists.txt",
+         "target_link_libraries(wpiemu_app_contract PUBLIC wpiemu_sdk wpiemu_app_ui)\n", 1),
+        ("app/common/CMakeLists.txt",
+         "target_link_libraries(wpiemu_app_common PUBLIC wpiemu_sdk wpiemu_app_ui)\n", 0),
+        ("app/shell/CMakeLists.txt",
+         "target_link_libraries(wpiemu_app_shell PUBLIC wpiemu_app_common wpiemu_app_editor wpiemu_app_runview wpiemu_app_ui)\n", 0),
+        ("app/runview/CMakeLists.txt",
+         "add_library(wpiemu_app_ui STATIC a.cpp)\n", 1),
     ]
     for rel, text, expected in cmake_cases:
         got = len(scan_cmake(rel, text))

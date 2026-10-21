@@ -23,8 +23,6 @@
 
 namespace wpiemu::app::runview {
 
-QColor parseColor(const std::string& css, const QColor& fallback = QColor(QStringLiteral("#808080")));
-
 // Draws N identical entities (fuel) from one position array using GPU instancing.
 class EntityInstancing : public QQuick3DInstancing {
     Q_OBJECT
