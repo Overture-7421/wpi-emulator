@@ -24,7 +24,7 @@ namespace wpiemu::app::editor::ops {
 inline constexpr const char* kChassisOwner = "chassis";   // owner string of chassis primitives
 
 // ---- naming -----------------------------------------------------------------------------------
-std::string baseIdForType(std::string_view mechanismType);                 // "game_2026.fuel_intake" -> "fuel_intake"
+std::string baseIdForType(std::string_view mechanismType);                 // "demo_game.fuel_intake" -> "fuel_intake"
 std::string uniqueMechanismId(const sdk::RobotConfig& c, std::string base);
 std::string uniqueWheelName(const sdk::RobotConfig& c, std::string base);
 std::string displayNameFor(const sdk::MechanismConfig& m, const EditorCatalog& catalog);

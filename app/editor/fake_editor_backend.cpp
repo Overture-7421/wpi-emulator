@@ -10,6 +10,7 @@
 #include "wpiemu/sdk/devices/device_identity.h"
 #include "wpiemu/sdk/dynamics/motor_model.h"
 #include "wpiemu/sdk/mechanisms/attachment.h"
+#include "wpiemu/sdk/testing/demo_game.h"
 
 namespace wpiemu::app::editor {
 
@@ -205,66 +206,15 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
                        {"tank", {"Tank", "Left / right skid steer.", traction(false)}},
                        {"mecanum", {"Mecanum", "Four mecanum wheels.", traction(false)}}};
 
-    // ---- plugin config ----
-    cat.pluginId = "game_2026";
-    cat.pluginDisplayName = "REBUILT (2026)";
-    cat.pluginSchema.schemaVersion = 1;
-    cat.pluginSchema.properties.properties = {
-        integer("preloadFuel", "Preloaded fuel", "Robot", 8, 0, 100, "Fuel the robot starts a match with."),
-        real("fuelDiameterM", "Fuel diameter", "Fuel", 0.15, 0.05, 0.4, PropertyUnit::Meters, {}, 0.005)};
-
-    // ---- zone kinds the plugin owns ----
-    sdk::ZoneKindInfo pickup;
-    pickup.kind = "game_2026.pickup";
-    pickup.displayName = "Pickup";
-    pickup.description = "Absorbs field fuel inside its volume while it is active.";
-    pickup.shape = sdk::ZoneShape::Volume;
-    pickup.properties.properties = {integer("capacity", "Capacity (fuel)", "Pickup", 30, 1, 100),
-                                    real("absorbRateHz", "Absorb rate", "Pickup", 10.0, 0.5, 60.0, PropertyUnit::Hertz, {}, 0.5)};
-    pickup.defaultSizeM = {0.4f, 0.6f, 0.25f};
-    pickup.defaultLocal.position = {0.3f, 0.f, 0.f};
-    pickup.color = "#ff9944";
-    cat.zoneKinds.push_back(pickup);
-
-    sdk::ZoneKindInfo shooter;
-    shooter.kind = "game_2026.shooter";
-    shooter.displayName = "Shooter";
-    shooter.description = "Launches fuel from its muzzle along +X while it is active.";
-    shooter.shape = sdk::ZoneShape::Muzzle;
-    shooter.properties.properties = {real("fireRateHz", "Fire rate", "Shooter", 8.0, 0.5, 30.0, PropertyUnit::Hertz, {}, 0.5),
-                                     real("exitSpeedMps", "Exit speed", "Shooter", 10.0, 1.0, 30.0, PropertyUnit::MetersPerSecond, {}, 0.5),
-                                     real("spreadRad", "Spread", "Shooter", 0.05, 0.0, 0.5, PropertyUnit::Radians, {}, 0.01)};
-    shooter.defaultLocal.position = {0.1f, 0.f, 0.f};
-    shooter.color = "#d1495b";
-    cat.zoneKinds.push_back(shooter);
-
-    cat.gameValues.push_back({"game_2026.fuel.count", "Fuel in robot", "Fuel currently held by the robot.", PropertyUnit::Count});
-    cat.gameValues.push_back({"game_2026.fuel.capacity", "Fuel capacity", "How much fuel the robot can hold.", PropertyUnit::Count});
-    cat.gameValues.push_back({"game_2026.fuel.fraction", "Fuel fill", "Held fuel divided by capacity (0 to 1).", PropertyUnit::Ratio});
-    cat.fieldFrame = {16.541f, 8.069f, sdk::FieldSymmetry::Rotational};
-    sdk::Box3 hopper;
-    hopper.pose.position = {-0.05f, 0.f, 0.f};
-    hopper.sizeM = {0.4f, 0.5f, 0.3f};
-
-    sdk::EditorPanelDescriptor hopperPanel;
-    hopperPanel.id = "game_2026.hopper";
-    hopperPanel.title = "Fuel hopper";
-    hopperPanel.scope = sdk::PanelScope::PluginConfig;
-    hopperPanel.properties.properties = {integer("capacity", "Fuel capacity", "Hopper", 40, 1, 200, "The fuel meter shows this as 100%."),
-                                         box("hopperVolume", "Hopper volume", "Hopper", hopper, "Where stored fuel is drawn (chassis frame).")};
-    hopperPanel.overlays.push_back({"hopperVolume", "Hopper", "#44cc88", true});
-    hopperPanel.order = 1;
-    cat.pluginPanels.push_back(hopperPanel);
-
-    // A mechanism-scope panel: only mechanisms of the listed templates get it.
-    sdk::EditorPanelDescriptor aiming;
-    aiming.id = "game_2026.aiming";
-    aiming.title = "Aiming";
-    aiming.scope = sdk::PanelScope::Mechanism;
-    aiming.mechanismTypes = {"sample.shooter"};
-    aiming.properties.properties = {real("hoodAngleRad", "Hood angle", "Aiming", 0.7, 0.0, 1.5, PropertyUnit::Radians, {}, 0.01)};
-    aiming.order = 2;
-    cat.pluginPanels.push_back(aiming);
+    // ---- the neutral demo game (shared with the run-view fake) ----
+    namespace demo = sdk::testing::demo_game;
+    cat.pluginId = demo::kPluginId;
+    cat.pluginDisplayName = demo::kDisplayName;
+    cat.pluginSchema = demo::configSchema();
+    cat.pluginPanels = demo::editorPanels("sample.shooter");
+    cat.zoneKinds = demo::zoneKinds();
+    cat.gameValues = demo::gameValues();
+    cat.fieldFrame = demo::fieldFrame();
     return cat;
 }
 
@@ -272,8 +222,7 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
     sdk::RobotConfig c;
     c.name = "Sample Robot";
     c.project.language = "java";
-    c.project.wpilibYear = 2026;
-    c.gamePluginId = "game_2026";
+    c.gamePluginId = sdk::testing::demo_game::kPluginId;
     c.chassis.sizeM = {0.76f, 0.76f, 0.1f};
     c.chassis.massKg = 52.f;
     c.chassis.comHeightM = 0.22f;
@@ -340,7 +289,7 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
     };
     sdk::ZoneConfig pickup;
     pickup.id = "pickup";
-    pickup.kind = "game_2026.pickup";
+    pickup.kind = sdk::testing::demo_game::kPickupZone;
     pickup.label = "Pickup";
     pickup.attachment.parentMechanismId = "intake";
     pickup.local.position = {0.25f, 0.f, 0.f};
@@ -351,7 +300,7 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
 
     sdk::ZoneConfig muzzle;
     muzzle.id = "muzzle";
-    muzzle.kind = "game_2026.shooter";
+    muzzle.kind = sdk::testing::demo_game::kShooterZone;
     muzzle.label = "Shooter muzzle";
     muzzle.attachment.parentMechanismId = "turret";
     muzzle.attachment.parentLink = "mover";
@@ -383,7 +332,7 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
     hopper.id = "hopper_sensor";
     hopper.label = "Hopper sensor";
     hopper.kind = sdk::SensorKind::Distance;
-    hopper.source = "game_2026.fuel.count";
+    hopper.source = sdk::testing::demo_game::kFuelCount;
     for (const auto& p : sdk::sensorResponseSchema(hopper.kind).properties) hopper.properties[p.key] = p.defaultValue;
     hopper.properties[sdk::sensor_prop::kThreshold] = 1.0;
     c.sensors.push_back(std::move(hopper));
@@ -392,7 +341,7 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
     feed.id = "feed_sensor";
     feed.label = "Feed beam break";
     feed.kind = sdk::SensorKind::BeamBreak;
-    feed.source = "game_2026.fuel.fraction";
+    feed.source = sdk::testing::demo_game::kFuelFraction;
     for (const auto& p : sdk::sensorResponseSchema(feed.kind).properties) feed.properties[p.key] = p.defaultValue;
     c.sensors.push_back(std::move(feed));
     return c;

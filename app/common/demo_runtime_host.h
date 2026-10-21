@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "contract/runtime_host.h"
+#include "contract/start_position_selection.h"
 
 namespace wpiemu::app {
 
@@ -19,7 +20,7 @@ public:
     HostStatus status() const override { return status_; }
     HostScene scene() const override { return scene_; }
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const override { return slot_.latest(); }
-    QString startPosition() const override { return startPositionId_; }
+    QString startPosition() const override { return startSelection_.id(); }
     void setProject(const HostProject& project) override;
 
     // Devices a robot with this config would typically declare.
@@ -56,7 +57,7 @@ private:
     HostStatus status_;
     HostScene scene_;
     QString projectPath_;
-    QString startPositionId_;
+    StartPositionSelection startSelection_;
     sdk::LatestSnapshotSlot slot_;
     QTimer startupTimer_;
     QTimer simTimer_;

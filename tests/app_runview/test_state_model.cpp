@@ -4,10 +4,12 @@
 
 #include "fake_run_backend.h"
 #include "state_model.h"
+#include "wpiemu/sdk/testing/demo_game.h"
 
 using namespace wpiemu::app::runview;
 using wpiemu::app::HostScene;
 namespace sdk = wpiemu::sdk;
+namespace demo = wpiemu::sdk::testing::demo_game;
 
 namespace {
 
@@ -15,12 +17,12 @@ HostScene sceneInfo() {
     HostScene info;
     info.config = std::make_shared<const sdk::RobotConfig>(FakeRunBackend::makeDemoConfig());
     sdk::GameValueInfo fuel;
-    fuel.id = "demo.fuel.count";
+    fuel.id = demo::kFuelCount;
     fuel.label = "Fuel held";
     fuel.unit = sdk::PropertyUnit::Count;
     info.gameValues = {fuel};
     sdk::ZoneKindInfo kind;
-    kind.kind = "demo_game.pickup";
+    kind.kind = demo::kPickupZone;
     kind.displayName = "Pickup";
     info.zoneKinds = {kind};
     return info;

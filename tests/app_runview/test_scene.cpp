@@ -8,10 +8,12 @@
 #include "fake_run_backend.h"
 #include "scene_model.h"
 #include "scene_parts.h"
+#include "wpiemu/sdk/testing/demo_game.h"
 
 using namespace wpiemu::app::runview;
 using wpiemu::app::HostScene;
 namespace sdk = wpiemu::sdk;
+namespace demo = wpiemu::sdk::testing::demo_game;
 
 namespace {
 
@@ -174,7 +176,7 @@ TEST_CASE("zone overlays resolve through plugin sections and mechanism propertie
 
 TEST_CASE("robot zones resolve to chassis-frame poses with the kind's shape and colour") {
     const auto cfg = demoConfig();
-    const auto kinds = FakeRunBackend::makeZoneKinds();
+    const auto kinds = demo::zoneKinds();
     const auto zones = resolveRobotZones(*cfg, kinds, nullptr);
     REQUIRE(zones.size() == 2);
 
@@ -183,13 +185,13 @@ TEST_CASE("robot zones resolve to chassis-frame poses with the kind's shape and 
     CHECK(zones[0].label == "Intake zone");
     CHECK_FALSE(zones[0].muzzle);
     CHECK(zones[0].tracksState);
-    CHECK(zones[0].color == "#22c55e");
+    CHECK(zones[0].color == kinds[0].color);
     CHECK(near(zones[0].pose.position, {0.78f, 0.f, -0.08f}));
     CHECK(near(zones[0].size, {0.5f, 0.7f, 0.2f}));
 
     // Muzzle zone: on the turret's yaw link at rest, direction along local +X
     CHECK(zones[1].muzzle);
-    CHECK(zones[1].color == "#f43f5e");
+    CHECK(zones[1].color == kinds[1].color);
     CHECK(near(zones[1].pose.position, {-0.1f + 0.38f, 0.f, 0.12f}));
 }
 
@@ -197,13 +199,13 @@ TEST_CASE("robot zones follow the pose of the attached mechanism link") {
     auto cfg = std::make_shared<sdk::RobotConfig>(FakeRunBackend::makeDemoConfig());
     sdk::ZoneConfig onArm;
     onArm.id = "arm.zone";
-    onArm.kind = "demo_game.pickup";
+    onArm.kind = demo::kPickupZone;
     onArm.attachment = {"intake", "arm"};
     onArm.local.position = {0.17f, 0.f, 0.f};
     cfg->zones.push_back(onArm);
     sdk::ZoneConfig onChassis;
     onChassis.id = "chassis.zone";
-    onChassis.kind = "demo_game.pickup";
+    onChassis.kind = demo::kPickupZone;
     onChassis.local.position = {0.1f, 0.2f, 0.3f};
     cfg->zones.push_back(onChassis);
 
@@ -218,7 +220,7 @@ TEST_CASE("robot zones follow the pose of the attached mechanism link") {
     d.mechanisms.push_back(turret);
     const sdk::SimSnapshot snap(d);
 
-    const auto zones = resolveRobotZones(*cfg, FakeRunBackend::makeZoneKinds(), &snap);
+    const auto zones = resolveRobotZones(*cfg, demo::zoneKinds(), &snap);
     REQUIRE(zones.size() == 4);
     CHECK(near(zones[2].pose.position, {0.38f, 0.f, -0.06f + 0.17f}));   // arm raised 90 deg, same as arm.bar
     CHECK(near(zones[3].pose.position, {0.1f, 0.2f, 0.3f}));              // chassis frame, no link involved
@@ -233,13 +235,13 @@ TEST_CASE("robot zones of an unknown kind are ignored") {
     other.id = "other";
     other.kind = "another_game.thing";
     cfg->zones.push_back(other);
-    CHECK(resolveRobotZones(*cfg, FakeRunBackend::makeZoneKinds(), nullptr).size() == 2);
+    CHECK(resolveRobotZones(*cfg, demo::zoneKinds(), nullptr).size() == 2);
     CHECK(resolveRobotZones(*cfg, {}, nullptr).empty());
 }
 
 TEST_CASE("robot zone active flag comes from the snapshot zones") {
     const auto cfg = demoConfig();
-    const auto kinds = FakeRunBackend::makeZoneKinds();
+    const auto kinds = demo::zoneKinds();
     for (const auto& z : resolveRobotZones(*cfg, kinds, nullptr)) CHECK_FALSE(z.active);
 
     sdk::SimSnapshotData d = baseSnapshot();
@@ -262,7 +264,7 @@ TEST_CASE("robot zone active flag comes from the snapshot zones") {
 
 TEST_CASE("zone rig builds a marker and an arrow for muzzles and highlights active zones") {
     ZoneRig rig;
-    rig.setScene(demoConfig(), {}, FakeRunBackend::makeZoneKinds());
+    rig.setScene(demoConfig(), {}, demo::zoneKinds());
     REQUIRE(rig.parts().size() == 3);   // pickup box, muzzle marker, muzzle arrow
     CHECK(rig.labels()[0] == "Intake zone");
     CHECK(rig.labels()[1] == "Shooter zone");
@@ -286,7 +288,7 @@ TEST_CASE("zone rig builds a marker and an arrow for muzzles and highlights acti
 }
 
 TEST_CASE("field parts centre the floor on the visuals") {
-    const auto field = FakeRunBackend::makeDemoField();
+    const auto field = demo::field();
     const FieldParts fp = buildFieldParts(&field);
     CHECK(fp.parts.size() == field.visuals.size() + 1);
     CHECK(fp.parts.front().name == "field.floor");
@@ -411,7 +413,7 @@ TEST_CASE("scene model draws zones and updates their parts only when something c
     SceneModel scene;
     HostScene info;
     info.config = demoConfig();
-    info.zoneKinds = FakeRunBackend::makeZoneKinds();
+    info.zoneKinds = demo::zoneKinds();
     scene.setSceneInfo(info);
     PartListModel& zones = *static_cast<PartListModel*>(scene.zones());
     CHECK(zones.rowCount() == 3);   // pickup volume + muzzle marker + muzzle arrow

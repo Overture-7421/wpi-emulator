@@ -11,7 +11,7 @@ namespace sdk = wpiemu::sdk;
 
 TEST_CASE("editor ops: ids are derived from the template type and kept unique") {
     auto c = robot();
-    CHECK(ops::baseIdForType("game_2026.fuel_intake") == "fuel_intake");
+    CHECK(ops::baseIdForType("demo_game.fuel_intake") == "fuel_intake");
     CHECK(ops::baseIdForType("mechanism") == "mechanism");
     CHECK(ops::uniqueMechanismId(c, "mechanism") == "mechanism");
     CHECK(ops::uniqueMechanismId(c, "intake") == "intake_2");

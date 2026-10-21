@@ -10,16 +10,6 @@ using namespace wpiemu::app::editor;
 using namespace wpiemu::app::editor::testing;
 namespace sdk = wpiemu::sdk;
 
-namespace {
-
-EditorCatalog catalogWithField() {
-    EditorCatalog cat = catalog();
-    cat.fieldFrame = {16.541f, 8.069f, sdk::FieldSymmetry::Rotational};
-    return cat;
-}
-
-}  // namespace
-
 TEST_CASE("start position ops: add, duplicate and remove keep ids unique") {
     auto c = robot();
     const std::string a = ops::addStartPosition(c);
@@ -35,27 +25,28 @@ TEST_CASE("start position ops: add, duplicate and remove keep ids unique") {
 
 TEST_CASE("start position copy tool: the other alliance gets the flipped pose and a swapped label") {
     auto c = robot();
+    const sdk::FieldFrame frame = catalog().fieldFrame;
     const std::string id = ops::addStartPosition(c);
     sdk::StartPosition* p = ops::findStartPosition(c, id);
     p->label = "Blue right";
     p->alliance = sdk::Alliance::Blue;
     p->pose = {4.51f, 0.527f, 0.f};
 
-    const std::string red = ops::copyStartPositionToOtherAlliance(c, id, catalogWithField().fieldFrame);
+    const std::string red = ops::copyStartPositionToOtherAlliance(c, id, frame);
     REQUIRE_FALSE(red.empty());
     const sdk::StartPosition* copy = c.findStartPosition(red);
     CHECK(copy->alliance == sdk::Alliance::Red);
     CHECK(copy->label == "Red right");
-    CHECK(copy->pose.xM == doctest::Approx(16.541f - 4.51f));
-    CHECK(copy->pose.yM == doctest::Approx(8.069f - 0.527f));
+    CHECK(copy->pose.xM == doctest::Approx(frame.lengthM - 4.51f));
+    CHECK(copy->pose.yM == doctest::Approx(frame.widthM - 0.527f));
 
     // and back: an unrecognised label gets a suffix, no symmetry means no tool
     ops::findStartPosition(c, id)->label = "Left lane";
-    const std::string back = ops::copyStartPositionToOtherAlliance(c, red, catalogWithField().fieldFrame);
+    const std::string back = ops::copyStartPositionToOtherAlliance(c, red, frame);
     CHECK(c.findStartPosition(back)->alliance == sdk::Alliance::Blue);
     CHECK(c.findStartPosition(back)->label == "Blue right");
     CHECK(ops::copyStartPositionToOtherAlliance(c, id, sdk::FieldFrame{}).empty());
-    const std::string suffixed = ops::copyStartPositionToOtherAlliance(c, id, catalogWithField().fieldFrame);
+    const std::string suffixed = ops::copyStartPositionToOtherAlliance(c, id, frame);
     CHECK(c.findStartPosition(suffixed)->label == "Left lane (Red)");
 }
 
@@ -82,7 +73,7 @@ TEST_CASE("start position document and controller: add selects, the copy tool se
 }
 
 TEST_CASE("start position property groups edit the label, alliance and pose, and the tree lists them") {
-    const auto cat = catalogWithField();
+    const auto cat = catalog();
     auto c = robot();
     const std::string id = ops::addStartPosition(c);
     const SelectionRef sel = SelectionRef::startPosition(id);

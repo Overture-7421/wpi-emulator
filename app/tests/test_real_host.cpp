@@ -8,6 +8,7 @@
 
 #include "common/real_runtime_host.h"
 #include "common/robot_basics.h"
+#include "contract/start_position_selection.h"
 #include "gui_support.h"
 #include "shell/main_window.h"
 #include "shell/page_factory.h"
@@ -138,6 +139,40 @@ TEST_CASE("Run intent: readiness consumes only the current project's deliberate 
     intent.request();           // same-project edited-config/restart does not replace the project
     CHECK_FALSE(intent.takeWhenReady(false));
     CHECK(intent.takeWhenReady(true));
+}
+
+TEST_CASE("start position selection: accepts only known ids and is dropped with its project or entry") {
+    sdk::RobotConfig config;
+    config.startPositions.push_back({"a", "A", sdk::Alliance::Red, {1.f, 2.f, 0.f}});
+    config.startPositions.push_back({"b", "B", sdk::Alliance::Blue, {3.f, 4.f, 0.f}});
+    sdk::RobotConfig edited;
+    edited.startPositions.push_back({"b", "B", sdk::Alliance::Blue, {3.f, 4.f, 0.f}});
+
+    StartPositionSelection selection;
+    CHECK(selection.find(&config) == nullptr);
+    CHECK_FALSE(selection.reconcile(&config, true));   // nothing selected, nothing to drop
+    CHECK_FALSE(selection.select(&config, QStringLiteral("missing")));
+    CHECK_FALSE(selection.select(nullptr, QStringLiteral("a")));
+
+    CHECK(selection.select(&config, QStringLiteral("a")));
+    CHECK_FALSE(selection.select(&config, QStringLiteral("a")));   // unchanged
+    REQUIRE(selection.find(&config) != nullptr);
+    CHECK(selection.find(&config)->pose.xM == 1.f);
+    CHECK(selection.find(nullptr) == nullptr);
+    CHECK(selection.find(&edited) == nullptr);
+
+    CHECK_FALSE(selection.reconcile(&config, true));   // an edit that keeps the entry
+    CHECK(selection.id() == QStringLiteral("a"));
+    CHECK(selection.reconcile(&edited, true));         // the entry vanished
+    CHECK(selection.id().isEmpty());
+
+    CHECK(selection.select(&config, QStringLiteral("b")));
+    CHECK(selection.reconcile(&config, false));        // another project, even if the id exists there
+    CHECK(selection.id().isEmpty());
+
+    CHECK(selection.select(&config, QStringLiteral("b")));
+    CHECK(selection.select(&config, QStringLiteral("missing")));   // an unknown id clears the selection
+    CHECK(selection.id().isEmpty());
 }
 
 TEST_CASE("real host: a project whose build fails is reported as FailedToStart with the console tail") {

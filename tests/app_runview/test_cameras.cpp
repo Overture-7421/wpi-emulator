@@ -9,9 +9,11 @@
 #include "fake_run_backend.h"
 #include "scene_model.h"
 #include "scene_parts.h"
+#include "wpiemu/sdk/testing/demo_game.h"
 
 using namespace wpiemu::app::runview;
 namespace sdk = wpiemu::sdk;
+namespace demo = wpiemu::sdk::testing::demo_game;
 
 namespace {
 
@@ -39,7 +41,7 @@ sdk::CameraState cameraState(const char* id, std::vector<int> tags) {
 
 TEST_CASE("tag rig draws a plate per tag and highlights the union of the cameras' visible ids") {
     TagRig rig;
-    rig.setLayout(FakeRunBackend::makeDemoTags());
+    rig.setLayout(demo::aprilTags());
     REQUIRE(rig.tags().size() == 8);
     CHECK(rig.parts().size() == 8);
     // +X out of the face: the panel is thin along X and sits just behind the tag pose.
@@ -189,7 +191,7 @@ TEST_CASE("tag images: ids 1-32 are embedded 36h11 markers and ids without an im
     CHECK(seen.size() == 32);
 
     TagRig rig;
-    sdk::AprilTagLayout layout = FakeRunBackend::makeDemoTags();
+    sdk::AprilTagLayout layout = demo::aprilTags();
     sdk::AprilTag extra;
     extra.id = 999;
     layout.tags.push_back(extra);

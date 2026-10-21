@@ -1,7 +1,8 @@
 #pragma once
 
 // Complete in-process IRuntimeHost: a synthetic holonomic robot with mechanism links, instanced "fuel",
-// HUD values, log output and an injectable robot-process lifecycle. Used by tests, the demo
+// HUD values, log output and an injectable robot-process lifecycle. The game it plays is the SDK's neutral
+// demo game (sdk/testing/demo_game.h), shared with the editor's fake. Used by tests, the demo
 // executable and screenshots; the shell supplies the real host.
 
 #include <QTimer>
@@ -10,6 +11,7 @@
 #include <random>
 
 #include "contract/runtime_host.h"
+#include "contract/start_position_selection.h"
 
 namespace wpiemu::app::runview {
 
@@ -29,7 +31,7 @@ public:
     HostStatus status() const override { return status_; }
     HostScene scene() const override { return scene_; }
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const override { return slot_.latest(); }
-    QString startPosition() const override { return startPositionId_; }
+    QString startPosition() const override { return startSelection_.id(); }
 
     // ---- test / demo hooks ----
     void tickOnce();                              // advance one 5 ms sim tick and publish a snapshot
@@ -50,10 +52,7 @@ public:
     // As if the shell had opened `projectPath` whose wizard chose `station` (the page applies it to its Driver Station).
     void setProjectDefaults(const QString& projectPath, sdk::proto::AllianceStation station);
 
-    static sdk::RobotConfig makeDemoConfig();
-    static std::vector<sdk::ZoneKindInfo> makeZoneKinds();   // demo_game.pickup (Volume), demo_game.shooter (Muzzle)
-    static sdk::AprilTagLayout makeDemoTags();               // 8 tags on the demo field's walls
-    static sdk::FieldDescription makeDemoField();
+    static sdk::RobotConfig makeDemoConfig();   // the demo robot; its zones and sensors use the demo game's ids
 
 public slots:
     void launch() override;
@@ -93,11 +92,11 @@ private:
     sdk::LatestSnapshotSlot slot_;
     sdk::proto::DsState ds_;
 
-    QString startPositionId_;
+    StartPositionSelection startSelection_;
     bool paused_ = false;
     bool programStarted_ = false;
     bool simulating_ = false;
-    bool beginWhenReady_ = false;
+    SimulationStartIntent beginIntent_;
     int pendingSteps_ = 0;
     double timeScale_ = 1.0;
     double timeAccum_ = 0.0;

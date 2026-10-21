@@ -74,10 +74,7 @@ void DemoRuntimeHost::setProject(const HostProject& project) {
     scene_.config = project.config;
     scene_.projectPath = projectPath;
     scene_.defaultStation = project.defaultStation;
-    if (!startPositionId_.isEmpty() && (!sameProject || scene_.config == nullptr || scene_.config->findStartPosition(startPositionId_.toStdString()) == nullptr)) {
-        startPositionId_.clear();
-        emit startPositionChanged();
-    }
+    if (startSelection_.reconcile(scene_.config.get(), sameProject)) emit startPositionChanged();
     if (game != nullptr) {
         scene_.hud = game->contributeHud();
         scene_.panels = game->contributeEditorPanels();
@@ -206,12 +203,11 @@ void DemoRuntimeHost::restart() {
 
 void DemoRuntimeHost::resetSimulation() {
     x_ = y_ = yaw_ = 0.0;
-    if (scene_.config)
-        if (const sdk::StartPosition* p = scene_.config->findStartPosition(startPositionId_.toStdString())) {
-            x_ = static_cast<double>(p->pose.xM);
-            y_ = static_cast<double>(p->pose.yM);
-            yaw_ = static_cast<double>(p->pose.headingRad);
-        }
+    if (const sdk::StartPosition* p = startSelection_.find(scene_.config.get())) {
+        x_ = static_cast<double>(p->pose.xM);
+        y_ = static_cast<double>(p->pose.yM);
+        yaw_ = static_cast<double>(p->pose.headingRad);
+    }
     vx_ = vy_ = omega_ = 0.0;
     wheelSpin_ = 0.0;
     tick_ = 0;
@@ -219,10 +215,7 @@ void DemoRuntimeHost::resetSimulation() {
 }
 
 void DemoRuntimeHost::setStartPosition(const QString& id) {
-    const QString next = scene_.config && scene_.config->findStartPosition(id.toStdString()) != nullptr ? id : QString();
-    if (next == startPositionId_) return;
-    startPositionId_ = next;
-    emit startPositionChanged();
+    if (startSelection_.select(scene_.config.get(), id)) emit startPositionChanged();
 }
 
 void DemoRuntimeHost::setPaused(bool paused) {

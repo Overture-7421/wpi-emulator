@@ -95,11 +95,8 @@ void RealRuntimeHost::setProject(const HostProject& project) {
     projectPath_ = projectPath;
     config_ = project.config;
     // The selected start position belongs to the project: drop it on a switch or when the entry is gone, follow edits otherwise.
-    if (!startPositionId_.isEmpty() && (!sameProject || resolveStartPlacement() == std::nullopt)) {
-        startPositionId_.clear();
-        emit startPositionChanged();
-    }
-    if (session_ && !startPositionId_.isEmpty()) session_->controller().setStartPlacement(resolveStartPlacement());
+    if (startSelection_.reconcile(config_.get(), sameProject)) emit startPositionChanged();
+    if (session_ && !startSelection_.id().isEmpty()) session_->controller().setStartPlacement(resolveStartPlacement());
     scene_ = {};
     scene_.config = project.config;
     scene_.projectPath = projectPath;
@@ -220,15 +217,12 @@ void RealRuntimeHost::resetSimulation() {
 }
 
 std::optional<sdk::RobotStartPose> RealRuntimeHost::resolveStartPlacement() const {
-    if (startPositionId_.isEmpty() || !config_) return std::nullopt;
-    if (const sdk::StartPosition* p = config_->findStartPosition(startPositionId_.toStdString())) return p->pose;
+    if (const sdk::StartPosition* p = startSelection_.find(config_.get())) return p->pose;
     return std::nullopt;
 }
 
 void RealRuntimeHost::setStartPosition(const QString& id) {
-    const QString next = config_ && config_->findStartPosition(id.toStdString()) != nullptr ? id : QString();
-    const bool changed = next != startPositionId_;
-    startPositionId_ = next;
+    const bool changed = startSelection_.select(config_.get(), id);
     if (session_) session_->controller().setStartPlacement(resolveStartPlacement());
     if (changed) emit startPositionChanged();
 }

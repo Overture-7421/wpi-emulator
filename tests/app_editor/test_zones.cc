@@ -22,6 +22,7 @@
 #include "views/inspector_panel.h"
 #include "views/property_form.h"
 #include "wpiemu/sdk/config/value_codec.h"
+#include "wpiemu/sdk/testing/demo_game.h"
 
 using namespace wpiemu::app::editor;
 using namespace wpiemu::app::editor::testing;
@@ -29,8 +30,8 @@ namespace sdk = wpiemu::sdk;
 
 namespace {
 
-constexpr const char* kPickup = "game_2026.pickup";
-constexpr const char* kShooter = "game_2026.shooter";
+constexpr const char* kPickup = sdk::testing::demo_game::kPickupZone;
+constexpr const char* kShooter = sdk::testing::demo_game::kShooterZone;
 
 struct ZonePage {
     FakeEditorBackend backend;
@@ -207,7 +208,7 @@ TEST_CASE("zone document: add, re-attach and activation edits are undoable") {
     const QString id = doc.addZone(kShooter, {"turret", "mover"});
     REQUIRE_FALSE(id.isEmpty());
     CHECK(doc.config().zones.size() == 3);
-    CHECK(doc.addZone("game_2026.nope").isEmpty());
+    CHECK(doc.addZone("demo_game.nope").isEmpty());
     doc.undoStack()->undo();
     CHECK(doc.config().zones.size() == 2);
     doc.undoStack()->redo();
@@ -245,7 +246,7 @@ TEST_CASE("zone controller: adding selects the zone and delete / duplicate act o
     REQUIRE_FALSE(id.isEmpty());
     CHECK(c.selection().current() == SelectionRef::zone(id.toStdString()));
     CHECK(c.selectionExists(SelectionRef::zone(id.toStdString())));
-    CHECK(c.addZone("game_2026.nope").isEmpty());
+    CHECK(c.addZone("demo_game.nope").isEmpty());
 
     REQUIRE(c.duplicateSelection());
     const SelectionRef copy = c.selection().current();
@@ -511,7 +512,7 @@ TEST_CASE("zone scene: volumes are translucent boxes in the kind colour, muzzles
     CHECK(pickup->ref == SelectionRef::zone("pickup"));
     CHECK(pickup->pickable);
     CHECK(pickup->opacity < 0.5f);
-    CHECK(pickup->color == QColor("#ff9944"));
+    CHECK(pickup->color == QColor(QString::fromStdString(cat.findZoneKind(kPickup)->color)));
     CHECK(approx(pickup->size, c.findZone("pickup")->sizeM));
     // Link pose * local: the pickup rides on the intake.
     CHECK(approx(pickup->world.position, (ops::mechanismRootWorld(c, cat, "intake") * c.findZone("pickup")->local).position));

@@ -339,11 +339,11 @@ TEST_CASE("page: selecting a mechanism shows its slots and generated property fo
     CHECK(insp->form("mech.props")->hasField("pickupZone"));
 
     f.c().selection().set(SelectionRef::mechanism("shooter"));
-    CHECK(insp->form("panel:game_2026.aiming") != nullptr);       // plugin panel contributed to matching templates only
+    CHECK(insp->form("panel:demo_game.aiming") != nullptr);       // plugin panel contributed to matching templates only
     f.c().selection().set(SelectionRef::mechanism("indexer"));
-    CHECK(insp->form("panel:game_2026.aiming") == nullptr);
+    CHECK(insp->form("panel:demo_game.aiming") == nullptr);
     f.c().selection().set(SelectionRef::plugin());
-    CHECK(insp->form("panel:game_2026.hopper") != nullptr);
+    CHECK(insp->form("panel:demo_game.hopper") != nullptr);
     CHECK(insp->form("plugin")->hasField("preloadFuel"));
     f.c().selection().set(SelectionRef::wheel("fr"));
     CHECK(insp->slotRows().size() == 3);  // drive + steer + optional azimuth encoder

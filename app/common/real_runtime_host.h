@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "contract/runtime_host.h"
+#include "contract/start_position_selection.h"
 #include "host/robot_session.h"
 
 namespace wpiemu::app {
@@ -42,7 +43,7 @@ public:
     HostStatus status() const override { return status_; }
     HostScene scene() const override { return scene_; }
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const override;
-    QString startPosition() const override { return startPositionId_; }
+    QString startPosition() const override { return startSelection_.id(); }
     void setProject(const HostProject& project) override;
 
     // The extension that would be launched (empty when it cannot be found).
@@ -84,7 +85,7 @@ private:
     std::string gamePluginId_;
     std::shared_ptr<const sdk::FieldDescription> field_;
     std::string fieldPluginId_;
-    QString startPositionId_;
+    StartPositionSelection startSelection_;
 
     std::unique_ptr<host::RobotSession> session_;
     std::shared_ptr<const sdk::ISimSnapshot> lastSnapshot_;

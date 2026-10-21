@@ -278,8 +278,8 @@ private:
     QVector3D cameraPosition_;
     QQuaternion cameraRotation_;
     float cameraFov_ = 45.f;
-    float fieldLength_ = 16.46f;
-    float fieldWidth_ = 8.23f;
+    float fieldLength_ = kGenericFieldLengthM;
+    float fieldWidth_ = kGenericFieldWidthM;
     QVector3D fieldCenter_{8.2f, 4.1f, 0.f};
     bool zonesVisible_ = true;
     bool tagsVisible_ = true;

@@ -37,7 +37,9 @@ Launching robot code is different from beginning simulation. The live robot can 
 for discovery; starting and stopping simulation enter and leave lock-step without a reboot.
 Restarting robot code relaunches it; resetting simulation does not. A same-project config edit
 applies to the next run and may require relaunch. Deferred start intent survives same-project
-relaunches but is canceled when the project changes.
+relaunches but is canceled when the project changes. The selected start position follows the same
+rule in every host through [`StartPositionSelection`](../../app/contract/start_position_selection.h):
+it accepts only an id the config has and is dropped on a project switch or when its entry disappears.
 
 Keep process state, link state, `programStarted`, and `simulating` distinct when enabling UI
 actions. `HostStatus::runGeneration` changes for robot launches, not physics resets.
@@ -48,6 +50,9 @@ without erasing user mappings. Declared addresses are not physical identities; s
 `FakeEditorBackend` and `FakeRunBackend` are separate page-level implementations for tests and
 standalone demos; they do not exercise the real host, launcher, or IPC. The fake editor backend
 validates with the same SDK config checks as core, over its own `EditorCatalog` ([runtime](runtime.md)).
+Both play the neutral [demo game](../../sdk/include/wpiemu/sdk/testing/demo_game.h): its plugin id, zone
+kinds, game values, HUD, panels, field and tags are defined once there, every id starting with `demo_game.`,
+and only the two demo robots differ. Season data belongs to a game plugin, never to a fake or a page library.
 
 ## Shell, wizard, and persistence
 

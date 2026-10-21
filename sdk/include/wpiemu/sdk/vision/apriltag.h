@@ -11,10 +11,13 @@
 
 namespace wpiemu::sdk {
 
+// Side length of the black square (6.5 in) of every FRC field tag: the same each season, not season data.
+inline constexpr double kFrcAprilTagSizeM = 0.1651;
+
 struct AprilTag {
     int id = 0;
     Pose3 pose;               // field frame, centre of the tag; +X out of the face
-    double sizeM = 0.1651;    // side length of the black square (6.5 in)
+    double sizeM = kFrcAprilTagSizeM;
 
     bool operator==(const AprilTag&) const = default;
 };

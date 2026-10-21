@@ -121,7 +121,7 @@ private:
 struct TagOverlay {
     int id = 0;
     sdk::Pose3 pose;     // field frame, +X out of the face
-    float sizeM = 0.1651f;
+    float sizeM = static_cast<float>(sdk::kFrcAprilTagSizeM);
     bool seen = false;
 };
 
@@ -153,12 +153,16 @@ private:
     std::vector<char> changed_;
 };
 
+// The floor drawn when a project has no plugin field: an FRC-field-sized placeholder, not any season's field.
+inline constexpr float kGenericFieldLengthM = 16.46f;
+inline constexpr float kGenericFieldWidthM = 8.23f;
+
 // Static field parts (floor + visuals) and the XY centre of the playing area.
 struct FieldParts {
     std::vector<ScenePart> parts;
     sdk::Vec3 center;       // z = 0
-    float lengthM = 16.46f;
-    float widthM = 8.23f;
+    float lengthM = kGenericFieldLengthM;
+    float widthM = kGenericFieldWidthM;
 };
 FieldParts buildFieldParts(const sdk::FieldDescription* field);
 
