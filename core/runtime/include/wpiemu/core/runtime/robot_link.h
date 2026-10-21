@@ -2,17 +2,16 @@
 
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <vector>
 
+#include "wpiemu/sdk/core/blocking_queue.h"
 #include "wpiemu/sdk/core/interface.h"
 #include "wpiemu/sdk/core/logger.h"
+#include "wpiemu/sdk/core/stoppable_thread.h"
 #include "wpiemu/sdk/ipc/transport.h"
 
 namespace wpiemu::core::runtime {
@@ -56,9 +55,9 @@ public:
 
 private:
     friend class ChannelRobotLink;
-    struct State;
-    static void push(const std::shared_ptr<State>& state, InboundEvent event);
-    std::shared_ptr<State> state_;
+    using Queue = sdk::BlockingQueue<InboundEvent>;
+    static void push(const std::shared_ptr<Queue>& queue, InboundEvent event);
+    std::shared_ptr<Queue> queue_;  // shared so a reader that outlives the inbox still publishes into a live, closed queue
 };
 
 // IRobotLink over a sdk MessageChannel (any ITransport + IMessageCodec, e.g. the ipc module's, or the in-memory
@@ -80,16 +79,15 @@ public:
     std::uint64_t id() const { return linkId_; }
 
 private:
-    void readLoop();
+    void readLoop(const sdk::StopToken& stop);
 
     std::uint64_t linkId_;
     std::string description_;
-    std::shared_ptr<MessageInbox::State> inbox_;
+    std::shared_ptr<MessageInbox::Queue> inbox_;
     sdk::proto::MessageChannel channel_;
     std::mutex sendMutex_;
-    std::atomic<bool> stop_{false};
     std::atomic<bool> started_{false};
-    std::thread reader_;
+    sdk::StoppableThread reader_;
 };
 
 // Accepts the extension's connection(s) on an ITransportServer and feeds the inbox. One robot at a time is
@@ -105,16 +103,15 @@ public:
     std::string endpoint() const;  // what the robot gets in WPIEMU_IPC (valid after start())
 
 private:
-    void acceptLoop();
+    void acceptLoop(const sdk::StopToken& stop);
 
     std::unique_ptr<sdk::proto::ITransportServer> server_;
     std::shared_ptr<const sdk::proto::IMessageCodec> codec_;
     MessageInbox& inbox_;
     sdk::ILogger* logger_;
-    std::atomic<bool> stop_{false};
     std::uint64_t nextLinkId_ = 1;
-    std::thread thread_;
     std::vector<std::weak_ptr<ChannelRobotLink>> links_;  // accept thread, then stop() after join
+    sdk::StoppableThread thread_;
 };
 
 }  // namespace wpiemu::core::runtime

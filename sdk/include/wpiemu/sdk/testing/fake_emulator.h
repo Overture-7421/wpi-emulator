@@ -14,11 +14,11 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "wpiemu/sdk/core/stoppable_thread.h"
 #include "wpiemu/sdk/ipc/lifecycle.h"
 #include "wpiemu/sdk/ipc/messages.h"
 #include "wpiemu/sdk/ipc/transport.h"
@@ -29,12 +29,12 @@ class FakeEmulator {
 public:
     FakeEmulator(std::unique_ptr<proto::ITransport> transport, std::shared_ptr<const proto::IMessageCodec> codec)
         : channel_(std::make_unique<proto::MessageChannel>(std::move(transport), std::move(codec))) {
-        reader_ = std::thread([this] { readLoop(); });
+        reader_.start([this](const StopToken& stop) { readLoop(stop); });
     }
     ~FakeEmulator() {
-        stop_ = true;
+        reader_.requestStop();
         channel_->close();
-        if (reader_.joinable()) reader_.join();
+        reader_.join();
     }
 
     // Answer the next Hello with this ack (sessionId/epoch are what the tests then stamp on frames).
@@ -128,8 +128,8 @@ private:
         return log != nullptr && proto::isLifecycleLog(*log, proto::kLifecycleProgramStarted);
     }
 
-    void readLoop() {
-        while (!stop_) {
+    void readLoop(const StopToken& stop) {
+        while (!stop.stopRequested()) {
             proto::Message m;
             const Result<bool> got = channel_->receive(m, std::chrono::milliseconds{20});
             if (!got) {
@@ -156,9 +156,8 @@ private:
     std::deque<proto::Message> inbox_;
     std::vector<int> history_;
     std::optional<proto::HelloAck> autoAck_;
-    std::atomic<bool> stop_{false};
     std::atomic<bool> closed_{false};
-    std::thread reader_;
+    StoppableThread reader_;
 };
 
 }  // namespace wpiemu::sdk::testing

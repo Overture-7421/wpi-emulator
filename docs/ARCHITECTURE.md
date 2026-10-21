@@ -68,6 +68,8 @@ Ownership is deliberately narrow:
   During lock-step, bridge operations happen between robot steps while the robot is quiescent.
 - **Transport workers:** move messages between processes and queues; they do not mutate the world.
   The extension also has an independent watchdog thread that can recover without a bridge lock.
+  Hand-off queues and joinable workers are the SDK's [BlockingQueue](../sdk/include/wpiemu/sdk/core/blocking_queue.h)
+  and [StoppableThread](../sdk/include/wpiemu/sdk/core/stoppable_thread.h); overflow and drop policy stays with the owner.
 
 The [runtime contract](reference/runtime.md) describes construction and configuration ownership;
 the [extension/IPC contract](reference/extension-ipc.md) describes robot startup and worker lifetimes.

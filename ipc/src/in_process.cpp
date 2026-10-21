@@ -1,11 +1,11 @@
 #include "wpiemu/ipc/in_process.h"
 
 #include <condition_variable>
-#include <deque>
 #include <map>
 #include <mutex>
 
 #include "wpiemu/ipc/endpoint.h"
+#include "wpiemu/sdk/core/blocking_queue.h"
 
 namespace wpiemu::ipc {
 
@@ -14,12 +14,8 @@ using namespace sdk::proto;
 
 namespace detail {
 
-struct Listener {
-    std::mutex mutex;
-    std::condition_variable cv;
-    std::deque<std::unique_ptr<ITransport>> pending;
-    bool closed = false;
-};
+// Connections a client made and the server has not accepted yet; closing it refuses further clients.
+using Listener = BlockingQueue<std::unique_ptr<ITransport>>;
 
 struct InProcessState {
     MemoryStreamOptions streamOptions;
@@ -58,14 +54,12 @@ public:
 
     Result<std::unique_ptr<ITransport>> accept(std::chrono::milliseconds timeout) override {
         if (!listener_) return makeError(ErrorCode::InvalidState, "listen() has not been called");
-        std::unique_lock lock(listener_->mutex);
-        listener_->cv.wait_for(lock, timeout, [&] { return !listener_->pending.empty() || listener_->closed; });
-        if (!listener_->pending.empty()) {
-            std::unique_ptr<ITransport> t = std::move(listener_->pending.front());
-            listener_->pending.pop_front();
-            return t;
+        std::unique_ptr<ITransport> accepted;
+        switch (listener_->pop(accepted, timeout)) {
+            case Listener::PopResult::Item: return accepted;
+            case Listener::PopResult::Closed: return makeError(ErrorCode::Cancelled, "server closed");
+            case Listener::PopResult::Timeout: break;
         }
-        if (listener_->closed) return makeError(ErrorCode::Cancelled, "server closed");
         return std::unique_ptr<ITransport>{};
     }
 
@@ -76,14 +70,7 @@ public:
             const auto it = state_->listeners.find(endpoint_);
             if (it != state_->listeners.end() && it->second == listener_) state_->listeners.erase(it);
         }
-        std::deque<std::unique_ptr<ITransport>> orphans;
-        {
-            std::lock_guard lock(listener_->mutex);
-            listener_->closed = true;
-            orphans.swap(listener_->pending);
-            listener_->cv.notify_all();
-        }
-        for (auto& t : orphans) t->close();
+        for (auto& orphan : listener_->closeAndDrain()) orphan->close();
     }
 
 private:
@@ -108,13 +95,9 @@ public:
         }
         MemoryStreamPair streams = makeMemoryStreamPair(state_->streamOptions);
         auto mine = std::make_unique<FramedTransport>(std::move(streams.first), state_->transportOptions);
-        auto theirs = std::make_unique<FramedTransport>(std::move(streams.second), state_->transportOptions);
-        {
-            std::lock_guard lock(listener->mutex);
-            if (listener->closed) return makeError(ErrorCode::Disconnected, "server closed");
-            listener->pending.push_back(std::move(theirs));
-            listener->cv.notify_one();
-        }
+        std::unique_ptr<ITransport> theirs = std::make_unique<FramedTransport>(std::move(streams.second), state_->transportOptions);
+        if (listener->push(std::move(theirs)) == Listener::PushResult::Closed)
+            return makeError(ErrorCode::Disconnected, "server closed");
         return std::unique_ptr<ITransport>(std::move(mine));
     }
 

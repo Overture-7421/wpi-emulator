@@ -140,7 +140,9 @@ sends Goodbye, and ends the connection rather than reconnecting.
 
 Bridge tick operations and HAL stepping belong to the clock thread. HAL callbacks on robot threads
 only record events; they must not step time or perform IPC I/O. The
-[IPC link](../../halsim_ext/src/ipc_link.cpp) has separate reader/writer threads and message queues.
+[IPC link](../../halsim_ext/src/ipc_link.cpp) has separate reader/writer threads and message queues. Its bounded inbound
+queue and the emulator's mailbox are SDK [BlockingQueues](../../sdk/include/wpiemu/sdk/core/blocking_queue.h): the link
+lets a closed queue drain, the mailbox discards its pending events. The outbound side keeps its own log-drop and flush accounting.
 Bridge startup happens during initialization, before the clock thread starts; normal shutdown stops
 bridges after joining it. Free-running modes permit concurrent robot execution, unlike lock-step's
 between-step quiescence. The watchdog never calls a bridge.

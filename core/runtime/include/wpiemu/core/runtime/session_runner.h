@@ -6,12 +6,12 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <thread>
 #include <variant>
 #include <vector>
 
 #include "wpiemu/core/runtime/robot_link.h"
 #include "wpiemu/core/runtime/simulation_session.h"
+#include "wpiemu/sdk/core/stoppable_thread.h"
 #include "wpiemu/sdk/ipc/lockstep.h"
 #include "wpiemu/sdk/telemetry/sim_controller.h"
 
@@ -189,8 +189,7 @@ private:
     std::atomic<std::uint64_t> ticksSent_{0};
     std::atomic<std::uint64_t> epoch_{0};
     std::atomic<std::uint64_t> dropped_{0};
-    std::atomic<bool> stopThread_{false};
-    std::thread thread_;
+    sdk::StoppableThread thread_;
 };
 
 }  // namespace wpiemu::core::runtime

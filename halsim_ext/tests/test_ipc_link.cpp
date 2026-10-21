@@ -69,6 +69,22 @@ TEST_CASE("link drains queued inbound messages before reporting Closed") {
     CHECK(p.link->pop(m, 1000ms) == IpcLink::PopResult::Closed);
 }
 
+TEST_CASE("an inbound queue overflow closes the link and the queued messages still drain") {
+    LinkPair p;
+    constexpr std::uint64_t kInboundCapacity = 8192;
+    for (std::uint64_t i = 1; i <= kInboundCapacity + 100; ++i) {
+        proto::SensorFrame f;
+        f.tick = i;
+        if (!p.peer->send(proto::Message(f))) break;
+    }
+    REQUIRE(sdk::testing::waitUntil([&] { return !p.link->open(); }, 10s));
+    CHECK(p.link->closeReason().find("overflow") != std::string::npos);
+    std::uint64_t popped = 0;
+    proto::Message m;
+    while (p.link->pop(m, 1000ms) == IpcLink::PopResult::Message) ++popped;
+    CHECK(popped == kInboundCapacity);
+}
+
 TEST_CASE("link flush waits until the outbound queue reached the transport") {
     LinkPair p;
     for (int i = 0; i < 20; ++i) p.link->post(proto::Message(proto::Goodbye{"x"}));

@@ -11,6 +11,7 @@
 #include <string>
 #include <thread>
 
+#include "wpiemu/sdk/core/blocking_queue.h"
 #include "wpiemu/sdk/ipc/messages.h"
 #include "wpiemu/sdk/ipc/transport.h"
 
@@ -59,16 +60,19 @@ private:
     static constexpr std::size_t kMaxQueuedLogs = 512;
     static constexpr int kMaxConsecutiveDecodeErrors = 8;
 
+    using InboundQueue = sdk::BlockingQueue<sdk::proto::Message>;
+
     std::unique_ptr<sdk::proto::MessageChannel> channel_;
     std::atomic<bool> closed_{false};
     std::atomic<std::uint64_t> skipped_{0};
     std::atomic<std::uint64_t> droppedLogs_{0};
 
+    InboundQueue inbound_{kMaxInbound};
+
+    // Guards the outbound side: its queue, the writer's in-flight send (what flush() waits for) and the close reason.
     mutable std::mutex mutex_;
-    std::condition_variable inboundCv_;
     std::condition_variable outboundCv_;
     std::condition_variable drainedCv_;
-    std::deque<sdk::proto::Message> inbound_;
     std::deque<sdk::proto::Message> outbound_;
     std::size_t queuedLogs_ = 0;
     bool writing_ = false;  // writer is inside send()

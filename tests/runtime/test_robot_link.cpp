@@ -12,38 +12,16 @@
 #include <vector>
 
 #include "wpiemu/core/runtime/robot_link.h"
+#include "wpiemu/sdk/testing/deadlock_deadline.h"
 #include "wpiemu/sdk/testing/fake_clock_logger.h"
 #include "wpiemu/sdk/testing/in_memory_transport.h"
 
 using namespace wpiemu::sdk;
 using namespace wpiemu::core::runtime;
 using namespace std::chrono_literals;
+using wpiemu::sdk::testing::DeadlockDeadline;
 
 namespace {
-
-// A broken join / mailbox-lock ordering must fail finitely rather than hang the whole test run.
-class DeadlockDeadline {
-public:
-    DeadlockDeadline()
-        : thread_([this] {
-              std::unique_lock lock(mutex_);
-              if (!cv_.wait_for(lock, 10s, [this] { return done_; })) std::abort();
-          }) {}
-    ~DeadlockDeadline() {
-        {
-            std::lock_guard lock(mutex_);
-            done_ = true;
-        }
-        cv_.notify_all();
-        thread_.join();
-    }
-
-private:
-    std::mutex mutex_;
-    std::condition_variable cv_;
-    bool done_ = false;
-    std::thread thread_;
-};
 
 struct TransportState {
     bool waitFor(const std::function<bool()>& predicate) {
@@ -203,6 +181,23 @@ TEST_CASE("link: a reader can finish after its mailbox owner is destroyed") {
     std::lock_guard lock(state->mutex);
     CHECK(state->readerReturned);
     CHECK(state->destroyed);
+}
+
+TEST_CASE("link: closing before start still reports Disconnected without reading") {
+    DeadlockDeadline deadline;
+    MessageInbox inbox;
+    auto state = std::make_shared<TransportState>();
+    ChannelRobotLink link(1, std::make_unique<LifecycleTransport>(state), std::make_shared<testing::MemoryMessageCodec>(), inbox);
+    link.close();
+    CHECK_FALSE(link.connected());
+    link.start();
+    InboundEvent event;
+    REQUIRE(inbox.waitPop(event, 5s));
+    CHECK(event.kind == InboundEvent::Kind::Disconnected);
+    CHECK(event.detail == "closed");
+    link.shutdown();
+    std::lock_guard lock(state->mutex);
+    CHECK_FALSE(state->receiving);
 }
 
 TEST_CASE("inbox: close rejects pending and future connection owners outside its lock") {

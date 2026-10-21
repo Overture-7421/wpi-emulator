@@ -59,16 +59,16 @@ std::string SessionRunner::refusal() const {
 
 void SessionRunner::start() {
     if (thread_.joinable()) return;
-    stopThread_ = false;
-    thread_ = std::thread([this] {
-        while (!stopThread_ && !finished_) poll(std::chrono::milliseconds(10));
+    thread_.resetStop();
+    thread_.start([this](const StopToken& stop) {
+        while (!stop.stopRequested() && !finished_) poll(std::chrono::milliseconds(10));
     });
 }
 
 void SessionRunner::stop() {
-    stopThread_ = true;
+    thread_.requestStop();
     inbox_.wake();
-    if (thread_.joinable()) thread_.join();
+    thread_.join();
 }
 
 // ---- the iteration ------------------------------------------------------------------------------------------
