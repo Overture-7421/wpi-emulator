@@ -7,6 +7,14 @@ option(WPIEMU_QT_DOWNLOAD "Automatically download Qt 6 via aqtinstall when not f
 
 set(_wpiemu_qt_components Core Gui Widgets Quick Quick3D QuickWidgets Svg)
 
+# Clear stale Qt6*_DIR cache entries if a previous Qt installation was moved or deleted.
+if(Qt6_DIR AND NOT EXISTS "${Qt6_DIR}/Qt6Config.cmake")
+    unset(Qt6_DIR CACHE)
+    foreach(_comp IN LISTS _wpiemu_qt_components ITEMS Test Tools ShaderTools Quick3DRuntimeRender Quick3DUtils)
+        unset(Qt6${_comp}_DIR CACHE)
+    endforeach()
+endif()
+
 # 1. Search standard local Qt 6 install locations first.
 if(NOT Qt6_DIR)
     set(_wpiemu_qt_search_globs
@@ -30,7 +38,7 @@ find_package(Qt6 6.5 QUIET COMPONENTS ${_wpiemu_qt_components})
 
 # 2. If Qt 6 is still not on the machine and WPIEMU_QT_DOWNLOAD is ON, install the pinned release via aqtinstall.
 if(NOT Qt6_FOUND AND WPIEMU_QT_DOWNLOAD)
-    wpiemu_pinned_version(_wpiemu_qt_ver qt.release)
+    wpiemu_pinned_version(_wpiemu_qt_ver qt release)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
     if(WIN32)
@@ -53,20 +61,43 @@ if(NOT Qt6_FOUND AND WPIEMU_QT_DOWNLOAD)
     set(_aqt_kit_path "${_aqt_out_dir}/${_wpiemu_qt_ver}/${_aqt_kit_subdir}")
     if(NOT EXISTS "${_aqt_kit_path}/lib/cmake/Qt6/Qt6Config.cmake")
         message(STATUS "wpiemu: Qt ${_wpiemu_qt_ver} not found; installing via aqtinstall into ${_aqt_kit_path}...")
+        set(_aqt_python "${Python3_EXECUTABLE}")
         execute_process(
-            COMMAND "${Python3_EXECUTABLE}" -m aqt version
+            COMMAND "${_aqt_python}" -m aqt version
             RESULT_VARIABLE _aqt_check_rc
             OUTPUT_QUIET ERROR_QUIET)
         if(NOT _aqt_check_rc EQUAL 0)
+            # Create an isolated venv in the build tree so PEP 668 / uv / system-managed Pythons never reject pip install.
+            set(_aqt_venv "${CMAKE_BINARY_DIR}/_aqt_venv")
+            if(WIN32)
+                set(_aqt_venv_python "${_aqt_venv}/Scripts/python.exe")
+            else()
+                set(_aqt_venv_python "${_aqt_venv}/bin/python")
+            endif()
+            if(NOT EXISTS "${_aqt_venv_python}")
+                execute_process(
+                    COMMAND "${Python3_EXECUTABLE}" -m venv "${_aqt_venv}"
+                    RESULT_VARIABLE _venv_rc)
+                if(NOT _venv_rc EQUAL 0)
+                    message(FATAL_ERROR "Failed to create Python venv for aqtinstall at ${_aqt_venv}")
+                endif()
+            endif()
+            set(_aqt_python "${_aqt_venv_python}")
             execute_process(
-                COMMAND "${Python3_EXECUTABLE}" -m pip install --quiet aqtinstall
-                RESULT_VARIABLE _pip_rc)
-            if(NOT _pip_rc EQUAL 0)
-                message(FATAL_ERROR "Failed to install aqtinstall with Python (${Python3_EXECUTABLE})")
+                COMMAND "${_aqt_python}" -m aqt version
+                RESULT_VARIABLE _aqt_venv_check_rc
+                OUTPUT_QUIET ERROR_QUIET)
+            if(NOT _aqt_venv_check_rc EQUAL 0)
+                execute_process(
+                    COMMAND "${_aqt_python}" -m pip install --quiet aqtinstall
+                    RESULT_VARIABLE _pip_rc)
+                if(NOT _pip_rc EQUAL 0)
+                    message(FATAL_ERROR "Failed to install aqtinstall in ${_aqt_venv}")
+                endif()
             endif()
         endif()
         execute_process(
-            COMMAND "${Python3_EXECUTABLE}" -m aqt install-qt "${_aqt_host}" desktop "${_wpiemu_qt_ver}" "${_aqt_arch}"
+            COMMAND "${_aqt_python}" -m aqt install-qt "${_aqt_host}" desktop "${_wpiemu_qt_ver}" "${_aqt_arch}"
                     -O "${_aqt_out_dir}" -m qtquick3d qtshadertools
             RESULT_VARIABLE _aqt_rc)
         if(NOT _aqt_rc EQUAL 0 AND WIN32)
@@ -74,7 +105,7 @@ if(NOT Qt6_FOUND AND WPIEMU_QT_DOWNLOAD)
             set(_aqt_out_dir "${CMAKE_SOURCE_DIR}/.qt")
             set(_aqt_kit_path "${_aqt_out_dir}/${_wpiemu_qt_ver}/${_aqt_kit_subdir}")
             execute_process(
-                COMMAND "${Python3_EXECUTABLE}" -m aqt install-qt "${_aqt_host}" desktop "${_wpiemu_qt_ver}" "${_aqt_arch}"
+                COMMAND "${_aqt_python}" -m aqt install-qt "${_aqt_host}" desktop "${_wpiemu_qt_ver}" "${_aqt_arch}"
                         -O "${_aqt_out_dir}" -m qtquick3d qtshadertools
                 RESULT_VARIABLE _aqt_rc)
         endif()
@@ -82,7 +113,12 @@ if(NOT Qt6_FOUND AND WPIEMU_QT_DOWNLOAD)
             message(FATAL_ERROR "aqtinstall failed to download Qt ${_wpiemu_qt_ver} (${_aqt_arch})")
         endif()
     endif()
+    unset(Qt6_DIR CACHE)
+    foreach(_comp IN LISTS _wpiemu_qt_components ITEMS Test Tools ShaderTools Quick3DRuntimeRender Quick3DUtils)
+        unset(Qt6${_comp}_DIR CACHE)
+    endforeach()
     list(PREPEND CMAKE_PREFIX_PATH "${_aqt_kit_path}")
+    set(Qt6_DIR "${_aqt_kit_path}/lib/cmake/Qt6" CACHE PATH "Qt6 CMake configuration directory" FORCE)
 endif()
 
 find_package(Qt6 6.5 REQUIRED COMPONENTS ${_wpiemu_qt_components})
