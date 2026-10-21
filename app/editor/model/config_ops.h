@@ -2,7 +2,8 @@
 
 // Pure edit operations on a RobotConfig (no Qt, no undo): the vocabulary the editor's commands are
 // built from. Each function either performs the edit and returns success, or leaves the config
-// untouched. They are the unit-tested heart of the editor model.
+// untouched. They are the unit-tested heart of the editor model. Each section below is implemented
+// in its own config_ops_<domain>.cpp.
 //
 // Display frame (shared with the viewport): world origin on the floor below the HULL CENTRE, Z up.
 // The chassis frame (origin = COM, docs/reference/physics.md) is at (comOffset.xy, comHeight). Wheel `positionM.z` is a

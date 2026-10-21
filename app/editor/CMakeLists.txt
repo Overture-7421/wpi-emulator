@@ -11,7 +11,15 @@ set(WPIEMU_EDITOR_SOURCES
     editor_backend.cpp
     editor_page.cpp
     fake_editor_backend.cpp
-    model/config_ops.cpp
+    model/config_ops_cameras.cpp
+    model/config_ops_chassis.cpp
+    model/config_ops_frames.cpp
+    model/config_ops_mechanisms.cpp
+    model/config_ops_sensors.cpp
+    model/config_ops_slots.cpp
+    model/config_ops_start_positions.cpp
+    model/config_ops_volumes.cpp
+    model/config_ops_zones.cpp
     model/editor_document.cpp
     model/motion_links.cpp
     model/property_groups.cpp
