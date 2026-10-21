@@ -60,6 +60,9 @@ The shell coordinates the selected project through `ProjectSession` and `ShellCo
 the setup pages edit `WizardViewModel`. The wizard's `updateRobotConfig()` merges robot basics
 into the existing model rather than replacing mechanisms, mappings, and plugin sections.
 Do not build a fresh model over an edited robot merely to update wizard fields.
+The wizard's wheels come from the SDK's [wheel layouts](../../sdk/include/wpiemu/sdk/physics/wheel_layout.h).
+`basics_limits` holds the ranges its spin boxes offer and `validateBasics()` reports; they are presentation
+limits, tighter than the physical validity [core validates](runtime.md), and a test keeps them inside it.
 
 `ConfigRepository` adapts core's `ProjectConfigRepository`; widgets do not own persistence.
 The authoritative app-data save and the shareable project export are separate outcomes.

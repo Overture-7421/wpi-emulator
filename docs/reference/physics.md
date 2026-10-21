@@ -27,7 +27,9 @@ Wheel X/Y are chassis-local, but `positionM.z` is hub height above the rest floo
 (`<= 0` means one wheel radius). Spawn height is derived from COM height and wheel
 geometry, not from a start position's X/Y/yaw. Derived box inertia includes the offset
 to the actual COM. See [chassis construction](../../core/physics/src/chassis_builder.cpp)
-and [ChassisSpec](../../sdk/include/wpiemu/sdk/physics/chassis_spec.h) for dimensions/defaults.
+and [ChassisSpec](../../sdk/include/wpiemu/sdk/physics/chassis_spec.h) for dimensions/defaults. The default
+wheels of the built-in kinds, shared by the wizard, the editor's add-wheel and the demo robots, are in
+[wheel_layout.h](../../sdk/include/wpiemu/sdk/physics/wheel_layout.h).
 
 ## Traction and load model
 

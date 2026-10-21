@@ -25,6 +25,30 @@ const MotorChoice* findMotor(const QString& key);
 // Best catalog match for a spec (by name), nullptr when the spec is custom.
 const MotorChoice* findMotorBySpec(const sdk::MotorSpec& spec);
 
+// What the wizard offers and accepts for each value: the spin-box limits and the ranges validateBasics() reports. They
+// are presentation limits, always inside what core's ConfigValidator calls physical (positive, finite, motors per wheel
+// up to sdk::kMaxMotorsPerAxis); test_robot_basics.cpp checks that every accepted value builds a model core accepts.
+namespace basics_limits {
+
+template <class T>
+struct Range {
+    T min;
+    T max;
+    constexpr bool excludes(T value) const { return value < min || value > max; }
+};
+
+inline constexpr Range<double> kFrameM{0.25, 1.5};              // each side, without bumpers
+inline constexpr Range<double> kMassKg{5.0, 120.0};
+inline constexpr Range<double> kWheelDiameterM{0.04, 0.25};
+inline constexpr Range<double> kDriveRatio{0.5, 100.0};
+inline constexpr Range<double> kSteerRatio{0.5, 200.0};
+inline constexpr Range<double> kBumperM{0.0, 0.15};
+inline constexpr Range<int> kWheelsPerSide{2, 4};
+inline constexpr Range<int> kMotorsPerWheel{1, 4};
+inline constexpr Range<int> kStation{1, 3};
+
+}  // namespace basics_limits
+
 // The handful of numbers a team knows off the top of their head. Everything is SI; the UI converts.
 struct RobotBasics {
     QString name = QStringLiteral("Robot");

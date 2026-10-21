@@ -8,6 +8,7 @@
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/physics/physics_types.h"
+#include "wpiemu/sdk/physics/wheel_layout.h"
 #include "wpiemu/sdk/testing/demo_game.h"
 
 namespace wpiemu::app::runview {
@@ -60,18 +61,8 @@ sdk::RobotConfig FakeRunBackend::makeDemoConfig() {
     prims.push_back(box("bumper.right", {0.f, -0.40f, -0.10f}, {0.76f, 0.05f, 0.12f}, "#c0392b"));
     prims.push_back(box("battery", {-0.18f, 0.f, -0.045f}, {0.18f, 0.17f, 0.07f}, "#1f2937"));
 
-    const char* names[4] = {"fl", "fr", "bl", "br"};
-    const float xs[4] = {0.3f, 0.3f, -0.3f, -0.3f};
-    const float ys[4] = {0.3f, -0.3f, 0.3f, -0.3f};
     c.drivetrain.spec.kind = sdk::drivetrain_kind::kSwerve;
-    for (int i = 0; i < 4; ++i) {
-        sdk::WheelSpec w;
-        w.name = names[i];
-        w.kind = sdk::WheelKind::Swerve;
-        w.positionM = {xs[i], ys[i], w.radiusM};
-        w.steered = true;
-        c.drivetrain.spec.wheels.push_back(w);
-    }
+    c.drivetrain.spec.wheels = sdk::swerveWheels({}, 0.3f, 0.3f);
 
     sdk::MechanismConfig intake;
     intake.id = "intake";
@@ -438,11 +429,10 @@ void FakeRunBackend::stepWorld() {
     if (pos_.x < margin || pos_.x > demo::kFieldLengthM - margin) { pos_.x = std::clamp(pos_.x, margin, demo::kFieldLengthM - margin); vel_.x = 0.f; }
     if (pos_.y < margin || pos_.y > demo::kFieldWidthM - margin) { pos_.y = std::clamp(pos_.y, margin, demo::kFieldWidthM - margin); vel_.y = 0.f; }
 
-    static constexpr float kWx[4] = {0.3f, 0.3f, -0.3f, -0.3f};
-    static constexpr float kWy[4] = {0.3f, -0.3f, 0.3f, -0.3f};
-    for (int i = 0; i < 4; ++i) {
-        const float wx = vel_.x - omega_ * kWy[i];
-        const float wy = vel_.y + omega_ * kWx[i];
+    const std::vector<sdk::WheelSpec>& wheels = scene_.config->drivetrain.spec.wheels;
+    for (std::size_t i = 0; i < wheels.size(); ++i) {
+        const float wx = vel_.x - omega_ * wheels[i].positionM.y;
+        const float wy = vel_.y + omega_ * wheels[i].positionM.x;
         const float speed = std::hypot(wx, wy);
         if (speed > 0.05f) steer_[i] = std::atan2(wy, wx);
         spin_[i] += (speed * (std::cos(steer_[i]) * wx + std::sin(steer_[i]) * wy >= 0.f ? 1.f : -1.f)) / static_cast<float>(sdk::kDefaultWheelRadiusM) * dt;
@@ -532,13 +522,11 @@ void FakeRunBackend::publish() {
     d.chassis.linearVelocity = {vel_.x * std::cos(yaw_) - vel_.y * std::sin(yaw_), vel_.x * std::sin(yaw_) + vel_.y * std::cos(yaw_), 0.f};
     d.chassis.angularVelocity = {0.f, 0.f, omega_};
 
-    static constexpr const char* kNames[4] = {"fl", "fr", "bl", "br"};
-    static constexpr float kWx[4] = {0.3f, 0.3f, -0.3f, -0.3f};
-    static constexpr float kWy[4] = {0.3f, -0.3f, 0.3f, -0.3f};
-    for (int i = 0; i < 4; ++i) {
+    const std::vector<sdk::WheelSpec>& wheels = scene_.config->drivetrain.spec.wheels;
+    for (std::size_t i = 0; i < wheels.size(); ++i) {
         sdk::WheelSample w;
-        w.name = kNames[i];
-        w.contactPoint = d.chassis.pose.transformPoint({kWx[i], kWy[i], -0.2f});
+        w.name = wheels[i].name;
+        w.contactPoint = d.chassis.pose.transformPoint({wheels[i].positionM.x, wheels[i].positionM.y, -0.2f});
         w.contactPoint.z = 0.f;
         w.steerAngleRad = steer_[i];
         w.spinAngleRad = spin_[i];

@@ -52,7 +52,7 @@ Merge one only with proof that it removes complexity without changing behavior o
 
 - Formatters and parsers: the run-view HUD, state and stats formatters; extension versus IPC environment parsing.
 - Layers: IPC framing, framed transport, codec and channel; core versus extension link types; the vendor backend
-  chain; the wizard's checks versus core validation; the config codec versus the SDK value codec.
+  chain; the wizard's input ranges versus core validation; the config codec versus the SDK value codec.
 - Math: motor, tire and mechanism dynamics; the vision bridges' double-precision vendor math versus SDK float poses.
 - Hosts and shells: demo versus real runtime host, editor versus run-view 3D shell, POSIX versus Windows processes.
 - Targets and tests: `wpiemu_halsim_hal`, the physics library, per-boundary test harnesses, and the shared

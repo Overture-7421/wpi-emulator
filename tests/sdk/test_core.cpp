@@ -26,6 +26,7 @@
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/core/value.h"
 #include "wpiemu/sdk/dynamics/motor_model.h"
+#include "wpiemu/sdk/physics/wheel_layout.h"
 #include "wpiemu/sdk/testing/environment.h"
 #include "wpiemu/sdk/testing/fake_game_module.h"
 
@@ -359,6 +360,51 @@ TEST_CASE("wheel kinds round trip through their persisted keys") {
     CHECK(std::string_view(wheelKindName(WheelKind::Swerve)) == "swerve");
     CHECK_FALSE(parseWheelKind("treads").has_value());
     CHECK_FALSE(parseWheelKind("").has_value());
+}
+
+TEST_CASE("default wheels and layouts follow the drivetrain kind") {
+    CHECK(drivetrainWheel(drivetrain_kind::kSwerve).kind == WheelKind::Swerve);
+    CHECK(drivetrainWheel(drivetrain_kind::kSwerve).steered);
+    CHECK(drivetrainWheel(drivetrain_kind::kMecanum).kind == WheelKind::Mecanum);
+    CHECK_FALSE(drivetrainWheel(drivetrain_kind::kMecanum).steered);
+    CHECK(drivetrainWheel(drivetrain_kind::kTank).kind == WheelKind::Standard);
+    CHECK(drivetrainWheel("kiwi").kind == WheelKind::Standard);   // an unknown kind gets the plain wheel
+
+    WheelSpec base;
+    base.radiusM = 0.08f;
+    base.driveMotorCount = 2;
+    base.driveGearRatio = 9.f;
+    const auto names = [](const std::vector<WheelSpec>& wheels) {
+        std::vector<std::string> out;
+        for (const WheelSpec& w : wheels) out.push_back(w.name);
+        return out;
+    };
+
+    const std::vector<WheelSpec> swerve = swerveWheels(base, 0.3f, 0.2f);
+    CHECK(names(swerve) == std::vector<std::string>{"fl", "fr", "bl", "br"});
+    CHECK(swerve[0].positionM == Vec3{0.3f, 0.2f, 0.08f});   // the hub is one radius above the floor
+    CHECK(swerve[3].positionM == Vec3{-0.3f, -0.2f, 0.08f});
+    for (const WheelSpec& w : swerve) {
+        CHECK(isSteered(w));
+        CHECK(w.driveMotorCount == 2);   // everything else comes from `base`
+        CHECK(w.driveGearRatio == 9.f);
+    }
+
+    const std::vector<WheelSpec> mecanum = mecanumWheels(base, 0.3f, 0.2f);
+    CHECK(names(mecanum) == names(swerve));
+    CHECK(mecanum[0].positionM == swerve[0].positionM);
+    CHECK(mecanum[0].tire.tractionAngleRad == -mecanum[1].tire.tractionAngleRad);
+    CHECK(mecanum[0].tire.tractionAngleRad == mecanum[3].tire.tractionAngleRad);
+    CHECK(mecanum[0].tire.tractionAngleRad > 0.f);
+    CHECK(mecanum[0].kind == WheelKind::Mecanum);
+
+    const std::vector<WheelSpec> tank = tankWheels(base, 3, 0.3f, 0.2f);
+    CHECK(names(tank) == std::vector<std::string>{"left0", "left1", "left2", "right0", "right1", "right2"});
+    CHECK(tank[0].positionM == Vec3{-0.3f, 0.2f, 0.08f});   // rear to front on the left side
+    CHECK(tank[1].positionM.x == 0.f);
+    CHECK(tank[5].positionM == Vec3{0.3f, -0.2f, 0.08f});
+    CHECK_FALSE(isSteered(tank[0]));
+    CHECK(tankWheels(base, 1, 0.3f, 0.2f)[0].positionM.x == 0.f);   // a lone wheel sits at the centre
 }
 
 TEST_CASE("RobotConfig finds entries by id and hands out mutable ones from a mutable config") {

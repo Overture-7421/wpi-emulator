@@ -8,6 +8,7 @@
 #include "wpiemu/sdk/core/strings.h"
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/mechanisms/motion_config.h"
+#include "wpiemu/sdk/physics/wheel_layout.h"
 
 namespace wpiemu::app::editor::ops {
 
@@ -1024,13 +1025,8 @@ const sdk::WheelSpec* findWheel(const RobotConfig& c, std::string_view name) {
 }
 
 std::string addWheel(RobotConfig& c) {
-    sdk::WheelSpec w;
+    sdk::WheelSpec w = sdk::drivetrainWheel(c.drivetrain.spec.kind);
     w.name = uniqueWheelName(c, "wheel");
-    const std::string kind = c.drivetrain.spec.kind;
-    w.kind = kind == sdk::drivetrain_kind::kSwerve ? sdk::WheelKind::Swerve
-             : kind == sdk::drivetrain_kind::kMecanum ? sdk::WheelKind::Mecanum
-                                                      : sdk::WheelKind::Standard;
-    w.steered = kind == sdk::drivetrain_kind::kSwerve;
     w.positionM = Vec3{0.f, c.chassis.sizeM.y * 0.5f - 0.05f, w.radiusM};
     if (!c.drivetrain.spec.wheels.empty()) w.positionM.z = c.drivetrain.spec.wheels.front().positionM.z;
     c.drivetrain.spec.wheels.push_back(w);

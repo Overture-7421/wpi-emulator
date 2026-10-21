@@ -10,6 +10,7 @@
 #include "wpiemu/sdk/devices/device_identity.h"
 #include "wpiemu/sdk/dynamics/motor_model.h"
 #include "wpiemu/sdk/mechanisms/attachment.h"
+#include "wpiemu/sdk/physics/wheel_layout.h"
 #include "wpiemu/sdk/testing/demo_game.h"
 
 namespace wpiemu::app::editor {
@@ -232,18 +233,12 @@ sdk::RobotConfig FakeEditorBackend::sampleConfig() {
     c.chassis.primitives.push_back(prim("bumper_rear", sdk::PrimitiveKind::Box, {-0.40f, 0.f, -0.1f}, {0.06f, 0.88f, 0.12f}, "#c0392b"));
 
     c.drivetrain.spec.kind = "swerve";
-    const struct { const char* name; float x; float y; } modules[] = {{"fl", 0.28f, 0.28f}, {"fr", 0.28f, -0.28f}, {"bl", -0.28f, 0.28f}, {"br", -0.28f, -0.28f}};
+    c.drivetrain.spec.wheels = sdk::swerveWheels({}, 0.28f, 0.28f);
     int canId = 1;
-    for (const auto& m : modules) {
-        sdk::WheelSpec w;
-        w.name = m.name;
-        w.kind = sdk::WheelKind::Swerve;
-        w.steered = true;
-        w.positionM = {m.x, m.y, w.radiusM};
-        c.drivetrain.spec.wheels.push_back(w);
+    for (const sdk::WheelSpec& w : c.drivetrain.spec.wheels) {
         for (const char* what : {"drive", "steer"}) {
             sdk::DeviceKey key{"phoenix6", "talonfx", canId++, "canivore", -1};
-            c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, std::string(m.name) + "." + what}, key});
+            c.drivetrain.mappings.push_back({{sdk::slot_owner::kDrivetrain, w.name + "." + what}, key});
         }
     }
     c.robotMappings.push_back({{sdk::slot_owner::kRobot, "imu"}, {"phoenix6", "pigeon2", 13, "canivore", -1}});
