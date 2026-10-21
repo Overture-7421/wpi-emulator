@@ -5,21 +5,16 @@
 
 #include "wpiemu/sdk/core/ids.h"
 #include "wpiemu/sdk/core/severity.h"
-#include "wpiemu/sdk/devices/device_descriptor.h"
 #include "wpiemu/sdk/devices/device_identity.h"
-#include "wpiemu/sdk/devices/signal.h"
+#include "wpiemu/sdk/devices/device_record.h"
 
 namespace wpiemu::sdk {
 
 // A device as known to the emulator-side hub: announced by the extension, optionally mapped to a slot.
-struct DiscoveredDevice {
-    DeviceId id;
-    DeviceDescriptor descriptor;
-    std::vector<SignalSpec> signalSpecs;  // index == SignalSample::signal
+struct DiscoveredDevice : DeviceRecord {
     bool live = true;                 // false after the robot freed/destroyed it
     bool mapped = false;              // bound to a slot (else: loopback + warning); false while in Conflict
     // ---- device identity (device_identity.h) ----
-    std::string observedBus;          // bus seen by an L3 hook; empty = not observed
     AliasState aliasState = AliasState::None;
     std::vector<DeviceKey> aliases;   // distinct declared addresses resolving to this device (empty/1 => None)
 

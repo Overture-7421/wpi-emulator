@@ -116,7 +116,9 @@ Constructor-time bridge polling is off by default; `WPIEMU_LIVE_DISCOVERY` is an
 
 At the extension boundary, a tick applies pending driver-station state, battery and device inputs,
 polls/applies vision, steps HAL by `stepUs`, then polls discovery and collects outputs.
-Announcements precede samples that reference them. Unmapped devices in `LoopbackSet` are handled
+Announcements precede samples that reference them. A `DeviceAnnounce` is the SDK's
+[DeviceRecord](../../sdk/include/wpiemu/sdk/devices/device_record.h) (id, descriptor, signal specifications,
+observed bus) plus a `retired` flag; the hub's `DiscoveredDevice` extends the same record with mapping state. Unmapped devices in `LoopbackSet` are handled
 locally and omitted from actuator samples; loopback may be a no-op for a device with nothing to echo.
 Outputs are delta-filtered, with a full baseline initially and after applied Reset/Begin.
 

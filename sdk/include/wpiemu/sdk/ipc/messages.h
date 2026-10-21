@@ -55,7 +55,7 @@
 #include "wpiemu/sdk/core/ids.h"
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/core/units.h"
-#include "wpiemu/sdk/devices/device_descriptor.h"
+#include "wpiemu/sdk/devices/device_record.h"
 #include "wpiemu/sdk/devices/signal.h"
 #include "wpiemu/sdk/game/alliance.h"
 #include "wpiemu/sdk/vision/camera_frame.h"
@@ -163,14 +163,8 @@ struct HelloAck {
 };
 
 // ---- discovery ----------------------------------------------------------------------------------
-struct DeviceAnnounce {
-    DeviceId id;
-    DeviceDescriptor descriptor;
-    std::vector<SignalSpec> signalSpecs;     // SignalSample::signal indexes into this
+struct DeviceAnnounce : DeviceRecord {
     bool retired = false;                // robot freed the device (descriptor still identifies it)
-    // CAN bus label OBSERVED at runtime (CTRE L3 hook); empty = not observed. Never
-    // derived from a static SimDeviceRule. A re-announce with a new value updates the hub's device.
-    std::string observedBus;
 };
 
 // Devices the extension must loop back itself (unmapped: output copied to input, no IPC hop).

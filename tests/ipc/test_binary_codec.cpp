@@ -374,6 +374,48 @@ TEST_CASE("codec: DeviceAnnounce and DsState fields survive") {
     CHECK(ds.runEpoch == 6);
 }
 
+TEST_CASE("codec: DeviceAnnounce wire bytes are pinned") {
+    DeviceAnnounce a;
+    a.id = DeviceId{42};
+    a.descriptor.family = "p";
+    a.descriptor.type = "t";
+    a.descriptor.vendor = "v";
+    a.descriptor.id = 7;
+    a.descriptor.bus = "b";
+    a.descriptor.channel = -1;
+    a.descriptor.capabilities = Capability::MotorOutput | Capability::RotorFeedback;
+    a.descriptor.nativeName = "n";
+    a.descriptor.displayName = "d";
+    a.signalSpecs = {{"a", SignalDirection::Input, SignalType::Bool, "V"}, {"bb", SignalDirection::Bidirectional, SignalType::Int, ""}};
+    a.retired = true;
+    a.observedBus = "can";
+
+    const std::vector<std::byte> golden = bytesOf({
+        kWireFormatVersion, 3, 0,                    // header: DeviceAnnounce
+        42, 0, 0, 0,                                 // DeviceId
+        24, 0,                                       // descriptor record length
+        1, 'p', 1, 't', 1, 'v',                      // family, type, vendor
+        7, 0, 0, 0,                                  // id
+        1, 'b',                                      // bus
+        0xFF, 0xFF, 0xFF, 0xFF,                      // channel -1
+        3, 0, 0, 0,                                  // capabilities
+        1, 'n', 1, 'd',                              // nativeName, displayName
+        2,                                           // signal spec count
+        6, 0, 1, 'a', 1, 1, 1, 'V',                  // name, Input, Bool, unit
+        6, 0, 2, 'b', 'b', 2, 2, 0,                  // name, Bidirectional, Int, unit
+        1,                                           // retired
+        3, 'c', 'a', 'n',                            // observedBus
+    });
+    CHECK(encodeOk(a) == golden);
+
+    const auto back = std::get<DeviceAnnounce>(decodeOk(golden));
+    CHECK(back.id == a.id);
+    CHECK(back.descriptor == a.descriptor);
+    CHECK(back.signalSpecs == a.signalSpecs);
+    CHECK(back.retired);
+    CHECK(back.observedBus == "can");
+}
+
 TEST_CASE("codec: special floating point values and extreme integers round trip") {
     SensorFrame f;
     f.tick = ~std::uint64_t{0};
