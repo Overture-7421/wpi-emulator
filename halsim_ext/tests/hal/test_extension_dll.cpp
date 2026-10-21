@@ -12,6 +12,7 @@
 #include "wpiemu/ipc/binary_codec.h"
 #include "wpiemu/ipc/endpoint.h"
 #include "wpiemu/ipc/local_ipc.h"
+#include "wpiemu/sdk/testing/fake_emulator.h"
 
 // Loads the REAL halsim_wpiemu shared library through the HAL's own extension loader (exactly what
 // HALSIM_EXTENSIONS does in a robot process), connects it to a fake emulator over a real named pipe /
@@ -69,11 +70,11 @@ TEST_CASE("real extension library: loads through the HAL extension loader and ru
     REQUIRE(server.value()->listen());
 
     auto codec = std::make_shared<ipc::BinaryMessageCodec>();
-    std::unique_ptr<FakeEmulator> emulator;
+    std::unique_ptr<sdk::testing::FakeEmulator> emulator;
     std::thread accepting([&] {
         auto transport = server.value()->accept(std::chrono::seconds(20));
         if (transport && transport.value()) {
-            emulator = std::make_unique<FakeEmulator>(std::move(transport).value(), codec);
+            emulator = std::make_unique<sdk::testing::FakeEmulator>(std::move(transport).value(), codec);
             proto::HelloAck ack = defaultAck();
             ack.watchdogTimeoutMs = 5000;
             emulator->autoAck(ack);

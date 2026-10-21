@@ -12,6 +12,8 @@
 #include "hal/simulation/RoboRioData.h"
 #include "wpiemu/halsim_ext/hal_sim_platform.h"
 #include "wpiemu/halsim_ext/os_process.h"
+#include "wpiemu/sdk/testing/fake_emulator.h"
+#include "wpiemu/sdk/testing/in_memory_transport.h"
 
 using namespace wpiemu;
 using namespace wpiemu::halsim;
@@ -114,7 +116,7 @@ struct RealRig {
         codec = std::make_shared<sdk::testing::MemoryMessageCodec>();
         auto pair = sdk::testing::makeInMemoryTransportPair();
         client.push(std::move(pair.b));
-        emulator = std::make_unique<FakeEmulator>(std::move(pair.a), codec);
+        emulator = std::make_unique<sdk::testing::FakeEmulator>(std::move(pair.a), codec);
         emulator->sessionId = ack.sessionId;
         emulator->autoAck(std::move(ack));
         auto probe = std::make_unique<HalProbeBridge>();
@@ -138,8 +140,8 @@ struct RealRig {
 
     ExtensionConfig config;
     std::shared_ptr<sdk::testing::MemoryMessageCodec> codec;
-    QueueClient client;
-    std::unique_ptr<FakeEmulator> emulator;
+    sdk::testing::QueuedTransportClient client;
+    std::unique_ptr<sdk::testing::FakeEmulator> emulator;
     HalSimPlatform platform;
     FakeProcess process;
     HalProbeBridge* bridge = nullptr;

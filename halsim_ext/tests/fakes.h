@@ -1,27 +1,24 @@
 #pragma once
 
-// Test doubles for the HALSim extension: fake HAL ports, a scriptable bridge, an in-memory
-// "connector" and a fake emulator that speaks the protocol from the other end of an in-memory pipe.
+// Test doubles for the HALSim extension: fake HAL ports, scriptable bridges, and the Rig that runs an ExtensionRuntime
+// against them and a FakeEmulator (sdk/testing) at the other end of an in-memory pipe.
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "wpiemu/halsim_ext/extension_runtime.h"
 #include "wpiemu/halsim_ext/hal_ports.h"
 #include "wpiemu/sdk/devices/device_bridge.h"
-#include "wpiemu/sdk/ipc/lifecycle.h"
-#include "wpiemu/sdk/ipc/lockstep.h"
 #include "wpiemu/sdk/vision/vision_bridge.h"
+#include "wpiemu/sdk/testing/fake_emulator.h"
 #include "wpiemu/sdk/testing/in_memory_transport.h"
 #include "wpiemu/sdk/testing/wait.h"
 
@@ -295,179 +292,6 @@ private:
     std::string name_;
 };
 
-// ---- transport plumbing ---------------------------------------------------------------------------------
-// ITransportClient that hands out pre-made transports in order (one per connect()).
-class QueueClient final : public proto::ITransportClient {
-public:
-    void push(std::unique_ptr<proto::ITransport> t) {
-        std::lock_guard lock(mutex_);
-        queue_.push_back(std::move(t));
-    }
-    sdk::Result<std::unique_ptr<proto::ITransport>> connect(const std::string& endpoint,
-                                                            std::chrono::milliseconds timeout) override {
-        lastEndpoint = endpoint;
-        const auto deadline = std::chrono::steady_clock::now() + timeout;
-        for (;;) {
-            {
-                std::lock_guard lock(mutex_);
-                ++attempts;
-                if (!queue_.empty()) {
-                    auto t = std::move(queue_.front());
-                    queue_.pop_front();
-                    return t;
-                }
-            }
-            if (std::chrono::steady_clock::now() >= deadline)
-                return sdk::makeError(sdk::ErrorCode::Timeout, "no emulator listening");
-            std::this_thread::sleep_for(5ms);
-        }
-    }
-    std::string lastEndpoint;
-    std::atomic<int> attempts{0};
-
-private:
-    std::mutex mutex_;
-    std::deque<std::unique_ptr<proto::ITransport>> queue_;
-};
-
-// The emulator end of an in-memory pipe. A reader thread collects every inbound message; helpers
-// wait for / take messages and send frames with the identity the test chooses.
-class FakeEmulator {
-public:
-    FakeEmulator(std::unique_ptr<proto::ITransport> transport, std::shared_ptr<const proto::IMessageCodec> codec)
-        : channel_(std::make_unique<proto::MessageChannel>(std::move(transport), std::move(codec))) {
-        reader_ = std::thread([this] { readLoop(); });
-    }
-    ~FakeEmulator() {
-        stop_ = true;
-        channel_->close();
-        if (reader_.joinable()) reader_.join();
-    }
-
-    // Answer the next Hello with this ack (sessionId/epoch are what the tests then stamp on frames).
-    void autoAck(proto::HelloAck ack) {
-        std::lock_guard lock(mutex_);
-        autoAck_ = std::move(ack);
-    }
-    bool send(proto::Message m) { return static_cast<bool>(channel_->send(m)); }
-    void disconnect() { channel_->close(); }
-
-    template <class T, class Pred = std::function<bool(const T&)>>
-    std::optional<T> take(std::chrono::milliseconds timeout, Pred pred = [](const T&) { return true; }) {
-        std::unique_lock lock(mutex_);
-        std::optional<T> found;
-        cv_.wait_for(lock, timeout, [&] {
-            for (auto it = inbox_.begin(); it != inbox_.end(); ++it) {
-                if (const T* v = std::get_if<T>(&*it); v != nullptr && pred(*v)) {
-                    found = *v;
-                    inbox_.erase(it);
-                    return true;
-                }
-            }
-            return false;
-        });
-        return found;
-    }
-    template <class T>
-    std::size_t count() const {
-        std::lock_guard lock(mutex_);
-        std::size_t n = 0;
-        for (const auto& m : inbox_)
-            if (std::holds_alternative<T>(m)) ++n;
-        return n;
-    }
-    bool waitForLifecycle(std::chrono::milliseconds timeout) {
-        return take<proto::Log>(timeout, [](const proto::Log& l) {
-                   return proto::isLifecycleLog(l, proto::kLifecycleProgramStarted);
-               }).has_value();
-    }
-    bool connectionClosed() const { return closed_; }
-    // Message types in arrival order (never consumed by take()).
-    static constexpr int kHistoryLifecycle = 1000;  // the program_started Log (other Logs record as MessageType::Log)
-    std::vector<int> history() const {
-        std::lock_guard lock(mutex_);
-        return history_;
-    }
-
-    std::uint64_t sessionId = 7;
-    std::uint64_t epoch = proto::kFirstRunEpoch;
-    std::uint64_t nextTick = 1;
-    sdk::SimTimeUs simTimeUs = 0;
-    std::vector<sdk::CameraFrame> pendingVision;   // attached to the next tick()
-
-    // Sends one SensorFrame and returns the extension's ack (nullopt on timeout).
-    std::optional<proto::ActuatorFrame> tick(std::vector<sdk::SignalSample> samples = {},
-                                             std::uint32_t stepUs = 5000, double batteryV = 12.0,
-                                             std::chrono::milliseconds timeout = 2000ms) {
-        proto::SensorFrame f;
-        f.tick = nextTick++;
-        simTimeUs += stepUs;
-        f.simTimeUs = simTimeUs;
-        f.stepUs = stepUs;
-        f.batteryVoltageV = batteryV;
-        f.samples = std::move(samples);
-        f.vision = std::move(pendingVision);
-        pendingVision.clear();
-        f.runEpoch = epoch;
-        const std::uint64_t tickNo = f.tick;
-        if (!send(proto::Message(std::move(f)))) return std::nullopt;
-        return take<proto::ActuatorFrame>(timeout, [tickNo](const proto::ActuatorFrame& a) {
-            return a.ackedTick() == tickNo;
-        });
-    }
-    bool sendControl(proto::SimCommand cmd, std::uint64_t commandId = proto::kUnspecified) {
-        proto::SimControl c;
-        c.command = cmd;
-        c.commandId = commandId;
-        c.sessionId = sessionId;
-        c.runEpoch = epoch;
-        return send(proto::Message(c));
-    }
-    bool sendDs(proto::DsState ds) {
-        ds.sessionId = sessionId;
-        ds.runEpoch = epoch;
-        return send(proto::Message(std::move(ds)));
-    }
-
-private:
-    static bool isLifecycle(const proto::Message& m) {
-        const auto* log = std::get_if<proto::Log>(&m);
-        return log != nullptr && proto::isLifecycleLog(*log, proto::kLifecycleProgramStarted);
-    }
-
-    void readLoop() {
-        while (!stop_) {
-            proto::Message m;
-            const sdk::Result<bool> got = channel_->receive(m, 20ms);
-            if (!got) {
-                closed_ = true;
-                cv_.notify_all();
-                return;
-            }
-            if (!got.value()) continue;
-            std::optional<proto::HelloAck> reply;
-            {
-                std::lock_guard lock(mutex_);
-                if (std::holds_alternative<proto::Hello>(m) && autoAck_) reply = autoAck_;
-                history_.push_back(isLifecycle(m) ? kHistoryLifecycle : static_cast<int>(proto::typeOf(m)));
-                inbox_.push_back(std::move(m));
-            }
-            if (reply) (void)channel_->send(proto::Message(*reply));
-            cv_.notify_all();
-        }
-    }
-
-    std::unique_ptr<proto::MessageChannel> channel_;
-    mutable std::mutex mutex_;
-    std::condition_variable cv_;
-    std::deque<proto::Message> inbox_;
-    std::vector<int> history_;
-    std::optional<proto::HelloAck> autoAck_;
-    std::atomic<bool> stop_{false};
-    std::atomic<bool> closed_{false};
-    std::thread reader_;
-};
-
 // ---- full rig ----------------------------------------------------------------------------------------------
 inline proto::HelloAck defaultAck() {
     proto::HelloAck ack;
@@ -505,7 +329,7 @@ struct Rig {
     void connectNext(proto::HelloAck ack) {
         auto pair = sdk::testing::makeInMemoryTransportPair();
         client.push(std::move(pair.b));
-        emulator = std::make_unique<FakeEmulator>(std::move(pair.a), codec);
+        emulator = std::make_unique<sdk::testing::FakeEmulator>(std::move(pair.a), codec);
         emulator->sessionId = ack.sessionId;
         emulator->epoch = ack.runEpoch;
         emulator->autoAck(std::move(ack));
@@ -552,8 +376,8 @@ struct Rig {
     ExtensionConfig config;
     RobotInfo robot{proto::RobotLanguage::Cpp, 2026, "2026.2.1", "test", 4242, "robot", {{"pwm", 20}}};
     std::shared_ptr<sdk::testing::MemoryMessageCodec> codec;
-    QueueClient client;
-    std::unique_ptr<FakeEmulator> emulator;
+    sdk::testing::QueuedTransportClient client;
+    std::unique_ptr<sdk::testing::FakeEmulator> emulator;
     FakeHalClock clock;
     FakeDriverStation ds;
     FakePower power;

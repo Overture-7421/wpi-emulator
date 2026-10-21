@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -9,6 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "wpiemu/sdk/ipc/transport.h"
@@ -98,6 +100,43 @@ inline InMemoryTransportPair makeInMemoryTransportPair() {
     return {std::make_unique<detail::InMemoryTransport>(connection, 0),
             std::make_unique<detail::InMemoryTransport>(std::move(connection), 1)};
 }
+
+// ITransportClient that hands out pre-made transports in order, one per connect(), waiting for one to be queued
+// until the timeout: tests push the extension end of a pair and keep the other.
+class QueuedTransportClient final : public proto::ITransportClient {
+public:
+    void push(std::unique_ptr<proto::ITransport> t) {
+        std::lock_guard lock(mutex_);
+        queue_.push_back(std::move(t));
+    }
+
+    Result<std::unique_ptr<proto::ITransport>> connect(const std::string& endpoint,
+                                                       std::chrono::milliseconds timeout) override {
+        lastEndpoint = endpoint;
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        for (;;) {
+            {
+                std::lock_guard lock(mutex_);
+                ++attempts;
+                if (!queue_.empty()) {
+                    auto t = std::move(queue_.front());
+                    queue_.pop_front();
+                    return t;
+                }
+            }
+            if (std::chrono::steady_clock::now() >= deadline)
+                return makeError(ErrorCode::Timeout, "no emulator listening");
+            std::this_thread::sleep_for(std::chrono::milliseconds{5});
+        }
+    }
+
+    std::string lastEndpoint;
+    std::atomic<int> attempts{0};
+
+private:
+    std::mutex mutex_;
+    std::deque<std::unique_ptr<proto::ITransport>> queue_;
+};
 
 class MemoryMessageCodec final : public proto::IMessageCodec {
 public:

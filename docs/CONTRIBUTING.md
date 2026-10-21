@@ -64,7 +64,8 @@ Add a focused regression test for changed behavior, next to the tests for that m
 interfaces and the header-only [SDK fakes](../sdk/include/wpiemu/sdk/testing) over implementation access.
 Wait on another thread or process with that folder's `waitUntil`, not a hand-written sleep loop, and build device
 announcements and hub-warning checks with its `device_fixtures.h`. Play the robot-process side of the protocol with its
-`fake_extension.h`: it owns Hello, frame answering and control acks, and a failing robot is configuration, not a new fake. Test helpers
+`fake_extension.h` (Hello, frame answering and control acks; a failing robot is configuration, not a new fake) and the
+emulator side with `fake_emulator.h`. Test helpers
 that need platform calls, such as the `ScopedEnv` environment guard, live in [tests/support](../tests/support).
 Cover the important failure/reset edge as well as the happy path; do not test constants or language
 behavior merely to increase coverage.
