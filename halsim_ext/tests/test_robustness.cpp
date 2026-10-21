@@ -1,5 +1,9 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <string>
+#include <vector>
+
 #include "fakes.h"
 
 using namespace wpiemu;
@@ -9,8 +13,10 @@ using namespace wpiemu::halsim::testing;
 namespace {
 // Parks console writes once enabled, so a test can hold the console (and the logger mutex behind it) at a chosen moment.
 struct ConsoleGate {
-    void write(std::string_view) {
+    void write(std::string_view line) {
         std::unique_lock lock(mutex);
+        lines.emplace_back(line);
+        cv.notify_all();
         if (!enabled) return;
         entered = true;
         cv.notify_all();
@@ -24,6 +30,14 @@ struct ConsoleGate {
         std::unique_lock lock(mutex);
         return cv.wait_for(lock, timeout, [&] { return entered; });
     }
+    // Console lines are recorded even while the gate is open.
+    bool waitForLine(std::string_view text, std::chrono::milliseconds timeout = 2000ms) {
+        std::unique_lock lock(mutex);
+        return cv.wait_for(lock, timeout, [&] {
+            return std::any_of(lines.begin(), lines.end(),
+                               [&](const std::string& line) { return line.find(text) != std::string::npos; });
+        });
+    }
     void release() {
         std::lock_guard lock(mutex);
         released = true;
@@ -31,6 +45,7 @@ struct ConsoleGate {
     }
     std::mutex mutex;
     std::condition_variable cv;
+    std::vector<std::string> lines;
     bool enabled = false;
     bool entered = false;
     bool released = false;
@@ -50,6 +65,9 @@ struct Started {
     explicit Started(ConsoleGate& gate, proto::HelloAck ack = defaultAck()) : rig(std::move(ack)) {
         rig.console = [&gate](std::string_view line) { gate.write(line); };
         startAndAwaitLifecycle();
+        // The session thread logs "robot program started" after posting the lifecycle message; wait for it so a gate
+        // enabled by the test can never park the session thread itself instead of the writer thread.
+        REQUIRE(gate.waitForLine("robot program started"));
     }
     Rig rig;
 
