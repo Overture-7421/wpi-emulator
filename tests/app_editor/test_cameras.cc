@@ -472,6 +472,7 @@ TEST_CASE("camera validation: issue paths are located to their camera and field"
     CHECK(at("cameras[0].hFovDeg").fieldKey == "hFovDeg");
     CHECK(at("cameras[0].name").fieldKey == "name");
     CHECK(at("cameras[0].local").fieldKey == "local");
+    CHECK(at("cameras[0].pose").fieldKey == "local");   // the shared validator reports the mount pose as ".pose"
     CHECK(at("cameras[0].id").fieldKey == "id");
     CHECK(at("cameras[9].attachment").selection.isNone());
 }

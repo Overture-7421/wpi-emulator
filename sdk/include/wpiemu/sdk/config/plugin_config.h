@@ -30,13 +30,15 @@ struct PluginConfigSchema {
 // Plugins may register mechanism templates only under their own id prefix ("<pluginId>.<name>", see
 // IGameModule::registerMechanisms). A plugin OWNS:
 //   * RobotConfig::plugins[<pluginId>] (its section), and
-//   * every MechanismConfig whose `type` satisfies ownsMechanismType(<pluginId>, type), including that
+//   * every MechanismConfig whose `type` satisfies ownsPluginId(<pluginId>, type), including that
 //     mechanism's properties, geometry, mount, attachment and slot mappings.
 // It owns NOTHING else: core fields (chassis, drivetrain, battery, sim, project, robotMappings), other
 // plugins' sections and core/other-plugin mechanisms are not the plugin's to change.
-inline bool ownsMechanismType(std::string_view pluginId, std::string_view mechanismType) {
-    return !pluginId.empty() && mechanismType.size() > pluginId.size() + 1 &&
-           mechanismType.substr(0, pluginId.size()) == pluginId && mechanismType[pluginId.size()] == '.';
+// The same "<pluginId>.<name>" rule covers the zone kinds (ZoneKindInfo::kind) and game values
+// (GameValueInfo::id) a plugin declares.
+inline bool ownsPluginId(std::string_view pluginId, std::string_view id) {
+    return !pluginId.empty() && id.size() > pluginId.size() + 1 && id.substr(0, pluginId.size()) == pluginId &&
+           id[pluginId.size()] == '.';
 }
 
 }  // namespace wpiemu::sdk

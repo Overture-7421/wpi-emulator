@@ -53,7 +53,11 @@ version return an error. Semantic problems return `LoadedConfig` with issues:
 successful loading alone does **not** imply `valid()`. Validation does not mutate the
 model. Keep stable issue codes and paths; the authoritative rules are in
 [ConfigValidator](../../core/runtime/src/config/config_validator.cpp) and the
-[SDK validation keys](../../sdk/include/wpiemu/sdk/config/validation_codes.h).
+[SDK validation keys](../../sdk/include/wpiemu/sdk/config/validation_codes.h). The start-position,
+zone, camera and sensor rules exist once, in
+[config_checks.h](../../sdk/include/wpiemu/sdk/config/config_checks.h); they ask an `IConfigCatalog`
+for mechanism templates, the selected plugin id, zone kinds and game values, so the validator and
+the editor's fake backend apply identical checks.
 
 Required unmapped mechanism slots are errors; missing drivetrain mappings are warnings.
 Motion-link followers are exempt from motor requirements. Device-capability checking

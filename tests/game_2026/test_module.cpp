@@ -38,7 +38,7 @@ TEST_CASE("zone kinds describe themselves for the editor and the plugin register
     const sdk::ZoneKindInfo* pickup = nullptr;
     const sdk::ZoneKindInfo* shooter = nullptr;
     for (const sdk::ZoneKindInfo& k : kinds) {
-        CHECK(sdk::ownsMechanismType("game_2026", k.kind));  // "<pluginId>." prefix
+        CHECK(sdk::ownsPluginId("game_2026", k.kind));  // "<pluginId>." prefix
         CHECK_FALSE(k.displayName.empty());
         CHECK_FALSE(k.description.empty());
         // defaults validate and every property is documented for the generic inspector
@@ -77,7 +77,7 @@ TEST_CASE("game values: the plugin declares what its game state publishes, and t
     const std::vector<sdk::GameValueInfo> values = s.module().contributeGameValues();
     REQUIRE(values.size() == 3);
     for (const sdk::GameValueInfo& v : values) {
-        CHECK(sdk::ownsGameValue("game_2026", v.id));
+        CHECK(sdk::ownsPluginId("game_2026", v.id));
         CHECK_FALSE(v.label.empty());
     }
     s.section()["preloadFuel"] = 2;

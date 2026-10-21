@@ -295,6 +295,7 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
             static const char* const kFields[] = {"id", "label", "name", "kind", "hFovDeg", "vFovDeg", "maxRangeM", "maxIncidenceDeg",
                                                   "fps", "latencyMs", "widthPx", "heightPx", "positionNoiseM", "yawNoiseDeg", "local"};
             if (field.rfind("attachment", 0) == 0) loc.fieldKey = "parent";
+            else if (field == "pose") loc.fieldKey = "local";  // the validator's path of the mount pose
             else if (std::find(std::begin(kFields), std::end(kFields), field) != std::end(kFields)) loc.fieldKey = field;
         }
         return loc;

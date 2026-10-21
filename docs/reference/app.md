@@ -46,7 +46,8 @@ without erasing user mappings. Declared addresses are not physical identities; s
 
 `--demo` selects `DemoRuntimeHost`, a scripted host without a robot process.
 `FakeEditorBackend` and `FakeRunBackend` are separate page-level implementations for tests and
-standalone demos; they do not exercise the real host, launcher, or IPC.
+standalone demos; they do not exercise the real host, launcher, or IPC. The fake editor backend
+validates with the same SDK config checks as core, over its own `EditorCatalog` ([runtime](runtime.md)).
 
 ## Shell, wizard, and persistence
 

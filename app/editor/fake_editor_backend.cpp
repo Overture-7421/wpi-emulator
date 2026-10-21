@@ -1,7 +1,9 @@
 #include "fake_editor_backend.h"
 
 #include <algorithm>
+#include <string_view>
 
+#include "wpiemu/sdk/config/config_checks.h"
 #include "wpiemu/sdk/config/property_builders.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/units.h"
@@ -112,6 +114,20 @@ sdk::LinkSpec link(const char* name, const char* label, sdk::Vec3 pos) {
 
 const CapabilitySet kTalon = Capability::MotorOutput | Capability::RotorFeedback | Capability::PositionSensor |
                              Capability::VelocitySensor | Capability::LimitInputs | Capability::SupplyVoltage;
+
+// The editor's catalog as the shared zone / camera / sensor checks see it (sdk/config/config_checks.h).
+class EditorConfigCatalog final : public sdk::IConfigCatalog {
+public:
+    explicit EditorConfigCatalog(const EditorCatalog& catalog) : catalog_(catalog) {}
+
+    const sdk::MechanismTemplateInfo* mechanismTemplate(std::string_view type) const override { return catalog_.findTemplate(type); }
+    std::string_view gamePluginId() const override { return catalog_.pluginId; }
+    const sdk::ZoneKindInfo* zoneKind(std::string_view kind) const override { return catalog_.findZoneKind(kind); }
+    const sdk::GameValueInfo* gameValue(std::string_view id) const override { return catalog_.findGameValue(id); }
+
+private:
+    const EditorCatalog& catalog_;
+};
 
 }  // namespace
 
@@ -469,111 +485,13 @@ std::vector<sdk::Issue> FakeEditorBackend::validate(const sdk::RobotConfig& c) c
             if (issue.severity == sdk::Severity::Error || issue.message != "unknown property") out.push_back(std::move(issue));
     }
     for (auto& issue : sdk::validateMechanismAttachments(c, factory_)) out.push_back(std::move(issue));
-    for (auto& issue : validateZones(c)) out.push_back(std::move(issue));
-    for (auto& issue : validateCameras(c)) out.push_back(std::move(issue));
-    for (auto& issue : validateSensors(c)) out.push_back(std::move(issue));
+    const EditorConfigCatalog catalog(catalog_);
+    sdk::validateZones(c, catalog, out);
+    sdk::validateCameras(c, catalog, out);
+    sdk::validateSensors(c, catalog, out);
+    sdk::validateStartPositions(c, out);
     for (auto& issue : sdk::validateDeviceAliases(c.allMappings())) out.push_back(std::move(issue));
     if (c.chassis.massKg < 10.f) out.push_back({sdk::Severity::Warning, "chassis.massKg", "chassis mass below 10 kg is unusual for an FRC robot", {}});
-    return out;
-}
-
-std::vector<sdk::Issue> FakeEditorBackend::validateZones(const sdk::RobotConfig& c) const {
-    std::vector<sdk::Issue> out;
-    for (std::size_t i = 0; i < c.zones.size(); ++i) {
-        const sdk::ZoneConfig& z = c.zones[i];
-        const std::string base = "zones[" + std::to_string(i) + "]";
-        if (z.id.empty() || c.findMechanism(z.id) != nullptr || c.findCamera(z.id) != nullptr)
-            out.push_back({sdk::Severity::Error, base + ".id", "zone id must be unique and not a mechanism id", "zone_id_duplicate"});
-        const sdk::MechanismAttachment att = z.attachment;
-        if (!att.onChassis()) {
-            const sdk::MechanismConfig* parent = c.findMechanism(att.parentMechanismId);
-            const sdk::MechanismTemplateInfo* info = parent != nullptr ? catalog_.findTemplate(parent->type) : nullptr;
-            if (parent == nullptr)
-                out.push_back({sdk::Severity::Error, base + ".attachment", "parent mechanism '" + att.parentMechanismId + "' does not exist",
-                               sdk::validation_code::kAttachmentParentMissing});
-            else if (info != nullptr && !sdk::hasLink(*info, att.parentLink))
-                out.push_back({sdk::Severity::Error, base + ".attachment", "mechanism '" + parent->id + "' has no link '" + att.parentLink + "'",
-                               sdk::validation_code::kAttachmentLinkMissing});
-        } else if (att.parentLink != sdk::kRootLink) {
-            out.push_back({sdk::Severity::Error, base + ".attachment", "the chassis only exposes the link 'root'", sdk::validation_code::kAttachmentLinkMissing});
-        }
-        const sdk::ZoneKindInfo* kind = catalog_.findZoneKind(z.kind);
-        if (kind == nullptr)
-            out.push_back({sdk::Severity::Warning, base + ".kind", "unknown zone kind '" + z.kind + "'", "zone_kind_unknown"});
-        else
-            for (auto& issue : sdk::validateProperties(kind->properties, z.properties, base + ".properties"))
-                if (issue.severity == sdk::Severity::Error || issue.message != "unknown property") {
-                    if (issue.code.empty()) issue.code = "zone_property_invalid";
-                    out.push_back(std::move(issue));
-                }
-        for (std::size_t j = 0; j < z.activation.conditions.size(); ++j)
-            if (c.findMechanism(z.activation.conditions[j].mechanismId) == nullptr)
-                out.push_back({sdk::Severity::Warning, base + ".activation.conditions[" + std::to_string(j) + "].mechanism",
-                               "condition mechanism '" + z.activation.conditions[j].mechanismId + "' does not exist", "zone_condition_mechanism_unknown"});
-    }
-    return out;
-}
-
-std::vector<sdk::Issue> FakeEditorBackend::validateSensors(const sdk::RobotConfig& c) const {
-    // Mirrors the real validator's sensor source checks (core: config_validator.h, issue_code::kSensor*).
-    std::vector<sdk::Issue> out;
-    for (std::size_t i = 0; i < c.sensors.size(); ++i) {
-        const sdk::SensorConfig& s = c.sensors[i];
-        const std::string base = "sensors[" + std::to_string(i) + "]";
-        if (s.source.empty())
-            out.push_back({sdk::Severity::Warning, base + ".source", "sensor has no source; it reads as idle", "sensor_source_missing"});
-        else if (catalog_.findGameValue(s.source) == nullptr)
-            out.push_back({sdk::Severity::Warning, base + ".source", "the game plugin does not publish '" + s.source + "'", "sensor_source_unknown"});
-    }
-    return out;
-}
-
-std::vector<sdk::Issue> FakeEditorBackend::validateCameras(const sdk::RobotConfig& c) const {
-    // Mirrors the real validator's camera checks (core: config_validator.h, issue_code::kCamera*).
-    std::vector<sdk::Issue> out;
-    auto finite = [](double v) { return std::isfinite(v); };
-    for (std::size_t i = 0; i < c.cameras.size(); ++i) {
-        const sdk::CameraConfig& cam = c.cameras[i];
-        const std::string base = "cameras[" + std::to_string(i) + "]";
-        if (cam.id.empty())
-            out.push_back({sdk::Severity::Error, base + ".id", "camera id must not be empty", "camera_id_invalid"});
-        else if (c.findMechanism(cam.id) != nullptr || c.findZone(cam.id) != nullptr ||
-                 std::count_if(c.cameras.begin(), c.cameras.end(), [&](const sdk::CameraConfig& o) { return o.id == cam.id; }) > 1)
-            out.push_back({sdk::Severity::Error, base + ".id", "camera id must be unique and not a mechanism or zone id", "camera_id_duplicate"});
-        if (std::any_of(c.cameras.begin(), c.cameras.begin() + static_cast<std::ptrdiff_t>(i),
-                        [&](const sdk::CameraConfig& o) { return o.kind == cam.kind && o.name == cam.name; }))
-            out.push_back({sdk::Severity::Error, base + ".name", "another camera of this type already uses the name '" + cam.name + "'",
-                           "camera_name_duplicate"});
-        const sdk::MechanismAttachment att = cam.attachment;
-        if (!att.onChassis()) {
-            const sdk::MechanismConfig* parent = c.findMechanism(att.parentMechanismId);
-            const sdk::MechanismTemplateInfo* info = parent != nullptr ? catalog_.findTemplate(parent->type) : nullptr;
-            if (parent == nullptr)
-                out.push_back({sdk::Severity::Error, base + ".attachment", "parent mechanism '" + att.parentMechanismId + "' does not exist",
-                               sdk::validation_code::kAttachmentParentMissing});
-            else if (info != nullptr && !sdk::hasLink(*info, att.parentLink))
-                out.push_back({sdk::Severity::Error, base + ".attachment", "mechanism '" + parent->id + "' has no link '" + att.parentLink + "'",
-                               sdk::validation_code::kAttachmentLinkMissing});
-        } else if (att.parentLink != sdk::kRootLink) {
-            out.push_back({sdk::Severity::Error, base + ".attachment", "the chassis only exposes the link 'root'", sdk::validation_code::kAttachmentLinkMissing});
-        }
-        if (!sdk::finite(cam.local))
-            out.push_back({sdk::Severity::Error, base + ".local", "camera pose must be finite", "camera_geometry_invalid"});
-        auto optics = [&](const char* key, bool ok, const char* what) {
-            if (!ok) out.push_back({sdk::Severity::Error, base + "." + key, what, "camera_optics_invalid"});
-        };
-        optics("hFovDeg", finite(cam.hFovDeg) && cam.hFovDeg > 0.0 && cam.hFovDeg < 180.0, "horizontal field of view must be in (0, 180) degrees");
-        optics("vFovDeg", finite(cam.vFovDeg) && cam.vFovDeg > 0.0 && cam.vFovDeg < 180.0, "vertical field of view must be in (0, 180) degrees");
-        optics("maxRangeM", finite(cam.maxRangeM) && cam.maxRangeM > 0.0, "max range must be positive");
-        optics("maxIncidenceDeg", finite(cam.maxIncidenceDeg) && cam.maxIncidenceDeg > 0.0 && cam.maxIncidenceDeg <= 90.0,
-               "max incidence must be in (0, 90] degrees");
-        optics("fps", finite(cam.fps) && cam.fps > 0.0, "frame rate must be positive");
-        optics("latencyMs", finite(cam.latencyMs) && cam.latencyMs >= 0.0, "latency must not be negative");
-        optics("widthPx", cam.widthPx > 0, "resolution must be positive");
-        optics("heightPx", cam.heightPx > 0, "resolution must be positive");
-        optics("positionNoiseM", finite(cam.positionNoiseM) && cam.positionNoiseM >= 0.0, "noise must not be negative");
-        optics("yawNoiseDeg", finite(cam.yawNoiseDeg) && cam.yawNoiseDeg >= 0.0, "noise must not be negative");
-    }
     return out;
 }
 

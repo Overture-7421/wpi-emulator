@@ -13,14 +13,12 @@
 
 namespace wpiemu::core::config {
 
-// Stable machine keys of the core validator (Issue::code), next to sdk::validation_code.
+// Stable machine keys of the core validator (Issue::code), next to sdk::validation_code. The keys of the
+// start-position, zone, camera and sensor rules live there, with the rules (sdk/config/config_checks.h).
 namespace issue_code {
 inline constexpr const char* kSchemaVersion = "schema_version_unsupported";
 inline constexpr const char* kChassisInvalid = "chassis_invalid";
 inline constexpr const char* kStartPoseInvalid = "start_pose_invalid";
-inline constexpr const char* kStartPositionIdInvalid = "start_position_id_invalid";        // empty
-inline constexpr const char* kStartPositionIdDuplicate = "start_position_id_duplicate";
-inline constexpr const char* kStartPositionInvalid = "start_position_invalid";            // non-finite pose
 inline constexpr const char* kDrivetrainKindUnknown = "drivetrain_kind_unknown";
 inline constexpr const char* kTireModelUnknown = "tire_model_unknown";
 inline constexpr const char* kDrivetrainNoWheels = "drivetrain_no_wheels";
@@ -47,28 +45,6 @@ inline constexpr const char* kPluginNotFound = "plugin_not_found";
 inline constexpr const char* kPluginUnknownSection = "plugin_section_unknown";
 inline constexpr const char* kPluginSectionVersion = "plugin_section_version_unsupported";
 inline constexpr const char* kPluginPropertyInvalid = "plugin_property_invalid";
-// zones (sdk/config/zone.h); attachment problems reuse sdk::validation_code::kAttachment*
-inline constexpr const char* kZoneIdInvalid = "zone_id_invalid";                // empty id
-inline constexpr const char* kZoneIdDuplicate = "zone_id_duplicate";            // duplicate, or equal to a mechanism id
-inline constexpr const char* kZoneKindNotOwned = "zone_kind_not_owned";         // no plugin, or kind lacks the plugin id prefix (Error)
-inline constexpr const char* kZoneKindUnknown = "zone_kind_unknown";           // owned prefix but not declared by the plugin (Warning)
-inline constexpr const char* kZonePropertyInvalid = "zone_property_invalid";
-inline constexpr const char* kZoneGeometryInvalid = "zone_geometry_invalid";    // non-finite pose, size <= 0 on a Volume
-inline constexpr const char* kZoneConditionInvalid = "zone_condition_invalid";  // empty value name, non-finite threshold
-inline constexpr const char* kZoneConditionMechanismUnknown = "zone_condition_mechanism_unknown";  // Warning
-// cameras (sdk/config/camera.h); attachment problems reuse sdk::validation_code::kAttachment*
-inline constexpr const char* kCameraIdInvalid = "camera_id_invalid";            // empty id
-inline constexpr const char* kCameraIdDuplicate = "camera_id_duplicate";        // duplicate, or equal to a mechanism / zone id
-inline constexpr const char* kCameraNameDuplicate = "camera_name_duplicate";    // two cameras of one kind share the robot-code name (Error)
-inline constexpr const char* kCameraGeometryInvalid = "camera_geometry_invalid";  // non-finite mount pose
-inline constexpr const char* kCameraOpticsInvalid = "camera_optics_invalid";    // fov/range/fps/latency/resolution/noise out of range
-// sensors (sdk/config/sensor.h)
-inline constexpr const char* kSensorIdInvalid = "sensor_id_invalid";            // empty, reserved, or contains '.'
-inline constexpr const char* kSensorIdDuplicate = "sensor_id_duplicate";        // duplicate, or equal to a mechanism / zone / camera id
-inline constexpr const char* kSensorSourceMissing = "sensor_source_missing";    // no game value selected (Warning)
-inline constexpr const char* kSensorSourceNotOwned = "sensor_source_not_owned";  // no plugin, or the value lacks the plugin id prefix (Error)
-inline constexpr const char* kSensorSourceUnknown = "sensor_source_unknown";    // owned prefix but not declared by the plugin (Warning)
-inline constexpr const char* kSensorPropertyInvalid = "sensor_property_invalid";  // response schema violation, or a degenerate linear range
 }  // namespace issue_code
 
 // The plugin a config selects: gamePluginId when set, else the registered plugin for project.wpilibYear;

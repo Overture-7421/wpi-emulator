@@ -98,16 +98,16 @@ TEST_CASE("sensors: validator checks ids, sources, response properties and slot 
     c.sensors.push_back(badSlot);
 
     const auto issues = validate(c, reg);
-    CHECK(has(issues, config::issue_code::kSensorIdInvalid, "sensors[1].id"));
-    CHECK(has(issues, config::issue_code::kSensorIdDuplicate, "sensors[2].id"));
-    CHECK(has(issues, config::issue_code::kSensorIdDuplicate, "sensors[3].id"));
-    CHECK(has(issues, config::issue_code::kSensorIdInvalid, "sensors[4].id"));
-    CHECK(has(issues, config::issue_code::kSensorIdInvalid, "sensors[5].id"));
-    CHECK(has(issues, config::issue_code::kSensorSourceMissing, "sensors[6].source", Severity::Warning));
-    CHECK(has(issues, config::issue_code::kSensorSourceNotOwned, "sensors[7].source"));
-    CHECK(has(issues, config::issue_code::kSensorSourceUnknown, "sensors[8].source", Severity::Warning));
-    CHECK(has(issues, config::issue_code::kSensorPropertyInvalid, "sensors[9].properties.inputMax"));
-    CHECK(has(issues, config::issue_code::kSensorPropertyInvalid, "sensors[10].properties.mode"));
+    CHECK(has(issues, validation_code::kSensorIdInvalid, "sensors[1].id"));
+    CHECK(has(issues, validation_code::kSensorIdDuplicate, "sensors[2].id"));
+    CHECK(has(issues, validation_code::kSensorIdDuplicate, "sensors[3].id"));
+    CHECK(has(issues, validation_code::kSensorIdInvalid, "sensors[4].id"));
+    CHECK(has(issues, validation_code::kSensorIdInvalid, "sensors[5].id"));
+    CHECK(has(issues, validation_code::kSensorSourceMissing, "sensors[6].source", Severity::Warning));
+    CHECK(has(issues, validation_code::kSensorSourceNotOwned, "sensors[7].source"));
+    CHECK(has(issues, validation_code::kSensorSourceUnknown, "sensors[8].source", Severity::Warning));
+    CHECK(has(issues, validation_code::kSensorPropertyInvalid, "sensors[9].properties.inputMax"));
+    CHECK(has(issues, validation_code::kSensorPropertyInvalid, "sensors[10].properties.mode"));
     CHECK(has(issues, config::issue_code::kSlotUnknown, "sensors[11].mappings[0]"));
 }
 
@@ -117,7 +117,7 @@ TEST_CASE("sensors: a source needs a game plugin") {
     c.project.wpilibYear = 1999;  // no plugin for this season
     c.sensors.push_back(sensor("hopper", SensorKind::Distance));
     const auto issues = config::ConfigValidator{}.validate(c, reg.mechanisms, reg.drivetrains, reg.plugins);
-    CHECK(has(issues, config::issue_code::kSensorSourceNotOwned, "sensors[0].source"));
+    CHECK(has(issues, validation_code::kSensorSourceNotOwned, "sensors[0].source"));
 }
 
 TEST_CASE("sensors: readings follow the response mode") {

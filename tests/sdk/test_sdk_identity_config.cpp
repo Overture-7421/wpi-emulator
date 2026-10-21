@@ -205,14 +205,14 @@ TEST_CASE("DeviceAnnounce can carry an observed bus and DeviceDescriptor.bus can
 
 // ---- 2. plugin ownership --------------------------------------------------------------------------
 
-TEST_CASE("a plugin owns only its section and its own mechanism types") {
-    CHECK(ownsMechanismType("game_2026", "game_2026.shooter"));
-    CHECK_FALSE(ownsMechanismType("game_2026", "roller"));
-    CHECK_FALSE(ownsMechanismType("game_2026", "game_2026"));
-    CHECK_FALSE(ownsMechanismType("game_2026", "game_2026."));
-    CHECK_FALSE(ownsMechanismType("game_2026", "game_20260.shooter"));  // prefix must end at the dot
-    CHECK_FALSE(ownsMechanismType("game_2026", "game_2027.shooter"));
-    CHECK_FALSE(ownsMechanismType("", ".x"));
+TEST_CASE("a plugin owns only its section and the ids under its own prefix") {
+    CHECK(ownsPluginId("game_2026", "game_2026.shooter"));
+    CHECK_FALSE(ownsPluginId("game_2026", "roller"));
+    CHECK_FALSE(ownsPluginId("game_2026", "game_2026"));
+    CHECK_FALSE(ownsPluginId("game_2026", "game_2026."));
+    CHECK_FALSE(ownsPluginId("game_2026", "game_20260.shooter"));  // prefix must end at the dot
+    CHECK_FALSE(ownsPluginId("game_2026", "game_2027.shooter"));
+    CHECK_FALSE(ownsPluginId("", ".x"));
 }
 
 TEST_CASE("plugins can require an SDK minor, and the SDK stays at 1.0 until release") {

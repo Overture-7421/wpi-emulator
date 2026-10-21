@@ -5,7 +5,9 @@
 #include <map>
 #include <set>
 #include <string>
+#include <string_view>
 
+#include "wpiemu/sdk/config/config_checks.h"
 #include "wpiemu/sdk/devices/device_identity.h"
 #include "wpiemu/sdk/mechanisms/attachment.h"
 #include "wpiemu/sdk/mechanisms/motion_config.h"
@@ -112,200 +114,32 @@ const SlotSpec* findSpec(const std::vector<SlotSpec>& specs, const std::string& 
     return nullptr;
 }
 
-bool ownsKind(const IGameModule* plugin, const std::string& kind) {
-    if (plugin == nullptr) return false;
-    const std::string prefix = plugin->metadata().id + ".";
-    return kind.size() > prefix.size() && kind.compare(0, prefix.size(), prefix) == 0;
-}
+// What the shared zone / camera / sensor checks (sdk/config/config_checks.h) ask of the registries and the selected plugin.
+class ValidationCatalog final : public IConfigCatalog {
+public:
+    ValidationCatalog(const MechanismFactory& mechanisms, const IGameModule* plugin)
+        : mechanisms_(mechanisms),
+          pluginId_(plugin != nullptr ? plugin->metadata().id : std::string()),
+          zoneKinds_(plugin != nullptr ? plugin->contributeZoneKinds() : std::vector<ZoneKindInfo>{}),
+          gameValues_(plugin != nullptr ? plugin->contributeGameValues() : std::vector<GameValueInfo>{}) {}
 
-// Attachment of a zone / camera: the chassis ('root') or an existing link of an existing mechanism.
-void validateAttachment(const RobotConfig& c, const MechanismFactory& mechanisms, const MechanismAttachment& att,
-                        const std::string& attPath, std::vector<Issue>& out) {
-    if (att.parentLink.empty()) {
-        add(out, Severity::Error, attPath, "parent link must not be empty (use 'root')", validation_code::kAttachmentLinkMissing);
-    } else if (att.onChassis()) {
-        if (att.parentLink != kRootLink)
-            add(out, Severity::Error, attPath, "the chassis only exposes the link 'root', not '" + att.parentLink + "'",
-                validation_code::kAttachmentLinkMissing);
-    } else if (const MechanismConfig* parent = c.findMechanism(att.parentMechanismId); parent == nullptr) {
-        add(out, Severity::Error, attPath, "parent mechanism '" + att.parentMechanismId + "' does not exist",
-            validation_code::kAttachmentParentMissing);
-    } else if (const MechanismTemplateInfo* info = mechanisms.templateInfo(parent->type);
-               info != nullptr && !hasLink(*info, att.parentLink)) {
-        add(out, Severity::Error, attPath, "mechanism '" + parent->id + "' (" + parent->type + ") has no link '" + att.parentLink + "'",
-            validation_code::kAttachmentLinkMissing);
+    const MechanismTemplateInfo* mechanismTemplate(std::string_view type) const override { return mechanisms_.templateInfo(type); }
+    std::string_view gamePluginId() const override { return pluginId_; }
+    const ZoneKindInfo* zoneKind(std::string_view kind) const override {
+        const auto it = std::find_if(zoneKinds_.begin(), zoneKinds_.end(), [&](const ZoneKindInfo& k) { return k.kind == kind; });
+        return it == zoneKinds_.end() ? nullptr : &*it;
     }
-}
-
-void validateZones(const RobotConfig& c, const MechanismFactory& mechanisms, const IGameModule* plugin, std::vector<Issue>& out) {
-    if (c.zones.empty()) return;
-    const std::vector<ZoneKindInfo> kinds = plugin != nullptr ? plugin->contributeZoneKinds() : std::vector<ZoneKindInfo>{};
-    std::set<std::string> ids;
-    for (std::size_t i = 0; i < c.zones.size(); ++i) {
-        const ZoneConfig& z = c.zones[i];
-        const std::string base = "zones[" + std::to_string(i) + "]";
-
-        if (z.id.empty())
-            add(out, Severity::Error, base + ".id", "zone id must not be empty", issue_code::kZoneIdInvalid);
-        else if (c.findMechanism(z.id) != nullptr)
-            add(out, Severity::Error, base + ".id", "zone id '" + z.id + "' is also a mechanism id", issue_code::kZoneIdDuplicate);
-        else if (c.findCamera(z.id) != nullptr)
-            add(out, Severity::Error, base + ".id", "zone id '" + z.id + "' is also a camera id", issue_code::kZoneIdDuplicate);
-        else if (!ids.insert(z.id).second)
-            add(out, Severity::Error, base + ".id", "duplicate zone id '" + z.id + "'", issue_code::kZoneIdDuplicate);
-
-        validateAttachment(c, mechanisms, z.attachment, base + ".attachment", out);
-
-        // ---- kind and properties ----
-        const ZoneKindInfo* info = nullptr;
-        if (!ownsKind(plugin, z.kind)) {
-            add(out, Severity::Error, base + ".kind",
-                plugin == nullptr ? "zone kind '" + z.kind + "' needs a game plugin (none is selected)"
-                                  : "zone kind '" + z.kind + "' is not owned by plugin '" + plugin->metadata().id + "'",
-                issue_code::kZoneKindNotOwned);
-        } else {
-            for (const ZoneKindInfo& k : kinds)
-                if (k.kind == z.kind) info = &k;
-            if (info == nullptr)
-                add(out, Severity::Warning, base + ".kind", "plugin '" + plugin->metadata().id + "' does not declare zone kind '" + z.kind + "'",
-                    issue_code::kZoneKindUnknown);
-        }
-        if (info != nullptr)
-            for (Issue& issue : validateProperties(info->properties, z.properties, base + ".properties")) {
-                if (issue.code.empty()) issue.code = issue_code::kZonePropertyInvalid;
-                out.push_back(std::move(issue));
-            }
-
-        // ---- geometry ----
-        if (!finite(z.local))
-            add(out, Severity::Error, base + ".local", "zone pose must be finite", issue_code::kZoneGeometryInvalid);
-        const bool volume = info == nullptr || info->shape == ZoneShape::Volume;
-        if (volume && (!finite(z.sizeM) || z.sizeM.x <= 0.f || z.sizeM.y <= 0.f || z.sizeM.z <= 0.f))
-            add(out, Severity::Error, base + ".sizeM", "zone size must be positive and finite", issue_code::kZoneGeometryInvalid);
-
-        // ---- activation ----
-        for (std::size_t j = 0; j < z.activation.conditions.size(); ++j) {
-            const ZoneCondition& cond = z.activation.conditions[j];
-            const std::string cp = base + ".activation.conditions[" + std::to_string(j) + "]";
-            if (cond.value.empty())
-                add(out, Severity::Error, cp + ".value", "condition value name must not be empty", issue_code::kZoneConditionInvalid);
-            if (!std::isfinite(cond.threshold) || !std::isfinite(cond.tolerance) || cond.tolerance < 0.0)
-                add(out, Severity::Error, cp, "condition threshold must be finite and tolerance >= 0", issue_code::kZoneConditionInvalid);
-            if (c.findMechanism(cond.mechanismId) == nullptr)
-                add(out, Severity::Warning, cp + ".mechanism", "condition mechanism '" + cond.mechanismId + "' does not exist",
-                    issue_code::kZoneConditionMechanismUnknown);
-        }
+    const GameValueInfo* gameValue(std::string_view id) const override {
+        const auto it = std::find_if(gameValues_.begin(), gameValues_.end(), [&](const GameValueInfo& v) { return v.id == id; });
+        return it == gameValues_.end() ? nullptr : &*it;
     }
-}
 
-void validateCameras(const RobotConfig& c, const MechanismFactory& mechanisms, std::vector<Issue>& out) {
-    std::set<std::string> ids;
-    std::set<std::pair<int, std::string>> names;
-    const auto inRange = [](double v, double lo, double hi) { return std::isfinite(v) && v > lo && v <= hi; };
-    for (std::size_t i = 0; i < c.cameras.size(); ++i) {
-        const CameraConfig& cam = c.cameras[i];
-        const std::string base = "cameras[" + std::to_string(i) + "]";
-
-        if (cam.id.empty())
-            add(out, Severity::Error, base + ".id", "camera id must not be empty", issue_code::kCameraIdInvalid);
-        else if (c.findMechanism(cam.id) != nullptr)
-            add(out, Severity::Error, base + ".id", "camera id '" + cam.id + "' is also a mechanism id", issue_code::kCameraIdDuplicate);
-        else if (c.findZone(cam.id) != nullptr)
-            add(out, Severity::Error, base + ".id", "camera id '" + cam.id + "' is also a zone id", issue_code::kCameraIdDuplicate);
-        else if (!ids.insert(cam.id).second)
-            add(out, Severity::Error, base + ".id", "duplicate camera id '" + cam.id + "'", issue_code::kCameraIdDuplicate);
-
-        if (!names.emplace(static_cast<int>(cam.kind), cam.name).second)
-            add(out, Severity::Error, base + ".name",
-                std::string("another ") + cameraKindKey(cam.kind) + " camera is already named '" + cam.name + "'",
-                issue_code::kCameraNameDuplicate);
-
-        validateAttachment(c, mechanisms, cam.attachment, base + ".attachment", out);
-
-        if (!finite(cam.local))
-            add(out, Severity::Error, base + ".pose", "camera pose must be finite", issue_code::kCameraGeometryInvalid);
-
-        const auto optics = [&](const char* field, bool ok, const char* why) {
-            if (!ok) add(out, Severity::Error, base + "." + field, why, issue_code::kCameraOpticsInvalid);
-        };
-        optics("hFovDeg", std::isfinite(cam.hFovDeg) && cam.hFovDeg > 0.0 && cam.hFovDeg < 180.0, "horizontal FOV must be in (0, 180) degrees");
-        optics("vFovDeg", std::isfinite(cam.vFovDeg) && cam.vFovDeg > 0.0 && cam.vFovDeg < 180.0, "vertical FOV must be in (0, 180) degrees");
-        optics("maxRangeM", std::isfinite(cam.maxRangeM) && cam.maxRangeM > 0.0, "maximum range must be positive");
-        optics("maxIncidenceDeg", inRange(cam.maxIncidenceDeg, 0.0, 90.0), "maximum incidence angle must be in (0, 90] degrees");
-        optics("fps", inRange(cam.fps, 0.0, 240.0), "frame rate must be in (0, 240]");
-        optics("latencyMs", std::isfinite(cam.latencyMs) && cam.latencyMs >= 0.0 && cam.latencyMs <= 2000.0, "latency must be in [0, 2000] ms");
-        optics("widthPx", cam.widthPx > 0, "image width must be positive");
-        optics("heightPx", cam.heightPx > 0, "image height must be positive");
-        optics("positionNoiseM", std::isfinite(cam.positionNoiseM) && cam.positionNoiseM >= 0.0, "position noise must be >= 0");
-        optics("yawNoiseDeg", std::isfinite(cam.yawNoiseDeg) && cam.yawNoiseDeg >= 0.0, "yaw noise must be >= 0");
-    }
-}
-
-void validateStartPositions(const RobotConfig& c, std::vector<Issue>& out) {
-    std::set<std::string> ids;
-    for (std::size_t i = 0; i < c.startPositions.size(); ++i) {
-        const StartPosition& p = c.startPositions[i];
-        const std::string base = "startPositions[" + std::to_string(i) + "]";
-        if (p.id.empty())
-            add(out, Severity::Error, base + ".id", "start position id must not be empty", issue_code::kStartPositionIdInvalid);
-        else if (!ids.insert(p.id).second)
-            add(out, Severity::Error, base + ".id", "duplicate start position id '" + p.id + "'", issue_code::kStartPositionIdDuplicate);
-        if (!std::isfinite(p.pose.xM) || !std::isfinite(p.pose.yM) || !std::isfinite(p.pose.headingRad))
-            add(out, Severity::Error, base + ".pose", "start position must have finite x, y and heading", issue_code::kStartPositionInvalid);
-    }
-}
-
-void validateSensors(const RobotConfig& c, const IGameModule* plugin, std::vector<Issue>& out) {
-    std::set<std::string> ids;
-    const std::vector<GameValueInfo> values = plugin != nullptr ? plugin->contributeGameValues() : std::vector<GameValueInfo>{};
-    for (std::size_t i = 0; i < c.sensors.size(); ++i) {
-        const SensorConfig& s = c.sensors[i];
-        const std::string base = "sensors[" + std::to_string(i) + "]";
-
-        if (s.id.empty())
-            add(out, Severity::Error, base + ".id", "sensor id must not be empty", issue_code::kSensorIdInvalid);
-        else if (s.id == slot_owner::kDrivetrain || s.id == slot_owner::kRobot)
-            add(out, Severity::Error, base + ".id", "'" + s.id + "' is a reserved slot owner", issue_code::kSensorIdInvalid);
-        else if (s.id.find('.') != std::string::npos)
-            add(out, Severity::Error, base + ".id", "sensor id must not contain '.'", issue_code::kSensorIdInvalid);
-        else if (c.findMechanism(s.id) != nullptr)
-            add(out, Severity::Error, base + ".id", "sensor id '" + s.id + "' is also a mechanism id", issue_code::kSensorIdDuplicate);
-        else if (c.findZone(s.id) != nullptr)
-            add(out, Severity::Error, base + ".id", "sensor id '" + s.id + "' is also a zone id", issue_code::kSensorIdDuplicate);
-        else if (c.findCamera(s.id) != nullptr)
-            add(out, Severity::Error, base + ".id", "sensor id '" + s.id + "' is also a camera id", issue_code::kSensorIdDuplicate);
-        else if (!ids.insert(s.id).second)
-            add(out, Severity::Error, base + ".id", "duplicate sensor id '" + s.id + "'", issue_code::kSensorIdDuplicate);
-
-        if (s.source.empty()) {
-            add(out, Severity::Warning, base + ".source", "sensor '" + s.id + "' has no game value selected; it will read as idle",
-                issue_code::kSensorSourceMissing);
-        } else if (plugin == nullptr || !ownsGameValue(plugin->metadata().id, s.source)) {
-            add(out, Severity::Error, base + ".source",
-                plugin == nullptr ? "sensor source '" + s.source + "' needs a game plugin (none is selected)"
-                                  : "sensor source '" + s.source + "' is not owned by plugin '" + plugin->metadata().id + "'",
-                issue_code::kSensorSourceNotOwned);
-        } else if (std::none_of(values.begin(), values.end(), [&](const GameValueInfo& v) { return v.id == s.source; })) {
-            add(out, Severity::Warning, base + ".source",
-                "plugin '" + plugin->metadata().id + "' does not declare game value '" + s.source + "'", issue_code::kSensorSourceUnknown);
-        }
-
-        const PropertySchema schema = sensorResponseSchema(s.kind);
-        for (Issue& issue : validateProperties(schema, s.properties, base + ".properties")) {
-            if (issue.code.empty()) issue.code = issue_code::kSensorPropertyInvalid;
-            out.push_back(std::move(issue));
-        }
-        if (s.kind == SensorKind::Distance && s.properties.isObject()) {
-            const Value* mode = s.properties.find(sensor_prop::kMode);
-            const Value* lo = s.properties.find(sensor_prop::kInputMin);
-            const Value* hi = s.properties.find(sensor_prop::kInputMax);
-            if (mode != nullptr && mode->isString() && mode->asString() == sensor_prop::kModeLinear && lo != nullptr && hi != nullptr &&
-                lo->isNumber() && hi->isNumber() && lo->asDouble() == hi->asDouble())
-                add(out, Severity::Error, base + ".properties." + sensor_prop::kInputMax, "linear input range must not be empty",
-                    issue_code::kSensorPropertyInvalid);
-        }
-    }
-}
+private:
+    const MechanismFactory& mechanisms_;
+    std::string pluginId_;
+    std::vector<ZoneKindInfo> zoneKinds_;
+    std::vector<GameValueInfo> gameValues_;
+};
 
 }  // namespace
 
@@ -493,9 +327,10 @@ std::vector<Issue> ConfigValidator::validate(const RobotConfig& config, const Me
             out.push_back(std::move(issue));
         }
     }
-    validateZones(config, mechanisms, selected, out);
-    validateCameras(config, mechanisms, out);
-    validateSensors(config, selected, out);
+    const ValidationCatalog catalog(mechanisms, selected);
+    validateZones(config, catalog, out);
+    validateCameras(config, catalog, out);
+    validateSensors(config, catalog, out);
     validateStartPositions(config, out);
     return out;
 }
