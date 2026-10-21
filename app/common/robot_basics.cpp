@@ -1,10 +1,9 @@
 #include "common/robot_basics.h"
 
-#include <QCoreApplication>
-
 #include <algorithm>
 #include <cmath>
 
+#include "ui/qt_text.h"
 #include "wpiemu/sdk/config/property_schema.h"
 #include "wpiemu/sdk/core/units.h"
 #include "wpiemu/sdk/mechanisms/motion_config.h"
@@ -13,7 +12,7 @@ namespace wpiemu::app {
 
 namespace {
 
-QString tr(const char* text) { return QCoreApplication::translate("RobotBasics", text); }
+constexpr ui::Tr tr{"RobotBasics"};
 
 constexpr float kFrameHeightM = 0.10f;
 constexpr float kComHeightM = 0.20f;

@@ -17,6 +17,8 @@
 #include "model/motion_links.h"
 #include "model/property_groups.h"
 #include "model/tr.h"
+#include "ui/qt_text.h"
+#include "ui/widget_support.h"
 #include "views/activation_card.h"
 #include "views/drive_card.h"
 
@@ -24,14 +26,8 @@ namespace wpiemu::app::editor {
 
 namespace {
 
-QString qs(const std::string& s) { return QString::fromStdString(s); }
-
-QLabel* mutedLabel(const QString& text, QWidget* parent, bool wrap = true) {
-    auto* l = new QLabel(text, parent);
-    l->setWordWrap(wrap);
-    l->setEnabled(false);
-    return l;
-}
+using ui::mutedLabel;
+using ui::qs;
 
 QString capabilityText(sdk::CapabilitySet caps) {
     struct Cap { sdk::Capability c; const char* name; };

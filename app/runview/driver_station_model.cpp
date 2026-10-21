@@ -1,15 +1,14 @@
 #include "driver_station_model.h"
 
-#include <QCoreApplication>
-
 #include <algorithm>
 #include <cmath>
 
+#include "ui/qt_text.h"
 #include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::app::runview {
 namespace {
-QString tr(const char* s) { return QCoreApplication::translate("DriverStation", s); }
+constexpr ui::Tr tr{"DriverStation"};
 }  // namespace
 
 void MatchTimer::begin(std::vector<MatchSegment> segments) {
@@ -71,9 +70,9 @@ void DriverStationModel::load() {
     alliance_ = settings_->value(QStringLiteral("runview/ds/alliance"), 0).toInt() == 1 ? sdk::Alliance::Blue : sdk::Alliance::Red;
     station_ = std::clamp(settings_->value(QStringLiteral("runview/ds/station"), 1).toInt(), 1, 3);
     gameMessage_ = settings_->value(QStringLiteral("runview/ds/gameMessage")).toString();
-    matchSettings_.autoSeconds = std::clamp(settings_->value(QStringLiteral("runview/ds/autoSeconds"), 20.0).toDouble(), 1.0, 600.0);
-    matchSettings_.teleopSeconds = std::clamp(settings_->value(QStringLiteral("runview/ds/teleopSeconds"), 140.0).toDouble(), 1.0, 1200.0);
-    matchSettings_.gapSeconds = std::clamp(settings_->value(QStringLiteral("runview/ds/gapSeconds"), 3.0).toDouble(), 0.0, 60.0);
+    matchSettings_.autoSeconds = std::clamp(settings_->value(QStringLiteral("runview/ds/autoSeconds"), 20.0).toDouble(), kAutoSecondsRange.min, kAutoSecondsRange.max);
+    matchSettings_.teleopSeconds = std::clamp(settings_->value(QStringLiteral("runview/ds/teleopSeconds"), 140.0).toDouble(), kTeleopSecondsRange.min, kTeleopSecondsRange.max);
+    matchSettings_.gapSeconds = std::clamp(settings_->value(QStringLiteral("runview/ds/gapSeconds"), 3.0).toDouble(), kGapSecondsRange.min, kGapSecondsRange.max);
 }
 
 void DriverStationModel::save() const {

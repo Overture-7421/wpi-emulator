@@ -1,18 +1,18 @@
 #include "joystick_types.h"
 
-#include <QCoreApplication>
 #include <QKeySequence>
 #include <QVariantList>
 
 #include <algorithm>
 #include <cmath>
 
+#include "ui/qt_text.h"
 #include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::app::runview::joy {
 namespace {
 
-QString tr(const char* s) { return QCoreApplication::translate("Joystick", s); }
+constexpr ui::Tr tr{"Joystick"};
 
 bool keyDown(const Input& in, const RawInput& raw) { return in.kind == Input::Kind::Key && raw.keys.count(in.code) != 0; }
 

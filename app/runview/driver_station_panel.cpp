@@ -30,6 +30,7 @@
 #include "hud_model.h"
 #include "joystick_editor.h"
 #include "status_chip.h"
+#include "ui/widget_support.h"
 #include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::app::runview {
@@ -167,18 +168,16 @@ DriverStationPanel::DriverStationPanel(DriverStationModel& model, JoystickManage
     message_->setClearButtonEnabled(true);
     message_->setMaxLength(64);
 
-    auto makeSeconds = [this](double max) {
+    auto makeSeconds = [this](const SecondsRange& range) {
         auto* box = new QDoubleSpinBox(this);
-        box->setRange(0, max);
+        box->setRange(range.min, range.max);
         box->setDecimals(0);
         box->setSuffix(tr(" s"));
         return box;
     };
-    autoSeconds_ = makeSeconds(600);
-    autoSeconds_->setMinimum(1);
-    gapSeconds_ = makeSeconds(60);
-    teleopSeconds_ = makeSeconds(1200);
-    teleopSeconds_->setMinimum(1);
+    autoSeconds_ = makeSeconds(kAutoSecondsRange);
+    gapSeconds_ = makeSeconds(kGapSecondsRange);
+    teleopSeconds_ = makeSeconds(kTeleopSecondsRange);
 
     auto* setupTab = new QWidget(this);
     auto* form = new QFormLayout;
@@ -242,11 +241,7 @@ DriverStationPanel::DriverStationPanel(DriverStationModel& model, JoystickManage
     for (int i = 0; i < 6; ++i) {
         auto* cell = new QVBoxLayout;
         cell->setSpacing(0);
-        auto* caption = new QLabel(tr(stats[i].caption), statsFrame);
-        QFont small = caption->font();
-        small.setPointSizeF(small.pointSizeF() * 0.85);
-        caption->setFont(small);
-        caption->setEnabled(false);
+        auto* caption = ui::captionLabel(tr(stats[i].caption), statsFrame);
         statValues_[i] = new QLabel(QStringLiteral("—"), statsFrame);
         statValues_[i]->setFont(mono);
         cell->addWidget(caption);

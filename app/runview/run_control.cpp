@@ -1,10 +1,10 @@
 #include "run_control.h"
 
-#include <QCoreApplication>
+#include "ui/qt_text.h"
 
 namespace wpiemu::app::runview {
 namespace {
-QString tr(const char* s) { return QCoreApplication::translate("RunStatus", s); }
+constexpr ui::Tr tr{"RunStatus"};
 }  // namespace
 
 RunControlState deriveControlState(const HostStatus& status, bool paused) {

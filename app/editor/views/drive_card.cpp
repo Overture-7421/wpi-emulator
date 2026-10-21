@@ -13,12 +13,15 @@
 #include "model/property_groups.h"
 #include "model/slot_status.h"
 #include "model/tr.h"
+#include "ui/qt_text.h"
+#include "ui/widget_support.h"
 
 namespace wpiemu::app::editor {
 
 namespace {
 
-QString qs(const std::string& s) { return QString::fromStdString(s); }
+using ui::mutedLabel;
+using ui::qs;
 
 QToolButton* segment(const QString& text, const QString& objectName, QWidget* parent) {
     auto* b = new QToolButton(parent);
@@ -30,13 +33,6 @@ QToolButton* segment(const QString& text, const QString& objectName, QWidget* pa
     b->setToolButtonStyle(Qt::ToolButtonTextOnly);
     b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     return b;
-}
-
-QLabel* mutedLabel(const QString& text, QWidget* parent) {
-    auto* l = new QLabel(text, parent);
-    l->setWordWrap(true);
-    l->setEnabled(false);
-    return l;
 }
 
 }  // namespace

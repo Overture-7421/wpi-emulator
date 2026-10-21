@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdlib>
 
+#include "ui/qt_text.h"
 #include "wpiemu/core/launcher/extension_locator.h"
 #include "wpiemu/sdk/core/environment.h"
 #include "wpiemu/sdk/core/strings.h"
@@ -18,11 +19,11 @@ namespace wpiemu::app {
 
 namespace {
 
+using ui::qs;
+
 std::string envString(const char* name) { return sdk::readEnvironment(name).value_or(std::string()); }
 
 bool envFlag(const char* name) { return sdk::parseBool(envString(name)).value_or(false); }
-
-QString fromStd(const std::string& s) { return QString::fromStdString(s); }
 
 }  // namespace
 
@@ -109,7 +110,7 @@ void RealRuntimeHost::setProject(const HostProject& project) {
         scene_.zoneKinds = game->contributeZoneKinds();
         scene_.gameValues = game->contributeGameValues();
         scene_.tags = game->aprilTagLayout();
-        scene_.gameName = QString::fromStdString(game->metadata().displayName);
+        scene_.gameName = qs(game->metadata().displayName);
         if (fieldPluginId_ != gamePluginId_ || !field_) {
             field_ = registries_.plugins != nullptr ? host::describeField(registries_.plugins->find(gamePluginId_)) : nullptr;
             fieldPluginId_ = gamePluginId_;
@@ -138,7 +139,7 @@ void RealRuntimeHost::launch() {
     o.extensionLibrary = extensionPath();
     if (o.extensionLibrary.empty()) {
         failToStart(tr("The HALSim extension (%1) was not found next to the application. Reinstall the emulator or set WPIEMU_EXTENSION.")
-                        .arg(fromStd(core::launcher::halsimExtensionFileName())));
+                        .arg(qs(core::launcher::halsimExtensionFileName())));
         return;
     }
     o.scratchDir = options_.scratchDir;
@@ -159,7 +160,7 @@ void RealRuntimeHost::launch() {
     emitLog(sdk::LogLevel::Info, QStringLiteral("runtime"), tr("Launching the robot with the HALSim extension"));
     auto started = host::RobotSession::start(registries_, *config_, std::move(o));
     if (!started) {
-        failToStart(fromStd(started.error().message));
+        failToStart(qs(started.error().message));
         return;
     }
     session_ = std::move(started).value();

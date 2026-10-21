@@ -11,6 +11,7 @@
 
 #include "model/tr.h"
 #include "ui/scene_support.h"
+#include "ui/widget_support.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/units.h"
 
@@ -215,14 +216,7 @@ CompositeEditor::CompositeEditor(sdk::PropertyType type, sdk::PropertyUnit unit,
     l->setContentsMargins(0, 0, 0, 0);
     l->setSpacing(2);
     const QStringList xyz{QStringLiteral("X"), QStringLiteral("Y"), QStringLiteral("Z")};
-    auto caption = [&](const QString& text) {
-        auto* c = new QLabel(text, this);
-        c->setEnabled(false);
-        QFont f = c->font();
-        f.setPointSizeF(f.pointSizeF() * 0.85);
-        c->setFont(f);
-        l->addWidget(c);
-    };
+    auto caption = [&](const QString& text) { l->addWidget(ui::captionLabel(text, this)); };
     caption(ETR("Position"));
     position_ = new VectorEditor(unit == sdk::PropertyUnit::None ? sdk::PropertyUnit::Meters : unit, units, xyz, this);
     l->addWidget(position_);

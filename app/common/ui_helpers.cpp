@@ -19,19 +19,25 @@ QLabel* makeLabel(const QString& text, const char* role, QWidget* parent, bool w
     return label;
 }
 
+QLabel* makeValueLabel() {
+    auto* label = new QLabel;
+    label->setWordWrap(true);
+    label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    return label;
+}
+
 void repolish(QWidget* widget) {
     widget->style()->unpolish(widget);
     widget->style()->polish(widget);
     widget->update();
 }
 
-Banner::Banner(const UiResources& ui, QWidget* parent) : QFrame(parent), ui_(ui), icon_(new QLabel), label_(new QLabel) {
+Banner::Banner(const UiResources& ui, QWidget* parent)
+    : QFrame(parent), ui_(ui), icon_(new QLabel), label_(makeValueLabel()) {
     auto* layout = new QHBoxLayout(this);
     layout->setContentsMargins(12, 9, 12, 9);
     layout->setSpacing(10);
     icon_->setFixedSize(20, 20);
-    label_->setWordWrap(true);
-    label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     layout->addWidget(icon_, 0, Qt::AlignTop);
     layout->addWidget(label_, 1);
     connect(&ui_, &UiResources::themeChanged, this, &Banner::refreshIcon);

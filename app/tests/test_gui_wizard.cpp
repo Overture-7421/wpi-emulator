@@ -9,7 +9,10 @@
 #include <QSignalSpy>
 #include <QUrl>
 
+#include <memory>
+
 #include "common/theme.h"
+#include "common/ui_helpers.h"
 #include "gui_support.h"
 #include "wizard/project_drop_zone.h"
 #include "wizard/project_page.h"
@@ -28,6 +31,13 @@ void enterProject(WizardDialog& dlg, const QString& path) {
     dlg.projectPage()->applyTypedPath();
 }
 }  // namespace
+
+TEST_CASE("value labels wrap and let the user select the text") {
+    const std::unique_ptr<QLabel> label(makeValueLabel());
+    CHECK(label->wordWrap());
+    CHECK(label->textInteractionFlags() == Qt::TextSelectableByMouse);
+    CHECK(label->parentWidget() == nullptr);
+}
 
 TEST_CASE("wizard dialog: first-run happy path from project to a saved robot") {
     GuiEnvironment env;

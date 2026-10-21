@@ -1,16 +1,15 @@
 #include "views/device_row.h"
 
 #include <QHBoxLayout>
-#include <QTimer>
 #include <QVBoxLayout>
 
 #include "model/tr.h"
+#include "ui/qt_text.h"
+#include "ui/widget_support.h"
 
 namespace wpiemu::app::editor {
 
-namespace {
-QString qs(const std::string& s) { return QString::fromStdString(s); }
-}  // namespace
+using ui::qs;
 
 DeviceRowWidget::DeviceRowWidget(const IconFactory& icons, QWidget* parent)
     : QFrame(parent), icons_(icons), dot_(new QLabel(this)), title_(new QLabel(this)), device_(new QLabel(this)),
@@ -76,8 +75,7 @@ void DeviceRowWidget::setInfo(const SlotInfo& info) {
 }
 
 void DeviceRowWidget::flash() {
-    setStyleSheet(QStringLiteral("QFrame#deviceRow { background: rgba(255, 190, 0, 70); border-radius: 4px; }"));
-    QTimer::singleShot(1400, this, [this] { setStyleSheet(QString()); });
+    ui::flashWidget(this, QStringLiteral("QFrame#deviceRow { background: rgba(255, 190, 0, 70); border-radius: 4px; }"));
 }
 
 }  // namespace wpiemu::app::editor

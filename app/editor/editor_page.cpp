@@ -15,6 +15,7 @@
 #include <optional>
 #include "model/config_ops.h"
 #include "model/tr.h"
+#include "ui/widget_support.h"
 #include "viewmodel/detected_devices_model.h"
 #include "viewmodel/editor_controller.h"
 #include "viewmodel/issue_model.h"
@@ -37,13 +38,7 @@ QWidget* titled(const QString& title, QWidget* body, QWidget* parent) {
     auto* v = new QVBoxLayout(box);
     v->setContentsMargins(0, 0, 0, 0);
     v->setSpacing(0);
-    auto* label = new QLabel(title.toUpper(), box);
-    QFont f = label->font();
-    f.setBold(true);
-    f.setPointSizeF(f.pointSizeF() * 0.8);
-    f.setLetterSpacing(QFont::PercentageSpacing, 108);
-    label->setFont(f);
-    label->setEnabled(false);
+    auto* label = ui::headingLabel(title, box);
     label->setContentsMargins(10, 8, 10, 4);
     v->addWidget(label);
     v->addWidget(body, 1);

@@ -7,19 +7,20 @@
 #include <algorithm>
 #include <filesystem>
 
+#include "ui/qt_text.h"
 #include "wpiemu/core/launcher/project_inspector.h"
 
 namespace wpiemu::app {
 
 namespace {
 
+using ui::qs;
+
 QString findBuildFile(const QDir& dir) {
     for (const char* name : {"build.gradle", "build.gradle.kts"})
         if (dir.exists(QLatin1String(name))) return dir.filePath(QLatin1String(name));
     return {};
 }
-
-QString fromCore(const std::string& text) { return QString::fromStdString(text); }
 
 }  // namespace
 
@@ -48,7 +49,7 @@ ProjectInspection GradleProjectInspector::inspect(const QString& rawPath) const 
 
     const auto inspected = core::launcher::ProjectInspector(json_).inspect(std::filesystem::path(info.absoluteFilePath().toStdU16String()));
     if (!inspected) {
-        out.notes.push_back({sdk::Severity::Error, fromCore(inspected.error().message)});
+        out.notes.push_back({sdk::Severity::Error, qs(inspected.error().message)});
         return out;
     }
     const core::launcher::ProjectReport& report = inspected.value();
@@ -62,12 +63,12 @@ ProjectInspection GradleProjectInspector::inspect(const QString& rawPath) const 
         return out;
     }
     out.isWpilibProject = true;
-    out.gradleRioVersion = fromCore(report.gradleRioVersion);
+    out.gradleRioVersion = qs(report.gradleRioVersion);
     out.wpilibYear = report.wpilibYear;
-    out.language = fromCore(report.language);
+    out.language = qs(report.language);
     out.teamNumber = std::max(report.teamNumber, 0);
     out.hasGradleWrapper = report.hasGradlewScript || report.hasGradlewBat;
-    for (const core::launcher::VendorDep& dep : report.vendorDeps) out.vendorDeps.push_back({fromCore(dep.name), fromCore(dep.version)});
+    for (const core::launcher::VendorDep& dep : report.vendorDeps) out.vendorDeps.push_back({qs(dep.name), qs(dep.version)});
 
     if (out.wpilibYear == 0)
         out.notes.push_back({sdk::Severity::Warning, tr("Could not read the GradleRIO version, so the WPILib season is unknown.")});

@@ -22,6 +22,10 @@ using namespace wpiemu::app::editor;
 
 namespace {
 
+// Delay before the page is grabbed, so the scene has drawn; a scripted detection needs longer to finish.
+constexpr int kGrabDelayMs = 1200;
+constexpr int kDetectGrabDelayMs = 1800;
+
 void applyPalette(QApplication& app, bool light) {
     app.setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
     QPalette p;
@@ -131,7 +135,7 @@ int main(int argc, char* argv[]) {
     }
     if (parser.isSet(grab)) {
         const QString path = parser.value(grab);
-        QTimer::singleShot(parser.isSet(detect) ? 1800 : 1200, [&page, path, &app] {
+        QTimer::singleShot(parser.isSet(detect) ? kDetectGrabDelayMs : kGrabDelayMs, [&page, path, &app] {
             page.grab().save(path);
             app.quit();
         });

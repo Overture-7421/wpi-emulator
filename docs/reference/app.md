@@ -12,7 +12,7 @@ Build and test commands belong to [Building](../BUILDING.md); controls belong to
 It owns the registries, persistence/model services, project session, and injected runtime host;
 `main()` passes it to the shell by reference. Built-in games enter through the plugin
 aggregator, not direct season dependencies. Inside `app/` the boundary checker also enforces the
-layering: the host contract, the shared scene support and the page libraries (editor, run view) include
+layering: the host contract, the shared Qt support (`ui`) and the page libraries (editor, run view) include
 and link only the SDK (the page libraries also `ui`, the run view also the contract) plus two shared Qt-free
 headers; `common`, `host`, `wizard` and `shell` compose them.
 
@@ -183,7 +183,9 @@ lists compile QML under `/wpiemu/editor` and `/wpiemu/runview`; load resource UR
 assuming a source checkout or working directory. Keep new assets in those resource lists.
 Scene plumbing both viewports need lives in the SDK+Qt `wpiemu_app_ui` target ([`app/ui`](../../app/ui)):
 SDK-to-Qt conversions, Qt Quick 3D's built-in mesh conventions, colour parsing and the `ZUpWorld` QML
-component under `/wpiemu/ui`. Add scene code there only when the editor and run view both use it.
+component under `/wpiemu/ui`. Add scene code there only when the editor and run view both use it. The same target
+holds the text and widget helpers any layer shares: `qs()` string conversion, the `Tr` translation-context helper
+(`ETR` is its `"Editor"` instance), clock text and small label recipes.
 The widget modules disable AUTOUIC because
 `sdk/include/wpiemu/sdk/game/ui_descriptors.h` matches its generated-header pattern.
 

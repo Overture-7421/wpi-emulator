@@ -1,7 +1,7 @@
 #include "viewmodel/editor_controller.h"
 #include "wpiemu/sdk/mechanisms/motion_config.h"
 
-#include <QTime>
+#include <QDateTime>
 
 #include <algorithm>
 
@@ -9,6 +9,7 @@
 #include "model/motion_links.h"
 #include "model/property_groups.h"
 #include "model/tr.h"
+#include "ui/qt_text.h"
 
 namespace wpiemu::app::editor {
 
@@ -113,7 +114,7 @@ sdk::Status EditorController::persist() {
     document_.markSaved();
     pendingSave_ = false;
     saveError_.clear();
-    lastSaved_ = QTime::currentTime().toString(QStringLiteral("HH:mm:ss"));
+    lastSaved_ = ui::clockText(QDateTime::currentMSecsSinceEpoch());
     Q_EMIT saveStateChanged();
     Q_EMIT autosaveRequested();
     return sdk::okStatus();

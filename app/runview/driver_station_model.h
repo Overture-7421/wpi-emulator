@@ -50,6 +50,15 @@ struct MatchSettings {
     double teleopSeconds = 140.0;  // 2:20
 };
 
+// What each practice-match segment length may be set to, in the setup panel and in the stored settings.
+struct SecondsRange {
+    double min;
+    double max;
+};
+inline constexpr SecondsRange kAutoSecondsRange{1.0, 600.0};
+inline constexpr SecondsRange kGapSecondsRange{0.0, 60.0};
+inline constexpr SecondsRange kTeleopSecondsRange{1.0, 1200.0};
+
 // What the user picks on the DS. Auto / Teleop / Test map to the wire RobotMode; Practice is a DS-only
 // concept: Enable runs autonomous, a disabled gap, then teleop on the match clock.
 enum class DsMode { Auto, Teleop, Practice, Test };

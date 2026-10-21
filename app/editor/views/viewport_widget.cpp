@@ -17,6 +17,9 @@ namespace wpiemu::app::editor {
 
 namespace {
 
+// Magnitude limit of the toolbar's X/Y/Z transform fields, in display units.
+constexpr double kTransformFieldLimit = 100000.0;
+
 QToolButton* makeButton(const QString& text, const QString& tip, QWidget* parent, bool checkable = false) {
     auto* b = new QToolButton(parent);
     b->setText(text);
@@ -127,7 +130,7 @@ void ViewportWidget::buildToolbar(QLayout* layout) {
         tag->setEnabled(false);
         layout->addWidget(tag);
         auto* spin = new QDoubleSpinBox(this);
-        spin->setRange(-100000, 100000);
+        spin->setRange(-kTransformFieldLimit, kTransformFieldLimit);
         spin->setDecimals(2);
         spin->setKeyboardTracking(true);
         spin->setButtonSymbols(QAbstractSpinBox::NoButtons);

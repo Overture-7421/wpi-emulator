@@ -9,10 +9,15 @@
 #include <QVBoxLayout>
 
 #include "model/tr.h"
+#include "ui/qt_text.h"
+#include "ui/widget_support.h"
 
 namespace wpiemu::app::editor {
 
 namespace {
+
+// Oldest console lines are dropped beyond this many.
+constexpr int kMaxConsoleLines = 5000;
 
 class IssueDelegate : public QStyledItemDelegate {
 public:
@@ -33,10 +38,8 @@ private:
 };
 
 QWidget* emptyState(const QString& text, QWidget* parent) {
-    auto* l = new QLabel(text, parent);
+    QLabel* l = ui::mutedLabel(text, parent);
     l->setAlignment(Qt::AlignCenter);
-    l->setWordWrap(true);
-    l->setEnabled(false);
     return l;
 }
 
@@ -59,7 +62,7 @@ BottomPanel::BottomPanel(EditorController& controller, IssueModel& issues, const
     // Console
     console_ = new QPlainTextEdit(this);
     console_->setReadOnly(true);
-    console_->setMaximumBlockCount(5000);
+    console_->setMaximumBlockCount(kMaxConsoleLines);
     console_->setLineWrapMode(QPlainTextEdit::NoWrap);
     QFont mono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     console_->setFont(mono);
@@ -134,7 +137,7 @@ void BottomPanel::updateValidationTab() {
 
 void BottomPanel::appendLog(sdk::Severity severity, const QString& text) {
     const QString color = severity == sdk::Severity::Error ? QStringLiteral("#f85149") : severity == sdk::Severity::Warning ? QStringLiteral("#d29922") : QString();
-    const QString time = QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"));
+    const QString time = ui::clockText(QDateTime::currentMSecsSinceEpoch());
     const QString line = QStringLiteral("<span style=\"color:gray\">%1</span> %2").arg(time, text.toHtmlEscaped());
     console_->appendHtml(color.isEmpty() ? line : QStringLiteral("<span style=\"color:%1\">%2</span>").arg(color, line));
 }

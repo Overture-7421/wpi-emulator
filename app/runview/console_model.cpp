@@ -1,9 +1,10 @@
 #include "console_model.h"
 
 #include <QCoreApplication>
-#include <QDateTime>
 
 #include <algorithm>
+
+#include "ui/qt_text.h"
 
 namespace wpiemu::app::runview {
 
@@ -26,7 +27,7 @@ int ConsoleModel::rowCount(const QModelIndex& parent) const {
 }
 
 QString ConsoleModel::formatLine(const HostLogLine& e) {
-    const QString time = QDateTime::fromMSecsSinceEpoch(e.timestampMs).toString(QStringLiteral("HH:mm:ss.zzz"));
+    const QString time = ui::clockTextMs(e.timestampMs);
     return e.source.isEmpty() ? QStringLiteral("%1  %2").arg(time, e.text)
                               : QStringLiteral("%1  [%2] %3").arg(time, e.source, e.text);
 }

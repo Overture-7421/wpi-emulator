@@ -25,7 +25,7 @@ and the dependencies listed below; tests may combine modules to exercise their c
 | Each `plugins/<name>` | SDK only | One game's field, entities, rules and metadata |
 | Plugin aggregator (`plugins/`) | SDK and game plugins | Built-in plugin registration |
 | `app` | SDK, core, IPC, plugin aggregator, Qt | Desktop composition, host, editor and run view |
-| `app/contract`, `app/ui`, `app/editor`, `app/runview` | SDK and Qt only (run view also the host contract; both page libraries also `app/ui`) | Host seam, shared 3D scene support and the page libraries |
+| `app/contract`, `app/ui`, `app/editor`, `app/runview` | SDK and Qt only (run view also the host contract; both page libraries also `app/ui`) | Host seam, shared Qt support (3D scene, text, small widgets) and the page libraries |
 
 There is no Qt in SDK, core, IPC, bridges or plugins. Box3D and robot-process backend headers never
 leak into the SDK. The physics adapter is separately built and linked by core; public physics
