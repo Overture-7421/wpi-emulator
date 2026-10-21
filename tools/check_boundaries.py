@@ -89,6 +89,9 @@ CMAKE_LINK_RE = re.compile(
     r"target_link_libraries\s*\(\s*([^\s)]+)([^)]*)\)", re.IGNORECASE | re.DOTALL
 )
 CMAKE_INCLUDE_DIRS_RE = re.compile(r"target_include_directories\s*\(([^)]*)\)", re.IGNORECASE | re.DOTALL)
+# The one include directory outside its own folder that a module's test target may add: the shared,
+# platform-only test helpers (tests/support).
+TEST_SUPPORT_DIR_RE = re.compile(r'"?\$\{(?:CMAKE|PROJECT)_SOURCE_DIR\}/tests/support/?"?')
 WPIEMU_TARGET_RE = re.compile(r"\bwpiemu::([A-Za-z0-9_]+)|\b(wpiemu_[A-Za-z0-9_]+|halsim_wpiemu)\b")
 CMAKE_TARGET_RE = re.compile(
     r"(?:qt_)?add_(?:library|executable)\s*\(\s*([^\s)]+)", re.IGNORECASE
@@ -314,6 +317,8 @@ def scan_cmake(rel: str, text: str) -> list[str]:
     for m in CMAKE_INCLUDE_DIRS_RE.finditer(text):
         line = text.count("\n", 0, m.start()) + 1
         for token in re.findall(r"[^\s()]+", m.group(1)):
+            if TEST_SUPPORT_DIR_RE.fullmatch(token):
+                continue
             norm = token.replace("\\", "/")
             if re.search(r"(^|/)\.\./", norm) or re.search(r"\$\{(CMAKE|PROJECT)_SOURCE_DIR\}", norm):
                 errors.append(
@@ -493,6 +498,10 @@ def self_test() -> int:
          "target_link_libraries(wpiemu_sdk INTERFACE wpiemu_core)\n", 1),
         ("plugins/game_2026/CMakeLists.txt",
          "target_include_directories(wpiemu_plugin_game_2026 PUBLIC ../../core/include)\n", 1),
+        ("halsim_ext/CMakeLists.txt",
+         'target_include_directories(wpiemu_halsim_ext_hal_tests PRIVATE tests "${CMAKE_SOURCE_DIR}/tests/support")\n', 0),
+        ("halsim_ext/CMakeLists.txt",
+         'target_include_directories(wpiemu_halsim_ext_hal_tests PRIVATE "${CMAKE_SOURCE_DIR}/core/runtime/include")\n', 1),
         # aggregation seam
         ("plugins/CMakeLists.txt",
          "target_link_libraries(wpiemu_plugins_builtin PUBLIC wpiemu_sdk PRIVATE wpiemu_plugin_game_2026 wpiemu_plugin_game_2027)\n", 0),

@@ -62,7 +62,8 @@ Merge one only with proof that it removes complexity without changing behavior o
 
 Add a focused regression test for changed behavior, next to the tests for that module. Prefer public
 interfaces and the header-only [SDK fakes](../sdk/include/wpiemu/sdk/testing) over implementation access.
-Wait on another thread or process with that folder's `waitUntil`, not a hand-written sleep loop.
+Wait on another thread or process with that folder's `waitUntil`, not a hand-written sleep loop. Test helpers
+that need platform calls, such as the `ScopedEnv` environment guard, live in [tests/support](../tests/support).
 Cover the important failure/reset edge as well as the happy path; do not test constants or language
 behavior merely to increase coverage.
 

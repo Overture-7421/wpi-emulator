@@ -1,7 +1,6 @@
 #include <doctest/doctest.h>
 
 #include <atomic>
-#include <cstdlib>
 #include <thread>
 
 #include "fakes.h"
@@ -9,6 +8,7 @@
 #include "hal/Extensions.h"
 #include "hal/simulation/DriverStationData.h"
 #include "hal/simulation/MockHooks.h"
+#include "scoped_env.h"
 #include "wpiemu/ipc/binary_codec.h"
 #include "wpiemu/ipc/endpoint.h"
 #include "wpiemu/ipc/local_ipc.h"
@@ -19,16 +19,9 @@
 
 using namespace wpiemu;
 using namespace wpiemu::halsim::testing;
+using wpiemu::test_support::ScopedEnv;
 
 namespace {
-
-void setEnv(const char* name, const std::string& value) {
-#if defined(_WIN32)
-    _putenv_s(name, value.c_str());
-#else
-    setenv(name, value.c_str(), 1);
-#endif
-}
 
 class DllRobot {
 public:
@@ -87,8 +80,8 @@ TEST_CASE("real extension library: loads through the HAL extension loader and ru
         }
     });
 
-    setEnv("WPIEMU_IPC_ENDPOINT", endpoint.address());
-    setEnv("WPIEMU_LOG_LEVEL", "debug");
+    const ScopedEnv endpointVar("WPIEMU_IPC_ENDPOINT", endpoint.address());
+    const ScopedEnv logLevelVar("WPIEMU_LOG_LEVEL", "debug");
     const int rc = HAL_LoadOneExtension(WPIEMU_EXTENSION_PATH);
     accepting.join();
     REQUIRE(rc == 0);

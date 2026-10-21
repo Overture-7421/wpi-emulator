@@ -6,16 +6,20 @@
 #include <QFile>
 #include <QSignalSpy>
 
+#include <optional>
+
 #include "common/real_runtime_host.h"
 #include "common/robot_basics.h"
 #include "contract/start_position_selection.h"
 #include "gui_support.h"
+#include "scoped_env.h"
 #include "shell/main_window.h"
 #include "shell/page_factory.h"
 #include "shell/shell_controller.h"
 
 using namespace wpiemu::app;
 using namespace wpiemu::app::testing;
+using wpiemu::test_support::ScopedEnv;
 namespace sdk = wpiemu::sdk;
 
 namespace {
@@ -39,7 +43,7 @@ struct RealFixture {
     TestProject project;
     QTemporaryDir extensionDir;
     QStringList logs;
-    QByteArray previousExtensionEnv = qgetenv("WPIEMU_EXTENSION");
+    ScopedEnv extensionEnv{"WPIEMU_EXTENSION", std::nullopt};
 
     explicit RealFixture(const char* script) {
         writeFile(project.path() + kWrapper, script);
@@ -49,7 +53,7 @@ struct RealFixture {
         env.addProject(project);
         const QString extension = extensionDir.path() + "/halsim_wpiemu_fake";
         writeFile(extension, "x");
-        qputenv("WPIEMU_EXTENSION", extension.toUtf8());
+        extensionEnv.set(extension.toStdString());
 
         REQUIRE(controller.openProject(project.path()) == OpenOutcome::NeedsSetup);
         ProjectSession& session = env.services->session();
@@ -60,8 +64,6 @@ struct RealFixture {
     ~RealFixture() {
         env.services->runtime().stop();
         waitFor([&] { return !env.services->runtime().status().active(); }, 15000);
-        if (previousExtensionEnv.isEmpty()) qunsetenv("WPIEMU_EXTENSION");
-        else qputenv("WPIEMU_EXTENSION", previousExtensionEnv);
     }
 
     IRuntimeHost& host() { return env.services->runtime(); }
@@ -272,7 +274,7 @@ TEST_CASE("real host e2e (opt-in): the shell discovers the devices of a real rob
         MESSAGE("skipped: no robot project at " << original.toStdString());
         return;
     }
-    qunsetenv("WPIEMU_EXTENSION");   // exercise the real lookup (install layout, then the build-tree fallback)
+    const ScopedEnv noExtensionOverride("WPIEMU_EXTENSION", std::nullopt);   // exercise the real lookup (install layout, then the build-tree fallback)
 
     GuiEnvironment env(true, true);
     ShellController controller(*env.services);

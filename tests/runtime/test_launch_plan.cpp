@@ -3,6 +3,7 @@
 #include "launcher_test_support.h"
 #include "wpiemu/core/config/json_codec.h"
 #include "wpiemu/core/launcher/init_script.h"
+#include "wpiemu/sdk/testing/environment.h"
 
 // Launch planning: the generated Gradle init script, the environment contract, and how a request becomes a Gradle or an
 // external-direct command line.
@@ -10,6 +11,7 @@
 using namespace wpiemu::sdk;
 using namespace wpiemu::core::launcher;
 using wpiemu::core::config::JsonValueCodec;
+using wpiemu::sdk::testing::envOf;
 using wpiemu::test_runtime::ScratchDir;
 using wpiemu::test_runtime::makeRequest;
 namespace fs = std::filesystem;
@@ -193,7 +195,7 @@ TEST_CASE("external launch plan: Java descriptor -> JVM command line") {
     const std::string json = R"json({"libraryDir": "C:\\jni\\release", "mainClassName": "frc.robot.Main",
         "environment": {"HALSIM_EXTENSIONS": "C:\\sim\\halsim_gui.dll", "KEEP": "me", "NUM": 5}, "extensions": []})json";
     const JsonValueCodec codec;
-    const auto envNone = [](std::string_view) -> std::optional<std::string> { return std::nullopt; };
+    const auto envNone = envOf({});
 
     {
         const auto plan = planExternalLaunch(r, json, codec, envNone, true, false);
@@ -213,11 +215,7 @@ TEST_CASE("external launch plan: Java descriptor -> JVM command line") {
         CHECK(s.env.at("PATH").rfind("C:\\jni\\release", 0) == 0);  // library dir first
     }
     {  // JAVA_HOME from the host, macOS flag, DYLD path, host value appended
-        const auto host = [](std::string_view name) -> std::optional<std::string> {
-            if (name == "JAVA_HOME") return std::string("/jdk17");
-            if (name == "DYLD_LIBRARY_PATH") return std::string("/existing");
-            return std::nullopt;
-        };
+        const auto host = envOf({{"JAVA_HOME", "/jdk17"}, {"DYLD_LIBRARY_PATH", "/existing"}});
         const auto plan = planExternalLaunch(r, R"json({"libraryDir": "/jni"})json", codec, host, false, true);
         REQUIRE(plan.ok());
         const ProcessSpec& s = plan.value();
@@ -257,7 +255,7 @@ TEST_CASE("external launch plan: native descriptor -> the exe") {
     ScratchDir dir;
     LaunchRequest r = makeRequest(dir, LaunchMode::ExternalDirect, "cpp");
     const JsonValueCodec codec;
-    const auto host = [](std::string_view name) -> std::optional<std::string> { return name == "PATH" ? std::optional<std::string>("C:\\Windows") : std::nullopt; };
+    const auto host = envOf({{"PATH", "C:\\Windows"}});
     const std::string json = R"json({"launchfile": "build/install/frcUserProgram/windowsx86-64/release/lib/frcUserProgram.exe",
         "libpaths": ["C:\\libs\\a", "C:\\libs\\b"], "environment": {"X": "1"}})json";
     const auto plan = planExternalLaunch(r, json, codec, host, true, false);

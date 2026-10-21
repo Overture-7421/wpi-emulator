@@ -71,7 +71,7 @@ if(WPIEMU_BUILD_TESTS)
             tests/hal/test_hal_integration.cpp
             tests/hal/test_builtin_bridges.cpp
             tests/hal/test_extension_dll.cpp)
-        target_include_directories(wpiemu_halsim_ext_hal_tests PRIVATE tests)
+        target_include_directories(wpiemu_halsim_ext_hal_tests PRIVATE tests "${CMAKE_SOURCE_DIR}/tests/support")
         target_link_libraries(wpiemu_halsim_ext_hal_tests PRIVATE
             doctest::doctest wpiemu_halsim_hal wpiemu_halsim_core wpiemu_ipc wpiemu_bridges_builtin wpiemu_sdk)
         # test_extension_dll loads the real shared library through the HAL's extension loader.
