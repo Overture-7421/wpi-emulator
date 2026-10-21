@@ -14,6 +14,9 @@ Rules (see docs/ARCHITECTURE.md):
   * Inside app/, the host contract, the shared UI scene support and the page libraries (editor, run view) see only
     the SDK, their allowed siblings (the page libraries link app/ui; the run view also the contract) and the shared
     Qt-free headers; the shell, wizard and common layers sit above them.
+  * Registration: a plugins/ or bridges/ module directory must be added by its parent CMakeLists.txt, linked into the
+    aggregator target and called from the aggregator source, and a tests/ suite must be built (docs/extending.md);
+    CMake would otherwise ignore the half-registered directory without a message.
 
 Owners are directories; ALLOWED maps an owner to the owners it may depend on.
 Run:  check_boundaries.py [--root DIR]     |     check_boundaries.py --self-test
@@ -25,6 +28,7 @@ import os
 import posixpath
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import common
@@ -147,6 +151,20 @@ TARGET_OWNERS = {
 WPILIB_TARGETS = {"wpiemu_wpilib_hal", "wpiemu_wpilib_wpiutil", "wpiemu_wpilib_wpinet", "wpiemu_wpilib_ntcore"}
 # Owners allowed to link them: the extension and the optional ntcore binding of the vision bridges.
 WPILIB_USERS = {"halsim_ext", "bridges/vision"}
+
+# Module families wired in by hand: (directory, target prefix, aggregator target). The aggregator source is
+# <directory>/builtin_<directory>.cpp. plugins/_template is built but never registered.
+AGGREGATED_FAMILIES = (
+    ("plugins", "wpiemu_plugin_", "wpiemu_plugins_builtin"),
+    ("bridges", "wpiemu_bridges_", "wpiemu_bridges_builtin"),
+)
+# tests/CMakeLists.txt globs *.cpp for the Qt-free wpiemu_tests; app/editor/CMakeLists.txt globs tests/app_editor/*.cc
+# for the editor's Qt suite, so the two never overlap. Any other suite with its own CMakeLists.txt is added by hand.
+EDITOR_TEST_SUITE = "app_editor"
+
+
+def strip_cmake_comments(text: str) -> str:
+    return re.sub(r"#[^\n]*", "", text)
 
 
 def owner_of_path(rel: str) -> str | None:
@@ -276,7 +294,7 @@ def target_mapping_errors(rel: str, text: str) -> list[str]:
     """Every declared first-party target/alias must have an explicit, correct owner."""
     owner = owner_of_path(rel) or ("tests" if rel.startswith("tests/") else None)
     errors = []
-    for m in CMAKE_TARGET_RE.finditer(re.sub(r"#[^\n]*", "", text)):
+    for m in CMAKE_TARGET_RE.finditer(strip_cmake_comments(text)):
         name = m.group(1)
         if not WPIEMU_TARGET_RE.fullmatch(name):
             continue
@@ -285,7 +303,7 @@ def target_mapping_errors(rel: str, text: str) -> list[str]:
         expected = "wpilib" if owner == "halsim_ext" and normalized in WPILIB_TARGETS else owner
         if mapped is None or mapped != expected:
             errors.append(f"{rel}: target '{name}' has unmapped or incorrect owner "
-                          f"'{mapped}' (expected '{expected}')")
+                          f"'{mapped}' (expected '{expected}'); see TARGET_OWNERS in tools/check_boundaries.py")
     return errors
 
 
@@ -296,7 +314,7 @@ def scan_cmake(rel: str, text: str) -> list[str]:
         return []
     allowed = allowed_deps(owner) if owner else set()
     # Drop comments so documentation does not trigger the check.
-    text = re.sub(r"#[^\n]*", "", text)
+    text = strip_cmake_comments(text)
     errors = target_mapping_errors(rel, text)
     for m in CMAKE_LINK_RE.finditer(text):
         line = text.count("\n", 0, m.start()) + 1
@@ -304,7 +322,8 @@ def scan_cmake(rel: str, text: str) -> list[str]:
             name = f"wpiemu_{alias}" if alias else name
             dep = owner_of_target(name)
             if dep is None:
-                errors.append(f"{rel}:{line}: first-party dependency '{name}' has no mapped owner")
+                errors.append(f"{rel}:{line}: first-party dependency '{name}' has no mapped owner; "
+                              f"see TARGET_OWNERS in tools/check_boundaries.py")
                 continue
             # WPILib is a private robot-process backend, not a general module dependency.
             if test_only or permits(allowed, dep) or (owner in WPILIB_USERS and dep == "wpilib"):
@@ -358,6 +377,61 @@ def collect_files(root: Path) -> list[str]:
     return out
 
 
+def registration_errors(known: set[str], read: Callable[[str], str]) -> list[str]:
+    """Plugin and bridge directories that CMake ignores silently unless they are wired in by hand."""
+    errors = []
+    for parent, prefix, aggregator in AGGREGATED_FAMILIES:
+        parent_cmake = f"{parent}/CMakeLists.txt"
+        source = f"{parent}/builtin_{parent}.cpp"
+        cmake = strip_cmake_comments(read(parent_cmake)) if parent_cmake in known else ""
+        linked = {name.replace("wpiemu::", "wpiemu_")
+                  for m in CMAKE_LINK_RE.finditer(cmake) if m.group(1) == aggregator
+                  for name in re.findall(r"[\w:]+", m.group(2))}
+        registered = re.sub(r"//[^\n]*", "", read(source)) if source in known else ""
+        modules = sorted({p.split("/")[1] for p in known
+                          if p.startswith(f"{parent}/") and p.count("/") == 2 and p.endswith("/CMakeLists.txt")})
+        for module in modules:
+            owner = f"{parent}/{module}"
+            if not re.search(rf"add_subdirectory\s*\(\s*{re.escape(module)}\s*\)", cmake):
+                errors.append(f"{owner}: {parent_cmake} never calls add_subdirectory({module}), so CMake ignores it")
+            if module.startswith("_"):
+                continue
+            if f"{prefix}{module}" not in linked:
+                errors.append(f"{owner}: {parent_cmake} does not link {prefix}{module} into {aggregator}")
+            if f"{parent}::{module}::" not in registered:
+                errors.append(f"{owner}: {source} never calls a {parent}::{module}:: registration function")
+            if not is_plugin(owner) and owner not in ALLOWED:
+                errors.append(f"{owner}: add it to ALLOWED and MODULE_OWNERS in tools/check_boundaries.py")
+    return errors
+
+
+def suite_registration_errors(known: set[str], read: Callable[[str], str]) -> list[str]:
+    """Test sources and suite directories that no CMake target builds."""
+    errors = []
+    tests_cmake = strip_cmake_comments(read("tests/CMakeLists.txt")) if "tests/CMakeLists.txt" in known else ""
+    all_cmake = None
+    for rel in sorted(known):
+        parts = rel.split("/")
+        if parts[0] != "tests" or len(parts) < 3:
+            continue
+        suite, ext = parts[1], posixpath.splitext(rel)[1]
+        if ext == ".cc" and suite != EDITOR_TEST_SUITE:
+            errors.append(f"{rel}: nothing builds *.cc outside tests/{EDITOR_TEST_SUITE}; name it *.cpp so "
+                          f"tests/CMakeLists.txt discovers it")
+        elif ext == ".cpp" and suite == EDITOR_TEST_SUITE:
+            errors.append(f"{rel}: name editor test sources *.cc, or tests/CMakeLists.txt links them into the "
+                          f"Qt-free wpiemu_tests")
+        elif len(parts) == 3 and parts[2] in CMAKE_NAMES:
+            if all_cmake is None:
+                all_cmake = [strip_cmake_comments(read(p)) for p in sorted(known)
+                             if posixpath.basename(p) in CMAKE_NAMES or p.endswith(".cmake")]
+            if not any(re.search(rf"add_subdirectory\s*\([^)]*\b{re.escape(suite)}\b", text) for text in all_cmake):
+                errors.append(f"{rel}: no add_subdirectory(...{suite}) adds this suite (see app/runview/CMakeLists.txt)")
+            if f"/tests/{suite}/" not in tests_cmake:
+                errors.append(f"{rel}: tests/CMakeLists.txt must exclude /tests/{suite}/ from its *.cpp glob")
+    return errors
+
+
 def check_tree(root: Path) -> list[str]:
     files = collect_files(root)
     known = set(files)
@@ -376,7 +450,10 @@ def check_tree(root: Path) -> list[str]:
             errors += scan_qt_keywords(rel, text)
         elif name in CMAKE_NAMES or ext in CMAKE_EXTS:
             errors += scan_cmake(rel, common.read_text(path, "replace"))
-    return errors
+    def read(rel: str) -> str:
+        return common.read_text(root / rel, "replace")
+
+    return errors + registration_errors(known, read) + suite_registration_errors(known, read)
 
 
 def self_test() -> int:
@@ -628,6 +705,56 @@ def self_test() -> int:
     if set(MODULE_OWNERS) != set(ALLOWED):
         failures += 1
         print("SELF-TEST FAIL module-map completeness: MODULE_OWNERS differs from ALLOWED")
+
+    plugin_wiring = {
+        "plugins/CMakeLists.txt": "add_subdirectory(game_2026)\nadd_subdirectory(_template)\n"
+                                  "target_link_libraries(wpiemu_plugins_builtin PUBLIC wpiemu_sdk PRIVATE wpiemu_plugin_game_2026)\n",
+        "plugins/builtin_plugins.cpp": "keepFirstError(plugins::game_2026::registerPlugin(registry));\n"
+                                       "// keepFirstError(plugins::game_2027::registerPlugin(registry));\n",
+        "plugins/game_2026/CMakeLists.txt": "",
+        "plugins/_template/CMakeLists.txt": "",
+    }
+    bridge_wiring = {
+        "bridges/CMakeLists.txt": "add_subdirectory(hal)\n"
+                                  "target_link_libraries(wpiemu_bridges_builtin PUBLIC wpiemu_sdk PRIVATE wpiemu::bridges_hal)\n",
+        "bridges/builtin_bridges.cpp": "attempt(first, [&] { return bridges::hal::registerHalBridges(registry); });\n",
+        "bridges/hal/CMakeLists.txt": "",
+    }
+    suite_wiring = {
+        "tests/CMakeLists.txt": 'list(FILTER SOURCES EXCLUDE REGEX "/tests/app_runview/")\n',
+        "tests/ipc/test_a.cpp": "",
+        "tests/app_editor/test_b.cc": "",
+        "tests/app_runview/CMakeLists.txt": "",
+        "tests/app_runview/test_c.cpp": "",
+        "tests/sdk/header_check.cmake": "",
+        "app/runview/CMakeLists.txt": 'add_subdirectory("${PROJECT_SOURCE_DIR}/tests/app_runview" "${CMAKE_CURRENT_BINARY_DIR}/tests")\n',
+    }
+    wiring_cases = [
+        # (check, files, expected_error_count)
+        (registration_errors, plugin_wiring, 0),
+        (registration_errors, {**plugin_wiring, "plugins/game_2027/CMakeLists.txt": ""}, 3),
+        (registration_errors, {**plugin_wiring, "plugins/CMakeLists.txt": "# add_subdirectory(game_2027)\n"
+                               + plugin_wiring["plugins/CMakeLists.txt"], "plugins/game_2027/CMakeLists.txt": ""}, 3),
+        (registration_errors, {**plugin_wiring, "plugins/CMakeLists.txt":
+                               plugin_wiring["plugins/CMakeLists.txt"].replace("add_subdirectory(game_2026)\n", "")}, 1),
+        (registration_errors, {**plugin_wiring, "plugins/CMakeLists.txt":
+                               plugin_wiring["plugins/CMakeLists.txt"].replace("add_subdirectory(_template)\n", "")}, 1),
+        (registration_errors, {**plugin_wiring, "plugins/builtin_plugins.cpp": ""}, 1),
+        (registration_errors, bridge_wiring, 0),
+        (registration_errors, {**bridge_wiring, "bridges/audio/CMakeLists.txt": ""}, 4),
+        (registration_errors, {**bridge_wiring, "bridges/vision/CMakeLists.txt": ""}, 3),
+        (suite_registration_errors, suite_wiring, 0),
+        (suite_registration_errors, {**suite_wiring, "tests/bridges/test_x.cc": ""}, 1),
+        (suite_registration_errors, {**suite_wiring, "tests/app_editor/test_y.cpp": ""}, 1),
+        (suite_registration_errors, {**suite_wiring, "tests/app_qt/CMakeLists.txt": ""}, 2),
+        (suite_registration_errors, {**suite_wiring, "app/runview/CMakeLists.txt": ""}, 1),
+        (suite_registration_errors, {**suite_wiring, "tests/CMakeLists.txt": ""}, 1),
+    ]
+    for check, files, expected in wiring_cases:
+        got = len(check(set(files), files.__getitem__))
+        if got != expected:
+            failures += 1
+            print(f"SELF-TEST FAIL {check.__name__}: expected {expected} errors, got {got}\n{sorted(files)}")
 
     kw_cases = [
         ("sdk/include/wpiemu/sdk/a.h", "std::vector<int> signals;\n", 1),

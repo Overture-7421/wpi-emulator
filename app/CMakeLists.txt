@@ -69,6 +69,5 @@ if(WIN32 AND PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
 endif()
 
 if(WPIEMU_BUILD_TESTS)
-    enable_testing()   # the root enables it after this directory; tests registered here need it earlier
     add_subdirectory(tests)
 endif()

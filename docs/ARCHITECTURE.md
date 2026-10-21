@@ -39,7 +39,8 @@ The only built-in aggregation seams are:
   the extension uses `registerBuiltinBridges` and `registerBuiltinVisionBridges`, never an individual
   bridge module. Bridges do not depend on one another.
 
-[The boundary checker](../tools/check_boundaries.py) checks includes and CMake links/target ownership.
+[The boundary checker](../tools/check_boundaries.py) checks includes, CMake links/target ownership and that each
+plugin and bridge directory is added, linked and registered through its aggregator and each test source is built.
 Dependency changes need an explicit contract, not an exception that bypasses an aggregator.
 Header conventions belong in [Contributing](CONTRIBUTING.md#coding-conventions); rationale lives in the
 [decision index](decisions/README.md).

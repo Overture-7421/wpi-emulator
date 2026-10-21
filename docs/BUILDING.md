@@ -9,7 +9,7 @@ Prerequisites: a checkout and a terminal at the repository root.
   Linux/macOS use GCC/Clang or Apple Clang. Non-Visual-Studio presets also require Ninja.
 - A Qt kit matching the [version pins](releasing.md#version-pins) with Quick 3D and Shader Tools; the Windows
   examples use `C:\Qt\6.8.3\msvc2022_64`. Omit Qt for a Qt-free build using the option below.
-- CMake fetches pinned Box3D and doctest sources; see [dependency declarations](../cmake/WpiEmuDependencies.cmake).
+- CMake fetches pinned [Box3D](../cmake/WpiEmuDependencies.cmake) and [doctest](../cmake/WpiEmuTests.cmake) sources.
 - WPILib desktop HAL/wpiutil artifacts enable the real extension. CMake searches the installer's
   Maven cache (`C:\Users\Public\wpilib\2026\maven` or `~/wpilib/2026/maven`).
   Supply another Maven/extracted root with `WPIEMU_WPILIB_ROOT`, or enable downloads below.
@@ -83,7 +83,7 @@ The Qt-free doctest executable discovers `tests/**/*.cpp`, excluding the separat
 Editor tests use `tests/app_editor/*.cc` to avoid that glob. Reconfigure after adding tests;
 each discovered `TEST_CASE` becomes a CTest entry. Names must be unique and contain **no semicolons**.
 SDK public headers automatically get stand-alone include checks.
-CTest supplies offscreen Qt settings and the Windows Qt DLL path for UI suites. Direct Qt test
+CTest supplies offscreen Qt settings and the Windows Qt DLL path for UI suites (`wpiemu_qt_test_environment(<test>)`). Direct Qt test
 binaries need `QT_QPA_PLATFORM=offscreen` and the kit's `bin` on `PATH`; doctest accepts
 `--test-case="exact case name"`. Offscreen does **not** validate Quick 3D rendering: use
 `wpiemu_editor_demo` or `wpiemu_runview_demo` interactively. For source-writing conventions see

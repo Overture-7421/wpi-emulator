@@ -31,7 +31,8 @@ the linked reference pages own detailed behavior. Do not add season/vendor switc
    into `wpiemu_plugins_builtin`. Include the public header and call its namespaced `registerPlugin`
    in [the aggregator](../plugins/builtin_plugins.cpp), preserving registration errors.
    The target links only `wpiemu_sdk`; no core/app or another plugin changes for season logic.
-   Conventionally named plugin targets/aliases are recognized by the boundary checker.
+   Conventionally named plugin targets/aliases are recognized by the boundary checker, which also fails a plugin
+   directory that is not added, linked and registered here.
 7. Add tests alongside the new plugin's source-mirroring test directory. If they include plugin
    headers, link the test executable to the new plugin in [test wiring](../tests/CMakeLists.txt).
    Exercise registration, defaults/ownership, field cleanup, rules, reset and HUD publication.
@@ -88,13 +89,15 @@ Plugins are built in with the host toolchain, not independently loaded shared li
 4. Expose a module registration function that registers factories with
    `DeviceBridgeRegistry::add`. Add its subdirectory and link it into
    `wpiemu_bridges_builtin` in [bridge build wiring](../bridges/CMakeLists.txt); call the function
-   from [the bridge aggregator](../bridges/builtin_bridges.cpp). The extension does not change.
+   from [the bridge aggregator](../bridges/builtin_bridges.cpp). The extension does not change, and the boundary
+   checker fails a module that is not added, linked and called there.
 5. For a new bridge module, update `ALLOWED`, `MODULE_OWNERS` and `TARGET_OWNERS` in
    [the boundary checker](../tools/check_boundaries.py), including the aggregator's outgoing edge
    and any aliases/binding targets. Do not allow a direct extension-to-module dependency.
 6. Test discovery/update/retirement, capabilities, direction/scale, missing values, loopback and
    input-history reset through fake backends. Link new-module tests explicitly to that module
-   in [test wiring](../tests/CMakeLists.txt), or register a dedicated test target: source discovery
+   in [test wiring](../tests/CMakeLists.txt), or register a dedicated test target (`wpiemu_doctest_target(<target>)`
+   applies the doctest and warning settings): source discovery
    does not extend the fixed test-library list. Add the actual contract to the [bridge reference](reference/bridges.md).
 
 ## Add a vendor rule set

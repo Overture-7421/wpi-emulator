@@ -36,9 +36,9 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 option(WPIEMU_BUILD_APP "Build the Qt application (requires Qt 6)" ON)
 option(WPIEMU_BUILD_TESTS "Build unit tests and register CTest checks" ON)
 option(WPIEMU_BUILD_PLUGIN_TEMPLATE "Build plugins/_template to keep the template compiling" ON)
-option(WPIEMU_WARNINGS_AS_ERRORS "Treat warnings in first-party code as errors" OFF)
 
 include(WpiEmuDefaults)
+wpiemu_option_warnings_as_errors(OFF)
 include(WpiEmuDependencies)
 
 add_subdirectory(sdk)
@@ -53,7 +53,6 @@ if(WPIEMU_BUILD_APP)
 endif()
 
 if(WPIEMU_BUILD_TESTS)
-    enable_testing()
     add_subdirectory(tests)
 endif()
 

@@ -23,24 +23,10 @@ endif()
 
 # ---- doctest (unit tests) -------------------------------------------------
 if(WPIEMU_BUILD_TESTS)
-    # doctest is header-only; its own CMakeLists is skipped (SOURCE_SUBDIR) because it targets
-    # an obsolete CMake minimum version. We define the interface target ourselves.
-    FetchContent_Declare(doctest
-        GIT_REPOSITORY https://github.com/doctest/doctest.git
-        GIT_TAG        v2.4.11
-        GIT_SHALLOW    TRUE
-        SOURCE_SUBDIR  _wpiemu_no_cmake
-        EXCLUDE_FROM_ALL)
-    FetchContent_MakeAvailable(doctest)
-    add_library(doctest INTERFACE)
-    add_library(doctest::doctest ALIAS doctest)
-    target_include_directories(doctest SYSTEM INTERFACE "${doctest_SOURCE_DIR}")
-    list(APPEND CMAKE_MODULE_PATH "${doctest_SOURCE_DIR}/scripts/cmake")
+    include(WpiEmuTests)
 endif()
 
 # ---- Qt 6 (app only) ------------------------------------------------------
-# Point CMAKE_PREFIX_PATH at the Qt kit, e.g. C:/Qt/<version>/msvc2022_64
 if(WPIEMU_BUILD_APP)
-    find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets Quick Quick3D QuickWidgets)
-    qt_standard_project_setup()
+    include(WpiEmuQt)
 endif()

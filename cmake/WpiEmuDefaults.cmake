@@ -1,5 +1,13 @@
-# Common per-target settings for first-party code.
+# Common settings for first-party code.
+#   wpiemu_option_warnings_as_errors(<default>)
 #   wpiemu_target_defaults(<target>)
+
+# Declares WPIEMU_WARNINGS_AS_ERRORS, which wpiemu_target_defaults reads. Only the default differs per build: the full
+# build (presets, CI) keeps it OFF, the standalone editor build is a developer tool and keeps it ON.
+function(wpiemu_option_warnings_as_errors default)
+    option(WPIEMU_WARNINGS_AS_ERRORS "Treat warnings in first-party code as errors" ${default})
+endfunction()
+
 function(wpiemu_target_defaults target)
     get_target_property(type ${target} TYPE)
     if(type STREQUAL "INTERFACE_LIBRARY")

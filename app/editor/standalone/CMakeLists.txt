@@ -25,27 +25,15 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 
 option(WPIEMU_BUILD_TESTS "Build the editor unit tests" ON)
-option(WPIEMU_WARNINGS_AS_ERRORS "Treat warnings in first-party code as errors" ON)
 
 include(WpiEmuDefaults)
+wpiemu_option_warnings_as_errors(ON)
 add_subdirectory("${WPIEMU_REPO_ROOT}/sdk" sdk)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets Quick Quick3D QuickWidgets)
-qt_standard_project_setup()
+include(WpiEmuQt)
 
 if(WPIEMU_BUILD_TESTS)
-    include(FetchContent)
-    FetchContent_Declare(doctest
-        GIT_REPOSITORY https://github.com/doctest/doctest.git
-        GIT_TAG        v2.4.11
-        GIT_SHALLOW    TRUE
-        SOURCE_SUBDIR  _wpiemu_no_cmake
-        EXCLUDE_FROM_ALL)
-    FetchContent_MakeAvailable(doctest)
-    add_library(doctest INTERFACE)
-    add_library(doctest::doctest ALIAS doctest)
-    target_include_directories(doctest SYSTEM INTERFACE "${doctest_SOURCE_DIR}")
-    enable_testing()
+    include(WpiEmuTests)
 endif()
 
 add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../ui" ui)

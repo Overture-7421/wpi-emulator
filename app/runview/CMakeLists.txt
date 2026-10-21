@@ -94,7 +94,6 @@ endif()
 
 # ---- tests (sources live in tests/app_runview; excluded from the Qt-free wpiemu_tests glob) ----
 if(WPIEMU_BUILD_TESTS AND EXISTS "${PROJECT_SOURCE_DIR}/tests/app_runview/CMakeLists.txt")
-    enable_testing()   # this directory is configured before the root enable_testing(); ctest must still descend here
     add_subdirectory("${PROJECT_SOURCE_DIR}/tests/app_runview" "${CMAKE_CURRENT_BINARY_DIR}/tests")
 endif()
 
