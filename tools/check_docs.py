@@ -2,13 +2,14 @@
 """Check local documentation links, repository paths, and build identifiers."""
 from __future__ import annotations
 
-import argparse
 import html
 import re
 import subprocess
 import sys
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
+
+import common
 
 
 TEXT_SUFFIXES = {".md", ".h", ".hpp", ".cpp", ".cc", ".qml", ".cmake",
@@ -73,7 +74,7 @@ def anchors(text: str) -> set[str]:
 def check(root: Path, files: list[Path]) -> list[str]:
     root = root.resolve()
     files = [path for path in files if path.is_file()]
-    texts = {path: path.read_text(encoding="utf-8") for path in files
+    texts = {path: common.read_text(path) for path in files
              if path.suffix in TEXT_SUFFIXES or path.name == "CMakeLists.txt"}
     documents = {path: text for path, text in texts.items() if path.suffix == ".md"}
     if not documents:
@@ -159,9 +160,7 @@ def check(root: Path, files: list[Path]) -> list[str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
-    args = parser.parse_args()
+    args = common.root_parser(__doc__).parse_args()
     root = args.root.resolve()
     try:
         names = subprocess.check_output(
@@ -171,11 +170,7 @@ def main() -> int:
     except (OSError, UnicodeError, subprocess.CalledProcessError) as error:
         print(f"docs: cannot check repository: {error}", file=sys.stderr)
         return 2
-    if errors:
-        print("\n".join(errors), file=sys.stderr)
-        return 1
-    print("docs: ok")
-    return 0
+    return common.report(errors, "docs: ok", file=sys.stderr)
 
 
 if __name__ == "__main__":

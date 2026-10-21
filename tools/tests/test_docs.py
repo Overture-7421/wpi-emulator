@@ -1,28 +1,20 @@
 """Documentation regressions using a small repository fixture."""
-import importlib.util
-import tempfile
 import unittest
-from pathlib import Path
 
+from support import scratch_directory
 
-REPO = Path(__file__).resolve().parents[2]
-SPEC = importlib.util.spec_from_file_location("check_docs", REPO / "tools" / "check_docs.py")
-DOCS = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(DOCS)
+import check_docs as DOCS
+from common import write_text
 
 
 class DocumentationTests(unittest.TestCase):
     def setUp(self):
-        (REPO / "build").mkdir(exist_ok=True)
-        directory = tempfile.TemporaryDirectory(prefix="docs-test-", dir=REPO / "build")
-        self.addCleanup(directory.cleanup)
-        self.root = Path(directory.name).resolve()
+        self.root = scratch_directory(self, "docs-test-")
         self.files = []
 
     def write(self, name, content):
         path = self.root / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        write_text(path, content)
         self.files.append(path)
         return path
 

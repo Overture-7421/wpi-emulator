@@ -27,6 +27,8 @@ import re
 import sys
 from pathlib import Path
 
+import common
+
 SOURCE_EXTS = {".h", ".hh", ".hpp", ".hxx", ".inl", ".c", ".cc", ".cpp", ".cxx", ".mm", ".m"}
 CMAKE_NAMES = {"CMakeLists.txt"}
 CMAKE_EXTS = {".cmake"}
@@ -366,14 +368,14 @@ def check_tree(root: Path) -> list[str]:
         path = root / rel
         if owner_of_path(rel) is None:
             if rel.startswith("tests/") and (name in CMAKE_NAMES or ext in CMAKE_EXTS):
-                errors += scan_cmake(rel, path.read_text(encoding="utf-8"))
+                errors += scan_cmake(rel, common.read_text(path))
             continue
         if ext in SOURCE_EXTS:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            text = common.read_text(path, "replace")
             errors += scan_source(rel, text, known)
             errors += scan_qt_keywords(rel, text)
         elif name in CMAKE_NAMES or ext in CMAKE_EXTS:
-            errors += scan_cmake(rel, path.read_text(encoding="utf-8", errors="replace"))
+            errors += scan_cmake(rel, common.read_text(path, "replace"))
     return errors
 
 
@@ -615,11 +617,11 @@ def self_test() -> int:
             failures += 1
             print(f"SELF-TEST FAIL cmake {rel}: expected {expected} errors, got {got}\n{text}")
 
-    root = Path(__file__).resolve().parent.parent
+    root = common.REPO_ROOT
     for rel in collect_files(root):
         if (owner_of_path(rel) or rel.startswith("tests/")) and (
                 posixpath.basename(rel) in CMAKE_NAMES or posixpath.splitext(rel)[1] in CMAKE_EXTS):
-            mapping_errors = target_mapping_errors(rel, (root / rel).read_text(encoding="utf-8"))
+            mapping_errors = target_mapping_errors(rel, common.read_text(root / rel))
             failures += len(mapping_errors)
             for error in mapping_errors:
                 print(f"SELF-TEST FAIL target-map completeness: {error}")
@@ -649,22 +651,15 @@ def self_test() -> int:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
+    ap = common.root_parser(__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
 
     if args.self_test:
         return self_test()
 
-    errors = check_tree(args.root)
-    if errors:
-        print("Architecture boundary violations:")
-        for e in errors:
-            print("  " + e)
-        return 1
-    print("boundaries: ok")
-    return 0
+    return common.report(check_tree(args.root), "boundaries: ok",
+                         heading="Architecture boundary violations:", indent="  ")
 
 
 if __name__ == "__main__":
