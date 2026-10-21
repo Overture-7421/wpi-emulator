@@ -13,6 +13,7 @@
 #endif
 
 #include "launcher_test_support.h"
+#include "wpiemu/sdk/testing/wait.h"
 
 // The process layer: line splitting, environment and command-line building, PATH lookup, and real child processes.
 
@@ -348,7 +349,7 @@ TEST_CASE("process: requestStop sends SIGTERM to the group") {
     CollectingSink sink;
     auto p = createSystemProcess();
     REQUIRE(p->start(shell("trap 'echo got term; exit 7' TERM; echo ready; while :; do sleep 0.1; done"), sink).ok());
-    for (int i = 0; i < 100 && !sink.has(OutputStream::Stdout, "ready"); ++i) std::this_thread::sleep_for(20ms);
+    wpiemu::sdk::testing::waitUntil([&] { return sink.has(OutputStream::Stdout, "ready"); }, 2s, 20ms);
     p->requestStop();
     REQUIRE(p->waitForExit(5s));
     CHECK(p->exitInfo()->exitCode == 7);

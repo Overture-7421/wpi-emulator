@@ -7,11 +7,11 @@
 #include <deque>
 #include <functional>
 #include <mutex>
-#include <thread>
 
 #include "launcher_test_support.h"
 #include "wpiemu/core/config/json_codec.h"
 #include "wpiemu/sdk/testing/fake_clock_logger.h"
+#include "wpiemu/sdk/testing/wait.h"
 
 // RobotLauncher: phases, cancellation and the build-then-run flow, driven by scripted fake processes, plus one end-to-end run
 // through a real fake gradlew.
@@ -19,6 +19,7 @@
 using namespace wpiemu::sdk;
 using namespace wpiemu::core::launcher;
 using wpiemu::core::config::JsonValueCodec;
+using wpiemu::sdk::testing::waitUntil;
 using wpiemu::test_runtime::CollectingSink;
 using wpiemu::test_runtime::ScratchDir;
 using wpiemu::test_runtime::kWindows;
@@ -116,15 +117,6 @@ ProcessFactory fakeFactory(FakeWorld& w) {
         }
         return std::make_unique<FakeProcess>(w, std::move(s));
     };
-}
-
-bool waitFor(const std::function<bool()>& pred, std::chrono::milliseconds timeout = 5s) {
-    const auto end = std::chrono::steady_clock::now() + timeout;
-    while (std::chrono::steady_clock::now() < end) {
-        if (pred()) return true;
-        std::this_thread::sleep_for(5ms);
-    }
-    return pred();
 }
 
 struct StartupGate {
@@ -269,7 +261,7 @@ TEST_CASE("launcher: plan errors are returned immediately, a second launch while
     world.scripts.push_back({0, true, false, nullptr, {}});
     const LaunchRequest good = makeRequest(dir);
     REQUIRE(launcher.launch(good, sink).ok());
-    REQUIRE(waitFor([&] { return launcher.status().phase == LaunchPhase::Running; }));
+    REQUIRE(waitUntil([&] { return launcher.status().phase == LaunchPhase::Running; }, 5s));
     CHECK(launcher.launch(good, sink).error().code == ErrorCode::InvalidState);
     CHECK_FALSE(launcher.waitUntilFinished(20ms));
     launcher.stop(0ms);
@@ -299,7 +291,7 @@ TEST_CASE("launcher: stop() asks politely, then kills the tree after the grace p
     RobotLauncher launcher(fakeFactory(world), json, logger);
     CollectingSink sink;
     REQUIRE(launcher.launch(makeRequest(dir), sink).ok());
-    REQUIRE(waitFor([&] { return launcher.status().phase == LaunchPhase::Running; }));
+    REQUIRE(waitUntil([&] { return launcher.status().phase == LaunchPhase::Running; }, 5s));
     CHECK(launcher.status().pid == 1234);
     launcher.stop(100ms);
     CHECK(world.stopRequested >= 1);
@@ -320,7 +312,7 @@ TEST_CASE("launcher: the destructor kills a running robot") {
     {
         RobotLauncher launcher(fakeFactory(world), json, logger);
         REQUIRE(launcher.launch(makeRequest(dir), sink).ok());
-        REQUIRE(waitFor([&] { return launcher.status().phase == LaunchPhase::Running; }));
+        REQUIRE(waitUntil([&] { return launcher.status().phase == LaunchPhase::Running; }, 5s));
     }
     CHECK(world.killed == 1);
 }
@@ -397,7 +389,7 @@ TEST_CASE("launcher: ExternalDirect failure modes - describe fails, descriptor m
         world.scripts.push_back({0, true, false, nullptr, {}});
         RobotLauncher launcher(fakeFactory(world), json, logger);
         REQUIRE(launcher.launch(request, sink).ok());
-        REQUIRE(waitFor([&] { return launcher.status().phase == LaunchPhase::Building; }));
+        REQUIRE(waitUntil([&] { return launcher.status().phase == LaunchPhase::Building; }, 5s));
         launcher.stop(0ms);
         CHECK(launcher.status().phase == LaunchPhase::Stopped);
         CHECK(world.started.size() == 1);

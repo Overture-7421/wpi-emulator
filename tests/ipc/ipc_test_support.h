@@ -20,6 +20,7 @@
 #include "wpiemu/ipc/in_process.h"
 #include "wpiemu/ipc/local_ipc.h"
 #include "wpiemu/sdk/ipc/lockstep.h"
+#include "wpiemu/sdk/testing/wait.h"
 
 namespace wpiemu::ipc::testing {
 
@@ -105,8 +106,7 @@ public:
     proto::LockstepFollower& follower() { return follower_; }
 
     bool waitHandshaken(std::chrono::milliseconds timeout) const {
-        const auto end = std::chrono::steady_clock::now() + timeout;
-        while (!handshaken_ && !handshakeFailed_ && std::chrono::steady_clock::now() < end) std::this_thread::sleep_for(1ms);
+        sdk::testing::waitUntil([&] { return handshaken_ || handshakeFailed_; }, timeout, 1ms);
         return handshaken_;
     }
 

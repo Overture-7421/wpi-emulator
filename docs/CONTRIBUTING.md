@@ -62,6 +62,7 @@ Merge one only with proof that it removes complexity without changing behavior o
 
 Add a focused regression test for changed behavior, next to the tests for that module. Prefer public
 interfaces and the header-only [SDK fakes](../sdk/include/wpiemu/sdk/testing) over implementation access.
+Wait on another thread or process with that folder's `waitUntil`, not a hand-written sleep loop.
 Cover the important failure/reset edge as well as the happy path; do not test constants or language
 behavior merely to increase coverage.
 

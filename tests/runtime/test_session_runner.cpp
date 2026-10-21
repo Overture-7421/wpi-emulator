@@ -4,6 +4,7 @@
 #include <thread>
 
 #include "runner_rig.h"
+#include "wpiemu/sdk/testing/wait.h"
 
 // SessionRunner, part 1: the connection lifecycle and the lock-step protocol - handshake, ticks, Reset, the watchdog,
 // reconnects and Stop. Parts 2 and 3 (test_runner_control.cpp, test_runner_vision.cpp) cover run control and cameras.
@@ -11,6 +12,7 @@
 using namespace wpiemu::sdk;
 using namespace wpiemu::core::runtime;
 using namespace std::chrono_literals;
+using wpiemu::sdk::testing::waitUntil;
 using wpiemu::test_runtime::Rig;
 
 TEST_CASE("runner: handshake assigns session, epoch, step and the negotiated watchdog") {
@@ -315,10 +317,7 @@ TEST_CASE("runner: a new connection replaces the old one") {
     REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value(); }));
     CHECK(rig.ext->helloAck->sessionId == 2);
     // the first link was closed by the runner
-    for (int i = 0; i < 100 && !first->disconnected; ++i) {
-        first->pump();
-        std::this_thread::sleep_for(5ms);
-    }
+    waitUntil([&] { return first->disconnected; }, 500ms, 5ms, [&] { first->pump(); });
     CHECK(first->disconnected);
 }
 
@@ -419,15 +418,12 @@ TEST_CASE("runner: runs on its own thread against a robot thread, then stops cle
             std::this_thread::sleep_for(1ms);
         }
     });
-    const auto deadline = std::chrono::steady_clock::now() + 5s;
-    while (rig.runner->ticksSent() < 100 && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(1ms);
-    CHECK(rig.runner->ticksSent() >= 100);
+    CHECK(waitUntil([&] { return rig.runner->ticksSent() >= 100; }, 5s, 1ms));
 
     proto::SimControl stop;
     stop.command = proto::SimCommand::Stop;
     rig.runner->control(stop);
-    while (rig.runner->state() != RunnerState::Stopped && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(1ms);
-    CHECK(rig.runner->state() == RunnerState::Stopped);
+    CHECK(waitUntil([&] { return rig.runner->state() == RunnerState::Stopped; }, 5s, 1ms));
     stopRobot = true;
     robot.join();
     rig.runner->stop();  // joins the already-finished thread

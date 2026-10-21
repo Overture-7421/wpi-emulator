@@ -23,6 +23,7 @@
 #include "wpiemu/sdk/ipc/lockstep.h"
 #include "wpiemu/sdk/vision/vision_bridge.h"
 #include "wpiemu/sdk/testing/in_memory_transport.h"
+#include "wpiemu/sdk/testing/wait.h"
 
 namespace wpiemu::halsim::testing {
 
@@ -567,12 +568,7 @@ struct Rig {
 
 template <class Pred>
 bool waitUntil(Pred pred, std::chrono::milliseconds timeout = 2000ms) {
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
-    while (std::chrono::steady_clock::now() < deadline) {
-        if (pred()) return true;
-        std::this_thread::sleep_for(2ms);
-    }
-    return pred();
+    return sdk::testing::waitUntil(pred, timeout, 2ms);
 }
 
 }  // namespace wpiemu::halsim::testing

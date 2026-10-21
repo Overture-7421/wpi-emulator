@@ -27,7 +27,6 @@
 #include <filesystem>
 #include <map>
 #include <string>
-#include <thread>
 
 #define DOCTEST_CONFIG_IMPLEMENT
 #include <doctest/doctest.h>
@@ -37,6 +36,7 @@
 #include "wpiemu/core/config/config_store.h"
 #include "wpiemu/core/launcher/project_inspector.h"
 #include "wpiemu/sdk/mechanisms/motion_config.h"
+#include "wpiemu/sdk/testing/wait.h"
 
 namespace fs = std::filesystem;
 using namespace wpiemu;
@@ -154,20 +154,21 @@ bool hasDevice(const sdk::ISimSnapshot& snap, const char* type, int id) {
 // Pumps status() / logs until `done`, a terminal state or the timeout. Robot console lines are echoed when WPIEMU_E2E_VERBOSE is set.
 template <class Done>
 bool waitFor(app::host::RobotSession& s, std::chrono::seconds timeout, Done&& done, sdk::SessionStatus& last, std::vector<std::string>& console) {
-    const auto deadline = Clock::now() + timeout;
     const bool verbose = !env("WPIEMU_E2E_VERBOSE").empty();
-    while (Clock::now() < deadline) {
-        for (const sdk::SessionLogEntry& e : s.takeLogs(5000)) {
-            const std::string line = (e.stream == sdk::LogStream::Emulator ? "[emu " + e.source + "] " : "[robot] ") + e.text;
-            console.push_back(line);
-            if (verbose) std::printf("%s\n", line.c_str());
-        }
-        last = s.status();
-        if (done(last)) return true;
-        if (!last.active()) return false;   // crashed / failed / exited
-        std::this_thread::sleep_for(50ms);
-    }
-    return false;
+    bool reached = false;
+    sdk::testing::waitUntil(
+        [&] {
+            for (const sdk::SessionLogEntry& e : s.takeLogs(5000)) {
+                const std::string line = (e.stream == sdk::LogStream::Emulator ? "[emu " + e.source + "] " : "[robot] ") + e.text;
+                console.push_back(line);
+                if (verbose) std::printf("%s\n", line.c_str());
+            }
+            last = s.status();
+            reached = done(last);
+            return reached || !last.active();   // crashed / failed / exited
+        },
+        timeout, 50ms);
+    return reached;
 }
 
 void dumpConsole(const std::vector<std::string>& console) {
@@ -252,7 +253,7 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
         session.waitUntilFinished();
         std::printf("e2e:   stopped in %.2f s\n", seconds(tStop, Clock::now()));
         CHECK(session.status().process == sdk::ProcessState::Exited);
-        for (int i = 0; i < 100 && processAlive(discoveryRobotPid); ++i) std::this_thread::sleep_for(100ms);
+        sdk::testing::waitUntil([&] { return !processAlive(discoveryRobotPid); }, 10s, 100ms);
         CHECK_FALSE(processAlive(discoveryRobotPid));
     }
 
@@ -401,7 +402,7 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
         std::printf("e2e:   stopped in %.2f s\n", seconds(tStop, Clock::now()));
         std::int64_t pid = 0;
         if (const auto hello = session.runner().robotHello()) pid = hello->pid;
-        for (int i = 0; i < 100 && processAlive(pid); ++i) std::this_thread::sleep_for(100ms);
+        sdk::testing::waitUntil([&] { return !processAlive(pid); }, 10s, 100ms);
         CHECK_FALSE(processAlive(pid));
     }
     std::printf("e2e: total %.1f s\n", seconds(t0, Clock::now()));

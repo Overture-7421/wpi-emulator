@@ -2,11 +2,11 @@
 
 #include <QCoreApplication>
 #include <QDir>
-#include <QElapsedTimer>
 #include <QFile>
 #include <QSet>
 #include <QTemporaryDir>
 
+#include <chrono>
 #include <functional>
 #include <map>
 #include <memory>
@@ -15,18 +15,14 @@
 #include "common/demo_runtime_host.h"
 #include "common/key_value_store.h"
 #include "common/system_probe.h"
+#include "wpiemu/sdk/testing/wait.h"
 
 namespace wpiemu::app::testing {
 
 // Runs the event loop until `done()` or the timeout; true when `done()` became true.
 inline bool waitFor(const std::function<bool()>& done, int timeoutMs = 8000) {
-    QElapsedTimer timer;
-    timer.start();
-    while (!done()) {
-        if (timer.elapsed() > timeoutMs) return false;
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-    }
-    return true;
+    return sdk::testing::waitUntil(done, std::chrono::milliseconds(timeoutMs), std::chrono::milliseconds::zero(),
+                                   [] { QCoreApplication::processEvents(QEventLoop::AllEvents, 20); });
 }
 
 inline void writeFile(const QString& path, const QByteArray& content) {

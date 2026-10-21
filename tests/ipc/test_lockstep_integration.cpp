@@ -7,6 +7,7 @@
 #include <numeric>
 
 #include "ipc_test_support.h"
+#include "wpiemu/sdk/testing/wait.h"
 
 using namespace wpiemu;
 using namespace wpiemu::ipc;
@@ -14,6 +15,7 @@ using namespace wpiemu::ipc::testing;
 using namespace wpiemu::sdk;
 using namespace std::chrono_literals;
 using Act = FakeExtension::Act;
+using wpiemu::sdk::testing::waitUntil;
 
 namespace {
 
@@ -161,8 +163,7 @@ TEST_CASE("lockstep: Reset while a tick is outstanding - the late answer is drop
         proto::ActuatorFrame answer;
         REQUIRE(s.emulator->tick(1, 2000ms, &answer) == TickOutcome::Completed);
         CHECK(answer.runEpoch == 2);
-        const auto end = std::chrono::steady_clock::now() + 2000ms;
-        while (s.extension->droppedDs + s.extension->acceptedDs < 2 && std::chrono::steady_clock::now() < end) std::this_thread::sleep_for(1ms);
+        waitUntil([&] { return s.extension->droppedDs + s.extension->acceptedDs >= 2; }, 2000ms, 1ms);
         CHECK(s.extension->droppedDs == 1);
         CHECK(s.extension->acceptedDs == 1);
     });
@@ -211,8 +212,7 @@ TEST_CASE("lockstep: frames of a foreign session are dropped on both sides") {
         proto::SensorFrame foreign = s.emulator->makeFrame(1);
         foreign.sessionId = 999;
         REQUIRE(s.emulator->channel().send(foreign).ok());
-        const auto end = std::chrono::steady_clock::now() + 2000ms;
-        while (s.extension->droppedSensor == 0 && std::chrono::steady_clock::now() < end) std::this_thread::sleep_for(1ms);
+        waitUntil([&] { return s.extension->droppedSensor != 0; }, 2000ms, 1ms);
         CHECK(s.extension->droppedSensor == 1);
         CHECK(s.extension->stepped == 0);
         REQUIRE(s.emulator->tick(1, 2000ms) == TickOutcome::Completed);  // tick 1 was never consumed

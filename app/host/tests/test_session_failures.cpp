@@ -12,6 +12,7 @@
 #include "wpiemu/ipc/handshake.h"
 #include "wpiemu/ipc/local_ipc.h"
 #include "wpiemu/sdk/ipc/lifecycle.h"
+#include "wpiemu/sdk/testing/wait.h"
 
 namespace fs = std::filesystem;
 using namespace wpiemu;
@@ -94,15 +95,14 @@ struct SyntheticProject {
 };
 
 template <class Pred>
-bool waitUntil(RobotSession& s, std::chrono::milliseconds timeout, Pred&& pred, SessionStatus* out = nullptr) {
-    const auto deadline = Clock::now() + timeout;
-    while (Clock::now() < deadline) {
-        const SessionStatus st = s.status();
-        if (out != nullptr) *out = st;
-        if (pred(st)) return true;
-        std::this_thread::sleep_for(20ms);
-    }
-    return false;
+bool waitForStatus(RobotSession& s, std::chrono::milliseconds timeout, Pred&& pred, SessionStatus* out = nullptr) {
+    return sdk::testing::waitUntil(
+        [&] {
+            const SessionStatus st = s.status();
+            if (out != nullptr) *out = st;
+            return pred(st);
+        },
+        timeout, 20ms);
 }
 
 // The robot side of the handshake, played by the test instead of halsim_wpiemu.
@@ -168,7 +168,7 @@ TEST_CASE("a robot project that ends before the extension connects is FailedToSt
     REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
     RobotSession& s = *r.value();
     SessionStatus st;
-    REQUIRE(waitUntil(s, 20s, [](const SessionStatus& x) { return x.process == ProcessState::FailedToStart; }, &st));
+    REQUIRE(waitForStatus(s, 20s, [](const SessionStatus& x) { return x.process == ProcessState::FailedToStart; }, &st));
     CHECK(st.exitCode == 3);
     CHECK(st.detail.find("BUILD FAILED") != std::string::npos);
     CHECK_FALSE(st.active());
@@ -185,7 +185,7 @@ TEST_CASE("the handshake timeout reports HandshakeTimeout and stops the process 
     REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
     RobotSession& s = *r.value();
     SessionStatus st;
-    REQUIRE(waitUntil(s, 20s, [](const SessionStatus& x) { return x.link == LinkState::HandshakeTimeout; }, &st));
+    REQUIRE(waitForStatus(s, 20s, [](const SessionStatus& x) { return x.link == LinkState::HandshakeTimeout; }, &st));
     CHECK(st.process == ProcessState::FailedToStart);
     CHECK(st.detail.find("did not connect") != std::string::npos);
     s.waitUntilFinished();
@@ -207,7 +207,7 @@ TEST_CASE("an extension with an unsupported protocol version is reported as Prot
     CHECK_FALSE(ipc::performClientHandshake(ext->channel, hello, 5s).ok());
 
     SessionStatus st;
-    REQUIRE(waitUntil(s, 10s, [](const SessionStatus& x) { return x.link == LinkState::ProtocolMismatch; }, &st));
+    REQUIRE(waitForStatus(s, 10s, [](const SessionStatus& x) { return x.link == LinkState::ProtocolMismatch; }, &st));
     CHECK(st.process == ProcessState::FailedToStart);
     CHECK(st.detail.find("protocol") != std::string::npos);
     s.waitUntilFinished();
@@ -229,15 +229,15 @@ TEST_CASE("a connected robot that then dies is Crashed with its exit code, stop 
         hello.programName = "fake robot";
         REQUIRE(ipc::performClientHandshake(ext->channel, hello, 5s).ok());
         SessionStatus st;
-        REQUIRE(waitUntil(s, 10s, [](const SessionStatus& x) { return x.link == LinkState::Connected; }, &st));
+        REQUIRE(waitForStatus(s, 10s, [](const SessionStatus& x) { return x.link == LinkState::Connected; }, &st));
         CHECK(st.process == ProcessState::Running);
         CHECK_FALSE(st.programStarted);   // the constructor has not finished yet: no ticks, no watchdog
 
         REQUIRE(ext->channel.send(sdk::proto::makeLifecycleLog(sdk::proto::kLifecycleProgramStarted)).ok());
-        REQUIRE(waitUntil(s, 10s, [](const SessionStatus& x) { return x.programStarted; }));
+        REQUIRE(waitForStatus(s, 10s, [](const SessionStatus& x) { return x.programStarted; }));
 
         p.signalStop();   // the "robot" exits with code 7
-        REQUIRE(waitUntil(s, 20s, [](const SessionStatus& x) { return x.process == ProcessState::Crashed; }, &st));
+        REQUIRE(waitForStatus(s, 20s, [](const SessionStatus& x) { return x.process == ProcessState::Crashed; }, &st));
         CHECK(st.exitCode == 7);
         CHECK(st.link == LinkState::Disconnected);
         s.waitUntilFinished();

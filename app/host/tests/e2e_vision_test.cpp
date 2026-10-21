@@ -20,7 +20,6 @@
 #include <set>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <vector>
 
 #define DOCTEST_CONFIG_IMPLEMENT
@@ -30,6 +29,7 @@
 #include "test_support.h"
 #include "wpiemu/core/launcher/project_inspector.h"
 #include "wpiemu/sdk/core/units.h"
+#include "wpiemu/sdk/testing/wait.h"
 
 namespace fs = std::filesystem;
 using namespace wpiemu;
@@ -192,22 +192,23 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     // Pumps logs/status until `done`, a terminal state or the timeout; samples the camera states as they change.
     std::set<int> everVisible[2];
     auto pump = [&](std::chrono::seconds timeout, auto&& done) {
-        const auto deadline = Clock::now() + timeout;
-        while (Clock::now() < deadline) {
-            drain(session, got, verbose);
-            if (const auto snap = session.latestSnapshot()) {
-                const auto cams = snap->cameras();
-                for (std::size_t i = 0; i < cams.size(); ++i) {
-                    const int slot = cams[i].id == "front" ? 0 : 1;
-                    for (int id : cams[i].visibleTagIds) everVisible[slot].insert(id);
+        bool reached = false;
+        sdk::testing::waitUntil(
+            [&] {
+                drain(session, got, verbose);
+                if (const auto snap = session.latestSnapshot()) {
+                    const auto cams = snap->cameras();
+                    for (std::size_t i = 0; i < cams.size(); ++i) {
+                        const int slot = cams[i].id == "front" ? 0 : 1;
+                        for (int id : cams[i].visibleTagIds) everVisible[slot].insert(id);
+                    }
                 }
-            }
-            const sdk::SessionStatus st = session.status();
-            if (done(st)) return true;
-            if (!st.active()) return false;
-            std::this_thread::sleep_for(20ms);
-        }
-        return false;
+                const sdk::SessionStatus st = session.status();
+                reached = done(st);
+                return reached || !st.active();
+            },
+            timeout, 20ms);
+        return reached;
     };
 
     bool ok = pump(600s, [](const sdk::SessionStatus& s) { return s.programStarted; });
@@ -313,7 +314,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     session.waitUntilFinished();
     std::int64_t pid = 0;
     if (const auto hello = session.runner().robotHello()) pid = hello->pid;
-    for (int i = 0; i < 100 && processAlive(pid); ++i) std::this_thread::sleep_for(100ms);
+    sdk::testing::waitUntil([&] { return !processAlive(pid); }, 10s, 100ms);
     CHECK_FALSE(processAlive(pid));
     std::printf("e2e: total %.1f s\n", std::chrono::duration<double>(Clock::now() - t0).count());
 }
