@@ -293,7 +293,12 @@ void RunPage::selectStartPosition(const QString& id) {
 }
 
 void RunPage::applyProjectDefaults(const HostScene& scene) {
-    if (scene.projectPath.isEmpty()) return;
+    if (scene.projectPath.isEmpty()) {
+        // No project: forget what was applied so reopening the same project applies its default again.
+        defaultsProject_.clear();
+        defaultsStation_.reset();
+        return;
+    }
     if (scene.projectPath == defaultsProject_ && defaultsStation_ == scene.defaultStation) return;
     defaultsProject_ = scene.projectPath;
     defaultsStation_ = scene.defaultStation;

@@ -376,6 +376,10 @@ TEST_CASE("run page: the project's default station moves the Driver Station once
     f.backend.setProjectDefaults({}, sdk::proto::AllianceStation::Red3);   // no project: nothing to apply
     CHECK(ds.alliance() == sdk::Alliance::Blue);
     CHECK(ds.station() == 2);
+
+    ds.setStation(1);
+    f.backend.setProjectDefaults(QStringLiteral("projectB"), sdk::proto::AllianceStation::Blue2);   // reopened after a close
+    CHECK(ds.station() == 2);
 }
 
 TEST_CASE("run page: restart shortcuts work with the dropdown closed") {
