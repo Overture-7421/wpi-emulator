@@ -12,6 +12,21 @@ using wpiemu::test_runtime::Registries;
 using wpiemu::test_runtime::Rig;
 using wpiemu::test_runtime::sampleConfig;
 
+namespace {
+
+// Asks for Begin and then End lockstep and lets the runner act on them; the caller checks what reached the extension.
+void requestBeginAndEnd(Rig& rig) {
+    for (const auto command : {proto::SimCommand::BeginLockstep, proto::SimCommand::EndLockstep}) {
+        proto::SimControl c;
+        c.command = command;
+        rig.runner->control(c);
+    }
+    rig.runner->poll(0ms);
+    rig.ext->pump();
+}
+
+}  // namespace
+
 TEST_CASE("runner: Pause stops frames, Step advances exactly n ticks, Resume continues") {
     Rig rig;
     rig.handshake();
@@ -393,14 +408,7 @@ TEST_CASE("runner: peers without explicit Armed support never receive Begin or E
         REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value(); }));
         CHECK_FALSE(rig.ext->helloAck->accepted);
         CHECK(rig.ext->helloAck->reason.find("supportsArmed") != std::string::npos);
-        for (const auto command :
-             {proto::SimCommand::BeginLockstep, proto::SimCommand::EndLockstep}) {
-            proto::SimControl c;
-            c.command = command;
-            rig.runner->control(c);
-        }
-        rig.runner->poll(0ms);
-        rig.ext->pump();
+        requestBeginAndEnd(rig);
         CHECK(rig.ext->controls.empty());
         CHECK(rig.runner->ticksSent() == 0);
         CHECK(rig.runner->state() == RunnerState::WaitingForRobot);
@@ -412,14 +420,7 @@ TEST_CASE("runner: peers without explicit Armed support never receive Begin or E
         REQUIRE(rig.run([&] { return rig.runner->ticksSent() >= 1; }));
         CHECK(rig.ext->helloAck->accepted);
         const auto epoch = rig.runner->runEpoch();
-        for (const auto command :
-             {proto::SimCommand::BeginLockstep, proto::SimCommand::EndLockstep}) {
-            proto::SimControl c;
-            c.command = command;
-            rig.runner->control(c);
-        }
-        rig.runner->poll(0ms);
-        rig.ext->pump();
+        requestBeginAndEnd(rig);
         CHECK(rig.ext->controls.empty());
         CHECK(rig.runner->runEpoch() == epoch);
         CHECK_FALSE(rig.runner->armed());

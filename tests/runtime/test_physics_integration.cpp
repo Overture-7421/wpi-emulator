@@ -15,13 +15,51 @@ using namespace wpiemu::core::runtime;
 namespace physics = wpiemu::core::physics;
 using wpiemu::test_runtime::Registries;
 using wpiemu::test_runtime::sampleConfig;
+using wpiemu::test_runtime::sixWheelTank;
 using wpiemu::sdk::testing::talonFxAnnounce;
 
-TEST_CASE("integration: the session drives a real Box3D swerve robot from hub voltages") {
+namespace {
+
+// What a session over the real physics module borrows; it must outlive the session.
+struct PhysicsRegistries {
     Registries reg;  // brings the roller mechanism + plugin registry; drivetrains/tires come from core/physics
     DrivetrainRegistry drivetrains;
     TireModelRegistry tires;
-    REQUIRE(physics::registerPhysicsComponents(drivetrains, tires).ok());
+
+    PhysicsRegistries() { REQUIRE(physics::registerPhysicsComponents(drivetrains, tires).ok()); }
+};
+
+// A session over a real Box3D world for `c`, standing on a static slab whose top face is at z = 0.
+std::unique_ptr<SimulationSession> buildSessionOnFloor(PhysicsRegistries& registries, const RobotConfig& c) {
+    SessionParts parts;
+    parts.world = physics::createBox3dWorld(c.sim.physics);
+    REQUIRE(parts.world != nullptr);
+    parts.config = c;
+    parts.mechanisms = &registries.reg.mechanisms;
+    parts.drivetrains = &registries.drivetrains;
+    parts.tireModels = &registries.tires;
+    parts.chassisBuilder = physicsChassisBuilder();
+    parts.coupling = std::make_unique<PhysicsCouplingDriver>();
+    auto built = SessionBuilder::build(std::move(parts));
+    REQUIRE_MESSAGE(built.ok(), (built.ok() ? "" : built.error().message));
+    std::unique_ptr<SimulationSession> session = std::move(built).value();
+
+    BodyDesc floor;
+    floor.type = BodyType::Static;
+    floor.pose.position = Vec3{0.f, 0.f, -0.5f};
+    const BodyId floorBody = session->world().createBody(floor);
+    ShapeDesc slab;
+    slab.geometry = BoxShape{Vec3{30.f, 30.f, 0.5f}};
+    slab.material = Material{0.8f, 0.f, 0.f};
+    slab.category = layer::Field;
+    REQUIRE(session->world().addShape(floorBody, slab).valid());
+    return session;
+}
+
+}  // namespace
+
+TEST_CASE("integration: the session drives a real Box3D swerve robot from hub voltages") {
+    PhysicsRegistries registries;
 
     RobotConfig c = sampleConfig();
     c.sim.physics = PhysicsConfig{};  // real gravity
@@ -42,28 +80,8 @@ TEST_CASE("integration: the session drives a real Box3D swerve robot from hub vo
     c.mechanisms.clear();
     c.robotMappings.clear();
 
-    SessionParts parts;
-    parts.world = physics::createBox3dWorld(c.sim.physics);
-    REQUIRE(parts.world != nullptr);
-    parts.config = c;
-    parts.mechanisms = &reg.mechanisms;
-    parts.drivetrains = &drivetrains;
-    parts.tireModels = &tires;
-    parts.chassisBuilder = physicsChassisBuilder();
-    parts.coupling = std::make_unique<PhysicsCouplingDriver>();
-    auto built = SessionBuilder::build(std::move(parts));
-    REQUIRE_MESSAGE(built.ok(), (built.ok() ? "" : built.error().message));
-    SimulationSession& s = *built.value();
-
-    BodyDesc floor;
-    floor.type = BodyType::Static;
-    floor.pose.position = Vec3{0.f, 0.f, -0.5f};
-    const BodyId floorBody = s.world().createBody(floor);
-    ShapeDesc slab;
-    slab.geometry = BoxShape{Vec3{30.f, 30.f, 0.5f}};
-    slab.material = Material{0.8f, 0.f, 0.f};
-    slab.category = layer::Field;
-    REQUIRE(s.world().addShape(floorBody, slab).valid());
+    const auto session = buildSessionOnFloor(registries, c);
+    SimulationSession& s = *session;
 
     // devices: drive talons 1..4 (runtime ids 101..104), steer talons 11..14 (111..114)
     for (std::uint32_t i = 0; i < 4; ++i) {
@@ -133,43 +151,11 @@ TEST_CASE("integration: the session drives a real Box3D swerve robot from hub vo
 }
 
 TEST_CASE("integration: two motors move and turn a six-contact linked tank in Box3D") {
-    Registries reg;
-    DrivetrainRegistry drivetrains;
-    TireModelRegistry tires;
-    REQUIRE(physics::registerPhysicsComponents(drivetrains, tires).ok());
-    RobotConfig c;
-    c.drivetrain.spec.kind = drivetrain_kind::kTank;
-    for (int side : {1, -1})
-        for (int i = 0; i < 3; ++i) {
-            WheelSpec wheel;
-            wheel.name = std::string(side > 0 ? "left" : "right") + std::to_string(i);
-            wheel.positionM = {0.2f * static_cast<float>(i - 1), 0.3f * static_cast<float>(side),
-                               wheel.radiusM};
-            c.drivetrain.spec.wheels.push_back(wheel);
-        }
-    c.drivetrain.mappings = {
-        {{slot_owner::kDrivetrain, "left1.drive"}, {"phoenix6", "talonfx", 1, "", -1}},
-        {{slot_owner::kDrivetrain, "right1.drive"}, {"phoenix6", "talonfx", 2, "", -1}}};
+    PhysicsRegistries registries;
+    RobotConfig c = sixWheelTank();
     c.motionLinks = tankMotionLinks(c).value();
-    SessionParts parts;
-    parts.world = physics::createBox3dWorld(c.sim.physics);
-    parts.config = c;
-    parts.mechanisms = &reg.mechanisms;
-    parts.drivetrains = &drivetrains;
-    parts.tireModels = &tires;
-    parts.chassisBuilder = physicsChassisBuilder();
-    parts.coupling = std::make_unique<PhysicsCouplingDriver>();
-    auto built = SessionBuilder::build(std::move(parts));
-    REQUIRE_MESSAGE(built.ok(), (built.ok() ? "" : built.error().message));
-    auto& s = *built.value();
-    BodyDesc floor;
-    floor.type = BodyType::Static;
-    floor.pose.position.z = -0.5f;
-    ShapeDesc slab;
-    slab.geometry = BoxShape{Vec3{30.f, 30.f, 0.5f}};
-    slab.material = Material{0.8f, 0.f, 0.f};
-    slab.category = layer::Field;
-    REQUIRE(s.world().addShape(s.world().createBody(floor), slab).valid());
+    const auto session = buildSessionOnFloor(registries, c);
+    SimulationSession& s = *session;
     s.hub().onAnnounce(talonFxAnnounce(101, 1));
     s.hub().onAnnounce(talonFxAnnounce(102, 2));
     proto::ActuatorFrame outputs;

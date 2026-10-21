@@ -29,6 +29,22 @@ const ScenePart* findPart(const RobotRig& rig, const std::string& name) {
     return nullptr;
 }
 
+// The demo intake with its arm raised 90 degrees about -Y.
+sdk::MechanismState intakeArmRaised() {
+    sdk::MechanismState intake;
+    intake.id = "intake";
+    intake.links.push_back({"arm", sdk::Pose3{{}, sdk::Quat::fromAxisAngle({0.f, 1.f, 0.f}, -1.5707963f)}});
+    return intake;
+}
+
+// The demo turret turned 90 degrees about Z.
+sdk::MechanismState turretQuarterTurn() {
+    sdk::MechanismState turret;
+    turret.id = "turret";
+    turret.links.push_back({"yaw", sdk::Pose3{{}, sdk::Quat::fromYaw(1.5707963f)}});
+    return turret;
+}
+
 }  // namespace
 
 TEST_CASE("robot rig builds chassis, wheel and mechanism parts") {
@@ -86,14 +102,8 @@ TEST_CASE("mechanism primitives follow their link pose") {
     rig.setConfig(demoConfig());
 
     sdk::SimSnapshotData d = baseSnapshot();
-    sdk::MechanismState intake;
-    intake.id = "intake";
-    intake.links.push_back({"arm", sdk::Pose3{{}, sdk::Quat::fromAxisAngle({0.f, 1.f, 0.f}, -1.5707963f)}});
-    d.mechanisms.push_back(intake);
-    sdk::MechanismState turret;
-    turret.id = "turret";
-    turret.links.push_back({"yaw", sdk::Pose3{{}, sdk::Quat::fromYaw(1.5707963f)}});
-    d.mechanisms.push_back(turret);
+    d.mechanisms.push_back(intakeArmRaised());
+    d.mechanisms.push_back(turretQuarterTurn());
     const sdk::SimSnapshot snap(d);
     rig.update(&snap);
 
@@ -121,10 +131,7 @@ TEST_CASE("every shape of a mechanism follows its first link, whatever the shape
     RobotRig rig;
     rig.setConfig(cfg);
     sdk::SimSnapshotData d = baseSnapshot();
-    sdk::MechanismState intake;
-    intake.id = "intake";
-    intake.links.push_back({"arm", sdk::Pose3{{}, sdk::Quat::fromAxisAngle({0.f, 1.f, 0.f}, -1.5707963f)}});
-    d.mechanisms.push_back(intake);
+    d.mechanisms.push_back(intakeArmRaised());
     const sdk::SimSnapshot snap(d);
     rig.update(&snap);
     const ScenePart* part = findPart(rig, "plate");
@@ -201,14 +208,8 @@ TEST_CASE("robot zones follow the pose of the attached mechanism link") {
     cfg->zones.push_back(onChassis);
 
     sdk::SimSnapshotData d = baseSnapshot();
-    sdk::MechanismState intake;
-    intake.id = "intake";
-    intake.links.push_back({"arm", sdk::Pose3{{}, sdk::Quat::fromAxisAngle({0.f, 1.f, 0.f}, -1.5707963f)}});
-    d.mechanisms.push_back(intake);
-    sdk::MechanismState turret;
-    turret.id = "turret";
-    turret.links.push_back({"yaw", sdk::Pose3{{}, sdk::Quat::fromYaw(1.5707963f)}});
-    d.mechanisms.push_back(turret);
+    d.mechanisms.push_back(intakeArmRaised());
+    d.mechanisms.push_back(turretQuarterTurn());
     const sdk::SimSnapshot snap(d);
 
     const auto zones = resolveRobotZones(*cfg, demo::zoneKinds(), &snap);

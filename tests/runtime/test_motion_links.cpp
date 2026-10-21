@@ -12,6 +12,7 @@
 
 using namespace wpiemu::sdk;
 using namespace wpiemu::core;
+using wpiemu::test_runtime::sixWheelTank;
 
 namespace {
 
@@ -39,23 +40,6 @@ struct Rig {
     }
 };
 
-RobotConfig tank() {
-    RobotConfig c;
-    c.drivetrain.spec.kind = drivetrain_kind::kTank;
-    for (const int side : {1, -1})
-        for (int i = 0; i < 3; ++i) {
-            WheelSpec wheel;
-            wheel.name = std::string(side > 0 ? "left" : "right") + std::to_string(i);
-            wheel.positionM = {0.2f * static_cast<float>(i - 1), 0.3f * static_cast<float>(side),
-                               wheel.radiusM};
-            c.drivetrain.spec.wheels.push_back(wheel);
-        }
-    c.drivetrain.mappings = {
-        {{slot_owner::kDrivetrain, "left1.drive"}, {"phoenix6", "talonfx", 1, "", -1}},
-        {{slot_owner::kDrivetrain, "right1.drive"}, {"phoenix6", "talonfx", 2, "", -1}}};
-    return c;
-}
-
 PlantState state(runtime::SimulationSession& session, const SlotAddress& address) {
     if (address.owner == slot_owner::kDrivetrain) {
         for (auto& axis : session.drivetrain()->motionAxes())
@@ -71,7 +55,7 @@ PlantState state(runtime::SimulationSession& session, const SlotAddress& address
 }  // namespace
 
 TEST_CASE("motion links: tank conversion keeps two motors and six wheels") {
-    auto c = tank();
+    auto c = sixWheelTank();
     const auto result = tankMotionLinks(c);
     REQUIRE(result.ok());
     c.motionLinks = result.value();
@@ -91,7 +75,7 @@ TEST_CASE("motion links: tank conversion keeps two motors and six wheels") {
 TEST_CASE(
     "motion links: validation rejects cycles, duplicate targets, invalid ratios and mapped "
     "followers") {
-    auto c = tank();
+    auto c = sixWheelTank();
     c.motionLinks = tankMotionLinks(c).value();
     const auto axes = motionAxisInfos(
         c, [](std::string_view) -> const MechanismTemplateInfo* { return nullptr; });
@@ -122,7 +106,7 @@ TEST_CASE(
 
 TEST_CASE("motion links: linked wheels follow the source in the same tick without extra current") {
     Rig rig;
-    auto c = tank();
+    auto c = sixWheelTank();
     c.motionLinks = tankMotionLinks(c).value();
     c.motionLinks[0].ratio = -2.0;
     auto s = rig.build(c);
@@ -211,7 +195,7 @@ TEST_CASE(
 
 TEST_CASE("motion links: the codec round-trips links and never invents or upgrades them") {
     config::RobotConfigCodec codec;
-    auto c = tank();
+    auto c = sixWheelTank();
     auto independent = codec.fromValue(codec.toValue(c));
     REQUIRE(independent.ok());
     CHECK(independent.value().motionLinks.empty());   // an unlinked tank stays unlinked
@@ -230,7 +214,7 @@ TEST_CASE("motion links: the pipeline validates links but does not create them")
     config::PluginRegistrar registrar(rig.mechanisms);
     GamePluginRegistry plugins;
     config::ConfigPipeline pipeline(codec, validator, registrar, rig.drivetrains, plugins);
-    auto c = tank();
+        auto c = sixWheelTank();
     auto loaded = pipeline.process(c);
     REQUIRE(loaded.ok());
     CHECK(loaded.value().valid());
@@ -253,7 +237,7 @@ TEST_CASE("motion links: the pipeline validates links but does not create them")
 }
 TEST_CASE("motion links: wheel and mechanism chains have no cross-owner tick delay") {
     Rig rig;
-    auto c = tank();
+    auto c = sixWheelTank();
     MechanismConfig source;
     source.id = "source";
     source.type = "mechanism";

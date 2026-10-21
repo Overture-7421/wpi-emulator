@@ -226,6 +226,23 @@ inline RobotConfig sampleConfig() {
     return c;
 }
 
+// A tank drivetrain with three wheels a side (left0..2, right0..2); only the middle wheels' drive slots are mapped (talons 1, 2).
+inline RobotConfig sixWheelTank() {
+    RobotConfig c;
+    c.drivetrain.spec.kind = drivetrain_kind::kTank;
+    for (const int side : {1, -1})
+        for (int i = 0; i < 3; ++i) {
+            WheelSpec w;
+            w.name = std::string(side > 0 ? "left" : "right") + std::to_string(i);
+            w.positionM = {0.2f * static_cast<float>(i - 1), 0.3f * static_cast<float>(side), w.radiusM};
+            c.drivetrain.spec.wheels.push_back(w);
+        }
+    c.drivetrain.mappings = {
+        {{slot_owner::kDrivetrain, "left1.drive"}, {"phoenix6", "talonfx", 1, "", -1}},
+        {{slot_owner::kDrivetrain, "right1.drive"}, {"phoenix6", "talonfx", 2, "", -1}}};
+    return c;
+}
+
 // A scratch directory under the current working directory (never the system temp dir), removed on destruction.
 class ScratchDir {
 public:

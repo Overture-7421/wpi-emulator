@@ -262,6 +262,17 @@ void renameRobot(editor::EditorPage& page, const std::string& name) {
     REQUIRE(page.hasUnsavedChanges());
 }
 
+// Opens `first` in the editor with an unsaved rename of its robot; `second` is another project the fake machine knows.
+editor::EditorPage& openWithPendingRename(ShellFixture& f, const TestProject& first, const TestProject& second, const std::string& name) {
+    f.acceptWizard();
+    f.env.addProject(first);
+    f.env.addProject(second);
+    f.window.openProjectPath(first.path());
+    editor::EditorPage& page = editorPage(f);
+    renameRobot(page, name);
+    return page;
+}
+
 // A directory at the authoritative file path fails even when tests run as an administrator.
 struct BlockAppDataSave {
     QString path;
@@ -318,14 +329,9 @@ private:
 
 TEST_CASE("shell composition: immediate close open and setup flush the old editor document") {
     ShellFixture f;
-    f.acceptWizard();
     TestProject first;
     TestProject second;
-    f.env.addProject(first);
-    f.env.addProject(second);
-    f.window.openProjectPath(first.path());
-    auto& page = editorPage(f);
-    renameRobot(page, "Pending old project");
+    auto& page = openWithPendingRename(f, first, second, "Pending old project");
 
     SUBCASE("window close") { CHECK(f.window.close()); }
     SUBCASE("project close") { f.controller.closeProject(); }
@@ -345,14 +351,9 @@ TEST_CASE("shell composition: immediate close open and setup flush the old edito
 
 TEST_CASE("shell composition: authoritative save failure blocks every destructive transition and can retry") {
     ShellFixture f;
-    f.acceptWizard();
     TestProject first;
     TestProject second;
-    f.env.addProject(first);
-    f.env.addProject(second);
-    f.window.openProjectPath(first.path());
-    auto& page = editorPage(f);
-    renameRobot(page, "Keep these edits");
+    auto& page = openWithPendingRename(f, first, second, "Keep these edits");
     const auto previous = f.env.services->session().config();
     BlockAppDataSave blocked(f.env.services->configs().appDataPath(first.path()));
     const int wizardRuns = f.wizardRuns;

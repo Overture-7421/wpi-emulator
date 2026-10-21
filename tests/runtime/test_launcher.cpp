@@ -142,6 +142,38 @@ struct StartupGate {
     bool timedOut = false;
 };
 
+// Releases the gate a fake process is parked at, then checks that the launcher finished and killed that one process once.
+void releaseAndExpectOneKill(StartupGate& gate, FakeWorld& world, RobotLauncher& launcher) {
+    gate.release();
+    const bool completed = launcher.waitUntilFinished(2s);
+    // The fake never exits on its own. Rescue only after recording failure, so a regression cannot hang the suite.
+    if (!completed) world.rescue = true;
+    launcher.stop(0ms);
+    CHECK_FALSE(gate.timedOut);
+    CHECK(completed);
+    CHECK(world.killed == 1);
+    CHECK(world.stopRequested == 1);
+}
+
+// The distinct phases a launcher reported so far, in order.
+class PhaseRecorder {
+public:
+    explicit PhaseRecorder(RobotLauncher& launcher) {
+        launcher.setOnChange([this](const LaunchStatus& s) {
+            std::lock_guard lock(m_);
+            if (phases_.empty() || phases_.back() != s.phase) phases_.push_back(s.phase);
+        });
+    }
+    std::vector<LaunchPhase> seen() const {
+        std::lock_guard lock(m_);
+        return phases_;
+    }
+
+private:
+    mutable std::mutex m_;
+    std::vector<LaunchPhase> phases_;
+};
+
 }  // namespace
 
 TEST_CASE("launcher: cancellation during startup is handed to the published process") {
@@ -154,19 +186,10 @@ TEST_CASE("launcher: cancellation during startup is handed to the published proc
     CollectingSink sink;
     RobotLauncher launcher(fakeFactory(world), json, logger);
     REQUIRE(launcher.launch(makeRequest(dir), sink).ok());
-    const bool entered = gate.waitUntilEntered();
+    CHECK(gate.waitUntilEntered());
     launcher.requestStop(0ms);
     launcher.requestStop(10s);  // cannot extend the first cancellation deadline
-    gate.release();
-    const bool completed = launcher.waitUntilFinished(2s);
-    // The fake never exits on its own. Rescue only after recording failure, so a regression cannot hang the suite.
-    if (!completed) world.rescue = true;
-    launcher.stop(0ms);
-    CHECK(entered);
-    CHECK_FALSE(gate.timedOut);
-    CHECK(completed);
-    CHECK(world.killed == 1);
-    CHECK(world.stopRequested == 1);
+    releaseAndExpectOneKill(gate, world, launcher);
     CHECK(launcher.status().phase == LaunchPhase::Stopped);
 }
 
@@ -181,17 +204,9 @@ TEST_CASE("launcher: cancellation is observed again after a bounded process wait
     CollectingSink sink;
     RobotLauncher launcher(fakeFactory(world), json, logger);
     REQUIRE(launcher.launch(makeRequest(dir), sink).ok());
-    const bool entered = gate.waitUntilEntered();
+    CHECK(gate.waitUntilEntered());
     launcher.requestStop(0ms);
-    gate.release();
-    const bool completed = launcher.waitUntilFinished(2s);
-    if (!completed) world.rescue = true;
-    launcher.stop(0ms);
-    CHECK(entered);
-    CHECK_FALSE(gate.timedOut);
-    CHECK(completed);
-    CHECK(world.killed == 1);
-    CHECK(world.stopRequested == 1);
+    releaseAndExpectOneKill(gate, world, launcher);
 }
 
 TEST_CASE("process: cancellation before native startup prevents creating a child") {
@@ -214,12 +229,7 @@ TEST_CASE("launcher: gradle mode runs one process, phases Running -> Exited, out
     JsonValueCodec json;
     testing::CapturingLogger logger;
     RobotLauncher launcher(fakeFactory(world), json, logger);
-    std::vector<LaunchPhase> phases;
-    std::mutex pm;
-    launcher.setOnChange([&](const LaunchStatus& s) {
-        std::lock_guard lock(pm);
-        if (phases.empty() || phases.back() != s.phase) phases.push_back(s.phase);
-    });
+    PhaseRecorder phases(launcher);
     CollectingSink sink;
     const LaunchRequest request = makeRequest(dir);
     REQUIRE(launcher.launch(request, sink).ok());
@@ -228,10 +238,7 @@ TEST_CASE("launcher: gradle mode runs one process, phases Running -> Exited, out
     CHECK(st.phase == LaunchPhase::Exited);
     REQUIRE(st.exit.has_value());
     CHECK(st.exit->exitCode == 0);
-    {
-        std::lock_guard lock(pm);
-        CHECK(phases == std::vector<LaunchPhase>{LaunchPhase::Running, LaunchPhase::Exited});
-    }
+    CHECK(phases.seen() == std::vector<LaunchPhase>{LaunchPhase::Running, LaunchPhase::Exited});
     REQUIRE(world.started.size() == 1);
     CHECK(world.started[0].args.back() == "simulateJava");
     CHECK(world.started[0].env.at(env_names::kIpcEndpoint) == request.ipcEndpoint);
@@ -330,20 +337,12 @@ TEST_CASE("launcher: ExternalDirect builds first, then runs the JVM from the des
     JsonValueCodec json;
     testing::CapturingLogger logger;
     RobotLauncher launcher(fakeFactory(world), json, logger);
-    std::vector<LaunchPhase> phases;
-    std::mutex pm;
-    launcher.setOnChange([&](const LaunchStatus& s) {
-        std::lock_guard lock(pm);
-        if (phases.empty() || phases.back() != s.phase) phases.push_back(s.phase);
-    });
+    PhaseRecorder phases(launcher);
     CollectingSink sink;
     REQUIRE(launcher.launch(request, sink).ok());
     REQUIRE(launcher.waitUntilFinished(5s));
     CHECK(launcher.status().phase == LaunchPhase::Exited);
-    {
-        std::lock_guard lock(pm);
-        CHECK(phases == std::vector<LaunchPhase>{LaunchPhase::Building, LaunchPhase::Running, LaunchPhase::Exited});
-    }
+    CHECK(phases.seen() == std::vector<LaunchPhase>{LaunchPhase::Building, LaunchPhase::Running, LaunchPhase::Exited});
     REQUIRE(world.started.size() == 2);
     CHECK(world.started[0].args.back() == "simulateExternalJavaRelease");
     const auto& jvmArgs = world.started[1].args;   // macOS adds -XstartOnFirstThread before -jar
