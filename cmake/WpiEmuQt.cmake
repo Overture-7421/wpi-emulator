@@ -1,6 +1,13 @@
 # The Qt 6 kit every first-party Qt module builds against, declared once for the full build and the standalone editor
 # build. Point CMAKE_PREFIX_PATH at the kit, e.g. C:/Qt/<version>/msvc2022_64.
 #   wpiemu_qt_test_environment(<test>... [HEADLESS])
+if(WIN32 AND NOT Qt6_DIR)
+    file(GLOB _wpiemu_qt_kits "C:/Qt/6.*/msvc*_64")
+    if(_wpiemu_qt_kits)
+        list(SORT _wpiemu_qt_kits ORDER DESCENDING)
+        list(APPEND CMAKE_PREFIX_PATH ${_wpiemu_qt_kits})
+    endif()
+endif()
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets Quick Quick3D QuickWidgets)
 qt_standard_project_setup()
 

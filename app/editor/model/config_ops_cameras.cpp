@@ -50,8 +50,11 @@ Pose3 cameraRobotPose(const RobotConfig& c, const EditorCatalog& catalog, const 
 
 std::string uniqueCameraName(const RobotConfig& c, sdk::CameraKind kind, std::string base, std::string_view exceptId) {
     if (!nameTaken(c, kind, base, exceptId)) return base;
-    return detail::uniqueSuffixed(base.empty() ? std::string("cam") : std::move(base), "cam", "",
-                                  [&](const std::string& candidate) { return nameTaken(c, kind, candidate, exceptId); });
+    const std::string stem = base.empty() ? std::string("cam") : base;
+    for (int n = 2;; ++n) {
+        std::string candidate = stem + std::to_string(n);
+        if (!nameTaken(c, kind, candidate, exceptId)) return candidate;
+    }
 }
 
 sdk::CameraConfig makeCamera(const RobotConfig& c, sdk::CameraKind kind, const sdk::MechanismAttachment& attachment) {
