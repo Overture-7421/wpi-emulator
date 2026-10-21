@@ -169,6 +169,13 @@ function(wpiemu_qt_deploy_runtime target_name)
                     --qmldir "${CMAKE_SOURCE_DIR}/app"
                     "$<TARGET_FILE:${target_name}>"
             COMMENT "Deploying Qt runtime for ${target_name} ($<CONFIG>)")
+        get_filename_component(_qt_root_dir "${_qt_bin_dir}" DIRECTORY)
+        set(_qoffscreen_dll "${_qt_root_dir}/plugins/platforms/qoffscreen$<$<CONFIG:Debug>:d>.dll")
+        add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                    "${_qoffscreen_dll}"
+                    "$<TARGET_FILE_DIR:${target_name}>/platforms/"
+            COMMENT "Copying qoffscreen platform plugin for headless test suites ($<CONFIG>)")
         if(TARGET Qt6::Test)
             add_custom_command(TARGET ${target_name} POST_BUILD
                 COMMAND "${CMAKE_COMMAND}" -E copy_if_different

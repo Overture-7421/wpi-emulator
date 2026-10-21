@@ -87,7 +87,8 @@ QString ToolchainChecker::launchJava(const ToolchainInput& input, const QString&
                     if (const QString java = inBin(join(wpilib, QStringLiteral("jdk"))); probe_.fileExists(java)) return java;
                 break;
             case core::launcher::JdkSource::JavaHome:
-                if (const QString javaHome = probe_.env(QStringLiteral("JAVA_HOME")); !javaHome.isEmpty()) return inBin(javaHome);
+                if (const QString javaHome = probe_.env(QStringLiteral("JAVA_HOME")); !javaHome.isEmpty())
+                    if (const QString java = inBin(javaHome); probe_.fileExists(java)) return java;
                 break;
             case core::launcher::JdkSource::Path:
                 return probe_.findInPath(exe);
