@@ -6,6 +6,10 @@ packaging tools below, and a real WPILib-enabled HALSim extension. Camera public
 ntcore support. This page owns packaging commands; general configure/build/test instructions
 remain in Building. Run examples from the repository root unless stated otherwise.
 
+Wiki publishing is a separate default-branch documentation workflow, not part of artifact release.
+Its administrator setup and recovery procedure belong in
+[documentation maintenance](guides/documentation.md).
+
 ## Artifacts and layout
 
 [Install/CPack rules](../cmake/WpiEmuInstall.cmake) derive names from the root project version:

@@ -6,6 +6,9 @@
 Build and test commands belong to [Building](../BUILDING.md); controls belong to the
 [User guide](../USER_GUIDE.md).
 
+For a schema-driven edit, follow [Editor properties](../guides/editor-properties.md);
+for host, persistence, or rendering diagnosis, use [Maintenance](../guides/maintenance.md).
+
 ## Composition and runtime boundary
 
 [`AppServices`](../../app/common/app_services.h) is the application composition root.

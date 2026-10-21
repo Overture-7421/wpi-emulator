@@ -2,7 +2,7 @@
 
 Read this when copying a starting point for a new season.
 Prerequisites: [Architecture](../../docs/ARCHITECTURE.md) and the
-[extension recipes](../../docs/extending.md).
+[game-year walkthrough](../../docs/guides/game-years.md).
 
 This compiling skeleton supplies an empty field, a ticking game state and a HUD counter.
 It is built by default but is deliberately absent from the built-in plugin aggregator.
@@ -15,7 +15,7 @@ Rename the `wpiemu_plugin_template` target and `wpiemu::plugin_template` alias i
 [CMakeLists.txt](CMakeLists.txt). Set `pluginId()` and `gameYear()` in
 [plugin_info.cpp](src/plugin_info.cpp), then replace the `TODO(new season)` placeholders.
 Keep the target's SDK-only dependency. Registration, implementation and validation steps
-belong to [Extending](../../docs/extending.md), not to this skeleton checklist.
+belong to the [game-year walkthrough](../../docs/guides/game-years.md), not to this skeleton checklist.
 
 ## Skeleton files
 
@@ -25,4 +25,4 @@ belong to [Extending](../../docs/extending.md), not to this skeleton checklist.
   [plugin_info.cpp](src/plugin_info.cpp): identity.
 - [game_module.cpp](src/game_module.cpp): placeholder module, field and game state.
 
-Next: [Extending](../../docs/extending.md) to implement and register the season.
+Next: [Game years](../../docs/guides/game-years.md) to implement, register, and exercise the season.

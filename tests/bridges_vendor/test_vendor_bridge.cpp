@@ -121,18 +121,19 @@ TEST_CASE("vendor registration: duplicates are reported by the checked variant a
     CHECK(only6.contains("ctre.phoenix6"));
 }
 
-TEST_CASE("vendor registration: without a HAL binding the bridge is inert and says so") {
-    DeviceBridgeRegistry registry;
-    vendor::registerVendorBridges(registry);  // defaults: real HAL binding when compiled in
-    auto bridges = registry.createAll();
-    REQUIRE(bridges.ok());
+TEST_CASE("vendor bridge: without a HAL binding the bridge is inert and says so") {
     FakeHost host;
-    REQUIRE(bridges.value()[0]->start(host).ok());
-    bridges.value()[0]->poll();
+    vendor::VendorSimBridgeOptions options;
+    options.backendAvailable = false;
+    // macOS may retain the transitively linked wpiHal without initializing it. Model its absence
+    // explicitly rather than attaching to whatever native libraries the test runner has loaded.
+    vendor::VendorSimDeviceBridge bridge("ctre.phoenix6", ctre::phoenix6Rules(), nullptr, options);
+    REQUIRE(bridge.start(host).ok());
+    bridge.poll();
+    bridge.poll();
     CHECK(host.announced.empty());
-    // A unit-test process has no loaded wpiHal, so the missing-backend warning is logged once either way.
     CHECK(host.log.count(LogLevel::Warn) == 1);
-    bridges.value()[0]->stop();
+    bridge.stop();
 }
 
 TEST_CASE("vendor bridge: yaw reaches the Pigeon once per tick and survives a vendor mirror via re-assert") {

@@ -50,8 +50,11 @@ SimDeviceRule talonFxLike(const char* ruleName, const char* type, const char* mo
     const CapabilitySet caps = Capability::MotorOutput | Capability::RotorFeedback | Capability::PositionSensor |
                                Capability::VelocitySensor | Capability::LimitInputs | Capability::SupplyVoltage;
     const std::string deviceModel = std::string(model) + R"( \(v6\)\[(\d+)\])";
+    // Phoenix C++ inserts a space after CANMotor:, unlike Java and the sensor children.
     SimDeviceRule r = base(ruleName, kFamilyPhoenix6, type, caps,
-                           "(?:CANMotor|CANEncoder|CANDIO):" + deviceModel + "(?:/(Rotor Sensor|Fwd Limit|Rev Limit))?", 2);
+                           "(?:CANMotor: ?|CANEncoder:|CANDIO:)" + deviceModel +
+                               "(?:/(Rotor Sensor|Fwd Limit|Rev Limit))?",
+                           2);
     namespace sg = sdk::signal;
     r.bindings = {
         // root CANMotor: supplyVoltage is the only sim input; the rest is firmware output we read.

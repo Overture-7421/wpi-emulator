@@ -45,20 +45,13 @@ Scratch experiments go in the git-ignored `spikes/`; never commit them.
   [`Alliance`](../sdk/include/wpiemu/sdk/game/alliance.h) do; do not copy tables, validation rules or helpers between
   modules.
 
-## Look-alikes kept on purpose
+## Reuse without changing contracts
 
-The simplification audit found these differ in behavior, precision, threading or dependency direction.
-Merge one only with proof that it removes complexity without changing behavior or adding a module edge:
-
-- Formatters and parsers: the run-view HUD, state and stats formatters; extension versus IPC environment parsing.
-- Layers: IPC framing, framed transport, codec and channel; core versus extension link types, `IpcLink`'s outbound
-  side, watchdogs and process readers; the vendor backend chain; the wizard's input ranges versus core validation;
-  the config codec versus the SDK value codec; Photon's wire format versus the IPC codec (only bytes are shared).
-- Math: motor, tire and mechanism dynamics (analytic gearbox versus numeric `DcMotorModel`); the vision bridges'
-  double-precision vendor math versus SDK float poses.
-- Hosts and shells: demo versus real runtime host, editor versus run-view lighting, POSIX versus Windows processes.
-- Targets and tests: `wpiemu_halsim_core`, `wpiemu_core`, per-boundary test harnesses, the shared
-  `PluginRegistrar` and init-script seams, the core-only runtime sample config.
+Similar code can differ in precision, threading, lifecycle or dependency direction.
+For example, the IPC and Photon codecs share scalar byte helpers, not packet layouts;
+demo and real hosts share an interface, not process behavior. Merge implementations only
+with evidence that behavior is unchanged and no forbidden dependency is added.
+Keep policies such as watchdog recovery and queue overflow with their owning subsystem.
 
 ## Tests
 
@@ -93,12 +86,15 @@ One fact has one home; link instead of copying:
 
 - [Architecture](ARCHITECTURE.md): module/dependency table, ownership overview and vocabulary.
 - [Building](BUILDING.md): prerequisites, commands, options and running tests.
-- [Extending](extending.md): every add-a-feature recipe; [reference](reference/runtime.md): subsystem contracts.
+- [Extending](extending.md): extension decision map; [guides](README.md#extension-guides): task recipes.
+  [Reference](reference/runtime.md): subsystem contracts, not duplicate tutorials.
 - [User guide](USER_GUIDE.md): user-visible behavior; [releasing](releasing.md): artifacts/deployment.
 - [Decision index](decisions/README.md): design rationale, not subsystem manuals.
 
-Keep page ceilings: Architecture 200 lines, Building 120, this page 110, Extending 220.
-Reference pages stay within their topic budgets; decision records are at most 45 lines each.
+Keep overview ceilings: Architecture 200 lines, Building 120, this page 110, Extending 220.
+Guides may be longer when a complete walkthrough needs it; keep one task family per page,
+with prerequisites, ordered changes, a source-backed example, expected results and focused checks.
+Reference pages stay within their topic; decision records are at most 45 lines each.
 Remove duplication rather than hiding it in oversized lines or creating forwarding stubs.
 
 Use descriptive, unnumbered H2 headings with stable anchors. Open with “Read this when” and
@@ -107,5 +103,8 @@ Pass `docs.check`; a successful link check does not prove an API or behavioral c
 Verify named APIs, flags and commands against source. Drop status/history, roadmap, product-version
 and test-count inventories. Outside the decisions directory, link only to its index, never a
 numbered record or citation.
+Execute instructional snippets in their documented context; compile alone is not runtime evidence.
+Keep legal notices unchanged. For Wiki preview, publication and adding pages, use
+[documentation maintenance](guides/documentation.md); edit repository sources, not generated pages.
 
 Next: [extend a feature through the SDK](extending.md).
