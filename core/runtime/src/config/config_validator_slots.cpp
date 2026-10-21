@@ -40,9 +40,7 @@ private:
         const auto specs = slotSpecsByOwner_.find(map.slot.owner);
         if (specs == slotSpecsByOwner_.end()) return;  // unknown template: already reported
         const SlotSpec* spec = findSpec(specs->second, map.slot.slot);
-        const MechanismConfig* owner = nullptr;
-        for (const MechanismConfig& m : config_.mechanisms)
-            if (m.id == map.slot.owner) owner = &m;
+        const MechanismConfig* owner = config_.findMechanism(map.slot.owner);
         if (spec == nullptr) {
             const Severity sev = map.slot.owner == slot_owner::kRobot ? Severity::Warning : Severity::Error;
             add(out_, sev, p, "unknown slot '" + map.slot.toString() + "'", issue_code::kSlotUnknown);

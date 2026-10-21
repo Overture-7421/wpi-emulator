@@ -6,6 +6,7 @@
 #include "model/spec_values.h"
 #include "model/tr.h"
 #include "model/units.h"
+#include "wpiemu/sdk/config/config_bindings.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/units.h"
 
@@ -170,23 +171,26 @@ sdk::PropertySchema zoneGeneralSchema() {
     return s;
 }
 
-sdk::PropertySchema startPositionGeneralSchema() {
-    sdk::PropertySchema s = zoneGeneralSchema();
-    s.properties[0].description = ETR("Name shown in the project tree and in the run view's start position menu.").toStdString();
+sdk::ConfigBindings<sdk::StartPosition> startPositionGeneralBindings() {
+    sdk::ConfigBindings<sdk::StartPosition> b;
+    PropertySpec label = zoneGeneralSchema().properties.front();
+    label.description = ETR("Name shown in the project tree and in the run view's start position menu.").toStdString();
+    b.add(std::move(label), &sdk::StartPosition::label);
+
     PropertySpec alliance;
     alliance.key = "alliance";
     alliance.label = ETR("Alliance").toStdString();
     alliance.description = ETR("Choosing this position in the run view also switches the Driver Station to this alliance.").toStdString();
     alliance.type = PropertyType::Enum;
     alliance.defaultValue = std::string(sdk::allianceKey(sdk::Alliance::Blue));
-    alliance.options.push_back({std::string(sdk::allianceKey(sdk::Alliance::Blue)), ETR("Blue").toStdString()});
-    alliance.options.push_back({std::string(sdk::allianceKey(sdk::Alliance::Red)), ETR("Red").toStdString()});
-    s.properties.push_back(std::move(alliance));
-    return s;
+    alliance.options = {{std::string(sdk::allianceKey(sdk::Alliance::Blue)), ETR("Blue").toStdString()},
+                        {std::string(sdk::allianceKey(sdk::Alliance::Red)), ETR("Red").toStdString()}};
+    b.choice(std::move(alliance), &sdk::StartPosition::alliance, {sdk::Alliance::Blue, sdk::Alliance::Red});
+    return b;
 }
 
-sdk::PropertySchema startPositionPlacementSchema() {
-    sdk::PropertySchema s;
+sdk::ConfigBindings<sdk::StartPosition> startPositionPlacementBindings() {
+    sdk::ConfigBindings<sdk::StartPosition> b;
     const std::string group = ETR("Placement").toStdString();
     const auto number = [&](const char* key, QString label, PropertyUnit unit, QString description) {
         PropertySpec p;
@@ -199,29 +203,18 @@ sdk::PropertySchema startPositionPlacementSchema() {
         p.defaultValue = 0.0;
         return p;
     };
-    s.properties.push_back(number("xM", ETR("X"), PropertyUnit::Meters, ETR("Field X: from the blue alliance wall toward the red one.")));
-    s.properties.push_back(number("yM", ETR("Y"), PropertyUnit::Meters, ETR("Field Y: to the left when facing the red wall.")));
-    s.properties.push_back(number("headingRad", ETR("Heading"), PropertyUnit::Radians, ETR("Counter-clockwise from +X (toward the red wall).")));
-    return s;
+    b.add(number("xM", ETR("X"), PropertyUnit::Meters, ETR("Field X: from the blue alliance wall toward the red one.")),
+          &sdk::StartPosition::pose, &sdk::RobotStartPose::xM);
+    b.add(number("yM", ETR("Y"), PropertyUnit::Meters, ETR("Field Y: to the left when facing the red wall.")),
+          &sdk::StartPosition::pose, &sdk::RobotStartPose::yM);
+    b.add(number("headingRad", ETR("Heading"), PropertyUnit::Radians, ETR("Counter-clockwise from +X (toward the red wall).")),
+          &sdk::StartPosition::pose, &sdk::RobotStartPose::headingRad);
+    return b;
 }
 
 bool applyStartPosition(sdk::StartPosition& p, const std::string& groupId, const std::string& key, const Value& value) {
-    if (groupId == "startpos.general") {
-        if (key == "label") { p.label = value.asString(p.label); return true; }
-        if (key == "alliance") {
-            p.alliance = value.asString() == sdk::allianceKey(sdk::Alliance::Red) ? sdk::Alliance::Red : sdk::Alliance::Blue;
-            return true;
-        }
-        return false;
-    }
-    if (groupId == "startpos.placement") {
-        const auto num = [&](float fallback) { return value.isNumber() ? static_cast<float>(value.asDouble()) : fallback; };
-        if (key == "xM") p.pose.xM = num(p.pose.xM);
-        else if (key == "yM") p.pose.yM = num(p.pose.yM);
-        else if (key == "headingRad") p.pose.headingRad = num(p.pose.headingRad);
-        else return false;
-        return true;
-    }
+    if (groupId == "startpos.general") return startPositionGeneralBindings().apply(p, key, value);
+    if (groupId == "startpos.placement") return startPositionPlacementBindings().apply(p, key, value);
     return false;
 }
 
@@ -246,15 +239,9 @@ sdk::PropertySchema zonePlacementSchema(const sdk::RobotConfig& c, const EditorC
     return s;
 }
 
-sdk::PropertySchema cameraGeneralSchema() {
-    sdk::PropertySchema s;
-    PropertySpec label;
-    label.key = "label";
-    label.label = ETR("Label").toStdString();
-    label.description = ETR("Name shown in the project tree and the viewport.").toStdString();
-    label.type = PropertyType::String;
-    label.defaultValue = std::string();
-    s.properties.push_back(label);
+sdk::ConfigBindings<sdk::CameraConfig> cameraGeneralBindings() {
+    sdk::ConfigBindings<sdk::CameraConfig> b;
+    b.add(zoneGeneralSchema().properties.front(), &sdk::CameraConfig::label);
 
     PropertySpec kind;
     kind.key = "kind";
@@ -262,9 +249,9 @@ sdk::PropertySchema cameraGeneralSchema() {
     kind.description = ETR("Which coprocessor the camera behaves like: it decides the NetworkTables data that is published.").toStdString();
     kind.type = PropertyType::Enum;
     kind.defaultValue = std::string(sdk::cameraKindKey(sdk::CameraKind::Limelight));
-    kind.options.push_back({sdk::cameraKindKey(sdk::CameraKind::Limelight), "Limelight"});
-    kind.options.push_back({sdk::cameraKindKey(sdk::CameraKind::PhotonVision), "PhotonVision"});
-    s.properties.push_back(kind);
+    kind.options = {{sdk::cameraKindKey(sdk::CameraKind::Limelight), "Limelight"},
+                    {sdk::cameraKindKey(sdk::CameraKind::PhotonVision), "PhotonVision"}};
+    b.choice(std::move(kind), &sdk::CameraConfig::kind, {sdk::CameraKind::Limelight, sdk::CameraKind::PhotonVision});
 
     PropertySpec name;
     name.key = "name";
@@ -272,8 +259,8 @@ sdk::PropertySchema cameraGeneralSchema() {
     name.description = ETR("The name the robot code uses. Unique among cameras of the same type.").toStdString();
     name.type = PropertyType::String;
     name.defaultValue = std::string();
-    s.properties.push_back(name);
-    return s;
+    b.add(std::move(name), &sdk::CameraConfig::name);
+    return b;
 }
 
 PropertySpec cameraNumber(const char* key, const QString& label, const QString& description, double def, double min, double max,
@@ -291,22 +278,32 @@ PropertySpec cameraNumber(const char* key, const QString& label, const QString& 
     return p;
 }
 
-sdk::PropertySchema cameraOpticsSchema() {
-    sdk::PropertySchema s;
+sdk::ConfigBindings<sdk::CameraConfig> cameraOpticsBindings() {
+    sdk::ConfigBindings<sdk::CameraConfig> b;
     using T = PropertyType;
     using U = PropertyUnit;
-    s.properties.push_back(cameraNumber("hFovDeg", ETR("Horizontal FOV (\xC2\xB0)"), ETR("Horizontal field of view in degrees."), 75.0, 1.0, 179.0, 1.0));
-    s.properties.push_back(cameraNumber("vFovDeg", ETR("Vertical FOV (\xC2\xB0)"), ETR("Vertical field of view in degrees."), 50.0, 1.0, 179.0, 1.0));
-    s.properties.push_back(cameraNumber("maxRangeM", ETR("Max range"), ETR("Tags farther than this are not seen."), 6.0, 0.1, 100.0, 0.5, U::Meters));
-    s.properties.push_back(cameraNumber("maxIncidenceDeg", ETR("Max incidence (\xC2\xB0)"),
-                                        ETR("Tags viewed more obliquely than this angle to their normal are not seen."), 75.0, 1.0, 90.0, 1.0));
-    s.properties.push_back(cameraNumber("fps", ETR("Frame rate (fps)"), ETR("Capture rate of the camera."), 30.0, 1.0, 240.0, 1.0));
-    s.properties.push_back(cameraNumber("latencyMs", ETR("Latency (ms)"), ETR("Delay between capture and the results reaching the robot."), 40.0, 0.0, 1000.0, 1.0));
-    s.properties.push_back(cameraNumber("widthPx", ETR("Resolution width (px)"), ETR("Image width used for corners and area."), 1280.0, 16.0, 8192.0, 16.0, U::Count, T::Int));
-    s.properties.push_back(cameraNumber("heightPx", ETR("Resolution height (px)"), ETR("Image height used for corners and area."), 800.0, 16.0, 8192.0, 16.0, U::Count, T::Int));
-    s.properties.push_back(cameraNumber("positionNoiseM", ETR("Position noise"), ETR("1-sigma noise on the estimated robot position (x, y)."), 0.0, 0.0, 5.0, 0.01, U::Meters));
-    s.properties.push_back(cameraNumber("yawNoiseDeg", ETR("Yaw noise (\xC2\xB0)"), ETR("1-sigma noise on the estimated robot yaw in degrees."), 0.0, 0.0, 90.0, 0.1));
-    return s;
+    b.add(cameraNumber("hFovDeg", ETR("Horizontal FOV (\xC2\xB0)"), ETR("Horizontal field of view in degrees."), 75.0, 1.0, 179.0, 1.0),
+          &sdk::CameraConfig::hFovDeg);
+    b.add(cameraNumber("vFovDeg", ETR("Vertical FOV (\xC2\xB0)"), ETR("Vertical field of view in degrees."), 50.0, 1.0, 179.0, 1.0),
+          &sdk::CameraConfig::vFovDeg);
+    b.add(cameraNumber("maxRangeM", ETR("Max range"), ETR("Tags farther than this are not seen."), 6.0, 0.1, 100.0, 0.5, U::Meters),
+          &sdk::CameraConfig::maxRangeM);
+    b.add(cameraNumber("maxIncidenceDeg", ETR("Max incidence (\xC2\xB0)"),
+                       ETR("Tags viewed more obliquely than this angle to their normal are not seen."), 75.0, 1.0, 90.0, 1.0),
+          &sdk::CameraConfig::maxIncidenceDeg);
+    b.add(cameraNumber("fps", ETR("Frame rate (fps)"), ETR("Capture rate of the camera."), 30.0, 1.0, 240.0, 1.0),
+          &sdk::CameraConfig::fps);
+    b.add(cameraNumber("latencyMs", ETR("Latency (ms)"), ETR("Delay between capture and the results reaching the robot."), 40.0, 0.0, 1000.0, 1.0),
+          &sdk::CameraConfig::latencyMs);
+    b.add(cameraNumber("widthPx", ETR("Resolution width (px)"), ETR("Image width used for corners and area."), 1280.0, 16.0, 8192.0, 16.0, U::Count, T::Int),
+          &sdk::CameraConfig::widthPx);
+    b.add(cameraNumber("heightPx", ETR("Resolution height (px)"), ETR("Image height used for corners and area."), 800.0, 16.0, 8192.0, 16.0, U::Count, T::Int),
+          &sdk::CameraConfig::heightPx);
+    b.add(cameraNumber("positionNoiseM", ETR("Position noise"), ETR("1-sigma noise on the estimated robot position (x, y)."), 0.0, 0.0, 5.0, 0.01, U::Meters),
+          &sdk::CameraConfig::positionNoiseM);
+    b.add(cameraNumber("yawNoiseDeg", ETR("Yaw noise (\xC2\xB0)"), ETR("1-sigma noise on the estimated robot yaw in degrees."), 0.0, 0.0, 90.0, 0.1),
+          &sdk::CameraConfig::yawNoiseDeg);
+    return b;
 }
 
 sdk::PropertySchema cameraPlacementSchema(const sdk::RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam) {
@@ -316,29 +313,6 @@ sdk::PropertySchema cameraPlacementSchema(const sdk::RobotConfig& c, const Edito
         ETR("Named frame of the parent the camera hangs on (e.g. a turret's moving part)."),
         ETR("Relative to the attachment link: x forward (optical axis), y left, z up."));
     return s;
-}
-
-Value cameraGeneralValues(const sdk::CameraConfig& cam) {
-    Value o = Value::makeObject();
-    o["label"] = cam.label;
-    o["kind"] = std::string(sdk::cameraKindKey(cam.kind));
-    o["name"] = cam.name;
-    return o;
-}
-
-Value cameraOpticsValues(const sdk::CameraConfig& cam) {
-    Value o = Value::makeObject();
-    o["hFovDeg"] = cam.hFovDeg;
-    o["vFovDeg"] = cam.vFovDeg;
-    o["maxRangeM"] = cam.maxRangeM;
-    o["maxIncidenceDeg"] = cam.maxIncidenceDeg;
-    o["fps"] = cam.fps;
-    o["latencyMs"] = cam.latencyMs;
-    o["widthPx"] = static_cast<std::int64_t>(cam.widthPx);
-    o["heightPx"] = static_cast<std::int64_t>(cam.heightPx);
-    o["positionNoiseM"] = cam.positionNoiseM;
-    o["yawNoiseDeg"] = cam.yawNoiseDeg;
-    return o;
 }
 
 Value cameraPlacementValues(const sdk::CameraConfig& cam) {
@@ -351,34 +325,19 @@ Value cameraPlacementValues(const sdk::CameraConfig& cam) {
 bool applyCamera(sdk::RobotConfig& c, const EditorCatalog& catalog, sdk::CameraConfig& cam, const std::string& groupId,
                  const std::string& key, const Value& value) {
     if (groupId == "camera.general") {
-        if (key == "label") { cam.label = value.asString(cam.label); return true; }
-        if (key == "name") { cam.name = value.asString(cam.name); return true; }
         if (key == "kind") {
-            const sdk::CameraKind kind = value.asString() == sdk::cameraKindKey(sdk::CameraKind::PhotonVision)
-                                             ? sdk::CameraKind::PhotonVision : sdk::CameraKind::Limelight;
-            if (kind == cam.kind) return false;
+            const sdk::CameraKind before = cam.kind;
+            cameraGeneralBindings().apply(cam, key, value);
+            if (cam.kind == before) return false;
             // Keep the default name of each type meaningful: Limelight's is empty, PhotonVision's "photon".
-            const std::string defaultFrom = cam.kind == sdk::CameraKind::PhotonVision ? "photon" : "";
-            cam.kind = kind;
-            if (cam.name == defaultFrom) cam.name = kind == sdk::CameraKind::PhotonVision ? "photon" : "";
-            cam.name = ops::uniqueCameraName(c, kind, cam.name, cam.id);
+            const std::string defaultFrom = before == sdk::CameraKind::PhotonVision ? "photon" : "";
+            if (cam.name == defaultFrom) cam.name = cam.kind == sdk::CameraKind::PhotonVision ? "photon" : "";
+            cam.name = ops::uniqueCameraName(c, cam.kind, cam.name, cam.id);
             return true;
         }
-        return false;
+        return cameraGeneralBindings().apply(cam, key, value);
     }
-    if (groupId == "camera.optics") {
-        if (key == "hFovDeg") { cam.hFovDeg = value.asDouble(cam.hFovDeg); return true; }
-        if (key == "vFovDeg") { cam.vFovDeg = value.asDouble(cam.vFovDeg); return true; }
-        if (key == "maxRangeM") { cam.maxRangeM = value.asDouble(cam.maxRangeM); return true; }
-        if (key == "maxIncidenceDeg") { cam.maxIncidenceDeg = value.asDouble(cam.maxIncidenceDeg); return true; }
-        if (key == "fps") { cam.fps = value.asDouble(cam.fps); return true; }
-        if (key == "latencyMs") { cam.latencyMs = value.asDouble(cam.latencyMs); return true; }
-        if (key == "widthPx") { cam.widthPx = static_cast<int>(value.asInt(cam.widthPx)); return true; }
-        if (key == "heightPx") { cam.heightPx = static_cast<int>(value.asInt(cam.heightPx)); return true; }
-        if (key == "positionNoiseM") { cam.positionNoiseM = value.asDouble(cam.positionNoiseM); return true; }
-        if (key == "yawNoiseDeg") { cam.yawNoiseDeg = value.asDouble(cam.yawNoiseDeg); return true; }
-        return false;
-    }
+    if (groupId == "camera.optics") return cameraOpticsBindings().apply(cam, key, value);
     if (groupId == "camera.placement") {
         if (key == "local") return sdk::fromValue(value, cam.local);
         if (key == "parent") return ops::reattachCamera(c, catalog, cam.id, value.asString(sdk::kChassisParent), sdk::kRootLink);
@@ -539,10 +498,12 @@ std::vector<PropertyGroup> propertyGroupsFor(const sdk::RobotConfig& c, const Ed
         case SelKind::Camera: {
             const sdk::CameraConfig* cam = c.findCamera(sel.owner);
             if (cam == nullptr) break;
-            PropertyGroup general = groupOf("camera.general", ETR("General"), cameraGeneralSchema(), cameraGeneralValues(*cam));
+            const auto gen = cameraGeneralBindings();
+            const auto opt = cameraOpticsBindings();
+            PropertyGroup general = groupOf("camera.general", ETR("General"), gen.schema(), gen.encode(*cam));
             general.hint = ETR("Limelight: empty = 'limelight', otherwise 'limelight-<name>'. PhotonVision: the PhotonCamera name.");
             out.push_back(std::move(general));
-            out.push_back(groupOf("camera.optics", ETR("Optics"), cameraOpticsSchema(), cameraOpticsValues(*cam)));
+            out.push_back(groupOf("camera.optics", ETR("Optics"), opt.schema(), opt.encode(*cam)));
             out.push_back(groupOf("camera.placement", ETR("Placement"), cameraPlacementSchema(c, catalog, *cam), cameraPlacementValues(*cam)));
             out.back().section = sdk::PropertySection::Placement;
             break;
@@ -573,15 +534,10 @@ std::vector<PropertyGroup> propertyGroupsFor(const sdk::RobotConfig& c, const Ed
         case SelKind::StartPosition: {
             const sdk::StartPosition* p = c.findStartPosition(sel.owner);
             if (p == nullptr) break;
-            Value general = Value::makeObject();
-            general["label"] = p->label;
-            general["alliance"] = std::string(sdk::allianceKey(p->alliance));
-            out.push_back(groupOf("startpos.general", ETR("General"), startPositionGeneralSchema(), std::move(general)));
-            Value placement = Value::makeObject();
-            placement["xM"] = static_cast<double>(p->pose.xM);
-            placement["yM"] = static_cast<double>(p->pose.yM);
-            placement["headingRad"] = static_cast<double>(p->pose.headingRad);
-            out.push_back(groupOf("startpos.placement", ETR("Placement"), startPositionPlacementSchema(), std::move(placement)));
+            const auto gen = startPositionGeneralBindings();
+            const auto place = startPositionPlacementBindings();
+            out.push_back(groupOf("startpos.general", ETR("General"), gen.schema(), gen.encode(*p)));
+            out.push_back(groupOf("startpos.placement", ETR("Placement"), place.schema(), place.encode(*p)));
             out.back().section = sdk::PropertySection::Placement;
             break;
         }
@@ -636,17 +592,15 @@ bool applyProperty(sdk::RobotConfig& c, const EditorCatalog& catalog, const Sele
         return cam != nullptr && applyCamera(c, catalog, *cam, groupId, key, value);
     }
     if (sel.kind == SelKind::Sensor) {
-        sdk::SensorConfig* s = ops::findSensor(c, sel.owner);
+        sdk::SensorConfig* s = c.findSensor(sel.owner);
         return s != nullptr && applySensor(*s, groupId, key, value);
     }
     if (sel.kind == SelKind::StartPosition) {
-        sdk::StartPosition* p = ops::findStartPosition(c, sel.owner);
+        sdk::StartPosition* p = c.findStartPosition(sel.owner);
         return p != nullptr && applyStartPosition(*p, groupId, key, value);
     }
     if (sel.kind == SelKind::Mechanism) {
-        sdk::MechanismConfig* m = nullptr;
-        for (auto& cand : c.mechanisms)
-            if (cand.id == sel.owner) m = &cand;
+        sdk::MechanismConfig* m = c.findMechanism(sel.owner);
         if (m == nullptr) return false;
         if (groupId == "mech.general") {
             return key == "label" ? (m->label = value.asString(m->label), true) : false;

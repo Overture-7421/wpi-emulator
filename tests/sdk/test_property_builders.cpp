@@ -3,7 +3,9 @@
 #include <limits>
 #include <string>
 
+#include "wpiemu/sdk/config/config_bindings.h"
 #include "wpiemu/sdk/config/property_builders.h"
+#include "wpiemu/sdk/config/robot_spec_bindings.h"
 #include "wpiemu/sdk/core/value.h"
 
 using namespace wpiemu::sdk;
@@ -92,3 +94,29 @@ TEST_CASE("Value readers fall back on missing keys, wrong types and non-finite n
     CHECK(getFiniteDouble(o, "d", 7.0) == 2.5);
     CHECK(getDouble(Value{}, "anything", 3.0) == 3.0);
 }
+
+TEST_CASE("ConfigBindings supports strings, geometry, custom accessors and single-key apply") {
+    ChassisSpec ch;
+    const auto chassis = chassisEditorBindings();
+    const Value encoded = chassis.encode(ch);
+    CHECK(validateProperties(chassis.schema(), encoded).empty());
+    CHECK(chassis.apply(ch, "massKg", Value(62.5)));
+    CHECK(ch.massKg == doctest::Approx(62.5f));
+    CHECK(chassis.apply(ch, "size", toValue(Vec3{0.8f, 0.7f, 0.15f})));
+    CHECK(ch.sizeM == Vec3{0.8f, 0.7f, 0.15f});
+    CHECK_FALSE(chassis.apply(ch, "unknownKey", Value(1.0)));
+
+    WheelSpec w;
+    const auto wheel = wheelEditorBindings(w);
+    CHECK(wheel.apply(w, "driveMotorCount", Value(99), true));
+    CHECK(w.driveMotorCount == kMaxMotorsPerAxis);
+    CHECK(wheel.apply(w, "driveMotor", Value("NEO")));
+    CHECK(w.driveMotor.name == "NEO");
+
+    CHECK(chassisEditorFieldKey("sizeM") == "size");
+    CHECK(chassisEditorFieldKey("groundClearanceM") == "groundClearance");
+    CHECK(wheelEditorFieldKey("radiusM") == "radius");
+    CHECK(wheelEditorFieldKey("tire.mu") == "mu");
+    CHECK(wheelEditorFieldKey("driveMotor.stallTorqueNm") == "driveMotor");
+}
+

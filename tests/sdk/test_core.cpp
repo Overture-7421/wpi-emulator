@@ -166,6 +166,31 @@ TEST_CASE("DC motor model matches WPILib equations") {
     CHECK(m.torqueNm(12.0, 0.0) == doctest::Approx(2.6).epsilon(1e-9));          // stall torque
     CHECK(m.currentA(12.0, 0.0) == doctest::Approx(105.0).epsilon(1e-9));        // stall current
     CHECK(m.currentA(12.0, motors::neo().freeSpeedRadPerSec) == doctest::Approx(1.8).epsilon(1e-6));  // free current
+
+    // Stator current limiting (limit <= 0 leaves current, torque and voltage untouched).
+    CHECK(m.limitedCurrentA(12.0, 0.0, 40.0) == doctest::Approx(40.0).epsilon(1e-9));
+    CHECK(m.limitedCurrentA(-12.0, 0.0, 40.0) == doctest::Approx(-40.0).epsilon(1e-9));
+    CHECK(m.limitedCurrentA(2.0, 0.0, 40.0) == doctest::Approx(m.currentA(2.0, 0.0)).epsilon(1e-9));
+    CHECK(m.limitedCurrentA(12.0, 0.0, 0.0) == doctest::Approx(105.0).epsilon(1e-9));
+    CHECK(m.limitedCurrentA(12.0, 0.0, -5.0) == doctest::Approx(105.0).epsilon(1e-9));
+
+    CHECK(m.limitedTorqueNm(12.0, 0.0, 40.0) == doctest::Approx(40.0 * motors::neo().ktNmPerAmp()).epsilon(1e-9));
+    CHECK(m.limitedTorqueNm(-12.0, 0.0, 40.0) == doctest::Approx(-40.0 * motors::neo().ktNmPerAmp()).epsilon(1e-9));
+    CHECK(m.limitedTorqueNm(12.0, 0.0, 0.0) == doctest::Approx(m.torqueNm(12.0, 0.0)).epsilon(1e-9));
+
+    const double omega = 120.0;
+    const double vLimited = m.limitedVoltageV(12.0, omega, 40.0);
+    CHECK(vLimited < 12.0);
+    CHECK(m.currentA(vLimited, omega) == doctest::Approx(m.limitedCurrentA(12.0, omega, 40.0)).epsilon(1e-9));
+    CHECK(m.limitedVoltageV(7.5, omega, 0.0) == 7.5);
+    CHECK(m.limitedVoltageV(7.5, omega, -1.0) == 7.5);
+    CHECK(m.dampingNmS(12.0, omega, 40.0) == 0.0);
+    CHECK(m.dampingNmS(12.0, omega, 0.0) > 0.0);
+
+    const ReflectedShaftDrive reflected = reflectSingleMotorShaftDrive(m, 12.0, 10.0, 40.0, 6.0, 0.9, 5e-5, 0.01);
+    CHECK(reflected.torqueNm == doctest::Approx(0.9 * 6.0 * m.limitedTorqueNm(12.0, 60.0, 40.0)).epsilon(1e-9));
+    CHECK(reflected.inertiaKgM2 == doctest::Approx(5e-5 * 36.0 + 0.01).epsilon(1e-9));
+    CHECK(reflected.supplyCurrentA == doctest::Approx(40.0).epsilon(1e-9));
 }
 
 TEST_CASE("motor table keys and names are unique, every row is physical and the SDK defaults come from it") {

@@ -22,11 +22,111 @@
 #include "wpiemu/sdk/core/interface.h"
 #include "wpiemu/sdk/core/severity.h"
 #include "wpiemu/sdk/devices/slot.h"
+#include "wpiemu/sdk/dynamics/motor_model.h"
 #include "wpiemu/sdk/game/game_value.h"
 #include "wpiemu/sdk/game/zone_kind.h"
 #include "wpiemu/sdk/mechanisms/mechanism.h"
 
 namespace wpiemu::sdk {
+
+namespace config_checks_detail {
+inline bool finitePositive(float v) { return std::isfinite(v) && v > 0.f; }
+inline bool finiteNonNegative(float v) { return std::isfinite(v) && v >= 0.f; }
+
+inline const char* collidingEntityKind(const RobotConfig& config, std::string_view id, std::string_view selfKind) {
+    if (selfKind != "mechanism" && config.findMechanism(id) != nullptr) return "mechanism";
+    if (selfKind != "zone" && config.findZone(id) != nullptr) return "zone";
+    if (selfKind != "camera" && config.findCamera(id) != nullptr) return "camera";
+    return nullptr;
+}
+
+inline bool checkPluginOwnedRef(const std::string& pluginId, const std::string& value, const char* label,
+                                const std::string& path, const char* notOwnedCode, std::vector<Issue>& out) {
+    if (ownsPluginId(pluginId, value)) return true;
+    out.push_back({Severity::Error, path,
+                   pluginId.empty() ? std::string(label) + " '" + value + "' needs a game plugin (none is selected)"
+                                    : std::string(label) + " '" + value + "' is not owned by plugin '" + pluginId + "'",
+                   notOwnedCode});
+    return false;
+}
+}  // namespace config_checks_detail
+
+inline void validateTire(const TireParams& t, const std::string& base, std::vector<Issue>& out) {
+    const auto positive = [&](float v, const char* field, const char* why) {
+        if (!config_checks_detail::finitePositive(v))
+            out.push_back({Severity::Error, base + "." + field, why, validation_code::kTireInvalid});
+    };
+    positive(t.peakSlipLong, "peakSlipLong", "peak longitudinal slip must be positive and finite");
+    positive(t.peakSlipLat, "peakSlipLat", "peak lateral slip must be positive and finite");
+    positive(t.vRefMps, "vRefMps", "reference creep velocity must be positive and finite");
+    positive(t.lateralScale, "lateralScale", "lateral scale must be positive and finite");
+    if (!std::isfinite(t.slideRatio))
+        out.push_back({Severity::Error, base + ".slideRatio", "slide ratio must be finite", validation_code::kTireInvalid});
+    if (!std::isfinite(t.tractionAngleRad))
+        out.push_back({Severity::Error, base + ".tractionAngleRad", "traction angle must be finite", validation_code::kTireInvalid});
+}
+
+inline void validateMotor(const MotorSpec& m, const std::string& base, std::vector<Issue>& out) {
+    for (const MotorSpecFault& f : motorSpecFaults(m))
+        out.push_back({Severity::Error, base + "." + f.field, f.why, validation_code::kMotorInvalid});
+}
+
+inline void validateChassis(const RobotConfig& c, std::vector<Issue>& out) {
+    using config_checks_detail::finiteNonNegative;
+    using config_checks_detail::finitePositive;
+    const ChassisSpec& ch = c.chassis;
+    const auto bad = [&](const std::string& field, const std::string& why) {
+        out.push_back({Severity::Error, "chassis." + field, why, validation_code::kChassisInvalid});
+    };
+    if (!finite(ch.sizeM) || ch.sizeM.x <= 0.f || ch.sizeM.y <= 0.f || ch.sizeM.z <= 0.f)
+        bad("sizeM", "chassis size must be positive and finite");
+    if (!finitePositive(ch.massKg)) bad("massKg", "chassis mass must be positive");
+    if (!finitePositive(ch.comHeightM)) bad("comHeightM", "COM height must be positive");
+    if (!finiteNonNegative(ch.groundClearanceM)) bad("groundClearanceM", "ground clearance must be >= 0");
+    if (!finite(ch.comOffsetM)) bad("comOffsetM", "COM offset must be finite");
+    if (!finite(ch.inertiaDiagKgM2) || ch.inertiaDiagKgM2.x < 0.f || ch.inertiaDiagKgM2.y < 0.f || ch.inertiaDiagKgM2.z < 0.f)
+        bad("inertiaDiagKgM2", "inertia must be >= 0 (0 = derive from the box)");
+    if (!finiteNonNegative(ch.material.friction) || !finiteNonNegative(ch.material.restitution))
+        bad("material", "friction and restitution must be >= 0");
+}
+
+inline void validateWheelSpecs(const DrivetrainSpec& spec, std::vector<Issue>& out) {
+    using config_checks_detail::finitePositive;
+    if (spec.wheels.empty())
+        out.push_back({Severity::Warning, "drivetrain.wheels", "the drivetrain has no wheels", validation_code::kDrivetrainNoWheels});
+
+    std::set<std::string> names;
+    for (std::size_t i = 0; i < spec.wheels.size(); ++i) {
+        const WheelSpec& w = spec.wheels[i];
+        const std::string base = "drivetrain.wheels[" + std::to_string(i) + "]";
+        if (w.name.empty() || w.name.find('.') != std::string::npos)
+            out.push_back({Severity::Error, base + ".name", "wheel name must be non-empty and must not contain '.'",
+                           validation_code::kWheelInvalid});
+        else if (!names.insert(w.name).second)
+            out.push_back({Severity::Error, base + ".name", "duplicate wheel name '" + w.name + "'",
+                           validation_code::kWheelDuplicate});
+        if (!finitePositive(w.radiusM))
+            out.push_back({Severity::Error, base + ".radiusM", "wheel radius must be positive", validation_code::kWheelInvalid});
+        if (!finite(w.positionM))
+            out.push_back({Severity::Error, base + ".positionM", "wheel position must be finite", validation_code::kWheelInvalid});
+        if (w.driveMotorCount < 1 || w.driveMotorCount > kMaxMotorsPerAxis)
+            out.push_back({Severity::Error, base + ".driveMotorCount",
+                           "drive motors per wheel must be in [1, " + std::to_string(kMaxMotorsPerAxis) + "]",
+                           validation_code::kWheelInvalid});
+        if (!finitePositive(w.driveGearRatio))
+            out.push_back({Severity::Error, base + ".driveGearRatio", "gear ratio must be positive", validation_code::kWheelInvalid});
+        if (!finitePositive(w.tire.mu))
+            out.push_back({Severity::Error, base + ".tire.mu", "friction coefficient must be positive", validation_code::kWheelInvalid});
+        validateTire(w.tire, base + ".tire", out);
+        validateMotor(w.driveMotor, base + ".driveMotor", out);
+        if (isSteered(w)) {
+            if (!finitePositive(w.steerGearRatio))
+                out.push_back({Severity::Error, base + ".steerGearRatio", "steer gear ratio must be positive",
+                               validation_code::kWheelInvalid});
+            validateMotor(w.steerMotor, base + ".steerMotor", out);
+        }
+    }
+}
 
 class IConfigCatalog {
     WPIEMU_INTERFACE(IConfigCatalog)
@@ -82,10 +182,9 @@ inline void validateZones(const RobotConfig& config, const IConfigCatalog& catal
 
         if (z.id.empty())
             out.push_back({Severity::Error, base + ".id", "zone id must not be empty", validation_code::kZoneIdInvalid});
-        else if (config.findMechanism(z.id) != nullptr)
-            out.push_back({Severity::Error, base + ".id", "zone id '" + z.id + "' is also a mechanism id", validation_code::kZoneIdDuplicate});
-        else if (config.findCamera(z.id) != nullptr)
-            out.push_back({Severity::Error, base + ".id", "zone id '" + z.id + "' is also a camera id", validation_code::kZoneIdDuplicate});
+        else if (const char* other = config_checks_detail::collidingEntityKind(config, z.id, "zone"))
+            out.push_back({Severity::Error, base + ".id", std::string("zone id '") + z.id + "' is also a " + other + " id",
+                           validation_code::kZoneIdDuplicate});
         else if (!ids.insert(z.id).second)
             out.push_back({Severity::Error, base + ".id", "duplicate zone id '" + z.id + "'", validation_code::kZoneIdDuplicate});
 
@@ -93,12 +192,8 @@ inline void validateZones(const RobotConfig& config, const IConfigCatalog& catal
 
         // ---- kind and properties ----
         const ZoneKindInfo* info = nullptr;
-        if (!ownsPluginId(pluginId, z.kind)) {
-            out.push_back({Severity::Error, base + ".kind",
-                           pluginId.empty() ? "zone kind '" + z.kind + "' needs a game plugin (none is selected)"
-                                            : "zone kind '" + z.kind + "' is not owned by plugin '" + pluginId + "'",
-                           validation_code::kZoneKindNotOwned});
-        } else {
+        if (config_checks_detail::checkPluginOwnedRef(pluginId, z.kind, "zone kind", base + ".kind",
+                                                      validation_code::kZoneKindNotOwned, out)) {
             info = catalog.zoneKind(z.kind);
             if (info == nullptr)
                 out.push_back({Severity::Warning, base + ".kind", "plugin '" + pluginId + "' does not declare zone kind '" + z.kind + "'",
@@ -143,10 +238,9 @@ inline void validateCameras(const RobotConfig& config, const IConfigCatalog& cat
 
         if (cam.id.empty())
             out.push_back({Severity::Error, base + ".id", "camera id must not be empty", validation_code::kCameraIdInvalid});
-        else if (config.findMechanism(cam.id) != nullptr)
-            out.push_back({Severity::Error, base + ".id", "camera id '" + cam.id + "' is also a mechanism id", validation_code::kCameraIdDuplicate});
-        else if (config.findZone(cam.id) != nullptr)
-            out.push_back({Severity::Error, base + ".id", "camera id '" + cam.id + "' is also a zone id", validation_code::kCameraIdDuplicate});
+        else if (const char* other = config_checks_detail::collidingEntityKind(config, cam.id, "camera"))
+            out.push_back({Severity::Error, base + ".id", std::string("camera id '") + cam.id + "' is also a " + other + " id",
+                           validation_code::kCameraIdDuplicate});
         else if (!ids.insert(cam.id).second)
             out.push_back({Severity::Error, base + ".id", "duplicate camera id '" + cam.id + "'", validation_code::kCameraIdDuplicate});
 
@@ -189,24 +283,18 @@ inline void validateSensors(const RobotConfig& config, const IConfigCatalog& cat
             out.push_back({Severity::Error, base + ".id", "'" + s.id + "' is a reserved slot owner", validation_code::kSensorIdInvalid});
         else if (s.id.find('.') != std::string::npos)
             out.push_back({Severity::Error, base + ".id", "sensor id must not contain '.'", validation_code::kSensorIdInvalid});
-        else if (config.findMechanism(s.id) != nullptr)
-            out.push_back({Severity::Error, base + ".id", "sensor id '" + s.id + "' is also a mechanism id", validation_code::kSensorIdDuplicate});
-        else if (config.findZone(s.id) != nullptr)
-            out.push_back({Severity::Error, base + ".id", "sensor id '" + s.id + "' is also a zone id", validation_code::kSensorIdDuplicate});
-        else if (config.findCamera(s.id) != nullptr)
-            out.push_back({Severity::Error, base + ".id", "sensor id '" + s.id + "' is also a camera id", validation_code::kSensorIdDuplicate});
+        else if (const char* other = config_checks_detail::collidingEntityKind(config, s.id, "sensor"))
+            out.push_back({Severity::Error, base + ".id", std::string("sensor id '") + s.id + "' is also a " + other + " id",
+                           validation_code::kSensorIdDuplicate});
         else if (!ids.insert(s.id).second)
             out.push_back({Severity::Error, base + ".id", "duplicate sensor id '" + s.id + "'", validation_code::kSensorIdDuplicate});
 
         if (s.source.empty()) {
             out.push_back({Severity::Warning, base + ".source", "sensor '" + s.id + "' has no game value selected; it will read as idle",
                            validation_code::kSensorSourceMissing});
-        } else if (!ownsPluginId(pluginId, s.source)) {
-            out.push_back({Severity::Error, base + ".source",
-                           pluginId.empty() ? "sensor source '" + s.source + "' needs a game plugin (none is selected)"
-                                            : "sensor source '" + s.source + "' is not owned by plugin '" + pluginId + "'",
-                           validation_code::kSensorSourceNotOwned});
-        } else if (catalog.gameValue(s.source) == nullptr) {
+        } else if (config_checks_detail::checkPluginOwnedRef(pluginId, s.source, "sensor source", base + ".source",
+                                                             validation_code::kSensorSourceNotOwned, out) &&
+                   catalog.gameValue(s.source) == nullptr) {
             out.push_back({Severity::Warning, base + ".source", "plugin '" + pluginId + "' does not declare game value '" + s.source + "'",
                            validation_code::kSensorSourceUnknown});
         }

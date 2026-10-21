@@ -11,16 +11,7 @@ using sdk::RobotConfig;
 
 // ---- sensors ----------------------------------------------------------------------------------
 std::string uniqueSensorId(const RobotConfig& c, std::string base) {
-    if (base.empty()) base = "sensor";
-    auto taken = [&](const std::string& id) {
-        return reservedOwner(id) || c.findSensor(id) != nullptr || c.findMechanism(id) != nullptr || c.findZone(id) != nullptr ||
-               c.findCamera(id) != nullptr;
-    };
-    if (!taken(base)) return base;
-    for (int n = 2;; ++n) {
-        std::string candidate = base + "_" + std::to_string(n);
-        if (!taken(candidate)) return candidate;
-    }
+    return detail::uniqueEntityId(c, std::move(base), "sensor");
 }
 
 std::string sensorDisplayName(const sdk::SensorConfig& s) {
@@ -33,19 +24,13 @@ std::string addSensor(RobotConfig& c, sdk::SensorKind kind) {
     s.kind = kind;
     s.id = uniqueSensorId(c, sdk::sensorKindKey(kind));
     s.label = sdk::sensorKindInfo(kind).displayName;
-    s.properties = sdk::Value::makeObject();
-    for (const auto& p : sdk::sensorResponseSchema(kind).properties) s.properties[p.key] = p.defaultValue;
+    s.properties = sdk::defaultsOf(sdk::sensorResponseSchema(kind));
     std::string id = s.id;
     c.sensors.push_back(std::move(s));
     return id;
 }
 
-bool removeSensor(RobotConfig& c, std::string_view id) {
-    const auto it = std::find_if(c.sensors.begin(), c.sensors.end(), [&](const sdk::SensorConfig& s) { return s.id == id; });
-    if (it == c.sensors.end()) return false;
-    c.sensors.erase(it);
-    return true;
-}
+bool removeSensor(RobotConfig& c, std::string_view id) { return sdk::detail::eraseById(c.sensors, id); }
 
 std::string duplicateSensor(RobotConfig& c, std::string_view id) {
     const sdk::SensorConfig* original = c.findSensor(id);
@@ -59,10 +44,6 @@ std::string duplicateSensor(RobotConfig& c, std::string_view id) {
     return newId;
 }
 
-sdk::SensorConfig* findSensor(RobotConfig& c, std::string_view id) {
-    for (auto& s : c.sensors)
-        if (s.id == id) return &s;
-    return nullptr;
-}
+sdk::SensorConfig* findSensor(RobotConfig& c, std::string_view id) { return c.findSensor(id); }
 
 }  // namespace wpiemu::app::editor::ops

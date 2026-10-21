@@ -36,7 +36,21 @@ auto* findById(Items& items, std::string_view id) {
         if (item.id == id) return &item;
     return static_cast<decltype(&*items.begin())>(nullptr);
 }
+
+// Removes the first entry of `items` whose `id` is `id`; returns true when an entry was removed.
+template <class Items>
+bool eraseById(Items& items, std::string_view id) {
+    const auto it = std::find_if(items.begin(), items.end(), [&](const auto& item) { return item.id == id; });
+    if (it == items.end()) return false;
+    items.erase(it);
+    return true;
+}
 }  // namespace detail
+
+// Reserved owner names that no mechanism, zone, camera or sensor id may take.
+inline bool isReservedEntityId(std::string_view id) {
+    return id == kChassisParent || id == slot_owner::kDrivetrain || id == slot_owner::kRobot;
+}
 
 // Version of the CORE schema (chassis/drivetrain/mechanisms/mappings). The SDK stays at version 1 until
 // release (docs/CONTRIBUTING.md): files with any other version are rejected, there is no migration.
@@ -124,13 +138,19 @@ struct RobotConfig {
 
     // Lookups by id; the non-const overloads let editors mutate the entry in place.
     const SensorConfig* findSensor(std::string_view id) const { return detail::findById(sensors, id); }
+    SensorConfig* findSensor(std::string_view id) { return detail::findById(sensors, id); }
     const StartPosition* findStartPosition(std::string_view id) const { return detail::findById(startPositions, id); }
+    StartPosition* findStartPosition(std::string_view id) { return detail::findById(startPositions, id); }
     const CameraConfig* findCamera(std::string_view id) const { return detail::findById(cameras, id); }
     CameraConfig* findCamera(std::string_view id) { return detail::findById(cameras, id); }
     const MechanismConfig* findMechanism(std::string_view id) const { return detail::findById(mechanisms, id); }
     MechanismConfig* findMechanism(std::string_view id) { return detail::findById(mechanisms, id); }
     const ZoneConfig* findZone(std::string_view id) const { return detail::findById(zones, id); }
     ZoneConfig* findZone(std::string_view id) { return detail::findById(zones, id); }
+    bool hasEntityId(std::string_view id) const {
+        return findMechanism(id) != nullptr || findZone(id) != nullptr || findCamera(id) != nullptr ||
+               findSensor(id) != nullptr;
+    }
     const PluginSection* findPlugin(std::string_view id) const {
         const auto it = plugins.find(id);
         return it == plugins.end() ? nullptr : &it->second;

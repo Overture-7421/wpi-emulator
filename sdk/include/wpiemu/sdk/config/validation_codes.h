@@ -22,6 +22,14 @@ inline constexpr const char* kAttachmentCycle = "attachment_cycle";
 inline constexpr const char* kMechanismIdReserved = "mechanism_id_reserved";
 inline constexpr const char* kTemplateLinkInvalid = "template_link_invalid";
 
+// ---- chassis & drivetrain physical model (physics/chassis_spec.h, config/config_checks.h) ----------
+inline constexpr const char* kChassisInvalid = "chassis_invalid";
+inline constexpr const char* kDrivetrainNoWheels = "drivetrain_no_wheels";
+inline constexpr const char* kWheelInvalid = "wheel_invalid";
+inline constexpr const char* kWheelDuplicate = "wheel_duplicate";
+inline constexpr const char* kTireInvalid = "tire_invalid";
+inline constexpr const char* kMotorInvalid = "motor_invalid";
+
 // ---- start positions (config/config_checks.h) ------------------------------------------------------------------
 inline constexpr const char* kStartPositionIdInvalid = "start_position_id_invalid";        // empty
 inline constexpr const char* kStartPositionIdDuplicate = "start_position_id_duplicate";

@@ -7,6 +7,7 @@
 #include "wpiemu/core/mechanisms/mechanism_templates.h"
 #include "wpiemu/core/physics/drivetrains.h"
 #include "wpiemu/core/physics/tire_models.h"
+#include "wpiemu/core/runtime/motion_link_graph.h"
 #include "wpiemu/core/runtime/simulation_session.h"
 #include "wpiemu/sdk/mechanisms/motion_config.h"
 
@@ -267,3 +268,35 @@ TEST_CASE("motion links: wheel and mechanism chains have no cross-owner tick del
         CHECK(d.velocity == doctest::Approx(-a.velocity));
     }
 }
+
+TEST_CASE("motion links: graph resolves topological order and follower motor slots") {
+    RobotConfig c;
+    c.motionLinks = {{"first", {"source", "axis"}, {"follower", "axis"}, 0.25},
+                     {"second", {"follower", "axis"}, {"chained", "axis"}, -2.0}};
+    const std::vector<MotionAxisInfo> axes = {
+        {{"chained", "axis"}, PlantKind::Angular, {{"chained", "motor"}}},
+        {{"follower", "axis"}, PlantKind::Linear, {{"follower", "motor"}, {"follower", "motor2"}}},
+        {{"source", "axis"}, PlantKind::Angular, {{"source", "motor"}}},
+    };
+
+    const auto resolved = runtime::MotionLinkGraph::resolveAndSort(c, axes);
+    REQUIRE_MESSAGE(resolved.ok(), (resolved.ok() ? "" : resolved.error().message));
+    CHECK(resolved.value().order == std::vector<std::size_t>{2, 1, 0});
+    CHECK(resolved.value().sources ==
+          std::vector<std::optional<std::size_t>>{1, 2, std::nullopt});
+    CHECK(resolved.value().ratios[0] == doctest::Approx(-2.0));
+    CHECK(resolved.value().ratios[1] == doctest::Approx(0.25));
+    CHECK(resolved.value().ratios[2] == doctest::Approx(1.0));
+    CHECK(runtime::MotionLinkGraph::isDrivenByMotionLink(axes, resolved.value().sources,
+                                                         {"follower", "motor"}));
+    CHECK(runtime::MotionLinkGraph::isDrivenByMotionLink(axes, resolved.value().sources,
+                                                         {"follower", "motor2"}));
+    CHECK(runtime::MotionLinkGraph::isDrivenByMotionLink(axes, resolved.value().sources,
+                                                         {"chained", "motor"}));
+    CHECK_FALSE(runtime::MotionLinkGraph::isDrivenByMotionLink(axes, resolved.value().sources,
+                                                               {"source", "motor"}));
+
+    c.motionLinks.push_back({"cycle", {"chained", "axis"}, {"source", "axis"}, 1.0});
+    CHECK_FALSE(runtime::MotionLinkGraph::resolveAndSort(c, axes).ok());
+}
+

@@ -11,15 +11,13 @@ target_link_libraries(wpiemu_bridges_builtin PUBLIC wpiemu_sdk PRIVATE wpiemu_br
 wpiemu_target_defaults(wpiemu_bridges_builtin)
 
 # The real HALSIM binding of the HAL bridges exists only when the WPILib HAL was found.
-if(TARGET wpiemu_bridges_hal_halsim)
-    target_link_libraries(wpiemu_bridges_builtin PRIVATE wpiemu_bridges_hal_halsim)
-    target_compile_definitions(wpiemu_bridges_builtin PRIVATE WPIEMU_BUILTIN_HAL_HALSIM)
+if(WPIEMU_HAL_INCLUDE_DIR AND WPIEMU_WPIUTIL_INCLUDE_DIR AND WPIEMU_HAL_LIBRARY)
+    target_compile_definitions(wpiemu_bridges_builtin PRIVATE WPIEMU_BUILTIN_HAL_HALSIM WPIEMU_HAS_HALSIM_BINDING=1)
 endif()
 
 # The real ntcore binding of the vision bridges exists only when ntcore was found.
-if(TARGET wpiemu_bridges_vision_nt)
-    target_link_libraries(wpiemu_bridges_builtin PRIVATE wpiemu_bridges_vision_nt)
-    target_compile_definitions(wpiemu_bridges_builtin PRIVATE WPIEMU_BUILTIN_VISION_NT)
+if(TARGET wpiemu_wpilib_ntcore AND TARGET wpiemu_wpilib_hal)
+    target_compile_definitions(wpiemu_bridges_builtin PRIVATE WPIEMU_BUILTIN_VISION_NT WPIEMU_HAS_VISION_NT=1)
 endif()
 
 # The vendor module publishes its registration function in vendor_bridges.h; use it once it exists.

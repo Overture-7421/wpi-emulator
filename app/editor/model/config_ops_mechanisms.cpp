@@ -23,16 +23,7 @@ std::string baseIdForType(std::string_view type) {
 }
 
 std::string uniqueMechanismId(const RobotConfig& c, std::string base) {
-    if (base.empty()) base = "mechanism";
-    auto taken = [&](const std::string& id) {
-        return reservedOwner(id) || c.findMechanism(id) != nullptr || c.findZone(id) != nullptr || c.findCamera(id) != nullptr ||
-               c.findSensor(id) != nullptr;
-    };
-    if (!taken(base)) return base;
-    for (int n = 2;; ++n) {
-        std::string candidate = base + "_" + std::to_string(n);
-        if (!taken(candidate)) return candidate;
-    }
+    return detail::uniqueEntityId(c, std::move(base), "mechanism");
 }
 
 std::string displayNameFor(const MechanismConfig& m, const EditorCatalog& catalog) {
@@ -178,18 +169,13 @@ std::string duplicateMechanism(RobotConfig& c, std::string_view id) {
     std::vector<std::pair<std::string, std::string>> renamed;   // old -> new
     std::vector<MechanismConfig> copies;
     auto taken = [&](const std::string& candidate) {
-        if (reservedOwner(candidate) || c.findMechanism(candidate) != nullptr || c.findZone(candidate) != nullptr ||
-            c.findCamera(candidate) != nullptr || c.findSensor(candidate) != nullptr)
-            return true;
+        if (reservedOwner(candidate) || c.hasEntityId(candidate)) return true;
         return std::any_of(renamed.begin(), renamed.end(), [&](const auto& r) { return r.second == candidate; });
     };
     for (const auto& oldId : subtree) {
         MechanismConfig copy = *c.findMechanism(oldId);
-        std::string base = oldId;
-        std::string fresh = base;
-        for (int n = 2; taken(fresh); ++n) fresh = base + "_" + std::to_string(n);
-        copy.id = fresh;
-        renamed.emplace_back(oldId, fresh);
+        copy.id = detail::uniqueSuffixed(oldId, "mechanism", "_", taken);
+        renamed.emplace_back(oldId, copy.id);
         copy.mappings.clear();
         copies.push_back(std::move(copy));
     }

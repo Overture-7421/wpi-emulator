@@ -66,21 +66,15 @@ struct TagView {
 }  // namespace
 
 LimelightBridge::LimelightBridge(std::shared_ptr<INtBackend> backend, VisionBridgeOptions options)
-    : sink_(std::move(backend), "bridge.vision.limelight"), options_(options) {}
-
-sdk::Status LimelightBridge::start(sdk::ILogger& logger) {
-    sink_.setLogger(&logger);
-    started_ = true;
-    return sdk::okStatus();
-}
+    : NtVisionBridgeBase(std::move(backend), "bridge.vision.limelight", options) {}
 
 void LimelightBridge::configure(const sdk::VisionSetup& setup) {
     fieldLengthM_ = setup.fieldLengthM;
     fieldWidthM_ = setup.fieldWidthM;
     fieldSizeKnown_ = setup.hasFieldSize();
     fieldWarningLogged_ = false;
-    cams_.configure(setup, sdk::CameraKind::Limelight,
-                    [](const sdk::CameraConfig& c) { return c.name.empty() ? "/limelight" : "/limelight-" + c.name; });
+    configureCameras(setup, sdk::CameraKind::Limelight,
+                     [](const sdk::CameraConfig& c) { return c.name.empty() ? "/limelight" : "/limelight-" + c.name; });
 }
 
 // The robot pose in the field convention `origin`. Blue is our own frame; red and center need the field size, which
@@ -96,60 +90,27 @@ std::optional<sdk::Pose3> LimelightBridge::poseInOrigin(const sdk::Pose3& blue, 
     return detail::inFieldOrigin(blue, origin, fieldLengthM_, fieldWidthM_);
 }
 
-// ntcore may not be ready until the robot constructor ran; callers retry on the next tick.
-bool LimelightBridge::ensureInitialized(Cam& cam, std::int64_t ntNow) {
-    if (cam.initialized) return true;
-    if (!sink_.available()) return false;
-    cam.initialized = true;
+void LimelightBridge::onInitializeCamera(Cam& cam, std::int64_t ntNow) {
     cam.restartHeartbeat();
-
     publishFrame(cam, sdk::CameraFrame{}, ntNow, true);
     sink_.putDouble(cam.root + "/hb", static_cast<double>(cam.heartbeat), ntNow);
     sink_.putDouble(cam.root + "/getpipe", cam.pipeline, ntNow);
     sink_.putString(cam.root + "/getpipetype", kPipelineType, ntNow);
-    return true;
 }
 
-void LimelightBridge::poll(sdk::SimTimeUs simTimeUs) {
-    if (cams_.empty() || !sink_.available()) return;
-    const std::int64_t ntNow = sink_.backend().nowUs();
-    cams_.forEach([&](Cam& cam) {
-        if (!ensureInitialized(cam, ntNow)) return;
-
-        const std::optional<double> pipeline = ntAsDouble(sink_.read(cam.root + "/pipeline"));
-        if (pipeline && *pipeline != cam.pipeline) {
-            cam.pipeline = *pipeline;
-            sink_.putDouble(cam.root + "/getpipe", cam.pipeline, ntNow);
-        }
-
-        if (cam.beat(simTimeUs, options_.heartbeatPeriodUs))
-            sink_.putDouble(cam.root + "/hb", static_cast<double>(cam.heartbeat), ntNow);
-    });
-}
-
-void LimelightBridge::apply(std::span<const sdk::CameraFrame> frames, sdk::SimTimeUs) {
-    if (frames.empty() || !sink_.available()) return;
-    const std::int64_t ntNow = sink_.backend().nowUs();
-    for (const sdk::CameraFrame& frame : frames) {
-        Cam* cam = cams_.find(frame.cameraIndex);
-        if (cam == nullptr || !ensureInitialized(*cam, ntNow)) continue;
-        publishFrame(*cam, frame, ntNow, false);
+void LimelightBridge::onPollCamera(Cam& cam, sdk::SimTimeUs simTimeUs, std::int64_t ntNow) {
+    const std::optional<double> pipeline = ntAsDouble(sink_.read(cam.root + "/pipeline"));
+    if (pipeline && *pipeline != cam.pipeline) {
+        cam.pipeline = *pipeline;
+        sink_.putDouble(cam.root + "/getpipe", cam.pipeline, ntNow);
     }
+
+    if (cam.beat(simTimeUs, options_.heartbeatPeriodUs))
+        sink_.putDouble(cam.root + "/hb", static_cast<double>(cam.heartbeat), ntNow);
 }
 
-void LimelightBridge::reset() {
-    // Republish a "no target" state now when ntcore is up, otherwise on the first available tick.
-    cams_.reset([this](Cam& cam) {
-        if (sink_.available()) ensureInitialized(cam, sink_.backend().nowUs());
-    });
-}
-
-void LimelightBridge::stop() noexcept {
-    if (started_ && sink_.available()) {
-        cams_.forEach([this](const Cam& cam) { sink_.backend().unpublish(cam.root + "/"); });
-    }
-    cams_.clear();
-    started_ = false;
+void LimelightBridge::onFrame(Cam& cam, const sdk::CameraFrame& frame, std::int64_t ntNow) {
+    publishFrame(cam, frame, ntNow, false);
 }
 
 void LimelightBridge::publishFrame(Cam& cam, const sdk::CameraFrame& frame, std::int64_t ntNow, bool synthetic) {

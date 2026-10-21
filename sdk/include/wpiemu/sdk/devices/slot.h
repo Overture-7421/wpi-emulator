@@ -25,23 +25,32 @@ enum class SlotType {
     DistanceSensor,  // model writes distance (m)
 };
 
-// Capabilities a device must have to be mappable onto a slot of this type.
-inline CapabilitySet requiredCapabilities(SlotType t) {
+// Metadata for one SlotType: short diagnostic noun (`shortName`), inspector label (`displayName`) and required capability set.
+struct SlotTypeInfo {
+    SlotType type = SlotType::Motor;
+    const char* shortName = "device";
+    const char* displayName = "Device";
+    CapabilitySet required{};
+};
+
+inline constexpr SlotTypeInfo slotTypeInfo(SlotType t) {
     switch (t) {
-        case SlotType::Motor: return Capability::MotorOutput;
-        case SlotType::PositionSensor: return Capability::PositionSensor;
-        case SlotType::VelocitySensor: return Capability::VelocitySensor;
-        case SlotType::LimitSwitch:
-        case SlotType::BeamBreak: return Capability::DigitalInput;
-        case SlotType::Imu: return Capability::Imu;
-        case SlotType::AnalogSensor: return Capability::AnalogInput;
-        case SlotType::DistanceSensor:
-            return Capability::Distance;
-        case SlotType::Solenoid: return Capability::Solenoid;
-        case SlotType::DigitalOutput: return Capability::DigitalOutput;
+        case SlotType::Motor: return {t, "motor", "Motor controller", Capability::MotorOutput};
+        case SlotType::PositionSensor: return {t, "position sensor", "Position sensor", Capability::PositionSensor};
+        case SlotType::VelocitySensor: return {t, "velocity sensor", "Velocity sensor", Capability::VelocitySensor};
+        case SlotType::LimitSwitch: return {t, "limit switch", "Limit switch", Capability::DigitalInput};
+        case SlotType::BeamBreak: return {t, "beam break", "Beam break", Capability::DigitalInput};
+        case SlotType::Imu: return {t, "IMU", "IMU", Capability::Imu};
+        case SlotType::AnalogSensor: return {t, "analog sensor", "Analog sensor", Capability::AnalogInput};
+        case SlotType::DistanceSensor: return {t, "distance sensor", "Distance sensor", Capability::Distance};
+        case SlotType::Solenoid: return {t, "solenoid", "Solenoid", Capability::Solenoid};
+        case SlotType::DigitalOutput: return {t, "digital output", "Digital output", Capability::DigitalOutput};
     }
     return {};
 }
+
+// Capabilities a device must have to be mappable onto a slot of this type.
+inline constexpr CapabilitySet requiredCapabilities(SlotType t) { return slotTypeInfo(t).required; }
 
 // Most motors one gearbox (a mechanism axis or a drivetrain wheel) can have.
 inline constexpr int kMaxMotorsPerAxis = 8;

@@ -35,7 +35,7 @@ set(WPIEMU_RUNVIEW_SOURCES
 qt_add_library(wpiemu_app_runview STATIC ${WPIEMU_RUNVIEW_SOURCES})
 target_include_directories(wpiemu_app_runview PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(wpiemu_app_runview
-    PUBLIC wpiemu_sdk wpiemu_app_contract wpiemu_app_ui Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::QuickWidgets Qt6::Quick3D)
+    PUBLIC wpiemu_sdk wpiemu_app_ui Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::QuickWidgets Qt6::Quick3D)
 wpiemu_target_defaults(wpiemu_app_runview)
 set_target_properties(wpiemu_app_runview PROPERTIES AUTOMOC ON)
 

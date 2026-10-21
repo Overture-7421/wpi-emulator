@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "wpiemu/core/config/config_validator.h"
-#include "wpiemu/sdk/mechanisms/motion_config.h"
+#include "wpiemu/core/runtime/motion_link_graph.h"
 #include "wpiemu/sdk/mechanisms/attachment.h"
 
 namespace wpiemu::core::runtime {
@@ -136,13 +136,10 @@ SimulationSession::~SimulationSession() = default;
 IMechanismDirectory& SimulationSession::mechanisms() { return *directory_; }
 
 Status SimulationSession::bindSlot(const SlotAddress& slot, const DeviceKey& device) {
-    for (std::size_t i = 0; i < motionAxes_.size(); ++i) {
-        const auto& motors = motionAxes_[i].info.motorSlots;
-        if (motionSources_[i] && std::find(motors.begin(), motors.end(), slot) != motors.end())
-            return makeError(
-                ErrorCode::InvalidArgument,
-                "This axis follows another axis. Remove its motion link before mapping a motor.");
-    }
+    if (MotionLinkGraph::isDrivenByMotionLink(motionAxes_, motionSources_, slot))
+        return makeError(
+            ErrorCode::InvalidArgument,
+            "This axis follows another axis. Remove its motion link before mapping a motor.");
     return hub_.bind(slot, device);
 }
 
@@ -223,43 +220,16 @@ Status SimulationSession::build(SessionParts& parts) {
                                         "mechanism '" + m.id + "' has a broken attachment chain; it is mounted on the chassis root"});
 
     if (!config_.motionLinks.empty()) {
-        if (drivetrain_) {
-            motionAxes_ = drivetrain_->motionAxes();
-            motionDrivetrain_ = !motionAxes_.empty();
-        }
-        for (const auto& mechanism : mechanismInstances_) {
-            auto axes = mechanism->motionAxes();
-            motionMechanisms_.push_back(!axes.empty());
-            for (auto& axis : axes) motionAxes_.push_back(std::move(axis));
-        }
-        std::vector<MotionAxisInfo> infos;
-        for (const auto& axis : motionAxes_) {
-            infos.push_back(axis.info);
-            motionStarts_.push_back(axis.state());
-        }
-        const auto issues = sdk::motionLinkIssues(config_, infos);
-        if (!issues.empty()) return makeError(ErrorCode::InvalidArgument, issues.front().message);
-        motionSources_.resize(motionAxes_.size());
-        motionRatios_.assign(motionAxes_.size(), 1.0);
-        for (std::size_t i = 0; i < motionAxes_.size(); ++i) {
-            if (const auto* link = sdk::motionLinkTo(config_, motionAxes_[i].info.address)) {
-                for (std::size_t j = 0; j < motionAxes_.size(); ++j)
-                    if (motionAxes_[j].info.address == link->source) motionSources_[i] = j;
-                motionRatios_[i] = link->ratio;
-            }
-        }
-        std::vector<bool> ordered(motionAxes_.size(), false);
-        while (motionOrder_.size() < motionAxes_.size()) {
-            const auto previousSize = motionOrder_.size();
-            for (std::size_t i = 0; i < motionAxes_.size(); ++i)
-                if (!ordered[i] && (!motionSources_[i] || ordered[*motionSources_[i]])) {
-                    motionOrder_.push_back(i);
-                    ordered[i] = true;
-                }
-            if (motionOrder_.size() == previousSize)
-                return makeError(ErrorCode::InvalidArgument,
-                                 "Motion links contain a dependency cycle.");
-        }
+        Result<MotionLinkGraph> graph =
+            MotionLinkGraph::build(config_, drivetrain_.get(), mechanismInstances_);
+        if (!graph) return graph.error();
+        motionAxes_ = std::move(graph.value().axes);
+        motionStarts_ = std::move(graph.value().starts);
+        motionSources_ = std::move(graph.value().sources);
+        motionRatios_ = std::move(graph.value().ratios);
+        motionOrder_ = std::move(graph.value().order);
+        motionMechanisms_ = std::move(graph.value().mechanismHasAxes);
+        motionDrivetrain_ = graph.value().drivetrainHasAxes;
     }
 
     // 5. game state

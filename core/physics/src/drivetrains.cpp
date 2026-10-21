@@ -112,34 +112,25 @@ WheelDrive TractionDrivetrain::driveFor(const Wheel& w, const WheelCommand& cmd,
     const int count = driveMotorCount(s);
     const double eta = std::clamp(static_cast<double>(s.driveEfficiency), 0.01, 1.0);
     const double motorOmega = gear * w.omega;
-    const double nominal = std::max(1e-3, w.driveMotor->spec().nominalVoltageV);
+    const double limit = s.driveCurrentLimitA;
 
     // Each motor has its own voltage (a reversed one fights the others); torque, damping and current add up.
     double torqueSum = 0.0, dampingSum = 0.0;
-    bool limited = false;
     supplyCurrentA = 0.0;
     for (int i = 0; i < count; ++i) {
         const double voltageV = finiteOrZero(driveVoltage(cmd, i));
-        double current = w.driveMotor->currentA(voltageV, motorOmega);
-        double torque = w.driveMotor->torqueNm(voltageV, motorOmega);
-        const double slope = w.driveMotor->torqueNm(voltageV, motorOmega + 1.0) - torque;  // d torque / d omega, < 0
-        const double limit = s.driveCurrentLimitA;
-        if (limit > 0.0 && std::fabs(current) > limit) {
-            torque *= limit / std::fabs(current);
-            current = std::copysign(limit, current);
-            limited = true;
-        } else {
-            dampingSum += std::max(0.0, -slope);
-        }
-        torqueSum += torque;
-        supplyCurrentA += std::max(0.0, voltageV * current / nominal);
+        torqueSum += w.driveMotor->limitedTorqueNm(voltageV, motorOmega, limit);
+        dampingSum += w.driveMotor->dampingNmS(voltageV, motorOmega, limit);
+        supplyCurrentA += w.driveMotor->supplyCurrentA(voltageV, motorOmega, limit);
     }
 
+    const ReflectedShaftDrive reflected = reflectShaftDrive(torqueSum, dampingSum, supplyCurrentA, count, gear, eta,
+                                                            options_.rotorInertiaKgM2, s.inertiaKgM2);
     WheelDrive d;
     d.omegaRadPerSec = static_cast<float>(w.omega);
-    d.torqueNm = static_cast<float>(eta * gear * torqueSum);
-    d.dampingNmS = static_cast<float>(dampingSum * eta * gear * gear);
-    d.inertiaKgM2 = static_cast<float>(static_cast<double>(count) * options_.rotorInertiaKgM2 * gear * gear + s.inertiaKgM2);
+    d.torqueNm = static_cast<float>(reflected.torqueNm);
+    d.dampingNmS = static_cast<float>(reflected.dampingNmS);
+    d.inertiaKgM2 = static_cast<float>(reflected.inertiaKgM2);
     return d;
 }
 
@@ -147,22 +138,16 @@ void TractionDrivetrain::stepSteer(Wheel& w, WheelState& st, double voltageV, fl
     const WheelSpec& s = *w.spec;
     const double gear = std::max(s.steerGearRatio, 1e-6f);
     const double eta = std::clamp(static_cast<double>(options_.steerEfficiency), 0.01, 1.0);
-    const double motorOmega = gear * w.steerOmega;
+    const ReflectedShaftDrive reflected = reflectSingleMotorShaftDrive(
+        *w.steerMotor, voltageV, w.steerOmega, 0.0, gear, eta, options_.rotorInertiaKgM2, s.steerInertiaKgM2);
+    const double inertia = std::max(1e-9, reflected.inertiaKgM2);
 
-    const double current = w.steerMotor->currentA(voltageV, motorOmega);
-    const double torque = w.steerMotor->torqueNm(voltageV, motorOmega);
-    const double slope = w.steerMotor->torqueNm(voltageV, motorOmega + 1.0) - torque;
-    const double azimuthTorque = eta * gear * torque;
-    const double damping = std::max(0.0, -slope) * eta * gear * gear;
-    const double inertia = std::max(1e-9, s.steerInertiaKgM2 + options_.rotorInertiaKgM2 * gear * gear);
-
-    const double ie = inertia + dt * damping;
-    const double steerOmegaNext = w.steerOmega + dt * azimuthTorque / ie;
+    const double ie = inertia + dt * reflected.dampingNmS;
+    const double steerOmegaNext = w.steerOmega + dt * reflected.torqueNm / ie;
     if (std::isfinite(steerOmegaNext)) w.steerOmega = steerOmegaNext;
     st.steerAngleRad += w.steerOmega * dt;
     st.steerOmegaRadPerSec = w.steerOmega;
-    const double nominal = std::max(1e-3, w.steerMotor->spec().nominalVoltageV);
-    st.steerMotorCurrentA = std::max(0.0, voltageV * current / nominal);
+    st.steerMotorCurrentA = reflected.supplyCurrentA;
 }
 
 void TractionDrivetrain::step(std::span<const WheelCommand> commands, float dt) {
@@ -327,24 +312,23 @@ void TractionDrivetrain::advanceWheel(std::size_t i, WheelCommand cmd, float dt,
 }
 
 Status registerDrivetrains(DrivetrainRegistry& registry) {
+    const auto infoFor = [](std::string_view kind) {
+        for (DrivetrainEntry& e : builtinDrivetrainInfos())
+            if (e.kind == kind) return std::move(e.info);
+        return DrivetrainInfo{};
+    };
     if (auto s = registry.registerDrivetrain(
-            drivetrain_kind::kSwerve,
-            {"Swerve", "Four or more independently steered and driven modules",
-             [](const DrivetrainSpec& spec) { return tractionSlotSpecs(spec, true); }},
+            drivetrain_kind::kSwerve, infoFor(drivetrain_kind::kSwerve),
             [](const DrivetrainBuildArgs& a) { return std::make_unique<SwerveDrivetrain>(a); });
         !s.ok())
         return s;
     if (auto s = registry.registerDrivetrain(
-            drivetrain_kind::kTank,
-            {"Tank / differential", "Fixed-heading wheels, any number per side",
-             [](const DrivetrainSpec& spec) { return tractionSlotSpecs(spec, false); }},
+            drivetrain_kind::kTank, infoFor(drivetrain_kind::kTank),
             [](const DrivetrainBuildArgs& a) { return std::make_unique<TankDrivetrain>(a); });
         !s.ok())
         return s;
     return registry.registerDrivetrain(
-        drivetrain_kind::kMecanum,
-        {"Mecanum", "Four roller wheels with +-45 degree traction axes",
-         [](const DrivetrainSpec& spec) { return tractionSlotSpecs(spec, false); }},
+        drivetrain_kind::kMecanum, infoFor(drivetrain_kind::kMecanum),
         [](const DrivetrainBuildArgs& a) { return std::make_unique<MecanumDrivetrain>(a); });
 }
 

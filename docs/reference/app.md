@@ -17,8 +17,9 @@ and link only the SDK (the page libraries also `ui`, the run view also the contr
 headers; `common`, `host`, `wizard` and `shell` compose them.
 
 [`IRuntimeHost`](../../app/contract/runtime_host.h) is the UI-thread seam for robot-process and
-link status, scene descriptions, immutable snapshots, logs, and run commands. It lives in the
-SDK+Qt `wpiemu_app_contract` target, so the run view consumes it without core. The editor adapter
+link status, scene descriptions, immutable snapshots, logs, and run commands. It is compiled into the
+SDK+Qt `wpiemu_app_ui` target (with `app/contract` enforced as its own include boundary), so the run view
+consumes it without core. The editor adapter
 and `RunPage` share the same host: discovery and the run view refer to the same robot instance.
 Selecting the open project is a separate interface, `IProjectBinding`, reached only through
 `AppServices::bindRuntime`; hosts implement both (`IProjectRuntimeHost`).

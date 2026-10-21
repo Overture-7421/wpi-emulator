@@ -37,14 +37,12 @@ if(WPIEMU_WPILIB_ROOT)
         "${WPIEMU_WPILIB_ROOT}/osx/universal/shared"
         NO_DEFAULT_PATH)
     if(WPIEMU_HAL_INCLUDE_DIR AND WPIEMU_WPIUTIL_INCLUDE_DIR AND WPIEMU_HAL_LIBRARY)
-        add_library(wpiemu_bridges_hal_halsim STATIC src/hal_sim_binding.cpp)
-        add_library(wpiemu::bridges_hal_halsim ALIAS wpiemu_bridges_hal_halsim)
-        target_include_directories(wpiemu_bridges_hal_halsim PUBLIC include)
+        target_sources(wpiemu_bridges_hal PRIVATE src/hal_sim_binding.cpp)
         # SYSTEM: WPILib headers are third-party and not warning-clean under /W4.
-        target_include_directories(wpiemu_bridges_hal_halsim SYSTEM PRIVATE
+        target_include_directories(wpiemu_bridges_hal SYSTEM PRIVATE
             "${WPIEMU_HAL_INCLUDE_DIR}" "${WPIEMU_WPIUTIL_INCLUDE_DIR}")
-        target_link_libraries(wpiemu_bridges_hal_halsim PUBLIC wpiemu_bridges_hal "${WPIEMU_HAL_LIBRARY}")
-        wpiemu_target_defaults(wpiemu_bridges_hal_halsim)
+        target_link_libraries(wpiemu_bridges_hal PUBLIC "${WPIEMU_HAL_LIBRARY}")
+        target_compile_definitions(wpiemu_bridges_hal PUBLIC WPIEMU_HAS_HALSIM_BINDING=1)
         message(STATUS "wpiemu: HALSIM binding enabled (${WPIEMU_HAL_LIBRARY})")
     else()
         message(WARNING "WPIEMU_WPILIB_ROOT is set but HAL headers/wpiutil headers/wpiHal were not all found "

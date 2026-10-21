@@ -49,18 +49,15 @@ CurrentLimitedMotorModel::CurrentLimitedMotorModel(std::unique_ptr<sdk::IMotorMo
 }
 
 double CurrentLimitedMotorModel::currentA(double voltageV, double omega) const {
-    const double i = inner_->currentA(voltageV, omega);
-    return limitA_ > 0.0 ? std::clamp(i, -limitA_, limitA_) : i;
+    return inner_->limitedCurrentA(voltageV, omega, limitA_);
 }
 
 double CurrentLimitedMotorModel::torqueNm(double voltageV, double omega) const {
-    return spec().ktNmPerAmp() * currentA(voltageV, omega);
+    return inner_->limitedTorqueNm(voltageV, omega, limitA_);
 }
 
 double CurrentLimitedMotorModel::limitedVoltage(double voltageV, double omega) const {
-    if (limitA_ <= 0.0) return voltageV;
-    const double backEmf = omega / spec().kvRadPerSecPerVolt();
-    return backEmf + spec().resistanceOhm() * currentA(voltageV, omega);
+    return inner_->limitedVoltageV(voltageV, omega, limitA_);
 }
 
 }  // namespace wpiemu::core::mechanisms

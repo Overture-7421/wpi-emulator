@@ -27,13 +27,37 @@ add_library(wpiemu_app_common STATIC
     ../wizard/toolchain_page.cpp
     ../wizard/wizard_dialog.cpp
     ../wizard/wizard_page.h
-    ../wizard/wizard_view_model.cpp)
+    ../wizard/wizard_view_model.cpp
+    # The application shell sources live in ../shell and are compiled into this library.
+    ../shell/about_dialog.cpp
+    ../shell/main_window.cpp
+    ../shell/mode_switcher.cpp
+    ../shell/page_factory.cpp
+    ../shell/settings_dialog.cpp
+    ../shell/shell_controller.cpp
+    ../shell/welcome_page.cpp)
 # Includes are rooted at app/ ("common/x.h", "wizard/x.h", "shell/x.h").
 target_include_directories(wpiemu_app_common PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(wpiemu_app_common
-    PUBLIC wpiemu_sdk wpiemu_core wpiemu_app_host wpiemu_app_contract wpiemu_app_ui Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg
+    PUBLIC wpiemu_sdk wpiemu_core wpiemu_app_host wpiemu_app_ui Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg
     PRIVATE wpiemu_plugins_builtin)
+target_compile_definitions(wpiemu_app_common PRIVATE WPIEMU_APP_VERSION="${PROJECT_VERSION}")
 wpiemu_target_defaults(wpiemu_app_common)
+
+# The editor and run view are separate libraries owned by their own streams. The shell adapts the
+# application to the editor's backend interface and hands the run view the shared runtime host; a placeholder
+# page stands in when a page library is not part of the build.
+option(WPIEMU_APP_USE_EDITOR "Embed the robot editor page when its library is part of the build" ON)
+option(WPIEMU_APP_USE_RUNVIEW "Embed the run view page when its library is part of the build" ON)
+if(WPIEMU_APP_USE_EDITOR AND TARGET wpiemu_app_editor AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../editor/editor_page.h")
+    target_sources(wpiemu_app_common PRIVATE ../shell/editor_backend_adapter.cpp)
+    target_link_libraries(wpiemu_app_common PUBLIC wpiemu_app_editor)
+    target_compile_definitions(wpiemu_app_common PUBLIC WPIEMU_APP_HAS_EDITOR)
+endif()
+if(WPIEMU_APP_USE_RUNVIEW AND TARGET wpiemu_app_runview AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../runview/run_page.h")
+    target_link_libraries(wpiemu_app_common PUBLIC wpiemu_app_runview)
+    target_compile_definitions(wpiemu_app_common PUBLIC WPIEMU_APP_HAS_RUNVIEW)
+endif()
 # Build-tree fallback of the extension lookup (an installed app finds halsim_wpiemu next to itself first).
 if(TARGET halsim_wpiemu)
     add_dependencies(wpiemu_app_common halsim_wpiemu)

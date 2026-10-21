@@ -56,8 +56,8 @@ model. Keep stable issue codes and paths; the authoritative rules are in
 [ConfigValidator](../../core/runtime/src/config/config_validator.cpp), which sequences the steps of
 `config_validator_robot.cpp` (chassis, drivetrain, sim, battery) and `config_validator_slots.cpp`
 (mechanisms and slot mappings), and the
-[SDK validation keys](../../sdk/include/wpiemu/sdk/config/validation_codes.h). The start-position,
-zone, camera and sensor rules exist once, in
+[SDK validation keys](../../sdk/include/wpiemu/sdk/config/validation_codes.h). The chassis, wheel/tire/motor,
+start-position, zone, camera and sensor rules exist once, in
 [config_checks.h](../../sdk/include/wpiemu/sdk/config/config_checks.h); they ask an `IConfigCatalog`
 for mechanism templates, the selected plugin id, zone kinds and game values, so the validator and
 the editor's fake backend apply identical checks.

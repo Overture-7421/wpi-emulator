@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "wpiemu/sdk/config/config_io.h"
+#include "wpiemu/sdk/config/validation_codes.h"
 #include "wpiemu/sdk/devices/device_descriptor.h"
 #include "wpiemu/sdk/game/plugin_registry.h"
 #include "wpiemu/sdk/mechanisms/mechanism.h"
@@ -14,18 +15,19 @@
 namespace wpiemu::core::config {
 
 // Stable machine keys of the core validator (Issue::code), next to sdk::validation_code. The keys of the
-// start-position, zone, camera and sensor rules live there, with the rules (sdk/config/config_checks.h).
+// chassis/wheel/tire/motor, start-position, zone, camera and sensor rules live in sdk::validation_code
+// (sdk/config/config_checks.h).
 namespace issue_code {
 inline constexpr const char* kSchemaVersion = "schema_version_unsupported";
-inline constexpr const char* kChassisInvalid = "chassis_invalid";
+inline constexpr const char* kChassisInvalid = sdk::validation_code::kChassisInvalid;
 inline constexpr const char* kStartPoseInvalid = "start_pose_invalid";
 inline constexpr const char* kDrivetrainKindUnknown = "drivetrain_kind_unknown";
 inline constexpr const char* kTireModelUnknown = "tire_model_unknown";
-inline constexpr const char* kDrivetrainNoWheels = "drivetrain_no_wheels";
-inline constexpr const char* kWheelInvalid = "wheel_invalid";
-inline constexpr const char* kWheelDuplicate = "wheel_duplicate";
-inline constexpr const char* kTireInvalid = "tire_invalid";
-inline constexpr const char* kMotorInvalid = "motor_invalid";
+inline constexpr const char* kDrivetrainNoWheels = sdk::validation_code::kDrivetrainNoWheels;
+inline constexpr const char* kWheelInvalid = sdk::validation_code::kWheelInvalid;
+inline constexpr const char* kWheelDuplicate = sdk::validation_code::kWheelDuplicate;
+inline constexpr const char* kTireInvalid = sdk::validation_code::kTireInvalid;
+inline constexpr const char* kMotorInvalid = sdk::validation_code::kMotorInvalid;
 inline constexpr const char* kMechanismIdInvalid = "mechanism_id_invalid";
 inline constexpr const char* kMechanismIdDuplicate = "mechanism_id_duplicate";
 inline constexpr const char* kMechanismTypeUnknown = "mechanism_type_unknown";

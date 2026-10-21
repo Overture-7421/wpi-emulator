@@ -14,32 +14,19 @@ namespace {
 void readMaterial(const Value* v, const std::string& path, Ctx& ctx, Material& m) {
     if (v == nullptr) return;
     ObjReader r(*v, path, ctx);
-    r.flt("friction", m.friction);
-    r.flt("restitution", m.restitution);
-    r.flt("rollingResistance", m.rollingResistance);
+    materialFields(r, m);
 }
 
 void readMotor(const Value* v, const std::string& path, Ctx& ctx, MotorSpec& m) {
     if (v == nullptr) return;
     ObjReader r(*v, path, ctx);
-    r.str("name", m.name);
-    r.dbl("nominalVoltageV", m.nominalVoltageV);
-    r.dbl("stallTorqueNm", m.stallTorqueNm);
-    r.dbl("stallCurrentA", m.stallCurrentA);
-    r.dbl("freeCurrentA", m.freeCurrentA);
-    r.dbl("freeSpeedRadPerSec", m.freeSpeedRadPerSec);
+    motorFields(r, m);
 }
 
 void readTire(const Value* v, const std::string& path, Ctx& ctx, TireParams& t) {
     if (v == nullptr) return;
     ObjReader r(*v, path, ctx);
-    r.flt("mu", t.mu);
-    r.flt("slideRatio", t.slideRatio);
-    r.flt("peakSlipLong", t.peakSlipLong);
-    r.flt("peakSlipLat", t.peakSlipLat);
-    r.flt("vRefMps", t.vRefMps);
-    r.flt("lateralScale", t.lateralScale);
-    r.flt("tractionAngleRad", t.tractionAngleRad);
+    tireFields(r, t);
 }
 
 PrimitiveSpec readPrimitive(const Value& v, const std::string& path, Ctx& ctx) {
@@ -52,13 +39,7 @@ PrimitiveSpec readPrimitive(const Value& v, const std::string& path, Ctx& ctx) {
         else if (kind == "cylinder") p.kind = PrimitiveKind::Cylinder;
         else ctx.err(join(path, "kind"), "unknown primitive kind '" + kind + "' (box|cylinder)");
     }
-    r.pose("local", p.local);
-    r.vec3("sizeM", p.sizeM);
-    r.flt("radiusM", p.radiusM);
-    r.flt("heightM", p.heightM);
-    r.str("color", p.color);
-    r.boolean("collides", p.collides);
-    r.flt("massKg", p.massKg);
+    primitiveGeometryFields(r, p);
     return p;
 }
 
@@ -131,12 +112,7 @@ void readWheel(const Value& v, const std::string& path, Ctx& ctx, WheelSpec& w) 
 void readChassis(const Value& v, Ctx& ctx, RobotConfig& cfg) {
     ObjReader r(v, "chassis", ctx);
     ChassisSpec& c = cfg.chassis;
-    r.vec3("sizeM", c.sizeM);
-    r.flt("massKg", c.massKg);
-    r.flt("comHeightM", c.comHeightM);
-    r.vec3("comOffsetM", c.comOffsetM);
-    r.flt("groundClearanceM", c.groundClearanceM);
-    r.vec3("inertiaDiagKgM2", c.inertiaDiagKgM2);
+    chassisCoreFields(r, c);
     readMaterial(r.get("material"), "chassis.material", ctx, c.material);
     c.primitives = readPrimitives(r.get("primitives"), "chassis.primitives", ctx);
 }
@@ -144,9 +120,7 @@ void readChassis(const Value& v, Ctx& ctx, RobotConfig& cfg) {
 void readDrivetrain(const Value& v, Ctx& ctx, RobotConfig& cfg) {
     ObjReader r(v, "drivetrain", ctx);
     DrivetrainConfig& d = cfg.drivetrain;
-    r.str("kind", d.spec.kind);
-    r.str("tireModel", d.spec.tireModel);
-    r.flt("loadTransferTauS", d.spec.loadTransferTauS);
+    drivetrainCoreFields(r, d.spec);
     if (const Value* wheels = r.get("wheels")) {
         if (!wheels->isArray()) {
             ctx.err("drivetrain.wheels", "expected an array");
@@ -167,11 +141,7 @@ void readMechanism(const Value& v, const std::string& path, Ctx& ctx, RobotConfi
     r.str("id", m.id);
     r.str("type", m.type);
     r.str("label", m.label);
-    if (const Value* a = r.get("attachment")) {
-        ObjReader ar(*a, join(path, "attachment"), ctx);
-        ar.str("parentMechanismId", m.attachment.parentMechanismId);
-        ar.str("parentLink", m.attachment.parentLink);
-    }
+    r.attachment("attachment", m.attachment);
     r.pose("mount", m.mount);
     m.geometry = readPrimitives(r.get("geometry"), join(path, "geometry"), ctx);
     if (const Value* props = r.get("properties")) {
@@ -188,11 +158,7 @@ void readZone(const Value& v, const std::string& path, Ctx& ctx, RobotConfig& cf
     r.str("id", z.id);
     r.str("kind", z.kind);
     r.str("label", z.label);
-    if (const Value* a = r.get("attachment")) {
-        ObjReader ar(*a, join(path, "attachment"), ctx);
-        ar.str("parentMechanismId", z.attachment.parentMechanismId);
-        ar.str("parentLink", z.attachment.parentLink);
-    }
+    r.attachment("attachment", z.attachment);
     r.pose("pose", z.local);
     r.vec3("sizeM", z.sizeM);
     if (const Value* props = r.get("properties")) {
@@ -244,22 +210,8 @@ void readCamera(const Value& v, const std::string& path, Ctx& ctx, RobotConfig& 
         else if (kind == cameraKindKey(CameraKind::PhotonVision)) c.kind = CameraKind::PhotonVision;
         else ctx.err(join(path, "kind"), "unknown camera kind '" + kind + "' (limelight|photonvision)");
     }
-    if (const Value* a = r.get("attachment")) {
-        ObjReader ar(*a, join(path, "attachment"), ctx);
-        ar.str("parentMechanismId", c.attachment.parentMechanismId);
-        ar.str("parentLink", c.attachment.parentLink);
-    }
-    r.pose("pose", c.local);
-    r.dbl("hFovDeg", c.hFovDeg);
-    r.dbl("vFovDeg", c.vFovDeg);
-    r.dbl("maxRangeM", c.maxRangeM);
-    r.dbl("maxIncidenceDeg", c.maxIncidenceDeg);
-    r.dbl("fps", c.fps);
-    r.dbl("latencyMs", c.latencyMs);
-    r.i32("widthPx", c.widthPx);
-    r.i32("heightPx", c.heightPx);
-    r.dbl("positionNoiseM", c.positionNoiseM);
-    r.dbl("yawNoiseDeg", c.yawNoiseDeg);
+    r.attachment("attachment", c.attachment);
+    cameraOpticsFields(r, c);
     cfg.cameras.push_back(std::move(c));
 }
 
@@ -311,10 +263,7 @@ void readStartPose(const Value& v, Ctx& ctx, RobotConfig& cfg) {
 
 void readProject(const Value& v, Ctx& ctx, RobotConfig& cfg) {
     ObjReader r(v, "project", ctx);
-    r.str("path", cfg.project.path);
-    r.str("language", cfg.project.language);
-    r.i32("wpilibYear", cfg.project.wpilibYear);
-    r.str("gradleRioVersion", cfg.project.gradleRioVersion);
+    projectFields(r, cfg.project);
 }
 
 void readMechanisms(const Value& ms, Ctx& ctx, RobotConfig& cfg) {
@@ -391,9 +340,7 @@ void readMotionLinks(const Value& links, Ctx& ctx, RobotConfig& cfg) {
 
 void readBattery(const Value& b, Ctx& ctx, RobotConfig& cfg) {
     ObjReader r(b, "battery", ctx);
-    r.dbl("nominalVoltageV", cfg.battery.nominalVoltageV);
-    r.dbl("internalResistanceOhm", cfg.battery.internalResistanceOhm);
-    r.dbl("brownoutVoltageV", cfg.battery.brownoutVoltageV);
+    batteryFields(r, cfg.battery);
 }
 
 void readSim(const Value& s, Ctx& ctx, RobotConfig& cfg) {
@@ -402,10 +349,7 @@ void readSim(const Value& s, Ctx& ctx, RobotConfig& cfg) {
     r.u64("seed", cfg.sim.seed);
     if (const Value* ph = r.get("physics")) {
         ObjReader pr(*ph, "sim.physics", ctx);
-        pr.i32("workerCount", cfg.sim.physics.workerCount);
-        pr.i32("subSteps", cfg.sim.physics.subSteps);
-        pr.boolean("sleeping", cfg.sim.physics.sleeping);
-        pr.vec3("gravity", cfg.sim.physics.gravity);
+        physicsFields(pr, cfg.sim.physics);
     }
 }
 

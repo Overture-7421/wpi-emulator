@@ -4,9 +4,7 @@ find_package(Qt6 REQUIRED COMPONENTS Svg)
 
 option(WPIEMU_BUILD_UI_DEMOS "Build the standalone UI demo executables (wpiemu_editor_demo, wpiemu_runview_demo)" ON)
 
-# The host seam every page and the shell share (SDK + Qt only); declared before the pages that link it.
-add_subdirectory(contract)
-# The Qt scene support both page libraries share (SDK + Qt only), declared before them for the same reason.
+# The Qt scene support and host seam (SDK + Qt only) both page libraries share, declared before them.
 add_subdirectory(ui)
 
 # Page libraries owned by the editor / run view streams; optional so the shell builds without them.
@@ -21,11 +19,10 @@ endforeach()
 set(CMAKE_AUTOUIC OFF)
 add_subdirectory(host)
 add_subdirectory(common)
-add_subdirectory(shell)
 
 qt_add_executable(wpiemu_app main.cpp)
 target_link_libraries(wpiemu_app PRIVATE
-    wpiemu_app_shell wpiemu_app_common
+    wpiemu_app_common
     wpiemu_core wpiemu_ipc wpiemu_sdk wpiemu_plugins_builtin
     Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::Quick3D Qt6::QuickWidgets)
 target_compile_definitions(wpiemu_app PRIVATE WPIEMU_APP_VERSION="${PROJECT_VERSION}")
@@ -33,6 +30,7 @@ wpiemu_target_defaults(wpiemu_app)
 set_target_properties(wpiemu_app PROPERTIES
     WIN32_EXECUTABLE OFF
     MACOSX_BUNDLE ON)
+wpiemu_qt_deploy_runtime(wpiemu_app)
 
 # Dev convenience (Visual Studio): the Qt runtime is not deployed next to the exe (the shared bin/ directory also holds the
 # test executables, which must keep resolving Qt from PATH), so generate the git-ignored .vs/launch.vs.json that puts the

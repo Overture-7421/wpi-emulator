@@ -8,12 +8,19 @@
 #include <string_view>
 #include <vector>
 
-#include "nt_sink.h"
+#include "nt_vision_bridge.h"
 #include "wpiemu/bridges/vision/vision_bridges.h"
 #include "wpiemu/sdk/vision/camera_bridge.h"
 #include "wpiemu/sdk/vision/vision_bridge.h"
 
 namespace wpiemu::bridges::vision {
+
+struct PhotonCam : sdk::CameraState {
+    std::int64_t pipelineIndex = 0;
+    bool driverMode = false;
+    std::int64_t fpsLimit = -1;
+    std::int64_t sequence = 0;  // for synthetic (empty) results
+};
 
 // PhotonVision coprocessor (PhotonLib) NetworkTables presentation of simulated AprilTag cameras.
 // Root table "photonvision" (version, ledModeState), camera table "photonvision/<CameraConfig::name>".
@@ -31,38 +38,30 @@ namespace wpiemu::bridges::vision {
 // Versions: the type string embeds the message-definition hash, which the robot's PhotonLib compares and
 // throws on mismatch. Only versions whose definitions were verified are served; for any other
 // VisionSetup::photonVersion an error is logged once and no PhotonVision camera is published.
-class PhotonBridge final : public sdk::IVisionBridge {
+class PhotonBridge final : public detail::NtVisionBridgeBase<PhotonBridge, PhotonCam> {
 public:
+    using Cam = PhotonCam;
+
     PhotonBridge(std::shared_ptr<INtBackend> backend, VisionBridgeOptions options);
 
     std::string_view name() const override { return "vision.photonvision"; }
-    sdk::Status start(sdk::ILogger& logger) override;
     void configure(const sdk::VisionSetup& setup) override;
-    void poll(sdk::SimTimeUs simTimeUs) override;
-    void apply(std::span<const sdk::CameraFrame> frames, sdk::SimTimeUs simTimeUs) override;
-    void reset() override;
-    void stop() noexcept override;
 
 private:
-    struct Cam : sdk::CameraState {
-        std::int64_t pipelineIndex = 0;
-        bool driverMode = false;
-        std::int64_t fpsLimit = -1;
-        std::int64_t sequence = 0;  // for synthetic (empty) results
-    };
+    friend class detail::NtVisionBridgeBase<PhotonBridge, PhotonCam>;
 
-    bool ensureInitialized(Cam& cam, std::int64_t ntNow);
+    bool isEnabled() const { return enabled_; }
+    void onInitializeCamera(Cam& cam, std::int64_t ntNow);
+    void onPollCamera(Cam& cam, sdk::SimTimeUs simTimeUs, std::int64_t ntNow);
+    void onPollBridge(std::int64_t ntNow);
+    void onFrame(Cam& cam, const sdk::CameraFrame& frame, std::int64_t ntNow);
     void publishFrame(Cam& cam, const sdk::CameraFrame* frame, std::int64_t ntNow);
 
-    detail::NtSink sink_;
-    VisionBridgeOptions options_;
-    sdk::CameraSet<Cam> cams_;
     std::string version_;
     bool enabled_ = true;
     std::string warnedVersion_;
     bool rootInitialized_ = false;
     std::int64_t ledMode_ = -1;
-    bool started_ = false;
 };
 
 }  // namespace wpiemu::bridges::vision

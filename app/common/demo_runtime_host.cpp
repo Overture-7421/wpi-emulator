@@ -62,7 +62,6 @@ std::vector<sdk::DiscoveredDevice> DemoRuntimeHost::demoDevicesFor(const sdk::Ro
 
 void DemoRuntimeHost::setProject(const HostProject& project) {
     const QString& projectPath = project.path;
-    const sdk::IGameModule* game = project.game;
     // A different project invalidates the run; edits of the same project are applied live.
     if (projectPath != projectPath_) {
         beginIntent_.projectReplaced();
@@ -70,19 +69,8 @@ void DemoRuntimeHost::setProject(const HostProject& project) {
     }
     const bool sameProject = projectPath == projectPath_;
     projectPath_ = projectPath;
-    scene_ = {};
-    scene_.config = project.config;
-    scene_.projectPath = projectPath;
-    scene_.defaultStation = project.defaultStation;
+    scene_ = makeHostScene(project);
     if (startSelection_.reconcile(scene_.config.get(), sameProject)) emit startPositionChanged();
-    if (game != nullptr) {
-        scene_.hud = game->contributeHud();
-        scene_.panels = game->contributeEditorPanels();
-        scene_.zoneKinds = game->contributeZoneKinds();
-        scene_.gameValues = game->contributeGameValues();
-        scene_.tags = game->aprilTagLayout();
-        scene_.gameName = QString::fromStdString(game->metadata().displayName);
-    }
     plannedDevices_ = scene_.config ? demoDevicesFor(*scene_.config) : std::vector<sdk::DiscoveredDevice>{};
     if (!sameProject) {
         announced_.clear();

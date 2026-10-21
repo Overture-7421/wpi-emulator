@@ -28,16 +28,7 @@ bool nameTaken(const RobotConfig& c, sdk::CameraKind kind, const std::string& na
 
 // ---- cameras ----------------------------------------------------------------------------------
 std::string uniqueCameraId(const RobotConfig& c, std::string base) {
-    if (base.empty()) base = "camera";
-    auto taken = [&](const std::string& id) {
-        return reservedOwner(id) || c.findCamera(id) != nullptr || c.findZone(id) != nullptr || c.findMechanism(id) != nullptr ||
-               c.findSensor(id) != nullptr;
-    };
-    if (!taken(base)) return base;
-    for (int n = 2;; ++n) {
-        std::string candidate = base + "_" + std::to_string(n);
-        if (!taken(candidate)) return candidate;
-    }
+    return detail::uniqueEntityId(c, std::move(base), "camera");
 }
 
 std::string cameraDisplayName(const sdk::CameraConfig& cam) {
@@ -46,10 +37,7 @@ std::string cameraDisplayName(const sdk::CameraConfig& cam) {
 }
 
 Pose3 cameraParentWorld(const RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam) {
-    const Pose3 chassis = chassisFrameWorld(c.chassis);
-    if (cam.attachment.onChassis()) return chassis;
-    if (const auto p = linkInChassis(c, catalog, cam.attachment.parentMechanismId, cam.attachment.parentLink)) return chassis * *p;
-    return chassis;
+    return detail::attachmentParentWorld(c, catalog, cam.attachment);
 }
 
 Pose3 cameraWorld(const RobotConfig& c, const EditorCatalog& catalog, const sdk::CameraConfig& cam) {
@@ -60,7 +48,8 @@ Pose3 cameraRobotPose(const RobotConfig& c, const EditorCatalog& catalog, const 
     return cameraWorld(c, catalog, cam);
 }
 
-std::string uniqueCameraName(const RobotConfig& c, sdk::CameraKind kind, std::string base, std::string_view exceptId) {    if (!nameTaken(c, kind, base, exceptId)) return base;
+std::string uniqueCameraName(const RobotConfig& c, sdk::CameraKind kind, std::string base, std::string_view exceptId) {
+    if (!nameTaken(c, kind, base, exceptId)) return base;
     const std::string stem = base.empty() ? std::string("cam") : base;
     for (int n = 2;; ++n) {
         std::string candidate = stem + std::to_string(n);
@@ -89,27 +78,13 @@ sdk::CameraConfig makeCamera(const RobotConfig& c, sdk::CameraKind kind, const s
 }
 
 std::string addCamera(RobotConfig& c, const EditorCatalog& catalog, sdk::CameraKind kind, const sdk::MechanismAttachment& attachment) {
-    sdk::MechanismAttachment att = attachment;
-    if (!att.onChassis()) {
-        const MechanismConfig* parent = c.findMechanism(att.parentMechanismId);
-        const sdk::MechanismTemplateInfo* tpl = parent != nullptr ? catalog.findTemplate(parent->type) : nullptr;
-        const std::string link = att.parentLink.empty() ? std::string(sdk::kRootLink) : att.parentLink;
-        if (parent == nullptr || (tpl != nullptr && !sdk::hasLink(*tpl, link))) att = sdk::MechanismAttachment{};
-    } else {
-        att = sdk::MechanismAttachment{};
-    }
-    sdk::CameraConfig cam = makeCamera(c, kind, att);
+    sdk::CameraConfig cam = makeCamera(c, kind, detail::sanitizeAttachment(c, catalog, attachment));
     std::string id = cam.id;
     c.cameras.push_back(std::move(cam));
     return id;
 }
 
-bool removeCamera(RobotConfig& c, std::string_view id) {
-    const auto it = std::find_if(c.cameras.begin(), c.cameras.end(), [&](const sdk::CameraConfig& cam) { return cam.id == id; });
-    if (it == c.cameras.end()) return false;
-    c.cameras.erase(it);
-    return true;
-}
+bool removeCamera(RobotConfig& c, std::string_view id) { return sdk::detail::eraseById(c.cameras, id); }
 
 std::string duplicateCamera(RobotConfig& c, std::string_view id) {
     const sdk::CameraConfig* original = c.findCamera(id);
@@ -127,20 +102,7 @@ std::string duplicateCamera(RobotConfig& c, std::string_view id) {
 bool reattachCamera(RobotConfig& c, const EditorCatalog& catalog, std::string_view id, const std::string& newParent,
                     const std::string& newLink, bool keepWorldPose) {
     sdk::CameraConfig* cam = c.findCamera(id);
-    if (cam == nullptr) return false;
-    const std::string link = newLink.empty() ? std::string(sdk::kRootLink) : newLink;
-    if (onChassis(newParent)) {
-        if (link != sdk::kRootLink) return false;
-    } else {
-        const MechanismConfig* parent = c.findMechanism(newParent);
-        if (parent == nullptr) return false;
-        if (const auto* info = catalog.findTemplate(parent->type); info != nullptr && !sdk::hasLink(*info, link)) return false;
-    }
-    const Pose3 before = cameraWorld(c, catalog, *cam);
-    cam->attachment.parentMechanismId = onChassis(newParent) ? std::string(sdk::kChassisParent) : newParent;
-    cam->attachment.parentLink = link;
-    if (keepWorldPose) cam->local = cameraParentWorld(c, catalog, *cam).inverse() * before;
-    return true;
+    return cam != nullptr && detail::reattachItem(c, catalog, cam->attachment, cam->local, newParent, newLink, keepWorldPose);
 }
 
 }  // namespace wpiemu::app::editor::ops

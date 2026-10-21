@@ -72,6 +72,7 @@ public:
     bool pose(std::string_view key, Pose3& out);
     // Reads a quaternion stored under `key`; a zero-length quaternion is rejected.
     bool quat(std::string_view key, Quat& out);
+    void attachment(std::string_view key, sdk::MechanismAttachment& out);
 
 private:
     bool typeErr(std::string_view key, const char* expected);
@@ -87,6 +88,130 @@ Value fv(float f);
 Value vec3Value(const Vec3& v);
 Value quatValue(const Quat& q);
 Value poseValue(const Pose3& p);
+Value attachmentValue(const sdk::MechanismAttachment& a);
+
+// Counterpart to ObjReader with the same member names so a single `codecFields(codec, value)` template encodes
+// and decodes a struct in declaration order without repeating field keys.
+class ObjWriter {
+public:
+    ObjWriter() : out_(Value::makeObject()) {}
+    explicit ObjWriter(Value& target) : out_(target) {}
+
+    void str(std::string_view key, const std::string& v) { out_[std::string(key)] = v; }
+    void boolean(std::string_view key, bool v) { out_[std::string(key)] = v; }
+    void dbl(std::string_view key, double v) { out_[std::string(key)] = v; }
+    void flt(std::string_view key, float v) { out_[std::string(key)] = fv(v); }
+    void i64(std::string_view key, std::int64_t v) { out_[std::string(key)] = v; }
+    void i32(std::string_view key, int v) { out_[std::string(key)] = v; }
+    void u64(std::string_view key, std::uint64_t v) { out_[std::string(key)] = static_cast<std::int64_t>(v); }
+    void vec3(std::string_view key, const Vec3& v) { out_[std::string(key)] = vec3Value(v); }
+    void pose(std::string_view key, const Pose3& v) { out_[std::string(key)] = poseValue(v); }
+    void attachment(std::string_view key, const sdk::MechanismAttachment& a) {
+        out_[std::string(key)] = attachmentValue(a);
+    }
+    void set(std::string_view key, Value v) { out_[std::string(key)] = std::move(v); }
+
+    Value take() { return std::move(out_); }
+
+private:
+    Value out_;
+};
+
+// ---- shared field tables (encode + decode in one place) ----------------------------------------------
+
+template <class Codec, class T>
+void materialFields(Codec& c, T& m) {
+    c.flt("friction", m.friction);
+    c.flt("restitution", m.restitution);
+    c.flt("rollingResistance", m.rollingResistance);
+}
+
+template <class Codec, class T>
+void motorFields(Codec& c, T& m) {
+    c.str("name", m.name);
+    c.dbl("nominalVoltageV", m.nominalVoltageV);
+    c.dbl("stallTorqueNm", m.stallTorqueNm);
+    c.dbl("stallCurrentA", m.stallCurrentA);
+    c.dbl("freeCurrentA", m.freeCurrentA);
+    c.dbl("freeSpeedRadPerSec", m.freeSpeedRadPerSec);
+}
+
+template <class Codec, class T>
+void tireFields(Codec& c, T& t) {
+    c.flt("mu", t.mu);
+    c.flt("slideRatio", t.slideRatio);
+    c.flt("peakSlipLong", t.peakSlipLong);
+    c.flt("peakSlipLat", t.peakSlipLat);
+    c.flt("vRefMps", t.vRefMps);
+    c.flt("lateralScale", t.lateralScale);
+    c.flt("tractionAngleRad", t.tractionAngleRad);
+}
+
+template <class Codec, class T>
+void primitiveGeometryFields(Codec& c, T& p) {
+    c.pose("local", p.local);
+    c.vec3("sizeM", p.sizeM);
+    c.flt("radiusM", p.radiusM);
+    c.flt("heightM", p.heightM);
+    c.str("color", p.color);
+    c.boolean("collides", p.collides);
+    c.flt("massKg", p.massKg);
+}
+
+template <class Codec, class T>
+void chassisCoreFields(Codec& c, T& ch) {
+    c.vec3("sizeM", ch.sizeM);
+    c.flt("massKg", ch.massKg);
+    c.flt("comHeightM", ch.comHeightM);
+    c.vec3("comOffsetM", ch.comOffsetM);
+    c.flt("groundClearanceM", ch.groundClearanceM);
+    c.vec3("inertiaDiagKgM2", ch.inertiaDiagKgM2);
+}
+
+template <class Codec, class T>
+void drivetrainCoreFields(Codec& c, T& spec) {
+    c.str("kind", spec.kind);
+    c.str("tireModel", spec.tireModel);
+    c.flt("loadTransferTauS", spec.loadTransferTauS);
+}
+
+template <class Codec, class T>
+void cameraOpticsFields(Codec& c, T& cam) {
+    c.pose("pose", cam.local);
+    c.dbl("hFovDeg", cam.hFovDeg);
+    c.dbl("vFovDeg", cam.vFovDeg);
+    c.dbl("maxRangeM", cam.maxRangeM);
+    c.dbl("maxIncidenceDeg", cam.maxIncidenceDeg);
+    c.dbl("fps", cam.fps);
+    c.dbl("latencyMs", cam.latencyMs);
+    c.i32("widthPx", cam.widthPx);
+    c.i32("heightPx", cam.heightPx);
+    c.dbl("positionNoiseM", cam.positionNoiseM);
+    c.dbl("yawNoiseDeg", cam.yawNoiseDeg);
+}
+
+template <class Codec, class T>
+void projectFields(Codec& c, T& p) {
+    c.str("path", p.path);
+    c.str("language", p.language);
+    c.i32("wpilibYear", p.wpilibYear);
+    c.str("gradleRioVersion", p.gradleRioVersion);
+}
+
+template <class Codec, class T>
+void batteryFields(Codec& c, T& b) {
+    c.dbl("nominalVoltageV", b.nominalVoltageV);
+    c.dbl("internalResistanceOhm", b.internalResistanceOhm);
+    c.dbl("brownoutVoltageV", b.brownoutVoltageV);
+}
+
+template <class Codec, class T>
+void physicsFields(Codec& c, T& p) {
+    c.i32("workerCount", p.workerCount);
+    c.i32("subSteps", p.subSteps);
+    c.boolean("sleeping", p.sleeping);
+    c.vec3("gravity", p.gravity);
+}
 
 // ---- enum spelling -----------------------------------------------------------------------------------
 

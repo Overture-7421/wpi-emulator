@@ -1,4 +1,5 @@
 #include "model/slot_status.h"
+#include "wpiemu/sdk/config/robot_spec_bindings.h"
 #include "wpiemu/sdk/mechanisms/motion_config.h"
 
 #include <algorithm>
@@ -11,39 +12,9 @@
 
 namespace wpiemu::app::editor {
 
-const char* slotTypeName(sdk::SlotType type) {
-    switch (type) {
-        case sdk::SlotType::Motor: return "motor";
-        case sdk::SlotType::PositionSensor: return "position sensor";
-        case sdk::SlotType::VelocitySensor: return "velocity sensor";
-        case sdk::SlotType::LimitSwitch: return "limit switch";
-        case sdk::SlotType::BeamBreak: return "beam break";
-        case sdk::SlotType::Imu: return "IMU";
-        case sdk::SlotType::AnalogSensor: return "analog sensor";
-        case sdk::SlotType::DistanceSensor:
-            return "distance sensor";
-        case sdk::SlotType::Solenoid: return "solenoid";
-        case sdk::SlotType::DigitalOutput: return "digital output";
-    }
-    return "device";
-}
+const char* slotTypeName(sdk::SlotType type) { return sdk::slotTypeInfo(type).shortName; }
 
-QString slotTypeLabel(sdk::SlotType type) {
-    switch (type) {
-        case sdk::SlotType::Motor: return ETR("Motor controller");
-        case sdk::SlotType::PositionSensor: return ETR("Position sensor");
-        case sdk::SlotType::VelocitySensor: return ETR("Velocity sensor");
-        case sdk::SlotType::LimitSwitch: return ETR("Limit switch");
-        case sdk::SlotType::BeamBreak: return ETR("Beam break");
-        case sdk::SlotType::Imu: return ETR("IMU");
-        case sdk::SlotType::AnalogSensor: return ETR("Analog sensor");
-        case sdk::SlotType::DistanceSensor:
-            return ETR("Distance sensor");
-        case sdk::SlotType::Solenoid: return ETR("Solenoid");
-        case sdk::SlotType::DigitalOutput: return ETR("Digital output");
-    }
-    return ETR("Device");
-}
+QString slotTypeLabel(sdk::SlotType type) { return ETR(sdk::slotTypeInfo(type).displayName); }
 
 QString mappedLabel(const SlotInfo& info) {
     if (!info.mapped) return {};
@@ -302,11 +273,20 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
     }
     if (path == "chassis" || path.rfind("chassis.", 0) == 0) {
         loc.selection = SelectionRef::chassis();
-        loc.fieldKey = path.size() > 8 ? firstSegment(path.substr(8)) : std::string();
+        loc.fieldKey = path.size() > 8 ? sdk::chassisEditorFieldKey(firstSegment(path.substr(8))) : std::string();
+        return loc;
+    }
+    if (parseIndexed(path, "drivetrain.wheels", index, rest)) {
+        if (index >= 0 && index < static_cast<int>(c.drivetrain.spec.wheels.size())) {
+            loc.selection = SelectionRef::wheel(c.drivetrain.spec.wheels[static_cast<std::size_t>(index)].name);
+            loc.fieldKey = sdk::wheelEditorFieldKey(rest);
+        } else {
+            loc.selection = SelectionRef::drivetrain();
+        }
         return loc;
     }
     if (path == "drivetrain" || path.rfind("drivetrain", 0) == 0) {
-        // "drivetrain.fl.drive" == slot address; "drivetrain" / "drivetrain.spec..." == the drivetrain.
+        // "drivetrain.fl.drive" == slot address; "drivetrain" / "drivetrain.kind..." == the drivetrain.
         const auto dot = path.find('.');
         if (dot != std::string::npos) {
             const std::string slot = path.substr(dot + 1);
@@ -315,6 +295,7 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
                     loc.selection = SelectionRef::slot(sdk::slot_owner::kDrivetrain, slot);
                     return loc;
                 }
+            loc.fieldKey = firstSegment(slot);
         }
         loc.selection = SelectionRef::drivetrain();
         return loc;

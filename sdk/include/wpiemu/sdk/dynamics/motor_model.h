@@ -3,6 +3,7 @@
 // 1-DOF motor model: data compatible with WPILib's DCMotor (but no WPILib dependency in the SDK;
 // core may convert to/from frc::DCMotor).
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <string_view>
@@ -138,6 +139,28 @@ public:
     virtual const MotorSpec& spec() const = 0;
     virtual double currentA(double voltageV, double omegaRadPerSec) const = 0;
     virtual double torqueNm(double voltageV, double omegaRadPerSec) const = 0;
+
+    double limitedCurrentA(double voltageV, double omegaRadPerSec, double statorLimitA) const {
+        const double i = currentA(voltageV, omegaRadPerSec);
+        return statorLimitA > 0.0 ? std::clamp(i, -statorLimitA, statorLimitA) : i;
+    }
+    double limitedTorqueNm(double voltageV, double omegaRadPerSec, double statorLimitA) const {
+        return spec().ktNmPerAmp() * limitedCurrentA(voltageV, omegaRadPerSec, statorLimitA);
+    }
+    double limitedVoltageV(double voltageV, double omegaRadPerSec, double statorLimitA) const {
+        if (statorLimitA <= 0.0) return voltageV;
+        return omegaRadPerSec / spec().kvRadPerSecPerVolt() +
+               spec().resistanceOhm() * limitedCurrentA(voltageV, omegaRadPerSec, statorLimitA);
+    }
+    double dampingNmS(double voltageV, double omegaRadPerSec, double statorLimitA = 0.0) const {
+        if (statorLimitA > 0.0 && std::fabs(currentA(voltageV, omegaRadPerSec)) > statorLimitA) return 0.0;
+        const double slope = torqueNm(voltageV, omegaRadPerSec + 1.0) - torqueNm(voltageV, omegaRadPerSec);
+        return std::max(0.0, -slope);
+    }
+    double supplyCurrentA(double voltageV, double omegaRadPerSec, double statorLimitA = 0.0) const {
+        const double nominal = std::max(1e-3, spec().nominalVoltageV);
+        return std::max(0.0, voltageV * limitedCurrentA(voltageV, omegaRadPerSec, statorLimitA) / nominal);
+    }
 };
 
 // Ideal brushed-DC model: I = (V - w/Kv) / R, tau = Kt * I.
@@ -152,8 +175,45 @@ public:
         return spec_.ktNmPerAmp() * currentA(voltageV, omega);
     }
 
+    using IMotorModel::limitedCurrentA;
+    using IMotorModel::limitedTorqueNm;
+    using IMotorModel::limitedVoltageV;
+
 private:
     MotorSpec spec_;
 };
+
+// Output-shaft drive quantities reflected through a gearbox of `gearRatio` and `efficiency`.
+struct ReflectedShaftDrive {
+    double torqueNm = 0.0;
+    double dampingNmS = 0.0;
+    double inertiaKgM2 = 0.0;
+    double supplyCurrentA = 0.0;
+};
+
+inline ReflectedShaftDrive reflectShaftDrive(double motorTorqueSumNm, double motorDampingSumNmS,
+                                             double supplyCurrentSumA, int motorCount, double gearRatio,
+                                             double efficiency, double rotorInertiaKgM2, double outputInertiaKgM2) {
+    const double gear = std::max(gearRatio, 1e-6);
+    const double eta = std::clamp(efficiency, 0.01, 1.0);
+    return {
+        eta * gear * motorTorqueSumNm,
+        motorDampingSumNmS * eta * gear * gear,
+        static_cast<double>(motorCount) * rotorInertiaKgM2 * gear * gear + outputInertiaKgM2,
+        supplyCurrentSumA,
+    };
+}
+
+inline ReflectedShaftDrive reflectSingleMotorShaftDrive(const IMotorModel& motor, double voltageV,
+                                                        double shaftOmegaRadPerSec, double statorLimitA,
+                                                        double gearRatio, double efficiency,
+                                                        double rotorInertiaKgM2, double outputInertiaKgM2) {
+    const double gear = std::max(gearRatio, 1e-6);
+    const double motorOmega = gear * shaftOmegaRadPerSec;
+    return reflectShaftDrive(motor.limitedTorqueNm(voltageV, motorOmega, statorLimitA),
+                             motor.dampingNmS(voltageV, motorOmega, statorLimitA),
+                             motor.supplyCurrentA(voltageV, motorOmega, statorLimitA), 1, gear, efficiency,
+                             rotorInertiaKgM2, outputInertiaKgM2);
+}
 
 }  // namespace wpiemu::sdk
