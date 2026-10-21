@@ -2,9 +2,7 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
 #include <cstring>
-#include <utility>
 
 #include "wpiemu/sdk/core/byte_order.h"
 
@@ -15,21 +13,7 @@ namespace {
 constexpr std::string_view kTypeString = "photonstruct:PhotonPipelineResult:4b2ff16a964b5e2bf04be0c1454d91c4";
 
 // Little-endian packet writer matching org.photonvision.common.dataflow.structures.Packet.
-class PacketWriter {
-public:
-    void u8(std::uint8_t v) { out_.push_back(v); }
-    void boolean(bool v) { u8(v ? 1 : 0); }
-    void i16(std::int16_t v) { le(static_cast<std::uint16_t>(v), 2); }
-    void i32(std::int32_t v) { le(static_cast<std::uint32_t>(v), 4); }
-    void i64(std::int64_t v) { le(static_cast<std::uint64_t>(v), 8); }
-    void f32(float v) { le(std::bit_cast<std::uint32_t>(v), 4); }
-    void f64(double v) { le(std::bit_cast<std::uint64_t>(v), 8); }
-    std::vector<std::uint8_t> take() { return std::move(out_); }
-
-private:
-    void le(std::uint64_t v, int bytes) { sdk::appendLittleEndian(out_, v, bytes); }
-    std::vector<std::uint8_t> out_;
-};
+using PacketWriter = sdk::LittleEndianWriter<std::uint8_t>;
 
 constexpr std::size_t kMaxListLen = 127;  // Packet.MAX_ARRAY_LEN: the count is a signed byte
 
@@ -81,7 +65,8 @@ std::string_view photonPipelineResultTypeString() { return kTypeString; }
 std::string_view photonPipelineResultUuid() { return kTypeString.substr(kTypeString.rfind(':') + 1); }
 
 std::vector<std::uint8_t> encodePhotonPipelineResult(const PhotonResult& r) {
-    PacketWriter w;
+    std::vector<std::uint8_t> out;
+    PacketWriter w(out);
     w.i64(r.sequenceId);
     w.i64(r.captureTimestampMicros);
     w.i64(r.publishTimestampMicros);
@@ -103,7 +88,7 @@ std::vector<std::uint8_t> encodePhotonPipelineResult(const PhotonResult& r) {
         w.u8(static_cast<std::uint8_t>(ids));
         for (std::size_t i = 0; i < ids; ++i) w.i16(m.fiducialIdsUsed[i]);
     }
-    return w.take();
+    return out;
 }
 
 }  // namespace wpiemu::bridges::vision

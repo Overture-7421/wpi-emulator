@@ -1,10 +1,13 @@
 #include "wpiemu/ipc/binary_codec.h"
 
 #include <bit>
+#include <concepts>
 #include <cstring>
 #include <limits>
 #include <new>
 #include <string>
+#include <type_traits>
+#include <utility>
 
 #include "wpiemu/sdk/core/byte_order.h"
 
@@ -31,28 +34,21 @@ constexpr std::size_t kCameraSetupMinWireBytes = 3 + 1 + 2 + 28 + 6 * 8 + 2 * 4 
 constexpr std::size_t kHeaderBytes = 3;  // wireFormat + messageType
 constexpr std::size_t kSampleWireBytes = 14;
 
-class Writer {
+// The field order of every struct is written once, as a `fields(codec, value)` function below. The Writer and the
+// Reader offer the same operations (a writer takes the value, a reader fills it in), so one description encodes and
+// decodes and the two cannot drift apart. Wire layout: docs/reference/extension-ipc.md.
+
+class Writer : public LittleEndianWriter<std::byte> {
 public:
-    explicit Writer(std::vector<std::byte>& out) : out_(out) {}
+    explicit Writer(std::vector<std::byte>& out) : LittleEndianWriter(out) {}
 
     bool bad() const { return bad_; }
-    void fail() { bad_ = true; }
+    // A writer always has more: fields after an `if (!c.more()) return;` are the optional appended tail.
+    constexpr bool more() const { return true; }
 
-    void u8(std::uint8_t v) { out_.push_back(static_cast<std::byte>(v)); }
-    void u16(std::uint16_t v) { appendLittleEndian(out_, v, 2); }
-    void u32(std::uint32_t v) { appendLittleEndian(out_, v, 4); }
-    void u64(std::uint64_t v) { appendLittleEndian(out_, v, 8); }
-    void i32(std::int32_t v) { u32(static_cast<std::uint32_t>(v)); }
-    void i64(std::int64_t v) { u64(static_cast<std::uint64_t>(v)); }
-    void f32(float v) { u32(std::bit_cast<std::uint32_t>(v)); }
-    void f64(double v) { u64(std::bit_cast<std::uint64_t>(v)); }
-    void boolean(bool v) { u8(v ? 1 : 0); }
-
-    void varint(std::uint64_t v) {
-        while (v >= 0x80) {
-            u8(static_cast<std::uint8_t>(v | 0x80));
-            v >>= 7;
-        }
+    // The bound only matters when reading.
+    template <class E>
+    void enumeration(E v, std::uint8_t /*maxValue*/ = 0xFF, const char* /*what*/ = "") {
         u8(static_cast<std::uint8_t>(v));
     }
 
@@ -66,13 +62,24 @@ public:
         out_.insert(out_.end(), p, p + s.size());
     }
 
-    std::size_t beginRecord() {
-        const std::size_t at = out_.size();
-        u16(0);
-        return at;
+    // Counted list, each element written by its own `fields` (found by argument-dependent lookup). The cap and
+    // the minimum element size are the decoder's limits: a list it would refuse is not worth sending.
+    template <class Items>
+    void list(const Items& items, std::size_t cap, std::size_t /*minElementBytes*/) {
+        if (items.size() > cap) {
+            bad_ = true;
+            return;
+        }
+        varint(items.size());
+        for (const auto& item : items) fields(*this, item);
     }
 
-    void endRecord(std::size_t at) {
+    // u16 byte-length prefix, so the record can grow fields later and older readers skip them.
+    template <class Body>
+    void record(Body body) {
+        const std::size_t at = out_.size();
+        u16(0);
+        body();
         const std::size_t len = out_.size() - at - 2;
         if (len > 0xFFFF) {
             bad_ = true;
@@ -83,7 +90,14 @@ public:
     }
 
 private:
-    std::vector<std::byte>& out_;
+    void varint(std::uint64_t v) {
+        while (v >= 0x80) {
+            u8(static_cast<std::uint8_t>(v | 0x80));
+            v >>= 7;
+        }
+        u8(static_cast<std::uint8_t>(v));
+    }
+
     bool bad_ = false;
 };
 
@@ -97,9 +111,8 @@ public:
     Reader(std::span<const std::byte> data, ReadState* state) : d_(data), s_(state) {}
 
     bool ok() const { return s_->ok; }
-    // True while there is unread data: used to detect absent trailing (appended) fields.
+    // True while there is unread data: absent trailing (appended) fields mean an older peer, so they keep their defaults.
     bool more() const { return s_->ok && pos_ < d_.size(); }
-    std::size_t remaining() const { return d_.size() - pos_; }
     void fail(const char* what) {
         if (s_->ok) {
             s_->ok = false;
@@ -107,15 +120,72 @@ public:
         }
     }
 
-    std::uint8_t u8() { return static_cast<std::uint8_t>(le(1)); }
-    std::uint16_t u16() { return static_cast<std::uint16_t>(le(2)); }
-    std::uint32_t u32() { return static_cast<std::uint32_t>(le(4)); }
-    std::uint64_t u64() { return le(8); }
-    std::int32_t i32() { return static_cast<std::int32_t>(u32()); }
-    std::int64_t i64() { return static_cast<std::int64_t>(u64()); }
-    float f32() { return std::bit_cast<float>(u32()); }
-    double f64() { return std::bit_cast<double>(u64()); }
-    bool boolean() { return u8() != 0; }
+    void u8(std::uint8_t& v) { v = static_cast<std::uint8_t>(le(1)); }
+    void u16(std::uint16_t& v) { v = static_cast<std::uint16_t>(le(2)); }
+    void u32(std::uint32_t& v) { v = static_cast<std::uint32_t>(le(4)); }
+    void u64(std::uint64_t& v) { v = le(8); }
+    void i16(std::int16_t& v) { v = static_cast<std::int16_t>(le(2)); }
+    void i32(std::int32_t& v) { v = static_cast<std::int32_t>(le(4)); }
+    void i64(std::int64_t& v) { v = static_cast<std::int64_t>(le(8)); }
+    void f32(float& v) { v = std::bit_cast<float>(static_cast<std::uint32_t>(le(4))); }
+    void f64(double& v) { v = std::bit_cast<double>(le(8)); }
+    void boolean(bool& v) { v = le(1) != 0; }
+
+    // Unbounded, any value is accepted (the receiver answers unknown commands itself); with a bound, a larger
+    // value is a malformed frame.
+    template <class E>
+    void enumeration(E& v, std::uint8_t maxValue = 0xFF, const char* what = "") {
+        std::uint8_t raw = 0;
+        u8(raw);
+        if (raw > maxValue) {
+            fail(what);
+            return;
+        }
+        v = static_cast<E>(raw);
+    }
+
+    void str(std::string& s) {
+        const std::uint64_t n = varint();
+        if (!s_->ok) return;
+        if (n > kMaxStringBytes || n > remaining()) {
+            fail("string length out of range");
+            return;
+        }
+        s.assign(reinterpret_cast<const char*>(d_.data() + pos_), static_cast<std::size_t>(n));
+        pos_ += static_cast<std::size_t>(n);
+    }
+
+    // Counted list; the count is checked against the cap and against the bytes left (`minElementBytes` each).
+    template <class Items>
+    void list(Items& items, std::size_t cap, std::size_t minElementBytes) {
+        items.resize(count(minElementBytes, cap));
+        for (auto& item : items) {
+            if (!ok()) break;
+            fields(*this, item);
+        }
+    }
+
+    // The body reads inside the record; this reader then continues after it, whatever the body consumed.
+    template <class Body>
+    void record(Body body) {
+        std::uint16_t n = 0;
+        u16(n);
+        if (!s_->ok) return;
+        if (n > remaining()) {
+            fail("record length out of range");
+            return;
+        }
+        const std::span<const std::byte> outer = d_;
+        const std::size_t resume = pos_ + n;
+        d_ = outer.subspan(pos_, n);
+        pos_ = 0;
+        body();
+        d_ = outer;
+        pos_ = resume;
+    }
+
+private:
+    std::size_t remaining() const { return d_.size() - pos_; }
 
     std::uint64_t varint() {
         std::uint64_t v = 0;
@@ -151,32 +221,6 @@ public:
         return static_cast<std::size_t>(n);
     }
 
-    std::string str() {
-        const std::uint64_t n = varint();
-        if (!s_->ok) return {};
-        if (n > kMaxStringBytes || n > remaining()) {
-            fail("string length out of range");
-            return {};
-        }
-        std::string s(reinterpret_cast<const char*>(d_.data() + pos_), static_cast<std::size_t>(n));
-        pos_ += static_cast<std::size_t>(n);
-        return s;
-    }
-
-    // Nested length-prefixed record; the parent continues after it, whatever the child consumed.
-    Reader record() {
-        const std::uint16_t n = u16();
-        if (!s_->ok) return Reader({}, s_);
-        if (n > remaining()) {
-            fail("record length out of range");
-            return Reader({}, s_);
-        }
-        Reader sub(d_.subspan(pos_, n), s_);
-        pos_ += n;
-        return sub;
-    }
-
-private:
     std::uint64_t le(int bytes) {
         if (!s_->ok) return 0;
         if (remaining() < static_cast<std::size_t>(bytes)) {
@@ -193,495 +237,284 @@ private:
     ReadState* s_;
 };
 
-template <class E>
-E enumUpTo(Reader& r, std::uint8_t maxValue, const char* what) {
-    const std::uint8_t v = r.u8();
-    if (v > maxValue) {
-        r.fail(what);
-        return E{};
-    }
-    return static_cast<E>(v);
+// T, possibly const: the writer visits a const message, the reader a mutable one.
+template <class T, class U>
+concept Is = std::same_as<std::remove_const_t<T>, U>;
+
+// ---- scalars and shared records ---------------------------------------------------------------------------
+
+template <class C, Is<float> M>
+void fields(C& c, M& v) {
+    c.f32(v);
 }
 
-// ---- shared records ---------------------------------------------------------------------------------
-
-void write(Writer& w, const DeviceDescriptor& d) {
-    const std::size_t at = w.beginRecord();
-    w.str(d.family);
-    w.str(d.type);
-    w.str(d.vendor);
-    w.i32(d.id);
-    w.str(d.bus);
-    w.i32(d.channel);
-    w.u32(d.capabilities.bits);
-    w.str(d.nativeName);
-    w.str(d.displayName);
-    w.endRecord(at);
+template <class C, Is<std::int16_t> M>
+void fields(C& c, M& v) {
+    c.i16(v);
 }
 
-void read(Reader& outer, DeviceDescriptor& d) {
-    Reader r = outer.record();
-    d.family = r.str();
-    d.type = r.str();
-    d.vendor = r.str();
-    d.id = r.i32();
-    d.bus = r.str();
-    d.channel = r.i32();
-    d.capabilities = CapabilitySet{r.u32()};
-    d.nativeName = r.str();
-    d.displayName = r.str();
+template <class C, Is<std::pair<std::string, std::int32_t>> M>
+void fields(C& c, M& portCount) {
+    c.str(portCount.first);
+    c.i32(portCount.second);
 }
 
-void write(Writer& w, const SignalSpec& s) {
-    const std::size_t at = w.beginRecord();
-    w.str(s.name);
-    w.u8(static_cast<std::uint8_t>(s.direction));
-    w.u8(static_cast<std::uint8_t>(s.type));
-    w.str(s.unit);
-    w.endRecord(at);
+template <class C, Is<DeviceId> M>
+void fields(C& c, M& id) {
+    c.u32(id.value);
 }
 
-void read(Reader& outer, SignalSpec& s) {
-    Reader r = outer.record();
-    s.name = r.str();
-    s.direction = enumUpTo<SignalDirection>(r, 2, "invalid SignalDirection");
-    s.type = enumUpTo<SignalType>(r, 2, "invalid SignalType");
-    s.unit = r.str();
+template <class C, Is<DeviceDescriptor> M>
+void fields(C& c, M& d) {
+    c.record([&] {
+        c.str(d.family);
+        c.str(d.type);
+        c.str(d.vendor);
+        c.i32(d.id);
+        c.str(d.bus);
+        c.i32(d.channel);
+        c.u32(d.capabilities.bits);
+        c.str(d.nativeName);
+        c.str(d.displayName);
+    });
 }
 
-void write(Writer& w, const std::vector<SignalSample>& samples) {
-    w.varint(samples.size());
-    for (const SignalSample& s : samples) {
-        w.u32(s.device.value);
-        w.u16(s.signal);
-        w.f64(s.value);
-    }
+template <class C, Is<SignalSpec> M>
+void fields(C& c, M& s) {
+    c.record([&] {
+        c.str(s.name);
+        c.enumeration(s.direction, 2, "invalid SignalDirection");
+        c.enumeration(s.type, 2, "invalid SignalType");
+        c.str(s.unit);
+    });
 }
 
-void read(Reader& r, std::vector<SignalSample>& samples) {
-    const std::size_t n = r.count(kSampleWireBytes, kMaxSamples);
-    samples.reserve(n);
-    for (std::size_t i = 0; i < n && r.ok(); ++i) {
-        SignalSample s;
-        s.device = DeviceId{r.u32()};
-        s.signal = r.u16();
-        s.value = r.f64();
-        samples.push_back(s);
-    }
+template <class C, Is<SignalSample> M>
+void fields(C& c, M& s) {
+    fields(c, s.device);
+    c.u16(s.signal);
+    c.f64(s.value);
 }
 
-void write(Writer& w, const JoystickState& j) {
-    const std::size_t at = w.beginRecord();
-    w.boolean(j.present);
-    w.varint(j.axes.size());
-    for (float a : j.axes) w.f32(a);
-    w.varint(j.povs.size());
-    for (std::int16_t p : j.povs) w.u16(static_cast<std::uint16_t>(p));
-    w.u32(j.buttons);
-    w.u8(j.buttonCount);
-    w.endRecord(at);
-}
-
-void read(Reader& outer, JoystickState& j) {
-    Reader r = outer.record();
-    j.present = r.boolean();
-    const std::size_t axes = r.count(4, kMaxJoystickElements);
-    j.axes.reserve(axes);
-    for (std::size_t i = 0; i < axes && r.ok(); ++i) j.axes.push_back(r.f32());
-    const std::size_t povs = r.count(2, kMaxJoystickElements);
-    j.povs.reserve(povs);
-    for (std::size_t i = 0; i < povs && r.ok(); ++i) j.povs.push_back(static_cast<std::int16_t>(r.u16()));
-    j.buttons = r.u32();
-    j.buttonCount = r.u8();
+template <class C, Is<JoystickState> M>
+void fields(C& c, M& j) {
+    c.record([&] {
+        c.boolean(j.present);
+        c.list(j.axes, kMaxJoystickElements, 4);
+        c.list(j.povs, kMaxJoystickElements, 2);
+        c.u32(j.buttons);
+        c.u8(j.buttonCount);
+    });
 }
 
 // ---- vision records (flat: sizes are bounded by the counts below, not by the 16-bit record length) -------------
 
-void write(Writer& w, const Pose3& p) {
-    w.f32(p.position.x);
-    w.f32(p.position.y);
-    w.f32(p.position.z);
-    w.f32(p.rotation.x);
-    w.f32(p.rotation.y);
-    w.f32(p.rotation.z);
-    w.f32(p.rotation.w);
+template <class C, Is<Pose3> M>
+void fields(C& c, M& p) {
+    c.f32(p.position.x);
+    c.f32(p.position.y);
+    c.f32(p.position.z);
+    c.f32(p.rotation.x);
+    c.f32(p.rotation.y);
+    c.f32(p.rotation.z);
+    c.f32(p.rotation.w);
 }
 
-void read(Reader& r, Pose3& p) {
-    p.position.x = r.f32();
-    p.position.y = r.f32();
-    p.position.z = r.f32();
-    p.rotation.x = r.f32();
-    p.rotation.y = r.f32();
-    p.rotation.z = r.f32();
-    p.rotation.w = r.f32();
+template <class C, Is<TagDetection> M>
+void fields(C& c, M& t) {
+    c.i32(t.id);
+    fields(c, t.cameraToTag);
+    c.f64(t.yawDeg);
+    c.f64(t.pitchDeg);
+    c.f64(t.areaPercent);
+    c.f64(t.ambiguity);
+    for (auto& corner : t.cornersPx) c.f64(corner);
+    c.f64(t.distanceM);
 }
 
-void write(Writer& w, const TagDetection& t) {
-    w.i32(t.id);
-    write(w, t.cameraToTag);
-    w.f64(t.yawDeg);
-    w.f64(t.pitchDeg);
-    w.f64(t.areaPercent);
-    w.f64(t.ambiguity);
-    for (double c : t.cornersPx) w.f64(c);
-    w.f64(t.distanceM);
+template <class C, Is<CameraFrame> M>
+void fields(C& c, M& f) {
+    c.u32(f.cameraIndex);
+    c.u64(f.sequence);
+    c.i64(f.captureTimeUs);
+    c.i64(f.publishTimeUs);
+    fields(c, f.robotToCamera);
+    c.list(f.tags, kMaxTagsPerFrame, kTagWireBytes);
+    c.boolean(f.hasRobotPose);
+    fields(c, f.robotPoseField);
+    c.f64(f.avgTagDistM);
+    c.f64(f.avgTagAreaPercent);
+    c.f64(f.tagSpanM);
 }
 
-void read(Reader& r, TagDetection& t) {
-    t.id = r.i32();
-    read(r, t.cameraToTag);
-    t.yawDeg = r.f64();
-    t.pitchDeg = r.f64();
-    t.areaPercent = r.f64();
-    t.ambiguity = r.f64();
-    for (double& c : t.cornersPx) c = r.f64();
-    t.distanceM = r.f64();
+template <class C, Is<CameraConfig> M>
+void fields(C& c, M& cfg) {
+    c.str(cfg.id);
+    c.str(cfg.label);
+    c.str(cfg.name);
+    c.enumeration(cfg.kind, 1, "invalid CameraKind");
+    c.str(cfg.attachment.parentMechanismId);
+    c.str(cfg.attachment.parentLink);
+    fields(c, cfg.local);
+    c.f64(cfg.hFovDeg);
+    c.f64(cfg.vFovDeg);
+    c.f64(cfg.maxRangeM);
+    c.f64(cfg.maxIncidenceDeg);
+    c.f64(cfg.fps);
+    c.f64(cfg.latencyMs);
+    c.i32(cfg.widthPx);
+    c.i32(cfg.heightPx);
+    c.f64(cfg.positionNoiseM);
+    c.f64(cfg.yawNoiseDeg);
 }
 
-void write(Writer& w, const CameraFrame& f) {
-    w.u32(f.cameraIndex);
-    w.u64(f.sequence);
-    w.i64(f.captureTimeUs);
-    w.i64(f.publishTimeUs);
-    write(w, f.robotToCamera);
-    if (f.tags.size() > kMaxTagsPerFrame) w.fail();
-    w.varint(f.tags.size());
-    for (const TagDetection& t : f.tags) write(w, t);
-    w.boolean(f.hasRobotPose);
-    write(w, f.robotPoseField);
-    w.f64(f.avgTagDistM);
-    w.f64(f.avgTagAreaPercent);
-    w.f64(f.tagSpanM);
-}
-
-void read(Reader& r, CameraFrame& f) {
-    f.cameraIndex = r.u32();
-    f.sequence = r.u64();
-    f.captureTimeUs = r.i64();
-    f.publishTimeUs = r.i64();
-    read(r, f.robotToCamera);
-    const std::size_t n = r.count(kTagWireBytes, kMaxTagsPerFrame);
-    f.tags.reserve(n);
-    for (std::size_t i = 0; i < n && r.ok(); ++i) read(r, f.tags.emplace_back());
-    f.hasRobotPose = r.boolean();
-    read(r, f.robotPoseField);
-    f.avgTagDistM = r.f64();
-    f.avgTagAreaPercent = r.f64();
-    f.tagSpanM = r.f64();
-}
-
-void write(Writer& w, const CameraConfig& c) {
-    w.str(c.id);
-    w.str(c.label);
-    w.str(c.name);
-    w.u8(static_cast<std::uint8_t>(c.kind));
-    w.str(c.attachment.parentMechanismId);
-    w.str(c.attachment.parentLink);
-    write(w, c.local);
-    w.f64(c.hFovDeg);
-    w.f64(c.vFovDeg);
-    w.f64(c.maxRangeM);
-    w.f64(c.maxIncidenceDeg);
-    w.f64(c.fps);
-    w.f64(c.latencyMs);
-    w.i32(c.widthPx);
-    w.i32(c.heightPx);
-    w.f64(c.positionNoiseM);
-    w.f64(c.yawNoiseDeg);
-}
-
-void read(Reader& r, CameraConfig& c) {
-    c.id = r.str();
-    c.label = r.str();
-    c.name = r.str();
-    c.kind = enumUpTo<CameraKind>(r, 1, "invalid CameraKind");
-    c.attachment.parentMechanismId = r.str();
-    c.attachment.parentLink = r.str();
-    read(r, c.local);
-    c.hFovDeg = r.f64();
-    c.vFovDeg = r.f64();
-    c.maxRangeM = r.f64();
-    c.maxIncidenceDeg = r.f64();
-    c.fps = r.f64();
-    c.latencyMs = r.f64();
-    c.widthPx = r.i32();
-    c.heightPx = r.i32();
-    c.positionNoiseM = r.f64();
-    c.yawNoiseDeg = r.f64();
-}
-
-void write(Writer& w, const std::vector<CameraFrame>& frames) {
-    if (frames.size() > kMaxVisionFrames) w.fail();
-    w.varint(frames.size());
-    for (const CameraFrame& f : frames) write(w, f);
-}
-
-void read(Reader& r, std::vector<CameraFrame>& frames) {
-    const std::size_t n = r.count(kCameraFrameMinWireBytes, kMaxVisionFrames);
-    frames.reserve(n);
-    for (std::size_t i = 0; i < n && r.ok(); ++i) read(r, frames.emplace_back());
+template <class C, Is<CameraSetup> M>
+void fields(C& c, M& setup) {
+    fields(c, setup.config);
 }
 
 // ---- messages: base fields first, later fields in an optional tail ---------------------------------------------
+// `if (!c.more()) return;` ends a message that an older peer sent without the appended fields below it: they keep
+// their defaults. A newer peer's extra bytes after the last field are ignored.
 
-void write(Writer& w, const Hello& m) {
-    w.u32(m.protocolVersion);
-    w.u8(static_cast<std::uint8_t>(m.language));
-    w.i32(m.wpilibYear);
-    w.str(m.wpilibVersion);
-    w.str(m.extensionVersion);
-    w.i64(m.pid);
-    w.str(m.programName);
-    w.varint(m.halPortCounts.size());
-    for (const auto& [name, count] : m.halPortCounts) {
-        w.str(name);
-        w.i32(count);
-    }
-    w.u32(m.proposedWatchdogMs);
-    w.boolean(m.supportsArmed);
+template <class C, Is<Hello> M>
+void fields(C& c, M& m) {
+    c.u32(m.protocolVersion);
+    c.enumeration(m.language);
+    c.i32(m.wpilibYear);
+    c.str(m.wpilibVersion);
+    c.str(m.extensionVersion);
+    c.i64(m.pid);
+    c.str(m.programName);
+    c.list(m.halPortCounts, kMaxPortCounts, 5);
+    if (!c.more()) return;
+    c.u32(m.proposedWatchdogMs);
+    if (!c.more()) return;
+    c.boolean(m.supportsArmed);
 }
 
-void read(Reader& r, Hello& m) {
-    m.protocolVersion = r.u32();
-    m.language = static_cast<RobotLanguage>(r.u8());
-    m.wpilibYear = r.i32();
-    m.wpilibVersion = r.str();
-    m.extensionVersion = r.str();
-    m.pid = r.i64();
-    m.programName = r.str();
-    const std::size_t n = r.count(5, kMaxPortCounts);
-    m.halPortCounts.reserve(n);
-    for (std::size_t i = 0; i < n && r.ok(); ++i) {
-        std::string name = r.str();
-        const std::int32_t count = r.i32();
-        m.halPortCounts.emplace_back(std::move(name), count);
-    }
-    if (!r.more()) return;
-    m.proposedWatchdogMs = r.u32();
-    if (!r.more()) return;
-    m.supportsArmed = r.boolean();
+template <class C, Is<HelloAck> M>
+void fields(C& c, M& m) {
+    c.boolean(m.accepted);
+    c.str(m.reason);
+    c.u32(m.protocolVersion);
+    c.enumeration(m.clockMode, 1, "invalid ClockMode");
+    c.u32(m.stepUs);
+    c.u64(m.sessionId);
+    c.boolean(m.discoveryOnly);
+    c.boolean(m.enableL3Hooks);
+    if (!c.more()) return;
+    c.u64(m.runEpoch);
+    c.u32(m.watchdogTimeoutMs);
+    c.enumeration(m.watchdogPolicy);
 }
 
-void write(Writer& w, const HelloAck& m) {
-    w.boolean(m.accepted);
-    w.str(m.reason);
-    w.u32(m.protocolVersion);
-    w.u8(static_cast<std::uint8_t>(m.clockMode));
-    w.u32(m.stepUs);
-    w.u64(m.sessionId);
-    w.boolean(m.discoveryOnly);
-    w.boolean(m.enableL3Hooks);
-    w.u64(m.runEpoch);
-    w.u32(m.watchdogTimeoutMs);
-    w.u8(static_cast<std::uint8_t>(m.watchdogPolicy));
+template <class C, Is<DeviceAnnounce> M>
+void fields(C& c, M& m) {
+    fields(c, m.id);
+    fields(c, m.descriptor);
+    c.list(m.signalSpecs, kMaxSignalSpecs, 2);
+    c.boolean(m.retired);
+    if (!c.more()) return;
+    c.str(m.observedBus);
 }
 
-void read(Reader& r, HelloAck& m) {
-    m.accepted = r.boolean();
-    m.reason = r.str();
-    m.protocolVersion = r.u32();
-    m.clockMode = enumUpTo<ClockMode>(r, 1, "invalid ClockMode");
-    m.stepUs = r.u32();
-    m.sessionId = r.u64();
-    m.discoveryOnly = r.boolean();
-    m.enableL3Hooks = r.boolean();
-    if (!r.more()) return;
-    m.runEpoch = r.u64();
-    m.watchdogTimeoutMs = r.u32();
-    m.watchdogPolicy = static_cast<WatchdogPolicy>(r.u8());
+template <class C, Is<LoopbackSet> M>
+void fields(C& c, M& m) {
+    c.list(m.loopback, kMaxLoopbackIds, 4);
 }
 
-void write(Writer& w, const DeviceAnnounce& m) {
-    w.u32(m.id.value);
-    write(w, m.descriptor);
-    w.varint(m.signalSpecs.size());
-    for (const SignalSpec& s : m.signalSpecs) write(w, s);
-    w.boolean(m.retired);
-    w.str(m.observedBus);
+template <class C, Is<SensorFrame> M>
+void fields(C& c, M& m) {
+    c.u64(m.tick);
+    c.i64(m.simTimeUs);
+    c.u32(m.stepUs);
+    c.f64(m.batteryVoltageV);
+    c.f64(m.batteryCurrentA);
+    c.boolean(m.full);
+    c.list(m.samples, kMaxSamples, kSampleWireBytes);
+    if (!c.more()) return;
+    c.u64(m.sessionId);
+    c.u64(m.runEpoch);
+    if (!c.more()) return;
+    c.list(m.vision, kMaxVisionFrames, kCameraFrameMinWireBytes);
 }
 
-void read(Reader& r, DeviceAnnounce& m) {
-    m.id = DeviceId{r.u32()};
-    read(r, m.descriptor);
-    const std::size_t n = r.count(2, kMaxSignalSpecs);
-    m.signalSpecs.reserve(n);
-    for (std::size_t i = 0; i < n && r.ok(); ++i) read(r, m.signalSpecs.emplace_back());
-    m.retired = r.boolean();
-    if (!r.more()) return;
-    m.observedBus = r.str();
+template <class C, Is<ActuatorFrame> M>
+void fields(C& c, M& m) {
+    c.u64(m.tick);
+    c.i64(m.simTimeUs);
+    c.u64(m.robotLoopCount);
+    c.boolean(m.full);
+    c.list(m.samples, kMaxSamples, kSampleWireBytes);
+    if (!c.more()) return;
+    c.u64(m.sessionId);
+    c.u64(m.runEpoch);
+    c.u64(m.ackTick);
+    c.enumeration(m.result);
 }
 
-void write(Writer& w, const LoopbackSet& m) {
-    w.varint(m.loopback.size());
-    for (DeviceId id : m.loopback) w.u32(id.value);
+template <class C, Is<DsState> M>
+void fields(C& c, M& m) {
+    c.boolean(m.dsAttached);
+    c.boolean(m.fmsAttached);
+    c.boolean(m.enabled);
+    c.boolean(m.eStop);
+    c.enumeration(m.mode, 2, "invalid RobotMode");
+    c.enumeration(m.station, 5, "invalid AllianceStation");
+    c.f64(m.matchTimeS);
+    c.str(m.gameSpecificMessage);
+    for (auto& joystick : m.joysticks) fields(c, joystick);
+    if (!c.more()) return;
+    c.u64(m.sessionId);
+    c.u64(m.runEpoch);
 }
 
-void read(Reader& r, LoopbackSet& m) {
-    const std::size_t n = r.count(4, kMaxLoopbackIds);
-    m.loopback.reserve(n);
-    for (std::size_t i = 0; i < n && r.ok(); ++i) m.loopback.emplace_back(r.u32());
+template <class C, Is<SimControl> M>
+void fields(C& c, M& m) {
+    c.enumeration(m.command);  // unknown commands are answered with ControlResult::Unsupported
+    c.u32(m.stepCount);
+    c.f64(m.timeScale);
+    if (!c.more()) return;
+    c.u64(m.commandId);
+    c.u64(m.sessionId);
+    c.u64(m.runEpoch);
 }
 
-void write(Writer& w, const SensorFrame& m) {
-    w.u64(m.tick);
-    w.i64(m.simTimeUs);
-    w.u32(m.stepUs);
-    w.f64(m.batteryVoltageV);
-    w.f64(m.batteryCurrentA);
-    w.boolean(m.full);
-    write(w, m.samples);
-    w.u64(m.sessionId);
-    w.u64(m.runEpoch);
-    write(w, m.vision);
+template <class C, Is<SimControlAck> M>
+void fields(C& c, M& m) {
+    c.u64(m.commandId);
+    c.enumeration(m.command);
+    c.enumeration(m.result);
+    c.u64(m.sessionId);
+    c.u64(m.runEpoch);
+    c.u64(m.tick);
+    c.str(m.detail);
 }
 
-void read(Reader& r, SensorFrame& m) {
-    m.tick = r.u64();
-    m.simTimeUs = r.i64();
-    m.stepUs = r.u32();
-    m.batteryVoltageV = r.f64();
-    m.batteryCurrentA = r.f64();
-    m.full = r.boolean();
-    read(r, m.samples);
-    if (!r.more()) return;
-    m.sessionId = r.u64();
-    m.runEpoch = r.u64();
-    if (!r.more()) return;
-    read(r, m.vision);
+template <class C, Is<Log> M>
+void fields(C& c, M& m) {
+    c.i64(m.simTimeUs);
+    c.enumeration(m.level, 4, "invalid LogLevel");
+    c.str(m.source);
+    c.str(m.message);
 }
 
-void write(Writer& w, const ActuatorFrame& m) {
-    w.u64(m.tick);
-    w.i64(m.simTimeUs);
-    w.u64(m.robotLoopCount);
-    w.boolean(m.full);
-    write(w, m.samples);
-    w.u64(m.sessionId);
-    w.u64(m.runEpoch);
-    w.u64(m.ackTick);
-    w.u8(static_cast<std::uint8_t>(m.result));
+template <class C, Is<Goodbye> M>
+void fields(C& c, M& m) {
+    c.str(m.reason);
 }
 
-void read(Reader& r, ActuatorFrame& m) {
-    m.tick = r.u64();
-    m.simTimeUs = r.i64();
-    m.robotLoopCount = r.u64();
-    m.full = r.boolean();
-    read(r, m.samples);
-    if (!r.more()) return;
-    m.sessionId = r.u64();
-    m.runEpoch = r.u64();
-    m.ackTick = r.u64();
-    m.result = static_cast<TickResult>(r.u8());
-}
-
-void write(Writer& w, const DsState& m) {
-    w.boolean(m.dsAttached);
-    w.boolean(m.fmsAttached);
-    w.boolean(m.enabled);
-    w.boolean(m.eStop);
-    w.u8(static_cast<std::uint8_t>(m.mode));
-    w.u8(static_cast<std::uint8_t>(m.station));
-    w.f64(m.matchTimeS);
-    w.str(m.gameSpecificMessage);
-    for (const JoystickState& j : m.joysticks) write(w, j);
-    w.u64(m.sessionId);
-    w.u64(m.runEpoch);
-}
-
-void read(Reader& r, DsState& m) {
-    m.dsAttached = r.boolean();
-    m.fmsAttached = r.boolean();
-    m.enabled = r.boolean();
-    m.eStop = r.boolean();
-    m.mode = enumUpTo<RobotMode>(r, 2, "invalid RobotMode");
-    m.station = enumUpTo<AllianceStation>(r, 5, "invalid AllianceStation");
-    m.matchTimeS = r.f64();
-    m.gameSpecificMessage = r.str();
-    for (JoystickState& j : m.joysticks) read(r, j);
-    if (!r.more()) return;
-    m.sessionId = r.u64();
-    m.runEpoch = r.u64();
-}
-
-void write(Writer& w, const SimControl& m) {
-    w.u8(static_cast<std::uint8_t>(m.command));
-    w.u32(m.stepCount);
-    w.f64(m.timeScale);
-    w.u64(m.commandId);
-    w.u64(m.sessionId);
-    w.u64(m.runEpoch);
-}
-
-void read(Reader& r, SimControl& m) {
-    m.command = static_cast<SimCommand>(r.u8());  // unknown commands are answered with ControlResult::Unsupported
-    m.stepCount = r.u32();
-    m.timeScale = r.f64();
-    if (!r.more()) return;
-    m.commandId = r.u64();
-    m.sessionId = r.u64();
-    m.runEpoch = r.u64();
-}
-
-void write(Writer& w, const SimControlAck& m) {
-    w.u64(m.commandId);
-    w.u8(static_cast<std::uint8_t>(m.command));
-    w.u8(static_cast<std::uint8_t>(m.result));
-    w.u64(m.sessionId);
-    w.u64(m.runEpoch);
-    w.u64(m.tick);
-    w.str(m.detail);
-}
-
-void read(Reader& r, SimControlAck& m) {
-    m.commandId = r.u64();
-    m.command = static_cast<SimCommand>(r.u8());
-    m.result = static_cast<ControlResult>(r.u8());
-    m.sessionId = r.u64();
-    m.runEpoch = r.u64();
-    m.tick = r.u64();
-    m.detail = r.str();
-}
-
-void write(Writer& w, const Log& m) {
-    w.i64(m.simTimeUs);
-    w.u8(static_cast<std::uint8_t>(m.level));
-    w.str(m.source);
-    w.str(m.message);
-}
-
-void read(Reader& r, Log& m) {
-    m.simTimeUs = r.i64();
-    m.level = enumUpTo<LogLevel>(r, 4, "invalid LogLevel");
-    m.source = r.str();
-    m.message = r.str();
-}
-
-void write(Writer& w, const Goodbye& m) { w.str(m.reason); }
-void read(Reader& r, Goodbye& m) { m.reason = r.str(); }
-
-void write(Writer& w, const VisionSetup& m) {
-    if (m.cameras.size() > kMaxCameras) w.fail();
-    w.varint(m.cameras.size());
-    for (const CameraSetup& c : m.cameras) write(w, c.config);
-    w.str(m.photonVersion);
-    w.str(m.layoutName);
-    w.f64(m.fieldLengthM);
-    w.f64(m.fieldWidthM);
-}
-
-void read(Reader& r, VisionSetup& m) {
-    const std::size_t n = r.count(kCameraSetupMinWireBytes, kMaxCameras);
-    m.cameras.reserve(n);
-    for (std::size_t i = 0; i < n && r.ok(); ++i) read(r, m.cameras.emplace_back().config);
-    if (!r.more()) return;
-    m.photonVersion = r.str();
-    if (!r.more()) return;
-    m.layoutName = r.str();
-    if (!r.more()) return;
-    m.fieldLengthM = r.f64();
-    m.fieldWidthM = r.f64();
+template <class C, Is<VisionSetup> M>
+void fields(C& c, M& m) {
+    c.list(m.cameras, kMaxCameras, kCameraSetupMinWireBytes);
+    if (!c.more()) return;
+    c.str(m.photonVersion);
+    if (!c.more()) return;
+    c.str(m.layoutName);
+    if (!c.more()) return;
+    c.f64(m.fieldLengthM);
+    c.f64(m.fieldWidthM);
 }
 
 template <class T>
@@ -689,7 +522,7 @@ Result<Message> decodeBody(std::span<const std::byte> body) {
     ReadState state;
     Reader r(body, &state);
     T value;
-    read(r, value);
+    fields(r, value);
     if (!state.ok) return makeError(ErrorCode::ProtocolError, std::string("malformed frame: ") + state.what);
     return Message{std::move(value)};
 }
@@ -702,7 +535,7 @@ Status BinaryMessageCodec::encode(const Message& message, std::vector<std::byte>
         Writer w(out);
         w.u8(kWireFormatVersion);
         w.u16(static_cast<std::uint16_t>(typeOf(message)));
-        std::visit([&w](const auto& m) { write(w, m); }, message);
+        std::visit([&w](const auto& m) { fields(w, m); }, message);
         if (w.bad()) {
             out.resize(start);
             return makeError(ErrorCode::InvalidArgument, "message field exceeds the wire limits");

@@ -244,6 +244,37 @@ TEST_CASE("little-endian helpers write the least significant byte first and read
     CHECK(raw == std::vector<std::uint8_t>{0xCD, 0xAB, 0xFF});
 }
 
+TEST_CASE("little-endian writer appends each scalar type with its two's complement or IEEE-754 bytes") {
+    std::vector<std::uint8_t> out;
+    LittleEndianWriter<std::uint8_t> w(out);
+    w.u8(0xFE);
+    w.u16(0x0102);
+    w.i16(-2);
+    w.u32(0x01020304u);
+    w.i32(-2);
+    w.u64(0x0102030405060708ull);
+    w.i64(-2);
+    w.f32(1.0f);
+    w.f64(-2.0);
+    w.boolean(true);
+    w.boolean(false);
+    CHECK(out == std::vector<std::uint8_t>{0xFE,                                      // u8
+                                           0x02, 0x01,                                // u16
+                                           0xFE, 0xFF,                                // i16
+                                           0x04, 0x03, 0x02, 0x01,                    // u32
+                                           0xFE, 0xFF, 0xFF, 0xFF,                    // i32
+                                           0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01,  // u64
+                                           0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,  // i64
+                                           0x00, 0x00, 0x80, 0x3F,                    // f32 1.0
+                                           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0,  // f64 -2.0
+                                           0x01, 0x00});                              // booleans
+
+    std::vector<std::byte> bytes;
+    LittleEndianWriter<std::byte> wb(bytes);
+    wb.u16(0xABCD);
+    CHECK(bytes == std::vector<std::byte>{std::byte{0xCD}, std::byte{0xAB}});
+}
+
 TEST_CASE("asciiLower lowers A-Z only") {
     CHECK(asciiLower("Blue LEFT 123-_") == "blue left 123-_");
     CHECK(asciiLower("\xC3\x84") == "\xC3\x84");   // non-ASCII bytes stay as they are, whatever the locale

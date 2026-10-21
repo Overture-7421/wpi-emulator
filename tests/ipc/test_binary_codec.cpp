@@ -4,6 +4,7 @@
 #include <cstring>
 #include <limits>
 #include <random>
+#include <string_view>
 
 #include "wpiemu/ipc/binary_codec.h"
 
@@ -252,6 +253,42 @@ std::vector<Message> allSamples() {
 
 bool sameSamples(const std::vector<SignalSample>& a, const std::vector<SignalSample>& b) { return a == b; }
 
+// Golden frames are written as hex, one field per line (whitespace is ignored).
+std::vector<std::byte> fromHex(std::string_view text) {
+    std::vector<std::byte> out;
+    int high = -1;
+    for (const char c : text) {
+        if (c == ' ') continue;
+        const int v = c <= '9' ? c - '0' : c - 'a' + 10;
+        if (high < 0) {
+            high = v;
+        } else {
+            out.push_back(static_cast<std::byte>(high * 16 + v));
+            high = -1;
+        }
+    }
+    return out;
+}
+
+std::string hexOf(const std::vector<std::byte>& bytes) {
+    static constexpr char kDigits[] = "0123456789abcdef";
+    std::string s;
+    for (const std::byte b : bytes) {
+        if (!s.empty()) s += ' ';
+        s += kDigits[static_cast<unsigned>(b) >> 4];
+        s += kDigits[static_cast<unsigned>(b) & 15u];
+    }
+    return s;
+}
+
+// The message must encode to exactly `golden`, and decoding `golden` must give a message that encodes to it again
+// (each golden gives every field its own non-default value, so a dropped or reordered field shows).
+void checkGolden(const Message& m, std::string_view golden) {
+    const std::vector<std::byte> expected = fromHex(golden);
+    CHECK(hexOf(encodeOk(m)) == hexOf(expected));
+    CHECK(hexOf(encodeOk(decodeOk(expected))) == hexOf(expected));
+}
+
 }  // namespace
 
 TEST_CASE("codec: every message type is represented in the sample set") {
@@ -414,6 +451,341 @@ TEST_CASE("codec: DeviceAnnounce wire bytes are pinned") {
     CHECK(back.signalSpecs == a.signalSpecs);
     CHECK(back.retired);
     CHECK(back.observedBus == "can");
+}
+
+TEST_CASE("codec: Hello and HelloAck wire bytes are pinned") {
+    Hello h;
+    h.protocolVersion = 1;
+    h.language = RobotLanguage::Cpp;
+    h.wpilibYear = 2026;
+    h.wpilibVersion = "2026.1";
+    h.extensionVersion = "x1";
+    h.pid = 0x0102030405LL;
+    h.programName = "Bot";
+    h.halPortCounts = {{"pwm", 20}, {"can", -1}};
+    h.proposedWatchdogMs = 750;
+    h.supportsArmed = true;
+    checkGolden(h,
+                "01 01 00 "                                // header: Hello
+                "01 00 00 00 "                             // protocolVersion
+                "02 "                                      // language Cpp
+                "ea 07 00 00 "                             // wpilibYear 2026
+                "06 32 30 32 36 2e 31 "                    // wpilibVersion "2026.1"
+                "02 78 31 "                                // extensionVersion "x1"
+                "05 04 03 02 01 00 00 00 "                 // pid
+                "03 42 6f 74 "                             // programName "Bot"
+                "02 "                                      // port count
+                "03 70 77 6d 14 00 00 00 "                 // "pwm" 20
+                "03 63 61 6e ff ff ff ff "                 // "can" -1
+                "ee 02 00 00 "                             // proposedWatchdogMs 750
+                "01");                                     // supportsArmed
+
+    HelloAck a;
+    a.accepted = false;
+    a.reason = "no";
+    a.protocolVersion = 7;
+    a.clockMode = ClockMode::Realtime;
+    a.stepUs = 2500;
+    a.sessionId = 0x1122334455667788ULL;
+    a.discoveryOnly = true;
+    a.enableL3Hooks = false;
+    a.runEpoch = 9;
+    a.watchdogTimeoutMs = 4321;
+    a.watchdogPolicy = WatchdogPolicy::Terminate;
+    checkGolden(a,
+                "01 02 00 "                                // header: HelloAck
+                "00 "                                      // accepted
+                "02 6e 6f "                                // reason "no"
+                "07 00 00 00 "                             // protocolVersion
+                "01 "                                      // clockMode Realtime
+                "c4 09 00 00 "                             // stepUs 2500
+                "88 77 66 55 44 33 22 11 "                 // sessionId
+                "01 "                                      // discoveryOnly
+                "00 "                                      // enableL3Hooks
+                "09 00 00 00 00 00 00 00 "                 // runEpoch
+                "e1 10 00 00 "                             // watchdogTimeoutMs 4321
+                "01");                                     // watchdogPolicy Terminate
+}
+
+TEST_CASE("codec: LoopbackSet and varint wire bytes are pinned") {
+    LoopbackSet lb;
+    lb.loopback = {DeviceId{1}, DeviceId{9}, DeviceId{4000000000u}};
+    checkGolden(lb,
+                "01 04 00 "                                // header: LoopbackSet
+                "03 "                                      // count
+                "01 00 00 00 09 00 00 00 00 28 6b ee");    // ids 1, 9, 4000000000
+
+    LoopbackSet many;
+    for (std::uint32_t i = 0; i < 200; ++i) many.loopback.push_back(DeviceId{i});
+    const std::vector<std::byte> f = encodeOk(many);
+    CHECK(hexOf({f.begin(), f.begin() + 5}) == "01 04 00 c8 01");  // 200 as LEB128
+
+    Goodbye longReason;
+    longReason.reason.assign(300, 'x');
+    const std::vector<std::byte> g = encodeOk(longReason);
+    CHECK(hexOf({g.begin(), g.begin() + 5}) == "01 0a 00 ac 02");  // 300 as LEB128
+}
+
+TEST_CASE("codec: SensorFrame and ActuatorFrame wire bytes are pinned") {
+    SensorFrame s;
+    s.tick = 0x0102;
+    s.simTimeUs = 100000;
+    s.stepUs = 5000;
+    s.batteryVoltageV = 12.0;
+    s.batteryCurrentA = 0.5;
+    s.full = true;
+    s.samples = {{DeviceId{3}, 2, 1.0}, {DeviceId{70000}, 258, -2.0}};
+    s.sessionId = 3;
+    s.runEpoch = 4;
+    checkGolden(s,
+                "01 05 00 "                                // header: SensorFrame
+                "02 01 00 00 00 00 00 00 "                 // tick
+                "a0 86 01 00 00 00 00 00 "                 // simTimeUs 100000
+                "88 13 00 00 "                             // stepUs 5000
+                "00 00 00 00 00 00 28 40 "                 // batteryVoltageV 12
+                "00 00 00 00 00 00 e0 3f "                 // batteryCurrentA 0.5
+                "01 "                                      // full
+                "02 "                                      // sample count
+                "03 00 00 00 02 00 00 00 00 00 00 00 f0 3f "  // device 3, signal 2, 1.0
+                "70 11 01 00 02 01 00 00 00 00 00 00 00 c0 "  // device 70000, signal 258, -2.0
+                "03 00 00 00 00 00 00 00 "                 // sessionId
+                "04 00 00 00 00 00 00 00 "                 // runEpoch
+                "00");                                     // camera frame count
+
+    ActuatorFrame a;
+    a.tick = 17;
+    a.simTimeUs = -5;
+    a.robotLoopCount = 99;
+    a.full = true;
+    a.samples = {{DeviceId{2}, 1, 0.5}};
+    a.sessionId = 3;
+    a.runEpoch = 4;
+    a.ackTick = 16;
+    a.result = TickResult::RobotStalled;
+    checkGolden(a,
+                "01 06 00 "                                // header: ActuatorFrame
+                "11 00 00 00 00 00 00 00 "                 // tick
+                "fb ff ff ff ff ff ff ff "                 // simTimeUs -5
+                "63 00 00 00 00 00 00 00 "                 // robotLoopCount
+                "01 "                                      // full
+                "01 "                                      // sample count
+                "02 00 00 00 01 00 00 00 00 00 00 00 e0 3f "  // device 2, signal 1, 0.5
+                "03 00 00 00 00 00 00 00 "                 // sessionId
+                "04 00 00 00 00 00 00 00 "                 // runEpoch
+                "10 00 00 00 00 00 00 00 "                 // ackTick
+                "01");                                     // result RobotStalled
+}
+
+TEST_CASE("codec: DsState wire bytes are pinned") {
+    DsState d;
+    d.dsAttached = false;
+    d.fmsAttached = true;
+    d.enabled = true;
+    d.eStop = false;
+    d.mode = RobotMode::Test;
+    d.station = AllianceStation::Blue3;
+    d.matchTimeS = 134.5;
+    d.gameSpecificMessage = "RBG";
+    d.joysticks[0].present = true;
+    d.joysticks[0].axes = {0.5f, -1.0f};
+    d.joysticks[0].povs = {-1, 90};
+    d.joysticks[0].buttons = 0xA5A5A5A5u;
+    d.joysticks[0].buttonCount = 12;
+    d.joysticks[5].present = true;
+    d.joysticks[5].buttons = 1;
+    d.joysticks[5].buttonCount = 1;
+    d.sessionId = 5;
+    d.runEpoch = 6;
+    checkGolden(d,
+                "01 07 00 "                                // header: DsState
+                "00 01 01 00 "                             // dsAttached, fmsAttached, enabled, eStop
+                "02 "                                      // mode Test
+                "05 "                                      // station Blue3
+                "00 00 00 00 00 d0 60 40 "                 // matchTimeS 134.5
+                "03 52 42 47 "                             // gameSpecificMessage "RBG"
+                "14 00 "                                   // joystick 0: record length
+                "01 "                                      //   present
+                "02 00 00 00 3f 00 00 80 bf "              //   axes 0.5, -1
+                "02 ff ff 5a 00 "                          //   povs -1, 90
+                "a5 a5 a5 a5 "                             //   buttons
+                "0c "                                      //   buttonCount
+                "08 00 00 00 00 00 00 00 00 00 "           // joystick 1: empty record
+                "08 00 00 00 00 00 00 00 00 00 "           // joystick 2
+                "08 00 00 00 00 00 00 00 00 00 "           // joystick 3
+                "08 00 00 00 00 00 00 00 00 00 "           // joystick 4
+                "08 00 01 00 00 01 00 00 00 01 "           // joystick 5: present, buttons 1, buttonCount 1
+                "05 00 00 00 00 00 00 00 "                 // sessionId
+                "06 00 00 00 00 00 00 00");                // runEpoch
+}
+
+TEST_CASE("codec: SimControl, SimControlAck and Log wire bytes are pinned") {
+    SimControl c;
+    c.command = SimCommand::SetTimeScale;
+    c.stepCount = 3;
+    c.timeScale = 0.25;
+    c.commandId = 77;
+    c.sessionId = 5;
+    c.runEpoch = 6;
+    checkGolden(c,
+                "01 08 00 "                                // header: SimControl
+                "05 "                                      // command SetTimeScale
+                "03 00 00 00 "                             // stepCount
+                "00 00 00 00 00 00 d0 3f "                 // timeScale 0.25
+                "4d 00 00 00 00 00 00 00 "                 // commandId 77
+                "05 00 00 00 00 00 00 00 "                 // sessionId
+                "06 00 00 00 00 00 00 00");                // runEpoch
+
+    SimControlAck a;
+    a.commandId = 77;
+    a.command = SimCommand::Reset;
+    a.result = ControlResult::StaleEpoch;
+    a.sessionId = 5;
+    a.runEpoch = 6;
+    a.tick = 1000;
+    a.detail = "late";
+    checkGolden(a,
+                "01 0b 00 "                                // header: SimControlAck
+                "4d 00 00 00 00 00 00 00 "                 // commandId
+                "03 "                                      // command Reset
+                "02 "                                      // result StaleEpoch
+                "05 00 00 00 00 00 00 00 "                 // sessionId
+                "06 00 00 00 00 00 00 00 "                 // runEpoch
+                "e8 03 00 00 00 00 00 00 "                 // tick 1000
+                "04 6c 61 74 65");                         // detail "late"
+
+    Log log;
+    log.simTimeUs = 42;
+    log.level = LogLevel::Warn;
+    log.source = "src";
+    log.message = "msg";
+    checkGolden(log,
+                "01 09 00 "                                // header: Log
+                "2a 00 00 00 00 00 00 00 "                 // simTimeUs
+                "03 "                                      // level Warn
+                "03 73 72 63 "                             // source "src"
+                "03 6d 73 67");                            // message "msg"
+}
+
+TEST_CASE("codec: VisionSetup wire bytes are pinned") {
+    CameraConfig c;
+    c.id = "c0";
+    c.label = "Lbl";
+    c.name = "n";
+    c.kind = CameraKind::PhotonVision;
+    c.attachment.parentMechanismId = "turret";
+    c.attachment.parentLink = "link";
+    c.local = Pose3({0.25f, -0.5f, 0.75f}, {-1.0f, 0.5f, 4.0f, 2.0f});
+    c.hFovDeg = 90.0;
+    c.vFovDeg = 60.0;
+    c.maxRangeM = 7.0;
+    c.maxIncidenceDeg = 70.0;
+    c.fps = 30.0;
+    c.latencyMs = 40.0;
+    c.widthPx = 960;
+    c.heightPx = 720;
+    c.positionNoiseM = 0.125;
+    c.yawNoiseDeg = 0.5;
+    VisionSetup v;
+    v.cameras.push_back(CameraSetup{c});
+    v.photonVersion = "v1";
+    v.layoutName = "L";
+    v.fieldLengthM = 16.0;
+    v.fieldWidthM = 8.0;
+    checkGolden(v,
+                "01 0c 00 "                                // header: VisionSetup
+                "01 "                                      // camera count
+                "02 63 30 "                                // id "c0"
+                "03 4c 62 6c "                             // label "Lbl"
+                "01 6e "                                   // name "n"
+                "01 "                                      // kind PhotonVision
+                "06 74 75 72 72 65 74 "                    // parentMechanismId "turret"
+                "04 6c 69 6e 6b "                          // parentLink "link"
+                "00 00 80 3e 00 00 00 bf 00 00 40 3f "     // local position 0.25, -0.5, 0.75
+                "00 00 80 bf 00 00 00 3f 00 00 80 40 00 00 00 40 "  // local rotation -1, 0.5, 4, 2
+                "00 00 00 00 00 80 56 40 "                 // hFovDeg 90
+                "00 00 00 00 00 00 4e 40 "                 // vFovDeg 60
+                "00 00 00 00 00 00 1c 40 "                 // maxRangeM 7
+                "00 00 00 00 00 80 51 40 "                 // maxIncidenceDeg 70
+                "00 00 00 00 00 00 3e 40 "                 // fps 30
+                "00 00 00 00 00 00 44 40 "                 // latencyMs 40
+                "c0 03 00 00 "                             // widthPx 960
+                "d0 02 00 00 "                             // heightPx 720
+                "00 00 00 00 00 00 c0 3f "                 // positionNoiseM 0.125
+                "00 00 00 00 00 00 e0 3f "                 // yawNoiseDeg 0.5
+                "02 76 31 "                                // photonVersion "v1"
+                "01 4c "                                   // layoutName "L"
+                "00 00 00 00 00 00 30 40 "                 // fieldLengthM 16
+                "00 00 00 00 00 00 20 40");                // fieldWidthM 8
+}
+
+TEST_CASE("codec: a SensorFrame with a camera frame and a tag has pinned wire bytes") {
+    TagDetection tag;
+    tag.id = 7;
+    tag.cameraToTag = Pose3({1.5f, -0.5f, 0.75f}, {-2.0f, 8.0f, 0.5f, 1.0f});
+    tag.yawDeg = 1.0;
+    tag.pitchDeg = 2.0;
+    tag.areaPercent = 0.5;
+    tag.ambiguity = 0.25;
+    tag.cornersPx = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0};
+    tag.distanceM = 2.5;
+    CameraFrame cam;
+    cam.cameraIndex = 1;
+    cam.sequence = 0x100000001ULL;
+    cam.captureTimeUs = 1000000;
+    cam.publishTimeUs = 1040000;
+    cam.robotToCamera = Pose3({1.0f, 2.0f, 3.0f}, {0.5f, 0.25f, -1.0f, 4.0f});
+    cam.tags = {tag};
+    cam.hasRobotPose = true;
+    cam.robotPoseField = Pose3({8.0f, 4.0f, 0.0f}, {0.0f, 2.0f, 0.75f, 0.5f});
+    cam.avgTagDistM = 3.0;
+    cam.avgTagAreaPercent = 1.5;
+    cam.tagSpanM = 0.125;
+    SensorFrame s;
+    s.tick = 1;
+    s.simTimeUs = 100000;
+    s.stepUs = 5000;
+    s.batteryVoltageV = 12.0;
+    s.batteryCurrentA = 0.5;
+    s.sessionId = 3;
+    s.runEpoch = 4;
+    s.vision = {cam};
+    checkGolden(s,
+                "01 05 00 "                                // header: SensorFrame
+                "01 00 00 00 00 00 00 00 "                 // tick
+                "a0 86 01 00 00 00 00 00 "                 // simTimeUs
+                "88 13 00 00 "                             // stepUs
+                "00 00 00 00 00 00 28 40 "                 // batteryVoltageV 12
+                "00 00 00 00 00 00 e0 3f "                 // batteryCurrentA 0.5
+                "00 "                                      // full
+                "00 "                                      // sample count
+                "03 00 00 00 00 00 00 00 "                 // sessionId
+                "04 00 00 00 00 00 00 00 "                 // runEpoch
+                "01 "                                      // camera frame count
+                "01 00 00 00 "                             //   cameraIndex
+                "01 00 00 00 01 00 00 00 "                 //   sequence
+                "40 42 0f 00 00 00 00 00 "                 //   captureTimeUs 1000000
+                "80 de 0f 00 00 00 00 00 "                 //   publishTimeUs 1040000
+                "00 00 80 3f 00 00 00 40 00 00 40 40 "     //   robotToCamera position 1, 2, 3
+                "00 00 00 3f 00 00 80 3e 00 00 80 bf 00 00 80 40 "  // rotation 0.5, 0.25, -1, 4
+                "01 "                                      //   tag count
+                "07 00 00 00 "                             //     id
+                "00 00 c0 3f 00 00 00 bf 00 00 40 3f "     //     cameraToTag position 1.5, -0.5, 0.75
+                "00 00 00 c0 00 00 00 41 00 00 00 3f 00 00 80 3f "  // rotation -2, 8, 0.5, 1
+                "00 00 00 00 00 00 f0 3f "                 //     yawDeg 1
+                "00 00 00 00 00 00 00 40 "                 //     pitchDeg 2
+                "00 00 00 00 00 00 e0 3f "                 //     areaPercent 0.5
+                "00 00 00 00 00 00 d0 3f "                 //     ambiguity 0.25
+                "00 00 00 00 00 00 f0 3f 00 00 00 00 00 00 00 40 "  // corners 1, 2
+                "00 00 00 00 00 00 08 40 00 00 00 00 00 00 10 40 "  // 3, 4
+                "00 00 00 00 00 00 14 40 00 00 00 00 00 00 18 40 "  // 5, 6
+                "00 00 00 00 00 00 1c 40 00 00 00 00 00 00 20 40 "  // 7, 8
+                "00 00 00 00 00 00 04 40 "                 //     distanceM 2.5
+                "01 "                                      //   hasRobotPose
+                "00 00 00 41 00 00 80 40 00 00 00 00 "     //   robotPoseField position 8, 4, 0
+                "00 00 00 00 00 00 00 40 00 00 40 3f 00 00 00 3f "  // rotation 0, 2, 0.75, 0.5
+                "00 00 00 00 00 00 08 40 "                 //   avgTagDistM 3
+                "00 00 00 00 00 00 f8 3f "                 //   avgTagAreaPercent 1.5
+                "00 00 00 00 00 00 c0 3f");                //   tagSpanM 0.125
 }
 
 TEST_CASE("codec: special floating point values and extreme integers round trip") {
@@ -888,6 +1260,31 @@ TEST_CASE("codec: vision frames beyond the wire caps fail to encode and leave th
     v.cameras.resize(257);
     CHECK_FALSE(BinaryMessageCodec().encode(v, out).ok());
     CHECK(out.size() == 1);
+}
+
+TEST_CASE("codec: every list beyond the decoder's cap fails to encode instead of sending a frame the peer rejects") {
+    std::vector<std::byte> out = {std::byte{7}};
+    const BinaryMessageCodec codec;
+
+    LoopbackSet loopback;
+    loopback.loopback.resize((std::size_t{1} << 20) + 1);
+    CHECK_FALSE(codec.encode(loopback, out).ok());
+
+    DeviceAnnounce announce = sampleAnnounce();
+    announce.signalSpecs.resize(65537);
+    CHECK_FALSE(codec.encode(announce, out).ok());
+
+    Hello hello = sampleHello();
+    hello.halPortCounts.resize(4097);
+    CHECK_FALSE(codec.encode(hello, out).ok());
+
+    DsState ds = sampleDs();
+    ds.joysticks[2].povs.resize(1025);
+    CHECK_FALSE(codec.encode(ds, out).ok());
+    CHECK(out.size() == 1);
+
+    ds.joysticks[2].povs.resize(1024);  // exactly at the cap is fine
+    CHECK(codec.encode(ds, out).ok());
 }
 
 TEST_CASE("codec: a large SensorFrame with many cameras and tags round trips") {

@@ -56,10 +56,12 @@ handshake protocol are separate values, both currently `1`. Integers are little-
 values use IEEE-754 bit patterns, and booleans occupy one byte. Lengths/counts use bounded LEB128;
 device descriptors, signal specifications, and joystick records have a `u16` byte-length prefix.
 Signal samples encode `(u32 device, u16 signal index, f64 value)`, not C++ object memory.
-The encoder/decoder, rather than struct layout, owns field order and optional-tail handling.
+One `fields` function per struct in the codec drives both encoding and decoding, so it, rather than
+struct layout, owns field order and optional-tail handling. The scalar encodings are shared with the
+PhotonVision packets, whose layout is a different protocol ([byte_order.h](../../sdk/include/wpiemu/sdk/core/byte_order.h)).
 
 Default payload limit is 8 MiB, string limit 1 MiB; counts are also checked against remaining bytes
-and per-type caps. A malformed payload returns `ProtocolError`, another wire-format byte returns
+and per-type caps, and the encoder refuses a list above its cap rather than send a frame the peer rejects. A malformed payload returns `ProtocolError`, another wire-format byte returns
 `VersionMismatch`, and an unknown message type returns `Unsupported`. Only the last is the
 unknown-type skip case handled by `receiveSkippingUnknown` and the extension's receive loop.
 These decoder behaviors do not establish a multi-version SDK compatibility policy.
