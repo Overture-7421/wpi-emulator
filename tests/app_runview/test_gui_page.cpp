@@ -132,7 +132,7 @@ TEST_CASE("run page: simulation stats live in a framed group of the Driver Stati
     CHECK(sawHz);
 }
 
-TEST_CASE("run page: practice highlights the running segment; setup and joysticks open in a popup") {
+TEST_CASE("run page: practice highlights the running segment and setup and joysticks open in a popup") {
     Fixture f;
     f.connectRobot();
     auto* panel = f.page.driverStationPanel();

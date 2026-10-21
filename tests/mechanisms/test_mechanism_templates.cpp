@@ -487,7 +487,7 @@ TEST_CASE("arm: angle from horizontal raises the +X end, gravity is held by the 
     CHECK(value(m->state(), "atLowerLimit") == 1.0);
 }
 
-TEST_CASE("a rotary mechanism with stops is a turret; equal stops make it continuous") {
+TEST_CASE("a rotary mechanism with stops is a turret and equal stops make it continuous") {
     Rig rig;
     rig.bind("t", "motor", sdk::SlotType::Motor);
     rig.bind("t", "forwardLimit", sdk::SlotType::LimitSwitch);

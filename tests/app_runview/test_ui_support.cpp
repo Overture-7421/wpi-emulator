@@ -73,7 +73,7 @@ TEST_CASE("clock text is the local time of day, zero padded, with optional milli
     CHECK(ui::clockText(localMs(beforeEpoch, 12, 34, 56)) == QStringLiteral("12:34:56"));
 }
 
-TEST_CASE("muted and caption labels are disabled; only the muted one wraps") {
+TEST_CASE("muted and caption labels are disabled and only the muted one wraps") {
     QWidget parent;
     const QLabel plain(&parent);
 
