@@ -156,6 +156,14 @@ Result<ProcessSpec> planGradleLaunch(const LaunchRequest& r, bool windows) {
     spec.args.push_back(gradleTaskName(r));
     spec.workingDir = r.projectDir;
     spec.env = emulatorEnvironment(r, windows);
+    if (r.javaHome.empty() && spec.env.count("JAVA_HOME") == 0) {
+        if (const auto inheritedJavaHome = effectiveHostEnv(r)("JAVA_HOME"); inheritedJavaHome && !inheritedJavaHome->empty()) {
+            std::error_code jec;
+            const fs::path jh(*inheritedJavaHome);
+            if (!fs::exists(jh / "bin" / (windows ? "java.exe" : "java"), jec))
+                spec.unsetEnv.emplace_back("JAVA_HOME");
+        }
+    }
     spec.label = "gradlew " + gradleTaskName(r);
     sanitizePackagedEnvironment(spec, effectiveHostEnv(r), windows);
     return spec;

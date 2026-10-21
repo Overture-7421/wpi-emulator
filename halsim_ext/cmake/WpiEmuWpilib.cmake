@@ -239,3 +239,35 @@ elseif(WPIEMU_WPILIB_FOUND)
     message(STATUS "WPILib ${WPIEMU_WPILIB_VERSION}: ntcore NOT found (ntcore-cpp/wpinet-cpp artifacts); the vision bridges "
                    "are built without their ntcore binding and never publish")
 endif()
+
+# ---- 4. local WPILib JDK fallback on Windows (when WPIEMU_WPILIB_DOWNLOAD is ON) --------------------------
+# If C:/Users/Public/wpilib/<year>/jdk is missing (for example when JAVA_HOME points there on a machine without
+# the full WPILib installer), provision it from a local JDK 17+ and strip any bundled <14.40 VC++ runtime DLLs
+# that would trip WPILib 2026's WPIUtilJNI.checkMsvcRuntime.
+if(WIN32 AND WPIEMU_WPILIB_DOWNLOAD)
+    string(SUBSTRING "${WPIEMU_WPILIB_VERSION}" 0 4 _wpiemu_year)
+    set(_wpiemu_public_jdk "C:/Users/Public/wpilib/${_wpiemu_year}/jdk")
+    if(NOT EXISTS "${_wpiemu_public_jdk}/bin/java.exe")
+        file(GLOB _wpiemu_sys_jdks LIST_DIRECTORIES true
+            "C:/Program Files/Java/jdk-17*"
+            "C:/Program Files/Eclipse Adoptium/jdk-17*"
+            "C:/Program Files/Microsoft/jdk-17*"
+            "C:/Program Files/Java/jdk-21*"
+            "C:/Program Files/Eclipse Adoptium/jdk-21*"
+            "C:/Program Files/Microsoft/jdk-21*")
+        foreach(_cand IN LISTS _wpiemu_sys_jdks)
+            if(EXISTS "${_cand}/bin/java.exe")
+                message(STATUS "wpiemu: provisioning ${_wpiemu_public_jdk} from ${_cand}...")
+                file(MAKE_DIRECTORY "C:/Users/Public/wpilib/${_wpiemu_year}")
+                file(COPY "${_cand}/" DESTINATION "${_wpiemu_public_jdk}")
+                file(GLOB _old_vc_dlls
+                    "${_wpiemu_public_jdk}/bin/msvcp140*.dll"
+                    "${_wpiemu_public_jdk}/bin/vcruntime140*.dll")
+                if(_old_vc_dlls)
+                    file(REMOVE ${_old_vc_dlls})
+                endif()
+                break()
+            endif()
+        endforeach()
+    endif()
+endif()

@@ -67,7 +67,13 @@ fs::path pickJdkHome(const Options& options, int wpilibYear) {
                 if (install && !install->jdkHome.empty()) return install->jdkHome;
                 break;
             case launcher::JdkSource::JavaHome:
-                if (javaHomeEnv && !javaHomeEnv->empty()) return *javaHomeEnv;
+                if (javaHomeEnv && !javaHomeEnv->empty()) {
+                    std::error_code ec;
+                    const fs::path candidate(*javaHomeEnv);
+                    if (fs::is_regular_file(candidate / "bin" / (kWindows ? "java.exe" : "java"), ec) ||
+                        fs::is_regular_file(candidate / "bin" / (kWindows ? "java" : "java.exe"), ec))
+                        return candidate;
+                }
                 break;
             case launcher::JdkSource::Path: break;
         }
