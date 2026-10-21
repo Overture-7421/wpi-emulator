@@ -7,7 +7,8 @@
       "hidden": true,
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_PREFIX_PATH": "$env{QT_ROOT_DIR}"
+        "CMAKE_PREFIX_PATH": "$env{QT_ROOT_DIR}",
+        "WPIEMU_WPILIB_DOWNLOAD": "ON"
       }
     },
     {

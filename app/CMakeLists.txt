@@ -30,6 +30,7 @@ wpiemu_target_defaults(wpiemu_app)
 set_target_properties(wpiemu_app PROPERTIES
     WIN32_EXECUTABLE OFF
     MACOSX_BUNDLE ON)
+wpiemu_qt_deploy_runtime(wpiemu_app)
 
 # Dev convenience (Visual Studio): the Qt runtime is not deployed next to the exe (the shared bin/ directory also holds the
 # test executables, which must keep resolving Qt from PATH), so generate the git-ignored .vs/launch.vs.json that puts the
