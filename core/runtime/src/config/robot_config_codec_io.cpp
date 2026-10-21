@@ -112,6 +112,14 @@ bool ObjReader::typeErr(std::string_view key, const char* expected) {
     return false;
 }
 
+void ObjReader::attachment(std::string_view key, MechanismAttachment& out) {
+    const Value* a = get(key);
+    if (a == nullptr) return;
+    ObjReader ar(*a, join(path_, key), ctx_);
+    ar.str("parentMechanismId", out.parentMechanismId);
+    ar.str("parentLink", out.parentLink);
+}
+
 // ---- encode ------------------------------------------------------------------------------------------
 
 Value fv(float f) { return Value(floatToDouble(f)); }
@@ -135,6 +143,12 @@ Value poseValue(const Pose3& p) {
     Value o = Value::makeObject();
     o["position"] = vec3Value(p.position);
     o["rotation"] = quatValue(p.rotation);
+    return o;
+}
+Value attachmentValue(const MechanismAttachment& a) {
+    Value o = Value::makeObject();
+    o["parentMechanismId"] = a.onChassis() ? std::string(kChassisParent) : a.parentMechanismId;
+    o["parentLink"] = a.parentLink;
     return o;
 }
 

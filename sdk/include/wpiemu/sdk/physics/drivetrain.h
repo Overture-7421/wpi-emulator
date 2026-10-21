@@ -155,6 +155,27 @@ inline std::vector<SlotSpec> drivetrainSlotSpecs(const DrivetrainInfo* info, con
     return info != nullptr && info->slotSpecs ? info->slotSpecs(spec) : tractionSlotSpecs(spec, true);
 }
 
+struct DrivetrainEntry {
+    std::string kind;
+    DrivetrainInfo info;
+};
+
+// Metadata and slot conventions of the built-in drivetrain kinds ("swerve", "tank", "mecanum"), shared by
+// core registration, the editor's catalog and schema fallbacks.
+inline std::vector<DrivetrainEntry> builtinDrivetrainInfos() {
+    const auto traction = [](bool steerable) {
+        return [steerable](const DrivetrainSpec& spec) { return tractionSlotSpecs(spec, steerable); };
+    };
+    return {
+        {drivetrain_kind::kSwerve,
+         {"Swerve", "Four or more independently steered and driven modules", traction(true)}},
+        {drivetrain_kind::kTank,
+         {"Tank / differential", "Fixed-heading wheels, any number per side", traction(false)}},
+        {drivetrain_kind::kMecanum,
+         {"Mecanum", "Four roller wheels with +-45 degree traction axes", traction(false)}},
+    };
+}
+
 // "swerve", "tank", "mecanum", ... Add a drivetrain type = register a factory.
 class DrivetrainRegistry : public Registry<DrivetrainInfo, IDrivetrain, const DrivetrainBuildArgs&> {
 public:

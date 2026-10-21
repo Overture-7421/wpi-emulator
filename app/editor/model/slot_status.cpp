@@ -1,4 +1,5 @@
 #include "model/slot_status.h"
+#include "wpiemu/sdk/config/robot_spec_bindings.h"
 #include "wpiemu/sdk/mechanisms/motion_config.h"
 
 #include <algorithm>
@@ -302,11 +303,20 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
     }
     if (path == "chassis" || path.rfind("chassis.", 0) == 0) {
         loc.selection = SelectionRef::chassis();
-        loc.fieldKey = path.size() > 8 ? firstSegment(path.substr(8)) : std::string();
+        loc.fieldKey = path.size() > 8 ? sdk::chassisEditorFieldKey(firstSegment(path.substr(8))) : std::string();
+        return loc;
+    }
+    if (parseIndexed(path, "drivetrain.wheels", index, rest)) {
+        if (index >= 0 && index < static_cast<int>(c.drivetrain.spec.wheels.size())) {
+            loc.selection = SelectionRef::wheel(c.drivetrain.spec.wheels[static_cast<std::size_t>(index)].name);
+            loc.fieldKey = sdk::wheelEditorFieldKey(rest);
+        } else {
+            loc.selection = SelectionRef::drivetrain();
+        }
         return loc;
     }
     if (path == "drivetrain" || path.rfind("drivetrain", 0) == 0) {
-        // "drivetrain.fl.drive" == slot address; "drivetrain" / "drivetrain.spec..." == the drivetrain.
+        // "drivetrain.fl.drive" == slot address; "drivetrain" / "drivetrain.kind..." == the drivetrain.
         const auto dot = path.find('.');
         if (dot != std::string::npos) {
             const std::string slot = path.substr(dot + 1);
@@ -315,6 +325,7 @@ IssueLocation locateIssue(const sdk::RobotConfig& c, const EditorCatalog& catalo
                     loc.selection = SelectionRef::slot(sdk::slot_owner::kDrivetrain, slot);
                     return loc;
                 }
+            loc.fieldKey = firstSegment(slot);
         }
         loc.selection = SelectionRef::drivetrain();
         return loc;

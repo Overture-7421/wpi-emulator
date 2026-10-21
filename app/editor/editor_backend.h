@@ -38,10 +38,7 @@
 
 namespace wpiemu::app::editor {
 
-struct DrivetrainOption {
-    std::string kind;              // DrivetrainSpec::kind ("swerve", "tank", "mecanum", ...)
-    sdk::DrivetrainInfo info;
-};
+using DrivetrainOption = sdk::DrivetrainEntry;
 
 // Everything the editor may offer to build, gathered from the registries by the backend: the
 // mechanism palette, the drivetrain kinds and the SELECTED game plugin's config schema and panels.

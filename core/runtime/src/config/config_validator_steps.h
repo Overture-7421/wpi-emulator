@@ -23,7 +23,6 @@ inline void add(std::vector<sdk::Issue>& out, sdk::Severity sev, std::string pat
 }
 
 // config_validator_robot.cpp
-void validateChassis(const sdk::RobotConfig& c, std::vector<sdk::Issue>& out);
 void validateDrivetrain(const sdk::RobotConfig& c, const sdk::DrivetrainRegistry& drivetrains, const sdk::TireModelRegistry* tires,
                         std::vector<sdk::Issue>& out);
 void validateSimSettings(const sdk::RobotConfig& c, std::vector<sdk::Issue>& out);

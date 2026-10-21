@@ -128,6 +128,23 @@ struct HostProject {
     sdk::proto::AllianceStation defaultStation = sdk::proto::AllianceStation::Red1;
 };
 
+// Populates a HostScene from the open project and its selected game module.
+inline HostScene makeHostScene(const HostProject& project) {
+    HostScene scene;
+    scene.config = project.config;
+    scene.projectPath = project.path;
+    scene.defaultStation = project.defaultStation;
+    if (const sdk::IGameModule* game = project.game) {
+        scene.hud = game->contributeHud();
+        scene.panels = game->contributeEditorPanels();
+        scene.zoneKinds = game->contributeZoneKinds();
+        scene.gameValues = game->contributeGameValues();
+        scene.tags = game->aprilTagLayout();
+        scene.gameName = QString::fromStdString(game->metadata().displayName);
+    }
+    return scene;
+}
+
 // Everything that actually runs the simulation, as the UI sees it. Real implementation: launches the robot with the
 // HALSim extension and drives the sim thread (core). DemoRuntimeHost: scripted stand-in used by `--demo` and tests.
 // The editor and the run view share ONE host, so a device discovered in the editor is the same device the run view

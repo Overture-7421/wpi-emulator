@@ -1,6 +1,7 @@
 #include <algorithm>
 
 #include "model/config_ops.h"
+#include "model/config_ops_internal.h"
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/physics/wheel_layout.h"
 
@@ -80,12 +81,7 @@ const sdk::WheelSpec* findWheel(const RobotConfig& c, std::string_view name) {
 }
 
 std::string uniqueWheelName(const RobotConfig& c, std::string base) {
-    auto taken = [&](const std::string& n) { return findWheel(c, n) != nullptr; };
-    if (!taken(base)) return base;
-    for (int n = 2;; ++n) {
-        std::string candidate = base + std::to_string(n);
-        if (!taken(candidate)) return candidate;
-    }
+    return detail::uniqueSuffixed(std::move(base), "wheel", "", [&](const std::string& n) { return findWheel(c, n) != nullptr; });
 }
 
 std::string addWheel(RobotConfig& c) {

@@ -1,4 +1,5 @@
 #include "model/config_ops.h"
+#include "model/config_ops_internal.h"
 
 namespace wpiemu::app::editor::ops {
 
@@ -47,11 +48,7 @@ Pose3 mechanismRootWorld(const RobotConfig& c, const EditorCatalog& catalog, std
 }
 
 Pose3 mechanismParentWorld(const RobotConfig& c, const EditorCatalog& catalog, const MechanismConfig& m) {
-    const Pose3 chassis = chassisFrameWorld(c.chassis);
-    const sdk::MechanismAttachment att = m.attachment;
-    if (att.onChassis()) return chassis;
-    if (const auto p = linkInChassis(c, catalog, att.parentMechanismId, att.parentLink)) return chassis * *p;
-    return chassis;
+    return detail::attachmentParentWorld(c, catalog, m.attachment);
 }
 
 }  // namespace wpiemu::app::editor::ops

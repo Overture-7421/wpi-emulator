@@ -200,12 +200,7 @@ EditorCatalog FakeEditorBackend::sampleCatalog() {
          prim("housing", sdk::PrimitiveKind::Box, {-0.06f, 0.f, 0.f}, {0.14f, 0.2f, 0.12f}, "#9aa5b1")},
         {link("exit", "Exit point", {0.1f, 0.f, 0.f})}));
 
-    const auto traction = [](bool steerable) {
-        return [steerable](const sdk::DrivetrainSpec& spec) { return sdk::tractionSlotSpecs(spec, steerable); };
-    };
-    cat.drivetrains = {{"swerve", {"Swerve", "Independently steered and driven modules.", traction(true)}},
-                       {"tank", {"Tank", "Left / right skid steer.", traction(false)}},
-                       {"mecanum", {"Mecanum", "Four mecanum wheels.", traction(false)}}};
+    cat.drivetrains = sdk::builtinDrivetrainInfos();
 
     // ---- the neutral demo game (shared with the run-view fake) ----
     namespace demo = sdk::testing::demo_game;
@@ -417,6 +412,8 @@ void FakeEditorBackend::announce(const sdk::DiscoveredDevice& device) {
 
 std::vector<sdk::Issue> FakeEditorBackend::validate(const sdk::RobotConfig& c) const {
     std::vector<sdk::Issue> out;
+    sdk::validateChassis(c, out);
+    sdk::validateWheelSpecs(c.drivetrain.spec, out);
     for (std::size_t i = 0; i < c.mechanisms.size(); ++i) {
         const auto& m = c.mechanisms[i];
         const std::string base = "mechanisms[" + std::to_string(i) + "]";

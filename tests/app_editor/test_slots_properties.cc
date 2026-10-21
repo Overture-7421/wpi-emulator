@@ -146,6 +146,14 @@ TEST_CASE("issues are merged without duplicates and located back to selections")
     CHECK(at("robot.imu").selection == SelectionRef::slot("robot", "imu"));
     CHECK(at("chassis.massKg").selection == SelectionRef::chassis());
     CHECK(at("chassis.massKg").fieldKey == "massKg");
+    CHECK(at("chassis.sizeM").selection == SelectionRef::chassis());
+    CHECK(at("chassis.sizeM").fieldKey == "size");
+    CHECK(at("drivetrain.wheels[0].radiusM").selection == SelectionRef::wheel("fl"));
+    CHECK(at("drivetrain.wheels[0].radiusM").fieldKey == "radius");
+    CHECK(at("drivetrain.wheels[0].tire.mu").selection == SelectionRef::wheel("fl"));
+    CHECK(at("drivetrain.wheels[0].tire.mu").fieldKey == "mu");
+    CHECK(at("drivetrain.wheels[0].driveMotor.stallTorqueNm").selection == SelectionRef::wheel("fl"));
+    CHECK(at("drivetrain.wheels[0].driveMotor.stallTorqueNm").fieldKey == "driveMotor");
     CHECK(at("plugins.demo_game.data.preloadFuel").selection == SelectionRef::plugin());
     CHECK(at("plugins.demo_game.data.preloadFuel").fieldKey == "preloadFuel");
     CHECK(at("device:phoenix6/talonfx[7]").selection == SelectionRef::device("phoenix6/talonfx[7]"));

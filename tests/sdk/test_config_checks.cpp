@@ -325,3 +325,26 @@ TEST_CASE("a linear distance sensor needs a non-empty input range") {
     c.sensors[0].properties[sensor_prop::kInputMax] = 3.0;
     CHECK(sensorIssues(c, catalog).empty());
 }
+
+TEST_CASE("shared chassis and wheel validation rules check dimensions, tires and motors") {
+    RobotConfig c = baseConfig();
+    c.chassis.massKg = 0.f;
+    c.chassis.groundClearanceM = -0.1f;
+    WheelSpec w;
+    w.name = "fl";
+    w.radiusM = 0.f;
+    w.tire.peakSlipLong = 0.f;
+    w.driveMotor.stallTorqueNm = -1.0;
+    c.drivetrain.spec.wheels = {w, w};
+
+    std::vector<Issue> out;
+    validateChassis(c, out);
+    validateWheelSpecs(c.drivetrain.spec, out);
+    CHECK(has(out, validation_code::kChassisInvalid, "chassis.massKg"));
+    CHECK(has(out, validation_code::kChassisInvalid, "chassis.groundClearanceM"));
+    CHECK(has(out, validation_code::kWheelInvalid, "drivetrain.wheels[0].radiusM"));
+    CHECK(has(out, validation_code::kTireInvalid, "drivetrain.wheels[0].tire.peakSlipLong"));
+    CHECK(has(out, validation_code::kMotorInvalid, "drivetrain.wheels[0].driveMotor.stallTorqueNm"));
+    CHECK(has(out, validation_code::kWheelDuplicate, "drivetrain.wheels[1].name"));
+}
+

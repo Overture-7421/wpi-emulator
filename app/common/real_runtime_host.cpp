@@ -98,19 +98,10 @@ void RealRuntimeHost::setProject(const HostProject& project) {
     // The selected start position belongs to the project: drop it on a switch or when the entry is gone, follow edits otherwise.
     if (startSelection_.reconcile(config_.get(), sameProject)) emit startPositionChanged();
     if (session_ && !startSelection_.id().isEmpty()) session_->controller().setStartPlacement(resolveStartPlacement());
-    scene_ = {};
-    scene_.config = project.config;
-    scene_.projectPath = projectPath;
-    scene_.defaultStation = project.defaultStation;
+    scene_ = makeHostScene(project);
     gamePluginId_.clear();
     if (game != nullptr) {
         gamePluginId_ = game->metadata().id;
-        scene_.hud = game->contributeHud();
-        scene_.panels = game->contributeEditorPanels();
-        scene_.zoneKinds = game->contributeZoneKinds();
-        scene_.gameValues = game->contributeGameValues();
-        scene_.tags = game->aprilTagLayout();
-        scene_.gameName = qs(game->metadata().displayName);
         if (fieldPluginId_ != gamePluginId_ || !field_) {
             field_ = registries_.plugins != nullptr ? host::describeField(registries_.plugins->find(gamePluginId_)) : nullptr;
             fieldPluginId_ = gamePluginId_;

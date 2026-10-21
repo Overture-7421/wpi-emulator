@@ -2,6 +2,7 @@
 #include <cctype>
 
 #include "model/config_ops.h"
+#include "model/config_ops_internal.h"
 #include "wpiemu/sdk/core/strings.h"
 
 namespace wpiemu::app::editor::ops {
@@ -10,12 +11,8 @@ using sdk::RobotConfig;
 
 // ---- start positions --------------------------------------------------------------------------
 std::string uniqueStartPositionId(const RobotConfig& c, std::string base) {
-    if (base.empty()) base = "start";
-    if (c.findStartPosition(base) == nullptr) return base;
-    for (int n = 2;; ++n) {
-        std::string candidate = base + "_" + std::to_string(n);
-        if (c.findStartPosition(candidate) == nullptr) return candidate;
-    }
+    return detail::uniqueSuffixed(std::move(base), "start", "_",
+                                  [&](const std::string& id) { return c.findStartPosition(id) != nullptr; });
 }
 
 std::string startPositionDisplayName(const sdk::StartPosition& p) { return p.label.empty() ? p.id : p.label; }
@@ -30,12 +27,7 @@ std::string addStartPosition(RobotConfig& c) {
     return id;
 }
 
-bool removeStartPosition(RobotConfig& c, std::string_view id) {
-    const auto it = std::find_if(c.startPositions.begin(), c.startPositions.end(), [&](const sdk::StartPosition& p) { return p.id == id; });
-    if (it == c.startPositions.end()) return false;
-    c.startPositions.erase(it);
-    return true;
-}
+bool removeStartPosition(RobotConfig& c, std::string_view id) { return sdk::detail::eraseById(c.startPositions, id); }
 
 std::string duplicateStartPosition(RobotConfig& c, std::string_view id) {
     const sdk::StartPosition* original = c.findStartPosition(id);
@@ -86,10 +78,6 @@ std::string copyStartPositionToOtherAlliance(RobotConfig& c, std::string_view id
     return newId;
 }
 
-sdk::StartPosition* findStartPosition(RobotConfig& c, std::string_view id) {
-    for (auto& p : c.startPositions)
-        if (p.id == id) return &p;
-    return nullptr;
-}
+sdk::StartPosition* findStartPosition(RobotConfig& c, std::string_view id) { return c.findStartPosition(id); }
 
 }  // namespace wpiemu::app::editor::ops

@@ -327,24 +327,23 @@ void TractionDrivetrain::advanceWheel(std::size_t i, WheelCommand cmd, float dt,
 }
 
 Status registerDrivetrains(DrivetrainRegistry& registry) {
+    const auto infoFor = [](std::string_view kind) {
+        for (DrivetrainEntry& e : builtinDrivetrainInfos())
+            if (e.kind == kind) return std::move(e.info);
+        return DrivetrainInfo{};
+    };
     if (auto s = registry.registerDrivetrain(
-            drivetrain_kind::kSwerve,
-            {"Swerve", "Four or more independently steered and driven modules",
-             [](const DrivetrainSpec& spec) { return tractionSlotSpecs(spec, true); }},
+            drivetrain_kind::kSwerve, infoFor(drivetrain_kind::kSwerve),
             [](const DrivetrainBuildArgs& a) { return std::make_unique<SwerveDrivetrain>(a); });
         !s.ok())
         return s;
     if (auto s = registry.registerDrivetrain(
-            drivetrain_kind::kTank,
-            {"Tank / differential", "Fixed-heading wheels, any number per side",
-             [](const DrivetrainSpec& spec) { return tractionSlotSpecs(spec, false); }},
+            drivetrain_kind::kTank, infoFor(drivetrain_kind::kTank),
             [](const DrivetrainBuildArgs& a) { return std::make_unique<TankDrivetrain>(a); });
         !s.ok())
         return s;
     return registry.registerDrivetrain(
-        drivetrain_kind::kMecanum,
-        {"Mecanum", "Four roller wheels with +-45 degree traction axes",
-         [](const DrivetrainSpec& spec) { return tractionSlotSpecs(spec, false); }},
+        drivetrain_kind::kMecanum, infoFor(drivetrain_kind::kMecanum),
         [](const DrivetrainBuildArgs& a) { return std::make_unique<MecanumDrivetrain>(a); });
 }
 

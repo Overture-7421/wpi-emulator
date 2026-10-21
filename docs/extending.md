@@ -172,13 +172,15 @@ Plugins are built in with the host toolchain, not independently loaded shared li
    Build entries with the [`props::` builders](../sdk/include/wpiemu/sdk/config/property_builders.h)
    and read stored values with `getDouble/getBool/getString/getFiniteDouble` from the SDK
    [`Value`](../sdk/include/wpiemu/sdk/core/value.h); do not write a per-module builder or reader.
-   A plugin's typed config section binds each spec to its member once with
-   [`ConfigBindings`](../sdk/include/wpiemu/sdk/config/config_bindings.h), which supplies schema, decode and encode.
+   A plugin's typed config section (and core's robot/chassis/drivetrain/wheel/primitive/camera/start-position
+   inspectors in [`robot_spec_bindings.h`](../sdk/include/wpiemu/sdk/config/robot_spec_bindings.h)) binds each spec to its member once with
+   [`ConfigBindings`](../sdk/include/wpiemu/sdk/config/config_bindings.h), which supplies schema, decode, encode and single-key `apply`.
 2. Implement consumption and validation in the owning module. Test defaults, an invalid value and
    persistence round-trip; use Qt-free editor/HUD descriptors for plugin presentation.
-3. For a new structural robot field, update the SDK model, codec/defaults and validator together.
-   Add its schema/value conversion in the editor model and route edits through
-   `EditorDocument`/`EditorController` undoable config operations, never widget-side mutation.
+3. For a new structural robot field, update the SDK model, [shared codec field table](../core/runtime/src/config/robot_config_codec_io.h),
+   [shared validation](../sdk/include/wpiemu/sdk/config/config_checks.h) and
+   [SDK spec bindings](../sdk/include/wpiemu/sdk/config/robot_spec_bindings.h) together.
+   Route edits through `EditorDocument`/`EditorController` undoable config operations, never widget-side mutation.
 4. Test edit/undo/redo, save/load and unit conversion where relevant. If placement or picking changes,
    add model/transform tests and check the demo visually. Follow [UI conventions](CONTRIBUTING.md#coding-conventions)
    and the [app contract](reference/app.md); keep runtime/persistence access behind the backend.

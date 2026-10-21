@@ -13,16 +13,7 @@ using sdk::RobotConfig;
 
 // ---- zones ------------------------------------------------------------------------------------
 std::string uniqueZoneId(const RobotConfig& c, std::string base) {
-    if (base.empty()) base = "zone";
-    auto taken = [&](const std::string& id) {
-        return reservedOwner(id) || c.findZone(id) != nullptr || c.findMechanism(id) != nullptr || c.findCamera(id) != nullptr ||
-               c.findSensor(id) != nullptr;
-    };
-    if (!taken(base)) return base;
-    for (int n = 2;; ++n) {
-        std::string candidate = base + "_" + std::to_string(n);
-        if (!taken(candidate)) return candidate;
-    }
+    return detail::uniqueEntityId(c, std::move(base), "zone");
 }
 
 std::string zoneDisplayName(const sdk::ZoneConfig& z, const EditorCatalog& catalog) {
@@ -32,10 +23,7 @@ std::string zoneDisplayName(const sdk::ZoneConfig& z, const EditorCatalog& catal
 }
 
 Pose3 zoneParentWorld(const RobotConfig& c, const EditorCatalog& catalog, const sdk::ZoneConfig& z) {
-    const Pose3 chassis = chassisFrameWorld(c.chassis);
-    if (z.attachment.onChassis()) return chassis;
-    if (const auto p = linkInChassis(c, catalog, z.attachment.parentMechanismId, z.attachment.parentLink)) return chassis * *p;
-    return chassis;
+    return detail::attachmentParentWorld(c, catalog, z.attachment);
 }
 
 Pose3 zoneWorld(const RobotConfig& c, const EditorCatalog& catalog, const sdk::ZoneConfig& z) {
@@ -58,27 +46,13 @@ sdk::ZoneConfig makeZone(const RobotConfig& c, const sdk::ZoneKindInfo& info, co
 }
 
 std::string addZone(RobotConfig& c, const EditorCatalog& catalog, const sdk::ZoneKindInfo& info, const sdk::MechanismAttachment& attachment) {
-    sdk::MechanismAttachment att = attachment;
-    if (!att.onChassis()) {
-        const MechanismConfig* parent = c.findMechanism(att.parentMechanismId);
-        const sdk::MechanismTemplateInfo* tpl = parent != nullptr ? catalog.findTemplate(parent->type) : nullptr;
-        const std::string link = att.parentLink.empty() ? std::string(sdk::kRootLink) : att.parentLink;
-        if (parent == nullptr || (tpl != nullptr && !sdk::hasLink(*tpl, link))) att = sdk::MechanismAttachment{};
-    } else {
-        att = sdk::MechanismAttachment{};
-    }
-    sdk::ZoneConfig z = makeZone(c, info, att);
+    sdk::ZoneConfig z = makeZone(c, info, detail::sanitizeAttachment(c, catalog, attachment));
     std::string id = z.id;
     c.zones.push_back(std::move(z));
     return id;
 }
 
-bool removeZone(RobotConfig& c, std::string_view id) {
-    const auto it = std::find_if(c.zones.begin(), c.zones.end(), [&](const sdk::ZoneConfig& z) { return z.id == id; });
-    if (it == c.zones.end()) return false;
-    c.zones.erase(it);
-    return true;
-}
+bool removeZone(RobotConfig& c, std::string_view id) { return sdk::detail::eraseById(c.zones, id); }
 
 std::string duplicateZone(RobotConfig& c, std::string_view id) {
     const sdk::ZoneConfig* original = c.findZone(id);
@@ -95,20 +69,7 @@ std::string duplicateZone(RobotConfig& c, std::string_view id) {
 bool reattachZone(RobotConfig& c, const EditorCatalog& catalog, std::string_view id, const std::string& newParent,
                   const std::string& newLink, bool keepWorldPose) {
     sdk::ZoneConfig* z = c.findZone(id);
-    if (z == nullptr) return false;
-    const std::string link = newLink.empty() ? std::string(sdk::kRootLink) : newLink;
-    if (onChassis(newParent)) {
-        if (link != sdk::kRootLink) return false;
-    } else {
-        const MechanismConfig* parent = c.findMechanism(newParent);
-        if (parent == nullptr) return false;
-        if (const auto* info = catalog.findTemplate(parent->type); info != nullptr && !sdk::hasLink(*info, link)) return false;
-    }
-    const Pose3 before = zoneWorld(c, catalog, *z);
-    z->attachment.parentMechanismId = onChassis(newParent) ? std::string(sdk::kChassisParent) : newParent;
-    z->attachment.parentLink = link;
-    if (keepWorldPose) z->local = zoneParentWorld(c, catalog, *z).inverse() * before;
-    return true;
+    return z != nullptr && detail::reattachItem(c, catalog, z->attachment, z->local, newParent, newLink, keepWorldPose);
 }
 
 int addZoneCondition(RobotConfig& c, std::string_view zoneId) {
