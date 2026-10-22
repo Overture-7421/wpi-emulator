@@ -78,6 +78,13 @@ MainWindow::MainWindow(AppServices& services, ShellController& controller, const
     });
 
     connect(welcome_, &WelcomePage::openRequested, this, &MainWindow::browseForProject);
+    if (pages_.onProblemAction) {
+        // The run view's failure overlay: 1 = fix it in the setup's toolchain step, 2 = in Settings.
+        pages_.onProblemAction(this, [this](int action) {
+            if (action == 1) runSetupWizard(services_.session().path(), true);
+            else if (action == 2) showSettings();
+        });
+    }
     connect(welcome_, &WelcomePage::projectChosen, this, &MainWindow::openProjectPath);
     connect(modeSwitcher_, &ModeSwitcher::modeRequested, &controller_, &ShellController::setMode);
     connect(&controller_, &ShellController::modeChanged, this, [this] { refresh(); });
@@ -303,13 +310,14 @@ void MainWindow::openProjectPath(const QString& path) {
     refresh();
 }
 
-void MainWindow::runSetupWizard(const QString& projectPath) {
+void MainWindow::runSetupWizard(const QString& projectPath, bool toolchainStep) {
     if (auto flushed = services_.session().flushPendingChanges(); !flushed) {
         showMessage(QString::fromStdString(flushed.error().message));
         return;
     }
     WizardDialog dialog(services_, ui_, this);
     if (!projectPath.isEmpty()) dialog.setProjectPath(projectPath);
+    if (toolchainStep) dialog.showToolchainStep();
     const int code = wizardRunner_(dialog);
     if (code == QDialog::Accepted) {
         if (!dialog.wizardResult().message.isEmpty()) showMessage(dialog.wizardResult().message);
@@ -321,7 +329,7 @@ void MainWindow::runSetupWizard(const QString& projectPath) {
 }
 
 void MainWindow::showSettings() {
-    SettingsDialog dialog(services_.settings(), services_.probe(), ui_, this);
+    SettingsDialog dialog(services_.settings(), services_.probe(), ui_, this, &services_.provisioner());
     dialog.exec();
 }
 

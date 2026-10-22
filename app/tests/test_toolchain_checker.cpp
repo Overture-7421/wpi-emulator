@@ -1,5 +1,10 @@
 #include <doctest/doctest.h>
 
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+
+#include <array>
 #include "common/toolchain_checker.h"
 #include "test_support.h"
 #include "wpiemu/sdk/game/builtin_plugins.h"
@@ -22,6 +27,14 @@ ToolchainInput inputFor(const QString& language, int year, const QString& projec
     in.language = language;
     in.wpilibYear = year;
     return in;
+}
+
+// What `vswhere -format json` prints for the given {display name, install path, version} installs.
+QString vswhereJson(std::initializer_list<std::array<const char*, 3>> installs) {
+    QJsonArray all;
+    for (const auto& i : installs)
+        all.append(QJsonObject{{"displayName", i[0]}, {"installationPath", i[1]}, {"installationVersion", i[2]}});
+    return QString::fromUtf8(QJsonDocument(all).toJson());
 }
 
 }  // namespace
@@ -145,11 +158,54 @@ TEST_CASE("c++ toolchain is only required for c++ projects") {
     f.probe.files.insert(vswhere);
     ProcessResult r;
     r.started = true;
-    r.output = QStringLiteral("C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\n");
+    r.output = vswhereJson({{"Visual Studio Community 2022", "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community", "17.14.37111.16"}});
     f.probe.processes[vswhere] = r;
     const ToolchainCheck vs = f.checker().checkCppToolchain(inputFor(QStringLiteral("cpp"), 2026));
     CHECK(vs.status == CheckStatus::Ok);
     CHECK(vs.detail.contains(QStringLiteral("Visual Studio")));
+}
+
+TEST_CASE("c++ toolchain (Windows): a working setup is never flagged, an unusable one explains why and offers the install") {
+    Fixture f;
+    f.probe.os = HostOs::Windows;
+    f.probe.environment[QStringLiteral("ProgramFiles(x86)")] = QStringLiteral("C:/Program Files (x86)");
+    const QString vswhere = QStringLiteral("C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe");
+    f.probe.files.insert(vswhere);
+    const auto machine = [&](std::initializer_list<std::array<const char*, 3>> installs) {
+        ProcessResult r;
+        r.started = true;
+        r.output = vswhereJson(installs);
+        f.probe.processes[vswhere] = r;
+    };
+    ToolchainInput in = inputFor(QStringLiteral("cpp"), 2026);
+    in.buildToolsInstallAvailable = true;
+
+    machine({{"Visual Studio Professional 2022", "C:\\vs22", "17.14.1"}, {"Visual Studio Community 2026", "C:\\vs26", "18.11.1"}});
+    ToolchainCheck check = f.checker().checkCppToolchain(in);
+    CHECK(check.status == CheckStatus::Ok);   // 2022 is there next to 2026
+    CHECK(check.fixAction == FixAction::None);
+    CHECK(check.detail.contains(QStringLiteral("2022")));
+
+    machine({{"Visual Studio Community 2026", "C:\\vs26", "18.11.1"}});
+    check = f.checker().checkCppToolchain(in);
+    CHECK(check.status == CheckStatus::Missing);
+    CHECK(check.detail.contains(QStringLiteral("newer than 2022")));
+    CHECK(check.fixAction == FixAction::InstallBuildTools);
+
+    machine({{"Visual Studio Community 2019", "C:\\vs19", "16.11.3"}});
+    check = f.checker().checkCppToolchain(in);
+    CHECK(check.status == CheckStatus::Missing);
+    CHECK(check.detail.contains(QStringLiteral("17.9")));
+
+    machine({});
+    in.buildToolsInstallAvailable = false;
+    check = f.checker().checkCppToolchain(in);
+    CHECK(check.status == CheckStatus::Missing);
+    CHECK(check.fixAction == FixAction::None);
+
+    in.language = QStringLiteral("java");   // a Java project never sees any of this
+    CHECK(f.checker().checkCppToolchain(in).status == CheckStatus::NotApplicable);
+    CHECK(f.checker().checkCppToolchain(in).fixAction == FixAction::None);
 }
 
 TEST_CASE("game module: supported season selects the plugin, other seasons run core-only") {
@@ -180,4 +236,154 @@ TEST_CASE("report says whether the robot can be launched") {
     const ToolchainReport ready = f.checker().run(inputFor(QStringLiteral("java"), 2026));
     CHECK(ready.canRunRobot());
     CHECK(ready.checks.size() == 5);
+}
+
+// ---- which Java is used, and when the emulator's own Java is offered ----------------------------------------------------
+
+namespace {
+const QString kJava17 = QStringLiteral("openjdk version \"17.0.9\" 2023-10-17");
+const QString kJava25 = QStringLiteral("java version \"25.0.1\" 2025-10-21 LTS");
+}  // namespace
+
+TEST_CASE("jdk gating: the project's WPILib JDK is used as is, with no download offered and nothing else examined") {
+    Fixture f;
+    f.probe.dirs.insert(QStringLiteral("/home/user/wpilib/2026"));
+    f.probe.addJava(QStringLiteral("/home/user/wpilib/2026/jdk/bin/java"), kJava17);
+    f.probe.environment[QStringLiteral("JAVA_HOME")] = QStringLiteral("/jdk25");
+    f.probe.addJava(QStringLiteral("/jdk25/bin/java"), kJava25);
+    ToolchainInput in = inputFor(QStringLiteral("java"), 2026);
+    in.managedJavaAvailable = true;
+    in.managedJdkHome = QStringLiteral("/managed");
+    f.probe.addJava(QStringLiteral("/managed/bin/java"), kJava17);
+
+    const ToolchainCheck check = f.checker().checkJdk(in);
+    CHECK(check.status == CheckStatus::Ok);
+    CHECK(check.fixAction == FixAction::None);
+    CHECK(check.detail.contains(QDir::toNativeSeparators(QStringLiteral("/home/user/wpilib/2026/jdk/bin/java"))));
+    CHECK(!check.detail.contains(QStringLiteral("Passed over")));
+    CHECK(f.probe.runCount == 1);   // only the WPILib JDK was run
+}
+
+TEST_CASE("jdk gating: a working JDK from JAVA_HOME or PATH means no download is offered") {
+    Fixture f;
+    f.probe.environment[QStringLiteral("JAVA_HOME")] = QStringLiteral("/jdk");
+    f.probe.addJava(QStringLiteral("/jdk/bin/java"), kJava17);
+    ToolchainInput in = inputFor(QStringLiteral("java"), 2026);
+    in.managedJavaAvailable = true;
+    const ToolchainCheck check = f.checker().checkJdk(in);
+    CHECK(check.status == CheckStatus::Ok);
+    CHECK(check.fixAction == FixAction::None);
+}
+
+TEST_CASE("jdk validation: Java too new for the project's Gradle is passed over and the download is offered") {
+    Fixture f;
+    f.probe.onPath[QStringLiteral("java")] = QStringLiteral("/usr/bin/java");
+    f.probe.addJava(QStringLiteral("/usr/bin/java"), kJava25);
+    ToolchainInput in = inputFor(QStringLiteral("java"), 2026);
+    in.gradleVersion = QStringLiteral("8.11");
+    CHECK(f.checker().checkJdk(in).status == CheckStatus::Missing);
+    in.managedJavaAvailable = true;
+    const ToolchainCheck check = f.checker().checkJdk(in);
+    CHECK(check.status == CheckStatus::Missing);
+    CHECK(check.fixAction == FixAction::GetJava);
+    CHECK(check.detail.contains(QStringLiteral("Java 25")));
+    CHECK(check.detail.contains(QStringLiteral("Gradle 8.11")));
+
+    in.gradleVersion = QStringLiteral("9.2.0");   // a newer Gradle runs on it
+    CHECK(f.checker().checkJdk(in).status == CheckStatus::Ok);
+}
+
+TEST_CASE("jdk validation: a JRE without javac is not a JDK") {
+    Fixture f;
+    f.probe.environment[QStringLiteral("JAVA_HOME")] = QStringLiteral("/jre");
+    f.probe.addJava(QStringLiteral("/jre/bin/java"), kJava17, false);
+    const ToolchainCheck check = f.checker().checkJdk(inputFor(QStringLiteral("java"), 2026));
+    CHECK(check.status == CheckStatus::Missing);
+    CHECK(check.detail.contains(QStringLiteral("javac")));
+}
+
+TEST_CASE("jdk validation (Windows): a JDK that bundles an old Visual C++ runtime is skipped, whatever Visual Studio is installed") {
+    Fixture f;
+    f.probe.os = HostOs::Windows;
+    f.probe.home = QStringLiteral("C:/Users/me");
+    f.probe.environment[QStringLiteral("SystemRoot")] = QStringLiteral("C:/Windows");
+    f.probe.fileVersions[QStringLiteral("C:/Windows/System32/msvcp140.dll")] = QStringLiteral("14.51.36247.0");   // the latest system runtime
+    f.probe.environment[QStringLiteral("JAVA_HOME")] = QStringLiteral("C:/jdk17");
+    f.probe.addJava(QStringLiteral("C:/jdk17/bin/java.exe"), kJava17);
+    f.probe.fileVersions[QStringLiteral("C:/jdk17/bin/msvcp140.dll")] = QStringLiteral("14.36.32532.0");   // java.exe loads this one first
+    ToolchainInput in = inputFor(QStringLiteral("java"), 2026);
+    in.managedJavaAvailable = true;
+
+    ToolchainCheck check = f.checker().checkJdk(in);
+    CHECK(check.status == CheckStatus::Missing);
+    CHECK(check.fixAction == FixAction::GetJava);
+    CHECK(check.detail.contains(QStringLiteral("14.36")));
+    CHECK(check.detail.contains(QStringLiteral("14.40")));
+
+    // the same JDK without its own copy loads the (current) system runtime and is fine
+    f.probe.fileVersions.erase(QStringLiteral("C:/jdk17/bin/msvcp140.dll"));
+    CHECK(f.checker().checkJdk(in).status == CheckStatus::Ok);
+
+    // the WPILib JDK of the project's season is trusted even with an older runtime
+    f.probe.fileVersions[QStringLiteral("C:/Users/me/wpilib/2026/jdk/bin/msvcp140.dll")] = QStringLiteral("14.29.0.0");
+    f.probe.dirs.insert(QStringLiteral("C:/Users/me/wpilib/2026"));
+    f.probe.addJava(QStringLiteral("C:/Users/me/wpilib/2026/jdk/bin/java.exe"), kJava17);
+    check = f.checker().checkJdk(in);
+    CHECK(check.status == CheckStatus::Ok);
+    CHECK(check.detail.contains(QStringLiteral("wpilib")));
+}
+
+TEST_CASE("jdk order: another installed season's JDK is a validated fallback; the emulator's Java comes last") {
+    Fixture f;
+    f.probe.dirs.insert(QStringLiteral("/home/user/wpilib/2025"));
+    f.probe.addJava(QStringLiteral("/home/user/wpilib/2025/jdk/bin/java"), kJava17);
+    f.probe.dirs.insert(QStringLiteral("/home/user/wpilib/2027"));
+    f.probe.addJava(QStringLiteral("/home/user/wpilib/2027/jdk/bin/java"), kJava25);   // too new: passed over
+    ToolchainInput in = inputFor(QStringLiteral("java"), 2026);
+    in.managedJdkHome = QStringLiteral("/managed");
+    f.probe.addJava(QStringLiteral("/managed/bin/java"), kJava17);
+
+    JdkResolution jdk = f.checker().resolveJdk(in);
+    REQUIRE(jdk.found);
+    CHECK(jdk.source == wpiemu::core::launcher::JdkSource::WpilibOtherSeason);
+    CHECK(jdk.home == QStringLiteral("/home/user/wpilib/2025/jdk"));
+    REQUIRE(jdk.skipped.size() == 1);
+    CHECK(jdk.skipped[0].reason.contains(QStringLiteral("Java 25")));
+
+    f.probe.files.remove(QStringLiteral("/home/user/wpilib/2025/jdk/bin/java"));
+    jdk = f.checker().resolveJdk(in);
+    REQUIRE(jdk.found);
+    CHECK(jdk.source == wpiemu::core::launcher::JdkSource::Managed);
+}
+
+TEST_CASE("jdk validation: the minimum Java comes from the project's season") {
+    Fixture f;
+    f.probe.environment[QStringLiteral("JAVA_HOME")] = QStringLiteral("/jdk");
+    f.probe.addJava(QStringLiteral("/jdk/bin/java"), kJava17);
+    ToolchainInput in = inputFor(QStringLiteral("java"), 2027);
+    in.minJavaMajor = 25;
+    in.gradleVersion = QStringLiteral("9.2.0");
+    ToolchainCheck check = f.checker().checkJdk(in);
+    CHECK(check.status == CheckStatus::Missing);
+    CHECK(check.detail.contains(QStringLiteral("needs Java 25")));
+    CHECK(check.title.contains(QStringLiteral("25")));
+
+    f.probe.addJava(QStringLiteral("/jdk/bin/java"), kJava25);
+    CHECK(f.checker().checkJdk(in).status == CheckStatus::Ok);
+}
+
+TEST_CASE("jdk setting: an explicit folder that cannot run the project is reported, never replaced") {
+    Fixture f;
+    f.probe.environment[QStringLiteral("JAVA_HOME")] = QStringLiteral("/jdk");
+    f.probe.addJava(QStringLiteral("/jdk/bin/java"), kJava17);
+    f.probe.addJava(QStringLiteral("/old/bin/java"), QStringLiteral("java version \"1.8.0_352\""));
+    ToolchainInput in = inputFor(QStringLiteral("java"), 2026);
+    in.jdkHomeOverride = QStringLiteral("/old");
+    in.managedJavaAvailable = true;
+    const JdkResolution jdk = f.checker().resolveJdk(in);
+    CHECK(!jdk.found);
+    CHECK(jdk.explicitFailed);
+    const ToolchainCheck check = f.checker().checkJdk(in);
+    CHECK(check.fixAction == FixAction::OpenSettings);
+    CHECK(check.detail.contains(QStringLiteral("Java 8")));
 }

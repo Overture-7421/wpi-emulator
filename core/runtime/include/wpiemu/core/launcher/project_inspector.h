@@ -79,9 +79,16 @@ std::optional<WpilibInstall> wpilibInstallAt(const std::filesystem::path& home, 
 // First root containing "<year>/" wins. `roots` empty => wpilibRootCandidates().
 std::optional<WpilibInstall> findWpilibInstall(int year, const std::vector<std::filesystem::path>& roots);
 
-// Where the JDK that runs Gradle comes from, in the order the launcher tries: the explicit setting, the season's WPILib JDK,
-// JAVA_HOME, then `java` on PATH. The robot session and the wizard's toolchain check both walk this list.
-enum class JdkSource { Setting, WpilibInstall, JavaHome, Path };
-inline constexpr std::array<JdkSource, 4> kJdkSources{JdkSource::Setting, JdkSource::WpilibInstall, JdkSource::JavaHome, JdkSource::Path};
+// Where the JDK that runs Gradle comes from, in the order the launcher tries: the explicit setting, the season's WPILib JDK
+// (trusted), another installed season's WPILib JDK, JAVA_HOME, `java` on PATH, then the emulator's own downloaded Java.
+// Everything but the setting and the season's WPILib JDK must pass jdk_policy.h before it is used. The robot session and the
+// wizard's toolchain check both walk this list.
+enum class JdkSource { Setting, WpilibInstall, WpilibOtherSeason, JavaHome, Path, Managed };
+inline constexpr std::array<JdkSource, 6> kJdkSources{JdkSource::Setting, JdkSource::WpilibInstall, JdkSource::WpilibOtherSeason,
+                                                      JdkSource::JavaHome, JdkSource::Path,         JdkSource::Managed};
+
+// Every season folder (<root>/<year>, year numeric) under `roots`, newest year first; the first root wins per year.
+// `roots` empty => wpilibRootCandidates().
+std::vector<WpilibInstall> listWpilibInstalls(const std::vector<std::filesystem::path>& roots);
 
 }  // namespace wpiemu::core::launcher

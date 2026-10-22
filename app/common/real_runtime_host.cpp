@@ -66,11 +66,12 @@ void RealRuntimeHost::emitLog(sdk::LogLevel level, const QString& source, const 
     emit logLine(emulatorLogLine(level, source, text));
 }
 
-void RealRuntimeHost::failToStart(const QString& detail) {
+void RealRuntimeHost::failToStart(const QString& detail, const QString& problem) {
     HostStatus s;
     s.process = sdk::ProcessState::FailedToStart;
     s.link = sdk::LinkState::Disconnected;
     s.detail = detail;
+    s.problem = problem;
     emitLog(sdk::LogLevel::Error, QStringLiteral("runtime"), detail);
     setStatus(s);
 }
@@ -144,6 +145,10 @@ void RealRuntimeHost::launch() {
     if (options_.physicsWorkers) o.physicsWorkers = options_.physicsWorkers();
     if (options_.toolchainOverrides) {
         const RealRuntimeOptions::ToolchainOverrides toolchain = options_.toolchainOverrides();
+        if (!toolchain.blocked.isEmpty()) {
+            failToStart(toolchain.blocked, toolchain.problem);
+            return;
+        }
         o.javaHome = toolchain.javaHome;
         o.wpilibHome = toolchain.wpilibHome;
     }

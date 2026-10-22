@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "common/app_settings.h"
+#include "common/build_tools_installer.h"
 #include "common/config_repository.h"
 #include "common/key_value_store.h"
 #include "common/project_inspector.h"
@@ -12,6 +13,7 @@
 #include "common/recent_projects.h"
 #include "common/system_probe.h"
 #include "common/toolchain_checker.h"
+#include "common/toolchain_provisioner.h"
 #include "common/update_service.h"
 #include "contract/runtime_host.h"
 #include "wpiemu/core/config/config_pipeline.h"
@@ -31,6 +33,9 @@ struct AppServicesOptions {
     std::unique_ptr<IProjectRuntimeHost> runtime;    // default: RealRuntimeHost, or DemoRuntimeHost when `demo`
     std::unique_ptr<IUpdateTransport> updateTransport;   // default: QNetworkAccessManager against github.com
     std::unique_ptr<IUpdateInstaller> updateInstaller;   // default: runs the installer through the OS
+    std::unique_ptr<ToolchainProvisioner> provisioner;   // default: downloads the pinned Java through github.com
+    std::unique_ptr<IBuildToolsEffects> buildToolsEffects;   // default: winget, else the Build Tools download page
+    std::filesystem::path localDataRoot;             // default: core's per-machine data folder (the downloaded Java lives here)
     QString appDir;                                  // default: the running executable's folder
     QString appVersion;                              // default: the version this binary was built as
     bool demo = false;
@@ -60,6 +65,10 @@ public:
     const ToolchainChecker& toolchain() const { return *toolchain_; }
     IRuntimeHost& runtime() { return *runtime_; }
     UpdateService& updates() { return *updates_; }
+    ToolchainProvisioner& provisioner() { return *provisioner_; }
+    BuildToolsInstaller& buildTools() { return *buildTools_; }
+    // What the Toolchain checks need to know about `inspection`'s project on this computer (Settings, the emulator's own Java).
+    ToolchainInput toolchainInput(const ProjectInspection& inspection) const;
     // Tells the runtime which project is open: `config` (the saved model, or one still being edited), the project's game
     // module and the wizard's Driver Station choice. Call whenever the open project or its model changes.
     void bindRuntime(std::shared_ptr<const sdk::RobotConfig> config);
@@ -98,6 +107,8 @@ private:
     std::unique_ptr<ProjectSession> session_;
     std::unique_ptr<IProjectRuntimeHost> runtime_;
     std::unique_ptr<UpdateService> updates_;
+    std::unique_ptr<ToolchainProvisioner> provisioner_;
+    std::unique_ptr<BuildToolsInstaller> buildTools_;
 };
 
 }  // namespace wpiemu::app

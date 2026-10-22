@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include "wpiemu/core/config/config_validator.h"
+#include "wpiemu/core/launcher/launch_diagnosis.h"
 #include "wpiemu/core/launcher/output_level.h"
 #include "wpiemu/core/launcher/project_inspector.h"
 #include "wpiemu/core/physics/box3d_world.h"
@@ -76,6 +77,9 @@ fs::path pickJdkHome(const Options& options, int wpilibYear) {
                 }
                 break;
             case launcher::JdkSource::Path: break;
+            // Validated sources: the app's toolchain resolver picks them and passes the result as options.javaHome.
+            case launcher::JdkSource::WpilibOtherSeason: break;
+            case launcher::JdkSource::Managed: break;
         }
     }
     return {};
@@ -358,6 +362,11 @@ void RobotSession::fail(ProcessState process, LinkState link, std::string detail
     status_.process = process;
     status_.link = link;
     status_.detail = std::move(detail);
+    if (const launcher::LaunchProblem problem = launcher::diagnoseLaunchOutput(status_.detail); problem.any()) {
+        status_.problem = launcher::launchProblemId(problem.code);
+        status_.problemFields = {{"found", problem.found}, {"expected", problem.expected}, {"jvmPath", problem.jvmPath},
+                                 {"runtimePath", problem.runtimePath}, {"line", problem.detail}};
+    }
     failed_ = true;
     logger_->error("session", status_.detail);
     beginTeardown(false);

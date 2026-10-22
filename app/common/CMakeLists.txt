@@ -15,6 +15,8 @@ add_library(wpiemu_app_common STATIC
     system_probe.cpp
     theme.cpp
     toolchain_checker.cpp
+    build_tools_installer.cpp
+    toolchain_provisioner.cpp
     ui_helpers.cpp
     ui_resources.cpp
     unit_system.cpp
@@ -43,6 +45,12 @@ add_library(wpiemu_app_common STATIC
     ../shell/welcome_page.cpp)
 # Includes are rooted at app/ ("common/x.h", "wizard/x.h", "shell/x.h").
 target_include_directories(wpiemu_app_common PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+# The pinned Java downloads, generated from versions.json ("pins/toolchain_pins.h").
+wpiemu_write_toolchain_pins("${CMAKE_CURRENT_BINARY_DIR}/generated/pins/toolchain_pins.h")
+target_include_directories(wpiemu_app_common PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+if(WIN32)
+    target_link_libraries(wpiemu_app_common PRIVATE version)   # GetFileVersionInfo: the Visual C++ runtime of a JDK
+endif()
 target_link_libraries(wpiemu_app_common
     PUBLIC wpiemu_sdk wpiemu_core wpiemu_app_host wpiemu_app_ui Qt6::Core Qt6::Gui     Qt6::Widgets Qt6::Svg Qt6::Network
     PRIVATE wpiemu_plugins_builtin)

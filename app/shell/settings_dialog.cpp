@@ -12,10 +12,11 @@
 
 namespace wpiemu::app {
 
-SettingsDialog::SettingsDialog(AppSettings& settings, const ISystemProbe& probe, const UiResources& ui, QWidget* parent)
+SettingsDialog::SettingsDialog(AppSettings& settings, const ISystemProbe& probe, const UiResources& ui, QWidget* parent, ToolchainProvisioner* java)
     : QDialog(parent),
       settings_(settings),
       probe_(probe),
+      java_(java),
       theme_(new QComboBox),
       units_(new QComboBox),
       rate_(new QComboBox),
@@ -58,11 +59,27 @@ SettingsDialog::SettingsDialog(AppSettings& settings, const ISystemProbe& probe,
     auto* pathsForm = new QFormLayout;
     pathsForm->setVerticalSpacing(12);
     wpilib_->setPlaceholderText(tr("Detected automatically"));
-    jdk_->setPlaceholderText(tr("Detected automatically (WPILib's JDK, then JAVA_HOME)"));
+    jdk_->setPlaceholderText(tr("Detected automatically (WPILib's JDK, then JAVA_HOME, then PATH)"));
     pathsForm->addRow(tr("WPILib folder"), pathRow(wpilib_, tr("Select the WPILib installation folder")));
     pathsForm->addRow(tr("JDK folder"), pathRow(jdk_, tr("Select the JDK folder")));
     pathsLayout->addLayout(pathsForm);
     pathsLayout->addWidget(makeLabel(tr("Leave a field empty to detect it automatically. Changes apply the next time the toolchain is checked or the robot is launched."), "muted", nullptr, true));
+    if (java_ != nullptr) {
+        // The emulator's own Java is only used when no other Java can run the project; it is downloaded from the setup's Toolchain step.
+        auto* javaRow = new QHBoxLayout;
+        javaStatus_ = makeLabel({}, "muted", nullptr, true);
+        removeJava_ = new QPushButton(tr("Remove"));
+        javaRow->addWidget(javaStatus_, 1);
+        javaRow->addWidget(removeJava_);
+        pathsLayout->addSpacing(12);
+        pathsLayout->addWidget(makeLabel(tr("WPI Emulator's own Java"), "section"));
+        pathsLayout->addLayout(javaRow);
+        connect(removeJava_, &QPushButton::clicked, this, [this] {
+            java_->remove();
+            refreshJava();
+        });
+        refreshJava();
+    }
     pathsLayout->addStretch(1);
     tabs->addTab(paths, ui.icon(QStringLiteral("folder-open")), tr("Toolchain"));
 
@@ -106,6 +123,17 @@ SettingsDialog::SettingsDialog(AppSettings& settings, const ISystemProbe& probe,
 
     load(settings_.data());
     validate();
+}
+
+void SettingsDialog::refreshJava() {
+    if (java_ == nullptr) return;
+    const qint64 bytes = java_->installedBytes();
+    removeJava_->setVisible(bytes > 0);
+    removeJava_->setEnabled(!java_->busy());
+    javaStatus_->setText(bytes > 0 ? tr("Downloaded (%1 MB) in %2. Used only when no other Java can run the project.")
+                                         .arg((bytes + 500000) / 1000000)
+                                         .arg(QDir::toNativeSeparators(java_->toolchainsDir()))
+                                   : tr("Not downloaded. If no Java that can run a project is found, the setup offers to download one."));
 }
 
 QWidget* SettingsDialog::pathRow(QLineEdit* edit, const QString& dialogTitle) {

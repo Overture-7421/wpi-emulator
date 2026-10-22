@@ -139,7 +139,8 @@ TEST_CASE("gradle launch plan: paths gradlew.bat cannot handle launch the wrappe
         if (special) {
             CHECK(s.program == (r.javaHome / "bin" / "java.exe").string());
             const std::vector<std::string> head = {"-Xmx64m", "-Xms64m", "-Dorg.gradle.appname=gradlew", "-classpath", jar.string(),
-                                                   "org.gradle.wrapper.GradleWrapperMain", "--no-daemon", "--console=plain", "-I"};
+                                                   "org.gradle.wrapper.GradleWrapperMain", "--no-daemon", "--console=plain",
+                                                   "-Dorg.gradle.java.home=" + r.javaHome.string(), "-I"};
             REQUIRE(s.args.size() > head.size());
             CHECK(std::vector<std::string>(s.args.begin(), s.args.begin() + static_cast<std::ptrdiff_t>(head.size())) == head);
             CHECK(s.args.back() == "simulateJava");
@@ -179,6 +180,7 @@ TEST_CASE("external launch plan: describe task names and descriptor paths") {
     REQUIRE(plan.ok());
     CHECK(plan.value().args.back() == "simulateExternalNativeDebug");
     CHECK(plan.value().args.front() == "--no-daemon");
+    CHECK(plan.value().args[2] == "-Dorg.gradle.java.home=" + fs::path("/jdk").string());   // wins over the project's gradle.properties
     CHECK(plan.value().env.at("JAVA_HOME") == "/jdk");
     CHECK(plan.value().env.count(env_names::kIpcEndpoint) == 0);  // the build step needs no emulator variables
     r.projectDir = dir.path() / "none";

@@ -49,7 +49,52 @@ PINS = [
                    "packaging/linux/build-appimage.sh", "docs/releasing.md"), UBUNTU, "Ubuntu release"),
     Pin("macosRunner", WORKFLOWS, r"\bmacos-(\d+)\b", "macOS runner image"),
     Pin("macosDeployment", ("docs/releasing.md",), r"defaults to macOS (\d+\.\d+)", "default macOS deployment target"),
+    Pin("msvcRuntimeMin", ("core/runtime/include/wpiemu/core/launcher/jdk_policy.h",), r'kMinVcRuntime = "(\d+\.\d+)"',
+        "minimum Visual C++ runtime of the JDK"),
 ]
+
+
+def check_jdk_assets(versions: dict) -> list[str]:
+    """The managed-JDK pins the app downloads: every asset must be self-consistent (the app trusts the SHA-256 only), and
+    every season must name a Java major that has a download for each platform."""
+    errors = []
+    jdk = versions.get("jdk")
+    if not isinstance(jdk, dict):
+        return ["versions.json: no entry 'jdk' (the managed Java download)"]
+    assets = jdk.get("assets", {})
+    if not assets:
+        errors.append("versions.json: jdk.assets is empty")
+    majors = set()
+    platforms = set()
+    for name, asset in assets.items():
+        where = f"versions.json jdk.assets.{name}"
+        match = re.fullmatch(r"(\d+)-((?:windows|macos|linux)-(?:x64|arm64))", name)
+        if not match:
+            errors.append(f"{where}: the key must be <java major>-<os>-<arch>, e.g. 17-windows-x64")
+        else:
+            majors.add(int(match.group(1)))
+            platforms.add(match.group(2))
+            if not str(asset.get("version", "")).startswith(match.group(1) + "."):
+                errors.append(f"{where}: version {asset.get('version')!r} is not a Java {match.group(1)} release")
+        if not re.fullmatch(r"[0-9a-f]{64}", str(asset.get("sha256", ""))):
+            errors.append(f"{where}: sha256 must be 64 lower-case hex digits")
+        if not str(asset.get("url", "")).startswith("https://github.com/"):
+            errors.append(f"{where}: url must be an https://github.com/ address (the only host the downloader allows)")
+        if not str(asset.get("version", "")) or str(asset["version"]) not in str(asset.get("url", "")).replace("%2B", "+").replace("_", "."):
+            errors.append(f"{where}: version {asset.get('version')!r} does not appear in the url")
+        if not isinstance(asset.get("size"), int) or asset["size"] <= 0 or asset["size"] > 500 * 1024 * 1024:
+            errors.append(f"{where}: size must be a positive byte count below the downloader's 500 MiB limit")
+    seasons = jdk.get("seasons", {})
+    if not seasons:
+        errors.append("versions.json: jdk.seasons is empty (it maps a WPILib year to the Java major that season builds with)")
+    for year, major in seasons.items():
+        if not re.fullmatch(r"\d{4}", str(year)) or not isinstance(major, int):
+            errors.append(f"versions.json jdk.seasons.{year}: expected a four-digit year mapped to a Java major number")
+            continue
+        for platform in sorted(platforms):
+            if f"{major}-{platform}" not in assets:
+                errors.append(f"versions.json jdk.seasons.{year}: Java {major} has no download for {platform}")
+    return errors
 
 
 def lookup(versions: dict, key: str) -> str:
@@ -89,7 +134,7 @@ def main() -> int:
     args = common.root_parser(__doc__).parse_args()
     root = args.root.resolve()
     try:
-        errors = check(root, common.load_versions(root))
+        errors = check(root, common.load_versions(root)) + check_jdk_assets(common.load_versions(root))
     except (OSError, ValueError) as error:
         print(f"versions: cannot check repository: {error}", file=sys.stderr)
         return 2

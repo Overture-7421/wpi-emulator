@@ -42,11 +42,18 @@ public:
     std::map<QString, QString> environment;
     std::map<QString, QString> onPath;
     std::map<QString, ProcessResult> processes;   // by program
+    std::map<QString, QString> fileVersions;      // by cleaned path (DLL product versions)
     QString cpu = QStringLiteral("x86_64");
     mutable int runCount = 0;
 
     HostOs hostOs() const override { return os; }
     QString cpuArchitecture() const override { return cpu; }
+    QString fileVersion(const QString& path) const override {
+        if (versionHook) return versionHook(QDir::cleanPath(path));
+        const auto it = fileVersions.find(QDir::cleanPath(path));
+        return it == fileVersions.end() ? QString() : it->second;
+    }
+    std::function<QString(const QString&)> versionHook;   // overrides fileVersions (tests whose files really move around)
     QString homeDir() const override { return home; }
     QString env(const QString& name) const override {
         const auto it = environment.find(name);
@@ -64,8 +71,15 @@ public:
         return it == processes.end() ? ProcessResult{} : it->second;
     }
 
-    void addJava(const QString& javaPath, const QString& versionText) {
+    // A working JDK: java, its compiler and the version text `java -version` prints.
+    void addJava(const QString& javaPath, const QString& versionText, bool withCompiler = true) {
         files.insert(QDir::cleanPath(javaPath));
+        if (withCompiler) {
+            QString javac = javaPath;
+            const int at = javac.lastIndexOf(QLatin1String("java"));
+            if (at >= 0) javac.replace(at, 4, QStringLiteral("javac"));
+            files.insert(QDir::cleanPath(javac));
+        }
         ProcessResult r;
         r.started = true;
         r.exitCode = 0;

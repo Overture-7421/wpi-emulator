@@ -18,10 +18,14 @@ struct RealRuntimeOptions {
     std::filesystem::path appDir;          // empty = QCoreApplication::applicationDirPath()
     int pollIntervalMs = 7;
     std::chrono::milliseconds handshakeTimeout{std::chrono::minutes(5)};
-    // The JDK and WPILib folders the user chose in Settings (empty = detect). Asked again at every launch.
+    // The JDK and WPILib folders to use (empty = detect). Asked again at every launch. `javaHome` is what the app's toolchain
+    // resolver chose (the Settings folder, a WPILib JDK, JAVA_HOME, PATH or the emulator's Java); `blocked` is a plain-language
+    // reason the launch cannot start (no usable Java), with the stable `problem` id the run view maps to an action.
     struct ToolchainOverrides {
         std::filesystem::path javaHome;
         std::filesystem::path wpilibHome;
+        QString blocked;
+        QString problem;
     };
     std::function<ToolchainOverrides()> toolchainOverrides;
     // Threads for the physics step of every launch (>= 1), chosen per machine in Settings. Empty = 1.
@@ -68,7 +72,7 @@ public slots:
 private:
     void pump();
     void setStatus(const HostStatus& status);
-    void failToStart(const QString& detail);
+    void failToStart(const QString& detail, const QString& problem = {});
     void sendBeginIfReady();
     void emitLog(sdk::LogLevel level, const QString& source, const QString& text);
     void releaseSession();

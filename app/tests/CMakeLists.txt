@@ -4,6 +4,7 @@ find_package(Qt6 REQUIRED COMPONENTS Test)
 add_executable(wpiemu_app_tests
     main.cpp
     test_app_services.cpp
+    test_build_tools_installer.cpp
     test_config_session.cpp
     test_gui_shell.cpp
     test_gui_wizard.cpp
@@ -13,6 +14,7 @@ add_executable(wpiemu_app_tests
     test_settings_models.cpp
     test_shell_controller.cpp
     test_toolchain_checker.cpp
+    test_toolchain_provisioner.cpp
     test_update.cpp
     test_wizard_view_model.cpp)
 target_link_libraries(wpiemu_app_tests PRIVATE wpiemu_app_common Qt6::Test)

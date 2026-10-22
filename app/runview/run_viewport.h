@@ -34,10 +34,12 @@ public:
     QLabel* titleLabel() const { return title_; }
     QLabel* detailLabel() const { return detail_; }
     QPushButton* restartButton() const { return restart_; }
+    QPushButton* fixButton() const { return fix_; }
 
 signals:
     void restartRequested();
     void showConsoleRequested();
+    void problemActionRequested(int action);   // a ProblemAction
 
 protected:
     void paintEvent(QPaintEvent*) override;
@@ -48,7 +50,9 @@ private:
     QLabel* detail_;
     QProgressBar* busy_;
     QPushButton* restart_;
+    QPushButton* fix_;
     QPushButton* console_;
+    ProblemAction action_ = ProblemAction::None;
 };
 
 // Qt Quick 3D scene hosted in a QQuickWidget plus the state overlay.

@@ -98,6 +98,36 @@ TEST_CASE("status presentation covers empty, loading and error states") {
     const auto f = presentStatus(failed, false);
     CHECK(f.detail == QStringLiteral("gradlew missing"));
     CHECK(f.tone == Tone::Error);
+    CHECK(f.action == ProblemAction::None);   // an unknown failure keeps the raw detail and offers no fix
+}
+
+TEST_CASE("status presentation words a recognised launch failure and offers the fix that exists for it") {
+    HostStatus stale = status(ProcessState::FailedToStart);
+    stale.detail = QStringLiteral("raw gradle tail");
+    stale.problem = QStringLiteral("stale_vc_runtime");
+    stale.problemFields.insert(QStringLiteral("found"), QStringLiteral("14.36"));
+    stale.problemFields.insert(QStringLiteral("expected"), QStringLiteral("14.40"));
+    stale.problemFields.insert(QStringLiteral("runtimePath"), QStringLiteral("C:\\jdk\\bin\\msvcp140.dll"));
+    const auto s = presentStatus(stale, false);
+    CHECK(s.detail.contains(QStringLiteral("14.36")));
+    CHECK(s.detail.contains(QStringLiteral("14.40")));
+    CHECK(s.detail.contains(QStringLiteral("msvcp140.dll")));
+    CHECK(!s.detail.contains(QStringLiteral("raw gradle tail")));
+    CHECK(s.action == ProblemAction::FixSetup);
+    CHECK(s.offerRestart);
+
+    HostStatus setting = status(ProcessState::FailedToStart);
+    setting.problem = QStringLiteral("java_setting_unusable");
+    setting.detail = QStringLiteral("/nowhere does not exist.");
+    const auto o = presentStatus(setting, false);
+    CHECK(o.action == ProblemAction::OpenSettings);
+    CHECK(o.detail == QStringLiteral("/nowhere does not exist."));   // the reasons stay visible
+
+    HostStatus offline = status(ProcessState::Crashed, LinkState::Disconnected, 1);
+    offline.problem = QStringLiteral("download_failed");
+    const auto d = presentStatus(offline, false);
+    CHECK(d.action == ProblemAction::None);
+    CHECK(d.detail.contains(QStringLiteral("internet")));
 }
 
 TEST_CASE("console model is bounded and filterable") {

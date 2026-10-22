@@ -10,6 +10,7 @@
 
 #include "common/app_settings.h"
 #include "common/system_probe.h"
+#include "common/toolchain_provisioner.h"
 #include "common/ui_resources.h"
 
 namespace wpiemu::app {
@@ -19,7 +20,8 @@ namespace wpiemu::app {
 class SettingsDialog : public QDialog {
     Q_OBJECT
 public:
-    SettingsDialog(AppSettings& settings, const ISystemProbe& probe, const UiResources& ui, QWidget* parent = nullptr);
+    SettingsDialog(AppSettings& settings, const ISystemProbe& probe, const UiResources& ui, QWidget* parent = nullptr,
+                   ToolchainProvisioner* java = nullptr);
 
     AppSettingsData collect() const;
     // Problems in the current input; non-empty disables OK.
@@ -33,6 +35,7 @@ public:
     QCheckBox* updatesCheck() const { return updates_; }
     QSlider* volumeSlider() const { return volume_; }
     QDialogButtonBox* buttons() const { return buttons_; }
+    QPushButton* removeJavaButton() const { return removeJava_; }
 
 public slots:
     void accept() override;
@@ -40,10 +43,14 @@ public slots:
 private:
     void load(const AppSettingsData& data);
     void validate();
+    void refreshJava();
     QWidget* pathRow(QLineEdit* edit, const QString& dialogTitle);
 
     AppSettings& settings_;
     const ISystemProbe& probe_;
+    ToolchainProvisioner* java_;
+    QLabel* javaStatus_ = nullptr;
+    QPushButton* removeJava_ = nullptr;
     QComboBox* theme_;
     QComboBox* units_;
     QComboBox* rate_;

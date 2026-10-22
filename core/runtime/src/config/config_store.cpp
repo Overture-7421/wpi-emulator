@@ -57,6 +57,16 @@ Result<fs::path> appDataRoot(Platform platform, const EnvLookup& env) {
     return makeError(ErrorCode::NotFound, "no home/app-data directory in the environment");
 }
 
+Result<fs::path> localDataRoot(Platform platform, const EnvLookup& env) {
+    if (platform == Platform::Windows) {
+        auto get = [&](std::string_view name) { return env ? env(name) : std::nullopt; };
+        if (const auto local = get("LOCALAPPDATA")) return fs::path(*local) / "WpiEmulator";
+        if (const auto profile = get("USERPROFILE")) return fs::path(*profile) / "AppData" / "Local" / "WpiEmulator";
+        return makeError(ErrorCode::NotFound, "no home/app-data directory in the environment");
+    }
+    return appDataRoot(platform, env);
+}
+
 std::string projectKeyForPath(std::string_view canonicalPath, bool caseInsensitive) {
     std::string path(canonicalPath);
     while (path.size() > 1 && (path.back() == '/' || path.back() == '\\')) path.pop_back();

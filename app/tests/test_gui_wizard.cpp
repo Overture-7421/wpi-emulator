@@ -190,6 +190,60 @@ TEST_CASE("wizard dialog: missing tools are explained with a fix and do not bloc
     CHECK(dlg.toolchainPage()->rowStatus(QStringLiteral("game")) == CheckStatus::Warning);   // still core-only
 }
 
+TEST_CASE("wizard dialog: Get Java is offered only for a failing Java row and only after consent") {
+    GuiEnvironment env(/*healthyMachine=*/false);
+    TestProject project;   // a 2026 project: the season has a pinned Java
+    env.addProject(project);
+    WizardDialog dlg(*env.services, env.ui);
+    dlg.show();
+    enterProject(dlg, project.path());
+    dlg.nextButton()->click();
+    REQUIRE(waitFor([&] { return dlg.model().toolchainChecked(); }));
+    REQUIRE(dlg.model().javaDownloadAvailable());
+    QPushButton* get = dlg.toolchainPage()->rowAction(QStringLiteral("jdk"));
+    REQUIRE(get != nullptr);
+    CHECK(get->text().contains(QStringLiteral("17")));
+    CHECK(dlg.toolchainPage()->rowAction(QStringLiteral("gradle")) == nullptr);
+
+    QString asked;
+    dlg.toolchainPage()->setConsent([&](const QString& question) {
+        asked = question;
+        return false;
+    });
+    get->click();
+    CHECK(asked.contains(QStringLiteral("github.com")));
+    CHECK(asked.contains(QStringLiteral("administrator")));
+    CHECK(!env.services->provisioner().busy());   // declined: nothing was downloaded
+}
+
+TEST_CASE("wizard dialog: with a working Java nothing is offered, and a season without a pin gets no download") {
+    {
+        GuiEnvironment env;   // healthy machine
+        TestProject project;
+        env.addProject(project);
+        WizardDialog dlg(*env.services, env.ui);
+        dlg.show();
+        enterProject(dlg, project.path());
+        dlg.nextButton()->click();
+        REQUIRE(waitFor([&] { return dlg.model().toolchainChecked(); }));
+        CHECK(dlg.toolchainPage()->rowStatus(QStringLiteral("jdk")) == CheckStatus::Ok);
+        CHECK(dlg.toolchainPage()->rowAction(QStringLiteral("jdk")) == nullptr);
+    }
+    {
+        GuiEnvironment env(/*healthyMachine=*/false);
+        TestProject project(QStringLiteral("java"), 2031);
+        env.addProject(project);
+        WizardDialog dlg(*env.services, env.ui);
+        dlg.show();
+        enterProject(dlg, project.path());
+        dlg.nextButton()->click();
+        REQUIRE(waitFor([&] { return dlg.model().toolchainChecked(); }));
+        CHECK(dlg.toolchainPage()->rowStatus(QStringLiteral("jdk")) == CheckStatus::Missing);
+        CHECK(!dlg.model().javaDownloadAvailable());   // never guess which Java an unknown season needs
+        CHECK(dlg.toolchainPage()->rowAction(QStringLiteral("jdk")) == nullptr);
+    }
+}
+
 TEST_CASE("wizard dialog: dropping a folder or a file inside it selects the project") {
     GuiEnvironment env;
     TestProject project;
