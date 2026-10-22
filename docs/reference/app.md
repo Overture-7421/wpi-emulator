@@ -188,6 +188,34 @@ offscreen platform or without an audio device. The page is silent while hidden a
 and 0-100 volume belong to **File > Settings** (`AppSettingsData`), and the shell applies them with
 `RunPage::setSoundEffects`, so the run view never sees `app/common`.
 
+## Updates
+
+`UpdateService` (`app/common`, owned by `AppServices::updates()`) checks GitHub once per start and on
+**Help > Check for updates…**; it asks only `github.com` (rationale in the
+[decision index](../decisions/README.md)). It follows the redirect of `releases/latest` to the stable tag, compares it with the
+running version, derives the installer name for this platform (`update_offer`) and reads the `.sha256` sidecar beside it.
+Anything else (no release, no installer for this computer, no sidecar) is "up to date"; a malformed sidecar or a network
+error is silent at start-up and reported only for a manual check. All requests go through `IUpdateTransport`
+(Qt Network: https to `github.com` and `*.githubusercontent.com` only, five redirects, size caps, no cookies) and every
+effect after the download through `IUpdateInstaller`, so tests script both.
+
+`detectInstall` classifies the copy from `ISystemProbe`: Windows installer (`Uninstall.exe` beside `bin`), macOS bundle
+outside `/Volumes`, AppImage (`APPIMAGE`), portable (packaged layout without an installer: the button opens the release
+page) or development (version `0.0.0` or any other layout: never checks). `--demo` and **Settings > Check for updates when
+the app starts** switch the start-up check off; the skipped version is kept under `updates/skippedVersion`.
+
+States run Idle, Checking, Available, Downloading, Verifying, Ready, Installing, with Failed after a download that failed
+or did not match its SHA-256 (the file is deleted; retrying downloads again). The installer lands in `%TEMP%\wpiemu-update`
+(Windows), Downloads (macOS) or beside the AppImage. **Install** then means: Windows and Linux ask the window to close
+(`installRequested`; `MainWindow` confirms only while a simulation runs, and `closeEvent` still flushes saves or refuses,
+which returns to Ready) and the installer is started from `aboutToQuit`, through the shell on Windows because it
+elevates; macOS opens the disk image and the app keeps running.
+
+`presentUpdate` maps state to the `UpdateButton` text, tone and tooltip, and to the Help menu mirror (a native macOS menu
+bar has no corner widget). The button is the menu bar's corner widget with `[updateButton="true"]` and `[tone]` QSS roles;
+its context menu offers release notes, skip this version and cancel download. Only a manual check reports its outcome in
+a dialog. The opt-in transport test (`WPIEMU_E2E_NETWORK=1`) talks to github.com.
+
 ## Scene presentation and resources
 
 The run renderer relies on these frame contracts:

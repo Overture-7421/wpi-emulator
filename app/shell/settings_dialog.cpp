@@ -24,6 +24,7 @@ SettingsDialog::SettingsDialog(AppSettings& settings, const ISystemProbe& probe,
       jdk_(new QLineEdit),
       reopen_(new QCheckBox(tr("Reopen the last project when the app starts"))),
       sound_(new QCheckBox(tr("Play match sound effects during Practice"))),
+      updates_(new QCheckBox(tr("Check for updates when the app starts"))),
       volume_(new QSlider(Qt::Horizontal)),
       problemLabel_(makeLabel({}, "error", nullptr, true)),
       buttons_(new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel)) {
@@ -79,6 +80,8 @@ SettingsDialog::SettingsDialog(AppSettings& settings, const ISystemProbe& probe,
     auto* generalLayout = new QVBoxLayout(general);
     generalLayout->setContentsMargins(18, 18, 18, 18);
     generalLayout->addWidget(reopen_);
+    generalLayout->addWidget(updates_);
+    generalLayout->addWidget(makeLabel(tr("Only asks github.com whether a newer release exists; nothing about you or your projects is sent."), "muted", nullptr, true));
     generalLayout->addSpacing(12);
     generalLayout->addWidget(sound_);
     auto* volumeRow = new QFormLayout;
@@ -129,6 +132,7 @@ void SettingsDialog::load(const AppSettingsData& d) {
     jdk_->setText(d.jdkHome);
     reopen_->setChecked(d.reopenLastProject);
     sound_->setChecked(d.soundEffects);
+    updates_->setChecked(d.checkForUpdates);
     volume_->setValue(d.soundVolumePercent);
     volume_->setEnabled(d.soundEffects);
 }
@@ -143,6 +147,7 @@ AppSettingsData SettingsDialog::collect() const {
     d.jdkHome = jdk_->text().trimmed();
     d.reopenLastProject = reopen_->isChecked();
     d.soundEffects = sound_->isChecked();
+    d.checkForUpdates = updates_->isChecked();
     d.soundVolumePercent = volume_->value();
     return d;
 }

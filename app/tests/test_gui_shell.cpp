@@ -14,6 +14,7 @@
 #include "shell/page_factory.h"
 #include "shell/settings_dialog.h"
 #include "shell/shell_controller.h"
+#include "update_fakes.h"
 #include "wizard/robot_page.h"
 #include "wizard/wizard_dialog.h"
 
@@ -40,8 +41,8 @@ struct ShellFixture {
     MainWindow window;
     int wizardRuns = 0;
 
-    explicit ShellFixture(bool healthy = true)
-        : env(healthy), controller(*env.services), window(*env.services, controller, env.ui, createShellPages(*env.services, env.ui, &controller)) {
+    explicit ShellFixture(bool healthy = true, const std::function<void(AppServicesOptions&)>& tweak = {})
+        : env(healthy, false, tweak), controller(*env.services), window(*env.services, controller, env.ui, createShellPages(*env.services, env.ui, &controller)) {
         window.setMessageRunner([](const QString&) {});
     }
 
@@ -170,6 +171,130 @@ TEST_CASE("shell: the sound preferences of File > Settings reach the run page") 
     CHECK(run->sfx().volumePercent() == 25);
 }
 #endif
+
+namespace {
+
+// An AppImage install that is one version behind the scripted release; nothing touches the network or the disk.
+struct UpdateRig {
+    FakeTransport* transport = nullptr;
+    FakeInstaller* installer = nullptr;
+
+    std::function<void(AppServicesOptions&)> tweak() {
+        return [this](AppServicesOptions& o) {
+            auto& probe = static_cast<FakeProbe&>(*o.probe);
+            probe.environment[QStringLiteral("APPIMAGE")] = QStringLiteral("/apps/WPI.AppImage");
+            probe.files.insert(QStringLiteral("/apps/WPI.AppImage"));
+            auto t = std::make_unique<FakeTransport>();
+            auto i = std::make_unique<FakeInstaller>();
+            transport = t.get();
+            installer = i.get();
+            o.updateTransport = std::move(t);
+            o.updateInstaller = std::move(i);
+            o.appDir = QStringLiteral("/tmp/.mount/usr/bin");
+            o.appVersion = QStringLiteral("0.0.5");
+        };
+    }
+};
+
+}  // namespace
+
+TEST_CASE("the Update button says what the updater is doing") {
+    UpdateOffer offer;
+    offer.tag = QStringLiteral("v0.0.6");
+    offer.version = QVersionNumber(0, 0, 6);
+    offer.fileName = QStringLiteral("x.AppImage");
+    const auto show = [&](UpdateState s, int percent = -1, InstallKind kind = InstallKind::AppImage) {
+        return presentUpdate(s, offer, percent, kind, QStringLiteral("boom"));
+    };
+    for (UpdateState hidden : {UpdateState::Idle, UpdateState::Checking, UpdateState::UpToDate, UpdateState::Unsupported}) CHECK_FALSE(show(hidden).visible);
+    CHECK(show(UpdateState::Available).text == QStringLiteral("Update"));
+    CHECK(show(UpdateState::Available).tone == QStringLiteral("success"));
+    CHECK(show(UpdateState::Downloading, 42).text == QStringLiteral("Downloading 42%"));
+    CHECK(show(UpdateState::Downloading).text == QStringLiteral("Downloading…"));
+    CHECK(show(UpdateState::Verifying).text == QStringLiteral("Verifying…"));
+    CHECK(show(UpdateState::Ready).text == QStringLiteral("Restart to update"));
+    CHECK(show(UpdateState::Ready, -1, InstallKind::MacBundle).text == QStringLiteral("Open update"));
+    CHECK(show(UpdateState::Failed).text == QStringLiteral("Update failed"));
+    CHECK(show(UpdateState::Failed).tone == QStringLiteral("error"));
+    CHECK(show(UpdateState::Failed).tooltip.contains(QStringLiteral("boom")));
+    offer.tag.clear();   // a failed check has no update to retry
+    CHECK_FALSE(show(UpdateState::Failed).visible);
+}
+
+TEST_CASE("shell: the Update button walks from discovery to the installer, mirrored in Help") {
+    UpdateRig rig;
+    ShellFixture f(true, rig.tweak());
+    f.window.show();
+    auto& updates = f.env.services->updates();
+    auto* button = f.window.updateButton();
+    CHECK_FALSE(button->isVisible());
+    CHECK_FALSE(f.window.updateAction()->isVisible());
+    CHECK(f.window.checkUpdatesAction()->isEnabled());
+    CHECK(f.window.menuBar()->cornerWidget(Qt::TopRightCorner) == button);
+
+    updates.check(false);
+    CHECK(button->isVisible());
+    CHECK(button->text() == QStringLiteral("Update"));
+    CHECK(button->property("tone").toString() == QStringLiteral("success"));
+    CHECK(f.window.updateAction()->isVisible());
+    CHECK(f.window.updateAction()->text() == QStringLiteral("&Update to 0.0.6…"));
+
+    button->click();   // downloads and verifies
+    CHECK(updates.state() == UpdateState::Ready);
+    CHECK(button->text() == QStringLiteral("Restart to update"));
+    CHECK(button->width() >= button->sizeHint().width());   // the menu bar made room for the longer text
+    CHECK(rig.installer->launched.empty());
+
+    button->click();   // closes the window; the installer starts as the app exits
+    CHECK_FALSE(f.window.isVisible());
+    CHECK(updates.state() == UpdateState::Installing);
+    updates.aboutToQuit();
+    CHECK(rig.installer->launched.size() == 1);
+}
+
+TEST_CASE("shell: only a manual update check tells the user the outcome") {
+    UpdateRig rig;
+    ShellFixture f(true, rig.tweak());
+    QStringList messages;
+    f.window.setMessageRunner([&](const QString& text) { messages << text; });
+    auto& updates = f.env.services->updates();
+
+    updates.check(false);
+    CHECK(messages.isEmpty());   // an update is offered through the button, not a dialog
+
+    rig.transport->latest = {true, 302, {}, QStringLiteral("https://github.com/Overture-7421/wpi-emulator/releases/tag/v0.0.5"), {}};
+    f.window.checkUpdatesAction()->trigger();
+    REQUIRE(messages.size() == 1);
+    CHECK(messages.front().contains(QStringLiteral("up to date")));
+
+    rig.transport->latest = {false, 0, QStringLiteral("offline"), {}, {}};
+    f.window.checkUpdatesAction()->trigger();
+    REQUIRE(messages.size() == 2);
+    CHECK(messages.back().contains(QStringLiteral("offline")));
+}
+
+TEST_CASE("shell: the right-click menu of the Update button offers notes, skip and cancel") {
+    UpdateRig rig;
+    ShellFixture f(true, rig.tweak());
+    auto& updates = f.env.services->updates();
+    updates.check(false);
+    std::unique_ptr<QMenu> menu(f.window.updateButton()->buildContextMenu());
+    QStringList titles;
+    for (QAction* a : menu->actions()) titles << a->text();
+    CHECK(titles == QStringList{QStringLiteral("Release notes"), QStringLiteral("Skip this version")});
+    menu->actions().at(0)->trigger();
+    CHECK(rig.installer->opened == std::vector<QString>{QStringLiteral("https://github.com/Overture-7421/wpi-emulator/releases/tag/v0.0.6")});
+    menu->actions().at(1)->trigger();
+    CHECK(updates.state() == UpdateState::Idle);
+
+    updates.check(true);
+    rig.transport->holdDownload = true;
+    updates.download();
+    menu.reset(f.window.updateButton()->buildContextMenu());
+    CHECK(menu->actions().first()->text() == QStringLiteral("Cancel download"));
+    menu->actions().first()->trigger();
+    CHECK(updates.state() == UpdateState::Available);
+}
 
 TEST_CASE("cancelling the wizard leaves no project half-open") {
     ShellFixture f;
@@ -507,6 +632,9 @@ TEST_CASE("settings dialog edits a copy and applies on OK") {
     dlg.soundCheck()->setChecked(false);
     CHECK_FALSE(dlg.volumeSlider()->isEnabled());
     dlg.volumeSlider()->setValue(30);
+    CHECK(dlg.updatesCheck()->isChecked());   // update checks are on by default
+    dlg.updatesCheck()->setChecked(false);
+    CHECK(env.services->settings().data().checkForUpdates);   // not applied yet
     CHECK(env.services->settings().data().soundEffects);   // not applied yet
     CHECK(env.services->settings().data().theme == ThemeMode::System);   // not applied yet
     dlg.buttons()->button(QDialogButtonBox::Ok)->click();
@@ -515,6 +643,7 @@ TEST_CASE("settings dialog edits a copy and applies on OK") {
     CHECK(env.services->settings().data().physicsThreads == 2);
     CHECK_FALSE(env.services->settings().data().soundEffects);
     CHECK(env.services->settings().data().soundVolumePercent == 30);
+    CHECK_FALSE(env.services->settings().data().checkForUpdates);
     CHECK(env.theme.isDark());   // the theme follows immediately
 
     dlg.themeCombo()->setCurrentIndex(dlg.themeCombo()->findData(static_cast<int>(ThemeMode::Light)));

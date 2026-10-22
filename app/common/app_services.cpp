@@ -1,6 +1,7 @@
 #include "common/app_services.h"
 
 #include <QDir>
+#include <QCoreApplication>
 
 #include <thread>
 
@@ -74,6 +75,12 @@ AppServices::AppServices(AppServicesOptions options)
         };
         runtime_ = std::make_unique<RealRuntimeHost>(registries, std::move(real));
     }
+
+    const QString version = options.appVersion.isEmpty() ? QStringLiteral(WPIEMU_APP_VERSION) : options.appVersion;
+    updates_ = std::make_unique<UpdateService>(
+        *store_, *probe_, options.updateTransport ? std::move(options.updateTransport) : createQtUpdateTransport(version),
+        options.updateInstaller ? std::move(options.updateInstaller) : createQtUpdateInstaller(), version,
+        options.appDir.isEmpty() && QCoreApplication::instance() ? QCoreApplication::applicationDirPath() : options.appDir);
 }
 
 AppServices::~AppServices() = default;

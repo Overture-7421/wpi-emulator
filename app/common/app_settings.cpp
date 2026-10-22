@@ -13,6 +13,7 @@ constexpr auto kWpilib = "settings/wpilibHome";
 constexpr auto kJdk = "settings/jdkHome";
 constexpr auto kReopen = "settings/reopenLastProject";
 constexpr auto kSoundEffects = "settings/soundEffects";
+constexpr auto kCheckForUpdates = "settings/checkForUpdates";
 constexpr auto kSoundVolume = "settings/soundVolume";
 constexpr auto kLanguage = "settings/language";
 }  // namespace
@@ -58,6 +59,7 @@ void AppSettings::load() {
     data_.jdkHome = store_.value(kJdk).toString();
     data_.reopenLastProject = store_.value(kReopen, true).toBool();
     data_.soundEffects = store_.value(kSoundEffects, true).toBool();
+    data_.checkForUpdates = store_.value(kCheckForUpdates, true).toBool();
     data_.soundVolumePercent = sanitizeSoundVolume(store_.value(kSoundVolume, kDefaultSoundVolumePercent).toInt());
     data_.language = store_.value(kLanguage).toString();
 }
@@ -71,6 +73,7 @@ void AppSettings::save() const {
     store_.setValue(kJdk, data_.jdkHome);
     store_.setValue(kReopen, data_.reopenLastProject);
     store_.setValue(kSoundEffects, data_.soundEffects);
+    store_.setValue(kCheckForUpdates, data_.checkForUpdates);
     store_.setValue(kSoundVolume, data_.soundVolumePercent);
     store_.setValue(kLanguage, data_.language);
     store_.sync();

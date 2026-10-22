@@ -109,6 +109,7 @@ export ARCH=x86_64
 export APPIMAGE_EXTRACT_AND_RUN=1            # no FUSE in containers / CI
 export LINUXDEPLOY_OUTPUT_VERSION="$VERSION"
 export QML_SOURCES_PATHS="$ROOT/app"         # QML is compiled in as resources, so point the scanner at the sources
+export EXTRA_QT_PLUGINS="tls"                # HTTPS backends of the in-app updater (QtNetwork)
 export PATH="$TOOLS_DIR:$PATH"               # linuxdeploy finds linuxdeploy-plugin-qt next to itself / on PATH
 # libwpiHal.so is resolved at run time by the robot process that loads the extension, so it is never bundled
 # (--exclude-library below), but linuxdeploy fails unless it can locate the library while scanning the extension.
@@ -141,7 +142,9 @@ env -i PATH=/usr/bin:/bin HOME="${HOME:-/tmp}" APPIMAGE_EXTRACT_AND_RUN=1 "$FINA
 verify_dir="$BUILD_DIR/verify"
 rm -rf "$verify_dir"; mkdir -p "$verify_dir"
 (cd "$verify_dir" && APPIMAGE_EXTRACT_AND_RUN=1 "$FINAL" --appimage-extract 'usr/lib/wpiemu/*' >/dev/null)
+(cd "$verify_dir" && APPIMAGE_EXTRACT_AND_RUN=1 "$FINAL" --appimage-extract 'usr/plugins/tls/*' >/dev/null)
 [[ -f "$verify_dir/squashfs-root/usr/lib/wpiemu/libhalsim_wpiemu.so" ]] || die "extension missing from the AppImage"
+compgen -G "$verify_dir/squashfs-root/usr/plugins/tls/*backend*" >/dev/null || die "Qt TLS backend missing from the AppImage (the updater needs HTTPS)"
 rm -rf "$verify_dir"
 
 echo

@@ -170,6 +170,8 @@ if(WIN32)
     set(CPACK_NSIS_MODIFY_PATH OFF)
     set(CPACK_NSIS_MANIFEST_DPI_AWARE ON)
     set(CPACK_NSIS_IGNORE_LICENSE_PAGE ON)
+    # An update downloaded by the app ends on this page: offer to start the new version (docs/releasing.md).
+    set(CPACK_NSIS_MUI_FINISHPAGE_RUN "wpiemu_app.exe")
     if(CPACK_RESOURCE_FILE_LICENSE)
         set(CPACK_NSIS_IGNORE_LICENSE_PAGE OFF)
     endif()

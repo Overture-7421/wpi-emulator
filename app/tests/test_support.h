@@ -42,9 +42,11 @@ public:
     std::map<QString, QString> environment;
     std::map<QString, QString> onPath;
     std::map<QString, ProcessResult> processes;   // by program
+    QString cpu = QStringLiteral("x86_64");
     mutable int runCount = 0;
 
     HostOs hostOs() const override { return os; }
+    QString cpuArchitecture() const override { return cpu; }
     QString homeDir() const override { return home; }
     QString env(const QString& name) const override {
         const auto it = environment.find(name);
@@ -104,7 +106,8 @@ struct TestEnvironment {
     DemoRuntimeHost* demo = nullptr;
     std::unique_ptr<AppServices> services;
 
-    explicit TestEnvironment(bool healthyMachine = true, bool realRuntime = false) {
+    explicit TestEnvironment(bool healthyMachine = true, bool realRuntime = false,
+                             const std::function<void(AppServicesOptions&)>& tweak = {}) {
         AppServicesOptions options;
         options.store = std::make_unique<MemoryKeyValueStore>();
         options.appDataRoot = std::filesystem::path(appData.path().toStdU16String());
@@ -125,6 +128,7 @@ struct TestEnvironment {
             host->setStepIntervals(5, 5);
             options.runtime = std::move(host);
         }
+        if (tweak) tweak(options);
         services = std::make_unique<AppServices>(std::move(options));
     }
 

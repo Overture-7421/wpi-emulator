@@ -168,6 +168,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "wpiemu_app --version failed ($LASTEXITCODE)" }
           foreach ($f in 'extensions\halsim_wpiemu.dll', 'plugins\platforms\qwindows.dll', 'plugins\imageformats\qsvg.dll',
                          'plugins\iconengines\qsvgicon.dll', 'plugins\multimedia\ffmpegmediaplugin.dll',
+                         'plugins\tls\qschannelbackend.dll',   # HTTPS of the in-app updater
                          'qml\QtQuick3D\qquick3dplugin.dll', 'bin\qt.conf') {
             if (-not (Test-Path "$dest\$f")) { throw "missing in installed tree: $f" }
           }
@@ -224,6 +225,7 @@ jobs:
           test -f "$app/Contents/PlugIns/wpiemu/libhalsim_wpiemu.dylib"
           find "$app/Contents/Resources/qml/QtQuick3D" -iname '*quick3dplugin*' -print -quit | grep -q .
           find "$app/Contents/PlugIns/multimedia" -iname '*ffmpegmediaplugin*' -print -quit | grep -q .
+          find "$app/Contents/PlugIns/tls" -iname '*backend*' -print -quit | grep -q .   # HTTPS of the in-app updater
           exe="$app/Contents/MacOS/wpiemu_app"
           # Fat binaries print "<exe> (architecture ...):" headers; only the tab-indented lines are dependencies.
           bad="$(otool -arch all -L "$exe" | grep -E '^[[:space:]]' | awk '{print $1}' | grep -v -E '^(@rpath|@executable_path|@loader_path|/usr/lib/|/System/)' || true)"

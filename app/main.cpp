@@ -77,6 +77,8 @@ int main(int argc, char* argv[]) {
     QTimer::singleShot(0, &window, [&] {
         if (!services.startupProblems().isEmpty())
             window.showMessage(services.startupProblems().join(QStringLiteral("\n")));
+        // One quiet look at GitHub per start: it only shows the Update button when a newer release exists.
+        if (!services.demo() && services.settings().data().checkForUpdates) services.updates().check(false);
         if (parser.isSet(projectOption)) window.openProjectPath(parser.value(projectOption));
         else controller.restoreLastProject();
     });

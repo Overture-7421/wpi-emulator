@@ -21,7 +21,7 @@ is `C:\Program Files\WPI Emulator\bin\wpiemu_app.exe`; a portable tree also uses
 macOS: open the DMG and copy `wpiemu_app.app` to Applications. Linux: make the AppImage executable
 and run it. Packages include the app's Qt runtime, not the robot's WPILib toolchain.
 Artifact names and packaging caveats are in [Releasing](releasing.md);
-source-build instructions and Qt DLL setup are in [Building](BUILDING.md).
+source-build instructions and Qt DLL setup are in [Building](BUILDING.md). The app can update itself; see [Updates](#updates).
 
 For example, in Windows PowerShell:
 
@@ -185,7 +185,7 @@ Tower points, penalties and ranking points are not scored.
 ## Settings and project files
 
 **File > Settings…** controls theme, dialog units, the WPILib and JDK folders, physics rate, physics threads,
-reopening the last project and Practice sound effects (on/off and volume). The folders apply to the next toolchain check and robot launch; left
+reopening the last project, the update check and Practice sound effects (on/off and volume). The folders apply to the next toolchain check and robot launch; left
 empty, Gradle runs with WPILib's JDK for the project's season (all-users or this-user install),
 then `JAVA_HOME`, then `java` on `PATH`. The physics-rate setting
 is copied into the model when the wizard finishes: rerun setup to apply a changed rate.
@@ -204,6 +204,21 @@ Windows `%APPDATA%\WpiEmulator`; macOS `~/Library/Application Support/WpiEmulato
 Linux `$XDG_DATA_HOME/wpi-emulator` or `~/.local/share/wpi-emulator`.
 The shareable export is `<project>\.wpiemu\robot.json`. Keep it in team version control if wanted;
 an existing app-data working copy takes precedence over that export. UI preferences are separate Qt settings.
+
+## Updates
+
+An installed copy asks `github.com` whether a newer stable release exists each time it starts. When one does, a green
+**Update** button appears at the right of the menu bar; the same action is under **Help**. Click it to download the installer
+(the button shows the progress and "Verifying…"), then click **Restart to update**: WPI Emulator closes, saving your work
+first and asking before it ends a running simulation, and the installer takes over (Windows asks for administrator rights; you
+can start the new version from its last page). On macOS the button reads **Open update** and opens the disk image, and on
+Linux the new AppImage is saved beside the old one and started. A portable ZIP or tree only opens the release page.
+Right-click the button for the release notes, to skip that version or to cancel a download. **Help > Check for updates…**
+checks on demand and says when you are current.
+
+A download is deleted unless it matches the checksum published with the release. The installers are not code-signed
+yet, so Windows may show an "unknown publisher" prompt. Only the version request goes to GitHub, and nothing about you or
+your projects is sent. Turn the start-up check off in **File > Settings…**. Development builds and `--demo` never check.
 
 ## Troubleshooting
 
