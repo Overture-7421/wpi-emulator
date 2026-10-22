@@ -67,6 +67,14 @@ struct ZoneState {
     bool active = false;
 };
 
+// A sound a game asked the UI to play (see game/sound_cue.h). Cues stay in the snapshots for a while: `sequence`
+// increases for every cue of a game state and the UI plays each one once.
+struct SoundCueEvent {
+    std::string cueId;             // SoundCueInfo::id
+    std::uint64_t sequence = 0;
+    SimTimeUs simTimeUs = 0;       // when the game raised it
+};
+
 // Runtime state of one simulated camera (RobotConfig::cameras).
 struct CameraState {
     std::string id;                 // CameraConfig::id
@@ -98,6 +106,8 @@ public:
     virtual std::span<const HudValue> hud() const = 0;
     // Activation state of the robot's zones (empty when the game defines none).
     virtual std::span<const ZoneState> zones() const { return {}; }
+    // Sounds the game raised recently, oldest first (empty when the game has none).
+    virtual std::span<const SoundCueEvent> soundCues() const { return {}; }
     // State of the robot's simulated cameras (empty when none are configured).
     virtual std::span<const CameraState> cameras() const { return {}; }
     // State of the robot's sensors (empty when none are configured).
@@ -130,6 +140,7 @@ struct SimSnapshotData {
     std::vector<MechanismState> mechanisms;
     std::vector<HudValue> hud;
     std::vector<ZoneState> zones;
+    std::vector<SoundCueEvent> soundCues;
     std::vector<CameraState> cameras;
     std::vector<SensorState> sensors;
     std::vector<DiscoveredDevice> devices;
@@ -154,6 +165,7 @@ public:
     std::span<const MechanismState> mechanisms() const override { return d_.mechanisms; }
     std::span<const HudValue> hud() const override { return d_.hud; }
     std::span<const ZoneState> zones() const override { return d_.zones; }
+    std::span<const SoundCueEvent> soundCues() const override { return d_.soundCues; }
     std::span<const CameraState> cameras() const override { return d_.cameras; }
     std::span<const SensorState> sensors() const override { return d_.sensors; }
     std::span<const DiscoveredDevice> devices() const override { return d_.devices; }
@@ -174,6 +186,7 @@ public:
     void addBody(BodySample b) { data_.bodies.push_back(std::move(b)); }
     void addMechanism(MechanismState m) { data_.mechanisms.push_back(std::move(m)); }
     void addZone(ZoneState z) { data_.zones.push_back(std::move(z)); }
+    void addSoundCue(SoundCueEvent e) { data_.soundCues.push_back(std::move(e)); }
     void addCamera(CameraState c) { data_.cameras.push_back(std::move(c)); }
     void addSensor(SensorState s) { data_.sensors.push_back(std::move(s)); }
     EntityGroupSample& addEntityGroup(EntityGroupSample g) {

@@ -13,6 +13,7 @@
 #include "wpiemu/plugins/game_2026/game_state.h"
 #include "wpiemu/plugins/game_2026/game_ui.h"
 #include "wpiemu/plugins/game_2026/game_values.h"
+#include "wpiemu/plugins/game_2026/match_sounds.h"
 #include "wpiemu/plugins/game_2026/plugin.h"
 #include "wpiemu/plugins/game_2026/plugin_info.h"
 #include "wpiemu/sdk/game/game_module.h"
@@ -57,6 +58,7 @@ public:
     std::vector<sdk::HudWidgetDescriptor> contributeHud() const override { return hudWidgets(); }
     std::vector<sdk::ZoneKindInfo> contributeZoneKinds() const override { return zoneKinds(); }
     std::vector<sdk::GameValueInfo> contributeGameValues() const override { return gameValueInfos(); }
+    std::vector<sdk::SoundCueInfo> contributeSoundCues() const override { return soundCueInfos(); }
 
     sdk::AprilTagLayout aprilTagLayout() const override { return game2026AprilTagLayout(); }
 

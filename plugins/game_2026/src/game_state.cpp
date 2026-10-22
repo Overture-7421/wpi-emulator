@@ -105,6 +105,7 @@ void Game2026State::reset(sdk::SimContext& ctx) {
     hits_.clear();
     clock_.reset();
     status_ = MatchStatus{};
+    sounds_.reset();
     hub_.reset();
     matchTimed_ = false;
     matchResult_ = false;
@@ -145,6 +146,7 @@ void Game2026State::step(sdk::SimContext& ctx, double dt) {
         status_ = clock_.update(freePlay, dt);
     }
     hub_.update(status_, ds, dt, ctx.rng());
+    sounds_.update(status_, ds, timed, ctx.clock().simTimeUs());
     pool_.updateGhosts(ctx.clock().simTimeUs());
 
     handleSensorEvents(ctx);
@@ -348,6 +350,7 @@ void Game2026State::publish(sdk::SnapshotBuilder& out) const {
     fuel.positions = fuelPositions_;
     out.addEntityGroup(std::move(fuel));
     for (const std::unique_ptr<FuelZoneRuntime>& zone : zones_) out.addZone({zone->id(), zone->active()});
+    sounds_.publish(out);
 
     out.setHud(hud::kFuelCount, meter_);
     out.setHud(hud::kFuelCapacity, config_.capacity);

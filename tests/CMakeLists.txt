@@ -24,7 +24,8 @@ if(WPIEMU_BUILD_PLUGIN_TEMPLATE)
 endif()
 wpiemu_doctest_target(wpiemu_tests)
 target_include_directories(wpiemu_tests PRIVATE support "${CMAKE_SOURCE_DIR}/halsim_ext/tests")
-target_compile_definitions(wpiemu_tests PRIVATE "WPIEMU_SAMPLES_DIR=\"${CMAKE_SOURCE_DIR}/samples\"")
+target_compile_definitions(wpiemu_tests PRIVATE "WPIEMU_SAMPLES_DIR=\"${CMAKE_SOURCE_DIR}/samples\""
+                                                "WPIEMU_PLUGINS_DIR=\"${CMAKE_SOURCE_DIR}/plugins\"")
 
 doctest_discover_tests(wpiemu_tests)
 

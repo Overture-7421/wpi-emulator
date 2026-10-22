@@ -18,6 +18,7 @@
 #include "wpiemu/plugins/game_2026/fuel_zones.h"
 #include "wpiemu/plugins/game_2026/hub_rules.h"
 #include "wpiemu/plugins/game_2026/match_clock.h"
+#include "wpiemu/plugins/game_2026/match_sounds.h"
 #include "wpiemu/sdk/core/sim_context.h"
 #include "wpiemu/sdk/game/game_state.h"
 #include "wpiemu/sdk/telemetry/snapshot.h"
@@ -68,6 +69,7 @@ public:
     const AllianceScore& score(Alliance a) const { return hub_.score(a); }
     bool hubActive(Alliance a) const { return hub_.active(a); }
     const MatchStatus& match() const { return status_; }
+    const MatchSounds& sounds() const { return sounds_; }
     const HubRules& hubRules() const { return hub_; }
     // Owned zones in config order (pickups and shooters), for tests and tools.
     const std::vector<std::unique_ptr<FuelZoneRuntime>>& zones() const { return zones_; }
@@ -105,6 +107,7 @@ private:
     FuelPool pool_;
     MatchClock clock_;
     MatchStatus status_;
+    MatchSounds sounds_;
     HubRules hub_;
     Alliance ownAlliance_ = Alliance::Red;
     bool matchTimed_ = false;   // the DS runs a timed match (Practice); otherwise free play without game timing
