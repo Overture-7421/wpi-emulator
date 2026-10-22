@@ -7,8 +7,8 @@ Prerequisites: a checkout and a terminal at the repository root.
 
 - Git, Python 3, CMake 3.25+, and a C++20 compiler. Windows uses MSVC 2022;
   Linux/macOS use GCC/Clang or Apple Clang. Non-Visual-Studio presets also require Ninja.
-- A Qt kit matching the [version pins](releasing.md#version-pins) with Quick 3D and Shader Tools; the Windows
-  examples use `C:\Qt\6.8.3\msvc2022_64`. Omit Qt for a Qt-free build using the option below.
+- A Qt kit matching the [version pins](releasing.md#version-pins) with Quick 3D, Shader Tools and Multimedia (aqt `qtmultimedia`);
+  Windows examples use `C:\Qt\6.8.3\msvc2022_64`. Omit Qt for a Qt-free build using the option below.
 - CMake fetches pinned [Box3D](../cmake/WpiEmuDependencies.cmake) and [doctest](../cmake/WpiEmuTests.cmake) sources.
 - WPILib desktop HAL/wpiutil artifacts enable the real extension. CMake searches the installer's
   Maven cache (`C:\Users\Public\wpilib\2026\maven` or `~/wpilib/2026/maven`).

@@ -1,6 +1,6 @@
 # Add game interactions and sensors
 
-Read this when a season needs a pickup volume, launch point, activation gate or game-fed sensor.
+Read this when a season needs a pickup volume, launch point, activation gate, game-fed sensor or sound.
 Prerequisites: [a registered season](game-years.md), [mechanisms](mechanisms.md), and the
 [game-plugin contract](../reference/game-plugin.md).
 
@@ -77,6 +77,33 @@ Here `distanceReadingM` is imported from `wpiemu::core::runtime` in the surround
 Expected result: crossing the game-value threshold changes the device distance from far to near.
 The same case exercises linear interpolation, endpoint clamping and active-low beam breaks.
 Response keys and idle semantics belong in the [runtime sensor contract](../reference/runtime.md).
+
+## Raise a sound cue
+
+A season's sounds are plugin data: the plugin ships the audio and decides when to play it; the app only plays what
+the snapshot says. Core and UI need no change.
+
+1. Put uncompressed WAV files under `plugins/<id>/assets/audio/` and append them to the global CMake property
+   `WPIEMU_PLUGIN_ASSET_FILES` with a glob, as [`game_2026/CMakeLists.txt`](../../plugins/game_2026/CMakeLists.txt) does.
+   Keep third-party files unmodified and record their provenance beside them, like the
+   [REBUILT audio](../../plugins/game_2026/assets/audio/README.md).
+2. Declare each sound in `contributeSoundCues()`: plugin-prefixed `id`, `label`, and `asset`, the path relative to
+   `plugins/`. Set `gain` to balance loudness and `interruptsOthers` for a sound that cuts the rest.
+3. Own a `SoundCueLog` in the game state. Raise cues from `step()` (simulation time, observed transitions only),
+   clear it in `reset()` and publish it in `publish()`:
+
+```cpp
+log_.raise(sound::kMatchStart, nowUs);                                 // MatchSounds::update
+void publish(sdk::SnapshotBuilder& out) const { log_.publish(out); }   // MatchSounds
+```
+
+The log keeps the last eight cues with increasing sequence numbers because snapshots are slower than ticks; do not
+raise a cue the first time you see a state, since a Reset can leave the previous match's inputs around for a few ticks.
+Test the cue timeline with scripted Driver Station states, a Reset and the declared files:
+
+```powershell
+ctest --preset windows-ninja-release -R "^match sounds:"
+```
 
 ## Wire and validate
 

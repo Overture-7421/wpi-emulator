@@ -176,6 +176,12 @@ Console can filter/search/copy robot and emulator output. Stats show simulation 
 The REBUILT HUD shows fuel and shots; Practice adds match phase, hub activity and fuel scores.
 Tower points, penalties and ranking points are not scored.
 
+Practice also plays the field's audio cues from the Game Manual (Cavalry Charge at the start, Buzzer, 3 Bells, the
+shift sounds, Steam Whistle, Buzzer at the end, and the Foghorn when Disable or E-stop cuts the match short). They are
+on by default and only audible while the Run view is showing; **View > Match sounds** turns them off, and volume
+follows the operating system. Linux needs PipeWire or PulseAudio, and without an audio device Console says so once.
+Auto, Teleop, Test and Reset are silent. The alliance-selection clock and field-reset sounds are not simulated.
+
 ## Settings and project files
 
 **File > Settings…** controls theme, dialog units, the WPILib and JDK folders, physics rate, physics threads and
@@ -228,6 +234,6 @@ no occlusion, lens distortion, lighting, object detection or video streams; repo
 
 Windows is the locally exercised workflow. Linux/macOS source, presets and CI/package checks exist,
 but do not establish native robot-process HAL loading or interactive 3D validation on those platforms.
-Headless smoke tests are not visual tests; validate real sessions on the target platform.
+Headless smoke tests are not visual tests, and they play no sound; validate real sessions on the target platform.
 
 Next: [documentation home](README.md) for task guides, or [runtime](reference/runtime.md) for file contracts.

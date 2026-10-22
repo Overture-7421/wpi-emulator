@@ -131,6 +131,41 @@ Snapshots expose fuel entities, zone activation, inventory/counters, and scores/
 The blue-left/red-right scoreboard keeps a stopped timed result inspectable as `FINAL` until
 reset, another timed match, or enabled free play.
 
+## Sound cues
+
+A game that makes sounds declares them with `contributeSoundCues()` (`SoundCueInfo`: id, label, `asset`, `gain`,
+`interruptsOthers`; every id starts with the plugin id plus `.`) and raises them from `IGameState::step` through a
+[`SoundCueLog`](../../sdk/include/wpiemu/sdk/game/sound_cue.h), publishing it from `publish()`. The log keeps the last
+eight cues with increasing sequence numbers, because snapshots are slower than ticks and the UI may skip some; the UI
+plays each sequence once. Cues use simulation time and carry no Qt: the app owns playback, volume and the audio files'
+loading ([application reference](app.md#run-view-snapshots-and-commands)).
+
+`asset` is a file path relative to `plugins/`. The plugin appends its audio files to the global CMake property
+`WPIEMU_PLUGIN_ASSET_FILES`; the app embeds them as `:/wpiemu/plugins/<asset>` without naming a season. REBUILT's six
+files and their provenance are in [the audio folder](../../plugins/game_2026/assets/audio/README.md). Keep them
+byte-for-byte: balance loudness with `gain`.
+
+REBUILT raises the FMS audio cues of manual 5.12, Table 5-4, from the Practice match timeline
+([`match_sounds.cpp`](../../plugins/game_2026/src/match_sounds.cpp)):
+
+| Cue id (`game_2026.sound.`) | Manual cue | Raised when |
+|---|---|---|
+| `match_start` | Cavalry Charge | a timed match begins with AUTO enabled (0:20) |
+| `auto_end` | Buzzer | the AUTO segment is left while the match goes on (0:00) |
+| `teleop_start` | 3 Bells | TELEOP and the TRANSITION SHIFT begin (2:20) |
+| `shift_start` | POWER UP - Linear Popping | SHIFT 1 to 4 begin (2:10, 1:45, 1:20, 0:55) |
+| `end_game` | Steam Whistle | END GAME begins (0:30) |
+| `match_end` | Buzzer | the clock runs out |
+| `match_stopped` | Foghorn | the operator ends the timed match early (Disable, E-stop); stops other sounds |
+
+Cues are observed transitions of the Driver Station match state, never first observations. After a Reset or new
+session the sounds stay silent until an untimed Driver Station state has been seen, because the runner can keep
+delivering the old timed state for a few ticks. A timed match that ends with at most one second left
+(`MatchSounds::kNaturalEndToleranceS`, tolerating Driver Station lag) is `match_end`; an earlier end is `match_stopped`.
+Free play, Test mode and Reset are silent, and a lost robot connection stops the ticks, so it raises nothing. Custom
+Practice durations move the existing phase clock, and the cues follow the phases. The manual calls the audio a
+courtesy: the timers are authoritative.
+
 ## Accuracy, sources, and pitfalls
 
 Use [field dimensions](../../plugins/game_2026/include/wpiemu/plugins/game_2026/field_dimensions.h)
@@ -157,7 +192,7 @@ and mechanism ordering before altering geometry.
 
 ## Testing
 
-[Season tests](../../tests/game_2026) cover rules, zones, reset, snapshots, and core-mechanism
+[Season tests](../../tests/game_2026) cover rules, zones, reset, snapshots, sound cues and core-mechanism
 integration; real-physics tests check geometry and fuel behavior that fakes cannot establish.
 The [new-season integration example](../../tests/plugins/test_new_year_plugin.cpp) exercises
 registration, config defaults, and a real core session without season changes in core.

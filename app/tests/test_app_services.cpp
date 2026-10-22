@@ -1,9 +1,16 @@
 #include <doctest/doctest.h>
 
+#include <QAudioDevice>
 #include <QFileInfo>
+#include <QMediaDevices>
 #include <QString>
+#include <QTest>
 
+#include <memory>
+#include <string>
 #include <vector>
+
+#include "runview/sound_output.h"
 
 #include "common/robot_basics.h"
 #include "test_support.h"
@@ -39,6 +46,26 @@ TEST_CASE("every sound cue of the built-in game is embedded in the application")
         CHECK(file.exists());
         CHECK(file.size() > 0);
     }
+}
+
+TEST_CASE("the Qt sound output loads and plays every embedded cue when an audio device exists") {
+    if (QMediaDevices::audioOutputs().isEmpty()) {
+        MESSAGE("no audio output device: skipping");
+        return;
+    }
+    TestEnvironment env;
+    const sdk::IGameModule* module = env.services->plugins().findByYear(2026);
+    REQUIRE(module != nullptr);
+    const std::vector<sdk::SoundCueInfo> cues = module->contributeSoundCues();
+
+    std::unique_ptr<runview::ISoundOutput> output = runview::createDefaultSoundOutput();
+    std::vector<std::string> problems;
+    output->setProblemHandler([&](const std::string& message) { problems.push_back(message); });
+    output->setCatalog(cues);
+    QTest::qWait(1500);  // the samples decode asynchronously
+    for (const sdk::SoundCueInfo& cue : cues) output->play(cue.id);
+    output->stopAll();
+    CHECK(problems.empty());
 }
 
 TEST_CASE("a robot built by the wizard passes core validation apart from device mappings") {

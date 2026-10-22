@@ -43,6 +43,15 @@ A new source is much smaller than a genuinely new sensor kind.
 Walkthrough: [game values and sensor responses](guides/game-interactions.md#publish-a-numeric-game-value).
 Contract: [runtime sensors](reference/runtime.md).
 
+## Add a sound cue
+
+Use a plugin-contributed `SoundCueInfo` for a sound the game plays (a match horn): the plugin ships the audio file,
+raises the cue through a `SoundCueLog` and publishes it in the snapshot. The run view plays it; the plugin includes
+no Qt and the app names no season.
+
+Walkthrough: [raise a sound cue](guides/game-interactions.md#raise-a-sound-cue).
+Contract: [game plugins](reference/game-plugin.md#sound-cues).
+
 ## Add a device bridge
 
 Choose a SimDevice rule for a named backend, `ChannelFamilyBridge` for indexed HAL families, or

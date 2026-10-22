@@ -22,14 +22,14 @@ These records explain adopted design constraints, not implementation inventories
 | [0010](0010-plugin-owned-season-data.md) | Plugin-owned season data |
 | [0011](0011-one-host-contract.md) | One host contract and app layering |
 | [0012](0012-shared-primitives-in-the-sdk.md) | Shared primitives live in the SDK |
+| [0013](0013-game-sound-cues.md) | Game sound cues |
 
 ## Maintaining the set
 
 Use Status, Context, Decision and Consequences sections; explain why and what is sacrificed.
 Keep each record within 45 physical lines and this index within 35.
 Contracts belong in [reference pages](../ARCHITECTURE.md#extension-points), not API inventories here.
-For future decisions, choose the next unused unique number and add it to this index.
-Keep assigned identifiers stable within this set; never silently reuse a number.
+For future decisions, choose the next unused number and add it here; keep assigned numbers stable, never reuse one.
 Update rationale and links together when the current decision changes.
 
 Next: [Contributing](../CONTRIBUTING.md).

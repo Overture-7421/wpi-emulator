@@ -168,6 +168,16 @@ WPILib Xbox layout. Hiding the page or losing activation releases held keyboard 
 Bindings, shortcuts, restart choices, and Driver Station controls are in the
 [User guide](../USER_GUIDE.md); optional gamepad dependencies are in [Building](../BUILDING.md).
 
+Match sounds come from the snapshot's sound cues ([game plugins](game-plugin.md#sound-cues)), not from HUD values.
+`SoundCueModel` plays each cue sequence once, in order: the first snapshot after the page appears, after the sim
+clock restarts (Reset, new robot session) or after a stop only learns which cues already happened, and cues older than
+a second of simulation time are skipped. A cue that `interruptsOthers` stops the rest first. Playback goes through
+`ISoundOutput`; `QtSoundOutput` keeps one `QSoundEffect` per cue (uncompressed WAV from the resources the plugins
+ship) so cues overlap, and reports a missing audio device or unreadable file once on the console. The page is silent
+while hidden, because the simulation keeps running behind the Editor. The only preference is **View > Match sounds**
+(`runview/sound/enabled`, on by default); volume belongs to the operating system. Tests use a recording output, never
+a device.
+
 ## Scene presentation and resources
 
 The run renderer relies on these frame contracts:

@@ -47,6 +47,8 @@ Install NSIS and make `makensis` discoverable **before configuring**; otherwise 
 ZIP only. Reconfigure after adding NSIS. The release workflow installs it with Chocolatey.
 Qt deployment defaults on and includes the app's QML imports; the VC++ runtime is installed
 beside both the app and the extension, which is loaded by a different process.
+Match sounds use `QSoundEffect` (WAV), which does not need Qt's FFmpeg backend, so deployment passes `--no-ffmpeg` to
+`windeployqt` and skips about 17 MB of FFmpeg DLLs; keep that flag unless a feature needs FFmpeg.
 
 After the normal Windows Release build:
 
@@ -113,7 +115,11 @@ this checks metadata, not execution on the minimum OS or loading the extension i
 
 Build on Linux x86_64 with the Qt kit and system dependencies listed in the release workflow.
 The release runner is Ubuntu 22.04; choose the oldest compatible build environment for your users.
-Bundling does not remove glibc/libstdc++ requirements or provide graphics drivers.
+Bundling does not remove glibc/libstdc++ requirements or provide graphics drivers; match sounds also need
+PipeWire or PulseAudio on the user's machine (without a device the app only reports that on its Console).
+The release workflow verifies the Multimedia runtime in the Windows install and the macOS bundle, and the
+[third-party notices](../packaging/THIRD-PARTY-NOTICES.txt) cover the embedded audio: confirm its redistribution terms
+before a public release.
 
 ```sh
 QT_ROOT_DIR=$HOME/Qt/6.8.3/gcc_64 bash packaging/linux/build-appimage.sh
