@@ -58,6 +58,7 @@ PAGES = {
     "docs/decisions/0012-shared-primitives-in-the-sdk.md": "Decision-0012-Shared-Primitives-in-the-SDK",
     "docs/decisions/0013-sound-cues-as-events.md": "Decision-0013-Sound-Cues-as-Events",
     "docs/decisions/0014-updater-without-api-or-silent-install.md": "Decision-0014-Updater-Without-API-or-Silent-Install",
+    "docs/decisions/0015-managed-java-after-wpilib.md": "Decision-0015-Managed-Java-After-WPILib",
     "plugins/_template/README.md": "Season-Template",
     "samples/swerve_robot/README.md": "Sample-Swerve-Robot",
     "samples/vision_robot/README.md": "Sample-Vision-Robot",
