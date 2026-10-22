@@ -41,33 +41,5 @@ AprilTag 36h11 images (app/runview/assets/apriltags/36h11, embedded in the run v
     NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
     POSSIBILITY OF SUCH DAMAGE.
 
-FRC field audio cues (plugins/game_2026/assets/audio, embedded in the application)
-    start.wav, end.wav, resume.wav, shift_change.wav, warning.wav and abort.wav, unmodified copies of the files of the
-    same names in https://github.com/Team254/cheesy-arena (static/audio, commit
-    248d9de497e701223e2cdbc986a19bbfea054c21), used under the Cheesy Arena license:
-
-    Copyright (c) 2014, Team 254
-    All rights reserved.
-
-    This software may be used and redistributed subject to the following conditions:
-
-    1. The software may be used without restriction for testing, scrimmages,
-       off-season events, and for evaluation purposes.
-    2. The software may be modified for such use, but the modifications may not be
-       redistributed without permission from Team 254.
-    3. Redistribution for the purpose of contributing to the original project (e.g.
-       forking on GitHub and submitting pull requests) is permitted.
-
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-    ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-    WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-    DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
-    ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-    (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-    LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-    ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 Microsoft Visual C++ runtime (Windows installer only)
     Redistributable under the Microsoft Visual Studio redistribution terms (vcruntime140*.dll, msvcp140*.dll).
