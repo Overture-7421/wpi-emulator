@@ -20,10 +20,16 @@ inline constexpr int kPhysicsRatesHz[] = {100, 200, 250, 500, 1000};
 inline constexpr int kDefaultPhysicsRateHz = 200;
 int sanitizePhysicsRateHz(int hz);
 
+// Threads for the physics step, chosen per machine and applied at the next robot launch. 0 = Auto.
+inline constexpr int kPhysicsThreadChoices[] = {0, 1, 2, 4, 8};
+inline constexpr int kDefaultPhysicsThreads = 0;
+int sanitizePhysicsThreads(int threads);
+
 struct AppSettingsData {
     ThemeMode theme = ThemeMode::System;
     UnitSystem units = UnitSystem::Imperial;
     int physicsRateHz = kDefaultPhysicsRateHz;
+    int physicsThreads = kDefaultPhysicsThreads;
     QString wpilibHome;   // override of the WPILib install dir (empty = auto-detect)
     QString jdkHome;      // override of the JDK used for gradle (empty = auto-detect)
     bool reopenLastProject = true;

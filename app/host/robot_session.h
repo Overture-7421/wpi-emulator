@@ -52,6 +52,7 @@ struct Options {
     std::map<std::string, std::string> extraEnv;          // robot-process environment (wins over everything)
     bool preStartPolling = false;                         // WPIEMU_LIVE_DISCOVERY: poll the bridges during the robot constructor (crashes the JVM with CTRE)
     double timeScale = 1.0;
+    int physicsWorkers = 1;                               // threads for the physics step; chosen per machine at launch, never part of the model
     bool startPaused = false;
     sdk::proto::DsState driverStation;
     // Placement every Reset (including the one that starts the simulation) restores instead of RobotConfig::startPose.

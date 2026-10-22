@@ -67,6 +67,7 @@ TEST_CASE("determinism: the hash does not depend on the physics worker count") {
     const std::uint64_t one = driveThroughFuel(1, 120, 800, 6.0).hash;
     CHECK(one == driveThroughFuel(2, 120, 800, 6.0).hash);
     CHECK(one == driveThroughFuel(4, 120, 800, 6.0).hash);
+    CHECK(one == driveThroughFuel(8, 120, 800, 6.0).hash);
 }
 
 TEST_CASE("determinism: the substep count is part of the configuration") {

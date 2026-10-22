@@ -207,7 +207,6 @@ void batteryFields(Codec& c, T& b) {
 
 template <class Codec, class T>
 void physicsFields(Codec& c, T& p) {
-    c.i32("workerCount", p.workerCount);
     c.i32("subSteps", p.subSteps);
     c.boolean("sleeping", p.sleeping);
     c.vec3("gravity", p.gravity);

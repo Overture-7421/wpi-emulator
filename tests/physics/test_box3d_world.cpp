@@ -495,4 +495,34 @@ TEST_CASE("box3d world: results are bit-identical for any worker count") {
     CHECK(h1 == scenario(1));
     CHECK(h1 == scenario(2));
     CHECK(h1 == scenario(4));
+    CHECK(h1 == scenario(8));
+}
+
+TEST_CASE("box3d world: stats report the worker count the world was built with") {
+    for (const int workers : {1, 2, 4, 8}) {
+        PhysicsConfig cfg;
+        cfg.workerCount = workers;
+        auto w = makeWorld(cfg);
+        REQUIRE(w);
+        CHECK(w->stats().workerCount == workers);
+    }
+    PhysicsConfig invalid;
+    invalid.workerCount = 0;
+    auto w = makeWorld(invalid);
+    REQUIRE(w);
+    CHECK(w->stats().workerCount == 1);
+}
+
+TEST_CASE("box3d world: worker count resolution honors explicit values and picks Auto from the core count") {
+    CHECK(phys::resolveWorkerCount(2, 1) == 2);
+    CHECK(phys::resolveWorkerCount(8, 4) == 8);
+    CHECK(phys::resolveWorkerCount(1000, 64) == 32);
+    CHECK(phys::resolveWorkerCount(0, 0) == 1);
+    CHECK(phys::resolveWorkerCount(0, 2) == 1);
+    CHECK(phys::resolveWorkerCount(0, 3) == 1);
+    CHECK(phys::resolveWorkerCount(0, 4) == 2);
+    CHECK(phys::resolveWorkerCount(0, 7) == 2);
+    CHECK(phys::resolveWorkerCount(0, 8) == 4);
+    CHECK(phys::resolveWorkerCount(0, 32) == 4);
+    CHECK(phys::resolveWorkerCount(-1, 16) == 4);
 }

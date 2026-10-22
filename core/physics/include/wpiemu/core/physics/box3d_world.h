@@ -19,4 +19,8 @@ sdk::PhysicsWorldFactory box3dWorldFactory();
 // Box3D version this adapter was built against ("major.minor.revision").
 std::string box3dVersionString();
 
+// Worker threads for the world step. `requested` >= 1 is honored (up to Box3D's maximum); <= 0 means Auto:
+// 1 below four logical cores, 2 for four to seven, 4 from eight up. Results never depend on the count.
+int resolveWorkerCount(int requested, unsigned logicalCores);
+
 }  // namespace wpiemu::core::physics

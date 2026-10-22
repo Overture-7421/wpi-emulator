@@ -162,3 +162,14 @@ TEST_CASE("sim stats compute rates from consecutive snapshots") {
     CHECK_FALSE(stats.values().hasData);
     CHECK(formatSimTime(75.3) == QStringLiteral("01:15.3"));
 }
+
+TEST_CASE("sim stats carry the physics step time and worker count") {
+    sdk::SimSnapshotData d;
+    d.physicsStats.lastStepMs = 0.4;
+    d.physicsStats.workerCount = 4;
+    const sdk::SimSnapshot snapshot(std::move(d));
+    SimStats stats;
+    stats.update(&snapshot, 1000);
+    CHECK(stats.values().physicsStepMs == doctest::Approx(0.4));
+    CHECK(stats.values().physicsWorkers == 4);
+}

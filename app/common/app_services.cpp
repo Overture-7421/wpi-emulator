@@ -2,10 +2,13 @@
 
 #include <QDir>
 
+#include <thread>
+
 #include "common/demo_runtime_host.h"
 #include "common/real_runtime_host.h"
 #include "wpiemu/core/config/config_store.h"
 #include "wpiemu/core/mechanisms/mechanism_templates.h"
+#include "wpiemu/core/physics/box3d_world.h"
 #include "wpiemu/core/physics/chassis_simulator.h"
 #include "wpiemu/sdk/game/builtin_plugins.h"
 
@@ -65,6 +68,9 @@ AppServices::AppServices(AppServicesOptions options)
         real.toolchainOverrides = [this] {
             const auto folder = [](const QString& text) { return text.isEmpty() ? std::filesystem::path() : std::filesystem::path(text.toStdU16String()); };
             return RealRuntimeOptions::ToolchainOverrides{folder(settings_->data().jdkHome), folder(settings_->data().wpilibHome)};
+        };
+        real.physicsWorkers = [this] {
+            return core::physics::resolveWorkerCount(settings_->data().physicsThreads, std::thread::hardware_concurrency());
         };
         runtime_ = std::make_unique<RealRuntimeHost>(registries, std::move(real));
     }

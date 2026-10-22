@@ -29,6 +29,7 @@ bool SimStats::update(const sdk::ISimSnapshot* snapshot, std::int64_t wallMs) {
         next.simTimeS = sdk::usToSeconds(snapshot->simTimeUs());
         next.batteryV = snapshot->batteryVoltageV();
         next.physicsStepMs = snapshot->physicsStats().lastStepMs;
+        next.physicsWorkers = snapshot->physicsStats().workerCount;
         next.bodies = snapshot->physicsStats().bodies;
         next.contacts = snapshot->physicsStats().contacts;
         next.paused = snapshot->paused();

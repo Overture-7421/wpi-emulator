@@ -56,6 +56,7 @@ public:
         b3WorldDef def = b3DefaultWorldDef();
         def.gravity = toB3(cfg.gravity);
         def.enableSleep = cfg.sleeping;
+        // Above 1, Box3D owns helper threads for the lifetime of the world (created here, joined in b3DestroyWorld).
         def.workerCount = static_cast<std::uint32_t>(std::max(1, cfg.workerCount));
         world_ = b3CreateWorld(&def);
     }
@@ -378,6 +379,7 @@ public:
         s.awakeBodies = b3World_GetAwakeBodyCount(world_);
         s.contacts = b3World_GetCounters(world_).contactCount;
         s.lastStepMs = lastStepMs_;
+        s.workerCount = b3World_GetWorkerCount(world_);
         return s;
     }
 
@@ -657,6 +659,13 @@ std::unique_ptr<IPhysicsWorld> createBox3dWorld(const PhysicsConfig& config) {
 
 PhysicsWorldFactory box3dWorldFactory() {
     return [](const PhysicsConfig& cfg) { return createBox3dWorld(cfg); };
+}
+
+int resolveWorkerCount(int requested, unsigned logicalCores) {
+    if (requested >= 1) return std::min(requested, B3_MAX_WORKERS);
+    if (logicalCores >= 8) return 4;
+    if (logicalCores >= 4) return 2;
+    return 1;
 }
 
 std::string box3dVersionString() {

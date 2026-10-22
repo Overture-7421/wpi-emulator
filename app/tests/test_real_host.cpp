@@ -206,6 +206,17 @@ TEST_CASE("real host: the JDK folder chosen in Settings is what Gradle is launch
     CHECK(f.logged("gradle JAVA_HOME=/chosen/jdk"));
 }
 
+TEST_CASE("real host: the physics threads chosen in Settings are what the launch uses") {
+    RealFixture f(kFailScript);
+    AppSettingsData chosen = f.env.services->settings().data();
+    chosen.physicsThreads = 2;
+    f.env.services->settings().update(chosen);
+
+    f.controller.launchRobot();
+    REQUIRE(f.waitProcess(sdk::ProcessState::FailedToStart));
+    CHECK(f.logged("physics worker threads: 2"));
+}
+
 TEST_CASE("real host: Stop ends a starting robot and the process tree, restart starts a fresh run") {
     RealFixture f(kWaitScript);
     f.host().launch();

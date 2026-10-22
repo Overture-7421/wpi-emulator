@@ -15,6 +15,7 @@ struct SimStatsValues {
     double realtimeFactor = 0.0;   // sim seconds per wall second
     double batteryV = 0.0;
     double physicsStepMs = 0.0;
+    int physicsWorkers = 1;
     int bodies = 0;
     int contacts = 0;
     int entities = 0;              // instanced entities (fuel ...)

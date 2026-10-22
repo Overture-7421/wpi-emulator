@@ -37,6 +37,8 @@ TEST_CASE("settings persist, sanitise and notify") {
         AppSettings settings(store);
         CHECK(settings.data().theme == ThemeMode::System);
         CHECK(settings.data().physicsRateHz == kDefaultPhysicsRateHz);
+        CHECK(settings.data().physicsThreads == kDefaultPhysicsThreads);
+        CHECK(kDefaultPhysicsThreads == 0);   // Auto
         CHECK(settings.stepUs() == 5000);
 
         int notifications = 0;
@@ -46,15 +48,18 @@ TEST_CASE("settings persist, sanitise and notify") {
         next.theme = ThemeMode::Dark;
         next.units = UnitSystem::Metric;
         next.physicsRateHz = 1234;   // not an offered rate -> falls back to the default
+        next.physicsThreads = 3;     // not an offered count -> falls back to Auto
         next.wpilibHome = QStringLiteral("/opt/wpilib");
         settings.update(next);
         CHECK(notifications == 1);
         CHECK(settings.data().physicsRateHz == kDefaultPhysicsRateHz);
+        CHECK(settings.data().physicsThreads == kDefaultPhysicsThreads);
 
         settings.update(settings.data());   // no change: no signal
         CHECK(notifications == 1);
 
         next.physicsRateHz = 1000;
+        next.physicsThreads = 4;
         settings.update(next);
         CHECK(settings.stepUs() == 1000);
     }
@@ -62,6 +67,7 @@ TEST_CASE("settings persist, sanitise and notify") {
     CHECK(reloaded.data().theme == ThemeMode::Dark);
     CHECK(reloaded.data().units == UnitSystem::Metric);
     CHECK(reloaded.data().physicsRateHz == 1000);
+    CHECK(reloaded.data().physicsThreads == 4);
     CHECK(reloaded.data().wpilibHome == QStringLiteral("/opt/wpilib"));
 }
 

@@ -105,7 +105,7 @@ sections, not replace the whole model. User-facing file management is in the
 ## Session, runner and host
 
 [SimulationSession](../../core/runtime/include/wpiemu/core/runtime/simulation_session.h)
-owns simulation state and advances synchronously: no I/O, threads or wall-clock pacing.
+owns simulation state and advances synchronously: no I/O, wall-clock pacing or threads of its own.
 Borrowed registries and the logger must outlive it. The complete tick sequence
 has one home in [Architecture](../ARCHITECTURE.md).
 

@@ -90,7 +90,14 @@ See [coupling implementation](../../core/physics/src/chassis_coupling.cpp).
 
 ## Determinism and limits
 
-The physics defaults are one worker and four substeps. Preserve fixed inputs, creation
+The engine defaults are one worker and four substeps. Results do not depend on the worker
+count, so the app picks it per machine at launch (Settings > Simulation, default Auto:
+under four logical cores 1, four to seven 2, eight or more 4) instead of storing it in the
+robot model; [resolveWorkerCount](../../core/physics/include/wpiemu/core/physics/box3d_world.h)
+holds the rule and `PhysicsStats::workerCount` reports it. With more than one worker Box3D
+owns helper threads for the world's lifetime: they are created with the world, sleep between
+steps, work only inside `step()` and are joined when the world is destroyed, which must
+happen after the sim thread has stopped. Preserve fixed inputs, creation
 order and physics settings when comparing runs. Floating-point contraction is disabled
 for first-party physics with `/fp:precise` on MSVC and `-ffp-contract=off` elsewhere;
 do not add fast-math. The flags live in [physics CMake](../../core/physics/CMakeLists.txt).
