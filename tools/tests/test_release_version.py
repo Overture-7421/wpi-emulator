@@ -77,11 +77,12 @@ class ApplyTests(unittest.TestCase):
                 RV.set_project_version(text, "1.2.3")
 
     def test_real_cmakelists_round_trip(self):
+        # The release workflow has already applied its version to this file when it runs CTest: assert no value.
         original = common.read_text(REPO / "CMakeLists.txt")
-        self.assertEqual(RV.read_project_version(original), RV.DEVELOPMENT_VERSION)
+        current = RV.read_project_version(original)
         changed = RV.set_project_version(original, "9.8.7")
         self.assertEqual(RV.read_project_version(changed), "9.8.7")
-        self.assertEqual(RV.set_project_version(changed, RV.DEVELOPMENT_VERSION), original)
+        self.assertEqual(RV.set_project_version(changed, current), original)
 
     def run_cli(self, *argv):
         with patch.object(sys, "argv", ["release_version.py", *argv]):
