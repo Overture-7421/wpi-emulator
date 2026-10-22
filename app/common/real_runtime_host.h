@@ -24,6 +24,8 @@ struct RealRuntimeOptions {
         std::filesystem::path wpilibHome;
     };
     std::function<ToolchainOverrides()> toolchainOverrides;
+    // Threads for the physics step of every launch (>= 1), chosen per machine in Settings. Empty = 1.
+    std::function<int()> physicsWorkers;
     // Test / advanced hook: adjusts the options of every run just before it starts.
     std::function<void(host::Options&)> tweak;
 };

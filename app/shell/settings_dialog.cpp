@@ -19,6 +19,7 @@ SettingsDialog::SettingsDialog(AppSettings& settings, const ISystemProbe& probe,
       theme_(new QComboBox),
       units_(new QComboBox),
       rate_(new QComboBox),
+      threads_(new QComboBox),
       wpilib_(new QLineEdit),
       jdk_(new QLineEdit),
       reopen_(new QCheckBox(tr("Reopen the last project when the app starts"))),
@@ -35,6 +36,8 @@ SettingsDialog::SettingsDialog(AppSettings& settings, const ISystemProbe& probe,
     units_->addItem(tr("Metric (cm, kg)"), static_cast<int>(UnitSystem::Metric));
     for (const int hz : kPhysicsRatesHz)
         rate_->addItem(hz == kDefaultPhysicsRateHz ? tr("%1 Hz (default)").arg(hz) : tr("%1 Hz").arg(hz), hz);
+    for (const int n : kPhysicsThreadChoices)
+        threads_->addItem(n == 0 ? tr("Auto (recommended)") : QString::number(n), n);
 
     auto* tabs = new QTabWidget;
 
@@ -66,6 +69,8 @@ SettingsDialog::SettingsDialog(AppSettings& settings, const ISystemProbe& probe,
     simulationForm->setVerticalSpacing(12);
     simulationForm->addRow(tr("Physics rate"), rate_);
     simulationForm->addRow(makeLabel(tr("Higher rates are more accurate but need more CPU. Applies to the next robot run."), "muted", nullptr, true));
+    simulationForm->addRow(tr("Physics threads"), threads_);
+    simulationForm->addRow(makeLabel(tr("Threads used to compute physics. Auto picks up to 4 from this computer's cores. More threads help scenes with many game pieces and high physics rates; results are identical for every choice. Applies the next time the robot is launched."), "muted", nullptr, true));
     tabs->addTab(simulation, ui.icon(QStringLiteral("run")), tr("Simulation"));
 
     auto* general = new QWidget;
@@ -108,6 +113,7 @@ void SettingsDialog::load(const AppSettingsData& d) {
     theme_->setCurrentIndex(theme_->findData(static_cast<int>(d.theme)));
     units_->setCurrentIndex(units_->findData(static_cast<int>(d.units)));
     rate_->setCurrentIndex(rate_->findData(d.physicsRateHz));
+    threads_->setCurrentIndex(threads_->findData(d.physicsThreads));
     wpilib_->setText(d.wpilibHome);
     jdk_->setText(d.jdkHome);
     reopen_->setChecked(d.reopenLastProject);
@@ -118,6 +124,7 @@ AppSettingsData SettingsDialog::collect() const {
     d.theme = static_cast<ThemeMode>(theme_->currentData().toInt());
     d.units = static_cast<UnitSystem>(units_->currentData().toInt());
     d.physicsRateHz = rate_->currentData().toInt();
+    d.physicsThreads = threads_->currentData().toInt();
     d.wpilibHome = wpilib_->text().trimmed();
     d.jdkHome = jdk_->text().trimmed();
     d.reopenLastProject = reopen_->isChecked();

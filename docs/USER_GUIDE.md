@@ -178,11 +178,14 @@ Tower points, penalties and ranking points are not scored.
 
 ## Settings and project files
 
-**File > Settings…** controls theme, dialog units, the WPILib and JDK folders, physics rate and
+**File > Settings…** controls theme, dialog units, the WPILib and JDK folders, physics rate, physics threads and
 reopening the last project. The folders apply to the next toolchain check and robot launch; left
 empty, Gradle runs with WPILib's JDK for the project's season (all-users or this-user install),
 then `JAVA_HOME`, then `java` on `PATH`. The physics-rate setting
 is copied into the model when the wizard finishes: rerun setup to apply a changed rate.
+Physics threads (Auto, 1, 2, 4 or 8) belongs to the computer, not the model: it applies at the next robot
+launch, Auto picks up to four threads from the core count, and results are identical for every choice.
+The Physics value in the run view shows the thread count in its tooltip.
 An inherited `JAVA_HOME` that has no Java executable is ignored; an explicitly selected JDK
 folder must be corrected in Settings rather than silently falling back to another JDK.
 

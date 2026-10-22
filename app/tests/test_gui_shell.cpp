@@ -479,14 +479,18 @@ TEST_CASE("settings dialog edits a copy and applies on OK") {
     SettingsDialog dlg(env.services->settings(), env.services->probe(), env.ui);
     CHECK(dlg.themeCombo()->count() == 3);
     CHECK(dlg.rateCombo()->count() == 5);
+    CHECK(dlg.threadsCombo()->count() == 5);
+    CHECK(dlg.threadsCombo()->currentData().toInt() == 0);   // Auto by default
     CHECK(dlg.buttons()->button(QDialogButtonBox::Ok)->isEnabled());
 
     dlg.themeCombo()->setCurrentIndex(dlg.themeCombo()->findData(static_cast<int>(ThemeMode::Dark)));
     dlg.rateCombo()->setCurrentIndex(dlg.rateCombo()->findData(500));
+    dlg.threadsCombo()->setCurrentIndex(dlg.threadsCombo()->findData(2));
     CHECK(env.services->settings().data().theme == ThemeMode::System);   // not applied yet
     dlg.buttons()->button(QDialogButtonBox::Ok)->click();
     CHECK(env.services->settings().data().theme == ThemeMode::Dark);
     CHECK(env.services->settings().data().physicsRateHz == 500);
+    CHECK(env.services->settings().data().physicsThreads == 2);
     CHECK(env.theme.isDark());   // the theme follows immediately
 
     dlg.themeCombo()->setCurrentIndex(dlg.themeCombo()->findData(static_cast<int>(ThemeMode::Light)));

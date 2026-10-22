@@ -86,8 +86,11 @@ Ownership is deliberately narrow:
 - **UI thread:** reads immutable `ISimSnapshot` objects and sends commands through
   `ISimController`; it never reaches into mutable simulation objects.
 - **Sim thread (live session):** owns physics, mechanisms, device hub, game state, configuration and RNG.
-  `SimulationSession` is synchronous, deterministic, and performs no I/O or threading.
+  `SimulationSession` is synchronous, deterministic, and creates no threads and does no I/O.
   `SessionRunner` wraps it with command queues, lock-step coordination, pacing and snapshot delivery.
+- **Physics workers:** with more than one worker the Box3D world owns helper threads for its lifetime. They work
+  only while the sim thread is inside `step()`, never touch other state, and are joined when the world is destroyed
+  after the runner stops. The count is a per-machine launch choice; see [physics](reference/physics.md#determinism-and-limits).
 - **Robot threads:** HAL callbacks record events only; they must not block or do socket I/O.
 - **Extension clock thread:** applies feedback, advances HAL timing and collects outputs.
   During lock-step, bridge operations happen between robot steps while the robot is quiescent.

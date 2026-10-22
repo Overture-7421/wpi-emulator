@@ -110,7 +110,7 @@ struct ContactEvent {
 inline constexpr float kDefaultGravityMps2 = 9.81f;
 
 struct PhysicsConfig {
-    int workerCount = 1;  // 1 = deterministic default
+    int workerCount = 1;  // threads for the world step; results are identical for every count (the app chooses at launch)
     int subSteps = 4;     // at the 200 Hz fixed step (docs/reference/physics.md)
     bool sleeping = true;
     Vec3 gravity{0.f, 0.f, -kDefaultGravityMps2};
@@ -121,6 +121,7 @@ struct PhysicsStats {
     int awakeBodies = 0;
     int contacts = 0;
     double lastStepMs = 0.0;
+    int workerCount = 1;
 };
 
 }  // namespace wpiemu::sdk

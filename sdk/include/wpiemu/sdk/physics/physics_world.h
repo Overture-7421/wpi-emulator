@@ -14,7 +14,9 @@ namespace wpiemu::sdk {
 // Engine-agnostic rigid-body world (implemented by core over Box3D, docs/reference/physics.md; fakes in sdk/testing).
 //
 // Threading: the world is owned by the SIM THREAD. Only that thread may call any method. Other
-// threads (UI) never touch it; they read ISimSnapshot copies instead.
+// threads (UI) never touch it; they read ISimSnapshot copies instead. A backend may own helper
+// threads for the world's lifetime (created with it, joined when it is destroyed); they work only
+// inside step(), which returns once that step's work is done.
 //
 // Frame/units: Z-up NWU, SI. All poses/vectors are world-frame unless the name says "Local".
 //
@@ -25,8 +27,8 @@ namespace wpiemu::sdk {
 //
 // Forces: applyForce*/applyTorque are consumed by the NEXT step() only; re-apply every step.
 //
-// Determinism: step() is a pure function of the previous state, the applied forces and dt, for
-// worker count 1. stateHash() makes that testable.
+// Determinism: step() is a pure function of the previous state, the applied forces and dt,
+// independent of PhysicsConfig::workerCount. stateHash() makes that testable.
 class IPhysicsWorld {
     WPIEMU_INTERFACE(IPhysicsWorld)
 public:

@@ -284,6 +284,19 @@ TEST_CASE("config codec: unknown fields are ignored") {
     CHECK(out.find("chassis")->find("wedgeAngle") == nullptr);
     CHECK(out.find("mechanisms")->array()[0].find("notes") == nullptr);
 }
+
+TEST_CASE("config codec: the physics worker count is a machine choice and never reaches the model file") {
+    RobotConfig config = sampleConfig();
+    config.sim.physics.workerCount = 4;
+    const RobotConfigCodec codec;
+    CHECK(codec.toValue(config).find("sim")->find("physics")->find("workerCount") == nullptr);
+
+    Value legacy = roundTripValue(sampleConfig());
+    legacy["sim"]["physics"]["workerCount"] = 4;
+    const auto r = codec.fromValue(legacy);
+    REQUIRE(r.ok());
+    CHECK(r.value().sim.physics.workerCount == 1);
+}
 TEST_CASE("config codec: absent fields default, wrong types are reported with their path") {
     Value minimal = Value::makeObject();
     minimal["schemaVersion"] = 1;

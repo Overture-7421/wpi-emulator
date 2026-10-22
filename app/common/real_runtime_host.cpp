@@ -141,6 +141,7 @@ void RealRuntimeHost::launch() {
     o.driverStation = ds_;
     o.startPose = resolveStartPlacement();
     o.timeScale = timeScale_;
+    if (options_.physicsWorkers) o.physicsWorkers = options_.physicsWorkers();
     if (options_.toolchainOverrides) {
         const RealRuntimeOptions::ToolchainOverrides toolchain = options_.toolchainOverrides();
         o.javaHome = toolchain.javaHome;

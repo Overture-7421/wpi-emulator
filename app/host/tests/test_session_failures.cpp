@@ -272,6 +272,25 @@ TEST_CASE("a season without a game plugin runs core-only with a floor under the 
     s.waitUntilFinished();
 }
 
+TEST_CASE("the launch's physics worker count reaches the world and its threads are torn down with the session") {
+    TestRegistries reg;
+    SyntheticProject p(kWaitScript);
+    const auto t0 = Clock::now();
+    {
+        Options o = p.options();
+        o.physicsWorkers = 2;
+        auto r = RobotSession::start(reg.view(), p.config(), o);
+        REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+        RobotSession& s = *r.value();
+        const auto snap = s.latestSnapshot();
+        REQUIRE(snap != nullptr);
+        CHECK(snap->physicsStats().workerCount == 2);
+        s.requestStop();
+        s.waitUntilFinished();
+    }   // the Box3D world and its helper threads are destroyed with the session
+    CHECK(std::chrono::duration<double>(Clock::now() - t0).count() < 15.0);
+}
+
 TEST_CASE("the destructor kills the robot process tree (app exit)") {
     TestRegistries reg;
     SyntheticProject p(kWaitScript);

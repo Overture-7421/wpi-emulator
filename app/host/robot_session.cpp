@@ -260,6 +260,8 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     if (!loaded) return makeError(loaded.error().code, "The robot configuration cannot be used: " + loaded.error().message);
     self->issues_ = loaded.value().issues;
     RobotConfig cfg = std::move(loaded.value().config);
+    cfg.sim.physics.workerCount = std::max(1, options.physicsWorkers);   // the machine's choice, not a model property
+    log.info("session", "physics worker threads: " + std::to_string(cfg.sim.physics.workerCount));
     if (!loaded.value().valid()) {
         if (options.mode == SessionMode::Run)
             return makeError(ErrorCode::InvalidState, "The robot configuration has errors that must be fixed before the robot can run:" +

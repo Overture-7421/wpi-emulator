@@ -22,8 +22,10 @@ feeding transient contact-impulse spikes into grip. A coupled wheel/chassis tire
 avoids the low-speed instability of an explicit stiff slip force.
 This deliberately avoids building a suspension or a full tire-contact solver.
 
-Use fixed steps, a single physics worker by default and controlled floating-point
-settings to favor reproducible behavior. Engine-free fakes exercise consumers.
+Use fixed steps, controlled floating-point settings and an engine default of one physics worker
+to favor reproducible behavior. Box3D gives identical results for every worker count, so the
+app chooses the count per machine at launch (default Auto) to keep real time on slower
+computers, outside the robot model. Engine-free fakes exercise consumers.
 Mechanisms affect the chassis through SDK coupling for wrenches, constraints and
 payload mass, rather than reaching into Box3D.
 

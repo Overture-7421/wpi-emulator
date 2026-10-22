@@ -13,7 +13,7 @@
 
 namespace wpiemu::app {
 
-// Preferences: appearance, toolchain locations, simulation rate. Edits a copy and only writes
+// Preferences: appearance, toolchain locations, simulation rate and physics threads. Edits a copy and only writes
 // to AppSettings on OK.
 class SettingsDialog : public QDialog {
     Q_OBJECT
@@ -26,6 +26,7 @@ public:
 
     QComboBox* themeCombo() const { return theme_; }
     QComboBox* rateCombo() const { return rate_; }
+    QComboBox* threadsCombo() const { return threads_; }
     QLineEdit* jdkEdit() const { return jdk_; }
     QDialogButtonBox* buttons() const { return buttons_; }
 
@@ -42,6 +43,7 @@ private:
     QComboBox* theme_;
     QComboBox* units_;
     QComboBox* rate_;
+    QComboBox* threads_;
     QLineEdit* wpilib_;
     QLineEdit* jdk_;
     QCheckBox* reopen_;

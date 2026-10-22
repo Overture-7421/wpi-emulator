@@ -323,6 +323,9 @@ void DriverStationPanel::setStats(const SimStatsValues& v) {
     const QColor c = v.batteryV < 7.0 ? toneColor(Tone::Error) : (v.batteryV < 9.0 ? toneColor(Tone::Warning) : palette().color(QPalette::WindowText));
     statValues_[3]->setStyleSheet(QStringLiteral("color: %1;").arg(c.name()));
     statValues_[4]->setText(tr("%1 ms").arg(v.physicsStepMs, 0, 'f', 2));
+    const QString physicsTip = tr("Physics step time");
+    const QString threadsTip = v.physicsWorkers > 1 ? tr("%1 (%2 threads)").arg(physicsTip).arg(v.physicsWorkers) : physicsTip;
+    statValues_[4]->setToolTip(threadsTip);
     statValues_[5]->setText(QString::number(v.entities));
 }
 
