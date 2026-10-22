@@ -143,6 +143,131 @@ TEST_CASE("every field element lies inside the field or behind an alliance wall"
     CHECK(corrals == 2);
 }
 
+namespace {
+
+// Does a horizontal line along X at (y, z) over [x0, x1] pass through the visual's box? (Wall pieces are axis aligned.)
+bool lineHits(const sdk::FieldVisual& v, float x0, float x1, float y, float z) {
+    const sdk::Vec3 c = v.pose.position, h = v.sizeM * 0.5f;
+    return std::abs(c.y - y) <= h.y && std::abs(c.z - z) <= h.z && c.x + h.x >= x0 && c.x - h.x <= x1;
+}
+
+bool blockedByOpaque(const FieldLayout& l, float x0, float x1, float y, float z) {
+    for (const sdk::FieldVisual& v : l.description.visuals)
+        if (v.opacity >= 1.f && lineHits(v, x0, x1, y, z)) return true;
+    return false;
+}
+
+bool insideCollider(const FieldLayout& l, const sdk::Vec3& p) {
+    for (const FieldBox& b : l.boxes) {
+        if (!b.collides) continue;
+        const sdk::Vec3 h = b.sizeM * 0.5f;
+        if (std::abs(p.x - b.pose.position.x) <= h.x && std::abs(p.y - b.pose.position.y) <= h.y &&
+            std::abs(p.z - b.pose.position.z) <= h.z)
+            return true;
+    }
+    return false;
+}
+
+}  // namespace
+
+TEST_CASE("alliance wall: a camera at driver height sees the field through the stations but not through the tower wall") {
+    const FieldLayout l = buildFieldLayout();
+    const float eye = 1.6f, len = dim::kFieldLengthM, wid = dim::kFieldWidthM;
+    const float towerLo = dim::kTowerCenterYM - dim::kTowerWallWidthM / 2;
+    REQUIRE(dim::kStationSponsorTopM < eye);
+    REQUIRE(dim::kAllianceWallHeightM - dim::kStationRailHeightM > eye);
+
+    for (const float y : {1.6f, 2.5f, towerLo - 0.05f, dim::kTowerCenterYM + dim::kTowerWallWidthM / 2 + 0.05f, 6.0f, 7.9f}) {
+        INFO("blue y=" << y);
+        CHECK_FALSE(blockedByOpaque(l, -1.5f, 0.5f, y, eye));
+        CHECK(blockedByOpaque(l, -1.5f, 0.5f, y, 0.5f));  // the base is solid
+        INFO("red y=" << wid - y);
+        CHECK_FALSE(blockedByOpaque(l, len - 0.5f, len + 1.5f, wid - y, eye));
+        CHECK(blockedByOpaque(l, len - 0.5f, len + 1.5f, wid - y, 0.5f));
+    }
+    // the tower wall is opaque at every height up to its top, as on the real field
+    CHECK(blockedByOpaque(l, -1.5f, 0.5f, dim::kTowerCenterYM, eye));
+    CHECK(blockedByOpaque(l, len - 0.5f, len + 1.5f, wid - dim::kTowerCenterYM, eye));
+}
+
+TEST_CASE("alliance wall: only the drawing is see-through, the colliders are as solid as before") {
+    const FieldLayout l = buildFieldLayout();
+    const float t = dim::kAllianceWallThicknessM, h = dim::kAllianceWallHeightM;
+    for (const Alliance a : kAlliances) {
+        const std::string n = std::string("wall_") + sdk::allianceKey(a);
+        const FieldBox* high = findBox(l, n + "_high_y");
+        REQUIRE(high != nullptr);
+        CHECK(high->collides);
+        CHECK_FALSE(high->visible);
+        CHECK(high->sizeM.x == doctest::Approx(t));
+        CHECK(high->sizeM.z == doctest::Approx(h));
+        for (const char* piece : {"_low_y", "_outpost_lip", "_outpost_top"}) {
+            const FieldBox* b = findBox(l, n + piece);
+            REQUIRE(b != nullptr);
+            CHECK(b->collides);
+            CHECK(b->visible);
+        }
+    }
+    // nothing passes the wall at any height along the stations and the tower
+    for (const float y : {1.2f, 2.5f, 3.7f, 5.0f, 7.9f})
+        for (const float z : {0.1f, 0.5f, 1.0f, 1.5f, 1.95f}) {
+            CHECK_MESSAGE(insideCollider(l, {-t / 2, y, z}), "blue y=" << y << " z=" << z);
+            CHECK_MESSAGE(insideCollider(l, {dim::kFieldLengthM + t / 2, dim::kFieldWidthM - y, z}),
+                          "red y=" << y << " z=" << z);
+        }
+}
+
+TEST_CASE("alliance wall and guardrails: clear plastic is translucent, frames are opaque, red mirrors blue") {
+    const FieldLayout l = buildFieldLayout();
+    auto find = [&](const std::string& name) -> const sdk::FieldVisual* {
+        for (const sdk::FieldVisual& v : l.description.visuals)
+            if (v.name == name) return &v;
+        return nullptr;
+    };
+
+    for (const char* alliance : {"blue", "red"}) {
+        const std::string n = std::string("wall_") + alliance;
+        for (const char* stations : {"_stations_near", "_stations_far"}) {
+            const sdk::FieldVisual* sheet = find(n + stations + "_sheet");
+            REQUIRE(sheet != nullptr);
+            CHECK(sheet->opacity < 1.f);
+            CHECK(sheet->opacity > 0.f);
+            for (const char* part : {"_base", "_sponsor", "_rail", "_shelf_1"}) {
+                const sdk::FieldVisual* v = find(n + stations + part);
+                REQUIRE(v != nullptr);
+                CHECK(v->opacity == 1.f);
+            }
+        }
+        CHECK(find(n + "_stations_far_shelf_2") != nullptr);
+        CHECK(find(n + "_stations_near_shelf_2") == nullptr);
+        CHECK(find(n + "_tower_wall")->opacity == 1.f);
+    }
+    int mirrored = 0;
+    for (const sdk::FieldVisual& blue : l.decor) {
+        if (blue.name.find("wall_blue") != 0) continue;
+        const sdk::FieldVisual* red = find(swapAlliance(blue.name));
+        REQUIRE_MESSAGE(red != nullptr, blue.name);
+        CHECK(red->pose.position.x == doctest::Approx(dim::kFieldLengthM - blue.pose.position.x).epsilon(1e-4));
+        CHECK(red->pose.position.y == doctest::Approx(dim::kFieldWidthM - blue.pose.position.y).epsilon(1e-4));
+        CHECK(red->pose.position.z == doctest::Approx(blue.pose.position.z));
+        CHECK(red->opacity == blue.opacity);
+        ++mirrored;
+    }
+    CHECK(mirrored > 10);
+
+    // the guardrail stays a collider; it is drawn as plastic between two aluminum extrusions
+    for (const char* side : {"guardrail_low_y", "guardrail_high_y"}) {
+        const FieldBox* rail = findBox(l, side);
+        REQUIRE(rail != nullptr);
+        CHECK(rail->collides);
+        CHECK_FALSE(rail->visible);
+        CHECK(find(side) == nullptr);
+        CHECK(find(std::string(side) + "_plastic")->opacity < 1.f);
+        CHECK(find(std::string(side) + "_top")->opacity == 1.f);
+        CHECK(find(std::string(side) + "_bottom")->opacity == 1.f);
+    }
+}
+
 TEST_CASE("bump mesh is a closed outward-wound prism with the expected volume") {
     const FieldLayout l = buildFieldLayout();
     const BumpSpec& b = l.bumps.front();

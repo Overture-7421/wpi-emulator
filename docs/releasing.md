@@ -12,7 +12,8 @@ Its administrator setup and recovery procedure belong in
 
 ## Artifacts and layout
 
-[Install/CPack rules](../cmake/WpiEmuInstall.cmake) derive names from the root project version:
+[Install/CPack rules](../cmake/WpiEmuInstall.cmake) derive names from the root project version, which the
+[release workflow](#release-automation-and-publication) sets to the version you release:
 
 - Windows x64: `wpi-emulator-<version>-windows-x64.exe` (NSIS) and `.zip` (portable).
 - macOS universal: `wpi-emulator-<version>-macos-arm64-x64.dmg`.
@@ -171,11 +172,25 @@ The app's updater (behaviour in the [app reference](reference/app.md#updates)) d
 
 ## Release automation and publication
 
-[release.yml](../.github/workflows/release.yml) runs on `v*` tags and manual dispatch.
-The tag's base version (before any prerelease suffix) must match the root CMake project version.
-The Windows/Linux/macOS matrix builds, runs CTest, packages, checks artifacts and uploads them.
-A tag publishes a **draft** GitHub release; a tag containing `-` marks it prerelease.
-Manual runs upload artifacts without creating a release.
+[release.yml](../.github/workflows/release.yml) runs only by manual dispatch. To release:
+
+1. Merge what should ship to `main` and let CI pass.
+2. Actions > **Release** > **Run workflow**, branch `main`, and type the version in `version`, for example `v0.0.8`
+   (a suffix such as `-rc1` marks a prerelease).
+3. Wait for the Windows/Linux/macOS matrix, which builds, runs CTest, packages, checks the artifacts and uploads them.
+4. Inspect the artifacts and the **draft** release the run created, then publish it. Publishing creates the tag
+   `vX.Y.Z` on the commit the run started from.
+
+[release_version.py](../tools/release_version.py) checks the input first: `vMAJOR.MINOR.PATCH` with an optional
+suffix, not `0.0.0`, not an existing tag and not lower than the latest tag. Nothing is pushed to `main` (its ruleset
+blocks the workflow token): the committed `project(VERSION 0.0.0)` of `CMakeLists.txt` is a placeholder, the app's
+development-build marker that never checks for updates, and each build job rewrites it in its own checkout. Installers
+and the app therefore carry the typed version, and a job fails unless every installer is named for it.
+A plain local `cpack` produces `wpi-emulator-0.0.0-...`. For a local build with a specific number, for example an older
+one to try the updater, run `python tools\release_version.py apply 0.0.7`, build, then `git checkout -- CMakeLists.txt`.
+
+Only a run on `main` drafts a release, and it stops if a release for that tag exists (delete a stale draft and run
+again). A run from any other branch uploads the artifacts and drafts nothing, which is how to test workflow changes.
 
 The workflow rejects a stub extension if HAL discovery/download failed, unless a manual run
 explicitly sets `allow_stub_extension`. Never publish that diagnostic override as a usable robot simulator.

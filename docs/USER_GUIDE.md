@@ -168,7 +168,9 @@ Default keyboard controls: `W A S D` left stick, arrows right stick, `U` / `O` t
 At the viewport's bottom-right, **Restart** (`Ctrl+R`) resets physics and game pieces but keeps
 robot code running. Its dropdown's **Restart robot code** (`Ctrl+Shift+R`) reboots code too.
 **Speed** changes pacing. **Home view** (`Ctrl+0` or double-click) restores the camera.
-Orbit/pan/zoom work as in the editor.
+Orbit/pan/zoom work as in the editor. In REBUILT the alliance walls and guardrails are see-through above their
+opaque base, so you can put the camera behind a wall where the drivers stand and still see the field; the tower wall
+and outpost stay opaque, as on the real field.
 
 For autonomous placement, set Robot's **Use custom start pose** or **Add start position** from
 its context menu. Named starts have alliance, field X/Y and heading; **Copy to Red/Blue**

@@ -56,6 +56,7 @@ struct FieldVisual {
     Pose3 pose;
     Vec3 sizeM{1.f, 1.f, 1.f};   // Box: full extents; Cylinder: (diameter, diameter, height); Mesh: scale
     std::string color = "#9090a0";
+    float opacity = 1.f;         // 1 = opaque; below 1 the renderer alpha-blends it (clear plastic)
     std::string meshAsset;       // Kind::Mesh: path relative to the plugin's asset root
 };
 

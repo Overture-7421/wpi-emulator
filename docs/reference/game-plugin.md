@@ -14,7 +14,9 @@ Descriptor queries, including tag layouts and field frames, must be pure and thr
 Registration and construction run on the caller's setup thread, including UI field previews.
 Live game-state ticking and publication belong to the simulation thread.
 
-`createField()` supplies owned static colliders and sensor volumes before `createGameState()`.
+`createField()` supplies owned static colliders and sensor volumes before `createGameState()`, and the
+`FieldDescription` the app draws. Visuals are separate from colliders: a plugin may draw a collider
+differently or add visuals with none, and `FieldVisual::opacity` below 1 draws clear plastic.
 The runtime resets the game state before the first tick and on Reset. `IGameState::step()` sees
 fresh physics events and mechanism readings; `publish()` contributes entities, zone state, and
 HUD values to snapshots. `onTick()` is an optional post-game hook; see [runtime](runtime.md) for lifecycle details.
@@ -134,6 +136,10 @@ Defaults, bounds, and property descriptions are authoritative in
 
 The field includes alliance walls, guardrails, hollow hubs, bumps, trenches, tower rungs, depots,
 and outpost openings/corrals. Blue geometry is rotated about the field center for red.
+The walls and guardrails stay solid for robots and fuel but are drawn like the real field: the driver
+stations have an opaque base and sponsor band under a see-through sheet, a top rail and a shelf, the tower wall
+and outpost are opaque, and the guardrails are clear plastic between aluminum rails, so a camera behind a wall
+sees the field.
 Fuel is simulated as rigid spheres; reset stages field fuel and restores the robot inventory
 and chute stocks. Body limits bound fuel creation; out-of-play fuel is removed.
 

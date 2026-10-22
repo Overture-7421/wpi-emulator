@@ -24,6 +24,7 @@ struct FieldBox {
     std::string color;
     sdk::Material material;
     bool collides = true;
+    bool visible = true;  // false: a collider only; `FieldLayout::decor` draws it instead
 };
 
 struct FieldCylinder {
@@ -81,6 +82,7 @@ struct DepotSpec {
 
 struct FieldLayout {
     std::vector<FieldBox> boxes;
+    std::vector<sdk::FieldVisual> decor;  // drawn only: no collider (see-through sheets, shelves, rails)
     std::vector<FieldCylinder> cylinders;
     std::vector<BumpSpec> bumps;
     std::vector<SensorVolume> sensors;
