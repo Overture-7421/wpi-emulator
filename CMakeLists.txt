@@ -15,7 +15,7 @@ if(POLICY CMP0156)
 endif()
 
 project(wpi-emulator
-    VERSION 0.0.4
+    VERSION 0.0.5
     DESCRIPTION "Cross-platform emulator for unmodified WPILib robot projects"
     LANGUAGES C CXX)
 
