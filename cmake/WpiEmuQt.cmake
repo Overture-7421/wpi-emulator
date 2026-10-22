@@ -5,7 +5,7 @@
 #   wpiemu_qt_deploy_runtime(<target>)
 option(WPIEMU_QT_DOWNLOAD "Automatically download Qt 6 via aqtinstall when not found on the system" ON)
 
-set(_wpiemu_qt_components Core Gui Widgets Quick Quick3D QuickWidgets Svg)
+set(_wpiemu_qt_components Core Gui Widgets Quick Quick3D QuickWidgets Svg Multimedia)
 
 # Clear stale Qt6*_DIR cache entries if a previous Qt installation was moved or deleted.
 if(Qt6_DIR AND NOT EXISTS "${Qt6_DIR}/Qt6Config.cmake")
@@ -59,8 +59,11 @@ if(NOT Qt6_FOUND AND WPIEMU_QT_DOWNLOAD)
     endif()
 
     set(_aqt_kit_path "${_aqt_out_dir}/${_wpiemu_qt_ver}/${_aqt_kit_subdir}")
-    if(NOT EXISTS "${_aqt_kit_path}/lib/cmake/Qt6/Qt6Config.cmake")
-        message(STATUS "wpiemu: Qt ${_wpiemu_qt_ver} not found; installing via aqtinstall into ${_aqt_kit_path}...")
+    # The kit may exist from an earlier checkout without a module added since (aqt adds modules to an installed kit).
+    set(_aqt_modules qtquick3d qtshadertools qtmultimedia)
+    if(NOT EXISTS "${_aqt_kit_path}/lib/cmake/Qt6/Qt6Config.cmake"
+       OR NOT EXISTS "${_aqt_kit_path}/lib/cmake/Qt6Multimedia/Qt6MultimediaConfig.cmake")
+        message(STATUS "wpiemu: Qt ${_wpiemu_qt_ver} (${_aqt_modules}) not found; installing via aqtinstall into ${_aqt_kit_path}...")
         set(_aqt_python "${Python3_EXECUTABLE}")
         execute_process(
             COMMAND "${_aqt_python}" -m aqt version
@@ -98,7 +101,7 @@ if(NOT Qt6_FOUND AND WPIEMU_QT_DOWNLOAD)
         endif()
         execute_process(
             COMMAND "${_aqt_python}" -m aqt install-qt "${_aqt_host}" desktop "${_wpiemu_qt_ver}" "${_aqt_arch}"
-                    -O "${_aqt_out_dir}" -m qtquick3d qtshadertools
+                    -O "${_aqt_out_dir}" -m ${_aqt_modules}
             RESULT_VARIABLE _aqt_rc)
         if(NOT _aqt_rc EQUAL 0 AND WIN32)
             # Fall back to repo-local .qt if C:/Qt is not writable.
@@ -106,7 +109,7 @@ if(NOT Qt6_FOUND AND WPIEMU_QT_DOWNLOAD)
             set(_aqt_kit_path "${_aqt_out_dir}/${_wpiemu_qt_ver}/${_aqt_kit_subdir}")
             execute_process(
                 COMMAND "${_aqt_python}" -m aqt install-qt "${_aqt_host}" desktop "${_wpiemu_qt_ver}" "${_aqt_arch}"
-                        -O "${_aqt_out_dir}" -m qtquick3d qtshadertools
+                        -O "${_aqt_out_dir}" -m ${_aqt_modules}
                 RESULT_VARIABLE _aqt_rc)
         endif()
         if(NOT _aqt_rc EQUAL 0)
@@ -121,6 +124,9 @@ if(NOT Qt6_FOUND AND WPIEMU_QT_DOWNLOAD)
     set(Qt6_DIR "${_aqt_kit_path}/lib/cmake/Qt6" CACHE PATH "Qt6 CMake configuration directory" FORCE)
 endif()
 
+if(NOT Qt6_FOUND)
+    message(STATUS "wpiemu: the Qt kit needs Quick 3D, Shader Tools and Multimedia (match sounds); with aqtinstall: -m qtquick3d qtshadertools qtmultimedia")
+endif()
 find_package(Qt6 6.5 REQUIRED COMPONENTS ${_wpiemu_qt_components})
 if(WPIEMU_BUILD_TESTS)
     find_package(Qt6 6.5 QUIET COMPONENTS Test)
@@ -166,6 +172,7 @@ function(wpiemu_qt_deploy_runtime target_name)
                     --no-compiler-runtime
                     --no-opengl-sw
                     --no-system-d3d-compiler
+                    --no-ffmpeg
                     --qmldir "${CMAKE_SOURCE_DIR}/app"
                     "$<TARGET_FILE:${target_name}>"
             COMMENT "Deploying Qt runtime for ${target_name} ($<CONFIG>)")

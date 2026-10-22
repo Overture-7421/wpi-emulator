@@ -200,6 +200,7 @@ void FakeRunBackend::resetWorld() {
     shotTimer_ = 0.0;
     tick_ = 0;
     simUs_ = 0;
+    soundLog_.clear();
     rng_.seed(1);
     scatterBalls();
 }
@@ -373,6 +374,16 @@ void FakeRunBackend::setProjectDefaults(const QString& projectPath, sdk::proto::
     scene_.projectPath = projectPath;
     scene_.defaultStation = station;
     emit sceneChanged();
+}
+
+void FakeRunBackend::setSoundCues(std::vector<sdk::SoundCueInfo> cues) {
+    scene_.soundCues = std::move(cues);
+    emit sceneChanged();
+}
+
+void FakeRunBackend::raiseSoundCue(const std::string& cueId) {
+    soundLog_.raise(cueId, simUs_);
+    publish();
 }
 
 void FakeRunBackend::onTimer() {
@@ -610,6 +621,7 @@ void FakeRunBackend::publish() {
 
     d.batteryVoltageV = sdk::kNominalBatteryVoltageV - 0.9 * (std::hypot(static_cast<double>(vel_.x), static_cast<double>(vel_.y)) / 3.5) - (flywheel_ > 1.f ? 0.5 : 0.0);
     d.driverStation = ds_;
+    soundLog_.publish(builder);
     d.physicsStats.bodies = 2 + static_cast<int>(balls_.size());
     d.physicsStats.awakeBodies = 2;
     d.physicsStats.contacts = 4;

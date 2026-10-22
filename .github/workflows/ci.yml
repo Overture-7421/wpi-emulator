@@ -71,7 +71,7 @@ jobs:
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
             libxcb-xinerama0 libegl1 libvulkan-dev \
             libx11-dev libxext-dev libxrandr-dev libxi-dev libxcursor-dev libxfixes-dev libxss-dev \
-            libudev-dev libasound2-dev
+            libudev-dev libasound2-dev libpulse-dev
 
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
@@ -91,7 +91,7 @@ jobs:
         with:
           version: "6.8.*"
           arch: ${{ matrix.qt_arch }}
-          modules: qtquick3d qtshadertools
+          modules: qtquick3d qtshadertools qtmultimedia
           cache: true
 
       # The WPILib HAL zips (frcmaven) are fetched by CMake; cache them so reruns stay offline.

@@ -48,9 +48,11 @@ RunPage::RunPage(IRuntimeHost& host, RunPageOptions options, QWidget* parent)
       options_(options),
       ownedSettings_(options.settings == nullptr ? std::make_unique<QSettings>() : nullptr),
       ownedProvider_(options.gamepads == nullptr && options.useDefaultGamepadBackend ? createDefaultJoystickProvider() : nullptr),
+      ownedSound_(options.sound == nullptr && options.useDefaultSoundBackend ? createDefaultSoundOutput() : nullptr),
       settings_(options.settings != nullptr ? options.settings : ownedSettings_.get()),
       ds_(settings_),
-      joysticks_(options.gamepads != nullptr ? options.gamepads : ownedProvider_.get(), settings_) {
+      joysticks_(options.gamepads != nullptr ? options.gamepads : ownedProvider_.get(), settings_),
+      sound_(options.sound != nullptr ? options.sound : ownedSound_.get(), settings_) {
     setObjectName(QStringLiteral("runview.page"));
     build();
 }
@@ -121,6 +123,9 @@ void RunPage::build() {
     connect(&host_, &IRuntimeHost::sceneChanged, this, &RunPage::onSceneChanged);
     connect(&host_, &IRuntimeHost::startPositionChanged, this, &RunPage::rebuildStartMenu);
     connect(&host_, &IRuntimeHost::logLine, console_, &ConsolePanel::append);
+    connect(&sound_, &SoundCueModel::problem, this, [this](const QString& message) {
+        console_->append(emulatorLogLine(sdk::LogLevel::Warn, tr("sound"), message));
+    });
     connect(&ds_, &DriverStationModel::stateReady, &host_, &IRuntimeHost::setDriverStation);
     connect(viewport_->overlay(), &StateOverlay::restartRequested, this, [this] {
         ds_.disable();
@@ -199,6 +204,10 @@ void RunPage::buildActions() {    restartAction_ = new QAction(reloadIcon(), tr(
     consoleAction_->setChecked(true);
     consoleAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_J));
     consoleAction_->setToolTip(tr("Show or hide the console (Ctrl+J)"));
+    soundAction_ = new QAction(tr("Match sounds"), this);
+    soundAction_->setCheckable(true);
+    soundAction_->setChecked(sound_.enabled());
+    soundAction_->setToolTip(tr("Play the field's audio cues during a Practice match (volume follows the system)"));
     connect(restartAction_, &QAction::triggered, this, [this] {
         ds_.onSimReset();
         host_.resetSimulation();
@@ -216,10 +225,11 @@ void RunPage::buildActions() {    restartAction_ = new QAction(reloadIcon(), tr(
     connect(zonesAction_, &QAction::toggled, &scene_, &SceneModel::setZonesVisible);
     connect(tagsAction_, &QAction::toggled, &scene_, &SceneModel::setTagsVisible);
     connect(consoleAction_, &QAction::toggled, this, [this](bool on) { setConsoleVisible(on); });
+    connect(soundAction_, &QAction::toggled, &sound_, &SoundCueModel::setEnabled);
 }
 
 QList<QAction*> RunPage::viewActions() const {
-    return {hudAction_, stateAction_, zonesAction_, zoneMenu_->menuAction(), tagsAction_, consoleAction_};
+    return {hudAction_, stateAction_, zonesAction_, zoneMenu_->menuAction(), tagsAction_, soundAction_, consoleAction_};
 }
 
 void RunPage::setConsoleVisible(bool visible) {
@@ -329,6 +339,7 @@ void RunPage::onSceneChanged() {
     startPositions_ = info.config ? info.config->startPositions : std::vector<sdk::StartPosition>{};
     scene_.setSceneInfo(info);
     hud_.setDescriptors(info.hud);
+    sound_.setCatalog(info.soundCues);
     stateWindow_->model()->setScene(info);
     rebuildZoneMenu();
     rebuildStartMenu();
@@ -344,6 +355,7 @@ void RunPage::applyStatus() {
     const bool available = status.live() && status.simulating;
     ds_.setRobotAvailable(available);
     dsPanel_->setRobotConnected(available);
+    if (!available) sound_.suspend();
 
     if (p.tone == Tone::Error && !consoleAutoShown_) {
         consoleAutoShown_ = true;
@@ -368,6 +380,9 @@ void RunPage::pollNow() {
     const auto snapshot = host_.latestSnapshot();
     const sdk::ISimSnapshot* s = snapshot.get();
     if (s != nullptr) ds_.onSimTime(s->simTimeUs());
+    // The simulation keeps running behind the other tabs: only a visible run page makes sound.
+    if (isVisible()) sound_.onSnapshot(s);
+    else sound_.suspend();
 
     scene_.update(s);
     hud_.update(s);
@@ -434,6 +449,7 @@ void RunPage::hideEvent(QHideEvent* e) {
     QWidget::hideEvent(e);
     if (qApp != nullptr) qApp->removeEventFilter(this);
     joysticks_.releaseAllKeys();
+    sound_.suspend();
     // The shell's stacked widget does not hide child windows; the action stays checked so showEvent restores it.
     if (stateWindow_ != nullptr && stateWindow_->isVisible()) {
         saveStateWindowGeometry();

@@ -22,6 +22,7 @@
 #include "fake_run_backend.h"
 #include "joystick_editor.h"
 #include "run_page.h"
+#include "test_support.h"
 
 using namespace wpiemu::app::runview;
 namespace sdk = wpiemu::sdk;
@@ -38,10 +39,12 @@ struct Fixture {
         return o;
     }()};
     FakeJoystickProvider gamepads;
+    runview_test::RecordingSoundOutput sound;
     RunPage page{backend, [this] {
                      RunPageOptions o;
                      o.settings = &settings;
                      o.gamepads = &gamepads;
+                     o.sound = &sound;
                      return o;
                  }()};
 
@@ -59,6 +62,57 @@ struct Fixture {
 
 }  // namespace
 
+TEST_CASE("run page: match sounds play only while the page is visible and follow the View toggle") {
+    Fixture f;
+    sdk::SoundCueInfo bell;
+    bell.id = "demo.bell";
+    bell.asset = "demo/bell.wav";
+    f.backend.setSoundCues({bell});
+    CHECK(f.sound.catalogSize == 1);
+    f.connectRobot();
+    f.page.pollNow();   // learns the starting sequence
+
+    f.backend.raiseSoundCue("demo.bell");
+    f.page.pollNow();
+    CHECK(f.sound.events == std::vector<std::string>{"demo.bell"});
+    f.page.pollNow();   // the same snapshot again: no second ring
+    CHECK(f.sound.events.size() == 1);
+
+    f.page.hide();      // the sim runs on behind another tab: silent, and what was playing stops
+    f.backend.raiseSoundCue("demo.bell");
+    f.page.pollNow();
+    CHECK(f.sound.events == std::vector<std::string>{"demo.bell", "<stop>"});
+    f.page.show();
+    f.page.pollNow();   // the cue raised while hidden is not played late
+    CHECK(f.sound.events.size() == 2);
+    f.backend.raiseSoundCue("demo.bell");
+    f.page.pollNow();
+    CHECK(f.sound.events.back() == "demo.bell");
+
+    REQUIRE(f.page.soundAction() != nullptr);
+    CHECK(f.page.viewActions().contains(f.page.soundAction()));
+    CHECK(f.page.soundAction()->isChecked());   // on by default
+    f.page.soundAction()->setChecked(false);
+    CHECK_FALSE(f.settings.value(QStringLiteral("runview/sound/enabled")).toBool());
+    CHECK(f.sound.events.back() == "<stop>");   // switching off cuts what is playing
+    const auto heard = f.sound.events.size();
+    f.backend.raiseSoundCue("demo.bell");
+    f.page.pollNow();
+    CHECK(f.sound.events.size() == heard);      // the cue itself stays silent
+}
+
+TEST_CASE("run page: the simulation stopping silences the match sounds") {
+    Fixture f;
+    sdk::SoundCueInfo bell;
+    bell.id = "demo.bell";
+    bell.asset = "demo/bell.wav";
+    f.backend.setSoundCues({bell});
+    f.connectRobot();
+    f.page.pollNow();
+    f.backend.stopSimulation();
+    CHECK(f.sound.events == std::vector<std::string>{"<stop>"});
+}
+
 TEST_CASE("run page: the 3D scene loads and the idle state invites the user to start") {
     Fixture f;
     CHECK_MESSAGE(f.page.viewport()->sceneLoaded(), f.page.viewport()->sceneError().toStdString());
@@ -69,7 +123,7 @@ TEST_CASE("run page: the 3D scene loads and the idle state invites the user to s
     CHECK_FALSE(f.page.speedCombo()->isEnabled());
     CHECK_FALSE(f.page.driverStationPanel()->enableButton()->isEnabled());   // no robot to enable
     CHECK(f.page.driverStationPanel()->modeButton(DsMode::Teleop)->isChecked());   // Teleop is selected from the start
-    CHECK(f.page.viewActions().size() == 6);   // overlays and console live in the shell's View menu
+    CHECK(f.page.viewActions().size() == 7);   // overlays and console live in the shell's View menu
 }
 
 TEST_CASE("run page: start connects, drives the view models and enables the DS") {

@@ -71,3 +71,13 @@ qt_add_resources(wpiemu_app_common wpiemu_app_icons
     PREFIX "/wpiemu"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/../resources"
     FILES ${WPIEMU_APP_ICONS})
+
+# Season audio the plugins ship (plugins append their files to WPIEMU_PLUGIN_ASSET_FILES): ":/wpiemu/plugins/<path
+# relative to plugins/>", the path a SoundCueInfo::asset names. The app never names a season here.
+get_property(WPIEMU_PLUGIN_ASSETS GLOBAL PROPERTY WPIEMU_PLUGIN_ASSET_FILES)
+if(WPIEMU_PLUGIN_ASSETS)
+    qt_add_resources(wpiemu_app_common wpiemu_plugin_assets
+        PREFIX "/wpiemu/plugins"
+        BASE "${PROJECT_SOURCE_DIR}/plugins"
+        FILES ${WPIEMU_PLUGIN_ASSETS})
+endif()

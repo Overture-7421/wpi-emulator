@@ -112,6 +112,7 @@ struct HostScene {
     std::vector<sdk::EditorPanelDescriptor> panels;
     std::vector<sdk::ZoneKindInfo> zoneKinds;             // the game module's contributeZoneKinds()
     std::vector<sdk::GameValueInfo> gameValues;           // the game module's contributeGameValues() (labels/units for sensor sources)
+    std::vector<sdk::SoundCueInfo> soundCues;             // the game module's contributeSoundCues() (the run view plays them)
     sdk::AprilTagLayout tags;                             // the game module's aprilTagLayout()
     QString gameName;
     QString projectPath;                                  // empty = no project; a different path means a project switch
@@ -139,6 +140,7 @@ inline HostScene makeHostScene(const HostProject& project) {
         scene.panels = game->contributeEditorPanels();
         scene.zoneKinds = game->contributeZoneKinds();
         scene.gameValues = game->contributeGameValues();
+        scene.soundCues = game->contributeSoundCues();
         scene.tags = game->aprilTagLayout();
         scene.gameName = QString::fromStdString(game->metadata().displayName);
     }

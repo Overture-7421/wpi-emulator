@@ -80,7 +80,7 @@ jobs:
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
             libxcb-xinerama0 libxcb-shape0 libxcb-xkb1 libegl1 libvulkan-dev libfontconfig1 \
             libx11-dev libxext-dev libxrandr-dev libxi-dev libxcursor-dev libxfixes-dev libxss-dev \
-            libudev-dev libasound2-dev desktop-file-utils file
+            libudev-dev libasound2-dev libpulse-dev desktop-file-utils file
 
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
@@ -102,7 +102,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: ${{ matrix.qt_arch }}
-          modules: qtquick3d qtshadertools
+          modules: qtquick3d qtshadertools qtmultimedia
           cache: true
 
       - name: Cache WPILib downloads
@@ -167,7 +167,8 @@ jobs:
           & "$dest\bin\wpiemu_app.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "wpiemu_app --version failed ($LASTEXITCODE)" }
           foreach ($f in 'extensions\halsim_wpiemu.dll', 'plugins\platforms\qwindows.dll', 'plugins\imageformats\qsvg.dll',
-                         'plugins\iconengines\qsvgicon.dll', 'qml\QtQuick3D\qquick3dplugin.dll', 'bin\qt.conf') {
+                         'plugins\iconengines\qsvgicon.dll', 'qml\QtQuick3D\qquick3dplugin.dll', 'bin\qt.conf',
+                         'bin\Qt6Multimedia.dll') {
             if (-not (Test-Path "$dest\$f")) { throw "missing in installed tree: $f" }
           }
           Start-Process "$dest\Uninstall.exe" -ArgumentList '/S', "_?=$dest" -Wait
@@ -222,6 +223,7 @@ jobs:
           fi
           test -f "$app/Contents/PlugIns/wpiemu/libhalsim_wpiemu.dylib"
           find "$app/Contents/Resources/qml/QtQuick3D" -iname '*quick3dplugin*' -print -quit | grep -q .
+          test -d "$app/Contents/Frameworks/QtMultimedia.framework"
           exe="$app/Contents/MacOS/wpiemu_app"
           # Fat binaries print "<exe> (architecture ...):" headers; only the tab-indented lines are dependencies.
           bad="$(otool -arch all -L "$exe" | grep -E '^[[:space:]]' | awk '{print $1}' | grep -v -E '^(@rpath|@executable_path|@loader_path|/usr/lib/|/System/)' || true)"

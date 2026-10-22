@@ -51,6 +51,9 @@ public:
     void setLinkSettled();                        // jump straight to Running + Connected
     // As if the shell had opened `projectPath` whose wizard chose `station` (the page applies it to its Driver Station).
     void setProjectDefaults(const QString& projectPath, sdk::proto::AllianceStation station);
+    // As if the open project's game declared `cues`; raiseSoundCue() then puts one of them in the next snapshots.
+    void setSoundCues(std::vector<sdk::SoundCueInfo> cues);
+    void raiseSoundCue(const std::string& cueId);
 
     static sdk::RobotConfig makeDemoConfig();   // the demo robot; its zones and sensors use the demo game's ids
 
@@ -91,6 +94,7 @@ private:
     HostScene scene_;
     sdk::LatestSnapshotSlot slot_;
     sdk::proto::DsState ds_;
+    sdk::SoundCueLog soundLog_;
 
     StartPositionSelection startSelection_;
     bool paused_ = false;

@@ -74,14 +74,16 @@ if(TARGET wpiemu_app)
     endif()
 
     # Qt runtime deployment. Linux is left to linuxdeploy (AppImage); WPIEMU_DEPLOY_QT=ON also works there (generic tool).
-    # Qt6::Svg is otherwise only visible inside app/ and the deploy-script generator (run here) cannot see it.
+    # Qt6::Svg and Qt6::Multimedia are otherwise only visible inside app/ and the deploy-script generator (run here)
+    # cannot see them.
     if(WPIEMU_DEPLOY_QT AND (WIN32 OR APPLE))
-        find_package(Qt6 REQUIRED COMPONENTS Svg)
+        find_package(Qt6 REQUIRED COMPONENTS Svg Multimedia)
         # The QML files are compiled in as plain resources (no qt_add_qml_module), so the importer scan has nothing to
         # look at: point the deploy tool at the sources instead, so QtQuick / QtQuick3D (+ plugins, shaders) are bundled.
         set(_qml_scan_root "${CMAKE_SOURCE_DIR}/app")
         if(WIN32)
-            set(_deploy_tool_options --qmldir "${_qml_scan_root}")
+            # Match sounds use QSoundEffect (WAV), which does not need FFmpeg: skip its ~17 MB of DLLs.
+            set(_deploy_tool_options --qmldir "${_qml_scan_root}" --no-ffmpeg)
         else()
             set(_deploy_tool_options "-qmldir=${_qml_scan_root}")
         endif()

@@ -1,5 +1,10 @@
 #include <doctest/doctest.h>
 
+#include <QFileInfo>
+#include <QString>
+
+#include <vector>
+
 #include "common/robot_basics.h"
 #include "test_support.h"
 #include "wpiemu/core/config/config_validator.h"
@@ -19,6 +24,21 @@ TEST_CASE("services register the built-in content") {
     CHECK(s.drivetrains().contains(sdk::drivetrain_kind::kMecanum));
     CHECK(s.mechanisms().size() >= 1);
     CHECK(!s.demo());
+}
+
+TEST_CASE("every sound cue of the built-in game is embedded in the application") {
+    TestEnvironment env;
+    const sdk::IGameModule* module = env.services->plugins().findByYear(2026);
+    REQUIRE(module != nullptr);
+    const std::vector<sdk::SoundCueInfo> cues = module->contributeSoundCues();
+    CHECK_FALSE(cues.empty());
+    for (const sdk::SoundCueInfo& cue : cues) {
+        CAPTURE(cue.id);
+        CAPTURE(cue.asset);
+        const QFileInfo file(QStringLiteral(":/wpiemu/plugins/") + QString::fromStdString(cue.asset));
+        CHECK(file.exists());
+        CHECK(file.size() > 0);
+    }
 }
 
 TEST_CASE("a robot built by the wizard passes core validation apart from device mappings") {
