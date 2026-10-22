@@ -8,11 +8,13 @@
 // (those objects are destroyed before the services). Not thread-safe: SIM THREAD only.
 
 #include <cstdint>
+#include <string_view>
 
 #include "wpiemu/sdk/core/clock.h"
 #include "wpiemu/sdk/core/ids.h"
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/core/rng.h"
+#include "wpiemu/sdk/game/sound_cue.h"
 #include "wpiemu/sdk/mechanisms/physics_coupling.h"
 
 namespace wpiemu::sdk {
@@ -38,6 +40,7 @@ struct SimContextServices {
     BodyId chassisBody;                   // the robot's rigid body in `physics` (invalid before it is built)
     IMechanismDirectory* mechanisms = nullptr;  // null until mechanisms are built
     IMechanismPhysicsCoupling* coupling = nullptr;  // null => SimContext::coupling() is a null object
+    ISoundCueSink* sounds = nullptr;      // null => requested sound cues are discarded
 };
 
 class SimContext {
@@ -65,6 +68,11 @@ public:
     // one. Mechanisms submit before the physics step and read prior-step loads (see physics_coupling.h).
     IMechanismPhysicsCoupling& coupling() { return s_.coupling != nullptr ? *s_.coupling : nullCoupling_; }
 
+    // Never null: discards cues when the runtime bound no sink. Thread-safe by the sink's contract.
+    ISoundCueSink& sounds() { return s_.sounds != nullptr ? *s_.sounds : nullSounds_; }
+    // Asks the app to play the sound cue `id` (see game/sound_cue.h), stamped with the current simulation time.
+    void requestSound(std::string_view id) { sounds().post({std::string(id), s_.clock.simTimeUs()}); }
+
     // Runtime only: bind once the game state exists / mechanisms are built.
     void bindGameState(IGameState* state) { gameState_ = state; }
     void bindMechanisms(IMechanismDirectory* directory) { s_.mechanisms = directory; }
@@ -75,6 +83,7 @@ private:
     SimContextServices s_;
     IGameState* gameState_ = nullptr;
     NullMechanismPhysicsCoupling nullCoupling_;
+    NullSoundCueSink nullSounds_;
 };
 
 }  // namespace wpiemu::sdk

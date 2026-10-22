@@ -1,23 +1,27 @@
 name: Release
 
-# Builds the three distributables and attaches them to a GitHub release:
+# Builds the three distributables and drafts a GitHub release for the version typed into "Run workflow":
 #   Windows  wpi-emulator-<ver>-windows-x64.exe (NSIS installer) + .zip (portable)
 #   macOS    wpi-emulator-<ver>-macos-arm64-x64.dmg (universal; signed + notarized when the Apple secrets exist)
 #   Linux    wpi-emulator-<ver>-linux-x86_64.AppImage
+# The committed project version (0.0.0) is a placeholder: every build job rewrites it in its own checkout, so nothing
+# is pushed to main. Only a run on main drafts the release; other refs just upload the artifacts.
 # See docs/releasing.md for the design, the secrets, and how to run each step locally.
 
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
     inputs:
+      version:
+        description: "Version to release, e.g. v0.0.8 (a suffix such as -rc1 makes it a prerelease)"
+        type: string
+        required: true
       allow_stub_extension:
         description: "Allow packaging when the WPILib HAL could not be fetched (the halsim extension is then a stub that refuses to load)"
         type: boolean
         default: false
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 permissions:
@@ -30,23 +34,35 @@ env:
   ALLOW_STUB_EXTENSION: ${{ inputs.allow_stub_extension && 'true' || 'false' }}
 
 jobs:
-  preflight:
-    name: Check tag against project version
+  prepare:
+    name: Check the release version
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
-      - name: Compare
-        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          fetch-depth: 0   # every tag, to reject a version that exists or is lower than the latest
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - id: resolve
+        name: Validate the version
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
-          project="$(sed -n '/^project(/,/)/{s/^ *VERSION \([0-9][0-9.]*\).*/\1/p}' CMakeLists.txt | head -n1)"
-          tag="${GITHUB_REF_NAME#v}"
-          echo "project version: $project, tag: $tag"
-          test -n "$project"
-          test "$project" = "${tag%%-*}"
+          git tag --list 'v*' > "$RUNNER_TEMP/tags.txt"
+          python tools/release_version.py resolve "$VERSION_INPUT" --tags-file "$RUNNER_TEMP/tags.txt" --github-output
+      - name: Note that no release will be drafted
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::notice::Run from ${GITHUB_REF_NAME}, not main. The artifacts are uploaded but no release is drafted."
 
   package:
     name: package (${{ matrix.name }})
-    needs: preflight
+    needs: prepare
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -56,6 +72,7 @@ jobs:
           - { name: linux, os: ubuntu-22.04, qt_arch: "" }   # oldest supported glibc for the AppImage and the extension
           - { name: macos, os: macos-14, qt_arch: "" }       # Apple Silicon; see docs/releasing.md for universal builds
     env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}                       # base64 of the Developer ID .p12
       MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
       MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}                   # "Developer ID Application: Name (TEAMID)"
@@ -68,6 +85,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      # Only this job's checkout changes; the committed placeholder stays in git.
+      - name: Apply the release version
+        shell: bash
+        run: python tools/release_version.py apply "$RELEASE_VERSION"
 
       - name: Architecture boundary check
         run: python tools/check_boundaries.py --root .
@@ -102,7 +124,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: ${{ matrix.qt_arch }}
-          modules: qtquick3d qtshadertools
+          modules: qtquick3d qtshadertools qtmultimedia
           cache: true
 
       - name: Cache WPILib downloads
@@ -167,7 +189,9 @@ jobs:
           & "$dest\bin\wpiemu_app.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "wpiemu_app --version failed ($LASTEXITCODE)" }
           foreach ($f in 'extensions\halsim_wpiemu.dll', 'plugins\platforms\qwindows.dll', 'plugins\imageformats\qsvg.dll',
-                         'plugins\iconengines\qsvgicon.dll', 'qml\QtQuick3D\qquick3dplugin.dll', 'bin\qt.conf') {
+                         'plugins\iconengines\qsvgicon.dll', 'plugins\multimedia\ffmpegmediaplugin.dll',
+                         'plugins\tls\qschannelbackend.dll',   # HTTPS of the in-app updater
+                         'qml\QtQuick3D\qquick3dplugin.dll', 'bin\qt.conf') {
             if (-not (Test-Path "$dest\$f")) { throw "missing in installed tree: $f" }
           }
           Start-Process "$dest\Uninstall.exe" -ArgumentList '/S', "_?=$dest" -Wait
@@ -222,6 +246,8 @@ jobs:
           fi
           test -f "$app/Contents/PlugIns/wpiemu/libhalsim_wpiemu.dylib"
           find "$app/Contents/Resources/qml/QtQuick3D" -iname '*quick3dplugin*' -print -quit | grep -q .
+          find "$app/Contents/PlugIns/multimedia" -iname '*ffmpegmediaplugin*' -print -quit | grep -q .
+          find "$app/Contents/PlugIns/tls" -iname '*backend*' -print -quit | grep -q .   # HTTPS of the in-app updater
           exe="$app/Contents/MacOS/wpiemu_app"
           # Fat binaries print "<exe> (architecture ...):" headers; only the tab-indented lines are dependencies.
           bad="$(otool -arch all -L "$exe" | grep -E '^[[:space:]]' | awk '{print $1}' | grep -v -E '^(@rpath|@executable_path|@loader_path|/usr/lib/|/System/)' || true)"
@@ -243,6 +269,11 @@ jobs:
           python tools/package_checksums.py build/release/pkg
           python tools/package_checksums.py build/release/pkg --verify
 
+      # The installer names come from the version the build used: they prove the release version took effect.
+      - name: Installers carry the release version
+        run: python tools/release_version.py artifacts build/release/pkg "$RELEASE_VERSION"
+        shell: bash
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -256,9 +287,9 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Publish GitHub release
-    needs: package
-    if: startsWith(github.ref, 'refs/tags/v')
+    name: Draft GitHub release
+    needs: [prepare, package]
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -267,11 +298,19 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Create release
+      - name: Create the draft release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
         run: |
+          # A draft holds no tag yet, so look for one by name: a stale draft of this version must be deleted first.
+          if gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName' | grep -Fxq "$TAG"; then
+            echo "::error::A release for $TAG already exists (possibly a stale draft). Delete it and run again."
+            exit 1
+          fi
           prerelease=""
-          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
-            --title "WPI Emulator $GITHUB_REF_NAME" --generate-notes --draft $prerelease
+          if [ "$PRERELEASE" = "true" ]; then prerelease="--prerelease"; fi
+          # GitHub creates the tag at this exact commit when the draft is published.
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "WPI Emulator $TAG" --generate-notes --draft $prerelease

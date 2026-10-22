@@ -42,6 +42,9 @@ MainWindow::MainWindow(AppServices& services, ShellController& controller, const
         box.exec();
         return box.clickedButton() == load;
     };
+    confirmRunner_ = [this](const QString& text) {
+        return QMessageBox::question(this, tr("WPI Emulator"), text) == QMessageBox::Yes;
+    };
 
     setObjectName(QStringLiteral("MainWindow"));
     setAcceptDrops(true);
@@ -61,6 +64,18 @@ MainWindow::MainWindow(AppServices& services, ShellController& controller, const
     modeSwitcher_->setParent(menuBar());
     menuBar()->installEventFilter(this);
     centerModeSwitcher();
+
+    // The Update button sits in the menu bar's right corner. A native macOS menu bar has no corner, so the
+    // same actions are mirrored in the Help menu.
+    updateButton_ = new UpdateButton(services_.updates());
+    menuBar()->setCornerWidget(updateButton_, Qt::TopRightCorner);
+    connect(&services_.updates(), &UpdateService::stateChanged, this, &MainWindow::refreshUpdate);
+    connect(&services_.updates(), &UpdateService::progressChanged, this, &MainWindow::refreshUpdate);
+    connect(&services_.updates(), &UpdateService::checkFinished, this, &MainWindow::reportCheck);
+    connect(&services_.updates(), &UpdateService::installRequested, this, &MainWindow::restartForUpdate);
+    connect(&services_.updates(), &UpdateService::installFailed, this, [this](const QString& why) {
+        showMessage(tr("Could not start the update: %1").arg(why));
+    });
 
     connect(welcome_, &WelcomePage::openRequested, this, &MainWindow::browseForProject);
     connect(welcome_, &WelcomePage::projectChosen, this, &MainWindow::openProjectPath);
@@ -90,6 +105,7 @@ MainWindow::MainWindow(AppServices& services, ShellController& controller, const
     rebuildRecentMenu();
     refreshIcons();
     refresh();
+    refreshUpdate();
 }
 
 void MainWindow::centerModeSwitcher() {
@@ -151,6 +167,12 @@ void MainWindow::buildActions() {
     aboutQtAction_ = new QAction(tr("About &Qt"), this);
     aboutQtAction_->setMenuRole(QAction::AboutQtRole);
     connect(aboutQtAction_, &QAction::triggered, qApp, &QApplication::aboutQt);
+
+    checkUpdatesAction_ = new QAction(tr("Check for &updates…"), this);
+    checkUpdatesAction_->setEnabled(!services_.demo());
+    connect(checkUpdatesAction_, &QAction::triggered, this, [this] { services_.updates().check(true); });
+    updateAction_ = new QAction(this);
+    connect(updateAction_, &QAction::triggered, this, [this] { services_.updates().install(); });
 }
 
 void MainWindow::buildMenus() {
@@ -174,6 +196,9 @@ void MainWindow::buildMenus() {
     }
 
     QMenu* help = menuBar()->addMenu(tr("&Help"));
+    help->addAction(updateAction_);
+    help->addAction(checkUpdatesAction_);
+    help->addSeparator();
     help->addAction(aboutAction_);
     help->addAction(aboutQtAction_);
 }
@@ -226,6 +251,41 @@ void MainWindow::refresh() {
 
 void MainWindow::showMessage(const QString& text) {
     messageRunner_(text);
+}
+
+void MainWindow::refreshUpdate() {
+    const UpdateService& updates = services_.updates();
+    const UpdatePresentation p = presentUpdate(updates.state(), updates.offer(), updates.percent(), updates.installInfo().kind, updates.error());
+    updateAction_->setVisible(p.visible);
+    updateAction_->setText(p.menuText);
+    updateAction_->setEnabled(p.menuEnabled);
+    updateAction_->setToolTip(p.tooltip);
+    checkUpdatesAction_->setEnabled(!services_.demo() && !updates.busy());
+    // The menu bar sizes its corner from the button's hint only when asked: re-seat it after the text changed.
+    menuBar()->setCornerWidget(updateButton_, Qt::TopRightCorner);
+    updateButton_->setVisible(p.visible);
+}
+
+// Only a check the user asked for reports its outcome; the button already says "update available".
+void MainWindow::reportCheck(bool manual) {
+    if (!manual) return;
+    const UpdateService& updates = services_.updates();
+    switch (updates.state()) {
+        case UpdateState::UpToDate: showMessage(tr("WPI Emulator %1 is up to date.").arg(updates.currentVersion())); break;
+        case UpdateState::Unsupported: showMessage(tr("Updates are only offered for installed copies of WPI Emulator, not development builds.")); break;
+        case UpdateState::Failed: showMessage(tr("Could not check for updates: %1").arg(updates.error())); break;
+        default: break;
+    }
+}
+
+void MainWindow::restartForUpdate() {
+    if (services_.runtime().status().simulating &&
+        !confirmRunner_(tr("A simulation is running. Close WPI Emulator and install the update now?"))) {
+        services_.updates().abortInstall();
+        return;
+    }
+    // closeEvent saves pending edits; if it refuses, the update waits.
+    if (!close()) services_.updates().abortInstall();
 }
 
 void MainWindow::browseForProject() {

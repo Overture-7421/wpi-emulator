@@ -18,6 +18,10 @@ add_library(wpiemu_app_common STATIC
     ui_helpers.cpp
     ui_resources.cpp
     unit_system.cpp
+    update_install.cpp
+    update_offer.cpp
+    update_service.cpp
+    update_transport.cpp
     # The setup wizard sources live in ../wizard and are compiled into this library.
     ../wizard/project_drop_zone.cpp
     ../wizard/project_page.cpp
@@ -35,11 +39,12 @@ add_library(wpiemu_app_common STATIC
     ../shell/page_factory.cpp
     ../shell/settings_dialog.cpp
     ../shell/shell_controller.cpp
+    ../shell/update_button.cpp
     ../shell/welcome_page.cpp)
 # Includes are rooted at app/ ("common/x.h", "wizard/x.h", "shell/x.h").
 target_include_directories(wpiemu_app_common PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(wpiemu_app_common
-    PUBLIC wpiemu_sdk wpiemu_core wpiemu_app_host wpiemu_app_ui Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg
+    PUBLIC wpiemu_sdk wpiemu_core wpiemu_app_host wpiemu_app_ui Qt6::Core Qt6::Gui     Qt6::Widgets Qt6::Svg Qt6::Network
     PRIVATE wpiemu_plugins_builtin)
 target_compile_definitions(wpiemu_app_common PRIVATE WPIEMU_APP_VERSION="${PROJECT_VERSION}")
 wpiemu_target_defaults(wpiemu_app_common)

@@ -11,6 +11,7 @@
 #include "wpiemu/sdk/game/field.h"
 #include "wpiemu/sdk/game/game_state.h"
 #include "wpiemu/sdk/game/game_value.h"
+#include "wpiemu/sdk/game/sound_cue.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
 #include "wpiemu/sdk/game/zone_kind.h"
 #include "wpiemu/sdk/mechanisms/mechanism.h"
@@ -73,6 +74,11 @@ public:
     // Numbers the game state publishes every tick for generic sensors (SensorConfig::source). Every id must start
     // with metadata().id + '.'; IGameState::gameValue(id) returns the live value.
     virtual std::vector<GameValueInfo> contributeGameValues() const { return {}; }
+
+    // Sound cues this plugin owns, beyond the common ones in sound_cue.h. Every id must start with metadata().id + '.';
+    // `asset` names plugins/<id>/assets/sfx/<asset>.wav, which the app embeds and plays when game state calls
+    // SimContext::requestSound(id).
+    virtual std::vector<SoundCueInfo> contributeSoundCues() const { return {}; }
 
     // The season's AprilTag layout (field frame), used by the simulated vision cameras. Empty = the season has none
     // and cameras never see a tag.

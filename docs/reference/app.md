@@ -167,6 +167,54 @@ WPILib Xbox layout. Hiding the page or losing activation releases held keyboard 
 Bindings, shortcuts, restart choices, and Driver Station controls are in the
 [User guide](../USER_GUIDE.md); optional gamepad dependencies are in [Building](../BUILDING.md).
 
+## Sound effects
+
+Practice plays the field's audio cues (manual Table 5-4). Two sources ask `SfxPlayer` for a cue id and neither
+plays audio itself: `DriverStationModel::sfxRequested` (only in Practice: match start, AUTO end, TELEOP start, match
+end, the Restart chime, and the foghorn for an E-Stop of a running match, never for Disable) and
+`IRuntimeHost::soundCue`, the game plugin's requests. The real host drains them from `RobotSession::takeSoundCues()`
+in `pump()`; cues are never queued while the page is hidden. The [game-plugin reference](game-plugin.md#sound-cues) owns
+the id contract and the REBUILT cue table.
+
+`SfxCatalog` maps ids to resources with two rules and no season knowledge: common cues play
+`app/runview/assets/sfx/<asset>.wav` (embedded under `/wpiemu/runview/assets/sfx`), a game's cues play files its plugin
+ships in `plugins/<id>/assets/sfx/`, which the `plugins/` aggregation seam hands to the run view's CMake as the global
+property `WPIEMU_BUILTIN_PLUGIN_SOUNDS` (embedded under `/wpiemu/plugins/<id>/sfx`). A missing file or a cue id without
+the plugin's prefix is reported once in the console. Alliance-selection sounds (`pick_clock*.wav`) are not embedded.
+
+Playback is `ISfxOutput`: Qt Multimedia `QSoundEffect` in the product, a recording fake in tests, and silence on the
+offscreen platform or without an audio device. The page is silent while hidden and when sound is off; the on/off switch
+and 0-100 volume belong to **File > Settings** (`AppSettingsData`), and the shell applies them with
+`RunPage::setSoundEffects`, so the run view never sees `app/common`.
+
+## Updates
+
+`UpdateService` (`app/common`, owned by `AppServices::updates()`) checks GitHub once per start and on
+**Help > Check for updates…**; it asks only `github.com` (rationale in the
+[decision index](../decisions/README.md)). It follows the redirect of `releases/latest` to the stable tag, compares it with the
+running version, derives the installer name for this platform (`update_offer`) and reads the `.sha256` sidecar beside it.
+Anything else (no release, no installer for this computer, no sidecar) is "up to date"; a malformed sidecar or a network
+error is silent at start-up and reported only for a manual check. All requests go through `IUpdateTransport`
+(Qt Network: https to `github.com` and `*.githubusercontent.com` only, five redirects, size caps, no cookies) and every
+effect after the download through `IUpdateInstaller`, so tests script both.
+
+`detectInstall` classifies the copy from `ISystemProbe`: Windows installer (`Uninstall.exe` beside `bin`), macOS bundle
+outside `/Volumes`, AppImage (`APPIMAGE`), portable (packaged layout without an installer: the button opens the release
+page) or development (version `0.0.0` or any other layout: never checks). `--demo` and **Settings > Check for updates when
+the app starts** switch the start-up check off; the skipped version is kept under `updates/skippedVersion`.
+
+States run Idle, Checking, Available, Downloading, Verifying, Ready, Installing, with Failed after a download that failed
+or did not match its SHA-256 (the file is deleted; retrying downloads again). The installer lands in `%TEMP%\wpiemu-update`
+(Windows), Downloads (macOS) or beside the AppImage. **Install** then means: Windows and Linux ask the window to close
+(`installRequested`; `MainWindow` confirms only while a simulation runs, and `closeEvent` still flushes saves or refuses,
+which returns to Ready) and the installer is started from `aboutToQuit`, through the shell on Windows because it
+elevates; macOS opens the disk image and the app keeps running.
+
+`presentUpdate` maps state to the `UpdateButton` text, tone and tooltip, and to the Help menu mirror (a native macOS menu
+bar has no corner widget). The button is the menu bar's corner widget with `[updateButton="true"]` and `[tone]` QSS roles;
+its context menu offers release notes, skip this version and cancel download. Only a manual check reports its outcome in
+a dialog. The opt-in transport test (`WPIEMU_E2E_NETWORK=1`) talks to github.com.
+
 ## Scene presentation and resources
 
 The run renderer relies on these frame contracts:
@@ -178,6 +226,7 @@ The run renderer relies on these frame contracts:
   a missing state is inactive. Panel-descriptor overlays are separate static config-derived boxes.
 * AprilTag layout comes from the game; camera snapshot visibility highlights the union of seen tags.
   The run scene does not draw the editor's camera bodies/frusta.
+* Field visuals come from the game's `FieldDescription`; one with `opacity` below 1 is drawn alpha-blended.
 
 `Robot state` is a separate window reading mechanisms, sensors, zones, and cameras from the
 snapshot, with names/source labels from scene metadata. It refreshes while visible and follows

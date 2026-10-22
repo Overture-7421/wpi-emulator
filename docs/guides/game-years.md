@@ -71,7 +71,8 @@ For production error handling and richer field construction, follow
 2. Prefer generic mechanisms with [zones and game values](game-interactions.md).
    Register a plugin mechanism only when generic dynamics cannot express the part.
 3. Return Qt-free HUD/editor descriptors and publish every HUD key they bind to. Numeric game
-   values for sensors are a separate interface, not parsed HUD strings.
+   values for sensors are a separate interface, not parsed HUD strings. Season sounds are
+   [sound cues](game-interactions.md#request-a-sound-cue) with their WAV in `assets/sfx/`.
 4. Supply `aprilTagLayout()` with tag poses and field dimensions for vision. Supply `fieldFrame()`
    with the correct symmetry for alliance-copy start poses. Neither feature is inferred from a mesh.
 5. Source rule/dimension data at the implementation and document deliberate limitations in the

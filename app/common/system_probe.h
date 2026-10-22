@@ -27,6 +27,8 @@ public:
     // First match of `executable` on PATH, empty if absent.
     virtual QString findInPath(const QString& executable) const = 0;
     virtual ProcessResult run(const QString& program, const QStringList& args, int timeoutMs) const = 0;
+    // "x86_64", "arm64", ... (QSysInfo naming). Fakes default to x86_64.
+    virtual QString cpuArchitecture() const { return QStringLiteral("x86_64"); }
 };
 
 class QtSystemProbe final : public ISystemProbe {
@@ -38,6 +40,7 @@ public:
     bool dirExists(const QString& path) const override;
     QString findInPath(const QString& executable) const override;
     ProcessResult run(const QString& program, const QStringList& args, int timeoutMs) const override;
+    QString cpuArchitecture() const override;
 };
 
 }  // namespace wpiemu::app

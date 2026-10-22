@@ -74,6 +74,7 @@ struct SessionParts {
     const sdk::TireModelRegistry* tireModels = nullptr;     // required when the config has wheels
     const sdk::GamePluginRegistry* plugins = nullptr;       // null => core features only
     sdk::ILogger* logger = nullptr;                   // null => NullLogger
+    sdk::ISoundCueSink* sounds = nullptr;             // where the game's sound cue requests go (thread-safe); null => discarded
     ChassisBuilder chassisBuilder;                    // empty => buildReferenceChassis
     std::unique_ptr<ICouplingDriver> coupling;        // empty => mechanisms see the SDK null coupling
     SessionOptions options;

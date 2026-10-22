@@ -8,6 +8,7 @@
 #include <QString>
 
 #include <array>
+#include <string_view>
 #include <vector>
 
 #include "wpiemu/sdk/ipc/driver_station.h"
@@ -23,20 +24,30 @@ struct MatchSegment {
 
 class MatchTimer {
 public:
+    // A segment boundary one advance() crossed: the segment that ended and the one that began (-1: the match finished).
+    struct Boundary {
+        int from = 0;
+        int to = -1;
+    };
+
     void begin(std::vector<MatchSegment> segments);
     void stop();
-    // Advances by dt seconds of sim time; returns true when the active segment (or running state) changed.
+    // Advances by dt seconds of sim time; returns true when the active segment (or running state) changed. The
+    // boundaries it crossed, in order, are in crossed() until the next call.
     bool advance(double dtSeconds);
 
     bool running() const { return running_; }
     bool finished() const { return finished_; }
     int segmentIndex() const { return index_; }
     const MatchSegment* current() const { return running_ ? &segments_[static_cast<std::size_t>(index_)] : nullptr; }
+    const MatchSegment& segment(int index) const { return segments_[static_cast<std::size_t>(index)]; }
+    const std::vector<Boundary>& crossed() const { return crossed_; }
     double remainingS() const;   // time left in the active segment; 0 when not running
     double elapsedS() const { return elapsed_; }
 
 private:
     std::vector<MatchSegment> segments_;
+    std::vector<Boundary> crossed_;
     int index_ = 0;
     double elapsed_ = 0.0;      // total
     double segmentElapsed_ = 0.0;
@@ -118,9 +129,13 @@ public:
 signals:
     void changed();
     void stateReady(const wpiemu::sdk::proto::DsState& state);
+    // A Practice match asks for a sound cue (an sdk::sound_cue id): the match lifecycle of manual Table 5-4 and the
+    // field reset. Other modes have no match clock and stay silent. Only an E-Stop sounds the foghorn.
+    void sfxRequested(const QString& cueId);
 
 private:
     void applySegment();
+    void requestSfx(std::string_view cueId);
     void load();
     void save() const;
 

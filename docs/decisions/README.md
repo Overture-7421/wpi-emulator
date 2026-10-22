@@ -3,8 +3,7 @@
 Read this when you need the reasons behind a design constraint.
 Prerequisite: [Architecture](../ARCHITECTURE.md).
 
-These records explain adopted design constraints, not implementation inventories.
-**Accepted** is a design status, not a delivery or test report.
+These records explain adopted design constraints, not implementation inventories. **Accepted** is a design status, not a delivery or test report.
 
 ## Index
 
@@ -22,14 +21,15 @@ These records explain adopted design constraints, not implementation inventories
 | [0010](0010-plugin-owned-season-data.md) | Plugin-owned season data |
 | [0011](0011-one-host-contract.md) | One host contract and app layering |
 | [0012](0012-shared-primitives-in-the-sdk.md) | Shared primitives live in the SDK |
+| [0013](0013-sound-cues-as-events.md) | Sound cues travel as events, not snapshots |
+| [0014](0014-updater-without-api-or-silent-install.md) | The updater needs no API and installs nothing silently |
 
 ## Maintaining the set
 
 Use Status, Context, Decision and Consequences sections; explain why and what is sacrificed.
 Keep each record within 45 physical lines and this index within 35.
 Contracts belong in [reference pages](../ARCHITECTURE.md#extension-points), not API inventories here.
-For future decisions, choose the next unused unique number and add it to this index.
-Keep assigned identifiers stable within this set; never silently reuse a number.
+For future decisions, choose the next unused number and add it to this index; never reuse or renumber one.
 Update rationale and links together when the current decision changes.
 
 Next: [Contributing](../CONTRIBUTING.md).

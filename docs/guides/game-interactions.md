@@ -78,6 +78,24 @@ Expected result: crossing the game-value threshold changes the device distance f
 The same case exercises linear interpolation, endpoint clamping and active-low beam breaks.
 Response keys and idle semantics belong in the [runtime sensor contract](../reference/runtime.md).
 
+## Request a sound cue
+
+1. Return a plugin-prefixed `SoundCueInfo` (id, label, `asset`) from `contributeSoundCues()`, as
+   [`game_sounds.cpp`](../../plugins/game_2026/src/game_sounds.cpp) does, and put `<asset>.wav` in
+   `plugins/<id>/assets/sfx/`. The `plugins/` aggregation seam embeds it; no app or CMake change is needed.
+2. In game state, call `ctx.requestSound(id)` on the edge of the rule, not every tick. Compare with the previous
+   status, as `Game2026State::requestSoundCues` does, so a pause, reset or first tick cannot repeat a cue.
+3. Use the SDK's common ids (`sound_cue::kEndGame`, ...) for sounds every season shares; the Driver Station already
+   requests the match lifecycle ones, so do not request those again.
+4. Test with `FakeSimEnvironment::sounds` (a `SoundCueQueue`): tick, then `take()` and compare ids and times.
+
+```powershell
+ctest --preset windows-ninja-release -R "^(sound cue|sim context: requestSound|sound cues:)"
+```
+
+This runs the queue, `requestSound` and REBUILT rules (four shift starts, end game, result, silent cases). The app test
+`every built-in game plugin ships the sounds it declares` fails when a declared WAV is missing.
+
 ## Wire and validate
 
 Zone kinds and values are contributions from the already registered plugin. No new core registry,

@@ -91,7 +91,7 @@ jobs:
         with:
           version: "6.8.*"
           arch: ${{ matrix.qt_arch }}
-          modules: qtquick3d qtshadertools
+          modules: qtquick3d qtshadertools qtmultimedia
           cache: true
 
       # The WPILib HAL zips (frcmaven) are fetched by CMake; cache them so reruns stay offline.

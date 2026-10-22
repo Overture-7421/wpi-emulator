@@ -122,6 +122,11 @@ QToolButton[segment="true"]:checked:disabled { background: %border%; border-colo
 QToolButton[segment="true"][segmentPos="first"] { border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
 QToolButton[segment="true"][segmentPos="last"] { border-top-right-radius: 7px; border-bottom-right-radius: 7px; border-left-width: 0; }
 QToolButton[segment="true"][segmentPos="middle"] { border-left-width: 0; }
+QToolButton[updateButton="true"] { border-radius: 11px; padding: 2px 12px; margin: 3px 6px; font-weight: 600; color: %accentText%; }
+QToolButton[updateButton="true"][tone="success"], QToolButton[updateButton="true"][tone="success"]:hover { background: %success%; border-color: %success%; }
+QToolButton[updateButton="true"][tone="accent"], QToolButton[updateButton="true"][tone="accent"]:hover { background: %accent%; border-color: %accent%; }
+QToolButton[updateButton="true"][tone="error"], QToolButton[updateButton="true"][tone="error"]:hover { background: %error%; border-color: %error%; }
+QToolButton[updateButton="true"]:hover { border-color: %accentText%; }
 
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPlainTextEdit, QTextEdit {
     background: %base%; color: %text%; border: 1px solid %border%; border-radius: 6px; padding: 5px 8px;

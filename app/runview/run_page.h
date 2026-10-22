@@ -16,6 +16,8 @@
 #include "run_control.h"
 #include "run_viewport.h"
 #include "scene_model.h"
+#include "sfx_output.h"
+#include "sfx_player.h"
 #include "sim_stats.h"
 #include "state_window.h"
 #include "status_chip.h"
@@ -35,6 +37,8 @@ struct RunPageOptions {
     QSettings* settings = nullptr;               // borrowed; null = a default QSettings owned by the page
     IJoystickProvider* gamepads = nullptr;       // borrowed; null = see useDefaultGamepadBackend
     bool useDefaultGamepadBackend = true;        // create the build's gamepad backend (SDL2) when `gamepads` is null
+    ISfxOutput* sfx = nullptr;                   // borrowed; null = see useDefaultSfxBackend
+    bool useDefaultSfxBackend = true;            // create the build's sound output (Qt Multimedia) when `sfx` is null; false = silent
 };
 
 // The run-time view: live 3D scene with game HUD, console and the built-in
@@ -51,6 +55,9 @@ public:
     DriverStationPanel* driverStationPanel() const { return dsPanel_; }
     DriverStationModel& driverStation() { return ds_; }
     JoystickManager& joysticks() { return joysticks_; }
+    SfxPlayer& sfx() { return sfx_; }
+    // The user's sound preferences (File > Settings); the shell applies them at startup and when they change.
+    void setSoundEffects(bool enabled, int volumePercent);
     SceneModel& scene() { return scene_; }
     HudModel& hud() { return hud_; }
     ViewportOptions& viewOptions() { return viewOptions_; }
@@ -99,10 +106,12 @@ private:
     RunPageOptions options_;
     std::unique_ptr<QSettings> ownedSettings_;
     std::unique_ptr<IJoystickProvider> ownedProvider_;
+    std::unique_ptr<ISfxOutput> ownedSfx_;
     QSettings* settings_;
 
     DriverStationModel ds_;
     JoystickManager joysticks_;
+    SfxPlayer sfx_;
     SceneModel scene_;
     HudModel hud_;
     ViewportTheme theme_;

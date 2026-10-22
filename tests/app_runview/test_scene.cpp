@@ -292,6 +292,32 @@ TEST_CASE("field parts centre the floor on the visuals") {
     CHECK(none.lengthM > 0.f);
 }
 
+TEST_CASE("field parts keep opaque visuals opaque and draw see-through ones translucent") {
+    sdk::FieldDescription field;
+    field.lengthM = 10.f;
+    field.widthM = 5.f;
+    sdk::FieldVisual wall;
+    wall.name = "wall";
+    field.visuals.push_back(wall);
+    sdk::FieldVisual glass;
+    glass.name = "glass";
+    glass.opacity = 0.25f;
+    field.visuals.push_back(glass);
+
+    const FieldParts fp = buildFieldParts(&field);
+    REQUIRE(fp.parts.size() == 3);
+    CHECK(fp.parts[1].name == "wall");
+    CHECK_FALSE(fp.parts[1].translucent);
+    CHECK(fp.parts[2].name == "glass");
+    CHECK(fp.parts[2].translucent);
+    CHECK(fp.parts[2].opacity == doctest::Approx(0.25f));
+
+    PartListModel model;
+    model.setParts(fp.parts);
+    CHECK(model.data(model.index(1), PartListModel::ColorRole).value<QColor>().alphaF() == doctest::Approx(1.0));
+    CHECK(model.data(model.index(2), PartListModel::ColorRole).value<QColor>().alphaF() == doctest::Approx(0.25));
+}
+
 TEST_CASE("run view camera uses the editor's orbit camera around a field-framed home view") {
     SceneModel scene;
     wpiemu::app::OrbitCamera editorLike;   // the editor viewport drives this same type

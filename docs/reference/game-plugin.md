@@ -14,7 +14,9 @@ Descriptor queries, including tag layouts and field frames, must be pure and thr
 Registration and construction run on the caller's setup thread, including UI field previews.
 Live game-state ticking and publication belong to the simulation thread.
 
-`createField()` supplies owned static colliders and sensor volumes before `createGameState()`.
+`createField()` supplies owned static colliders and sensor volumes before `createGameState()`, and the
+`FieldDescription` the app draws. Visuals are separate from colliders: a plugin may draw a collider
+differently or add visuals with none, and `FieldVisual::opacity` below 1 draws clear plastic.
 The runtime resets the game state before the first tick and on Reset. `IGameState::step()` sees
 fresh physics events and mechanism readings; `publish()` contributes entities, zone state, and
 HUD values to snapshots. `onTick()` is an optional post-game hook; see [runtime](runtime.md) for lifecycle details.
@@ -80,6 +82,32 @@ For REBUILT the source contract is:
 | `game_2026.fuel.capacity` | count | Configured inventory capacity |
 | `game_2026.fuel.fraction` | ratio | Count / capacity; zero when capacity is zero |
 
+## Sound cues
+
+A plugin asks for a sound by id with `SimContext::requestSound(id)`; the app plays it. The ids and the hand-off live in
+[`sound_cue.h`](../../sdk/include/wpiemu/sdk/game/sound_cue.h): `commonSoundCues()` are the FMS audio cues every season
+shares (manual Table 5-4), and `contributeSoundCues()` declares the plugin's own `SoundCueInfo`. A plugin id starts with
+the plugin id plus `.`; `asset` names `plugins/<id>/assets/sfx/<asset>.wav`, which the plugin ships and the app embeds
+through the `plugins/` aggregation seam, so a season's sounds add no app code. Common cues use
+`app/runview/assets/sfx/<asset>.wav`. Requests are one-shot events, so they travel through a bounded
+[`SoundCueQueue`](../../sdk/include/wpiemu/sdk/game/sound_cue_queue.h) that the host drains, not through snapshots,
+which the UI may skip. Playback, volume and the Practice-only Driver Station cues belong to the [app contract](app.md).
+
+For REBUILT the cues of Table 5-4 split like this; the plugin never requests a cue the Driver Station owns.
+
+| Event (timer) | Cue id | Requested by |
+|---|---|---|
+| MATCH start, AUTO ends, TELEOP begins, MATCH end | `match.start`, `match.auto_end`, `match.teleop_start`, `match.end` | Driver Station (Practice) |
+| MATCH stopped | `match.stopped` | Driver Station, on E-Stop of a running Practice match only |
+| ALLIANCE SHIFT starts (2:10, 1:45, 1:20, 0:55) | `game_2026.shift_change` | plugin, on entering Shift 1-4 |
+| END GAME begins (0:30) | `match.end_game` | plugin, on entering END GAME |
+| Final score posted | `match.result` | plugin, once the 3 s assessment of 6.5 ends |
+| Restart in Practice | `field.reset` | Driver Station |
+
+The plugin fires only for a boundary crossed inside one TELEOP run, so the first TELEOP tick, free play, Test mode and a
+re-enable inside a phase are silent. An E-Stopped match gets the foghorn and no result cue. Tests are in
+[`test_sound_cues.cpp`](../../tests/game_2026/test_sound_cues.cpp).
+
 ## REBUILT robot behavior
 
 The [2026 module](../../plugins/game_2026/src/game_module.cpp) registers no mechanism templates
@@ -108,6 +136,10 @@ Defaults, bounds, and property descriptions are authoritative in
 
 The field includes alliance walls, guardrails, hollow hubs, bumps, trenches, tower rungs, depots,
 and outpost openings/corrals. Blue geometry is rotated about the field center for red.
+The walls and guardrails stay solid for robots and fuel but are drawn like the real field: the driver
+stations have an opaque base and sponsor band under a see-through sheet, a top rail and a shelf, the tower wall
+and outpost are opaque, and the guardrails are clear plastic between aluminum rails, so a camera behind a wall
+sees the field.
 Fuel is simulated as rigid spheres; reset stages field fuel and restores the robot inventory
 and chute stocks. Body limits bound fuel creation; out-of-play fuel is removed.
 

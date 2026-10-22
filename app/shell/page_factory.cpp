@@ -67,6 +67,12 @@ ShellPages createShellPages([[maybe_unused]] AppServices& services, [[maybe_unus
 #ifdef WPIEMU_APP_HAS_RUNVIEW
     {
         auto* runPage = new runview::RunPage(services.runtime());
+        // Sound preferences live in File > Settings; the run view only receives them.
+        const auto applySound = [runPage, &settings = services.settings()] {
+            runPage->setSoundEffects(settings.data().soundEffects, settings.data().soundVolumePercent);
+        };
+        applySound();
+        QObject::connect(&services.settings(), &AppSettings::changed, runPage, applySound);
         pages.run = runPage;
         pages.runViewActions = runPage->viewActions();
         pages.runIsReal = true;

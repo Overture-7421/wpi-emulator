@@ -3,6 +3,9 @@
 #include "common/robot_basics.h"
 #include "test_support.h"
 #include "wpiemu/core/config/config_validator.h"
+#ifdef WPIEMU_APP_HAS_RUNVIEW
+#include "runview/sfx_catalog.h"
+#endif
 
 using namespace wpiemu::app;
 using namespace wpiemu::app::testing;
@@ -20,6 +23,29 @@ TEST_CASE("services register the built-in content") {
     CHECK(s.mechanisms().size() >= 1);
     CHECK(!s.demo());
 }
+
+#ifdef WPIEMU_APP_HAS_RUNVIEW
+TEST_CASE("every built-in game plugin ships the sounds it declares") {
+    TestEnvironment env;
+    const auto& plugins = env.services->plugins().list();
+    REQUIRE_FALSE(plugins.empty());
+    for (const sdk::IGameModule* module : plugins) {
+        CAPTURE(module->metadata().id);
+        wpiemu::app::runview::SfxCatalog catalog;
+        const QStringList problems = catalog.set(QString::fromStdString(module->metadata().id), module->contributeSoundCues());
+        CHECK(problems.join(QLatin1Char('\n')).toStdString().empty());
+        for (const sdk::SoundCueInfo& cue : module->contributeSoundCues())
+            CHECK(catalog.resolve(QString::fromStdString(cue.id)).has_value());
+    }
+    // REBUILT's alliance-shift sound is the plugin's own file, not one of the app's.
+    const sdk::IGameModule* rebuilt = env.services->plugins().findByYear(2026);
+    REQUIRE(rebuilt != nullptr);
+    wpiemu::app::runview::SfxCatalog catalog;
+    (void)catalog.set(QStringLiteral("game_2026"), rebuilt->contributeSoundCues());
+    CHECK(catalog.resolve(QStringLiteral("game_2026.shift_change")).value().toString() ==
+          QLatin1String("qrc:/wpiemu/plugins/game_2026/sfx/shift_change.wav"));
+}
+#endif
 
 TEST_CASE("a robot built by the wizard passes core validation apart from device mappings") {
     TestEnvironment env;

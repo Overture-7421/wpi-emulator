@@ -21,7 +21,7 @@ is `C:\Program Files\WPI Emulator\bin\wpiemu_app.exe`; a portable tree also uses
 macOS: open the DMG and copy `wpiemu_app.app` to Applications. Linux: make the AppImage executable
 and run it. Packages include the app's Qt runtime, not the robot's WPILib toolchain.
 Artifact names and packaging caveats are in [Releasing](releasing.md);
-source-build instructions and Qt DLL setup are in [Building](BUILDING.md).
+source-build instructions and Qt DLL setup are in [Building](BUILDING.md). The app can update itself; see [Updates](#updates).
 
 For example, in Windows PowerShell:
 
@@ -152,6 +152,12 @@ Auto/Teleop/Test run until disabled. Practice runs autonomous, a disabled gap, t
 using the configured match clock. Click Enable again or press `Enter` to disable.
 `Space` latches emergency stop; click the E-STOPPED control to clear it.
 
+Practice plays the field's sounds: the start charge, the buzzer when autonomous ends, three bells when teleop begins,
+a buzzer at the end, a chime when you Restart and, in REBUILT, a pop at each alliance shift (2:10, 1:45, 1:20, 0:55),
+a whistle when the end game starts (0:30) and a chime when the final score posts. Only an E-Stop of a running
+Practice match sounds the foghorn; Disable ends a match quietly. Sounds play only while the Run page is showing.
+Turn them off or set the volume in **File > Settings… > General**.
+
 The cog opens **Setup** (alliance/station, game message, Practice durations) and **Joysticks**.
 Game-supplied field data can override the manual game message.
 Assign the keyboard or a gamepad to the robot's joystick port and adjust bindings there.
@@ -162,7 +168,9 @@ Default keyboard controls: `W A S D` left stick, arrows right stick, `U` / `O` t
 At the viewport's bottom-right, **Restart** (`Ctrl+R`) resets physics and game pieces but keeps
 robot code running. Its dropdown's **Restart robot code** (`Ctrl+Shift+R`) reboots code too.
 **Speed** changes pacing. **Home view** (`Ctrl+0` or double-click) restores the camera.
-Orbit/pan/zoom work as in the editor.
+Orbit/pan/zoom work as in the editor. In REBUILT the alliance walls and guardrails are see-through above their
+opaque base, so you can put the camera behind a wall where the drivers stand and still see the field; the tower wall
+and outpost stay opaque, as on the real field.
 
 For autonomous placement, set Robot's **Use custom start pose** or **Add start position** from
 its context menu. Named starts have alliance, field X/Y and heading; **Copy to Red/Blue**
@@ -178,8 +186,8 @@ Tower points, penalties and ranking points are not scored.
 
 ## Settings and project files
 
-**File > Settings…** controls theme, dialog units, the WPILib and JDK folders, physics rate, physics threads and
-reopening the last project. The folders apply to the next toolchain check and robot launch; left
+**File > Settings…** controls theme, dialog units, the WPILib and JDK folders, physics rate, physics threads,
+reopening the last project, the update check and Practice sound effects (on/off and volume). The folders apply to the next toolchain check and robot launch; left
 empty, Gradle runs with WPILib's JDK for the project's season (all-users or this-user install),
 then `JAVA_HOME`, then `java` on `PATH`. The physics-rate setting
 is copied into the model when the wizard finishes: rerun setup to apply a changed rate.
@@ -205,6 +213,21 @@ Projects set up before this kept their setup under the app-data root
 (`projects\<folder>-<hash>\robot.json` in `%APPDATA%\WpiEmulator`, `~/Library/Application Support/WpiEmulator`
 or `~/.local/share/wpi-emulator`); opening one moves that setup into the project once and keeps
 the old file as `robot.json.migrated.bak`. UI preferences are separate Qt settings.
+
+## Updates
+
+An installed copy asks `github.com` whether a newer stable release exists each time it starts. When one does, a green
+**Update** button appears at the right of the menu bar; the same action is under **Help**. Click it to download the installer
+(the button shows the progress and "Verifying…"), then click **Restart to update**: WPI Emulator closes, saving your work
+first and asking before it ends a running simulation, and the installer takes over (Windows asks for administrator rights; you
+can start the new version from its last page). On macOS the button reads **Open update** and opens the disk image, and on
+Linux the new AppImage is saved beside the old one and started. A portable ZIP or tree only opens the release page.
+Right-click the button for the release notes, to skip that version or to cancel a download. **Help > Check for updates…**
+checks on demand and says when you are current.
+
+A download is deleted unless it matches the checksum published with the release. The installers are not code-signed
+yet, so Windows may show an "unknown publisher" prompt. Only the version request goes to GitHub, and nothing about you or
+your projects is sent. Turn the start-up check off in **File > Settings…**. Development builds and `--demo` never check.
 
 ## Troubleshooting
 

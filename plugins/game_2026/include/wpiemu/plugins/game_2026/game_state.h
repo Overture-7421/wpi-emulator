@@ -98,6 +98,8 @@ private:
     void stepRecycling(sdk::SimContext& ctx, double dt);
     void stepHumanPlayers(sdk::SimContext& ctx, double dt);
     void refreshPositions();
+    // Table 5-4 cues owned by the season: shift starts, end game and the posted result (docs/reference/game-plugin.md).
+    void requestSoundCues(sdk::SimContext& ctx, const MatchStatus& previous, bool resultEdge, bool eStop);
     sdk::Pose3 chassisPose(sdk::SimContext& ctx) const;
 
     GameConfig config_;
@@ -109,6 +111,7 @@ private:
     Alliance ownAlliance_ = Alliance::Red;
     bool matchTimed_ = false;   // the DS runs a timed match (Practice); otherwise free play without game timing
     bool matchResult_ = false;  // a timed match just stopped: its final score stays on the HUD
+    bool resultCuePending_ = false;  // the result chime waits for the scoring window to close
     int meter_ = 0;
     int shots_ = 0;
     int lost_ = 0;

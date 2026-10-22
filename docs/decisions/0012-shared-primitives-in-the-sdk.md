@@ -29,4 +29,4 @@ One definition per rule, so a change cannot reach only some modules. The SDK gro
 includer pays header compile time, so shared code stays small and inline. A shared helper is a
 dependency: changing it needs golden or equivalence tests, which the audit added first.
 
-Next: [User guide](../USER_GUIDE.md).
+Next: [Sound cues as events](0013-sound-cues-as-events.md).

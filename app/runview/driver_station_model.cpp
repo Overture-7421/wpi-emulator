@@ -5,6 +5,7 @@
 
 #include "ui/qt_text.h"
 #include "wpiemu/sdk/core/units.h"
+#include "wpiemu/sdk/game/sound_cue.h"
 
 namespace wpiemu::app::runview {
 namespace {
@@ -13,6 +14,7 @@ constexpr ui::Tr tr{"DriverStation"};
 
 void MatchTimer::begin(std::vector<MatchSegment> segments) {
     segments_ = std::move(segments);
+    crossed_.clear();
     index_ = 0;
     elapsed_ = 0.0;
     segmentElapsed_ = 0.0;
@@ -26,6 +28,7 @@ void MatchTimer::stop() {
 }
 
 bool MatchTimer::advance(double dt) {
+    crossed_.clear();
     if (!running_ || dt <= 0.0) return false;
     bool changed = false;
     elapsed_ += dt;
@@ -33,8 +36,10 @@ bool MatchTimer::advance(double dt) {
     while (running_ && segmentElapsed_ >= segments_[static_cast<std::size_t>(index_)].durationS) {
         segmentElapsed_ -= segments_[static_cast<std::size_t>(index_)].durationS;
         if (index_ + 1 < static_cast<int>(segments_.size())) {
+            crossed_.push_back({index_, index_ + 1});
             ++index_;
         } else {
+            crossed_.push_back({index_, -1});
             running_ = false;
             finished_ = true;
         }
@@ -137,10 +142,13 @@ void DriverStationModel::setEnabled(bool enabled) {
 }
 
 void DriverStationModel::eStop() {
+    // The foghorn is the one cue a user action sounds: only an E-Stop that stops a running Practice match.
+    const bool stopsMatch = practice_ && match_.running() && !eStopped_;
     eStopped_ = true;
     enabled_ = false;
     match_.stop();
     emit changed();
+    if (stopsMatch) requestSfx(sdk::sound_cue::kMatchStopped);
 }
 
 void DriverStationModel::clearEStop() {
@@ -217,6 +225,7 @@ bool DriverStationModel::startMatch() {
     match_.begin(std::move(segments));
     applySegment();
     emit changed();
+    requestSfx(sdk::sound_cue::kMatchStart);
     return true;
 }
 
@@ -256,6 +265,17 @@ void DriverStationModel::onSimTime(std::int64_t simTimeUs) {
         if (match_.running()) applySegment();
         else enabled_ = false;           // match over
         emit changed();
+        // Table 5-4: a buzzer when AUTO ends, three bells when TELEOP begins, a buzzer when the match ends.
+        for (const MatchTimer::Boundary& b : match_.crossed()) {
+            const MatchSegment& ended = match_.segment(b.from);
+            if (ended.mode == sdk::proto::RobotMode::Autonomous && ended.enabled) requestSfx(sdk::sound_cue::kAutoEnd);
+            if (b.to < 0) {
+                requestSfx(sdk::sound_cue::kMatchEnd);
+            } else {
+                const MatchSegment& began = match_.segment(b.to);
+                if (began.mode == sdk::proto::RobotMode::Teleop && began.enabled) requestSfx(sdk::sound_cue::kTeleopStart);
+            }
+        }
     }
 }
 
@@ -265,6 +285,11 @@ void DriverStationModel::onSimReset() {
     enabled_ = false;
     match_.stop();
     if (wasActive) emit changed();
+    if (practice_) requestSfx(sdk::sound_cue::kFieldReset);
+}
+
+void DriverStationModel::requestSfx(std::string_view cueId) {
+    emit sfxRequested(QString::fromUtf8(cueId.data(), static_cast<qsizetype>(cueId.size())));
 }
 
 bool DriverStationModel::publish(const std::array<sdk::proto::JoystickState, 6>& joysticks, std::int64_t nowMs, bool force) {

@@ -4,6 +4,7 @@
 #include <QFileInfo>
 #include <QProcess>
 #include <QStandardPaths>
+#include <QSysInfo>
 
 namespace wpiemu::app {
 
@@ -18,6 +19,8 @@ HostOs QtSystemProbe::hostOs() const {
 }
 
 QString QtSystemProbe::homeDir() const { return QDir::homePath(); }
+
+QString QtSystemProbe::cpuArchitecture() const { return QSysInfo::currentCpuArchitecture(); }
 
 QString QtSystemProbe::env(const QString& name) const { return qEnvironmentVariable(name.toUtf8().constData()); }
 
