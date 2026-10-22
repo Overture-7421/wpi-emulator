@@ -6,6 +6,7 @@
 #include <QDialogButtonBox>
 #include <QLabel>
 #include <QLineEdit>
+#include <QSlider>
 
 #include "common/app_settings.h"
 #include "common/system_probe.h"
@@ -28,6 +29,8 @@ public:
     QComboBox* rateCombo() const { return rate_; }
     QComboBox* threadsCombo() const { return threads_; }
     QLineEdit* jdkEdit() const { return jdk_; }
+    QCheckBox* soundCheck() const { return sound_; }
+    QSlider* volumeSlider() const { return volume_; }
     QDialogButtonBox* buttons() const { return buttons_; }
 
 public slots:
@@ -47,6 +50,8 @@ private:
     QLineEdit* wpilib_;
     QLineEdit* jdk_;
     QCheckBox* reopen_;
+    QCheckBox* sound_;
+    QSlider* volume_;
     QLabel* problemLabel_;
     QDialogButtonBox* buttons_;
 };

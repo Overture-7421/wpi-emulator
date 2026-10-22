@@ -39,6 +39,8 @@ TEST_CASE("settings persist, sanitise and notify") {
         CHECK(settings.data().physicsRateHz == kDefaultPhysicsRateHz);
         CHECK(settings.data().physicsThreads == kDefaultPhysicsThreads);
         CHECK(kDefaultPhysicsThreads == 0);   // Auto
+        CHECK(settings.data().soundEffects);
+        CHECK(settings.data().soundVolumePercent == kDefaultSoundVolumePercent);
         CHECK(settings.stepUs() == 5000);
 
         int notifications = 0;
@@ -50,10 +52,13 @@ TEST_CASE("settings persist, sanitise and notify") {
         next.physicsRateHz = 1234;   // not an offered rate -> falls back to the default
         next.physicsThreads = 3;     // not an offered count -> falls back to Auto
         next.wpilibHome = QStringLiteral("/opt/wpilib");
+        next.soundEffects = false;
+        next.soundVolumePercent = 250;   // out of range -> clamped
         settings.update(next);
         CHECK(notifications == 1);
         CHECK(settings.data().physicsRateHz == kDefaultPhysicsRateHz);
         CHECK(settings.data().physicsThreads == kDefaultPhysicsThreads);
+        CHECK(settings.data().soundVolumePercent == 100);
 
         settings.update(settings.data());   // no change: no signal
         CHECK(notifications == 1);
@@ -69,6 +74,8 @@ TEST_CASE("settings persist, sanitise and notify") {
     CHECK(reloaded.data().physicsRateHz == 1000);
     CHECK(reloaded.data().physicsThreads == 4);
     CHECK(reloaded.data().wpilibHome == QStringLiteral("/opt/wpilib"));
+    CHECK_FALSE(reloaded.data().soundEffects);
+    CHECK(reloaded.data().soundVolumePercent == 100);
 }
 
 TEST_CASE("recent projects are most-recent-first, unique and capped") {

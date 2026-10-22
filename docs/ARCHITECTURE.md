@@ -170,6 +170,8 @@ stable ABI for independently built shared libraries.
 - **Game plugin:** the owner of a season's field and game state; its module is stateless across sessions.
 - **Zone:** a game-owned volume or muzzle attached to a chassis/mechanism link, not a motorized part.
 - **Game value:** a plugin-published number that generic sensors can consume, distinct from HUD text.
+- **Sound cue:** an id a game plugin or the Driver Station asks the app to play; the SDK owns the id and the hand-off
+  queue (not snapshots), the app owns playback.
 - **Attachment link:** a named spatial frame. A **motion link** instead prescribes one axis from another.
 - **Lock-step:** coordinated simulation/HAL stepping with one acknowledged tick at a time.
 

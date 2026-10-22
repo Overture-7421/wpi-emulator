@@ -8,6 +8,7 @@
 
 #include "wpiemu/plugins/game_2026/field_dimensions.h"
 #include "wpiemu/plugins/game_2026/fuel_layout.h"
+#include "wpiemu/plugins/game_2026/game_sounds.h"
 #include "wpiemu/plugins/game_2026/game_values.h"
 #include "wpiemu/plugins/game_2026/plugin_info.h"
 #include "wpiemu/sdk/game/zone_activation.h"
@@ -108,6 +109,7 @@ void Game2026State::reset(sdk::SimContext& ctx) {
     hub_.reset();
     matchTimed_ = false;
     matchResult_ = false;
+    resultCuePending_ = false;
     meter_ = std::min(config_.preloadFuel, config_.capacity);
     shots_ = 0;
     lost_ = 0;
@@ -127,9 +129,12 @@ void Game2026State::step(sdk::SimContext& ctx, double dt) {
     // A DS match time (Practice) means a timed match: phases, shifts and scores apply. Without one the robot is in
     // free play: when enabled it behaves like test mode (both hubs scoring, no phases) and the match HUD is hidden.
     const bool timed = ds.matchTimeS >= 0.0;
+    MatchStatus previous = status_;
+    const bool resultBefore = matchResult_;
     if (timed && !matchTimed_) {
         clock_.reset();
         hub_.reset();
+        previous = MatchStatus{};   // a new match starts from nothing: no boundary can be crossed on its first tick
     }
     // When the timed match stops (it ended or was aborted) its final score stays on the HUD until a reset, the next
     // timed match, or free play is enabled.
@@ -145,6 +150,7 @@ void Game2026State::step(sdk::SimContext& ctx, double dt) {
         status_ = clock_.update(freePlay, dt);
     }
     hub_.update(status_, ds, dt, ctx.rng());
+    requestSoundCues(ctx, previous, matchResult_ && !resultBefore, ds.eStop);
     pool_.updateGhosts(ctx.clock().simTimeUs());
 
     handleSensorEvents(ctx);
@@ -155,6 +161,23 @@ void Game2026State::step(sdk::SimContext& ctx, double dt) {
     stepRecycling(ctx, dt);
     stepHumanPlayers(ctx, dt);
     refreshPositions();
+}
+
+void Game2026State::requestSoundCues(sdk::SimContext& ctx, const MatchStatus& previous, bool resultEdge, bool eStop) {
+    // Only a boundary crossed inside one TELEOP run sounds: the first TELEOP tick belongs to the DS ("3 Bells"), and a
+    // pause or re-enable inside a phase changes nothing.
+    if (previous.teleopStarted && status_.running && status_.phase != previous.phase) {
+        if (isShift(status_.phase)) ctx.requestSound(sound::kShiftChange);
+        else if (status_.phase == MatchPhase::EndGame) ctx.requestSound(sdk::sound_cue::kEndGame);
+    }
+
+    // The result is posted once fuel is no longer assessed (manual 6.5). An E-Stopped match gets the foghorn instead.
+    if (resultEdge && !eStop) resultCuePending_ = true;
+    if (!matchResult_) resultCuePending_ = false;
+    if (resultCuePending_ && !hub_.scoringOpen(Alliance::Red) && !hub_.scoringOpen(Alliance::Blue)) {
+        resultCuePending_ = false;
+        ctx.requestSound(sdk::sound_cue::kMatchResult);
+    }
 }
 
 void Game2026State::handleSensorEvents(sdk::SimContext& ctx) {

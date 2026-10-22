@@ -177,7 +177,7 @@ Status SimulationSession::build(SessionParts& parts) {
     chassis_ = chassis.value();
     if (coupling_) coupling_->bind(*world_, chassis_.body, chassis_.baseMass);
     ctx_ = std::make_unique<SimContext>(SimContextServices{*world_, clock_, hub_, *logger_, config_, rng_, ds_, chassis_.body, nullptr,
-                                                           coupling_ ? &coupling_->service() : nullptr});
+                                                           coupling_ ? &coupling_->service() : nullptr, parts.sounds});
 
     if (!config_.drivetrain.spec.wheels.empty()) {
         if (parts.drivetrains == nullptr || parts.tireModels == nullptr)

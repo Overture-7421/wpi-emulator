@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Ubuntu 22.04 ships CMake 3.22; the presets need 3.25+.
 RUN pip3 install --no-cache-dir cmake aqtinstall \
-    && python3 -m aqt install-qt linux desktop ${QT_VERSION} linux_gcc_64 -O /opt/Qt -m qtquick3d qtshadertools
+    && python3 -m aqt install-qt linux desktop ${QT_VERSION} linux_gcc_64 -O /opt/Qt -m qtquick3d qtshadertools qtmultimedia
 
 ENV LD_LIBRARY_PATH=/opt/Qt/${QT_VERSION}/gcc_64/lib
 

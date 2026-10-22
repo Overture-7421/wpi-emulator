@@ -48,10 +48,13 @@ RunPage::RunPage(IRuntimeHost& host, RunPageOptions options, QWidget* parent)
       options_(options),
       ownedSettings_(options.settings == nullptr ? std::make_unique<QSettings>() : nullptr),
       ownedProvider_(options.gamepads == nullptr && options.useDefaultGamepadBackend ? createDefaultJoystickProvider() : nullptr),
+      ownedSfx_(options.sfx == nullptr && options.useDefaultSfxBackend ? createDefaultSfxOutput() : nullptr),
       settings_(options.settings != nullptr ? options.settings : ownedSettings_.get()),
       ds_(settings_),
-      joysticks_(options.gamepads != nullptr ? options.gamepads : ownedProvider_.get(), settings_) {
+      joysticks_(options.gamepads != nullptr ? options.gamepads : ownedProvider_.get(), settings_),
+      sfx_(options.sfx != nullptr ? options.sfx : ownedSfx_.get()) {
     setObjectName(QStringLiteral("runview.page"));
+    sfx_.setActive(false);   // until the page is shown
     build();
 }
 
@@ -122,6 +125,11 @@ void RunPage::build() {
     connect(&host_, &IRuntimeHost::startPositionChanged, this, &RunPage::rebuildStartMenu);
     connect(&host_, &IRuntimeHost::logLine, console_, &ConsolePanel::append);
     connect(&ds_, &DriverStationModel::stateReady, &host_, &IRuntimeHost::setDriverStation);
+    connect(&ds_, &DriverStationModel::sfxRequested, &sfx_, &SfxPlayer::play);
+    connect(&host_, &IRuntimeHost::soundCue, &sfx_, &SfxPlayer::play);
+    connect(&sfx_, &SfxPlayer::problem, this, [this](const QString& message) {
+        console_->append(emulatorLogLine(sdk::LogLevel::Warn, tr("sound"), message));
+    });
     connect(viewport_->overlay(), &StateOverlay::restartRequested, this, [this] {
         ds_.disable();
         host_.restart();
@@ -328,6 +336,7 @@ void RunPage::onSceneChanged() {
     applyProjectDefaults(info);
     startPositions_ = info.config ? info.config->startPositions : std::vector<sdk::StartPosition>{};
     scene_.setSceneInfo(info);
+    sfx_.setCatalog(info.gameId, info.soundCues);
     hud_.setDescriptors(info.hud);
     stateWindow_->model()->setScene(info);
     rebuildZoneMenu();
@@ -425,6 +434,7 @@ void RunPage::changeEvent(QEvent* e) {
 
 void RunPage::showEvent(QShowEvent* e) {
     QWidget::showEvent(e);
+    sfx_.setActive(true);
     qApp->installEventFilter(this);
     theme_.setPalette(palette());
     if (stateAction_ != nullptr && stateAction_->isChecked() && stateWindow_->isHidden()) stateWindow_->show();
@@ -432,6 +442,7 @@ void RunPage::showEvent(QShowEvent* e) {
 
 void RunPage::hideEvent(QHideEvent* e) {
     QWidget::hideEvent(e);
+    sfx_.setActive(false);   // leaving Run silences it; switching windows does not
     if (qApp != nullptr) qApp->removeEventFilter(this);
     joysticks_.releaseAllKeys();
     // The shell's stacked widget does not hide child windows; the action stays checked so showEvent restores it.
@@ -439,6 +450,11 @@ void RunPage::hideEvent(QHideEvent* e) {
         saveStateWindowGeometry();
         stateWindow_->hide();
     }
+}
+
+void RunPage::setSoundEffects(bool enabled, int volumePercent) {
+    sfx_.setEnabled(enabled);
+    sfx_.setVolumePercent(volumePercent);
 }
 
 void RunPage::saveStateWindowGeometry() {

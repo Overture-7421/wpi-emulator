@@ -102,7 +102,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: ${{ matrix.qt_arch }}
-          modules: qtquick3d qtshadertools
+          modules: qtquick3d qtshadertools qtmultimedia
           cache: true
 
       - name: Cache WPILib downloads
@@ -167,7 +167,8 @@ jobs:
           & "$dest\bin\wpiemu_app.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "wpiemu_app --version failed ($LASTEXITCODE)" }
           foreach ($f in 'extensions\halsim_wpiemu.dll', 'plugins\platforms\qwindows.dll', 'plugins\imageformats\qsvg.dll',
-                         'plugins\iconengines\qsvgicon.dll', 'qml\QtQuick3D\qquick3dplugin.dll', 'bin\qt.conf') {
+                         'plugins\iconengines\qsvgicon.dll', 'plugins\multimedia\ffmpegmediaplugin.dll',
+                         'qml\QtQuick3D\qquick3dplugin.dll', 'bin\qt.conf') {
             if (-not (Test-Path "$dest\$f")) { throw "missing in installed tree: $f" }
           }
           Start-Process "$dest\Uninstall.exe" -ArgumentList '/S', "_?=$dest" -Wait
@@ -222,6 +223,7 @@ jobs:
           fi
           test -f "$app/Contents/PlugIns/wpiemu/libhalsim_wpiemu.dylib"
           find "$app/Contents/Resources/qml/QtQuick3D" -iname '*quick3dplugin*' -print -quit | grep -q .
+          find "$app/Contents/PlugIns/multimedia" -iname '*ffmpegmediaplugin*' -print -quit | grep -q .
           exe="$app/Contents/MacOS/wpiemu_app"
           # Fat binaries print "<exe> (architecture ...):" headers; only the tab-indented lines are dependencies.
           bad="$(otool -arch all -L "$exe" | grep -E '^[[:space:]]' | awk '{print $1}' | grep -v -E '^(@rpath|@executable_path|@loader_path|/usr/lib/|/System/)' || true)"

@@ -256,6 +256,7 @@ void RealRuntimeHost::pump() {
         return;
     }
     for (const sdk::SessionLogEntry& e : session_->takeLogs(500)) emit logLine(toHostLogLine(e));
+    for (const sdk::SoundCue& cue : session_->takeSoundCues()) emit soundCue(QString::fromStdString(cue.id));
     const sdk::SessionStatus s = session_->status();
     setStatus(toHostStatus(s));
     sendBeginIfReady();

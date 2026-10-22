@@ -29,13 +29,16 @@ set(WPIEMU_RUNVIEW_SOURCES
     console_panel.cpp
     joystick_editor.cpp
     driver_station_panel.cpp
+    sfx_catalog.cpp
+    sfx_player.cpp
+    sfx_qt_output.cpp
     run_viewport.cpp
     run_page.cpp)
 
 qt_add_library(wpiemu_app_runview STATIC ${WPIEMU_RUNVIEW_SOURCES})
 target_include_directories(wpiemu_app_runview PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(wpiemu_app_runview
-    PUBLIC wpiemu_sdk wpiemu_app_ui Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::QuickWidgets Qt6::Quick3D)
+    PUBLIC wpiemu_sdk wpiemu_app_ui Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::QuickWidgets Qt6::Quick3D Qt6::Multimedia)
 wpiemu_target_defaults(wpiemu_app_runview)
 set_target_properties(wpiemu_app_runview PROPERTIES AUTOMOC ON)
 
@@ -55,6 +58,36 @@ file(GLOB WPIEMU_RUNVIEW_TAG_IMAGES CONFIGURE_DEPENDS RELATIVE "${CMAKE_CURRENT_
 qt_add_resources(wpiemu_app_runview runview_apriltags
     PREFIX "/wpiemu/runview"
     FILES ${WPIEMU_RUNVIEW_TAG_IMAGES})
+
+# Sound effects. The common cues (sdk::commonSoundCues) play these files; pick_clock*.wav belong to alliance selection,
+# which is not simulated, so they are not embedded.
+qt_add_resources(wpiemu_app_runview runview_sfx
+    PREFIX "/wpiemu/runview"
+    FILES
+        assets/sfx/start.wav
+        assets/sfx/end.wav
+        assets/sfx/resume.wav
+        assets/sfx/warning.wav
+        assets/sfx/abort.wav
+        assets/sfx/field_reset.wav
+        assets/sfx/match_result.wav)
+
+# Sounds the built-in game plugins ship (plugins/<id>/assets/sfx/<asset>.wav). The plugins/ aggregation seam lists them as
+# "<file>|<id>/sfx/<asset>.wav" entries; they are embedded under /wpiemu/plugins without this file naming any plugin.
+get_property(_wpiemu_plugin_sounds GLOBAL PROPERTY WPIEMU_BUILTIN_PLUGIN_SOUNDS)
+set(_wpiemu_plugin_sound_files "")
+foreach(_entry IN LISTS _wpiemu_plugin_sounds)
+    string(REPLACE "|" ";" _parts "${_entry}")
+    list(GET _parts 0 _file)
+    list(GET _parts 1 _alias)
+    set_source_files_properties("${_file}" PROPERTIES QT_RESOURCE_ALIAS "${_alias}")
+    list(APPEND _wpiemu_plugin_sound_files "${_file}")
+endforeach()
+if(_wpiemu_plugin_sound_files)
+    qt_add_resources(wpiemu_app_runview runview_plugin_sfx
+        PREFIX "/wpiemu/plugins"
+        FILES ${_wpiemu_plugin_sound_files})
+endif()
 
 # ---- optional gamepad backend (SDL2) --------------------------------------------------------
 if(WPIEMU_RUNVIEW_SDL2)

@@ -607,6 +607,11 @@ void FakeRunBackend::publish() {
         }
         d.hud.push_back({demo::kMessage, ds_.gameSpecificMessage.empty() ? std::string("—") : ds_.gameSpecificMessage});
     }
+    // Like a game plugin, the scripted game asks for the end-game whistle when the teleop clock reaches 0:30.
+    if (ds_.enabled && ds_.mode == sdk::proto::RobotMode::Teleop && ds_.matchTimeS >= 0.0 && lastMatchTimeS_ > 30.0 &&
+        ds_.matchTimeS <= 30.0)
+        emit soundCue(QString::fromUtf8(sdk::sound_cue::kEndGame.data(), static_cast<qsizetype>(sdk::sound_cue::kEndGame.size())));
+    lastMatchTimeS_ = ds_.matchTimeS;
 
     d.batteryVoltageV = sdk::kNominalBatteryVoltageV - 0.9 * (std::hypot(static_cast<double>(vel_.x), static_cast<double>(vel_.y)) / 3.5) - (flywheel_ > 1.f ? 0.5 : 0.0);
     d.driverStation = ds_;
