@@ -107,7 +107,7 @@ sdk::Status EditorController::persist() {
     if (!result) {
         saveError_ = QString::fromStdString(result.error().message);
         Q_EMIT saveStateChanged();
-        Q_EMIT statusMessage(ETR("Save failed: %1. Check the app-data location and disk space, then retry Save. "
+        Q_EMIT statusMessage(ETR("Save failed: %1. Check that the project folder is writable and the disk has space, then retry Save. "
                                 "Your changes are still open.").arg(saveError_), 2);
         return result;
     }

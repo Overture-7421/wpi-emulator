@@ -10,33 +10,28 @@
 namespace wpiemu::app {
 
 struct SaveOutcome {
-    bool appDataSaved = false;
-    bool exportSaved = false;
-    QString appDataPath;
-    QString exportPath;
-    QString appDataError;
-    QString exportError;
+    bool saved = false;
+    QString path;    // <project>/.wpiemu/robot.json
+    QString error;
 
-    // The app-data copy is authoritative; a read-only project folder only produces a warning.
-    bool ok() const { return appDataSaved; }
-    bool hasWarning() const { return appDataSaved && !exportSaved; }
+    bool ok() const { return saved; }
 };
 
-// Qt-facing facade over core's ProjectConfigRepository (app-data copy + <project>/.wpiemu/robot.json)
-// and ConfigPipeline (defaults -> validation). All path handling is delegated to core so
-// the editor, the wizard and the launcher agree on locations.
+// Qt-facing facade over core's ProjectConfigRepository (<project>/.wpiemu/robot.json, the only copy of the robot
+// setup) and ConfigPipeline (defaults -> validation). All path handling is delegated to core so the editor, the
+// wizard and the launcher agree on locations.
 class ConfigRepository {
 public:
     ConfigRepository(std::filesystem::path appDataRoot, const sdk::IValueTextCodec& text,
                      const core::config::RobotConfigCodec& codec, const core::config::ConfigPipeline& pipeline);
 
-    QString appDataPath(const QString& projectPath) const;
-    QString exportPath(const QString& projectPath) const;
+    QString configPath(const QString& projectPath) const;
 
+    // A robot setup is in the project, or an older version left one in app data that opening moves in.
     bool exists(const QString& projectPath) const;
-    // Opens the stored model (app-data copy first, then the project export) and runs the load pipeline.
+    // Opens the project's robot setup and runs the load pipeline.
     sdk::Result<core::config::LoadedConfig> load(const QString& projectPath) const;
-    // Writes the app-data copy, then exports to the project folder (failure of the latter is a warning).
+    // Writes the project's robot setup.
     SaveOutcome save(const QString& projectPath, const sdk::RobotConfig& config) const;
 
 private:

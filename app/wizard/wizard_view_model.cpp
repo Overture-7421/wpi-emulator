@@ -253,11 +253,9 @@ WizardResult WizardViewModel::finish() {
     prefs.station = basics_.station;
     result.outcome = session.commit(config, prefs);
     if (!result.outcome.ok()) {
-        result.message = tr("Could not save the robot configuration: %1").arg(result.outcome.appDataError);
+        result.message = tr("Could not save the robot configuration: %1").arg(result.outcome.error);
         return result;
     }
-    if (result.outcome.hasWarning())
-        result.message = tr("Saved, but the shareable copy in the project folder could not be written: %1").arg(result.outcome.exportError);
     result.ok = true;
     result.detectDevices = detectAfter_ && discoveryPossible();
     return result;

@@ -209,58 +209,66 @@ Status FileConfigStore::save(const RobotConfig& config) {
 
 // ---- ProjectConfigRepository ---------------------------------------------------------------------------
 
-FileConfigStore ProjectConfigRepository::appDataStore(const fs::path& projectDir) const {
-    return FileConfigStore(appDataConfigPath(root_, projectDir), "app data", text_, codec_, logger_);
+FileConfigStore ProjectConfigRepository::projectStore(const fs::path& projectDir) const {
+    return FileConfigStore(projectConfigPath(projectDir), "robot setup", text_, codec_, logger_);
 }
 
-FileConfigStore ProjectConfigRepository::projectStore(const fs::path& projectDir) const {
-    return FileConfigStore(projectConfigPath(projectDir), "project export", text_, codec_, logger_);
+FileConfigStore ProjectConfigRepository::legacyAppDataStore(const fs::path& projectDir) const {
+    return FileConfigStore(appDataConfigPath(root_, projectDir), "app data robot setup", text_, codec_, logger_);
 }
 
 Result<RobotConfig> ProjectConfigRepository::open(const fs::path& projectDir, ConfigSource* usedSource) const {
-    FileConfigStore local = appDataStore(projectDir);
-    if (local.exists()) {
-        Result<RobotConfig> cfg = local.load();
-        if (cfg) {
-            if (usedSource != nullptr) *usedSource = ConfigSource::AppData;
-        }
+    FileConfigStore project = projectStore(projectDir);
+    if (project.exists()) {
+        // An unreadable file is reported as it is. Falling back to an older copy would hide the problem and let
+        // the next save overwrite whatever the team put in git.
+        Result<RobotConfig> cfg = project.load();
+        if (cfg && usedSource != nullptr) *usedSource = ConfigSource::Project;
         return cfg;
     }
-    FileConfigStore shared = projectStore(projectDir);
-    if (!shared.exists()) return makeError(ErrorCode::NotFound, "no saved robot configuration for " + projectDir.string());
-    Result<RobotConfig> cfg = shared.load();
+
+    FileConfigStore legacy = legacyAppDataStore(projectDir);
+    if (!legacy.exists()) return makeError(ErrorCode::NotFound, "no robot setup at " + project.path().string());
+    Result<RobotConfig> cfg = legacy.load();
     if (!cfg) return cfg;
-    if (usedSource != nullptr) *usedSource = ConfigSource::Project;
-    if (Status s = local.save(cfg.value()); !s && logger_ != nullptr)
-        logger_->warn("config", "imported project config but could not cache it in app data: " + s.error().message);
-    return cfg;
-}
-
-Status ProjectConfigRepository::save(const fs::path& projectDir, const RobotConfig& config, bool alsoExport) const {
-    FileConfigStore local = appDataStore(projectDir);
-    if (Status s = local.save(config); !s) return s;
-    if (!alsoExport) return okStatus();
-    return projectStore(projectDir).save(config);
-}
-
-Status ProjectConfigRepository::exportToProject(const fs::path& projectDir) const {
-    FileConfigStore local = appDataStore(projectDir);
-    Result<RobotConfig> cfg = local.load();
-    if (!cfg) return cfg.error();
-    return projectStore(projectDir).save(cfg.value());
-}
-
-Result<RobotConfig> ProjectConfigRepository::importFromProject(const fs::path& projectDir) const {
-    FileConfigStore shared = projectStore(projectDir);
-    Result<RobotConfig> cfg = shared.load();
-    if (!cfg) return cfg;
-    FileConfigStore local = appDataStore(projectDir);
-    if (local.exists()) {
-        const Result<fs::path> backup = local.backup("pre-import");
-        if (!backup) return backup.error();
+    // Set up with an older version, which kept the setup in app data: move it into the project, once.
+    if (Status s = project.save(cfg.value()); !s) {
+        // Still usable from app data; the old copy stays until a save into the project succeeds.
+        if (logger_ != nullptr)
+            logger_->warn("config", "could not move the robot setup into the project, using " + legacy.path().string() +
+                                        " for now: " + s.error().message);
+    } else {
+        // Kept as a backup rather than deleted, but out of the way: a project file deleted later on purpose must
+        // not come back from here.
+        Result<fs::path> kept = legacy.backup("migrated");
+        std::error_code ec;
+        if (kept) fs::remove(legacy.path(), ec);
+        if (logger_ != nullptr) {
+            if (kept && !ec)
+                logger_->info("config", "moved the robot setup into " + project.path().string() + "; the old copy is kept as " +
+                                            kept.value().string());
+            else
+                logger_->warn("config", "moved the robot setup into " + project.path().string() + " but could not retire " +
+                                            legacy.path().string());
+        }
     }
-    if (Status s = local.save(cfg.value()); !s) return s.error();
+    if (usedSource != nullptr) *usedSource = ConfigSource::MigratedFromAppData;
     return cfg;
+}
+
+Status ProjectConfigRepository::save(const fs::path& projectDir, const RobotConfig& config) const {
+    FileConfigStore project = projectStore(projectDir);
+    // The file is the only copy. One that does not load (hand-edited, a merge conflict, a newer schema) is kept
+    // before it is replaced, so finishing setup after a load error never destroys the only copy of someone's work.
+    if (project.exists()) {
+        if (Result<RobotConfig> current = project.load(); !current && current.error().code != ErrorCode::NotFound) {
+            Result<fs::path> kept = project.backup("unreadable");
+            if (!kept) return kept.error();
+            if (logger_ != nullptr)
+                logger_->warn("config", "replaced an unreadable robot setup; the old file is kept as " + kept.value().string());
+        }
+    }
+    return project.save(config);
 }
 
 }  // namespace wpiemu::core::config

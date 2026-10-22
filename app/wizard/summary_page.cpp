@@ -78,7 +78,7 @@ void SummaryPage::refresh() {
                              .arg(b.name, kind)
                              .arg(b.wheelCount())
                              .arg(u.formatLength(b.frameLengthM), u.formatLength(b.frameWidthM), u.formatMass(b.massKg)));
-    locationValue_->setText(tr("The app's data folder, plus a shareable copy in the project at .wpiemu/robot.json"));
+    locationValue_->setText(tr("The project, at .wpiemu/robot.json. Commit it to share the setup with your team."));
 
     const bool possible = model_.discoveryPossible();
     detectCheck_->setEnabled(possible);

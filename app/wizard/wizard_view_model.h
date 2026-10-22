@@ -98,7 +98,7 @@ public:
     bool discoveryPossible() const;
     sdk::RobotConfig previewConfig() const;
 
-    // Persists the model (app-data + <project>/.wpiemu/robot.json) and makes the project current.
+    // Persists the model to <project>/.wpiemu/robot.json and makes the project current.
     WizardResult finish();
 
 signals:

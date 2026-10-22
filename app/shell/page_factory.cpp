@@ -54,11 +54,12 @@ ShellPages createShellPages([[maybe_unused]] AppServices& services, [[maybe_unus
             auto result = editorPage->controller().flushSave();
             if (!result)
                 return sdk::Status(sdk::makeError(result.error().code,
-                    QObject::tr("Could not save pending robot edits: %1. Check the app-data location and disk space, "
+                    QObject::tr("Could not save pending robot edits: %1. Check that the project folder is writable and the disk has space, "
                                 "then retry Save before closing or replacing the project.")
                         .arg(QString::fromStdString(result.error().message)).toStdString()));
             return result;
         });
+        services.session().setUnsavedChangesQuery([editorPage] { return editorPage && editorPage->hasUnsavedChanges(); });
     }
 #else
     pages.editor = placeholder(QObject::tr("Robot editor"), QObject::tr("The 3D robot editor is not part of this build."));

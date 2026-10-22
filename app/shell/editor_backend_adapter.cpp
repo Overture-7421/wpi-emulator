@@ -75,14 +75,11 @@ sdk::Status EditorBackendAdapter::saveConfig() {
     const SaveOutcome outcome = session.commit(*pending_, session.prefs());
     committing_ = false;
     if (!outcome.ok()) {
-        emit logMessage(sdk::Severity::Error, tr("Could not save the robot configuration: %1").arg(outcome.appDataError));
-        return sdk::makeError(sdk::ErrorCode::IoError, outcome.appDataError.toStdString());
+        emit logMessage(sdk::Severity::Error, tr("Could not save the robot configuration: %1").arg(outcome.error));
+        return sdk::makeError(sdk::ErrorCode::IoError, outcome.error.toStdString());
     }
     pending_.reset();   // what is stored is now what the editor shows
-    if (outcome.hasWarning())
-        emit logMessage(sdk::Severity::Warning, tr("Saved, but the project copy %1 could not be written: %2").arg(outcome.exportPath, outcome.exportError));
-    else
-        emit logMessage(sdk::Severity::Info, tr("Saved robot configuration to %1").arg(outcome.exportPath));
+    emit logMessage(sdk::Severity::Info, tr("Saved robot configuration to %1").arg(outcome.path));
     return sdk::okStatus();
 }
 

@@ -16,16 +16,13 @@ ConfigRepository::ConfigRepository(std::filesystem::path appDataRoot, const sdk:
                                    const core::config::RobotConfigCodec& codec, const core::config::ConfigPipeline& pipeline)
     : repo_(std::move(appDataRoot), text, codec), pipeline_(pipeline) {}
 
-QString ConfigRepository::appDataPath(const QString& projectPath) const {
-    return fromPath(repo_.appDataStore(toPath(projectPath)).path());
-}
-
-QString ConfigRepository::exportPath(const QString& projectPath) const {
+QString ConfigRepository::configPath(const QString& projectPath) const {
     return fromPath(repo_.projectStore(toPath(projectPath)).path());
 }
 
 bool ConfigRepository::exists(const QString& projectPath) const {
-    return QFileInfo::exists(appDataPath(projectPath)) || QFileInfo::exists(exportPath(projectPath));
+    return QFileInfo::exists(configPath(projectPath)) ||
+           QFileInfo::exists(fromPath(repo_.legacyAppDataStore(toPath(projectPath)).path()));
 }
 
 sdk::Result<core::config::LoadedConfig> ConfigRepository::load(const QString& projectPath) const {
@@ -36,14 +33,9 @@ sdk::Result<core::config::LoadedConfig> ConfigRepository::load(const QString& pr
 
 SaveOutcome ConfigRepository::save(const QString& projectPath, const sdk::RobotConfig& config) const {
     SaveOutcome out;
-    out.appDataPath = appDataPath(projectPath);
-    out.exportPath = exportPath(projectPath);
-    if (auto s = repo_.save(toPath(projectPath), config, false); s) out.appDataSaved = true;
-    else out.appDataError = QString::fromStdString(s.error().message);
-    if (out.appDataSaved) {
-        if (auto s = repo_.exportToProject(toPath(projectPath)); s) out.exportSaved = true;
-        else out.exportError = QString::fromStdString(s.error().message);
-    }
+    out.path = configPath(projectPath);
+    if (auto s = repo_.save(toPath(projectPath), config); s) out.saved = true;
+    else out.error = QString::fromStdString(s.error().message);
     return out;
 }
 

@@ -10,6 +10,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QPushButton>
 #include <QUrl>
 
 #include "common/ui_helpers.h"
@@ -33,6 +34,14 @@ MainWindow::MainWindow(AppServices& services, ShellController& controller, const
         return QFileDialog::getExistingDirectory(this, tr("Open WPILib robot project"), services_.recentProjects().lastProject());
     };
     messageRunner_ = [this](const QString& text) { QMessageBox::information(this, tr("WPI Emulator"), text); };
+    questionRunner_ = [this](const QString& text) {
+        QMessageBox box(QMessageBox::Question, tr("WPI Emulator"), text, QMessageBox::NoButton, this);
+        QPushButton* load = box.addButton(tr("Load it from disk"), QMessageBox::AcceptRole);
+        box.addButton(tr("Keep my edits"), QMessageBox::RejectRole);
+        box.setDefaultButton(load);
+        box.exec();
+        return box.clickedButton() == load;
+    };
     confirmRunner_ = [this](const QString& text) {
         return QMessageBox::question(this, tr("WPI Emulator"), text) == QMessageBox::Yes;
     };
@@ -76,6 +85,16 @@ MainWindow::MainWindow(AppServices& services, ShellController& controller, const
     connect(&controller_, &ShellController::runtimeChanged, this, [this] { refresh(); });
     connect(&controller_, &ShellController::notice, this, &MainWindow::showMessage);
     connect(&controller_, &ShellController::errorOccurred, this, &MainWindow::showMessage);
+    connect(&services_.session(), &ProjectSession::externalChangeIgnored, this, &MainWindow::showMessage);
+    connect(&services_.session(), &ProjectSession::externalChangeConflict, this, [this] {
+        ProjectSession& session = services_.session();
+        const bool load = questionRunner_(
+            tr("The robot setup (.wpiemu/robot.json) changed on disk, probably from a git pull, while you have unsaved edits.\n\n"
+               "Load it from disk and discard your edits, or keep your edits? Keeping them writes them over the file on the "
+               "next save; the version on disk stays in git."));
+        if (load) (void)session.reloadFromDisk();
+        else session.keepLocalChanges();
+    });
     connect(&services_.recentProjects(), &RecentProjects::changed, this, &MainWindow::rebuildRecentMenu);
     connect(&services_.settings(), &AppSettings::changed, this, [this] { refresh(); });
     connect(&ui_, &UiResources::themeChanged, this, &MainWindow::refreshIcons);
