@@ -116,7 +116,6 @@ TEST_CASE("project info, sim rate and the game plugin section come from the buil
     sdk::GamePluginRegistry plugins;
     REQUIRE(sdk::registerBuiltinGamePlugins(plugins).ok());
     RobotBuildContext ctx;
-    ctx.projectPath = QStringLiteral("/p/robot");
     ctx.language = QStringLiteral("cpp");
     ctx.wpilibYear = 2026;
     ctx.gradleRioVersion = QStringLiteral("2026.1.1");

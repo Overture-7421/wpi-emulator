@@ -86,7 +86,6 @@ struct SyntheticProject {
     }
     sdk::RobotConfig config(int year = 2026) const {
         sdk::RobotConfig c;
-        c.project.path = dir().string();
         c.project.language = "java";
         c.project.wpilibYear = year;
         return c;

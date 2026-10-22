@@ -201,7 +201,6 @@ inline WheelSpec wheel(const std::string& name, float x, float y) {
 inline RobotConfig sampleConfig() {
     RobotConfig c;
     c.name = "Sample";
-    c.project.path = "C:/robot";
     c.project.language = "java";
     c.project.wpilibYear = 2999;
     c.project.gradleRioVersion = "2999.1.1";

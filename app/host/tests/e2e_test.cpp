@@ -75,10 +75,9 @@ constexpr int kIntakeRollerId = 32;
 constexpr int kIntakePivotId = 29;
 constexpr int kIntakePivotEncoderId = 30;
 
-sdk::RobotConfig baseConfig(const fs::path& project) {
+sdk::RobotConfig baseConfig() {
     sdk::RobotConfig c;
     c.name = "Swerve sample e2e";
-    c.project.path = project.string();
     c.project.language = "java";
     c.project.wpilibYear = 2026;
     c.project.gradleRioVersion = "2026.2.1";
@@ -86,8 +85,8 @@ sdk::RobotConfig baseConfig(const fs::path& project) {
 }
 
 // Minimal but complete model: swerve chassis, IMU, one roller mechanism, every mapping to a device that discovery announced.
-sdk::RobotConfig mappedConfig(const fs::path& project) {
-    sdk::RobotConfig c = baseConfig(project);
+sdk::RobotConfig mappedConfig() {
+    sdk::RobotConfig c = baseConfig();
     c.chassis.sizeM = {0.775f, 0.80f, 0.15f};
     c.chassis.massKg = 61.235f;
     c.chassis.comHeightM = 0.20f;
@@ -203,7 +202,7 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
         app::host::Options o = base;
         o.mode = sdk::SessionMode::Armed;
         const Clock::time_point t = Clock::now();
-        auto started = app::host::RobotSession::start(registries.view(), baseConfig(project), o);
+        auto started = app::host::RobotSession::start(registries.view(), baseConfig(), o);
         REQUIRE_MESSAGE(started.ok(), (started.ok() ? "" : started.error().message));
         app::host::RobotSession& session = *started.value();
         CHECK_FALSE(session.coreOnly());
@@ -267,7 +266,7 @@ TEST_CASE("e2e: swerve sample robot - discovery, mapping and a driven teleop run
         ds.joysticks[0].buttonCount = 12;
 
         const Clock::time_point t = Clock::now();
-        auto started = app::host::RobotSession::start(registries.view(), mappedConfig(project), o);
+        auto started = app::host::RobotSession::start(registries.view(), mappedConfig(), o);
         REQUIRE_MESSAGE(started.ok(), (started.ok() ? "" : started.error().message));
         app::host::RobotSession& session = *started.value();
         for (const sdk::Issue& i : session.configIssues()) std::printf("e2e:   config issue [%s] %s\n", i.code.c_str(), i.message.c_str());
@@ -419,7 +418,6 @@ TEST_CASE("e2e: saved tank robot keeps its two mappings and drives six linked wh
     for (const auto& issue : loaded.value().issues) INFO(issue.code << ": " << issue.message);
     REQUIRE(loaded.value().valid());
     auto config = loaded.value().config;
-    config.project.path = project.string();
     REQUIRE(config.drivetrain.mappings == mappings);
     REQUIRE(config.drivetrain.mappings.size() == 2);
     REQUIRE(config.drivetrain.spec.wheels.size() == 6);

@@ -75,10 +75,9 @@ sdk::CameraConfig makeCamera(const char* id, sdk::CameraKind kind, const char* n
     return c;
 }
 
-sdk::RobotConfig visionConfig(const fs::path& project, const std::string& language) {
+sdk::RobotConfig visionConfig(const std::string& language) {
     sdk::RobotConfig c;
     c.name = "Vision e2e";
-    c.project.path = project.string();
     c.project.language = language;
     c.project.wpilibYear = 2026;
     c.project.gradleRioVersion = "2026.2.1";
@@ -185,7 +184,7 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     ds.mode = sdk::proto::RobotMode::Autonomous;
     ds.station = sdk::proto::AllianceStation::Blue1;
 
-    const sdk::RobotConfig config = visionConfig(project, language);
+    const sdk::RobotConfig config = visionConfig(language);
     auto started = app::host::RobotSession::start(registries.view(), config, o);
     REQUIRE_MESSAGE(started.ok(), (started.ok() ? "" : started.error().message));
     app::host::RobotSession& session = *started.value();

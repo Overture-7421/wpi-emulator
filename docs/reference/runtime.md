@@ -30,6 +30,10 @@ rejected, not migrated. Selected plugin sections also use schema version `1`.
 | `battery`, `sim` | Electrical model, fixed step, seed and physics settings. |
 | `plugins` | Sections keyed by plugin id, each with `schemaVersion` and opaque object `data`. |
 
+`project` stores `language`, `wpilibYear` and `gradleRioVersion`, not a filesystem path.
+The app obtains the build/launch folder from the opened project session, so the model
+can be shared between checkouts.
+
 A mapping stores `owner`, `slot`, a declared `device` address and optional `reversed`
 (omitted when false). Owners are `robot`, `drivetrain`, a mechanism id or a sensor id.
 The declared address is not necessarily a unique physical identity; preserve

@@ -152,7 +152,6 @@ std::vector<sdk::Issue> validateBasics(const RobotBasics& b) {
 sdk::RobotConfig buildRobotConfig(const RobotBasics& b, const RobotBuildContext& ctx) {
     sdk::RobotConfig config;
     config.name = b.name.trimmed().toStdString();
-    config.project.path = ctx.projectPath.toStdString();
     config.project.language = ctx.language.toStdString();
     config.project.wpilibYear = ctx.wpilibYear;
     config.project.gradleRioVersion = ctx.gradleRioVersion.toStdString();
