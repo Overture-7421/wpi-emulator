@@ -12,6 +12,7 @@
 #include "common/recent_projects.h"
 #include "common/system_probe.h"
 #include "common/toolchain_checker.h"
+#include "common/update_service.h"
 #include "contract/runtime_host.h"
 #include "wpiemu/core/config/config_pipeline.h"
 #include "wpiemu/core/config/config_validator.h"
@@ -28,6 +29,10 @@ struct AppServicesOptions {
     std::unique_ptr<ISystemProbe> probe;             // default: QtSystemProbe
     std::unique_ptr<IProjectInspector> inspector;    // default: GradleProjectInspector
     std::unique_ptr<IProjectRuntimeHost> runtime;    // default: RealRuntimeHost, or DemoRuntimeHost when `demo`
+    std::unique_ptr<IUpdateTransport> updateTransport;   // default: QNetworkAccessManager against github.com
+    std::unique_ptr<IUpdateInstaller> updateInstaller;   // default: runs the installer through the OS
+    QString appDir;                                  // default: the running executable's folder
+    QString appVersion;                              // default: the version this binary was built as
     bool demo = false;
 };
 
@@ -54,6 +59,7 @@ public:
     const ISystemProbe& probe() const { return *probe_; }
     const ToolchainChecker& toolchain() const { return *toolchain_; }
     IRuntimeHost& runtime() { return *runtime_; }
+    UpdateService& updates() { return *updates_; }
     // Tells the runtime which project is open: `config` (the saved model, or one still being edited), the project's game
     // module and the wizard's Driver Station choice. Call whenever the open project or its model changes.
     void bindRuntime(std::shared_ptr<const sdk::RobotConfig> config);
@@ -91,6 +97,7 @@ private:
     std::unique_ptr<ConfigRepository> configs_;
     std::unique_ptr<ProjectSession> session_;
     std::unique_ptr<IProjectRuntimeHost> runtime_;
+    std::unique_ptr<UpdateService> updates_;
 };
 
 }  // namespace wpiemu::app

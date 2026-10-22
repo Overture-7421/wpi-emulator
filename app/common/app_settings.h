@@ -39,6 +39,7 @@ struct AppSettingsData {
     bool reopenLastProject = true;
     bool soundEffects = true;
     int soundVolumePercent = kDefaultSoundVolumePercent;
+    bool checkForUpdates = true;   // look for a newer release on every start
     QString language;     // UI locale override, empty = system
 
     bool operator==(const AppSettingsData&) const = default;

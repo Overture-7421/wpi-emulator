@@ -13,8 +13,8 @@ struct GuiEnvironment : TestEnvironment {
     ThemeManager theme;
     UiResources ui;
 
-    explicit GuiEnvironment(bool healthyMachine = true, bool realRuntime = false)
-        : TestEnvironment(healthyMachine, realRuntime),
+    explicit GuiEnvironment(bool healthyMachine = true, bool realRuntime = false, const std::function<void(AppServicesOptions&)>& tweak = {})
+        : TestEnvironment(healthyMachine, realRuntime, tweak),
           theme(static_cast<QApplication&>(*QCoreApplication::instance()), services->settings()),
           ui(theme) {}
 };

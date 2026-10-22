@@ -14,6 +14,7 @@
 #include "shell/mode_switcher.h"
 #include "shell/page_factory.h"
 #include "shell/shell_controller.h"
+#include "shell/update_button.h"
 #include "shell/welcome_page.h"
 
 namespace wpiemu::app {
@@ -37,9 +38,11 @@ public:
     using WizardRunner = std::function<int(WizardDialog&)>;
     using FolderPicker = std::function<QString()>;
     using MessageRunner = std::function<void(const QString&)>;
+    using ConfirmRunner = std::function<bool(const QString&)>;
     void setWizardRunner(WizardRunner runner) { wizardRunner_ = std::move(runner); }
     void setFolderPicker(FolderPicker picker) { folderPicker_ = std::move(picker); }
     void setMessageRunner(MessageRunner runner) { messageRunner_ = std::move(runner); }
+    void setConfirmRunner(ConfirmRunner runner) { confirmRunner_ = std::move(runner); }
 
     // Tells the user something once, in a modal dialog.
     void showMessage(const QString& text);
@@ -55,6 +58,9 @@ public:
     QAction* settingsAction() const { return settingsAction_; }
     QAction* closeAction() const { return closeAction_; }
     QMenu* recentMenu() const { return recentMenu_; }
+    UpdateButton* updateButton() const { return updateButton_; }
+    QAction* checkUpdatesAction() const { return checkUpdatesAction_; }
+    QAction* updateAction() const { return updateAction_; }
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -70,6 +76,9 @@ private:
     void refreshIcons();
     void rebuildRecentMenu();
     void browseForProject();
+    void refreshUpdate();
+    void reportCheck(bool manual);
+    void restartForUpdate();
 
     AppServices& services_;
     ShellController& controller_;
@@ -78,6 +87,7 @@ private:
     WizardRunner wizardRunner_;
     FolderPicker folderPicker_;
     MessageRunner messageRunner_;
+    ConfirmRunner confirmRunner_;
     bool busyOpening_ = false;
 
     QStackedWidget* stack_;
@@ -94,6 +104,9 @@ private:
     QAction* runAction_ = nullptr;
     QAction* aboutAction_ = nullptr;
     QAction* aboutQtAction_ = nullptr;
+    QAction* checkUpdatesAction_ = nullptr;
+    QAction* updateAction_ = nullptr;
+    UpdateButton* updateButton_ = nullptr;
     QMenu* recentMenu_ = nullptr;
 
 };

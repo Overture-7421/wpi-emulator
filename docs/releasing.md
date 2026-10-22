@@ -155,6 +155,20 @@ disagrees, with file and line. To change a pin, edit the JSON and fix what the c
 keeps its cached `WPIEMU_WPILIB_VERSION` until you pass the new value. The linuxdeploy versions and checksums live
 only in the [AppImage script](../packaging/linux/build-appimage.sh).
 
+## In-app updates
+
+The app's updater (behaviour in the [app reference](reference/app.md#updates)) depends on conventions this process must keep:
+
+- A published, non-draft, non-prerelease release is what `https://github.com/Overture-7421/wpi-emulator/releases/latest`
+  redirects to, and its tag is `v<major>.<minor>.<patch>`. Other tags are ignored. Publish the draft only after every artifact
+  is attached, because the app reads the release the moment it is public.
+- Installer names are exactly those under Artifacts and layout (`windows-x64.exe`, `macos-arm64-x64.dmg`,
+  `linux-x86_64.AppImage`), each with `<name>.sha256` in `sha256sum` format. Renaming an artifact or dropping a sidecar
+  silently stops updates for that platform; the app treats a missing sidecar as "no update".
+- The checksum is the only integrity check, and installers are not signed, so a compromised release is not detectable by the app.
+- Each package must carry Qt's `tls` plugin folder (the HTTPS backends); the release workflow and AppImage
+  script check it. A Linux host also needs OpenSSL 3. The NSIS finish page offers to start the new version.
+
 ## Release automation and publication
 
 [release.yml](../.github/workflows/release.yml) runs on `v*` tags and manual dispatch.

@@ -5,7 +5,7 @@
 #   wpiemu_qt_deploy_runtime(<target>)
 option(WPIEMU_QT_DOWNLOAD "Automatically download Qt 6 via aqtinstall when not found on the system" ON)
 
-set(_wpiemu_qt_components Core Gui Widgets Quick Quick3D QuickWidgets Svg Multimedia)
+set(_wpiemu_qt_components Core Gui Widgets Quick Quick3D QuickWidgets Svg Multimedia Network)
 
 # Clear stale Qt6*_DIR cache entries if a previous Qt installation was moved or deleted.
 if(Qt6_DIR AND NOT EXISTS "${Qt6_DIR}/Qt6Config.cmake")
