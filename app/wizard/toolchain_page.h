@@ -51,6 +51,7 @@ private:
     void applyIcon(Row& row) const;
     void clearRows();
     void onGetJava();
+    void onInstallBuildTools();
 
     WizardViewModel& model_;
     const UiResources& ui_;

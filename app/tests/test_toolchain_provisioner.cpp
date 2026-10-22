@@ -271,6 +271,33 @@ TEST_CASE("provisioner (Windows): when no current runtime exists the install is 
     CHECK(!f.leftovers());
 }
 
+TEST_CASE("provisioner e2e (opt-in): the pinned Java downloads from github.com, verifies, unpacks and runs") {
+    if (!qEnvironmentVariableIsSet("WPIEMU_E2E_NETWORK")) {
+        MESSAGE("skipped: set WPIEMU_E2E_NETWORK=1 to download the pinned Java (about 190 MB)");
+        return;
+    }
+    QtSystemProbe probe;
+    const auto assets = ToolchainProvisioner::pinnedAssetsFor(probe.hostOs(), probe.cpuArchitecture());
+    if (assets.empty()) {
+        MESSAGE("skipped: no pinned Java for this computer");
+        return;
+    }
+    QTemporaryDir dir;
+    ToolchainProvisioner provisioner(probe, createQtUpdateTransport(QStringLiteral("0.0.0-test")), createQtToolchainEffects(), dir.filePath(QStringLiteral("toolchains")),
+                                     QCoreApplication::applicationDirPath(), assets);
+    provisioner.start(assets[0].major);
+    REQUIRE(waitFor([&] { return !provisioner.busy(); }, 15 * 60 * 1000));
+    INFO(provisioner.error().toStdString());
+    REQUIRE(provisioner.state() == ProvisionState::Ready);
+    const QString home = provisioner.installedHome(assets[0].major);
+    REQUIRE(!home.isEmpty());
+    const QString java = home + (probe.hostOs() == HostOs::Windows ? "/bin/java.exe" : "/bin/java");
+    const ProcessResult run = probe.run(java, {QStringLiteral("-version")}, 20000);
+    CHECK(run.started);
+    CHECK(run.output.contains(QStringLiteral("openjdk version \"%1").arg(assets[0].major)));
+    if (probe.hostOs() == HostOs::Windows) CHECK(!loadedVcRuntime(probe, home + "/bin").isEmpty());
+}
+
 TEST_CASE("pinned Java downloads exist for the supported computers and only come from github.com") {
     const auto windows = ToolchainProvisioner::pinnedAssetsFor(HostOs::Windows, QStringLiteral("x86_64"));
     REQUIRE(!windows.empty());

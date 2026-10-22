@@ -72,6 +72,11 @@ WizardViewModel::WizardViewModel(AppServices& services, QObject* parent)
         if (ok && projectValid()) recheckToolchain();   // the Java row can now pass
         emit javaChanged();
     });
+    BuildToolsInstaller& tools = services_.buildTools();
+    connect(&tools, &BuildToolsInstaller::stateChanged, this, &WizardViewModel::buildToolsChanged);
+    connect(&tools, &BuildToolsInstaller::finished, this, [this](bool) {
+        if (projectValid()) recheckToolchain();   // even a failed run may have installed it: the check decides
+    });
     // Re-opening the wizard on the current project starts from what is stored.
     if (services_.session().hasProject()) setProjectPath(services_.session().path());
 }
@@ -211,6 +216,14 @@ void WizardViewModel::getJava() {
 }
 
 void WizardViewModel::cancelJava() { services_.provisioner().cancel(); }
+
+bool WizardViewModel::buildToolsBusy() const { return services_.buildTools().busy(); }
+
+QString WizardViewModel::buildToolsMessage() const { return services_.buildTools().message(); }
+
+void WizardViewModel::installBuildTools() { services_.buildTools().start(); }
+
+void WizardViewModel::cancelBuildTools() { services_.buildTools().cancel(); }
 
 // ---- robot basics ----
 

@@ -1,8 +1,13 @@
 #include "common/toolchain_checker.h"
 
 #include <QDir>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QRegularExpression>
+#include <QVersionNumber>
 
+#include <algorithm>
 #include <filesystem>
 
 #include "wpiemu/core/launcher/jdk_policy.h"
@@ -260,20 +265,43 @@ ToolchainCheck ToolchainChecker::checkCppToolchain(const ToolchainInput& input) 
 
     switch (probe_.hostOs()) {
         case HostOs::Windows: {
+            struct VsInstance {
+                QString name, path;
+                QVersionNumber version;
+            };
+            std::vector<VsInstance> instances;
             const QString programFiles = probe_.env(QStringLiteral("ProgramFiles(x86)"));
             const QString vswhere = join(programFiles, QStringLiteral("Microsoft Visual Studio/Installer/vswhere.exe"));
             if (!programFiles.isEmpty() && probe_.fileExists(vswhere)) {
                 const ProcessResult r = probe_.run(
                     vswhere,
-                    {QStringLiteral("-latest"), QStringLiteral("-products"), QStringLiteral("*"), QStringLiteral("-requires"),
-                     QStringLiteral("Microsoft.VisualStudio.Component.VC.Tools.x86.x64"), QStringLiteral("-property"),
-                     QStringLiteral("installationPath")},
+                    {QStringLiteral("-all"), QStringLiteral("-products"), QStringLiteral("*"), QStringLiteral("-requires"),
+                     QStringLiteral("Microsoft.VisualStudio.Component.VC.Tools.x86.x64"), QStringLiteral("-format"), QStringLiteral("json")},
                     kProbeTimeoutMs);
-                if (const QString found = r.output.trimmed(); r.started && !found.isEmpty()) {
-                    check.status = CheckStatus::Ok;
-                    check.detail = tr("Visual Studio C++ tools at %1").arg(found.section(QLatin1Char('\n'), 0, 0).trimmed());
-                    return check;
+                const QJsonArray found = r.started ? QJsonDocument::fromJson(r.output.toUtf8()).array() : QJsonArray();
+                for (const QJsonValue& v : found) {
+                    const QJsonObject o = v.toObject();
+                    instances.push_back({o.value(QStringLiteral("displayName")).toString(), o.value(QStringLiteral("installationPath")).toString(),
+                                         QVersionNumber::fromString(o.value(QStringLiteral("installationVersion")).toString())});
                 }
+            }
+            // WPILib's desktop libraries need Visual Studio 2022 17.9 or newer. Gradle 8.x only knows Visual Studio up to 2022
+            // (version 17), so a machine with nothing but Visual Studio 2026 (18) may not be recognised by the project's build.
+            const QVersionNumber minimum(17, 9);
+            const QVersionNumber knownToGradle(17, 99);
+            std::vector<const VsInstance*> usable;
+            const VsInstance* tooOld = nullptr;
+            const VsInstance* tooNew = nullptr;
+            for (const VsInstance& vs : instances) {
+                if (vs.version >= minimum && vs.version <= knownToGradle) usable.push_back(&vs);
+                else if (vs.version < minimum) tooOld = &vs;
+                else tooNew = &vs;
+            }
+            if (!usable.empty()) {
+                const VsInstance* best = *std::max_element(usable.begin(), usable.end(), [](const VsInstance* a, const VsInstance* b) { return a->version < b->version; });
+                check.status = CheckStatus::Ok;
+                check.detail = tr("%1 (C++ tools) at %2").arg(best->name.isEmpty() ? tr("Visual Studio") : best->name, display(best->path));
+                return check;
             }
             if (const QString cl = probe_.findInPath(QStringLiteral("cl.exe")); !cl.isEmpty()) {
                 check.status = CheckStatus::Ok;
@@ -281,8 +309,20 @@ ToolchainCheck ToolchainChecker::checkCppToolchain(const ToolchainInput& input) 
                 return check;
             }
             check.status = CheckStatus::Missing;
-            check.detail = tr("No MSVC compiler was found.");
-            check.fixHint = tr("Install Visual Studio 2022 (or Build Tools) with the \"Desktop development with C++\" workload.");
+            if (tooNew != nullptr) {
+                check.detail = tr("%1 has the C++ tools, but WPILib's Gradle may not recognise a Visual Studio newer than 2022.").arg(tooNew->name.isEmpty() ? tr("Visual Studio") : tooNew->name);
+                check.fixHint = tr("Install the Visual Studio 2022 Build Tools next to it; both can stay installed.");
+            } else if (tooOld != nullptr) {
+                check.detail = tr("%1 is older than Visual Studio 2022 17.9, which WPILib needs.").arg(tooOld->name.isEmpty() ? tr("Visual Studio") : tooOld->name);
+                check.fixHint = tr("Update Visual Studio, or install the Visual Studio 2022 Build Tools.");
+            } else {
+                check.detail = tr("No MSVC compiler was found.");
+                check.fixHint = tr("Install Visual Studio 2022 (or Build Tools) with the \"Desktop development with C++\" workload.");
+            }
+            if (input.buildToolsInstallAvailable) {
+                check.fixAction = FixAction::InstallBuildTools;
+                check.fixHint += tr(" WPI Emulator can start that install for you (several GB; Windows asks for administrator permission).");
+            }
             return check;
         }
         case HostOs::MacOs: {

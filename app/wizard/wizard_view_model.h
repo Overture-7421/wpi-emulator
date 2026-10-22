@@ -92,6 +92,12 @@ public:
     QString javaError() const;                // why the last download failed; empty otherwise
     void getJava();                           // downloads it; the toolchain is re-checked when it is installed
     void cancelJava();
+
+    // The C++ build tools (Windows): a guided install through Microsoft's own installer, offered by a failing C++ row.
+    bool buildToolsBusy() const;
+    QString buildToolsMessage() const;        // what the installer did last; empty before the first click
+    void installBuildTools();
+    void cancelBuildTools();
     const RobotBasics& basics() const { return basics_; }
     void setBasics(const RobotBasics& basics);
     // Switches the drivetrain type, loading that type's defaults but keeping name/alliance/units choices.
@@ -115,6 +121,7 @@ signals:
     void projectChanged();
     void toolchainChanged();
     void javaChanged();
+    void buildToolsChanged();
     void basicsChanged();
     void summaryChanged();
 

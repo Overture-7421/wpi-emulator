@@ -4,6 +4,7 @@ find_package(Qt6 REQUIRED COMPONENTS Test)
 add_executable(wpiemu_app_tests
     main.cpp
     test_app_services.cpp
+    test_build_tools_installer.cpp
     test_config_session.cpp
     test_gui_shell.cpp
     test_gui_wizard.cpp

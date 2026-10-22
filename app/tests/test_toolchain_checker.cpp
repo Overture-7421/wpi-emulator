@@ -1,5 +1,10 @@
 #include <doctest/doctest.h>
 
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+
+#include <array>
 #include "common/toolchain_checker.h"
 #include "test_support.h"
 #include "wpiemu/sdk/game/builtin_plugins.h"
@@ -22,6 +27,14 @@ ToolchainInput inputFor(const QString& language, int year, const QString& projec
     in.language = language;
     in.wpilibYear = year;
     return in;
+}
+
+// What `vswhere -format json` prints for the given {display name, install path, version} installs.
+QString vswhereJson(std::initializer_list<std::array<const char*, 3>> installs) {
+    QJsonArray all;
+    for (const auto& i : installs)
+        all.append(QJsonObject{{"displayName", i[0]}, {"installationPath", i[1]}, {"installationVersion", i[2]}});
+    return QString::fromUtf8(QJsonDocument(all).toJson());
 }
 
 }  // namespace
@@ -145,11 +158,54 @@ TEST_CASE("c++ toolchain is only required for c++ projects") {
     f.probe.files.insert(vswhere);
     ProcessResult r;
     r.started = true;
-    r.output = QStringLiteral("C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\n");
+    r.output = vswhereJson({{"Visual Studio Community 2022", "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community", "17.14.37111.16"}});
     f.probe.processes[vswhere] = r;
     const ToolchainCheck vs = f.checker().checkCppToolchain(inputFor(QStringLiteral("cpp"), 2026));
     CHECK(vs.status == CheckStatus::Ok);
     CHECK(vs.detail.contains(QStringLiteral("Visual Studio")));
+}
+
+TEST_CASE("c++ toolchain (Windows): a working setup is never flagged, an unusable one explains why and offers the install") {
+    Fixture f;
+    f.probe.os = HostOs::Windows;
+    f.probe.environment[QStringLiteral("ProgramFiles(x86)")] = QStringLiteral("C:/Program Files (x86)");
+    const QString vswhere = QStringLiteral("C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe");
+    f.probe.files.insert(vswhere);
+    const auto machine = [&](std::initializer_list<std::array<const char*, 3>> installs) {
+        ProcessResult r;
+        r.started = true;
+        r.output = vswhereJson(installs);
+        f.probe.processes[vswhere] = r;
+    };
+    ToolchainInput in = inputFor(QStringLiteral("cpp"), 2026);
+    in.buildToolsInstallAvailable = true;
+
+    machine({{"Visual Studio Professional 2022", "C:\\vs22", "17.14.1"}, {"Visual Studio Community 2026", "C:\\vs26", "18.11.1"}});
+    ToolchainCheck check = f.checker().checkCppToolchain(in);
+    CHECK(check.status == CheckStatus::Ok);   // 2022 is there next to 2026
+    CHECK(check.fixAction == FixAction::None);
+    CHECK(check.detail.contains(QStringLiteral("2022")));
+
+    machine({{"Visual Studio Community 2026", "C:\\vs26", "18.11.1"}});
+    check = f.checker().checkCppToolchain(in);
+    CHECK(check.status == CheckStatus::Missing);
+    CHECK(check.detail.contains(QStringLiteral("newer than 2022")));
+    CHECK(check.fixAction == FixAction::InstallBuildTools);
+
+    machine({{"Visual Studio Community 2019", "C:\\vs19", "16.11.3"}});
+    check = f.checker().checkCppToolchain(in);
+    CHECK(check.status == CheckStatus::Missing);
+    CHECK(check.detail.contains(QStringLiteral("17.9")));
+
+    machine({});
+    in.buildToolsInstallAvailable = false;
+    check = f.checker().checkCppToolchain(in);
+    CHECK(check.status == CheckStatus::Missing);
+    CHECK(check.fixAction == FixAction::None);
+
+    in.language = QStringLiteral("java");   // a Java project never sees any of this
+    CHECK(f.checker().checkCppToolchain(in).status == CheckStatus::NotApplicable);
+    CHECK(f.checker().checkCppToolchain(in).fixAction == FixAction::None);
 }
 
 TEST_CASE("game module: supported season selects the plugin, other seasons run core-only") {

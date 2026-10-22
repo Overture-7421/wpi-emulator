@@ -59,6 +59,7 @@ ToolchainPage::ToolchainPage(WizardViewModel& model, const UiResources& ui, QWid
     connect(recheckButton_, &QPushButton::clicked, &model_, &WizardViewModel::recheckToolchain);
     connect(&model_, &WizardViewModel::toolchainChanged, this, &ToolchainPage::refresh);
     connect(&model_, &WizardViewModel::javaChanged, this, &ToolchainPage::refresh);
+    connect(&model_, &WizardViewModel::buildToolsChanged, this, &ToolchainPage::refresh);
     consent_ = [this](const QString& question) {
         return QMessageBox::question(this, tr("Get Java"), question, QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes) == QMessageBox::Yes;
     };
@@ -102,6 +103,18 @@ void ToolchainPage::onGetJava() {
     if (consent_ && consent_(question)) model_.getJava();
 }
 
+void ToolchainPage::onInstallBuildTools() {
+    if (model_.buildToolsBusy()) {
+        model_.cancelBuildTools();
+        return;
+    }
+    const QString question =
+        tr("WPI Emulator will start Microsoft's installer for the Visual Studio 2022 Build Tools (the \"Desktop development with C++\" "
+           "workload). It is several GB, shows its own progress window and Windows will ask for administrator permission. "
+           "Your other Visual Studio installs are not changed.\n\nStart the installer?");
+    if (consent_ && consent_(question)) model_.installBuildTools();
+}
+
 void ToolchainPage::clearRows() {
     for (Row& r : rows_) {
         rowsLayout_->removeWidget(r.frame);
@@ -118,7 +131,8 @@ void ToolchainPage::applyIcon(Row& row) const {
 void ToolchainPage::refresh() {
     const bool checking = model_.toolchainRunning();
     const bool downloading = model_.javaBusy();
-    const bool running = checking || downloading;
+    const bool buildTools = model_.buildToolsBusy();
+    const bool running = checking || downloading || buildTools;
     busy_->setVisible(running);
     busyLabel_->setVisible(running);
     if (downloading && model_.javaPercent() >= 0) {
@@ -127,7 +141,9 @@ void ToolchainPage::refresh() {
         busyLabel_->setText(tr("Downloading Java %1… %2%").arg(model_.javaMajor()).arg(model_.javaPercent()));
     } else {
         busy_->setRange(0, 0);
-        busyLabel_->setText(downloading ? tr("Checking and unpacking Java %1…").arg(model_.javaMajor()) : tr("Checking your machine…"));
+        busyLabel_->setText(buildTools ? tr("Installing the C++ build tools… follow the installer window")
+                            : downloading ? tr("Checking and unpacking Java %1…").arg(model_.javaMajor())
+                                          : tr("Checking your machine…"));
     }
     recheckButton_->setEnabled(!running && model_.projectValid());
 
@@ -166,6 +182,12 @@ void ToolchainPage::refresh() {
             connect(row.action, &QPushButton::clicked, this, &ToolchainPage::onGetJava);
             text->addWidget(row.action, 0, Qt::AlignLeft);
         }
+        if (check.fixAction == FixAction::InstallBuildTools && check.status == CheckStatus::Missing) {
+            row.action = new QPushButton(buildTools ? tr("Cancel") : tr("Install C++ build tools"));
+            row.action->setObjectName(QStringLiteral("toolchain.installBuildTools"));
+            connect(row.action, &QPushButton::clicked, this, &ToolchainPage::onInstallBuildTools);
+            text->addWidget(row.action, 0, Qt::AlignLeft);
+        }
         layout->addWidget(row.icon, 0, Qt::AlignTop);
         layout->addLayout(text, 1);
         row.frame->setAccessibleName(QStringLiteral("%1: %2").arg(check.title, check.detail));
@@ -175,6 +197,7 @@ void ToolchainPage::refresh() {
     }
 
     if (const QString failure = model_.javaError(); !failure.isEmpty()) summary_->setMessage(BannerKind::Error, tr("Could not get Java: %1").arg(failure));
+    else if (!report.canRunRobot() && !model_.buildToolsMessage().isEmpty()) summary_->setMessage(BannerKind::Info, model_.buildToolsMessage());
     else if (report.canRunRobot()) summary_->setMessage(BannerKind::Success, tr("Everything needed to launch your robot was found."));
     else summary_->setMessage(BannerKind::Warning, tr("Something needed to launch the robot is missing. You can finish the setup now and fix it before running."));
 

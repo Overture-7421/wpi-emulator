@@ -148,13 +148,25 @@ General dependency, SDL2 and build switches belong to [Building](BUILDING.md).
 
 ## Version pins
 
-[versions.json](../versions.json) is the only home of the WPILib, Qt, CMake, Python, Ubuntu and macOS pins:
+[versions.json](../versions.json) is the only home of the WPILib, Qt, CMake, Python, Ubuntu and macOS pins, of the Visual C++ runtime
+WPILib requires (`msvcRuntimeMin`) and of the Java the app can download (`jdk`):
 `qt.release` is the exact kit for releases and the Docker image, `qt.ci` the pattern CI installs.
-CMake reads `wpilib` (the default of `WPIEMU_WPILIB_VERSION`) and `macosDeployment`. The workflows, Docker image,
+CMake reads `wpilib` (the default of `WPIEMU_WPILIB_VERSION`) and `macosDeployment`, and generates the Java table the app compiles in. The workflows, Docker image,
 AppImage script and docs cannot read it, so `tools\check_versions.py` (CTest `versions.check`) reports every copy that
-disagrees, with file and line. To change a pin, edit the JSON and fix what the checker lists; an existing build tree
+disagrees, with file and line, and checks each Java download (https://github.com only, a SHA-256, a version that appears in its URL, under the
+downloader's 500 MiB limit). To change a pin, edit the JSON and fix what the checker lists; an existing build tree
 keeps its cached `WPIEMU_WPILIB_VERSION` until you pass the new value. The linuxdeploy versions and checksums live
 only in the [AppImage script](../packaging/linux/build-appimage.sh).
+
+**A new season:** add its year to `jdk.seasons` with the Java major WPILib builds that season with; if that major has no `jdk.assets`
+entries yet, add one `<major>-<os>-<arch>` entry per platform (get the URL, size and SHA-256 from the Adoptium release page) and
+extend `kGradleJava` in `jdk_policy.cpp` if Gradle now supports a newer Java. A year missing from `jdk.seasons` gets no Java download, by design.
+Raise `msvcRuntimeMin` together with `kMinVcRuntime` in `jdk_policy.h` when WPILib raises its check. Refresh the `jdk.assets`
+entries when Temurin publishes a security release.
+
+The downloaded Java is Eclipse Temurin fetched by the user's app at run time, never redistributed in a package. The Windows installer must
+carry a Visual C++ runtime of at least `msvcRuntimeMin` beside the app (the release workflow checks it), because the app copies it into
+a downloaded Java whose own runtime is older.
 
 ## In-app updates
 

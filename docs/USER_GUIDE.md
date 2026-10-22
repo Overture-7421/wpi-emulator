@@ -1,10 +1,10 @@
 # WPI Emulator user guide
 
 Read this when installing the app, describing a robot or running your robot code.
-Prerequisites: a WPILib 2026 Java or C++ project using GradleRIO, its complete Gradle wrapper,
-and the WPILib desktop simulation toolchain. Use WPILib's bundled JDK; the toolchain check
-accepts JDK 17+. C++ projects also need MSVC C++ tools on Windows, Xcode command line tools
-on macOS, or a Linux C++ compiler. The 3D view needs a working graphics driver.
+Prerequisites: a WPILib 2026 Java or C++ project using GradleRIO and its complete Gradle wrapper. **You do not need to install
+WPILib.** If it is installed, the emulator uses its Java and nothing else changes; if not, setup finds a Java that works or
+offers to download one. C++ projects also need the MSVC C++ tools on Windows (setup can start their installer), Xcode command line
+tools on macOS, or a Linux C++ compiler. The 3D view needs a working graphics driver.
 
 The launcher injects a HALSim extension through Gradle without rewriting your robot source,
 build configuration or vendordeps. Normal Gradle outputs/caches and the editor's separate
@@ -19,7 +19,7 @@ To change the emulator rather than a robot model, start with the [developer guid
 Windows: run the NSIS installer, or extract the **whole** portable ZIP. The installed executable
 is `C:\Program Files\WPI Emulator\bin\wpiemu_app.exe`; a portable tree also uses `bin\wpiemu_app.exe`.
 macOS: open the DMG and copy `wpiemu_app.app` to Applications. Linux: make the AppImage executable
-and run it. Packages include the app's Qt runtime, not the robot's WPILib toolchain.
+and run it. Packages include the app's Qt runtime, not the robot's WPILib toolchain or a Java (setup downloads one only when needed).
 Artifact names and packaging caveats are in [Releasing](releasing.md);
 source-build instructions and Qt DLL setup are in [Building](BUILDING.md). The app can update itself; see [Updates](#updates).
 
@@ -45,7 +45,11 @@ team number and vendor libraries. Missing GradleRIO or an unreadable project is 
 an unknown season or incomplete wrapper needs attention before running.
 
 **Toolchain:** wait for checks of Java, the wrapper, WPILib, the C++ compiler when needed,
-and the game module. Follow each missing row's hint, then **Re-check**.
+and the game module. Follow each missing row's hint, then **Re-check**. If no Java on the computer can run the project, the Java row
+shows **Get Java**: after you confirm, WPI Emulator downloads Java 17 (about 190 MB, from github.com, checked against a published
+checksum, no administrator rights) and re-checks. It appears only when nothing else works: an installed WPILib's Java is always used
+as it is. On a Windows C++ project without usable build tools the C++ row offers **Install C++ build tools**, which starts Microsoft's
+installer (several GB; it shows its own window and Windows asks for permission).
 You may finish setup with missing tools, but must fix them before robot code can run.
 **Core-only mode** means no season field, game pieces or scoring; it does not promise that
 the bundled HALSim extension works with another WPILib year.
@@ -188,8 +192,10 @@ Tower points, penalties and ranking points are not scored.
 
 **File > Settings…** controls theme, dialog units, the WPILib and JDK folders, physics rate, physics threads,
 reopening the last project, the update check and Practice sound effects (on/off and volume). The folders apply to the next toolchain check and robot launch; left
-empty, Gradle runs with WPILib's JDK for the project's season (all-users or this-user install),
-then `JAVA_HOME`, then `java` on `PATH`. The physics-rate setting
+empty, Gradle runs with the first Java that works, in this order: WPILib's JDK for the project's season (all-users or this-user install), another
+installed season's WPILib JDK, `JAVA_HOME`, `java` on `PATH`, then the Java WPI Emulator downloaded. Apart from the project's own WPILib JDK, a Java must
+be a full JDK, at least the season's version, not too new for the project's Gradle (Java 23 for Gradle 8.11) and, on Windows,
+carry Visual C++ runtime 14.40 or newer; one that fails is listed as passed over with the reason. The physics-rate setting
 is copied into the model when the wizard finishes: rerun setup to apply a changed rate.
 Physics threads (Auto, 1, 2, 4 or 8) belongs to the computer, not the model: it applies at the next robot
 launch, Auto picks up to four threads from the core count, and results are identical for every choice.
@@ -225,7 +231,12 @@ your projects is sent. Turn the start-up check off in **File > Settings…**. De
 ## Troubleshooting
 
 - **Failed start/crash:** read Console and Validation. Confirm the wrapper and its JAR exist,
-  the project builds outside the emulator, and WPILib's JDK/compiler are available. Allow time for first build.
+  the project builds outside the emulator, and a Java and (for C++) a compiler are available. Allow time for first build.
+  Known causes get their own explanation and a fix button in the Run view.
+- **"Invalid MSVC Runtime … Expected at least 14.40":** the Java that started the robot carries an old `msvcp140.dll` in its own
+  folder, so updating Visual Studio does not help. Use WPILib's Java, or **Get Java** in setup.
+- **Download failed:** the first run downloads WPILib and the project's libraries (about 1 GB); check the internet connection,
+  proxy or firewall, or pick a JDK folder in Settings to avoid the Java download.
 - **No extension/handshake/protocol:** reinstall a matching app and extension, check robot load errors
   and the WPILib year. Advanced extension-location overrides are described in [Releasing](releasing.md).
 - **Robot not responding:** blocked robot code can trip the watchdog; inspect output and use Restart robot code.

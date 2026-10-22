@@ -145,14 +145,21 @@ the simulation target, then starts its JVM/native binary. Neither edits sources/
 `ProjectInspector` reads metadata without executing Gradle; the wizard words its report and
 adds nothing of its own. The JDK Gradle runs with is chosen in one order,
 [`kJdkSources`](../../core/runtime/include/wpiemu/core/launcher/project_inspector.h): the Settings JDK folder,
-the project season's WPILib JDK (all-users or this-user install, or the Settings WPILib folder), `JAVA_HOME`, then
-`java` on `PATH`. An inherited `JAVA_HOME` without a Java executable is ignored; an explicitly chosen
-Settings folder is not silently replaced. Both the session launch and the wizard's toolchain check
-follow the shared source order. The host requests protocol Stop
+the project season's WPILib JDK (all-users or this-user install, or the Settings WPILib folder), another installed season's
+WPILib JDK, `JAVA_HOME`, `java` on `PATH`, then the emulator's own downloaded Java ([Emulator Java](app.md#emulator-java-and-build-tools)).
+Only the first two are taken as they are. The rest must pass [`jdk_policy`](../../core/runtime/include/wpiemu/core/launcher/jdk_policy.h):
+a runnable JDK with `javac`, the season's Java major or newer, not newer than `maxJavaForGradle` of the project's wrapper
+(8.11 when unknown), and on Windows a Visual C++ runtime of at least `kMinVcRuntime`, the `msvcp140.dll` that `java.exe` loads
+(the JDK's own copy first; WPILib's `checkMsvcRuntime` compares it). The Settings folder is judged too but never replaced. An inherited
+`JAVA_HOME` without a Java executable is ignored. Both the session launch and the wizard's toolchain check use this order, and
+the launcher adds `-Dorg.gradle.java.home=<that JDK>` so a path in the project's `gradle.properties` cannot override it. The host requests protocol Stop
 before cleanup; cancellation remains latched through startup and escalates to whole-tree kill
 after the grace deadline. Destruction joins the worker and cleans up the process tree.
 Robot console lines get a level from [`classifyOutputLine`](../../core/runtime/include/wpiemu/core/launcher/output_level.h)
 (`ERROR`/`Exception`/stack frames, `Warning`, `DEBUG`, `TRACE` as whole words; plain stderr defaults to Warn).
+[`diagnoseLaunchOutput`](../../core/runtime/include/wpiemu/core/launcher/launch_diagnosis.h) recognises the failures a user can act
+on (WPILib's stale Visual C++ runtime, Java Gradle cannot run on, an invalid Java home, a failed download, a broken wrapper, no C++
+toolchain) and gives them stable ids; unknown output keeps the raw tail.
 
 ## Device feedback and game-fed sensors
 

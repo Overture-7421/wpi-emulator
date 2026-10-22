@@ -216,6 +216,31 @@ bar has no corner widget). The button is the menu bar's corner widget with `[upd
 its context menu offers release notes, skip this version and cancel download. Only a manual check reports its outcome in
 a dialog. The opt-in transport test (`WPIEMU_E2E_NETWORK=1`) talks to github.com.
 
+## Emulator Java and build tools
+
+Which Java runs a project is decided once, by [`ToolchainChecker::resolveJdk`](../../app/common/toolchain_checker.cpp): the wizard's Java
+row reports it and `AppServices` passes the same folder to the launch (`RealRuntimeOptions::ToolchainOverrides`), so the two cannot
+differ. The order and the rules are in the [runtime reference](runtime.md#launcher-boundary). A launch with no usable Java never
+starts Gradle: `RealRuntimeHost` fails it with `no_usable_java` (or `java_setting_unusable` for a rejected Settings folder).
+
+`ToolchainProvisioner` (`AppServices::provisioner()`) is the only code that downloads Java, and only when the Toolchain page's
+**Get Java** button is confirmed: a row offers it (`FixAction::GetJava`) only when no JDK passed and `versions.json` maps the project's
+season to a Java major with a pin for this computer. Steps: disk space, download through its own `IUpdateTransport` (github.com
+only), SHA-256 against the pin, unpack with the system `tar` (Windows: `System32\tar.exe`), then on Windows replace the Visual C++
+runtime DLLs with those installed beside the app **only if** the runtime that Java would load is older than 14.40
+(`loadedVcRuntime`), run `java -version`, and move it to `<local data>/toolchains/<vendor>-<version>` with a `.wpiemu-ready` marker. Anything
+that fails removes its partial files; Settings shows the install and removes it. Tests use `IUpdateTransport`, `IToolchainEffects`
+and `FakeProbe`; `WPIEMU_E2E_NETWORK=1` also downloads the real Java once.
+
+`BuildToolsInstaller` backs `FixAction::InstallBuildTools` on Windows C++ projects: after a confirmation it runs
+`winget install … Microsoft.VisualStudio.2022.BuildTools` with `--passive` (Microsoft's window and the administrator prompt), or opens
+the Build Tools download page when winget is missing, and the toolchain is re-checked afterwards. The C++ row counts Visual Studio
+2022 17.9+ with the C++ tools and does not flag one it accepts.
+
+Failures the launcher classifies (`diagnoseLaunchOutput`) reach the run view as `HostStatus::problem` and its fields. `presentStatus`
+words them and `StateOverlay` offers **Fix in setup** (the shell opens the wizard on the Toolchain step) or **Open Settings** through
+`ShellPages::onProblemAction`; the run view never includes `app/common`.
+
 ## Scene presentation and resources
 
 The run renderer relies on these frame contracts:

@@ -15,6 +15,7 @@ add_library(wpiemu_app_common STATIC
     system_probe.cpp
     theme.cpp
     toolchain_checker.cpp
+    build_tools_installer.cpp
     toolchain_provisioner.cpp
     ui_helpers.cpp
     ui_resources.cpp

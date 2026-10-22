@@ -23,13 +23,13 @@ These records explain adopted design constraints, not implementation inventories
 | [0012](0012-shared-primitives-in-the-sdk.md) | Shared primitives live in the SDK |
 | [0013](0013-sound-cues-as-events.md) | Sound cues travel as events, not snapshots |
 | [0014](0014-updater-without-api-or-silent-install.md) | The updater needs no API and installs nothing silently |
+| [0015](0015-managed-java-after-wpilib.md) | The emulator finds a working Java first and downloads one only when none works |
 
 ## Maintaining the set
 
 Use Status, Context, Decision and Consequences sections; explain why and what is sacrificed.
 Keep each record within 45 physical lines and this index within 35.
 Contracts belong in [reference pages](../ARCHITECTURE.md#extension-points), not API inventories here.
-For future decisions, choose the next unused number and add it to this index; never reuse or renumber one.
-Update rationale and links together when the current decision changes.
+For future decisions, choose the next unused number and add it here; never reuse or renumber one. Update rationale and links together.
 
 Next: [Contributing](../CONTRIBUTING.md).

@@ -69,6 +69,8 @@ AppServices::AppServices(AppServicesOptions options)
             ToolchainProvisioner::pinnedAssetsFor(probe_->hostOs(), probe_->cpuArchitecture()));
     }
     configs_ = std::make_unique<ConfigRepository>(root, textCodec_, configCodec_, pipeline_);
+    buildTools_ = std::make_unique<BuildToolsInstaller>(
+        *probe_, options.buildToolsEffects ? std::move(options.buildToolsEffects) : createQtBuildToolsEffects());
     session_ = std::make_unique<ProjectSession>(*inspector_, *configs_, *recent_, *prefs_, plugins_);
 
     if (options.runtime) {
@@ -125,6 +127,7 @@ ToolchainInput AppServices::toolchainInput(const ProjectInspection& inspection) 
     in.gradleVersion = inspection.gradleVersion;
     in.wpilibHomeOverride = settings_->data().wpilibHome;
     in.jdkHomeOverride = settings_->data().jdkHome;
+    in.buildToolsInstallAvailable = buildTools_->available();
     // The Java comes from the season: an unknown season has no download and keeps the default minimum.
     if (const std::optional<int> major = ToolchainProvisioner::javaMajorForSeason(inspection.wpilibYear)) {
         in.minJavaMajor = *major;

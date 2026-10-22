@@ -194,6 +194,10 @@ jobs:
                          'qml\QtQuick3D\qquick3dplugin.dll', 'bin\qt.conf') {
             if (-not (Test-Path "$dest\$f")) { throw "missing in installed tree: $f" }
           }
+          # The downloaded Java gets this runtime when its own is too old (WPILib needs msvcp140 >= versions.json msvcRuntimeMin).
+          $min = [version](Get-Content versions.json -Raw | ConvertFrom-Json).msvcRuntimeMin
+          $runtime = [version](Get-Item "$dest\bin\msvcp140.dll").VersionInfo.ProductVersion
+          if ($runtime -lt $min) { throw "bin\msvcp140.dll is $runtime, older than the $min WPILib needs" }
           Start-Process "$dest\Uninstall.exe" -ArgumentList '/S', "_?=$dest" -Wait
 
       # ---------------------------------------------------------------- macOS
