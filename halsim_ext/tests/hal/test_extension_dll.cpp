@@ -126,6 +126,8 @@ TEST_CASE("real extension library: loads through the HAL extension loader and ru
         // Stop is honoured: timing is released and the extension says Goodbye.
         REQUIRE(emulator->sendControl(proto::SimCommand::Stop, 77));
         CHECK(emulator->take<proto::SimControlAck>(3000ms).has_value());
+        // Goodbye follows the final timing resume, so the next test can safely own HAL's clock.
+        REQUIRE(emulator->take<proto::Goodbye>(3000ms).has_value());
         CHECK(waitUntil([] { return !HALSIM_IsTimingPaused(); }, 3000ms));
     }
 }
