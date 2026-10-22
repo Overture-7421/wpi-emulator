@@ -80,6 +80,32 @@ For REBUILT the source contract is:
 | `game_2026.fuel.capacity` | count | Configured inventory capacity |
 | `game_2026.fuel.fraction` | ratio | Count / capacity; zero when capacity is zero |
 
+## Sound cues
+
+A plugin asks for a sound by id with `SimContext::requestSound(id)`; the app plays it. The ids and the hand-off live in
+[`sound_cue.h`](../../sdk/include/wpiemu/sdk/game/sound_cue.h): `commonSoundCues()` are the FMS audio cues every season
+shares (manual Table 5-4), and `contributeSoundCues()` declares the plugin's own `SoundCueInfo`. A plugin id starts with
+the plugin id plus `.`; `asset` names `plugins/<id>/assets/sfx/<asset>.wav`, which the plugin ships and the app embeds
+through the `plugins/` aggregation seam, so a season's sounds add no app code. Common cues use
+`app/runview/assets/sfx/<asset>.wav`. Requests are one-shot events, so they travel through a bounded
+[`SoundCueQueue`](../../sdk/include/wpiemu/sdk/game/sound_cue_queue.h) that the host drains, not through snapshots,
+which the UI may skip. Playback, volume and the Practice-only Driver Station cues belong to the [app contract](app.md).
+
+For REBUILT the cues of Table 5-4 split like this; the plugin never requests a cue the Driver Station owns.
+
+| Event (timer) | Cue id | Requested by |
+|---|---|---|
+| MATCH start, AUTO ends, TELEOP begins, MATCH end | `match.start`, `match.auto_end`, `match.teleop_start`, `match.end` | Driver Station (Practice) |
+| MATCH stopped | `match.stopped` | Driver Station, on E-Stop of a running Practice match only |
+| ALLIANCE SHIFT starts (2:10, 1:45, 1:20, 0:55) | `game_2026.shift_change` | plugin, on entering Shift 1-4 |
+| END GAME begins (0:30) | `match.end_game` | plugin, on entering END GAME |
+| Final score posted | `match.result` | plugin, once the 3 s assessment of 6.5 ends |
+| Restart in Practice | `field.reset` | Driver Station |
+
+The plugin fires only for a boundary crossed inside one TELEOP run, so the first TELEOP tick, free play, Test mode and a
+re-enable inside a phase are silent. An E-Stopped match gets the foghorn and no result cue. Tests are in
+[`test_sound_cues.cpp`](../../tests/game_2026/test_sound_cues.cpp).
+
 ## REBUILT robot behavior
 
 The [2026 module](../../plugins/game_2026/src/game_module.cpp) registers no mechanism templates

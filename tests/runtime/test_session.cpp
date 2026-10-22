@@ -4,6 +4,7 @@
 
 #include "runtime_fixtures.h"
 #include "wpiemu/core/runtime/simulation_session.h"
+#include "wpiemu/sdk/game/sound_cue_queue.h"
 #include "wpiemu/sdk/testing/device_fixtures.h"
 #include "wpiemu/sdk/testing/fake_clock_logger.h"
 #include "wpiemu/sdk/testing/fake_mechanism_physics_coupling.h"
@@ -728,4 +729,33 @@ TEST_CASE("reference chassis: hull, wheel pads, mass properties, bad specs are r
     CHECK(explicitInertia.value().baseMass.inertiaDiagLocal == Vec3{1.f, 2.f, 3.f});
     chassis.massKg = 0.f;
     CHECK(buildReferenceChassis(world, chassis, dt).error().code == ErrorCode::InvalidArgument);
+}
+
+TEST_CASE("session: sound cues requested by the game reach the injected sink and are dropped without one") {
+    struct CueModule final : testing::FakeGameModule {
+        CueModule() : FakeGameModule("cuemod", 3003) {}
+        void onTick(SimContext& ctx, double) override { ctx.requestSound("cuemod.ping"); }
+    };
+    Fixture f;
+    REQUIRE(f.reg.plugins.add(std::make_unique<CueModule>()).ok());
+    RobotConfig c = sampleConfig();
+    c.gamePluginId = "cuemod";
+
+    SoundCueQueue queue;
+    SessionParts withSink = f.parts(c);
+    withSink.sounds = &queue;
+    auto built = SessionBuilder::build(std::move(withSink));
+    REQUIRE_MESSAGE(built.ok(), (built.ok() ? "" : built.error().message));
+    proto::SensorFrame out;
+    built.value()->tick(out, false);
+    built.value()->tick(out, false);
+    const std::vector<SoundCue> cues = queue.take();
+    REQUIRE(cues.size() == 2);
+    CHECK(cues[0].id == "cuemod.ping");
+    CHECK(cues[1].simTimeUs > cues[0].simTimeUs);
+
+    auto silent = SessionBuilder::build(f.parts(c));
+    REQUIRE(silent.ok());
+    silent.value()->tick(out, false);
+    CHECK(queue.size() == 0);
 }

@@ -25,6 +25,10 @@ inline constexpr int kPhysicsThreadChoices[] = {0, 1, 2, 4, 8};
 inline constexpr int kDefaultPhysicsThreads = 0;
 int sanitizePhysicsThreads(int threads);
 
+// Match sound effects (Practice cues): on or off, and a 0..100 volume.
+inline constexpr int kDefaultSoundVolumePercent = 70;
+int sanitizeSoundVolume(int percent);
+
 struct AppSettingsData {
     ThemeMode theme = ThemeMode::System;
     UnitSystem units = UnitSystem::Imperial;
@@ -33,6 +37,8 @@ struct AppSettingsData {
     QString wpilibHome;   // override of the WPILib install dir (empty = auto-detect)
     QString jdkHome;      // override of the JDK used for gradle (empty = auto-detect)
     bool reopenLastProject = true;
+    bool soundEffects = true;
+    int soundVolumePercent = kDefaultSoundVolumePercent;
     QString language;     // UI locale override, empty = system
 
     bool operator==(const AppSettingsData&) const = default;

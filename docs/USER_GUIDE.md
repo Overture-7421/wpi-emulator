@@ -152,6 +152,12 @@ Auto/Teleop/Test run until disabled. Practice runs autonomous, a disabled gap, t
 using the configured match clock. Click Enable again or press `Enter` to disable.
 `Space` latches emergency stop; click the E-STOPPED control to clear it.
 
+Practice plays the field's sounds: the start charge, the buzzer when autonomous ends, three bells when teleop begins,
+a buzzer at the end, a chime when you Restart and, in REBUILT, a pop at each alliance shift (2:10, 1:45, 1:20, 0:55),
+a whistle when the end game starts (0:30) and a chime when the final score posts. Only an E-Stop of a running
+Practice match sounds the foghorn; Disable ends a match quietly. Sounds play only while the Run page is showing.
+Turn them off or set the volume in **File > Settings… > General**.
+
 The cog opens **Setup** (alliance/station, game message, Practice durations) and **Joysticks**.
 Game-supplied field data can override the manual game message.
 Assign the keyboard or a gamepad to the robot's joystick port and adjust bindings there.
@@ -178,8 +184,8 @@ Tower points, penalties and ranking points are not scored.
 
 ## Settings and project files
 
-**File > Settings…** controls theme, dialog units, the WPILib and JDK folders, physics rate, physics threads and
-reopening the last project. The folders apply to the next toolchain check and robot launch; left
+**File > Settings…** controls theme, dialog units, the WPILib and JDK folders, physics rate, physics threads,
+reopening the last project and Practice sound effects (on/off and volume). The folders apply to the next toolchain check and robot launch; left
 empty, Gradle runs with WPILib's JDK for the project's season (all-users or this-user install),
 then `JAVA_HOME`, then `java` on `PATH`. The physics-rate setting
 is copied into the model when the wizard finishes: rerun setup to apply a changed rate.

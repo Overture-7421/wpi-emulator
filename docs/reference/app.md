@@ -168,6 +168,26 @@ WPILib Xbox layout. Hiding the page or losing activation releases held keyboard 
 Bindings, shortcuts, restart choices, and Driver Station controls are in the
 [User guide](../USER_GUIDE.md); optional gamepad dependencies are in [Building](../BUILDING.md).
 
+## Sound effects
+
+Practice plays the field's audio cues (manual Table 5-4). Two sources ask `SfxPlayer` for a cue id and neither
+plays audio itself: `DriverStationModel::sfxRequested` (only in Practice: match start, AUTO end, TELEOP start, match
+end, the Restart chime, and the foghorn for an E-Stop of a running match, never for Disable) and
+`IRuntimeHost::soundCue`, the game plugin's requests. The real host drains them from `RobotSession::takeSoundCues()`
+in `pump()`; cues are never queued while the page is hidden. The [game-plugin reference](game-plugin.md#sound-cues) owns
+the id contract and the REBUILT cue table.
+
+`SfxCatalog` maps ids to resources with two rules and no season knowledge: common cues play
+`app/runview/assets/sfx/<asset>.wav` (embedded under `/wpiemu/runview/assets/sfx`), a game's cues play files its plugin
+ships in `plugins/<id>/assets/sfx/`, which the `plugins/` aggregation seam hands to the run view's CMake as the global
+property `WPIEMU_BUILTIN_PLUGIN_SOUNDS` (embedded under `/wpiemu/plugins/<id>/sfx`). A missing file or a cue id without
+the plugin's prefix is reported once in the console. Alliance-selection sounds (`pick_clock*.wav`) are not embedded.
+
+Playback is `ISfxOutput`: Qt Multimedia `QSoundEffect` in the product, a recording fake in tests, and silence on the
+offscreen platform or without an audio device. The page is silent while hidden and when sound is off; the on/off switch
+and 0-100 volume belong to **File > Settings** (`AppSettingsData`), and the shell applies them with
+`RunPage::setSoundEffects`, so the run view never sees `app/common`.
+
 ## Scene presentation and resources
 
 The run renderer relies on these frame contracts:

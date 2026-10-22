@@ -155,6 +155,22 @@ TEST_CASE("shell: Ctrl Shift R restarts from Run without opening setup") {
 }
 #endif
 
+#ifdef WPIEMU_APP_HAS_RUNVIEW
+TEST_CASE("shell: the sound preferences of File > Settings reach the run page") {
+    ShellFixture f;
+    auto* run = f.window.findChild<wpiemu::app::runview::RunPage*>();
+    REQUIRE(run != nullptr);
+    CHECK(run->sfx().enabled());
+    CHECK(run->sfx().volumePercent() == kDefaultSoundVolumePercent);
+    AppSettingsData data = f.env.services->settings().data();
+    data.soundEffects = false;
+    data.soundVolumePercent = 25;
+    f.env.services->settings().update(data);
+    CHECK_FALSE(run->sfx().enabled());
+    CHECK(run->sfx().volumePercent() == 25);
+}
+#endif
+
 TEST_CASE("cancelling the wizard leaves no project half-open") {
     ShellFixture f;
     f.cancelWizard();
@@ -486,11 +502,19 @@ TEST_CASE("settings dialog edits a copy and applies on OK") {
     dlg.themeCombo()->setCurrentIndex(dlg.themeCombo()->findData(static_cast<int>(ThemeMode::Dark)));
     dlg.rateCombo()->setCurrentIndex(dlg.rateCombo()->findData(500));
     dlg.threadsCombo()->setCurrentIndex(dlg.threadsCombo()->findData(2));
+    CHECK(dlg.soundCheck()->isChecked());   // sound effects are on by default
+    CHECK(dlg.volumeSlider()->value() == kDefaultSoundVolumePercent);
+    dlg.soundCheck()->setChecked(false);
+    CHECK_FALSE(dlg.volumeSlider()->isEnabled());
+    dlg.volumeSlider()->setValue(30);
+    CHECK(env.services->settings().data().soundEffects);   // not applied yet
     CHECK(env.services->settings().data().theme == ThemeMode::System);   // not applied yet
     dlg.buttons()->button(QDialogButtonBox::Ok)->click();
     CHECK(env.services->settings().data().theme == ThemeMode::Dark);
     CHECK(env.services->settings().data().physicsRateHz == 500);
     CHECK(env.services->settings().data().physicsThreads == 2);
+    CHECK_FALSE(env.services->settings().data().soundEffects);
+    CHECK(env.services->settings().data().soundVolumePercent == 30);
     CHECK(env.theme.isDark());   // the theme follows immediately
 
     dlg.themeCombo()->setCurrentIndex(dlg.themeCombo()->findData(static_cast<int>(ThemeMode::Light)));

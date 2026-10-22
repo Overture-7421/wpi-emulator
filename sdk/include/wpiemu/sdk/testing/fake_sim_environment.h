@@ -3,6 +3,7 @@
 #include "wpiemu/sdk/core/sim_context.h"
 #include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/game/null_objects.h"
+#include "wpiemu/sdk/game/sound_cue_queue.h"
 #include "wpiemu/sdk/ipc/driver_station.h"
 #include "wpiemu/sdk/testing/fake_clock_logger.h"
 #include "wpiemu/sdk/testing/fake_device_hub.h"
@@ -17,7 +18,7 @@ public:
         : physics(config.sim.physics),
           clock(config.sim.stepUs),
           rng(config.sim.seed),
-          ctx(SimContextServices{physics, clock, hub, logger, config, rng, driverStation, BodyId{}, nullptr, &coupling}) {}
+          ctx(SimContextServices{physics, clock, hub, logger, config, rng, driverStation, BodyId{}, nullptr, &coupling, &sounds}) {}
 
     void advance() {
         const BodyId chassis = ctx.chassisBody();
@@ -39,6 +40,7 @@ public:
     Rng rng;
     proto::DsState driverStation;
     FakeMechanismPhysicsCoupling coupling;
+    SoundCueQueue sounds;   // what the game state requested; take() it in tests
     SimContext ctx;
 };
 

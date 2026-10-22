@@ -56,6 +56,7 @@ PAGES = {
     "docs/decisions/0010-plugin-owned-season-data.md": "Decision-0010-Plugin-Owned-Season-Data",
     "docs/decisions/0011-one-host-contract.md": "Decision-0011-One-Host-Contract",
     "docs/decisions/0012-shared-primitives-in-the-sdk.md": "Decision-0012-Shared-Primitives-in-the-SDK",
+    "docs/decisions/0013-sound-cues-as-events.md": "Decision-0013-Sound-Cues-as-Events",
     "plugins/_template/README.md": "Season-Template",
     "samples/swerve_robot/README.md": "Sample-Swerve-Robot",
     "samples/vision_robot/README.md": "Sample-Vision-Robot",

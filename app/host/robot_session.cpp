@@ -198,8 +198,8 @@ RobotSession::RobotSession() {
 
 namespace {
 
-Result<std::unique_ptr<runtime::SimulationSession>> buildSession(const Registries& reg, RobotConfig config, ILogger& logger, IGameModule* module,
-                                                                  const FieldDescription* field) {
+Result<std::unique_ptr<runtime::SimulationSession>> buildSession(const Registries& reg, RobotConfig config, ILogger& logger, ISoundCueSink& sounds,
+                                                                  IGameModule* module, const FieldDescription* field) {
     runtime::SessionParts parts;
     parts.world = core::physics::createBox3dWorld(config.sim.physics);
     if (!parts.world) return makeError(ErrorCode::Internal, "the physics world could not be created (invalid physics settings)");
@@ -226,6 +226,7 @@ Result<std::unique_ptr<runtime::SimulationSession>> buildSession(const Registrie
     parts.tireModels = reg.tireModels;
     parts.plugins = reg.plugins;
     parts.logger = &logger;
+    parts.sounds = &sounds;
     parts.chassisBuilder = runtime::physicsChassisBuilder(placement);
     parts.coupling = std::make_unique<runtime::PhysicsCouplingDriver>();
     return runtime::SessionBuilder::build(std::move(parts));
@@ -283,7 +284,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
 
     // ---- simulation session ----
     const std::shared_ptr<const FieldDescription> field = describeField(module);
-    auto built = buildSession(reg, cfg, log, module, field.get());
+    auto built = buildSession(reg, cfg, log, self->cues_, module, field.get());
     if (!built && options.mode == SessionMode::Armed) {
         // An armed session only needs the device hub until the simulation starts: fall back to the bare chassis when the full model cannot be built.
         log.warn("session", "the robot model could not be built (" + built.error().message + "); discovering with an empty model");
@@ -292,7 +293,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
         bare.drivetrain.spec.wheels.clear();
         bare.drivetrain.mappings.clear();
         bare.chassis = sdk::ChassisSpec{};
-        built = buildSession(reg, std::move(bare), log, module, field.get());
+        built = buildSession(reg, std::move(bare), log, self->cues_, module, field.get());
     }
     if (!built) return makeError(built.error().code, "The simulation could not be built: " + built.error().message);
     self->session_ = std::move(built).value();
@@ -350,7 +351,8 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
 
 std::string RobotSession::outputTail() const { return logs_->tail(); }
 
-std::vector<SessionLogEntry> RobotSession::takeLogs(std::size_t maxEntries) { return logs_->take(maxEntries); }
+std::vector<sdk::SessionLogEntry> RobotSession::takeLogs(std::size_t maxEntries) { return logs_->take(maxEntries); }
+std::vector<sdk::SoundCue> RobotSession::takeSoundCues(std::size_t maxCues) { return cues_.take(maxCues); }
 
 void RobotSession::fail(ProcessState process, LinkState link, std::string detail) {
     status_.process = process;

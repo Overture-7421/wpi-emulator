@@ -112,6 +112,8 @@ this checks metadata, not execution on the minimum OS or loading the extension i
 ## Linux AppImage
 
 Build on Linux x86_64 with the Qt kit and system dependencies listed in the release workflow.
+The kit needs the `qtquick3d`, `qtshadertools` and `qtmultimedia` modules; the Windows and macOS workflow
+steps check that the Multimedia backend plugin was deployed.
 The release runner is Ubuntu 22.04; choose the oldest compatible build environment for your users.
 Bundling does not remove glibc/libstdc++ requirements or provide graphics drivers.
 

@@ -7,6 +7,7 @@ add_library(wpiemu_plugin_game_2026 STATIC
     src/fuel_pool.cpp
     src/fuel_zones.cpp
     src/game_module.cpp
+    src/game_sounds.cpp
     src/game_state.cpp
     src/game_ui.cpp
     src/game_values.cpp

@@ -31,7 +31,7 @@ than a new mechanism class.
 | Add motor data or understand model/controller responsibilities | [Motors](guides/motors.md) |
 | Configure or implement a mechanism and plant | [Mechanisms](guides/mechanisms.md) |
 | Bring up another game year | [Game years](guides/game-years.md) |
-| Connect pickup/shooter zones and game-fed sensors | [Game interactions](guides/game-interactions.md) |
+| Connect pickup/shooter zones, game-fed sensors and sound cues | [Game interactions](guides/game-interactions.md) |
 | Add a camera vendor or test robot-facing results | [Vision](guides/vision.md) |
 | Add configurable editor fields | [Editor properties](guides/editor-properties.md) |
 | Add drivetrain, tire, physics, or protocol strategies | [Simulation strategies](guides/simulation-strategies.md) |

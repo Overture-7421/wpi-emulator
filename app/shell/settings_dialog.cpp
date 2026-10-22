@@ -23,6 +23,8 @@ SettingsDialog::SettingsDialog(AppSettings& settings, const ISystemProbe& probe,
       wpilib_(new QLineEdit),
       jdk_(new QLineEdit),
       reopen_(new QCheckBox(tr("Reopen the last project when the app starts"))),
+      sound_(new QCheckBox(tr("Play match sound effects during Practice"))),
+      volume_(new QSlider(Qt::Horizontal)),
       problemLabel_(makeLabel({}, "error", nullptr, true)),
       buttons_(new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel)) {
     setWindowTitle(tr("Settings"));
@@ -77,6 +79,14 @@ SettingsDialog::SettingsDialog(AppSettings& settings, const ISystemProbe& probe,
     auto* generalLayout = new QVBoxLayout(general);
     generalLayout->setContentsMargins(18, 18, 18, 18);
     generalLayout->addWidget(reopen_);
+    generalLayout->addSpacing(12);
+    generalLayout->addWidget(sound_);
+    auto* volumeRow = new QFormLayout;
+    volume_->setRange(0, 100);
+    volume_->setPageStep(10);
+    volumeRow->addRow(tr("Volume"), volume_);
+    generalLayout->addLayout(volumeRow);
+    generalLayout->addWidget(makeLabel(tr("A Practice match plays the field's start, end and warning sounds, and the foghorn when you E-Stop."), "muted", nullptr, true));
     generalLayout->addStretch(1);
     tabs->addTab(general, ui.icon(QStringLiteral("settings")), tr("General"));
 
@@ -89,6 +99,7 @@ SettingsDialog::SettingsDialog(AppSettings& settings, const ISystemProbe& probe,
     connect(buttons_, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(wpilib_, &QLineEdit::textChanged, this, &SettingsDialog::validate);
     connect(jdk_, &QLineEdit::textChanged, this, &SettingsDialog::validate);
+    connect(sound_, &QCheckBox::toggled, volume_, &QWidget::setEnabled);
 
     load(settings_.data());
     validate();
@@ -117,6 +128,9 @@ void SettingsDialog::load(const AppSettingsData& d) {
     wpilib_->setText(d.wpilibHome);
     jdk_->setText(d.jdkHome);
     reopen_->setChecked(d.reopenLastProject);
+    sound_->setChecked(d.soundEffects);
+    volume_->setValue(d.soundVolumePercent);
+    volume_->setEnabled(d.soundEffects);
 }
 
 AppSettingsData SettingsDialog::collect() const {
@@ -128,6 +142,8 @@ AppSettingsData SettingsDialog::collect() const {
     d.wpilibHome = wpilib_->text().trimmed();
     d.jdkHome = jdk_->text().trimmed();
     d.reopenLastProject = reopen_->isChecked();
+    d.soundEffects = sound_->isChecked();
+    d.soundVolumePercent = volume_->value();
     return d;
 }
 

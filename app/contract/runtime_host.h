@@ -112,8 +112,10 @@ struct HostScene {
     std::vector<sdk::EditorPanelDescriptor> panels;
     std::vector<sdk::ZoneKindInfo> zoneKinds;             // the game module's contributeZoneKinds()
     std::vector<sdk::GameValueInfo> gameValues;           // the game module's contributeGameValues() (labels/units for sensor sources)
+    std::vector<sdk::SoundCueInfo> soundCues;             // the game module's contributeSoundCues() (the plugin's own cues)
     sdk::AprilTagLayout tags;                             // the game module's aprilTagLayout()
     QString gameName;
+    QString gameId;                                       // the game module's plugin id; its sound files are plugins/<gameId>/assets/sfx
     QString projectPath;                                  // empty = no project; a different path means a project switch
     // Where the emulated Driver Station sits for this project (the wizard's choice); the run view applies it once per
     // project switch and the user can move it from there.
@@ -139,8 +141,10 @@ inline HostScene makeHostScene(const HostProject& project) {
         scene.panels = game->contributeEditorPanels();
         scene.zoneKinds = game->contributeZoneKinds();
         scene.gameValues = game->contributeGameValues();
+        scene.soundCues = game->contributeSoundCues();
         scene.tags = game->aprilTagLayout();
         scene.gameName = QString::fromStdString(game->metadata().displayName);
+        scene.gameId = QString::fromStdString(game->metadata().id);
     }
     return scene;
 }
@@ -190,6 +194,9 @@ signals:
     void startPositionChanged();
     void snapshotPublished();
     void logLine(const wpiemu::app::HostLogLine& line);
+    // The game (or the host) asked for a sound cue to be played: an id from sdk::commonSoundCues() or the scene's
+    // soundCues. Delivered once per request, in order, on the UI thread.
+    void soundCue(const QString& cueId);
 };
 
 // Selecting the open project is the shell's job, not the pages': AppServices is the only caller.

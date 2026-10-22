@@ -23,6 +23,7 @@
 #include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/game/plugin_registry.h"
+#include "wpiemu/sdk/game/sound_cue_queue.h"
 #include "wpiemu/sdk/telemetry/session_status.h"
 #include "wpiemu/sdk/telemetry/snapshot.h"
 
@@ -87,6 +88,8 @@ public:
     // Recomputes and returns the state (call periodically).
     sdk::SessionStatus status();
     std::vector<sdk::SessionLogEntry> takeLogs(std::size_t maxEntries = 2000);
+    // Sound cues the game requested since the last call, oldest first (the UI plays them; see game/sound_cue.h).
+    std::vector<sdk::SoundCue> takeSoundCues(std::size_t maxCues = 64);
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const { return slot_.latest(); }
 
     sdk::ISimController& controller() { return *runner_; }
@@ -118,6 +121,7 @@ private:
     std::unique_ptr<QueueLogger> logger_;
     std::unique_ptr<OutputSink> sink_;
     sdk::LatestSnapshotSlot slot_;
+    sdk::SoundCueQueue cues_;   // outlives session_: the game state posts into it from the sim thread
     std::unique_ptr<core::runtime::SimulationSession> session_;
     const sdk::IGameModule* module_ = nullptr;
     std::vector<sdk::Issue> issues_;

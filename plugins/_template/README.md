@@ -25,4 +25,8 @@ belong to the [game-year walkthrough](../../docs/guides/game-years.md), not to t
   [plugin_info.cpp](src/plugin_info.cpp): identity.
 - [game_module.cpp](src/game_module.cpp): placeholder module, field and game state.
 
+A season that plays its own sounds adds `assets/sfx/<name>.wav` and declares them with
+`contributeSoundCues()`; the template ships none and is never embedded
+([walkthrough](../../docs/guides/game-interactions.md#request-a-sound-cue)).
+
 Next: [Game years](../../docs/guides/game-years.md) to implement, register, and exercise the season.

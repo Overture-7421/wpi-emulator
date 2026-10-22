@@ -91,6 +91,7 @@ private:
     HostScene scene_;
     sdk::LatestSnapshotSlot slot_;
     sdk::proto::DsState ds_;
+    double lastMatchTimeS_ = -1.0;
 
     StartPositionSelection startSelection_;
     bool paused_ = false;

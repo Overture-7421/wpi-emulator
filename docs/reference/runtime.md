@@ -127,7 +127,8 @@ a bare model if full construction fails. Armed operation handles discovery and l
 without stepping; Begin/End lock-step keep the robot process alive. The host waits for
 the extension's program-start lifecycle signal before ticking or starting its tick
 watchdog, so a slow robot constructor is not mistaken for a stalled tick.
-UI host state and restart policy belong to [App](app.md).
+UI host state and restart policy belong to [App](app.md). `SessionParts::sounds` receives the game's sound cue
+requests; `RobotSession` queues them for the UI to drain like logs ([sound cues](game-plugin.md#sound-cues)).
 
 The session's battery model uses supply current from mechanisms and drivetrain plus
 baseline draw. `Vnext = clamp(Vnominal - I * R, 0, Vnominal)` becomes the next tick's

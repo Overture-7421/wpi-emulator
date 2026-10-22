@@ -43,6 +43,16 @@ A new source is much smaller than a genuinely new sensor kind.
 Walkthrough: [game values and sensor responses](guides/game-interactions.md#publish-a-numeric-game-value).
 Contract: [runtime sensors](reference/runtime.md).
 
+## Add a sound cue
+
+Return a plugin-prefixed `SoundCueInfo` from `IGameModule::contributeSoundCues()`, ship its WAV in
+`plugins/<id>/assets/sfx/`, and call `SimContext::requestSound(id)` from game state when the rule fires. Seasons share
+the FMS cues in `commonSoundCues()`; request those by id instead of copying the file. The app embeds and plays the
+sound; the plugin never links audio or Qt, and the UI adds no season code.
+
+Walkthrough: [request a sound cue](guides/game-interactions.md#request-a-sound-cue).
+Contract: [game plugins](reference/game-plugin.md#sound-cues).
+
 ## Add a device bridge
 
 Choose a SimDevice rule for a named backend, `ChannelFamilyBridge` for indexed HAL families, or
