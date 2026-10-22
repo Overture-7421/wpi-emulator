@@ -36,14 +36,13 @@ struct FieldCylinder {
     sdk::Material material;
 };
 
-// Two 15 degree ramps meeting at a ridge; symmetric about both horizontal axes.
+// Two ramps from the carpet to a ridge; symmetric about both horizontal axes.
 struct BumpSpec {
     std::string name;
     sdk::Vec3 center;   // centre of the footprint on the floor
     float widthM = 0.f; // along Y
     float depthM = 0.f; // along X
     float ridgeHeightM = 0.f;
-    float edgeHeightM = 0.f;
     std::string color;
 };
 
@@ -98,7 +97,7 @@ struct FieldLayout {
 
 FieldLayout buildFieldLayout();
 
-// Closed triangle mesh (outward winding) of a bump: pentagonal prism extruded along Y.
+// Closed triangle mesh (outward winding) of a bump: triangular prism extruded along Y.
 struct BumpMesh {
     std::vector<float> xyz;
     std::vector<std::uint32_t> triangles;

@@ -40,7 +40,7 @@ float signedVolume(const BumpMesh& m) {
 
 }  // namespace
 
-TEST_CASE("field layout uses the official REBUILT dimensions") {
+TEST_CASE("field layout preserves REBUILT dimensions with flush bump approaches") {
     const FieldLayout l = buildFieldLayout();
     CHECK(l.description.lengthM == doctest::Approx(16.541f));
     CHECK(l.description.widthM == doctest::Approx(8.069f));
@@ -54,18 +54,14 @@ TEST_CASE("field layout uses the official REBUILT dimensions") {
     CHECK(l.hub(Alliance::Blue).center.y == doctest::Approx(dim::kFieldWidthM / 2));
     CHECK(l.hub(Alliance::Red).center.x == doctest::Approx(dim::kFieldLengthM - dim::kHubCenterXM));
 
-    // bumps: 73 in wide, 44.4 in deep, 6.513 in tall; four of them
+    // Bumps retain their width, ridge height and slope, extending down to the carpet.
     REQUIRE(l.bumps.size() == 4);
     for (const BumpSpec& b : l.bumps) {
         CHECK(b.widthM == doctest::Approx(1.8542f));
-        CHECK(b.depthM == doctest::Approx(1.1278f).epsilon(0.001));
         CHECK(b.ridgeHeightM == doctest::Approx(0.16543f));
-        CHECK(b.edgeHeightM > 0.f);
-        CHECK(b.edgeHeightM < b.ridgeHeightM);
+        CHECK(b.depthM / 2 * std::tan(15.f * sdk::kPiF / 180.f) ==
+              doctest::Approx(b.ridgeHeightM).epsilon(0.001));
     }
-    // the 15 degree slope reproduces the ridge: edge + half the depth * tan(15)
-    const BumpSpec& b0 = l.bumps.front();
-    CHECK(b0.edgeHeightM + b0.depthM / 2 * std::tan(15.f * 3.14159265f / 180.f) == doctest::Approx(b0.ridgeHeightM).epsilon(0.001));
 
     // trench: arm underside 22.25 in, top 29.75 in (the tag panels stand on it up to 40.25 in), 47 in deep; four arms
     const FieldBox* arm = findBox(l, "trench_blue_low_y_arm");
@@ -272,8 +268,8 @@ TEST_CASE("bump mesh is a closed outward-wound prism with the expected volume") 
     const FieldLayout l = buildFieldLayout();
     const BumpSpec& b = l.bumps.front();
     const BumpMesh m = buildBumpMesh(b);
-    CHECK(m.xyz.size() == 30);
-    CHECK(m.triangles.size() == 3 * 16);  // 2 caps x 3 + 5 sides x 2 triangles = 16
+    CHECK(m.xyz.size() == 18);
+    CHECK(m.triangles.size() == 3 * 8);  // two triangular caps and three side quads
 
     // watertight: every directed edge has exactly one opposite
     std::map<std::pair<std::uint32_t, std::uint32_t>, int> edges;
@@ -284,7 +280,7 @@ TEST_CASE("bump mesh is a closed outward-wound prism with the expected volume") 
         CHECK(edges.count({edge.second, edge.first}) == 1);
     }
 
-    const float area = b.depthM * (b.edgeHeightM + b.ridgeHeightM) / 2;
+    const float area = b.depthM * b.ridgeHeightM / 2;
     CHECK(signedVolume(m) == doctest::Approx(area * b.widthM).epsilon(1e-3));  // positive => outward
 
     float maxZ = 0.f;
@@ -378,7 +374,7 @@ TEST_CASE("field creation reports a refusing physics world instead of leaking") 
         const FieldLayout layout = buildFieldLayout();
         auto field = Game2026Field::create(world, layout);
         REQUIRE(field.ok());
-        const std::size_t expected = layout.boxes.size() + layout.cylinders.size() + 3 * layout.bumps.size() + layout.sensors.size();
+        const std::size_t expected = layout.boxes.size() + layout.cylinders.size() + 2 * layout.bumps.size() + layout.sensors.size();
         CHECK(field.value()->shapeCount() == expected);
     }
 }

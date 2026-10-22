@@ -72,7 +72,7 @@ GameConfig emptyConfig() {
 
 }  // namespace
 
-TEST_CASE("Box3D: the field's surfaces are where the manual says they are") {
+TEST_CASE("Box3D: the field's surfaces match the REBUILT layout") {
     Box3dRig rig;
     const std::uint64_t field = sdk::layer::Field;
     const float hubX = dim::kHubCenterXM, midY = dim::kFieldWidthM / 2;

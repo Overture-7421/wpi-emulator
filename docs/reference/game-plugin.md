@@ -171,6 +171,8 @@ for numbers and provenance tags: **GM** is the
 **AT** is WPILib's welded AprilTag dataset, and **MS** is
 [MapleSim's community geometry](https://github.com/Shenzhen-Robotics-Alliance/maple-sim).
 Derived and approximate dimensions are marked in source; this is not an official CAD model.
+Bump ramps preserve their slope and ridge height but extend to the carpet without an edge step,
+making their footprint deeper than nominal.
 [Field construction](../../plugins/game_2026/src/field_layout.cpp),
 [embedded tags](../../plugins/game_2026/src/april_tags.cpp),
 [match timing](../../plugins/game_2026/include/wpiemu/plugins/game_2026/match_clock.h), and

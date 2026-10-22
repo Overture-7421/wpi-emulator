@@ -43,11 +43,10 @@ inline constexpr float kHubExitFanRad = 0.19634954f;     // [MS] +-11.25 deg (in
 
 // ---- bump -----------------------------------------------------------------------------------
 inline constexpr float kBumpWidthM = inch(73.0);         // [GM] 5.5 (along Y)
-inline constexpr float kBumpDepthM = inch(44.4);         // [GM] 5.5 (along X)
 inline constexpr float kBumpHeightM = inch(6.513);       // [GM] 5.5 (ridge)
 inline constexpr float kBumpRampSlope = 0.26794919f;     // [GM] 5.5: 15 degree ramps, tan(15 deg)
-// Edge step so that two 15 deg ramps over half the depth reach the stated ridge height (derived).
-inline constexpr float kBumpEdgeHeightM = kBumpHeightM - kBumpDepthM * 0.5f * kBumpRampSlope;
+// Derived: extend the nominal footprint along X so the ramps meet the carpet without an edge step.
+inline constexpr float kBumpDepthM = 2.f * kBumpHeightM / kBumpRampSlope;
 
 // ---- trench ---------------------------------------------------------------------------------
 inline constexpr float kTrenchDepthM = inch(47.0);       // [GM] 5.6 (along X)

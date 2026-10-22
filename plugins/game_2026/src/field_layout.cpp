@@ -15,7 +15,7 @@ using sdk::Pose3;
 using sdk::Quat;
 using sdk::Vec3;
 
-constexpr float kRampAngleRad = 0.2617994f;  // 15 degrees
+constexpr float kChuteAngleRad = 0.2617994f;  // 15 degrees
 
 const char* const kRedColor = "#b3261e";
 const char* const kBlueColor = "#1f4fb3";
@@ -45,6 +45,10 @@ private:
 };
 
 Pose3 at(float x, float y, float z) { return Pose3{{x, y, z}, Quat{}}; }
+
+float bumpRampAngleRad(const BumpSpec& b) {
+    return std::atan2(b.ridgeHeightM, b.depthM * 0.5f);
+}
 
 void addBox(FieldLayout& l, const Frame& f, std::string name, const Pose3& pose, const Vec3& size, const char* color,
             const sdk::Material& material = {}) {
@@ -170,7 +174,6 @@ void addBumpsAndTrenches(FieldLayout& l, const Frame& f, Alliance a) {
         b.widthM = d::kBumpWidthM;
         b.depthM = d::kBumpDepthM;
         b.ridgeHeightM = d::kBumpHeightM;
-        b.edgeHeightM = d::kBumpEdgeHeightM;
         b.color = color;
         l.bumps.push_back(std::move(b));
     }
@@ -244,32 +247,28 @@ void addOutpost(FieldLayout& l, const Frame& f, Alliance a) {
     o.alliance = a;
     const float chuteZ = d::kChuteBottomM + d::kChuteHeightM / 2;
     o.chuteExit = f.point({0.15f, y, chuteZ});
-    o.chuteVelocity = f.vector({d::kChuteExitSpeedMps * std::cos(kRampAngleRad), 0.f,
-                                -d::kChuteExitSpeedMps * std::sin(kRampAngleRad)});
+    o.chuteVelocity = f.vector({d::kChuteExitSpeedMps * std::cos(kChuteAngleRad), 0.f,
+                                -d::kChuteExitSpeedMps * std::sin(kChuteAngleRad)});
     o.chuteHalfWidthM = d::kChuteWidthM / 2 - d::kFuelRadiusM;
     o.inwardY = f.vector({0.f, 1.f, 0.f});
 }
 
 void addBumpVisuals(sdk::FieldDescription& desc, const BumpSpec& b) {
     const float a = b.depthM * 0.5f;
-    const float slabLen = a / std::cos(kRampAngleRad);
+    const float angle = bumpRampAngleRad(b);
+    const float slabLen = a / std::cos(angle);
     const float thickness = 0.02f;
-    const float midZ = (b.edgeHeightM + b.ridgeHeightM) * 0.5f;
     for (const float side : {-1.f, 1.f}) {
         sdk::FieldVisual v;
         v.name = b.name + (side < 0 ? "_ramp_a" : "_ramp_b");
         v.kind = sdk::FieldVisual::Kind::Box;
-        v.pose = {{b.center.x + side * a / 2, b.center.y, midZ},         Quat::fromAxisAngle({0.f, 1.f, 0.f}, side * kRampAngleRad)};
+        const Quat q = Quat::fromAxisAngle({0.f, 1.f, 0.f}, side * angle);
+        const Vec3 surface{b.center.x + side * a / 2, b.center.y, b.ridgeHeightM * 0.5f};
+        v.pose = {surface - q.rotate({0.f, 0.f, thickness * 0.5f}), q};
         v.sizeM = {slabLen, b.widthM, thickness};
         v.color = b.color;
         desc.visuals.push_back(std::move(v));
     }
-    sdk::FieldVisual base;
-    base.name = b.name + "_base";
-    base.pose = at(b.center.x, b.center.y, b.edgeHeightM / 2);
-    base.sizeM = {b.depthM, b.widthM, b.edgeHeightM};
-    base.color = b.color;
-    desc.visuals.push_back(std::move(base));
 }
 
 }  // namespace
@@ -335,32 +334,30 @@ FieldLayout buildFieldLayout() {
 BumpMesh buildBumpMesh(const BumpSpec& b) {
     const float a = b.depthM * 0.5f, hw = b.widthM * 0.5f;
     // profile (x, z), counter-clockwise seen from +Y
-    const float prof[5][2] = {{-a, 0.f}, {a, 0.f}, {a, b.edgeHeightM}, {0.f, b.ridgeHeightM}, {-a, b.edgeHeightM}};
+    const float prof[3][2] = {{-a, 0.f}, {a, 0.f}, {0.f, b.ridgeHeightM}};
     BumpMesh m;
-    m.xyz.reserve(10 * 3);
+    m.xyz.reserve(6 * 3);
     for (const float y : {-hw, hw})
         for (const auto& p : prof) {
             m.xyz.push_back(p[0]);
             m.xyz.push_back(y);
             m.xyz.push_back(p[1]);
         }
-    auto vtx = [](std::uint32_t side, std::uint32_t i) { return side * 5u + i; };
+    auto vtx = [](std::uint32_t side, std::uint32_t i) { return side * 3u + i; };
     auto tri = [&](std::uint32_t i0, std::uint32_t i1, std::uint32_t i2) {
         // wind the triangle so that its normal points away from the (convex) prism's interior
         auto p = [&](std::uint32_t i) { return Vec3{m.xyz[i * 3], m.xyz[i * 3 + 1], m.xyz[i * 3 + 2]}; };
         const Vec3 p0 = p(i0), p1 = p(i1), p2 = p(i2);
-        const Vec3 interior{0.f, 0.f, b.edgeHeightM * 0.5f};
+        const Vec3 interior{0.f, 0.f, b.ridgeHeightM / 3.f};
         const Vec3 n = sdk::cross(p1 - p0, p2 - p0);
         const Vec3 c = (p0 + p1 + p2) / 3.f;
         if (sdk::dot(n, c - interior) >= 0.f) m.triangles.insert(m.triangles.end(), {i0, i1, i2});
         else m.triangles.insert(m.triangles.end(), {i0, i2, i1});
     };
-    for (std::uint32_t i = 1; i + 1 < 5; ++i) {  // end caps: fans of the convex pentagon
-        tri(vtx(0, 0), vtx(0, i), vtx(0, i + 1));
-        tri(vtx(1, 0), vtx(1, i), vtx(1, i + 1));
-    }
-    for (std::uint32_t i = 0; i < 5; ++i) {  // side quads
-        const std::uint32_t j = (i + 1) % 5;
+    tri(vtx(0, 0), vtx(0, 1), vtx(0, 2));
+    tri(vtx(1, 0), vtx(1, 1), vtx(1, 2));
+    for (std::uint32_t i = 0; i < 3; ++i) {  // side quads
+        const std::uint32_t j = (i + 1) % 3;
         tri(vtx(0, i), vtx(0, j), vtx(1, j));
         tri(vtx(0, i), vtx(1, j), vtx(1, i));
     }
@@ -421,16 +418,12 @@ sdk::Result<std::unique_ptr<Game2026Field>> Game2026Field::create(sdk::IPhysicsW
             ++field->shapeCount_;
             continue;
         }
-        // Adapter without mesh support: base block plus two thick tilted slabs reproduce the profile.
-        const float a = b.depthM * 0.5f, slabLen = a / std::cos(kRampAngleRad), thickness = 0.1f;
-        sdk::ShapeDesc base;
-        base.geometry = sdk::BoxShape{{a, b.widthM * 0.5f, b.edgeHeightM * 0.5f}};
-        base.local = at(b.center.x, b.center.y, b.edgeHeightM * 0.5f);
-        base.category = sdk::layer::Field;
-        if (!add(base)) return fail(b.name);
+        // Adapter without mesh support: two thick tilted slabs reproduce the driving surface.
+        const float angle = bumpRampAngleRad(b);
+        const float a = b.depthM * 0.5f, slabLen = a / std::cos(angle), thickness = 0.1f;
         for (const float side : {-1.f, 1.f}) {
-            const Quat q = Quat::fromAxisAngle({0.f, 1.f, 0.f}, side * kRampAngleRad);
-            const Vec3 surface{b.center.x + side * a / 2, b.center.y, (b.edgeHeightM + b.ridgeHeightM) * 0.5f};
+            const Quat q = Quat::fromAxisAngle({0.f, 1.f, 0.f}, side * angle);
+            const Vec3 surface{b.center.x + side * a / 2, b.center.y, b.ridgeHeightM * 0.5f};
             sdk::ShapeDesc slab;
             slab.geometry = sdk::BoxShape{{slabLen * 0.5f, b.widthM * 0.5f, thickness * 0.5f}};
             slab.local = {surface - q.rotate({0.f, 0.f, thickness * 0.5f}), q};
