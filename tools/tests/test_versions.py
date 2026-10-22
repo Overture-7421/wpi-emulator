@@ -40,6 +40,26 @@ class VersionPinTests(unittest.TestCase):
         self.assertEqual(self.check(),
                          ['presets.json:1: minimum CMake is "3.24", but versions.json cmake is "3.25"'])
 
+    def test_jdk_assets_must_be_self_consistent(self):
+        asset = {"version": "17.0.20.1", "size": 190817615, "sha256": "e" * 64,
+                 "url": "https://github.com/adoptium/x/download/jdk-17.0.20.1%2B1/OpenJDK17U_17.0.20.1_1.zip"}
+        good = {"jdk": {"seasons": {"2026": 17}, "assets": {"17-windows-x64": asset}}}
+        self.assertEqual(VERSIONS.check_jdk_assets(good), [])
+        bad = {"jdk": {"seasons": {"2026": 17}, "assets": {"17-windows-x64": {
+            "version": "17.0.9", "size": 900 * 1024 * 1024, "sha256": "XYZ", "url": "http://example.com/jdk.zip"}}}}
+        self.assertEqual(len(VERSIONS.check_jdk_assets(bad)), 4)
+        self.assertEqual(len(VERSIONS.check_jdk_assets({})), 1)
+
+    def test_every_season_needs_a_download_of_its_java_for_every_platform(self):
+        asset = {"version": "17.0.20.1", "size": 1, "sha256": "e" * 64,
+                 "url": "https://github.com/adoptium/x/jdk-17.0.20.1/OpenJDK17U_17.0.20.1_1.zip"}
+        pins = {"jdk": {"seasons": {"2026": 17, "2027": 25}, "assets": {"17-windows-x64": asset, "17-linux-x64": asset}}}
+        errors = VERSIONS.check_jdk_assets(pins)
+        self.assertEqual(len(errors), 2)
+        self.assertIn("jdk.seasons.2027: Java 25 has no download for linux-x64", errors[0])
+        wrong_key = {"jdk": {"seasons": {"2026": 17}, "assets": {"windows-x64": asset}}}
+        self.assertIn("<java major>-<os>-<arch>", VERSIONS.check_jdk_assets(wrong_key)[0])
+
     def test_missing_file_missing_pin_and_unknown_key_are_distinct_errors(self):
         (self.root / "build.sh").unlink()
         write_text(self.root / "presets.json", "{}\n")

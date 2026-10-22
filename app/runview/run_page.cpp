@@ -137,6 +137,7 @@ void RunPage::build() {
     connect(dsPanel_, &DriverStationPanel::matchClockChanged, viewport_, &RunViewport::setMatchClock);
     connect(viewport_, &RunViewport::homeRequested, this, [this] { scene_.resetCamera(); });
     connect(viewport_->overlay(), &StateOverlay::showConsoleRequested, this, [this] { setConsoleVisible(true); });
+    connect(viewport_->overlay(), &StateOverlay::problemActionRequested, this, &RunPage::problemActionRequested);
     connect(&scene_, &SceneModel::zoneLabelsChanged, this, &RunPage::rebuildZoneMenu);
     connect(&joysticks_, &JoystickManager::gamepadConnected, this, [this](const JoystickSourceInfo& info, int slot) {
         console_->append(emulatorLogLine(sdk::LogLevel::Info, tr("gamepad"),

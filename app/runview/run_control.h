@@ -21,6 +21,9 @@ RunControlState deriveControlState(const HostStatus& status, bool paused);
 
 enum class Tone { Neutral, Info, Success, Warning, Error };
 
+// What the overlay's extra button asks the shell to do about a failure the user can fix.
+enum class ProblemAction { None = 0, FixSetup = 1, OpenSettings = 2 };
+
 struct StatusPresentation {
     Tone tone = Tone::Neutral;
     QString chipText;   // short, for the status chip
@@ -29,6 +32,8 @@ struct StatusPresentation {
     bool showOverlay = false;   // cover the viewport (not running / failed)
     bool offerRestart = false;
     bool offerShowConsole = false;
+    ProblemAction action = ProblemAction::None;
+    QString actionText;   // the button's label when action != None
 };
 
 // `snapshotConnected` is ISimSnapshot::robotConnected() of the newest snapshot (false when none).

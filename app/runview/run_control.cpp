@@ -5,6 +5,49 @@
 namespace wpiemu::app::runview {
 namespace {
 constexpr ui::Tr tr{"RunStatus"};
+
+// Words a failure the launcher recognised (HostStatus::problem) in plain language and offers the fix that exists for it.
+// Unknown problems keep the raw detail.
+void applyProblem(StatusPresentation& p, const HostStatus& st) {
+    const QString& id = st.problem;
+    if (id.isEmpty()) return;
+    const auto field = [&](const char* key) { return st.problemFields.value(QString::fromLatin1(key)); };
+    const auto fixSetup = [&] {
+        p.action = ProblemAction::FixSetup;
+        p.actionText = tr("Fix in setup");
+    };
+    if (id == QLatin1String("stale_vc_runtime")) {
+        p.title = tr("This Java is too old for WPILib");
+        p.detail = tr("The Java that started the robot loads Visual C++ runtime %1, but WPILib needs %2 or newer. Installing a newer "
+                      "Visual Studio does not change that: the runtime comes from the Java's own folder (%3). "
+                      "Let WPI Emulator set up its own Java, or use the Java that comes with WPILib.")
+                       .arg(field("found"), field("expected"), field("runtimePath"));
+        fixSetup();
+    } else if (id == QLatin1String("java_unsupported_by_gradle")) {
+        p.title = tr("This Java does not work with the project's Gradle");
+        p.detail = tr("Gradle could not run on the selected Java, usually because it is too new. Pick Java 17 (WPILib's) in setup.");
+        fixSetup();
+    } else if (id == QLatin1String("java_home_invalid") || id == QLatin1String("no_usable_java")) {
+        p.title = id == QLatin1String("no_usable_java") ? tr("Java is needed to run the robot") : tr("The Java folder is not valid");
+        if (id == QLatin1String("java_home_invalid")) p.detail = tr("JAVA_HOME or the project's Gradle settings point to a folder with no Java in it.");
+        fixSetup();
+    } else if (id == QLatin1String("java_setting_unusable")) {
+        p.title = tr("The Java folder chosen in Settings cannot run this project");
+        p.action = ProblemAction::OpenSettings;
+        p.actionText = tr("Open Settings");
+    } else if (id == QLatin1String("download_failed")) {
+        p.title = tr("Gradle could not download what it needs");
+        p.detail = tr("The first run downloads WPILib and the project's libraries (about 1 GB). Check the internet connection, a proxy or "
+                      "a firewall, then press Restart robot.");
+    } else if (id == QLatin1String("gradle_wrapper_broken")) {
+        p.title = tr("The project's Gradle wrapper is damaged");
+        p.detail = tr("gradle/wrapper/gradle-wrapper.jar is missing or broken. Get a fresh copy of the project, or open it once in VS Code.");
+    } else if (id == QLatin1String("no_native_toolchain")) {
+        p.title = tr("C++ build tools are missing");
+        p.detail = tr("This C++ project needs a C++ compiler. Setup can show you how to install one.");
+        fixSetup();
+    }
+}
 }  // namespace
 
 RunControlState deriveControlState(const HostStatus& status, bool paused) {
@@ -55,8 +98,9 @@ StatusPresentation presentStatus(const HostStatus& st, bool snapshotConnected) {
             p.title = tr("The robot program crashed");
             if (p.detail.isEmpty()) p.detail = tr("The process ended unexpectedly with exit code %1. Check the console for the stack trace.").arg(st.exitCode);
             p.showOverlay = true;
-                        p.offerRestart = true;
+            p.offerRestart = true;
             p.offerShowConsole = true;
+            applyProblem(p, st);
             return p;
         case sdk::ProcessState::FailedToStart:
             p.tone = Tone::Error;
@@ -64,8 +108,9 @@ StatusPresentation presentStatus(const HostStatus& st, bool snapshotConnected) {
             p.title = tr("The robot could not be started");
             if (p.detail.isEmpty()) p.detail = tr("Check the toolchain settings and the build output in the console.");
             p.showOverlay = true;
-                        p.offerRestart = true;
+            p.offerRestart = true;
             p.offerShowConsole = true;
+            applyProblem(p, st);
             return p;
         case sdk::ProcessState::Running:
             break;

@@ -74,6 +74,9 @@ ShellPages createShellPages([[maybe_unused]] AppServices& services, [[maybe_unus
         QObject::connect(&services.settings(), &AppSettings::changed, runPage, applySound);
         pages.run = runPage;
         pages.runViewActions = runPage->viewActions();
+        pages.onProblemAction = [runPage](QObject* receiver, std::function<void(int)> handler) {
+            QObject::connect(runPage, &runview::RunPage::problemActionRequested, receiver, std::move(handler));
+        };
         pages.runIsReal = true;
     }
 #else

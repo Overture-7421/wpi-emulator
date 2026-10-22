@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <string>
 
 #include "wpiemu/sdk/core/logger.h"
@@ -61,7 +62,10 @@ struct SessionStatus {
     std::string detail;            // human readable reason / progress
     bool programStarted = false;   // the robot constructor finished (devices announced, lock-step may start)
     bool simulating = false;       // lock-step is running (always true in Run mode once connected; false while armed)
-
+    // A failure the user can act on, as a stable id ("stale_vc_runtime", "java_unsupported_by_gradle", ...; empty = unknown)
+    // with the facts the explanation needs ("found", "expected", "jvmPath", "runtimePath").
+    std::string problem;
+    std::map<std::string, std::string> problemFields;
     bool active() const { return isActive(process); }
     bool armed() const { return isArmed(process, link, simulating); }
     bool operator==(const SessionStatus&) const = default;

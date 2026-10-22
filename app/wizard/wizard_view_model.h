@@ -82,7 +82,16 @@ public:
     bool toolchainRunning() const { return runner_.running(); }
     void recheckToolchain();
 
-    // ---- step 3: robot basics ----
+    // The emulator's own Java (ToolchainProvisioner), offered by a failing Java row. Nothing here starts on its own.
+    int javaMajor() const;                    // the Java this project's season builds with (0 = the pins do not know the season)
+    bool javaDownloadAvailable() const;       // a pinned download exists for that Java on this computer
+    qint64 javaDownloadBytes() const;
+    bool javaBusy() const;
+    int javaPercent() const;                  // 0..100 while downloading, else -1
+    QString javaFolder() const;               // where the emulator keeps its own Java
+    QString javaError() const;                // why the last download failed; empty otherwise
+    void getJava();                           // downloads it; the toolchain is re-checked when it is installed
+    void cancelJava();
     const RobotBasics& basics() const { return basics_; }
     void setBasics(const RobotBasics& basics);
     // Switches the drivetrain type, loading that type's defaults but keeping name/alliance/units choices.
@@ -105,6 +114,7 @@ signals:
     void stepChanged(wpiemu::app::WizardStep step);
     void projectChanged();
     void toolchainChanged();
+    void javaChanged();
     void basicsChanged();
     void summaryChanged();
 

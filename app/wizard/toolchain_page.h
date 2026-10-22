@@ -5,6 +5,7 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
+#include <functional>
 #include <vector>
 
 #include "common/ui_helpers.h"
@@ -29,6 +30,10 @@ public:
     int rowCount() const { return static_cast<int>(rows_.size()); }
     // Status shown for a row (exposed for tests).
     CheckStatus rowStatus(const QString& id) const;
+    // The action button of a row ("Get Java", "Cancel"); null when the row offers none.
+    QPushButton* rowAction(const QString& id) const;
+    // Asks before anything is downloaded (default: a message box); replaced in tests.
+    void setConsent(std::function<bool(const QString& question)> consent) { consent_ = std::move(consent); }
 
 private:
     struct Row {
@@ -39,14 +44,17 @@ private:
         QLabel* title = nullptr;
         QLabel* detail = nullptr;
         QLabel* hint = nullptr;
+        QPushButton* action = nullptr;
     };
 
     void refresh();
     void applyIcon(Row& row) const;
     void clearRows();
+    void onGetJava();
 
     WizardViewModel& model_;
     const UiResources& ui_;
+    std::function<bool(const QString&)> consent_;
     QPushButton* recheckButton_;
     QProgressBar* busy_;
     QLabel* busyLabel_;

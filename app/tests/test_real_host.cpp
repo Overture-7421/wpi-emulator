@@ -197,6 +197,7 @@ TEST_CASE("real host: a project whose build fails is reported as FailedToStart w
 
 TEST_CASE("real host: the JDK folder chosen in Settings is what Gradle is launched with") {
     RealFixture f(kJavaHomeScript);
+    f.env.probe->addJava(QStringLiteral("/chosen/jdk/bin/java"), QStringLiteral("openjdk version \"17.0.9\" 2023-10-17"));
     AppSettingsData chosen = f.env.services->settings().data();
     chosen.jdkHome = QStringLiteral("/chosen/jdk");
     f.env.services->settings().update(chosen);
@@ -204,6 +205,19 @@ TEST_CASE("real host: the JDK folder chosen in Settings is what Gradle is launch
     f.controller.launchRobot();
     REQUIRE(f.waitProcess(sdk::ProcessState::FailedToStart));
     CHECK(f.logged("gradle JAVA_HOME=/chosen/jdk"));
+}
+
+TEST_CASE("real host: no usable Java blocks the launch with a typed problem instead of running Gradle") {
+    RealFixture f(kJavaHomeScript);
+    AppSettingsData chosen = f.env.services->settings().data();
+    chosen.jdkHome = QStringLiteral("/nowhere");
+    f.env.services->settings().update(chosen);
+
+    f.controller.launchRobot();
+    REQUIRE(f.waitProcess(sdk::ProcessState::FailedToStart));
+    CHECK(f.host().status().problem == QStringLiteral("java_setting_unusable"));
+    CHECK(f.host().status().detail.contains(QStringLiteral("does not exist")));
+    CHECK(!f.logged("gradle JAVA_HOME"));   // Gradle never ran
 }
 
 TEST_CASE("real host: the physics threads chosen in Settings are what the launch uses") {

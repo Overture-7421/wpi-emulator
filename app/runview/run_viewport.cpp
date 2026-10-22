@@ -143,9 +143,12 @@ StateOverlay::StateOverlay(QWidget* parent) : QWidget(parent) {
     restart_->setDefault(true);
     restart_->setMinimumWidth(130);
     console_ = new QPushButton(tr("Show console"), this);
+    fix_ = new QPushButton(this);
+    fix_->setVisible(false);
 
     auto* buttons = new QHBoxLayout;
     buttons->addStretch(1);
+    buttons->addWidget(fix_);
     buttons->addWidget(restart_);
     buttons->addWidget(console_);
     buttons->addStretch(1);
@@ -163,6 +166,7 @@ StateOverlay::StateOverlay(QWidget* parent) : QWidget(parent) {
 
     connect(restart_, &QPushButton::clicked, this, &StateOverlay::restartRequested);
     connect(console_, &QPushButton::clicked, this, &StateOverlay::showConsoleRequested);
+    connect(fix_, &QPushButton::clicked, this, [this] { emit problemActionRequested(static_cast<int>(action_)); });
     setVisible(false);
 }
 
@@ -179,6 +183,10 @@ void StateOverlay::setPresentation(const StatusPresentation& p) {
     busy_->setVisible(p.tone == Tone::Info);
     restart_->setVisible(p.offerRestart);
     console_->setVisible(p.offerShowConsole);
+    action_ = p.action;
+    fix_->setText(p.actionText);
+    fix_->setVisible(p.action != ProblemAction::None);
+    if (p.action != ProblemAction::None) fix_->setDefault(true);
     if (p.offerRestart) restart_->setFocus();
 }
 

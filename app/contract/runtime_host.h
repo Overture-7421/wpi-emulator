@@ -5,6 +5,7 @@
 // stand-ins live elsewhere and implement these interfaces.
 
 #include <QDateTime>
+#include <QMap>
 #include <QMetaType>
 #include <QObject>
 #include <QString>
@@ -48,6 +49,9 @@ struct HostStatus {
     sdk::LinkState link = sdk::LinkState::Disconnected;
     int exitCode = 0;
     QString detail;
+    // The failure the user can act on ("stale_vc_runtime", ...; empty = unknown) and the facts to explain it.
+    QString problem;
+    QMap<QString, QString> problemFields;
     // The robot program finished its constructor: devices are announced and the simulation may start.
     bool programStarted = false;
     // The lock-step simulation is running (as opposed to the robot merely being alive and detecting devices).
@@ -78,6 +82,8 @@ inline HostStatus toHostStatus(const sdk::SessionStatus& s) {
     out.link = s.link;
     out.exitCode = s.exitCode;
     out.detail = QString::fromStdString(s.detail);
+    out.problem = QString::fromStdString(s.problem);
+    for (const auto& [key, value] : s.problemFields) out.problemFields.insert(QString::fromStdString(key), QString::fromStdString(value));
     out.programStarted = s.programStarted;
     out.simulating = s.simulating;
     return out;

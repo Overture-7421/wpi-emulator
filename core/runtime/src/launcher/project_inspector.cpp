@@ -248,4 +248,21 @@ std::optional<WpilibInstall> findWpilibInstall(int year, const std::vector<fs::p
     return std::nullopt;
 }
 
+std::vector<WpilibInstall> listWpilibInstalls(const std::vector<fs::path>& roots) {
+    const std::vector<fs::path> candidates = roots.empty() ? wpilibRootCandidates(config::currentPlatform(), &sdk::readEnvironment) : roots;
+    std::vector<WpilibInstall> found;
+    for (const fs::path& root : candidates) {
+        std::error_code ec;
+        for (fs::directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+            const std::string name = it->path().filename().string();
+            if (name.size() != 4 || !std::all_of(name.begin(), name.end(), [](unsigned char c) { return std::isdigit(c) != 0; })) continue;
+            const int year = std::stoi(name);
+            if (std::any_of(found.begin(), found.end(), [&](const WpilibInstall& i) { return i.year == year; })) continue;
+            if (auto install = wpilibInstallAt(it->path(), year)) found.push_back(std::move(*install));
+        }
+    }
+    std::sort(found.begin(), found.end(), [](const WpilibInstall& a, const WpilibInstall& b) { return a.year > b.year; });
+    return found;
+}
+
 }  // namespace wpiemu::core::launcher

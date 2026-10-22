@@ -30,7 +30,7 @@ public:
 
     // Opens a project (folder or a file inside it) and walks through the wizard when it needs setup.
     void openProjectPath(const QString& path);
-    void runSetupWizard(const QString& projectPath);
+    void runSetupWizard(const QString& projectPath, bool toolchainStep = false);
     void showSettings();
     void showAbout();
 

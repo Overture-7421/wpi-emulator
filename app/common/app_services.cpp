@@ -8,6 +8,7 @@
 #include "common/demo_runtime_host.h"
 #include "common/real_runtime_host.h"
 #include "wpiemu/core/config/config_store.h"
+#include "wpiemu/core/launcher/jdk_policy.h"
 #include "wpiemu/core/mechanisms/mechanism_templates.h"
 #include "wpiemu/core/physics/box3d_world.h"
 #include "wpiemu/core/physics/chassis_simulator.h"
@@ -22,6 +23,12 @@ std::filesystem::path defaultAppDataRoot() {
     using namespace core::config;
     if (auto root = appDataRoot(currentPlatform(), &sdk::readEnvironment); root) return root.value();
     return std::filesystem::path(QDir::homePath().toStdU16String()) / ".wpiemu";
+}
+
+std::filesystem::path defaultLocalDataRoot(const std::filesystem::path& fallback) {
+    using namespace core::config;
+    if (auto root = localDataRoot(currentPlatform(), &sdk::readEnvironment); root) return root.value();
+    return fallback;
 }
 
 }  // namespace
@@ -48,6 +55,19 @@ AppServices::AppServices(AppServicesOptions options)
     toolchain_ = std::make_unique<ToolchainChecker>(*probe_, plugins_);
 
     const std::filesystem::path root = options.appDataRoot.empty() ? defaultAppDataRoot() : options.appDataRoot;
+    const std::filesystem::path localRoot = !options.localDataRoot.empty() ? options.localDataRoot
+                                            : !options.appDataRoot.empty() ? options.appDataRoot   // tests keep everything in one folder
+                                                                           : defaultLocalDataRoot(root);
+    const QString appDir = options.appDir.isEmpty() && QCoreApplication::instance() ? QCoreApplication::applicationDirPath() : options.appDir;
+    const QString appVersion = options.appVersion.isEmpty() ? QStringLiteral(WPIEMU_APP_VERSION) : options.appVersion;
+    if (options.provisioner) {
+        provisioner_ = std::move(options.provisioner);
+    } else {
+        provisioner_ = std::make_unique<ToolchainProvisioner>(
+            *probe_, createQtUpdateTransport(appVersion), createQtToolchainEffects(),
+            QString::fromStdU16String(core::launcher::managedToolchainsDir(localRoot).generic_u16string()), appDir,
+            ToolchainProvisioner::pinnedAssetsFor(probe_->hostOs(), probe_->cpuArchitecture()));
+    }
     configs_ = std::make_unique<ConfigRepository>(root, textCodec_, configCodec_, pipeline_);
     session_ = std::make_unique<ProjectSession>(*inspector_, *configs_, *recent_, *prefs_, plugins_);
 
@@ -68,7 +88,21 @@ AppServices::AppServices(AppServicesOptions options)
         real.scratchDir = root / "scratch";
         real.toolchainOverrides = [this] {
             const auto folder = [](const QString& text) { return text.isEmpty() ? std::filesystem::path() : std::filesystem::path(text.toStdU16String()); };
-            return RealRuntimeOptions::ToolchainOverrides{folder(settings_->data().jdkHome), folder(settings_->data().wpilibHome)};
+            RealRuntimeOptions::ToolchainOverrides overrides;
+            overrides.wpilibHome = folder(settings_->data().wpilibHome);
+            // The Java the Toolchain page validated is the Java the launch uses.
+            const ToolchainInput input = toolchainInput(session_->inspection());
+            const JdkResolution jdk = toolchain_->resolveJdk(input);
+            if (jdk.found) {
+                overrides.javaHome = folder(jdk.home);
+            } else {
+                QStringList reasons;
+                for (const JdkSkip& skip : jdk.skipped) reasons << skip.reason;
+                overrides.blocked = QCoreApplication::translate("AppServices", "No Java that can run this project was found.");
+                if (!reasons.isEmpty()) overrides.blocked += QLatin1Char('\n') + reasons.join(QLatin1Char('\n'));
+                overrides.problem = jdk.explicitFailed ? QStringLiteral("java_setting_unusable") : QStringLiteral("no_usable_java");
+            }
+            return overrides;
         };
         real.physicsWorkers = [this] {
             return core::physics::resolveWorkerCount(settings_->data().physicsThreads, std::thread::hardware_concurrency());
@@ -76,14 +110,29 @@ AppServices::AppServices(AppServicesOptions options)
         runtime_ = std::make_unique<RealRuntimeHost>(registries, std::move(real));
     }
 
-    const QString version = options.appVersion.isEmpty() ? QStringLiteral(WPIEMU_APP_VERSION) : options.appVersion;
     updates_ = std::make_unique<UpdateService>(
-        *store_, *probe_, options.updateTransport ? std::move(options.updateTransport) : createQtUpdateTransport(version),
-        options.updateInstaller ? std::move(options.updateInstaller) : createQtUpdateInstaller(), version,
-        options.appDir.isEmpty() && QCoreApplication::instance() ? QCoreApplication::applicationDirPath() : options.appDir);
+        *store_, *probe_, options.updateTransport ? std::move(options.updateTransport) : createQtUpdateTransport(appVersion),
+        options.updateInstaller ? std::move(options.updateInstaller) : createQtUpdateInstaller(), appVersion, appDir);
 }
 
 AppServices::~AppServices() = default;
+
+ToolchainInput AppServices::toolchainInput(const ProjectInspection& inspection) const {
+    ToolchainInput in;
+    in.projectPath = inspection.path;
+    in.language = inspection.language;
+    in.wpilibYear = inspection.wpilibYear;
+    in.gradleVersion = inspection.gradleVersion;
+    in.wpilibHomeOverride = settings_->data().wpilibHome;
+    in.jdkHomeOverride = settings_->data().jdkHome;
+    // The Java comes from the season: an unknown season has no download and keeps the default minimum.
+    if (const std::optional<int> major = ToolchainProvisioner::javaMajorForSeason(inspection.wpilibYear)) {
+        in.minJavaMajor = *major;
+        in.managedJdkHome = provisioner_->installedHome(*major);
+        in.managedJavaAvailable = provisioner_->availableFor(*major);
+    }
+    return in;
+}
 
 void AppServices::bindRuntime(std::shared_ptr<const sdk::RobotConfig> config) {
     HostProject project;

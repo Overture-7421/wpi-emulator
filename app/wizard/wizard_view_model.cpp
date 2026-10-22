@@ -1,6 +1,7 @@
 #include "wizard/wizard_view_model.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QMetaObject>
 #include <QThread>
 
@@ -64,6 +65,13 @@ WizardViewModel::WizardViewModel(AppServices& services, QObject* parent)
     basics_ = defaultBasicsFor(sdk::drivetrain_kind::kSwerve);
     revalidateBasics();
 
+    ToolchainProvisioner& provisioner = services_.provisioner();
+    connect(&provisioner, &ToolchainProvisioner::stateChanged, this, &WizardViewModel::javaChanged);
+    connect(&provisioner, &ToolchainProvisioner::progressChanged, this, &WizardViewModel::javaChanged);
+    connect(&provisioner, &ToolchainProvisioner::finished, this, [this](bool ok) {
+        if (ok && projectValid()) recheckToolchain();   // the Java row can now pass
+        emit javaChanged();
+    });
     // Re-opening the wizard on the current project starts from what is stored.
     if (services_.session().hasProject()) setProjectPath(services_.session().path());
 }
@@ -169,15 +177,7 @@ void WizardViewModel::loadExistingBasics() {
 
 // ---- toolchain ----
 
-ToolchainInput WizardViewModel::toolchainInput() const {
-    ToolchainInput in;
-    in.projectPath = inspection_.path;
-    in.language = inspection_.language;
-    in.wpilibYear = inspection_.wpilibYear;
-    in.wpilibHomeOverride = services_.settings().data().wpilibHome;
-    in.jdkHomeOverride = services_.settings().data().jdkHome;
-    return in;
-}
+ToolchainInput WizardViewModel::toolchainInput() const { return services_.toolchainInput(inspection_); }
 
 void WizardViewModel::startToolchainCheck() { runner_.run(toolchainInput()); }
 
@@ -186,6 +186,31 @@ void WizardViewModel::recheckToolchain() {
     toolchainChecked_ = false;
     startToolchainCheck();
 }
+
+int WizardViewModel::javaMajor() const { return ToolchainProvisioner::javaMajorForSeason(inspection_.wpilibYear).value_or(0); }
+
+bool WizardViewModel::javaDownloadAvailable() const { return javaMajor() > 0 && services_.provisioner().availableFor(javaMajor()); }
+
+qint64 WizardViewModel::javaDownloadBytes() const {
+    const JavaAsset* asset = services_.provisioner().assetFor(javaMajor());
+    return asset != nullptr ? asset->sizeBytes : 0;
+}
+
+bool WizardViewModel::javaBusy() const { return services_.provisioner().busy(); }
+
+int WizardViewModel::javaPercent() const { return services_.provisioner().percent(); }
+
+QString WizardViewModel::javaFolder() const { return QDir::toNativeSeparators(services_.provisioner().toolchainsDir()); }
+
+QString WizardViewModel::javaError() const {
+    return services_.provisioner().state() == ProvisionState::Failed ? services_.provisioner().error() : QString();
+}
+
+void WizardViewModel::getJava() {
+    if (javaDownloadAvailable()) services_.provisioner().start(javaMajor());
+}
+
+void WizardViewModel::cancelJava() { services_.provisioner().cancel(); }
 
 // ---- robot basics ----
 

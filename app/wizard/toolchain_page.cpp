@@ -1,6 +1,7 @@
 #include "wizard/toolchain_page.h"
 
 #include <QHBoxLayout>
+#include <QMessageBox>
 
 namespace wpiemu::app {
 
@@ -57,6 +58,10 @@ ToolchainPage::ToolchainPage(WizardViewModel& model, const UiResources& ui, QWid
 
     connect(recheckButton_, &QPushButton::clicked, &model_, &WizardViewModel::recheckToolchain);
     connect(&model_, &WizardViewModel::toolchainChanged, this, &ToolchainPage::refresh);
+    connect(&model_, &WizardViewModel::javaChanged, this, &ToolchainPage::refresh);
+    consent_ = [this](const QString& question) {
+        return QMessageBox::question(this, tr("Get Java"), question, QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes) == QMessageBox::Yes;
+    };
     connect(&ui_, &UiResources::themeChanged, this, [this] {
         for (Row& r : rows_) applyIcon(r);
         recheckButton_->setIcon(ui_.icon(QStringLiteral("refresh")));
@@ -76,6 +81,27 @@ CheckStatus ToolchainPage::rowStatus(const QString& id) const {
     return CheckStatus::Warning;
 }
 
+QPushButton* ToolchainPage::rowAction(const QString& id) const {
+    for (const Row& r : rows_)
+        if (r.id == id) return r.action;
+    return nullptr;
+}
+
+void ToolchainPage::onGetJava() {
+    if (model_.javaBusy()) {
+        model_.cancelJava();
+        return;
+    }
+    const QString question =
+        tr("WPI Emulator will download Java %1 (about %2 MB) from github.com (Eclipse Temurin) and keep it in\n%3\n\n"
+           "The download is checked against a published checksum and needs no administrator rights. It is used only because no other "
+           "Java that can run this project was found; your own Java and WPILib are not touched.\n\nDownload it now?")
+            .arg(model_.javaMajor())
+            .arg((model_.javaDownloadBytes() + 500000) / 1000000)
+            .arg(model_.javaFolder());
+    if (consent_ && consent_(question)) model_.getJava();
+}
+
 void ToolchainPage::clearRows() {
     for (Row& r : rows_) {
         rowsLayout_->removeWidget(r.frame);
@@ -90,14 +116,24 @@ void ToolchainPage::applyIcon(Row& row) const {
 }
 
 void ToolchainPage::refresh() {
-    const bool running = model_.toolchainRunning();
+    const bool checking = model_.toolchainRunning();
+    const bool downloading = model_.javaBusy();
+    const bool running = checking || downloading;
     busy_->setVisible(running);
     busyLabel_->setVisible(running);
+    if (downloading && model_.javaPercent() >= 0) {
+        busy_->setRange(0, 100);
+        busy_->setValue(model_.javaPercent());
+        busyLabel_->setText(tr("Downloading Java %1… %2%").arg(model_.javaMajor()).arg(model_.javaPercent()));
+    } else {
+        busy_->setRange(0, 0);
+        busyLabel_->setText(downloading ? tr("Checking and unpacking Java %1…").arg(model_.javaMajor()) : tr("Checking your machine…"));
+    }
     recheckButton_->setEnabled(!running && model_.projectValid());
 
     clearRows();
     const ToolchainReport& report = model_.toolchain();
-    if (running || !model_.toolchainChecked()) {
+    if (checking || !model_.toolchainChecked()) {
         summary_->clear();
         coreOnly_->clear();
         return;
@@ -124,6 +160,12 @@ void ToolchainPage::refresh() {
             row.hint = makeLabel(tr("How to fix: %1").arg(check.fixHint), "muted", nullptr, true);
             text->addWidget(row.hint);
         }
+        if (check.fixAction == FixAction::GetJava && check.status == CheckStatus::Missing && model_.javaDownloadAvailable()) {
+            row.action = new QPushButton(downloading ? tr("Cancel") : tr("Get Java %1").arg(model_.javaMajor()));
+            row.action->setObjectName(QStringLiteral("toolchain.getJava"));
+            connect(row.action, &QPushButton::clicked, this, &ToolchainPage::onGetJava);
+            text->addWidget(row.action, 0, Qt::AlignLeft);
+        }
         layout->addWidget(row.icon, 0, Qt::AlignTop);
         layout->addLayout(text, 1);
         row.frame->setAccessibleName(QStringLiteral("%1: %2").arg(check.title, check.detail));
@@ -132,7 +174,8 @@ void ToolchainPage::refresh() {
         rows_.push_back(row);
     }
 
-    if (report.canRunRobot()) summary_->setMessage(BannerKind::Success, tr("Everything needed to launch your robot was found."));
+    if (const QString failure = model_.javaError(); !failure.isEmpty()) summary_->setMessage(BannerKind::Error, tr("Could not get Java: %1").arg(failure));
+    else if (report.canRunRobot()) summary_->setMessage(BannerKind::Success, tr("Everything needed to launch your robot was found."));
     else summary_->setMessage(BannerKind::Warning, tr("Something needed to launch the robot is missing. You can finish the setup now and fix it before running."));
 
     if (report.coreOnly() && model_.projectValid())

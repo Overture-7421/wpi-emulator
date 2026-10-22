@@ -41,6 +41,8 @@ const sdk::EnvLookup& effectiveHostEnv(const LaunchRequest& r) {
 std::vector<std::string> gradleCommonArgs(const LaunchRequest& r) {
     std::vector<std::string> args{"--no-daemon", "--console=plain"};  // no daemon: the process tree stays ours (docs/reference/extension-ipc.md)
     if (r.gradleOffline) args.emplace_back("--offline");
+    // Beats an org.gradle.java.home in the project's gradle.properties (often a WPILib path that does not exist on this machine).
+    if (!r.javaHome.empty()) args.push_back("-Dorg.gradle.java.home=" + r.javaHome.string());
     return args;
 }
 

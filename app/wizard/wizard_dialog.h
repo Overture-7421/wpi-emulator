@@ -33,6 +33,8 @@ public:
 
     // Pre-fills step 1 (used when a folder is dropped on the welcome page or re-running setup).
     void setProjectPath(const QString& path);
+    // Opens on the toolchain check (used when the run view sends the user here to fix a failed launch).
+    void showToolchainStep();
 
     ProjectPage* projectPage() const { return projectPage_; }
     ToolchainPage* toolchainPage() const { return toolchainPage_; }

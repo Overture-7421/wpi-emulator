@@ -31,6 +31,7 @@ struct ProjectInspection {
     QString language;             // "java" | "cpp" | "" (unknown)
     int wpilibYear = 0;           // 0 = unknown
     QString gradleRioVersion;
+    QString gradleVersion;        // the wrapper's Gradle, "8.11"; empty when unknown
     int teamNumber = 0;           // 0 = unknown
     std::vector<VendorDep> vendorDeps;
     std::vector<InspectionNote> notes;

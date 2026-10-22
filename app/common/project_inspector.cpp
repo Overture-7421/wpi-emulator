@@ -64,6 +64,7 @@ ProjectInspection GradleProjectInspector::inspect(const QString& rawPath) const 
     }
     out.isWpilibProject = true;
     out.gradleRioVersion = qs(report.gradleRioVersion);
+    out.gradleVersion = qs(report.gradleVersion);
     out.wpilibYear = report.wpilibYear;
     out.language = qs(report.language);
     out.teamNumber = std::max(report.teamNumber, 0);

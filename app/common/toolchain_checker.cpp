@@ -5,6 +5,7 @@
 
 #include <filesystem>
 
+#include "wpiemu/core/launcher/jdk_policy.h"
 #include "wpiemu/core/launcher/project_inspector.h"
 
 namespace wpiemu::app {
@@ -16,7 +17,8 @@ QString join(const QString& a, const QString& b) { return QDir::cleanPath(a + QL
 QString display(const QString& path) { return QDir::toNativeSeparators(path); }
 
 constexpr int kProbeTimeoutMs = 8000;
-constexpr int kMinJdkMajor = 17;
+constexpr int kFirstSeasonYear = 2024;   // oldest WPILib season whose JDK is considered as a fallback
+constexpr int kLastSeasonYear = 2031;
 
 core::config::Platform platformOf(HostOs os) {
     switch (os) {
@@ -40,14 +42,7 @@ QString probePath(const std::filesystem::path& path, HostOs os) {
 
 }  // namespace
 
-std::optional<int> ToolchainChecker::parseJavaMajor(const QString& text) {
-    static const QRegularExpression re(QStringLiteral("version\\s+\"(\\d+)(?:\\.(\\d+))?"));
-    const auto m = re.match(text);
-    if (!m.hasMatch()) return std::nullopt;
-    const int first = m.captured(1).toInt();
-    if (first == 1 && !m.captured(2).isEmpty()) return m.captured(2).toInt();   // 1.8.0_352 -> 8
-    return first;
-}
+std::optional<int> ToolchainChecker::parseJavaMajor(const QString& text) { return core::launcher::parseJavaMajor(text.toStdString()); }
 
 QStringList ToolchainChecker::wpilibRoots() const {
     const HostOs os = probe_.hostOs();
@@ -75,61 +70,143 @@ QString ToolchainChecker::findWpilibHome(const ToolchainInput& input) const {
     return {};
 }
 
-QString ToolchainChecker::launchJava(const ToolchainInput& input, const QString& exe) const {
+std::optional<QString> ToolchainChecker::judgeJdk(const QString& java, bool trusted, const ToolchainInput& input, int* majorOut) const {
+    using namespace core::launcher;
+    const bool windows = probe_.hostOs() == HostOs::Windows;
+    if (!probe_.fileExists(java)) return tr("%1 does not exist.").arg(display(java));
+    const ProcessResult result = probe_.run(java, {QStringLiteral("-version")}, kProbeTimeoutMs);
+    JdkFacts facts;
+    facts.hasJava = true;
+    if (result.started) facts.major = core::launcher::parseJavaMajor(result.output.toStdString());
+    if (majorOut != nullptr && facts.major) *majorOut = *facts.major;
+
+    const QString clean = QDir::cleanPath(java);
+    const QString bin = clean.left(clean.lastIndexOf(QLatin1Char('/')));
+    facts.hasCompiler = probe_.fileExists(join(bin, windows ? QStringLiteral("javac.exe") : QStringLiteral("javac")));
+    if (windows) {
+        const QString version = loadedVcRuntime(probe_, bin);
+        if (!version.isEmpty()) facts.vcRuntime = version.toStdString();
+    }
+
+    const int maxMajor = maxJavaForGradle(input.gradleVersion.toStdString());
+    JdkVerdict verdict = evaluateJdk(facts, input.minJavaMajor, maxMajor, windows);
+    // The WPILib JDK of the project's season is what WPILib ships and tests; it is not second-guessed.
+    if (trusted && (verdict.problem == JdkProblem::TooNewForGradle || verdict.problem == JdkProblem::StaleVcRuntime ||
+                    verdict.problem == JdkProblem::NoCompiler))
+        verdict.problem = JdkProblem::None;
+
+    switch (verdict.problem) {
+        case JdkProblem::None: return std::nullopt;
+        case JdkProblem::NotRunnable: return tr("Could not run %1.").arg(display(java));
+        case JdkProblem::TooOld:
+            return tr("%1 is Java %2; this project needs Java %3 or newer.").arg(display(java)).arg(verdict.major).arg(input.minJavaMajor);
+        case JdkProblem::TooNewForGradle:
+            return tr("%1 is Java %2, which this project's Gradle %3 cannot run on (Java %4 is the newest it supports).")
+                .arg(display(java)).arg(verdict.major)
+                .arg(input.gradleVersion.isEmpty() ? QStringLiteral("8.11") : input.gradleVersion).arg(verdict.maxMajor);
+        case JdkProblem::NoCompiler:
+            return tr("%1 is a Java runtime without a compiler (javac); the robot needs a full JDK.").arg(display(java));
+        case JdkProblem::StaleVcRuntime:
+            return tr("%1 bundles Visual C++ runtime %2, but WPILib needs %3 or newer. Installing a newer Visual Studio does not change this.")
+                .arg(display(java), QString::fromStdString(verdict.vcRuntime), QString::fromLatin1(kMinVcRuntime.data(), static_cast<int>(kMinVcRuntime.size())));
+    }
+    return std::nullopt;
+}
+
+JdkResolution ToolchainChecker::resolveJdk(const ToolchainInput& input) const {
+    using core::launcher::JdkSource;
+    const bool windows = probe_.hostOs() == HostOs::Windows;
+    const QString exe = windows ? QStringLiteral("java.exe") : QStringLiteral("java");
     const auto inBin = [&](const QString& home) { return join(join(home, QStringLiteral("bin")), exe); };
-    for (const core::launcher::JdkSource source : core::launcher::kJdkSources) {
+
+    JdkResolution res;
+    // Judges one candidate; true when it is usable (and fills `res`). Failures are remembered for the report.
+    const auto consider = [&](JdkSource source, const QString& java, const QString& home, bool trusted) {
+        int major = 0;
+        if (const std::optional<QString> problem = judgeJdk(java, trusted, input, &major)) {
+            res.skipped.push_back({display(java), *problem});
+            return false;
+        }
+        res.found = true;
+        res.source = source;
+        res.java = java;
+        res.home = home;
+        res.major = major;
+        return true;
+    };
+
+    for (const JdkSource source : core::launcher::kJdkSources) {
         switch (source) {
-            case core::launcher::JdkSource::Setting:
-                if (!input.jdkHomeOverride.isEmpty()) return inBin(input.jdkHomeOverride);
+            case JdkSource::Setting:
+                if (input.jdkHomeOverride.isEmpty()) break;
+                if (!consider(source, inBin(input.jdkHomeOverride), QDir::cleanPath(input.jdkHomeOverride), false)) res.explicitFailed = true;
+                return res;   // an explicit choice is never silently replaced
+            case JdkSource::WpilibInstall:
+                if (const QString wpilib = findWpilibHome(input); !wpilib.isEmpty()) {
+                    const QString home = join(wpilib, QStringLiteral("jdk"));
+                    if (probe_.fileExists(inBin(home)) && consider(source, inBin(home), home, true)) return res;
+                }
                 break;
-            case core::launcher::JdkSource::WpilibInstall:
-                if (const QString wpilib = findWpilibHome(input); !wpilib.isEmpty())
-                    if (const QString java = inBin(join(wpilib, QStringLiteral("jdk"))); probe_.fileExists(java)) return java;
+            case JdkSource::WpilibOtherSeason:
+                for (int year = kLastSeasonYear; year >= kFirstSeasonYear; --year) {
+                    if (year == input.wpilibYear) continue;
+                    for (const QString& root : wpilibRoots()) {
+                        const QString home = join(join(root, QString::number(year)), QStringLiteral("jdk"));
+                        if (probe_.fileExists(inBin(home)) && consider(source, inBin(home), home, false)) return res;
+                    }
+                }
                 break;
-            case core::launcher::JdkSource::JavaHome:
+            case JdkSource::JavaHome:
                 if (const QString javaHome = probe_.env(QStringLiteral("JAVA_HOME")); !javaHome.isEmpty())
-                    if (const QString java = inBin(javaHome); probe_.fileExists(java)) return java;
+                    if (probe_.fileExists(inBin(javaHome)) && consider(source, inBin(javaHome), QDir::cleanPath(javaHome), false)) return res;
                 break;
-            case core::launcher::JdkSource::Path:
-                return probe_.findInPath(exe);
+            case JdkSource::Path:
+                if (const QString java = probe_.findInPath(exe); !java.isEmpty()) {
+                    const QString clean = QDir::cleanPath(java);
+                    const QString bin = clean.left(clean.lastIndexOf(QLatin1Char('/')));
+                    const bool inBinDir = bin.endsWith(QLatin1String("/bin"));
+                    if (consider(source, clean, inBinDir ? bin.left(bin.size() - 4) : QString(), false)) return res;
+                }
+                break;
+            case JdkSource::Managed:
+                if (!input.managedJdkHome.isEmpty() && consider(source, inBin(input.managedJdkHome), QDir::cleanPath(input.managedJdkHome), false)) return res;
+                break;
         }
     }
-    return {};
+    return res;
 }
 
 ToolchainCheck ToolchainChecker::checkJdk(const ToolchainInput& input) const {
     ToolchainCheck check;
     check.id = QString::fromLatin1(check_id::kJdk);
-    check.title = tr("Java (JDK %1+)").arg(kMinJdkMajor);
+    check.title = tr("Java (JDK %1+)").arg(input.minJavaMajor);
     check.requiredToRun = true;
     check.status = CheckStatus::Missing;
-    check.fixHint = tr("Install the WPILib bundle (it includes a JDK) or a JDK %1+, then set JAVA_HOME "
-                       "or point the JDK folder in Settings.").arg(kMinJdkMajor);
 
     // Judge the JDK the launcher will use, not whichever one happens to work.
-    const QString exe = probe_.hostOs() == HostOs::Windows ? QStringLiteral("java.exe") : QStringLiteral("java");
-    const QString java = launchJava(input, exe);
-    if (java.isEmpty()) {
-        check.detail = tr("No Java installation was found.");
+    const JdkResolution jdk = resolveJdk(input);
+    QStringList skipped;
+    for (const JdkSkip& s : jdk.skipped) skipped << s.reason;
+
+    if (jdk.found) {
+        check.status = CheckStatus::Ok;
+        check.detail = tr("Java %1 at %2").arg(jdk.major).arg(display(jdk.java));
+        if (!skipped.isEmpty()) check.detail += tr("\nPassed over: %1").arg(skipped.join(QLatin1Char(' ')));
         return check;
     }
-    if (!probe_.fileExists(java)) {
-        check.detail = tr("%1 does not exist.").arg(display(java));
-        return check;
+
+    check.detail = skipped.isEmpty() ? tr("No Java installation was found.") : skipped.join(QLatin1Char('\n'));
+    if (jdk.explicitFailed) {
+        check.fixAction = FixAction::OpenSettings;
+        check.fixHint = tr("Choose a different JDK folder in Settings, or clear it so the emulator can pick one.");
+    } else if (input.managedJavaAvailable) {
+        check.fixAction = FixAction::GetJava;
+        check.fixHint = tr("Let WPI Emulator download Java %1 for you (no administrator rights needed), or install the WPILib bundle, "
+                           "which includes a JDK.").arg(input.minJavaMajor);
+    } else {
+        check.fixHint = tr("Install the WPILib bundle (it includes a JDK) or a JDK %1+, then set JAVA_HOME "
+                           "or point the JDK folder in Settings.").arg(input.minJavaMajor);
     }
-    const ProcessResult result = probe_.run(java, {QStringLiteral("-version")}, kProbeTimeoutMs);
-    const auto major = result.started ? parseJavaMajor(result.output) : std::nullopt;
-    if (!major) {
-        check.detail = tr("Could not run %1.").arg(display(java));
-        return check;
-    }
-    if (*major < kMinJdkMajor) {
-        check.detail = tr("%1 is Java %2; Gradle needs Java %3 or newer.").arg(display(java)).arg(*major).arg(kMinJdkMajor);
-        return check;
-    }
-    check.status = CheckStatus::Ok;
-    check.detail = tr("Java %1 at %2").arg(*major).arg(display(java));
-    check.fixHint.clear();
     return check;
 }
 
@@ -164,7 +241,8 @@ ToolchainCheck ToolchainChecker::checkWpilibInstall(const ToolchainInput& input)
     check.status = CheckStatus::Warning;
     const QString expected = input.wpilibHomeOverride.isEmpty() ? defaultWpilibHome(input.wpilibYear) : input.wpilibHomeOverride;
     check.detail = tr("Not found at %1.").arg(display(expected));
-    check.fixHint = tr("Optional if a JDK is installed elsewhere. Install WPILib for this season or set its folder in Settings.");
+    check.fixHint = tr("Optional: WPI Emulator works without it, and Gradle downloads the WPILib libraries on the first run (about 1 GB). "
+                       "Install WPILib for this season to use its Java and skip that download.");
     return check;
 }
 

@@ -20,6 +20,8 @@ struct ShellPages {
     bool runIsReal = false;
     std::function<void()> saveEditor;   // File > Save
     QList<QAction*> runViewActions;     // View menu entries owned by the run page (overlays, console)
+    // Registers what happens when the run view's failure overlay asks for a fix (1 = open the setup, 2 = open Settings).
+    std::function<void(QObject* receiver, std::function<void(int)> handler)> onProblemAction;
 };
 
 // Creates the pages with their backend adapters; the adapters are children of `backendParent`.

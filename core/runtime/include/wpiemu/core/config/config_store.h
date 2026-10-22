@@ -25,6 +25,11 @@ Platform currentPlatform();
 // environment offers no home directory.
 sdk::Result<std::filesystem::path> appDataRoot(Platform platform, const sdk::EnvLookup& env);
 
+// Per-machine data that can be re-created and is too big to roam (downloaded toolchains):
+//   Windows  %LOCALAPPDATA%\WpiEmulator       (fallback %USERPROFILE%\AppData\Local)
+//   macOS, Linux  the same folder as appDataRoot
+sdk::Result<std::filesystem::path> localDataRoot(Platform platform, const sdk::EnvLookup& env);
+
 // Key of a project directory: "<sanitised folder name>-<16 hex>", the FNV-1a 64 hash of its canonical path
 // (lower-cased on Windows). Stable across runs; distinct projects with the same folder name never collide.
 std::string projectKeyForPath(std::string_view canonicalPath, bool caseInsensitive);

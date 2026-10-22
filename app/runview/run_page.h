@@ -88,6 +88,10 @@ protected:
     void hideEvent(QHideEvent*) override;
     void changeEvent(QEvent*) override;
 
+signals:
+    // The overlay's fix button for a failure the shell can help with (a ProblemAction: 1 = open the setup, 2 = open Settings).
+    void problemActionRequested(int action);
+
 private:
     void build();
     void buildActions();

@@ -141,6 +141,8 @@ WizardPage* WizardDialog::currentPage() const {
 
 void WizardDialog::setProjectPath(const QString& path) { model_.setProjectPath(path); }
 
+void WizardDialog::showToolchainStep() { model_.goTo(WizardStep::Toolchain); }
+
 void WizardDialog::onStepChanged() {
     stack_->setCurrentIndex(static_cast<int>(model_.step()));
     WizardPage* page = currentPage();
