@@ -21,6 +21,21 @@ Value roundTripValue(const RobotConfig& c) {
 
 }  // namespace
 
+TEST_CASE("config codec: project metadata does not persist a machine-specific path") {
+    const RobotConfigCodec codec;
+    const JsonValueCodec json;
+    const Value portable = codec.toValue(sampleConfig());
+    const Value* project = portable.find("project");
+    REQUIRE(project != nullptr);
+    CHECK(project->find("path") == nullptr);
+
+    Value withPath = portable;
+    withPath["project"]["path"] = R"(C:\other-checkout\robot)";
+    const auto loaded = codec.fromValue(withPath);
+    REQUIRE(loaded.ok());
+    CHECK(json.dump(codec.toValue(loaded.value()), true) == json.dump(portable, true));
+}
+
 TEST_CASE("config codec: optional start pose round trips and rejects malformed coordinates") {
     const RobotConfigCodec codec;
     const JsonValueCodec json;

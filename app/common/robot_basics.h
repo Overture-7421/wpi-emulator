@@ -86,7 +86,6 @@ std::vector<sdk::Issue> validateBasics(const RobotBasics& basics);
 bool hasErrors(const std::vector<sdk::Issue>& issues);
 
 struct RobotBuildContext {
-    QString projectPath;
     QString language;
     int wpilibYear = 0;
     QString gradleRioVersion;

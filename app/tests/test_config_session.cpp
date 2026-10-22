@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 
@@ -69,17 +70,29 @@ TEST_CASE("commit writes the app-data copy and the project export, and reopening
     CHECK(session.prefs().station == 1);
 }
 
-TEST_CASE("the project export alone is enough to reopen (shared via version control)") {
+TEST_CASE("the project export can be shared with another checkout") {
     TestEnvironment env;
     TestProject project;
     ProjectSession& session = env.services->session();
     REQUIRE(session.open(project.path()).ok());
-    const SaveOutcome outcome = session.commit(defaultRobotConfig(*env.services), ProjectPrefs{});
+    sdk::RobotConfig config = defaultRobotConfig(*env.services);
+    config.name = "Shared robot";
+    const SaveOutcome outcome = session.commit(config, ProjectPrefs{});
     REQUIRE(outcome.ok());
+    REQUIRE(outcome.exportSaved);
     REQUIRE(session.close().ok());
-    REQUIRE(QFile::remove(outcome.appDataPath));
-    REQUIRE(session.open(project.path()).ok());
-    CHECK(session.hasConfig());
+
+    TestProject checkout;
+    const QString sharedExport = env.services->configs().exportPath(checkout.path());
+    REQUIRE(QDir().mkpath(QFileInfo(sharedExport).absolutePath()));
+    REQUIRE(QFile::copy(outcome.exportPath, sharedExport));
+    REQUIRE_FALSE(QFileInfo::exists(env.services->configs().appDataPath(checkout.path())));
+    REQUIRE(session.open(checkout.path()).ok());
+    REQUIRE(session.hasConfig());
+    CHECK(session.config()->name == config.name);
+
+    env.services->bindRuntime(session.config());
+    CHECK(env.demo->scene().projectPath == checkout.path());
 }
 
 TEST_CASE("an unreadable stored model asks for setup instead of crashing") {

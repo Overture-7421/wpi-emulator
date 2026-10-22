@@ -89,7 +89,6 @@ void AppServices::bindRuntime(std::shared_ptr<const sdk::RobotConfig> config) {
 
 RobotBuildContext AppServices::buildContext(const ProjectInspection& inspection) const {
     RobotBuildContext ctx;
-    ctx.projectPath = inspection.path;
     ctx.language = inspection.language;
     ctx.wpilibYear = inspection.wpilibYear;
     ctx.gradleRioVersion = inspection.gradleRioVersion;

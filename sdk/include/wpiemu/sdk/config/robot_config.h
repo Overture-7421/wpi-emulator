@@ -57,7 +57,6 @@ inline bool isReservedEntityId(std::string_view id) {
 inline constexpr int kRobotConfigSchemaVersion = 1;
 
 struct ProjectInfo {
-    std::string path;           // robot project root (contains build.gradle)
     std::string language;       // "java" | "cpp"
     int wpilibYear = 0;         // GradleRIO year, selects the game plugin
     std::string gradleRioVersion;

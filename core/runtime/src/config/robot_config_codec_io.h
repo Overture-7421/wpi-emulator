@@ -192,7 +192,6 @@ void cameraOpticsFields(Codec& c, T& cam) {
 
 template <class Codec, class T>
 void projectFields(Codec& c, T& p) {
-    c.str("path", p.path);
     c.str("language", p.language);
     c.i32("wpilibYear", p.wpilibYear);
     c.str("gradleRioVersion", p.gradleRioVersion);
