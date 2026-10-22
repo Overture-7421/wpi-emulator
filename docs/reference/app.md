@@ -69,9 +69,8 @@ The wizard's wheels come from the SDK's [wheel layouts](../../sdk/include/wpiemu
 limits, tighter than the physical validity [core validates](runtime.md), and a test keeps them inside it.
 
 `ConfigRepository` adapts core's `ProjectConfigRepository`; widgets do not own persistence.
-The authoritative app-data save and the shareable project export are separate outcomes.
-An authoritative failure keeps edits dirty and offers retry guidance. A project-export
-failure after authoritative success is a warning, not a failed save.
+A save writes the project's `.wpiemu/robot.json`, the only copy. A failure keeps edits
+dirty and offers retry guidance.
 
 Shell Save, editor Save, autosave, and project-transition flushing use the same controller
 persistence path, `EditorController::flushSave()` for explicit flushes.

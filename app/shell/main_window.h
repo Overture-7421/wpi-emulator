@@ -37,9 +37,12 @@ public:
     using WizardRunner = std::function<int(WizardDialog&)>;
     using FolderPicker = std::function<QString()>;
     using MessageRunner = std::function<void(const QString&)>;
+    // Asks the question; true picks the first answer ("Load it from disk").
+    using QuestionRunner = std::function<bool(const QString&)>;
     void setWizardRunner(WizardRunner runner) { wizardRunner_ = std::move(runner); }
     void setFolderPicker(FolderPicker picker) { folderPicker_ = std::move(picker); }
     void setMessageRunner(MessageRunner runner) { messageRunner_ = std::move(runner); }
+    void setQuestionRunner(QuestionRunner runner) { questionRunner_ = std::move(runner); }
 
     // Tells the user something once, in a modal dialog.
     void showMessage(const QString& text);
@@ -78,6 +81,7 @@ private:
     WizardRunner wizardRunner_;
     FolderPicker folderPicker_;
     MessageRunner messageRunner_;
+    QuestionRunner questionRunner_;
     bool busyOpening_ = false;
 
     QStackedWidget* stack_;

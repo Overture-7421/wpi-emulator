@@ -166,7 +166,7 @@ TEST_CASE("finish saves the model, remembers the alliance and opens the project"
     const WizardResult result = vm.finish();
     REQUIRE(result.ok);
     CHECK(result.detectDevices);
-    CHECK(result.outcome.exportSaved);
+    CHECK(result.outcome.ok());
     CHECK(QFileInfo::exists(project.path() + "/.wpiemu/robot.json"));
     CHECK(s.session().hasConfig());
     CHECK(s.session().config()->name == "Wizard bot");

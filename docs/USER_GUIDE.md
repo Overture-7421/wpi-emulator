@@ -7,8 +7,8 @@ accepts JDK 17+. C++ projects also need MSVC C++ tools on Windows, Xcode command
 on macOS, or a Linux C++ compiler. The 3D view needs a working graphics driver.
 
 The launcher injects a HALSim extension through Gradle without rewriting your robot source,
-build configuration or vendordeps. Normal Gradle outputs/caches and the editor's separate
-`.wpiemu\robot.json` configuration are still written.
+build configuration or vendordeps. Normal Gradle outputs/caches and the robot setup in
+`.wpiemu\robot.json` are still written.
 
 For a first run, the [swerve](../samples/swerve_robot/README.md) and
 [vision](../samples/vision_robot/README.md) samples provide known device layouts and expected output.
@@ -190,14 +190,21 @@ An inherited `JAVA_HOME` that has no Java executable is ignored; an explicitly s
 folder must be corrected in Settings rather than silently falling back to another JDK.
 
 Edits autosave; **Save** / `Ctrl+S` saves immediately. Closing, switching projects or rerunning
-setup first saves pending edits. An app-data save failure cancels that transition and leaves
-the document open; a failed shareable export is only a warning after app-data save succeeds.
+setup first saves pending edits. A save failure cancels that transition and leaves the document open.
 
-The working model is `projects\<folder>-<hash>\robot.json` under the app-data root:
-Windows `%APPDATA%\WpiEmulator`; macOS `~/Library/Application Support/WpiEmulator`;
-Linux `$XDG_DATA_HOME/wpi-emulator` or `~/.local/share/wpi-emulator`.
-The shareable export is `<project>\.wpiemu\robot.json`. Keep it in team version control if wanted;
-an existing app-data working copy takes precedence over that export. UI preferences are separate Qt settings.
+The robot setup lives in the project, at `<project>\.wpiemu\robot.json`, and nowhere else.
+Commit it to share the setup with your team: what is in version control is what runs.
+The open project watches the file: when it changes outside the emulator (a git pull, a hand edit)
+the setup is loaded again on its own. With unsaved edits open, the emulator asks first whether to
+load the file or keep your edits, which the next save then writes over it. The emulator only writes
+the file after an edit, so an open project never overwrites a pull by itself.
+A file that cannot be loaded (a merge conflict, a hand edit, a newer schema) is reported: at open it
+offers setup, while a project is open the setup in memory stays. Whatever replaces an unreadable file
+first keeps it as `robot.json.unreadable.bak` beside it.
+Projects set up before this kept their setup under the app-data root
+(`projects\<folder>-<hash>\robot.json` in `%APPDATA%\WpiEmulator`, `~/Library/Application Support/WpiEmulator`
+or `~/.local/share/wpi-emulator`); opening one moves that setup into the project once and keeps
+the old file as `robot.json.migrated.bak`. UI preferences are separate Qt settings.
 
 ## Troubleshooting
 
@@ -210,8 +217,8 @@ an existing app-data working copy takes precedence over that export. UI preferen
   motor signs and links. Do not let another simulator also write the same vendor simulation state.
 - **No vision:** check name, mount, FOV/range, tag layout and latency; inspect PhotonLib errors.
   Camera publication also needs an emulator build with ntcore support.
-- **Unreadable setup/save failure:** preserve a backup before rerunning setup; check disk space and
-  app-data permissions. A blank viewport needs a working graphics backend; headless tests do not prove rendering.
+- **Unreadable setup/save failure:** fix or remove the file (setup keeps it as `.unreadable.bak`
+  before replacing it); check disk space and that the project folder is writable. A blank viewport needs a working graphics backend; headless tests do not prove rendering.
 
 ## Limits and platforms
 

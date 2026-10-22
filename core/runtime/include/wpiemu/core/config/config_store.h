@@ -30,6 +30,7 @@ sdk::Result<std::filesystem::path> appDataRoot(Platform platform, const sdk::Env
 std::string projectKeyForPath(std::string_view canonicalPath, bool caseInsensitive);
 std::string projectKey(const std::filesystem::path& projectDir);  // canonicalises first
 
+// Where versions before the project file kept a project's robot setup. Read only to move it into the project.
 std::filesystem::path appDataConfigPath(const std::filesystem::path& appDataRoot, const std::filesystem::path& projectDir);
 std::filesystem::path projectConfigPath(const std::filesystem::path& projectDir);  // <project>/.wpiemu/robot.json
 
@@ -55,7 +56,7 @@ public:
     const std::filesystem::path& path() const { return file_; }
     bool exists() const;
     // Copies the current file to "<file>.<tag>.bak" ("-2", "-3"... when taken). Returns the backup path
-    // (importFromProject keeps the app-data copy this way before replacing it).
+    // (the repository keeps an unreadable or migrated file this way).
     sdk::Result<std::filesystem::path> backup(std::string_view tag) const;
 
 private:
@@ -66,25 +67,28 @@ private:
     sdk::ILogger* logger_;
 };
 
-enum class ConfigSource { AppData, Project };
+enum class ConfigSource { Project, MigratedFromAppData };
 
-// The two stores of one project behind one object: the per-user working copy in app data (keyed by the project
-// path hash) and the shareable `<project>/.wpiemu/robot.json` export.
-//  * open(): app-data copy when present, else the project export (imported into app data), else NotFound.
-//  * save(): app-data copy (always) and, when `alsoExport`, the project export.
+// The robot setup of one project. It lives in the project, at `<project>/.wpiemu/robot.json`, the way PathPlanner
+// keeps its files in deploy/pathplanner: what is in version control is what runs, and a pull takes effect the next
+// time the project is opened. There is no second copy.
+//  * open(): the project file, else NotFound. An unreadable file is an error, never replaced by anything else.
+//    A project with no file but a setup left in app data by an older version gets that setup moved into the
+//    project, once; the app-data file is kept beside itself as "robot.json.migrated.bak".
+//  * save(): writes the project file. An existing file that does not load is first kept as
+//    "robot.json.unreadable.bak", so finishing setup after a load error never destroys someone's work.
 class ProjectConfigRepository {
 public:
+    // `appDataRoot` is only read to move an older version's setup into the project.
     ProjectConfigRepository(std::filesystem::path appDataRoot, const sdk::IValueTextCodec& text, const RobotConfigCodec& codec,
                             sdk::ILogger* logger = nullptr)
         : root_(std::move(appDataRoot)), text_(text), codec_(codec), logger_(logger) {}
 
-    FileConfigStore appDataStore(const std::filesystem::path& projectDir) const;
     FileConfigStore projectStore(const std::filesystem::path& projectDir) const;
+    FileConfigStore legacyAppDataStore(const std::filesystem::path& projectDir) const;
 
     sdk::Result<sdk::RobotConfig> open(const std::filesystem::path& projectDir, ConfigSource* usedSource = nullptr) const;
-    sdk::Status save(const std::filesystem::path& projectDir, const sdk::RobotConfig& config, bool alsoExport = false) const;
-    sdk::Status exportToProject(const std::filesystem::path& projectDir) const;     // app-data copy -> project
-    sdk::Result<sdk::RobotConfig> importFromProject(const std::filesystem::path& projectDir) const;  // project -> app-data copy
+    sdk::Status save(const std::filesystem::path& projectDir, const sdk::RobotConfig& config) const;
 
 private:
     std::filesystem::path root_;

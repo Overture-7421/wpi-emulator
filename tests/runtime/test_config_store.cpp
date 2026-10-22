@@ -153,14 +153,12 @@ TEST_CASE("file store: backup of a missing file fails cleanly, unwritable save r
     CHECK(blocked.save(sampleConfig()).error().code == ErrorCode::IoError);
 }
 
-TEST_CASE("repository: app-data copy, project export/import, per-project keys") {
+TEST_CASE("repository: the project file is the only copy") {
     ScratchDir dir;
     Codecs c;
     const fs::path appData = dir.path() / "appdata";
     const fs::path projectA = dir.path() / "robotA";
     const fs::path projectB = dir.path() / "robotB";
-    fs::create_directories(projectA);
-    fs::create_directories(projectB);
     ProjectConfigRepository repo(appData, c.json, c.codec);
 
     CHECK(repo.open(projectA).error().code == ErrorCode::NotFound);
@@ -171,68 +169,119 @@ TEST_CASE("repository: app-data copy, project export/import, per-project keys") 
     b.name = "B";
     REQUIRE(repo.save(projectA, a).ok());
     REQUIRE(repo.save(projectB, b).ok());
-    CHECK_FALSE(fs::exists(projectConfigPath(projectA)));  // not exported unless asked
-    CHECK(repo.appDataStore(projectA).path() != repo.appDataStore(projectB).path());
+    CHECK(fs::exists(projectA / ".wpiemu" / "robot.json"));
+    CHECK_FALSE(fs::exists(appData));  // nothing is written outside the project
 
-    ConfigSource source = ConfigSource::Project;
+    ConfigSource source = ConfigSource::MigratedFromAppData;
     CHECK(repo.open(projectA, &source).value().name == "A");
-    CHECK(source == ConfigSource::AppData);
+    CHECK(source == ConfigSource::Project);
     CHECK(repo.open(projectB).value().name == "B");
 
-    REQUIRE(repo.exportToProject(projectA).ok());
-    CHECK(fs::exists(projectA / ".wpiemu" / "robot.json"));
-    REQUIRE(repo.save(projectB, b, true).ok());
-    CHECK(fs::exists(projectB / ".wpiemu" / "robot.json"));
+    // A pull or a teammate's change replaces the file: the next open reads it, nothing in between.
+    RobotConfig pulled = sampleConfig();
+    pulled.name = "Pulled";
+    REQUIRE(repo.projectStore(projectA).save(pulled).ok());
+    CHECK(repo.open(projectA).value().name == "Pulled");
 
-    // a fresh machine (empty app data) opens the shared project file and caches it
+    // A clone on another machine (another app-data root) reads the same file.
     ProjectConfigRepository other(dir.path() / "appdata2", c.json, c.codec);
-    const auto imported = other.open(projectA, &source);
-    REQUIRE(imported.ok());
-    CHECK(source == ConfigSource::Project);
-    CHECK(imported.value().name == "A");
-    CHECK(other.appDataStore(projectA).exists());
-
-    // importFromProject overwrites the working copy (backing it up first)
-    a.name = "A-edited-locally";
-    REQUIRE(repo.save(projectA, a).ok());
-    const auto reimported = repo.importFromProject(projectA);
-    REQUIRE(reimported.ok());
-    CHECK(reimported.value().name == "A");
-    CHECK(repo.open(projectA).value().name == "A");
-    bool hasBackup = false;
-    for (const auto& e : fs::directory_iterator(repo.appDataStore(projectA).path().parent_path())) hasBackup |= e.path().extension() == ".bak";
-    CHECK(hasBackup);
-
-    CHECK(repo.importFromProject(dir.path() / "nothing").error().code == ErrorCode::NotFound);
-    CHECK(repo.exportToProject(dir.path() / "nothing").error().code == ErrorCode::NotFound);
+    CHECK(other.open(projectA).value().name == "Pulled");
 }
 
-TEST_CASE("repository: import preserves local bytes when every backup candidate is occupied") {
+TEST_CASE("repository: an unreadable project file is reported and kept until replaced") {
     ScratchDir dir;
     Codecs c;
     const fs::path project = dir.path() / "robot";
     ProjectConfigRepository repo(dir.path() / "appdata", c.json, c.codec);
-    RobotConfig cfg = sampleConfig();
-    cfg.name = "Shared";
-    REQUIRE(repo.save(project, cfg, true).ok());
-    cfg.name = "Local edits";
-    REQUIRE(repo.save(project, cfg).ok());
-    const fs::path local = repo.appDataStore(project).path();
-    const std::string original = ScratchDir::read(local);
+    const fs::path file = projectConfigPath(project);
+    const auto backups = [&] {
+        int n = 0;
+        for (const auto& e : fs::directory_iterator(file.parent_path())) n += e.path().extension() == ".bak" ? 1 : 0;
+        return n;
+    };
+
+    // An older version's setup in app data must not hide a broken project file.
+    RobotConfig legacy = sampleConfig();
+    legacy.name = "Legacy";
+    REQUIRE(repo.legacyAppDataStore(project).save(legacy).ok());
+    dir.write("robot/.wpiemu/robot.json", "<<<<<<< HEAD merge conflict");
+    const auto opened = repo.open(project);
+    REQUIRE_FALSE(opened.ok());
+    CHECK(opened.error().code != ErrorCode::NotFound);
+    CHECK(ScratchDir::read(file) == "<<<<<<< HEAD merge conflict");
+
+    // Saving over it (finishing setup after the error) keeps the broken file first.
+    RobotConfig fresh = sampleConfig();
+    fresh.name = "Fresh";
+    REQUIRE(repo.save(project, fresh).ok());
+    CHECK(repo.open(project).value().name == "Fresh");
+    CHECK(backups() == 1);
+    CHECK(ScratchDir::read(fs::path(file.string() + ".unreadable.bak")) == "<<<<<<< HEAD merge conflict");
+
+    // Later saves over a good file make no more backups.
+    fresh.name = "Fresh again";
+    REQUIRE(repo.save(project, fresh).ok());
+    CHECK(backups() == 1);
+}
+
+TEST_CASE("repository: an unreadable file is not replaced when it cannot be kept") {
+    ScratchDir dir;
+    Codecs c;
+    const fs::path project = dir.path() / "robot";
+    ProjectConfigRepository repo(dir.path() / "appdata", c.json, c.codec);
+    const fs::path file = projectConfigPath(project);
+    dir.write("robot/.wpiemu/robot.json", "{ hand edited");
     for (int n = 1; n < 1000; ++n) {
-        fs::path occupied = local;
-        occupied += n == 1 ? ".pre-import.bak" : ".pre-import-" + std::to_string(n) + ".bak";
+        fs::path occupied = file;
+        occupied += n == 1 ? ".unreadable.bak" : ".unreadable-" + std::to_string(n) + ".bak";
         REQUIRE(fs::create_directory(occupied));
     }
 
-    const auto result = repo.importFromProject(project);
+    const Status result = repo.save(project, sampleConfig());
     REQUIRE_FALSE(result.ok());
     CHECK(result.error().code == ErrorCode::IoError);
     CHECK(result.error().message.find("cannot back up") != std::string::npos);
-    CHECK(ScratchDir::read(local) == original);
-    CHECK(repo.open(project).value().name == "Local edits");
-    // The destination itself is still replaceable: only the protective backup failed.
-    cfg.name = "Explicit save";
-    REQUIRE(repo.save(project, cfg).ok());
-    CHECK(repo.open(project).value().name == "Explicit save");
+    CHECK(ScratchDir::read(file) == "{ hand edited");
+}
+
+TEST_CASE("repository: an older version's app-data setup moves into the project once") {
+    ScratchDir dir;
+    Codecs c;
+    const fs::path project = dir.path() / "robot";
+    ProjectConfigRepository repo(dir.path() / "appdata", c.json, c.codec);
+    const fs::path legacyPath = repo.legacyAppDataStore(project).path();
+    RobotConfig legacy = sampleConfig();
+    legacy.name = "Set up before the project file";
+    REQUIRE(repo.legacyAppDataStore(project).save(legacy).ok());
+
+    ConfigSource source = ConfigSource::Project;
+    CHECK(repo.open(project, &source).value().name == "Set up before the project file");
+    CHECK(source == ConfigSource::MigratedFromAppData);
+    CHECK(fs::exists(projectConfigPath(project)));
+    CHECK_FALSE(fs::exists(legacyPath));                                     // retired...
+    CHECK(fs::exists(fs::path(legacyPath.string() + ".migrated.bak")));      // ...but kept
+
+    CHECK(repo.open(project, &source).value().name == "Set up before the project file");
+    CHECK(source == ConfigSource::Project);
+
+    // Deleting the project file on purpose resets the project; the old copy does not come back.
+    fs::remove(projectConfigPath(project));
+    CHECK(repo.open(project).error().code == ErrorCode::NotFound);
+}
+
+TEST_CASE("repository: an older setup stays usable when the project cannot take it") {
+    ScratchDir dir;
+    Codecs c;
+    const fs::path project = dir.path() / "robot";
+    ProjectConfigRepository repo(dir.path() / "appdata", c.json, c.codec);
+    RobotConfig legacy = sampleConfig();
+    legacy.name = "Legacy";
+    REQUIRE(repo.legacyAppDataStore(project).save(legacy).ok());
+    dir.write("robot/.wpiemu", "a file where the folder should be");
+
+    ConfigSource source = ConfigSource::Project;
+    CHECK(repo.open(project, &source).value().name == "Legacy");
+    CHECK(source == ConfigSource::MigratedFromAppData);
+    CHECK(repo.legacyAppDataStore(project).exists());  // not retired: the move did not happen
+    CHECK(repo.save(project, legacy).error().code == ErrorCode::IoError);
 }

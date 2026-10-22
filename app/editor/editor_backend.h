@@ -97,8 +97,7 @@ public:
     // Live-applies the edited model (the backend may re-bind slots in a running session). Does not
     // have to persist.
     virtual void submitConfig(const sdk::RobotConfig& config) = 0;
-    // Persists the last submitted model (app-data copy + <project>/.wpiemu/robot.json).
-    // Success means the authoritative copy was saved. A failed project export is a warning only.
+    // Persists the last submitted model to <project>/.wpiemu/robot.json, its only copy.
     virtual sdk::Status saveConfig() = 0;
     // "Detect devices": run the robot in discovery mode; devices then arrive through the signals.
     virtual void startDetection() = 0;

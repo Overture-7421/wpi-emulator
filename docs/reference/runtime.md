@@ -89,18 +89,18 @@ owns disk policy. The app's
 [ConfigRepository](../../app/common/config_repository.cpp) adapts it and processes loaded
 models through the pipeline; it does not implement another store.
 
-The working copy lives under the platform app-data root at
-`projects/<project-key>/robot.json`. The key incorporates the canonical project path,
-case-folded on Windows. The shareable export is `<project>/.wpiemu/robot.json`.
-`open()` prefers an existing working copy; a corrupt one is reported, not silently
-replaced by the export. With no working copy, it loads the export and attempts to cache
-it; cache failure warns but does not discard a successfully loaded model.
+The robot setup is one file, `<project>/.wpiemu/robot.json`; there is no second copy.
+`open()` reads it. An unreadable file is reported as it is, never replaced by anything else.
+With no file, a setup left by an older version under the platform app-data root at
+`projects/<project-key>/robot.json` (the key incorporates the canonical project path,
+case-folded on Windows) is moved into the project once: it is written to the project, then
+the app-data file is kept as `robot.json.migrated.bak`. If the project cannot be written, the
+app-data setup is used as is and kept until a later move succeeds.
 
 Writes flush a sibling scratch file and atomically replace one target, so a failed
-replacement does not leave partial JSON. Saving the working copy and exporting are
-separate operations, not a two-file transaction. Import loads the export, backs up an
-existing working copy without overwriting another backup, then replaces it; backup
-failure aborts the import. Platform paths and error handling are implemented in
+replacement does not leave partial JSON. `save()` keeps an existing file that does not load
+as `robot.json.unreadable.bak` (never overwriting another backup) before replacing it; backup
+failure aborts the save. Platform paths and error handling are implemented in
 [the store](../../core/runtime/src/config/config_store.cpp).
 Edits to wizard basics must preserve the existing mechanisms, mappings and plugin
 sections, not replace the whole model. User-facing file management is in the

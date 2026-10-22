@@ -274,9 +274,9 @@ editor::EditorPage& openWithPendingRename(ShellFixture& f, const TestProject& fi
 }
 
 // A directory at the authoritative file path fails even when tests run as an administrator.
-struct BlockAppDataSave {
+struct BlockConfigSave {
     QString path;
-    explicit BlockAppDataSave(const QString& file) : path(file) {
+    explicit BlockConfigSave(const QString& file) : path(file) {
         REQUIRE(QFile::rename(path, path + ".held"));
         REQUIRE(QDir().mkpath(path));
     }
@@ -286,7 +286,7 @@ struct BlockAppDataSave {
         REQUIRE(QFile::rename(path + ".held", path));
         path.clear();
     }
-    ~BlockAppDataSave() {
+    ~BlockConfigSave() {
         if (!path.isEmpty()) {
             QDir().rmdir(path);
             QFile::rename(path + ".held", path);
@@ -349,13 +349,13 @@ TEST_CASE("shell composition: immediate close open and setup flush the old edito
     CHECK(f.env.services->session().config()->name == "Pending old project");
 }
 
-TEST_CASE("shell composition: authoritative save failure blocks every destructive transition and can retry") {
+TEST_CASE("shell composition: save failure blocks every destructive transition and can retry") {
     ShellFixture f;
     TestProject first;
     TestProject second;
     auto& page = openWithPendingRename(f, first, second, "Keep these edits");
     const auto previous = f.env.services->session().config();
-    BlockAppDataSave blocked(f.env.services->configs().appDataPath(first.path()));
+    BlockConfigSave blocked(f.env.services->configs().configPath(first.path()));
     const int wizardRuns = f.wizardRuns;
 
     SUBCASE("window close") { CHECK_FALSE(f.window.close()); }
@@ -384,7 +384,7 @@ TEST_CASE("shell composition: authoritative save failure blocks every destructiv
     CHECK(f.env.services->session().config()->name == "Keep these edits");
 }
 
-TEST_CASE("shell composition: shell and editor Save share success state and export warnings stay nonfatal") {
+TEST_CASE("shell composition: shell and editor Save share success state") {
     ShellFixture f;
     f.acceptWizard();
     TestProject project;
@@ -401,21 +401,10 @@ TEST_CASE("shell composition: shell and editor Save share success state and expo
     CHECK_FALSE(page.hasUnsavedChanges());
     CHECK(saved.count() == 2);
 
-    const QString exported = f.env.services->configs().exportPath(project.path());
-    REQUIRE(QFile::remove(exported));
-    REQUIRE(QDir().rmdir(QFileInfo(exported).absolutePath()));
-    writeFile(QFileInfo(exported).absolutePath(), "block export only");
-    bool warned = false;
-    QObject::connect(&page.controller(), &editor::EditorController::logLine, &page,
-                     [&](sdk::Severity severity, const QString&) { warned |= severity == sdk::Severity::Warning; });
-    renameRobot(page, "Authoritative success");
-    page.saveAction()->trigger();
-    CHECK(warned);
-    CHECK_FALSE(page.hasUnsavedChanges());
     CHECK(page.controller().saveStatusText().contains("Saved "));
     const auto stored = f.env.services->configs().load(project.path());
     REQUIRE(stored.ok());
-    CHECK(stored.value().config.name == "Authoritative success");
+    CHECK(stored.value().config.name == "Editor Save");
 }
 
 TEST_CASE("editor adapter: complete inventories and new runs reconcile physical liveness without losing mappings") {
