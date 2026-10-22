@@ -94,6 +94,27 @@ inline constexpr float kChuteHeightM = inch(7.0);        // [GM] 5.9.2
 inline constexpr float kChuteWidthM = inch(31.8);        // [GM] 5.9.2
 inline constexpr float kChuteExitSpeedMps = 1.5f;        // approx: roll-out speed down the 15 deg chute
 
+// ---- alliance wall drawing (the colliders above are unchanged; this only decides what is drawn) ------
+// [GM] 5.9.1: a DRIVER STATION is a 36.8 in diamond plate base, a 6 in sponsor panel (top at 42.9 in) and a 42 in
+// transparent sheet under a top rail; the OUTPOST and TOWER WALL are opaque; guardrails are 20 in of transparent
+// polycarbonate between aluminum extrusions ([GM] 5.2).
+inline constexpr float kStationBaseHeightM = inch(36.8);   // [GM] 5.9.1
+inline constexpr float kStationSponsorTopM = inch(42.9);   // [GM] 5.9.1: opaque up to here, see-through above
+inline constexpr float kStationRailHeightM = inch(2.0);    // approx: the top rail along the sheet
+inline constexpr float kStationBaseThicknessM = 0.10f;     // approx
+inline constexpr float kPlasticThicknessM = 0.012f;        // approx
+inline constexpr float kPlasticOpacity = 0.2f;             // approx: how much of the clear sheet the renderer shows
+inline constexpr float kStationShelfWidthM = inch(69.0);   // [GM] 5.9.1
+inline constexpr float kStationShelfDepthM = inch(12.25);  // [GM] 5.9.1 (behind the wall)
+inline constexpr float kStationShelfThicknessM = 0.02f;    // approx; its top is the base top
+inline constexpr float kTowerWallWidthM = inch(49.25);     // [GM] 5.8
+inline constexpr float kTowerWallHeightM = inch(78.25);    // [GM] 5.8
+inline constexpr float kOutpostWidthM = 2.f * kOutpostCenterYM;  // approx: tag 29 is centred on the outpost, which starts at the guardrail
+inline constexpr int kStationsOutpostSide = 1;             // [GM] 5.8: the TOWER sits between DRIVER STATIONS 2 and 3, so one
+inline constexpr int kStationsFarSide = 2;                 // station on the outpost side and two beyond it (split equally, approx)
+inline constexpr float kGuardrailPlasticThicknessM = 0.01f;  // approx
+inline constexpr float kGuardrailExtrusionM = inch(1.5);   // approx: the aluminum top and bottom rails
+
 // ---- fuel -----------------------------------------------------------------------------------
 inline constexpr float kFuelRadiusM = 0.075f;            // [GM] 5.10.1: 5.91 in (15.0 cm) diameter
 inline constexpr float kFuelMassKg = 0.215f;             // [GM] 5.10.1: 0.448 - 0.500 lb (0.203 - 0.227 kg), mid value

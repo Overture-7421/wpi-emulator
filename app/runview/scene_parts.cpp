@@ -441,7 +441,9 @@ FieldParts buildFieldParts(const sdk::FieldDescription* field) {
         p.name = v.name;
         p.pose = v.pose;
         p.color = v.color;
-        if (v.kind == sdk::FieldVisual::Kind::Mesh) continue;  // mesh assets are not loaded yet; colliders still exist
+        p.translucent = v.opacity < 1.f;
+        p.opacity = std::clamp(v.opacity, 0.f, 1.f);
+        if (v.kind == sdk::FieldVisual::Kind::Mesh) continue;  // mesh assets are not loaded yet; colliders still exist  // mesh assets are not loaded yet; colliders still exist
         p.shape = v.kind == sdk::FieldVisual::Kind::Cylinder ? sdk::PrimitiveKind::Cylinder : sdk::PrimitiveKind::Box;
         p.size = v.sizeM;
         const float ex = std::max(v.sizeM.x, v.sizeM.y) * 0.5f;

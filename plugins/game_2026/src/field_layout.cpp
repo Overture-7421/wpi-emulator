@@ -22,6 +22,9 @@ const char* const kBlueColor = "#1f4fb3";
 const char* const kSteelColor = "#8a8f99";
 const char* const kRailColor = "#cfe3f0";
 const char* const kCarpetColor = "#5a5f6b";
+const char* const kPlasticColor = "#a9cde6";
+const char* const kAluminumColor = "#b9bec7";
+const char* const kSponsorColor = "#2b303a";
 
 const char* allianceColor(Alliance a) { return a == Alliance::Red ? kRedColor : kBlueColor; }
 
@@ -63,6 +66,65 @@ void addAllianceWall(FieldLayout& l, const Frame& f, Alliance a) {
     addBox(l, f, n + "_outpost_top", at(-t / 2, (lo + hi) / 2, (gapTop + h) / 2), {t, hi - lo, h - gapTop},
            allianceColor(a), wall);
     addBox(l, f, n + "_high_y", at(-t / 2, (hi + w) / 2, h / 2), {t, w - hi, h}, kSteelColor, wall);
+    l.boxes.back().visible = false;  // drawn by addAllianceWallVisuals: opaque base, see-through sheet, opaque tower wall
+}
+
+void addDecor(FieldLayout& l, const Frame& f, std::string name, const Pose3& pose, const Vec3& size, const char* color,
+              float opacity = 1.f) {
+    sdk::FieldVisual v;
+    v.name = std::move(name);
+    v.pose = f.pose(pose);
+    v.sizeM = size;
+    v.color = color;
+    v.opacity = opacity;
+    l.decor.push_back(std::move(v));
+}
+
+// What the solid `_high_y` collider looks like: stations (base, sponsor band, clear sheet, top rail, shelf), the opaque
+// tower wall and the rest of the outpost. The colliders themselves do not change.
+void addAllianceWallVisuals(FieldLayout& l, const Frame& f, Alliance a) {
+    namespace d = dim;
+    const std::string n = std::string("wall_") + sdk::allianceKey(a);
+    const float t = d::kAllianceWallThicknessM, h = d::kAllianceWallHeightM, w = d::kFieldWidthM;
+    const float base = d::kStationBaseHeightM, sponsorTop = d::kStationSponsorTopM, rail = d::kStationRailHeightM;
+    const float tb = d::kStationBaseThicknessM, ts = d::kPlasticThicknessM;
+    const float openingEnd = d::kOutpostCenterYM + d::kCorralOpeningWidthM * 0.5f;
+    const float towerLo = d::kTowerCenterYM - d::kTowerWallWidthM * 0.5f, towerHi = towerLo + d::kTowerWallWidthM;
+
+    addDecor(l, f, n + "_outpost_side", at(-t / 2, (openingEnd + d::kOutpostWidthM) / 2, h / 2),
+             {t, d::kOutpostWidthM - openingEnd, h}, kSteelColor);
+    addDecor(l, f, n + "_tower_wall", at(-t / 2, (towerLo + towerHi) / 2, d::kTowerWallHeightM / 2),
+             {t, d::kTowerWallWidthM, d::kTowerWallHeightM}, kSteelColor);
+
+    auto stations = [&](const std::string& name, float y0, float y1, int count) {
+        const float yc = (y0 + y1) / 2, len = y1 - y0, sheetTop = h - rail;
+        addDecor(l, f, name + "_base", at(-tb / 2, yc, base / 2), {tb, len, base}, kSteelColor);
+        addDecor(l, f, name + "_sponsor", at(-tb / 2, yc, (base + sponsorTop) / 2), {tb, len, sponsorTop - base},
+                 kSponsorColor);
+        addDecor(l, f, name + "_sheet", at(-ts / 2, yc, (sponsorTop + sheetTop) / 2), {ts, len, sheetTop - sponsorTop},
+                 kPlasticColor, d::kPlasticOpacity);
+        addDecor(l, f, name + "_rail", at(-tb / 2, yc, h - rail / 2), {tb, len, rail}, kAluminumColor);
+        const float pitch = len / static_cast<float>(count);
+        const float shelfWidth = std::min(d::kStationShelfWidthM, pitch - 0.05f);
+        for (int i = 0; i < count; ++i)
+            addDecor(l, f, name + "_shelf_" + std::to_string(i + 1),
+                     at(-tb - d::kStationShelfDepthM / 2, y0 + pitch * (static_cast<float>(i) + 0.5f),
+                        base - d::kStationShelfThicknessM / 2),
+                     {d::kStationShelfDepthM, shelfWidth, d::kStationShelfThicknessM}, kAluminumColor);
+    };
+    stations(n + "_stations_near", d::kOutpostWidthM, towerLo, d::kStationsOutpostSide);
+    stations(n + "_stations_far", towerHi, w, d::kStationsFarSide);
+}
+
+// The guardrail collider is a thin solid box; the real rail is clear polycarbonate between aluminum extrusions.
+void addGuardrailVisuals(FieldLayout& l, const std::string& name, float y) {
+    namespace d = dim;
+    const Frame f(Alliance::Blue);
+    const float len = d::kFieldLengthM, h = d::kGuardrailHeightM, e = d::kGuardrailExtrusionM;
+    addDecor(l, f, name + "_plastic", at(len / 2, y, h / 2), {len, d::kGuardrailPlasticThicknessM, h - 2 * e},
+             kPlasticColor, d::kPlasticOpacity);
+    addDecor(l, f, name + "_bottom", at(len / 2, y, e / 2), {len, d::kGuardrailThicknessM, e}, kAluminumColor);
+    addDecor(l, f, name + "_top", at(len / 2, y, h - e / 2), {len, d::kGuardrailThicknessM, e}, kAluminumColor);
 }
 
 void addHub(FieldLayout& l, const Frame& f, Alliance a) {
@@ -226,13 +288,16 @@ FieldLayout buildFieldLayout() {
     rail.restitution = 0.3f;
     for (const bool high : {false, true}) {
         const float y = high ? wid + d::kGuardrailThicknessM / 2 : -d::kGuardrailThicknessM / 2;
-        l.boxes.push_back({high ? "guardrail_high_y" : "guardrail_low_y", at(len / 2, y, d::kGuardrailHeightM / 2),
-                           {len, d::kGuardrailThicknessM, d::kGuardrailHeightM}, kRailColor, rail, true});
+        const std::string name = high ? "guardrail_high_y" : "guardrail_low_y";
+        l.boxes.push_back({name, at(len / 2, y, d::kGuardrailHeightM / 2),
+                           {len, d::kGuardrailThicknessM, d::kGuardrailHeightM}, kRailColor, rail, true, false});
+        addGuardrailVisuals(l, name, y);
     }
 
     for (const Alliance a : kAlliances) {
         const Frame f(a);
         addAllianceWall(l, f, a);
+        addAllianceWallVisuals(l, f, a);
         addHub(l, f, a);
         addBumpsAndTrenches(l, f, a);
         addTower(l, f, a);
@@ -244,6 +309,7 @@ FieldLayout buildFieldLayout() {
     l.description.lengthM = len;
     l.description.widthM = wid;
     for (const FieldBox& b : l.boxes) {
+        if (!b.visible) continue;
         sdk::FieldVisual v;
         v.name = b.name;
         v.kind = sdk::FieldVisual::Kind::Box;
@@ -252,6 +318,7 @@ FieldLayout buildFieldLayout() {
         v.color = b.color;
         l.description.visuals.push_back(std::move(v));
     }
+    l.description.visuals.insert(l.description.visuals.end(), l.decor.begin(), l.decor.end());
     for (const FieldCylinder& c : l.cylinders) {
         sdk::FieldVisual v;
         v.name = c.name;

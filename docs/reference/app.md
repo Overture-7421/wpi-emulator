@@ -227,6 +227,7 @@ The run renderer relies on these frame contracts:
   a missing state is inactive. Panel-descriptor overlays are separate static config-derived boxes.
 * AprilTag layout comes from the game; camera snapshot visibility highlights the union of seen tags.
   The run scene does not draw the editor's camera bodies/frusta.
+* Field visuals come from the game's `FieldDescription`; one with `opacity` below 1 is drawn alpha-blended.
 
 `Robot state` is a separate window reading mechanisms, sensors, zones, and cameras from the
 snapshot, with names/source labels from scene metadata. It refreshes while visible and follows
