@@ -21,7 +21,14 @@ project(wpi-emulator
 
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-set(CMAKE_CXX_STANDARD 20)
+wpiemu_pinned_version(_wpiemu_default_wpilib_season wpilib default)
+set(WPIEMU_WPILIB_SEASON "${_wpiemu_default_wpilib_season}" CACHE STRING "WPILib season year used by this build")
+set_property(CACHE WPIEMU_WPILIB_SEASON PROPERTY STRINGS "2026" "2027")
+if(WPIEMU_WPILIB_SEASON STREQUAL "2027")
+    set(CMAKE_CXX_STANDARD 23)
+else()
+    set(CMAKE_CXX_STANDARD 20)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)

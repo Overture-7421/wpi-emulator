@@ -25,9 +25,11 @@ optional for vision ([WPILib discovery](../../halsim_ext/cmake/WpiEmuWpilib.cmak
 
 1. Edit [`versions.json`](../../versions.json), the pin source read by
    [`WpiEmuVersions.cmake`](../../cmake/WpiEmuVersions.cmake).
-   - Set `wpilib` to the version consumed by the emulator's HAL/wpiutil artifacts.
-   - Update the GradleRIO version in every sample robot build script to the target season's
-     generated value. `check_versions.py` enforces that these values match the `wpilib` pin.
+   - Add or update `wpilib.seasons.<year>` with the GradleRIO/WPILib artifact version,
+     Maven groups, header roots and WPILib install-folder name. Update `wpilib.default` only
+     when intentionally changing the default build season.
+   - Update each sample robot's GradleRIO version to match its own season profile.
+     `check_versions.py` verifies the per-season relationship.
    - Add the season year and its verified Java major to `jdk.seasons`. The generated toolchain
      pins, produced by [`app/common/CMakeLists.txt`](../../app/common/CMakeLists.txt), feed
      `ToolchainProvisioner::javaMajorForSeason`; an unlisted season intentionally has no
@@ -52,18 +54,19 @@ optional for vision ([WPILib discovery](../../halsim_ext/cmake/WpiEmuWpilib.cmak
 
 ## Validate from a clean build
 
-Run from the repository root:
+Run from the repository root, selecting the target profile explicitly:
 
 ```powershell
 python tools\check_versions.py
 python tools\check_wpilib_configure.py --generator "Visual Studio 17 2022" --architecture x64
-cmake --preset windows-vs2022 -DWPIEMU_WPILIB_ROOT="C:\Users\Public\wpilib\<year>\maven" -DWPIEMU_WPILIB_DOWNLOAD=OFF
+cmake --preset windows-vs2022 -DWPIEMU_WPILIB_SEASON=<year> -DWPIEMU_WPILIB_ROOT="C:\Users\Public\wpilib\<year>\maven" -DWPIEMU_WPILIB_DOWNLOAD=OFF
 cmake --build --preset windows-vs2022-release --parallel
 ctest --preset windows-vs2022-release
 ```
 
-Use a fresh build tree or explicitly pass the new `WPIEMU_WPILIB_VERSION`: an existing CMake cache
-retains its prior value. Confirm configuration reports real HAL and, when vision is in scope,
+Use a fresh build tree when changing seasons so cached headers and libraries cannot leak across
+profiles. `WPIEMU_WPILIB_VERSION` remains available for an intentional artifact-version override.
+Confirm configuration reports real HAL and, when vision is in scope,
 ntcore; a no-HAL stub is not an integration result. Also build the Java and C++ sample projects
 with that season's WPILib tooling. When available, run the opt-in robot-project integration tests
 from [Building](../BUILDING.md#opt-in-robot-project-tests); a skipped test does not validate the

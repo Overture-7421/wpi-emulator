@@ -53,7 +53,7 @@ public:
     void setProject(const HostProject& project) override;
 
     // The extension that would be launched (empty when it cannot be found).
-    std::filesystem::path extensionPath() const;
+    std::filesystem::path extensionPath(int wpilibYear) const;
     bool simulationStartPending() const { return beginIntent_.pending(); }
 
 public slots:

@@ -8,7 +8,7 @@
 #   extracted   <root>/include/hal/HAL.h, <root>/include/wpi/string.h,
 #               <root>/<platform>/shared/{wpiHal,wpiutil}.*   (platform = windows/x86-64, linux/x86-64,
 #               linux/arm64, osx/universal)
-#   maven       a WPILib Maven cache (the installer's ~/wpilib/2026/maven, or any mirror) holding
+#   maven       a WPILib Maven cache (the installer's ~/wpilib/<year>/maven, or any mirror) holding
 #               edu/wpi/first/{hal/hal-cpp,wpiutil/wpiutil-cpp}/<version>/*-headers.zip and the
 #               platform zips. It is extracted into <build>/_wpilib/<version> (extracted layout) and
 #               WPIEMU_WPILIB_ROOT is then pointed there for the sibling modules.
@@ -16,8 +16,9 @@
 # Inputs:
 #   WPIEMU_WPILIB_ROOT      either layout (or the year dir containing maven/). Also read from the
 #                           environment variable of the same name. Default search for a maven cache:
-#                           <PUBLIC|HOME|USERPROFILE>/wpilib/2026/maven.
-#   WPIEMU_WPILIB_VERSION   WPILib version of hal-cpp / wpiutil-cpp (default: `wpilib` in versions.json).
+#                           <PUBLIC|HOME|USERPROFILE>/wpilib/<year>/maven.
+#   WPIEMU_WPILIB_SEASON    WPILib profile year (default: `wpilib.default` in versions.json).
+#   WPIEMU_WPILIB_VERSION   optional artifact-version override for the selected season profile.
 #   WPIEMU_WPILIB_DOWNLOAD  OFF by default. ON: fetch missing zips from frcmaven (CI on a clean machine).
 #
 # Outputs:
@@ -34,8 +35,47 @@ include_guard(GLOBAL)
 include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/WpiEmuVersions.cmake")
 
 set(WPIEMU_WPILIB_ROOT "" CACHE PATH "WPILib HAL root: extracted layout or Maven cache; empty = auto-detect")
-wpiemu_pinned_version(_wpiemu_wpilib_pinned wpilib)
+if(NOT WPIEMU_WPILIB_SEASON)
+    wpiemu_pinned_version(_wpiemu_default_season wpilib default)
+    set(WPIEMU_WPILIB_SEASON "${_wpiemu_default_season}" CACHE STRING "WPILib season year used by this build")
+endif()
+set(WPIEMU_WPILIB_YEAR "${WPIEMU_WPILIB_SEASON}")
+wpiemu_pinned_version(_wpiemu_wpilib_pinned wpilib seasons "${WPIEMU_WPILIB_SEASON}" version)
+wpiemu_pinned_version(_wpiemu_hal_group wpilib seasons "${WPIEMU_WPILIB_SEASON}" groups hal)
+wpiemu_pinned_version(_wpiemu_wpiutil_group wpilib seasons "${WPIEMU_WPILIB_SEASON}" groups wpiutil)
+wpiemu_pinned_version(_wpiemu_ntcore_group wpilib seasons "${WPIEMU_WPILIB_SEASON}" groups ntcore)
+wpiemu_pinned_version(_wpiemu_wpinet_group wpilib seasons "${WPIEMU_WPILIB_SEASON}" groups wpinet)
+wpiemu_pinned_version(_wpiemu_hal_header wpilib seasons "${WPIEMU_WPILIB_SEASON}" headers hal)
+wpiemu_pinned_version(_wpiemu_wpiutil_header wpilib seasons "${WPIEMU_WPILIB_SEASON}" headers wpiutil)
+wpiemu_pinned_version(_wpiemu_ntcore_header wpilib seasons "${WPIEMU_WPILIB_SEASON}" headers ntcore)
+wpiemu_pinned_version(WPIEMU_WPILIB_INSTALL_FOLDER wpilib seasons "${WPIEMU_WPILIB_SEASON}" installFolder)
 set(WPIEMU_WPILIB_VERSION "${_wpiemu_wpilib_pinned}" CACHE STRING "WPILib version of hal-cpp/wpiutil-cpp to link against")
+if(DEFINED WPIEMU_WPILIB_AUTO_VERSION AND WPIEMU_WPILIB_VERSION STREQUAL WPIEMU_WPILIB_AUTO_VERSION)
+    set(WPIEMU_WPILIB_VERSION "${_wpiemu_wpilib_pinned}" CACHE STRING
+        "WPILib version of hal-cpp/wpiutil-cpp to link against" FORCE)
+else()
+    # Existing build trees may have the previous season's default cached before this profile
+    # mechanism existed. Recognize a pinned version from another season as an old default.
+    file(READ "${CMAKE_CURRENT_LIST_DIR}/../../versions.json" _wpiemu_versions_json)
+    string(JSON _wpiemu_season_count LENGTH "${_wpiemu_versions_json}" wpilib seasons)
+    math(EXPR _wpiemu_season_last "${_wpiemu_season_count} - 1")
+    foreach(_i RANGE ${_wpiemu_season_last})
+        string(JSON _year MEMBER "${_wpiemu_versions_json}" wpilib seasons ${_i})
+        string(JSON _version GET "${_wpiemu_versions_json}" wpilib seasons "${_year}" version)
+        if(NOT _year STREQUAL WPIEMU_WPILIB_SEASON AND WPIEMU_WPILIB_VERSION STREQUAL _version)
+            set(WPIEMU_WPILIB_VERSION "${_wpiemu_wpilib_pinned}" CACHE STRING
+                "WPILib version of hal-cpp/wpiutil-cpp to link against" FORCE)
+            break()
+        endif()
+    endforeach()
+endif()
+set(WPIEMU_WPILIB_AUTO_VERSION "${_wpiemu_wpilib_pinned}" CACHE INTERNAL
+    "Last profile-derived WPILib version" FORCE)
+string(SUBSTRING "${WPIEMU_WPILIB_VERSION}" 0 4 _wpiemu_version_year)
+if(NOT _wpiemu_version_year STREQUAL WPIEMU_WPILIB_SEASON)
+    message(FATAL_ERROR "WPILib version ${WPIEMU_WPILIB_VERSION} does not match selected season "
+                        "${WPIEMU_WPILIB_SEASON}; use a version override from that season")
+endif()
 option(WPIEMU_WPILIB_DOWNLOAD "Download missing WPILib HAL/wpiutil zips from frcmaven" OFF)
 
 set(WPIEMU_WPILIB_FOUND FALSE)
@@ -61,7 +101,7 @@ set(_wpiemu_extracted_root "")   # root in the "extracted" layout, when we have 
 
 # ---- 1. user-provided root in the extracted layout ---------------------------------------------------
 foreach(_root IN ITEMS "${WPIEMU_WPILIB_ROOT}" "$ENV{WPIEMU_WPILIB_ROOT}")
-    if(_root AND EXISTS "${_root}/include/hal/HAL.h" AND EXISTS "${_root}/include/wpi/string.h")
+    if(_root AND EXISTS "${_root}/include/${_wpiemu_hal_header}" AND EXISTS "${_root}/include/${_wpiemu_wpiutil_header}")
         set(_wpiemu_extracted_root "${_root}")
         break()
     endif()
@@ -77,12 +117,16 @@ if(NOT _wpiemu_extracted_root)
     endforeach()
     foreach(_home IN ITEMS "$ENV{PUBLIC}" "$ENV{HOME}" "$ENV{USERPROFILE}" "C:/Users/Public")
         if(_home)
-            list(APPEND _wpiemu_wpilib_candidates "${_home}/wpilib/2026/maven")
+            list(APPEND _wpiemu_wpilib_candidates "${_home}/wpilib/${WPIEMU_WPILIB_INSTALL_FOLDER}/maven")
         endif()
     endforeach()
 
-    set(_hal_rel "edu/wpi/first/hal/hal-cpp/${WPIEMU_WPILIB_VERSION}/hal-cpp-${WPIEMU_WPILIB_VERSION}")
-    set(_util_rel "edu/wpi/first/wpiutil/wpiutil-cpp/${WPIEMU_WPILIB_VERSION}/wpiutil-cpp-${WPIEMU_WPILIB_VERSION}")
+    string(REPLACE "." "/" _hal_group_path "${_wpiemu_hal_group}")
+    string(REPLACE "." "/" _wpiemu_wpiutil_group_path "${_wpiemu_wpiutil_group}")
+    string(REPLACE "." "/" _wpiemu_ntcore_group_path "${_wpiemu_ntcore_group}")
+    string(REPLACE "." "/" _wpiemu_wpinet_group_path "${_wpiemu_wpinet_group}")
+    set(_hal_rel "${_hal_group_path}/hal-cpp/${WPIEMU_WPILIB_VERSION}/hal-cpp-${WPIEMU_WPILIB_VERSION}")
+    set(_util_rel "${_wpiemu_wpiutil_group_path}/wpiutil-cpp/${WPIEMU_WPILIB_VERSION}/wpiutil-cpp-${WPIEMU_WPILIB_VERSION}")
     set(_wpiemu_maven "")
     foreach(_c IN LISTS _wpiemu_wpilib_candidates)
         if(EXISTS "${_c}/${_hal_rel}-headers.zip" AND EXISTS "${_c}/${_util_rel}-headers.zip")
@@ -123,8 +167,8 @@ if(NOT _wpiemu_extracted_root)
     _wpiemu_wpilib_fetch("${_util_rel}" "headers" _util_headers_zip)
     _wpiemu_wpilib_fetch("${_util_rel}" "${_wpiemu_wpilib_classifier}" _util_libs_zip)
     # ntcore (+ the wpinet it loads) is optional: the vision bridges' ntcore binding is simply not built without it.
-    set(_nt_rel "edu/wpi/first/ntcore/ntcore-cpp/${WPIEMU_WPILIB_VERSION}/ntcore-cpp-${WPIEMU_WPILIB_VERSION}")
-    set(_net_rel "edu/wpi/first/wpinet/wpinet-cpp/${WPIEMU_WPILIB_VERSION}/wpinet-cpp-${WPIEMU_WPILIB_VERSION}")
+    set(_nt_rel "${_wpiemu_ntcore_group_path}/ntcore-cpp/${WPIEMU_WPILIB_VERSION}/ntcore-cpp-${WPIEMU_WPILIB_VERSION}")
+    set(_net_rel "${_wpiemu_wpinet_group_path}/wpinet-cpp/${WPIEMU_WPILIB_VERSION}/wpinet-cpp-${WPIEMU_WPILIB_VERSION}")
     _wpiemu_wpilib_fetch("${_nt_rel}" "headers" _nt_headers_zip)
     _wpiemu_wpilib_fetch("${_nt_rel}" "${_wpiemu_wpilib_classifier}" _nt_libs_zip)
     _wpiemu_wpilib_fetch("${_net_rel}" "${_wpiemu_wpilib_classifier}" _net_libs_zip)
@@ -156,9 +200,17 @@ if(NOT _wpiemu_extracted_root)
 endif()
 
 if(_wpiemu_extracted_root)
+    if(NOT EXISTS "${_wpiemu_extracted_root}/include/${_wpiemu_hal_header}" OR
+       NOT EXISTS "${_wpiemu_extracted_root}/include/${_wpiemu_wpiutil_header}")
+        set(_wpiemu_extracted_root "")
+    endif()
+endif()
+
+if(_wpiemu_extracted_root)
     # Publish either discovery route to sibling bridges without replacing the user's cache input.
     set(WPIEMU_WPILIB_ROOT "${_wpiemu_extracted_root}" PARENT_SCOPE)
 endif()
+set(WPIEMU_WPILIB_YEAR "${WPIEMU_WPILIB_SEASON}" PARENT_SCOPE)
 
 # ---- 3. imported targets ----------------------------------------------------------------------------------
 if(_wpiemu_extracted_root)
@@ -186,7 +238,7 @@ if(_wpiemu_extracted_root)
             IMPORTED_LOCATION "${_hal_loc}"
             INTERFACE_INCLUDE_DIRECTORIES "${_wpiemu_extracted_root}/include"
             INTERFACE_LINK_LIBRARIES wpiemu_wpilib_wpiutil
-            INTERFACE_COMPILE_DEFINITIONS "WPIEMU_WPILIB_VERSION=\"${WPIEMU_WPILIB_VERSION}\"")
+            INTERFACE_COMPILE_DEFINITIONS "WPIEMU_WPILIB_VERSION=\"${WPIEMU_WPILIB_VERSION}\";WPIEMU_WPILIB_YEAR=${WPIEMU_WPILIB_YEAR}")
         if(WIN32)
             set_target_properties(wpiemu_wpilib_hal PROPERTIES IMPORTED_IMPLIB "${_hal_imp}")
             set_target_properties(wpiemu_wpilib_wpiutil PROPERTIES IMPORTED_IMPLIB "${_util_imp}")
@@ -207,7 +259,7 @@ if(_wpiemu_extracted_root)
             set(_nt_loc "${_dir}/libntcore.so")
             set(_net_loc "${_dir}/libwpinet.so")
         endif()
-        if(EXISTS "${_nt_loc}" AND EXISTS "${_net_loc}" AND EXISTS "${_wpiemu_extracted_root}/include/ntcore_c.h")
+        if(EXISTS "${_nt_loc}" AND EXISTS "${_net_loc}" AND EXISTS "${_wpiemu_extracted_root}/include/${_wpiemu_ntcore_header}")
             add_library(wpiemu_wpilib_wpinet SHARED IMPORTED GLOBAL)
             set_target_properties(wpiemu_wpilib_wpinet PROPERTIES
                 IMPORTED_LOCATION "${_net_loc}"
@@ -229,7 +281,7 @@ endif()
 if(WPIEMU_WPILIB_FOUND)
     message(STATUS "WPILib ${WPIEMU_WPILIB_VERSION}: HAL found at ${_wpiemu_extracted_root}; halsim_wpiemu is built with HAL support")
 else()
-    message(STATUS "WPILib ${WPIEMU_WPILIB_VERSION}: NOT found (set -DWPIEMU_WPILIB_ROOT=<.../wpilib/2026/maven> or "
+    message(STATUS "WPILib ${WPIEMU_WPILIB_VERSION}: NOT found (set -DWPIEMU_WPILIB_ROOT=<.../wpilib/${WPIEMU_WPILIB_INSTALL_FOLDER}/maven> or "
                    "-DWPIEMU_WPILIB_DOWNLOAD=ON); halsim_wpiemu is built as a stub that refuses to load")
 endif()
 
@@ -242,23 +294,20 @@ endif()
 
 # ---- 4. local WPILib JDK fallback on Windows (when WPIEMU_WPILIB_DOWNLOAD is ON) --------------------------
 # If C:/Users/Public/wpilib/<year>/jdk is missing (for example when JAVA_HOME points there on a machine without
-# the full WPILib installer), provision it from a local JDK 17+ and strip any bundled <14.40 VC++ runtime DLLs
-# that would trip WPILib 2026's WPIUtilJNI.checkMsvcRuntime.
+# the full WPILib installer), provision it from a local JDK and strip any bundled <14.40 VC++ runtime DLLs
+# that would trip WPILib's WPIUtilJNI.checkMsvcRuntime.
 if(WIN32 AND WPIEMU_WPILIB_DOWNLOAD)
     string(SUBSTRING "${WPIEMU_WPILIB_VERSION}" 0 4 _wpiemu_year)
-    set(_wpiemu_public_jdk "C:/Users/Public/wpilib/${_wpiemu_year}/jdk")
+    set(_wpiemu_public_jdk "C:/Users/Public/wpilib/${WPIEMU_WPILIB_INSTALL_FOLDER}/jdk")
     if(NOT EXISTS "${_wpiemu_public_jdk}/bin/java.exe")
         file(GLOB _wpiemu_sys_jdks LIST_DIRECTORIES true
-            "C:/Program Files/Java/jdk-17*"
-            "C:/Program Files/Eclipse Adoptium/jdk-17*"
-            "C:/Program Files/Microsoft/jdk-17*"
-            "C:/Program Files/Java/jdk-21*"
-            "C:/Program Files/Eclipse Adoptium/jdk-21*"
-            "C:/Program Files/Microsoft/jdk-21*")
+            "C:/Program Files/Java/jdk-*"
+            "C:/Program Files/Eclipse Adoptium/jdk-*"
+            "C:/Program Files/Microsoft/jdk-*")
         foreach(_cand IN LISTS _wpiemu_sys_jdks)
             if(EXISTS "${_cand}/bin/java.exe")
                 message(STATUS "wpiemu: provisioning ${_wpiemu_public_jdk} from ${_cand}...")
-                file(MAKE_DIRECTORY "C:/Users/Public/wpilib/${_wpiemu_year}")
+                file(MAKE_DIRECTORY "C:/Users/Public/wpilib/${WPIEMU_WPILIB_INSTALL_FOLDER}")
                 file(COPY "${_cand}/" DESTINATION "${_wpiemu_public_jdk}")
                 file(GLOB _old_vc_dlls
                     "${_wpiemu_public_jdk}/bin/msvcp140*.dll"

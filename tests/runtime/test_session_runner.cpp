@@ -82,6 +82,32 @@ TEST_CASE("runner: a peer with a protocol version below the minimum is refused")
     CHECK(rig.run([&] { return rig.ext->disconnected; }));  // the link was closed
 }
 
+TEST_CASE("runner: a known WPILib season mismatch is refused unless the extension was explicitly overridden") {
+    {
+        RunnerOptions options = Rig::fast();
+        options.expectedWpilibYear = 2026;
+        Rig rig(options);
+        rig.connect();
+        rig.ext->hello(0, proto::kProtocolVersion, true, 2027);
+        REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value(); }));
+        CHECK_FALSE(rig.ext->helloAck->accepted);
+        CHECK(rig.ext->helloAck->reason.find("project year 2026") != std::string::npos);
+        CHECK(rig.runner->ticksSent() == 0);
+        CHECK(rig.run([&] { return rig.ext->disconnected; }));
+    }
+    {
+        RunnerOptions options = Rig::fast();
+        options.expectedWpilibYear = 2026;
+        options.allowWpilibYearMismatch = true;
+        Rig rig(options);
+        rig.connect();
+        rig.ext->hello(0, proto::kProtocolVersion, true, 2027);
+        REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value() && rig.runner->ticksSent() > 0; }));
+        CHECK(rig.ext->helloAck->accepted);
+        CHECK(rig.logger.count(LogLevel::Warn) > 0);
+    }
+}
+
 TEST_CASE("runner: lock-step - consecutive ticks, one outstanding, identity on every frame") {
     Rig rig;
     rig.ext = nullptr;

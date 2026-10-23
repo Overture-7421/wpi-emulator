@@ -120,15 +120,16 @@ jobs:
       - name: Install smoke test
         shell: bash
         run: |
+          wpilib_year="${WPILIB_VERSION:0:4}"
           cmake --install build/${{ matrix.preset }} --config Release --prefix "$PWD/stage"
           if [ "$RUNNER_OS" = "macOS" ]; then
             stage/wpiemu_app.app/Contents/MacOS/wpiemu_app --version
-            test -f stage/wpiemu_app.app/Contents/PlugIns/wpiemu/libhalsim_wpiemu.dylib
+            test -f "stage/wpiemu_app.app/Contents/PlugIns/wpiemu/$wpilib_year/libhalsim_wpiemu.dylib"
           elif [ "$RUNNER_OS" = "Windows" ]; then
             stage/bin/wpiemu_app.exe --version
-            test -f stage/extensions/halsim_wpiemu.dll
+            test -f "stage/extensions/$wpilib_year/halsim_wpiemu.dll"
             test -f stage/plugins/platforms/qwindows.dll
           else
             stage/bin/wpiemu_app --version
-            test -f stage/lib/wpiemu/libhalsim_wpiemu.so
+            test -f "stage/lib/wpiemu/$wpilib_year/libhalsim_wpiemu.so"
           fi

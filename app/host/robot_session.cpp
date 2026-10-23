@@ -259,6 +259,8 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     if (options.extensionLibrary.empty() || !fs::exists(options.extensionLibrary, ec))
         return makeError(ErrorCode::NotFound, "The HALSim extension (" + options.extensionLibrary.string() +
                                                  ") was not found. Reinstall the emulator, build the halsim_wpiemu target, or set WPIEMU_EXTENSION_PATH.");
+    const auto projectReport = launcher::ProjectInspector(*reg.json).inspect(options.projectDir);
+    const int expectedWpilibYear = projectReport ? projectReport.value().wpilibYear : 0;
 
     // ---- config: defaults, validation ----
     auto loaded = reg.pipeline->process(std::move(config));
@@ -318,8 +320,10 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     ro.discoveryOnly = options.mode == SessionMode::Armed;
     ro.awaitProgramStart = true;
     ro.preferredWatchdogMs = options.watchdogMs;
+    ro.expectedWpilibYear = expectedWpilibYear;
+    ro.allowWpilibYearMismatch = options.allowWpilibYearMismatch;
     // The inspection is read-only and optional: without it PhotonVision cameras use the extension's default version.
-    if (const auto report = launcher::ProjectInspector(*reg.json).inspect(options.projectDir)) ro.photonVersion = report.value().photonLibVersion();
+    if (projectReport) ro.photonVersion = projectReport.value().photonLibVersion();
     self->runner_ = std::make_unique<runtime::SessionRunner>(*self->session_, self->inbox_, self->slot_, log, ro);
     self->runner_->setDriverStation(options.driverStation);
     self->runner_->start();
@@ -395,8 +399,12 @@ SessionStatus RobotSession::status() {
     }
 
     if (const std::string refusal = runner_->refusal(); !refusal.empty()) {
+        const bool protocolMismatch = refusal.find("protocol version") != std::string::npos;
         fail(ProcessState::FailedToStart, LinkState::ProtocolMismatch,
-             "The HALSim extension speaks an incompatible protocol (" + refusal + "). Rebuild or reinstall the emulator so the app and halsim_wpiemu match.");
+             protocolMismatch
+                 ? "The HALSim extension speaks an incompatible protocol (" + refusal + "). Rebuild or reinstall the emulator so the app and halsim_wpiemu match."
+                 : "The HALSim extension was refused (" + refusal +
+                       "). Install the extension built for this project or explicitly override WPIEMU_EXTENSION.");
         return s;
     }
 

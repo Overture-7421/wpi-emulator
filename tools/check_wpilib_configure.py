@@ -20,11 +20,16 @@ def main() -> None:
     parser.add_argument("--directory", type=Path, default=Path("build/wpilib-root-fixture"))
     args = parser.parse_args()
     repo = common.REPO_ROOT
-    wpilib = common.load_versions(repo)["wpilib"]
+    wpilib_pin = common.load_versions(repo)["wpilib"]
+    season = str(wpilib_pin["default"])
+    wpilib = wpilib_pin["seasons"][season]["version"]
+    profile = wpilib_pin["seasons"][season]
+    header_roots = profile["headers"]
     work = args.directory.resolve()
     extracted = work / "extracted"
-    headers = {"hal/HAL.h": "", "hal/Ports.h": "", "hal/simulation/SimDeviceData.h": "",
-               "wpi/string.h": ""}
+    hal_header_dir = Path(header_roots["hal"]).parent.as_posix()
+    headers = {header_roots["hal"]: "", f"{hal_header_dir}/Ports.h": "",
+               f"{hal_header_dir}/simulation/SimDeviceData.h": "", header_roots["wpiutil"]: ""}
     libraries = {}
     for platform, names in (
             ("windows/x86-64", ("wpiHal.dll", "wpiHal.lib", "wpiutil.dll", "wpiutil.lib")),
@@ -37,7 +42,9 @@ def main() -> None:
         common.write_text(extracted / name, content)
     maven = work / "maven"
     for module in ("hal", "wpiutil"):
-        prefix = maven / f"edu/wpi/first/{module}/{module}-cpp/{wpilib}/{module}-cpp-{wpilib}"
+        group = profile["groups"][module].replace(".", "/")
+        artifact = "hal-cpp" if module == "hal" else "wpiutil-cpp"
+        prefix = maven / group / artifact / wpilib / f"{artifact}-{wpilib}"
         prefix.parent.mkdir(parents=True, exist_ok=True)
         for classifier, entries in (
                 ("headers", {key: value for key, value in headers.items()

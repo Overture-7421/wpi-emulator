@@ -8,11 +8,19 @@
 #include <limits>
 #include <string>
 
+#if WPIEMU_WPILIB_YEAR >= 2027
+#include "wpi/hal/HAL.h"
+#include "wpi/hal/simulation/DriverStationData.h"
+#include "wpi/hal/simulation/MockHooks.h"
+#include "wpi/hal/simulation/NotifierData.h"
+#include "wpi/hal/simulation/RoboRioData.h"
+#else
 #include "hal/HAL.h"
 #include "hal/simulation/DriverStationData.h"
 #include "hal/simulation/MockHooks.h"
 #include "hal/simulation/NotifierData.h"
 #include "hal/simulation/RoboRioData.h"
+#endif
 #include "wpiemu/halsim_ext/hal_sim_platform.h"
 #include "wpiemu/halsim_ext/os_process.h"
 

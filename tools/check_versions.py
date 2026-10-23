@@ -29,9 +29,8 @@ QT_KIT_PATH = r"Qt[\\/](\d+\.\d+\.\d+)[\\/]"
 UBUNTU = r"(?i)\bubuntu[-: ](\d+\.\d+)"
 
 PINS = [
-    Pin("wpilib", WORKFLOWS, r'^\s*WPILIB_VERSION:\s*"([^"]+)"', "WPILIB_VERSION (WPILib download cache key)"),
-    Pin("wpilib", ("samples/*/*/build.gradle",), r'edu\.wpi\.first\.GradleRIO"\s+version\s+"([^"]+)"',
-        "GradleRIO version of the sample robot"),
+    Pin("wpilib.seasons.2026.version", WORKFLOWS, r'^\s*WPILIB_VERSION:\s*"([^"]+)"',
+        "WPILIB_VERSION (WPILib download cache key)"),
     Pin("qt.release", (".github/workflows/release.yml",), r'^\s*QT_VERSION:\s*"([^"]+)"', "QT_VERSION"),
     Pin("qt.release", ("tools/docker/linux/Dockerfile",), r"^ARG QT_VERSION=(\S+)", "QT_VERSION build argument"),
     Pin("qt.release", ("tools/docker/linux/Dockerfile",), r"\bQt (\d+\.\d+\.\d+)", "Qt version in the description"),
@@ -98,11 +97,63 @@ def check_jdk_assets(versions: dict) -> list[str]:
     return errors
 
 
+def check_wpilib_seasons(versions: dict) -> list[str]:
+    errors = []
+    wpilib = versions.get("wpilib")
+    if not isinstance(wpilib, dict):
+        return ["versions.json: wpilib must contain a default season and season profiles"]
+    seasons = wpilib.get("seasons", {})
+    default = str(wpilib.get("default", ""))
+    if default not in seasons:
+        errors.append(f"versions.json wpilib.default: {default!r} has no matching season profile")
+    if not seasons:
+        errors.append("versions.json wpilib.seasons is empty")
+    for year, profile in seasons.items():
+        where = f"versions.json wpilib.seasons.{year}"
+        if not re.fullmatch(r"\d{4}", str(year)) or not isinstance(profile, dict):
+            errors.append(f"{where}: expected a four-digit year mapped to a season profile")
+            continue
+        if not str(profile.get("version", "")).startswith(str(year) + "."):
+            errors.append(f"{where}.version: must begin with {year}.")
+        if not str(profile.get("installFolder", "")):
+            errors.append(f"{where}.installFolder: missing WPILib installation folder")
+        for key in ("hal", "wpiutil", "ntcore", "wpinet"):
+            if not str(profile.get("groups", {}).get(key, "")):
+                errors.append(f"{where}.groups.{key}: missing Maven group")
+        for key in ("hal", "wpiutil", "ntcore"):
+            if not str(profile.get("headers", {}).get(key, "")):
+                errors.append(f"{where}.headers.{key}: missing header probe")
+    return errors
+
+
+def check_sample_wpilib_versions(root: Path, versions: dict) -> list[str]:
+    errors = []
+    profiles = versions.get("wpilib", {}).get("seasons", {})
+    pattern = re.compile(r'(?:edu\.wpi\.first|org\.wpilib)\.GradleRIO"\s+version\s+"([^"]+)"')
+    for file in sorted(root.glob("samples/*/*/build.gradle")):
+        text = common.read_text(file)
+        matches = list(pattern.finditer(text))
+        rel = file.relative_to(root).as_posix()
+        if not matches:
+            errors.append(f"{rel}: no literal GradleRIO version found")
+        for match in matches:
+            found = match.group(1)
+            year_match = re.match(r"(\d{4})\.", found)
+            year = year_match.group(1) if year_match else ""
+            profile = profiles.get(year)
+            if profile is None:
+                errors.append(f"{rel}:{text.count(chr(10), 0, match.start(1)) + 1}: GradleRIO version {found!r} has no WPILib season pin")
+            elif found != profile.get("version"):
+                line = text.count("\n", 0, match.start(1)) + 1
+                errors.append(f'{rel}:{line}: GradleRIO version is "{found}", but versions.json wpilib.seasons.{year}.version is "{profile["version"]}"')
+    return errors
+
+
 def lookup(versions: dict, key: str) -> str:
     value = versions
     for part in key.split("."):
         value = value[part]
-    return value
+    return str(value)
 
 
 def check(root: Path, versions: dict, pins: list[Pin] = PINS) -> list[str]:
@@ -135,7 +186,9 @@ def main() -> int:
     args = common.root_parser(__doc__).parse_args()
     root = args.root.resolve()
     try:
-        errors = check(root, common.load_versions(root)) + check_jdk_assets(common.load_versions(root))
+        versions = common.load_versions(root)
+        errors = check(root, versions) + check_jdk_assets(versions) + check_wpilib_seasons(versions)
+        errors += check_sample_wpilib_versions(root, versions)
     except (OSError, ValueError) as error:
         print(f"versions: cannot check repository: {error}", file=sys.stderr)
         return 2

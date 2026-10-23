@@ -93,6 +93,8 @@ fi
 
 VERSION="$(sed -n 's/^CMAKE_PROJECT_VERSION:[A-Z]*=//p' "$BUILD_DIR/CMakeCache.txt")"
 [[ -n "$VERSION" ]] || die "could not read the project version from $BUILD_DIR/CMakeCache.txt"
+WPILIB_YEAR="$(sed -n 's/^WPIEMU_WPILIB_SEASON:STRING=//p' "$BUILD_DIR/CMakeCache.txt")"
+[[ "$WPILIB_YEAR" =~ ^20[0-9]{2}$ ]] || die "could not read the WPILib season from $BUILD_DIR/CMakeCache.txt"
 
 step "install into $APPDIR/usr"
 rm -rf "$APPDIR"
@@ -141,9 +143,9 @@ step "verify $FINAL"
 env -i PATH=/usr/bin:/bin HOME="${HOME:-/tmp}" APPIMAGE_EXTRACT_AND_RUN=1 "$FINAL" --version
 verify_dir="$BUILD_DIR/verify"
 rm -rf "$verify_dir"; mkdir -p "$verify_dir"
-(cd "$verify_dir" && APPIMAGE_EXTRACT_AND_RUN=1 "$FINAL" --appimage-extract 'usr/lib/wpiemu/*' >/dev/null)
+(cd "$verify_dir" && APPIMAGE_EXTRACT_AND_RUN=1 "$FINAL" --appimage-extract "usr/lib/wpiemu/$WPILIB_YEAR/*" >/dev/null)
 (cd "$verify_dir" && APPIMAGE_EXTRACT_AND_RUN=1 "$FINAL" --appimage-extract 'usr/plugins/tls/*' >/dev/null)
-[[ -f "$verify_dir/squashfs-root/usr/lib/wpiemu/libhalsim_wpiemu.so" ]] || die "extension missing from the AppImage"
+[[ -f "$verify_dir/squashfs-root/usr/lib/wpiemu/$WPILIB_YEAR/libhalsim_wpiemu.so" ]] || die "extension missing from the AppImage"
 compgen -G "$verify_dir/squashfs-root/usr/plugins/tls/*backend*" >/dev/null || die "Qt TLS backend missing from the AppImage (the updater needs HTTPS)"
 rm -rf "$verify_dir"
 

@@ -17,7 +17,11 @@
 #include <dlfcn.h>
 #endif
 
+#if defined(WPIEMU_WPILIB_YEAR) && WPIEMU_WPILIB_YEAR >= 2027
+#include <wpi/nt/ntcore_c.h>
+#else
 #include <ntcore_c.h>
+#endif
 
 #include "wpiemu/bridges/vision/nt_binding.h"
 

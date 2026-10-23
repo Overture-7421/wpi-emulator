@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.25)
 project(wpilib_root_fixture LANGUAGES CXX)
 include("${WPIEMU_FIXTURE_REPO}/cmake/WpiEmuVersions.cmake")
-wpiemu_pinned_version(_wpilib_version wpilib)
+wpiemu_pinned_version(_wpilib_season wpilib default)
+wpiemu_pinned_version(_wpilib_version wpilib seasons "${_wpilib_season}" version)
 
 function(wpiemu_target_defaults target)
 endfunction()

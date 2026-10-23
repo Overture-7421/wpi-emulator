@@ -43,6 +43,7 @@ struct Options {
     sdk::SessionMode mode = sdk::SessionMode::Run;
     std::filesystem::path projectDir;
     std::filesystem::path extensionLibrary;               // halsim_wpiemu.{dll,so,dylib}
+    bool allowWpilibYearMismatch = false;                 // explicitly selected extension; otherwise project and extension years must match
     core::launcher::LaunchMode launchMode = core::launcher::LaunchMode::GradleInitScript;
     bool release = true;                                  // ExternalDirect: Release vs Debug variant
     std::filesystem::path scratchDir;                     // generated init script; empty = <temp>/wpiemu

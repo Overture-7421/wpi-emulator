@@ -60,6 +60,28 @@ class VersionPinTests(unittest.TestCase):
         wrong_key = {"jdk": {"seasons": {"2026": 17}, "assets": {"windows-x64": asset}}}
         self.assertIn("<java major>-<os>-<arch>", VERSIONS.check_jdk_assets(wrong_key)[0])
 
+    def test_wpilib_season_profiles_and_sample_plugins_match_their_year(self):
+        versions = {
+            "wpilib": {
+                "default": 2026,
+                "seasons": {
+                    "2026": {"version": "2026.2.1", "installFolder": "2026",
+                             "groups": {key: "edu.wpi.first." + key for key in ("hal", "wpiutil", "ntcore", "wpinet")},
+                             "headers": {"hal": "hal/HAL.h", "wpiutil": "wpi/string.h", "ntcore": "ntcore_c.h"}},
+                    "2027": {"version": "2027.0.0-alpha-7", "installFolder": "2027_alpha7",
+                             "groups": {key: "org.wpilib." + key for key in ("hal", "wpiutil", "ntcore", "wpinet")},
+                             "headers": {"hal": "wpi/hal/HAL.h", "wpiutil": "wpi/util/string.h", "ntcore": "wpi/nt/ntcore_c.h"}},
+                },
+            }
+        }
+        self.assertEqual(VERSIONS.check_wpilib_seasons(versions), [])
+        write_text(self.root / "samples/2027/java/build.gradle",
+                   'plugins { id "org.wpilib.GradleRIO" version "2027.0.0-alpha-7" }\n')
+        self.assertEqual(VERSIONS.check_sample_wpilib_versions(self.root, versions), [])
+        write_text(self.root / "samples/2027/java/build.gradle",
+                   'plugins { id "org.wpilib.GradleRIO" version "2027.0.0-alpha-6" }\n')
+        self.assertIn("wpilib.seasons.2027.version", VERSIONS.check_sample_wpilib_versions(self.root, versions)[0])
+
     def test_missing_file_missing_pin_and_unknown_key_are_distinct_errors(self):
         (self.root / "build.sh").unlink()
         write_text(self.root / "presets.json", "{}\n")

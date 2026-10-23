@@ -101,17 +101,17 @@ Result<ProjectReport> ProjectInspector::inspect(const fs::path& dir) const {
     }
     if (!r.hasBuildScript) note(Severity::Error, "build.gradle", "no build.gradle or build.gradle.kts in " + dir.string());
 
-    if (const auto v = firstMatch(buildText, R"(edu\.wpi\.first\.GradleRIO["'\)\s]*version\s*["']([^"']+)["'])")) {
+    if (const auto v = firstMatch(buildText, R"((?:edu\.wpi\.first|org\.wpilib)\.GradleRIO["'\)\s]*version\s*["']([^"']+)["'])")) {
         r.gradleRioFound = true;
         r.gradleRioVersion = *v;
-    } else if (const auto cp = firstMatch(buildText, R"(edu\.wpi\.first:GradleRIO:([0-9][^"']*)["'])")) {
+    } else if (const auto cp = firstMatch(buildText, R"((?:edu\.wpi\.first|org\.wpilib):GradleRIO:([0-9][^"']*)["'])")) {
         r.gradleRioFound = true;
         r.gradleRioVersion = *cp;
-    } else if (contains(buildText, R"(edu\.wpi\.first\.GradleRIO)")) {
+    } else if (contains(buildText, R"((?:edu\.wpi\.first|org\.wpilib)\.GradleRIO)")) {
         r.gradleRioFound = true;  // plugin applied, version declared elsewhere (a variable / settings plugin management)
         note(Severity::Warning, "build.gradle", "GradleRIO plugin found but its version is not a literal; the year comes from the preferences");
     } else if (r.hasBuildScript) {
-        note(Severity::Error, "build.gradle", "the GradleRIO plugin (edu.wpi.first.GradleRIO) is not applied: this is not a WPILib project");
+        note(Severity::Error, "build.gradle", "the GradleRIO plugin is not applied: this is not a WPILib project");
     }
     r.wpilibYear = yearOf(r.gradleRioVersion);
 
@@ -139,7 +139,8 @@ Result<ProjectReport> ProjectInspector::inspect(const fs::path& dir) const {
     }
     if (r.wpilibYear == 0)
         if (const auto settings = config::readTextFile(dir / "settings.gradle"))
-            if (const auto y = firstMatch(settings.value(), R"(frcYear\s*=\s*["'](\d{4})["'])")) r.wpilibYear = std::stoi(*y);
+            if (const auto y = firstMatch(settings.value(), R"((?:frcYear|wpilibYear)\s*=\s*["'](\d{4})[^"']*["'])"))
+                r.wpilibYear = std::stoi(*y);
     r.isWpilibProject = r.hasBuildScript && (r.gradleRioFound || (hasPrefs && r.wpilibYear > 0));
     if (r.isWpilibProject && r.wpilibYear == 0) note(Severity::Warning, "build.gradle", "could not determine the WPILib year");
 

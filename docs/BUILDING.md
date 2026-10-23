@@ -28,9 +28,10 @@ CTest runs registered checks and reports opt-in robot tests as skipped unless en
   See the [version pins](releasing.md#version-pins) before choosing another kit.
 - CMake fetches pinned [Box3D](../cmake/WpiEmuDependencies.cmake) and
   [doctest](../cmake/WpiEmuTests.cmake) sources.
-- The real HAL extension needs WPILib desktop HAL and wpiutil artifacts. CMake searches
-  `C:\Users\Public\wpilib\2026\maven` or `~/wpilib/2026/maven`. Set `WPIEMU_WPILIB_ROOT`
-  to another Maven cache or extracted artifact root, or allow CMake to download them.
+- The real HAL extension needs WPILib desktop HAL and wpiutil artifacts. CMake searches the
+  selected season's Maven cache (for example, `C:\Users\Public\wpilib\<year>\maven` or
+  `~/wpilib/<year>/maven`). Set `WPIEMU_WPILIB_ROOT` to another Maven cache or extracted
+  artifact root, or allow CMake to download them.
   Without HAL, the extension is a failing stub and real-HAL tests are not built.
 - Optional ntcore/wpinet artifacts enable vision publishing. Without them, camera
   publishing is inactive.
@@ -94,8 +95,9 @@ Pass these options to `cmake --preset`, not `cmake --build`.
 | `WPIEMU_BUILD_PLUGIN_TEMPLATE` | ON | Compile the season-plugin skeleton. |
 | `WPIEMU_WARNINGS_AS_ERRORS` | OFF | Promote first-party warnings to errors. |
 | `WPIEMU_BUILD_UI_DEMOS` | ON | Build the editor and run-view demo applications. |
+| `WPIEMU_WPILIB_SEASON` | The season pinned by `wpilib.default` | Select a WPILib season profile from `versions.json`. |
 | `WPIEMU_WPILIB_ROOT` | auto | Use a Maven cache, year directory, or extracted artifacts. Also read from the environment. |
-| `WPIEMU_WPILIB_VERSION` | the `wpilib` [pin](releasing.md#version-pins) | Select the WPILib artifact version. |
+| `WPIEMU_WPILIB_VERSION` | the selected season's pin | Override the profile's WPILib artifact version. |
 | `WPIEMU_WPILIB_DOWNLOAD` | OFF; presets set ON | Download missing WPILib artifacts. On Windows, this can also copy a local JDK into the public WPILib year folder; bundled VC++ runtime DLLs are omitted. |
 | `WPIEMU_RUNVIEW_SDL2` | ON | Enable SDL2 gamepads when available. Keyboard input works without SDL2. |
 | `WPIEMU_RUNVIEW_FETCH_SDL2` | ON | Fetch SDL2 when no system package is found. Set OFF to avoid this download. |

@@ -152,7 +152,7 @@ TEST_CASE("install kind follows the packaged layout") {
     probe.os = HostOs::Windows;
     const QString bin = QStringLiteral("C:/Program Files/WPI Emulator/bin");
     CHECK(detectInstall(probe, bin, QStringLiteral("0.0.5")).kind == InstallKind::Dev);
-    probe.files.insert(QStringLiteral("C:/Program Files/WPI Emulator/extensions/halsim_wpiemu.dll"));
+    probe.files.insert(QStringLiteral("C:/Program Files/WPI Emulator/extensions/2026/halsim_wpiemu.dll"));
     CHECK(detectInstall(probe, bin, QStringLiteral("0.0.5")).kind == InstallKind::Portable);
     probe.files.insert(QStringLiteral("C:/Program Files/WPI Emulator/Uninstall.exe"));
     CHECK(detectInstall(probe, bin, QStringLiteral("0.0.5")).kind == InstallKind::Nsis);
@@ -169,6 +169,10 @@ TEST_CASE("install kind follows the packaged layout") {
     const InstallInfo appImage = detectInstall(probe, QStringLiteral("/tmp/.mount/usr/bin"), QStringLiteral("0.0.5"));
     CHECK(appImage.kind == InstallKind::AppImage);
     CHECK(appImage.appImagePath == QStringLiteral("/apps/WPI.AppImage"));
+    probe.environment.clear();
+    probe.files.insert(QStringLiteral("/opt/wpi/lib/wpiemu/2027/libhalsim_wpiemu.so"));
+    CHECK(detectInstall(probe, QStringLiteral("/opt/wpi/bin"), QStringLiteral("0.0.5")).kind ==
+          InstallKind::Portable);
 }
 
 TEST_CASE("a check finds the newer release without the GitHub API") {
@@ -338,7 +342,7 @@ TEST_CASE("macOS opens the disk image and a portable install opens the release p
     Rig portable(QStringLiteral("0.0.5"),
                  [](FakeProbe& p) {
                      p.environment.clear();
-                     p.files.insert(QStringLiteral("/opt/wpi/lib/wpiemu/libhalsim_wpiemu.so"));
+                     p.files.insert(QStringLiteral("/opt/wpi/lib/wpiemu/2026/libhalsim_wpiemu.so"));
                  },
                  QStringLiteral("/opt/wpi/bin"));
     portable.service->check(false);
@@ -347,4 +351,3 @@ TEST_CASE("macOS opens the disk image and a portable install opens the release p
     portable.service->download();
     CHECK(portable.installer->opened == std::vector<QString>{QStringLiteral("https://github.com/Overture-7421/wpi-emulator/releases/tag/v0.0.6")});
 }
-

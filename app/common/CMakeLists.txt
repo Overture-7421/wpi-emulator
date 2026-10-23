@@ -74,8 +74,10 @@ endif()
 # Build-tree fallback of the extension lookup (an installed app finds halsim_wpiemu next to itself first).
 if(TARGET halsim_wpiemu)
     add_dependencies(wpiemu_app_common halsim_wpiemu)
+    set(_wpiemu_build_extension_year "${WPIEMU_WPILIB_SEASON}")
     set_property(SOURCE real_runtime_host.cpp APPEND PROPERTY COMPILE_DEFINITIONS
-        "WPIEMU_BUILD_EXTENSION_PATH=\"$<TARGET_FILE:halsim_wpiemu>\"")
+        "WPIEMU_BUILD_EXTENSION_PATH=\"$<TARGET_FILE:halsim_wpiemu>\""
+        "WPIEMU_BUILD_EXTENSION_YEAR=${_wpiemu_build_extension_year}")
 endif()
 
 # Icons are plain SVG files compiled into the binary (":/wpiemu/icons/<name>.svg").

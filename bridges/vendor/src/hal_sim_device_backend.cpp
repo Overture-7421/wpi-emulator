@@ -10,10 +10,17 @@
 #include <set>
 #include <unordered_map>
 
+#if WPIEMU_WPILIB_YEAR >= 2027
+#include "wpi/hal/SimDevice.h"
+#include "wpi/hal/Types.h"
+#include "wpi/hal/Value.h"
+#include "wpi/hal/simulation/SimDeviceData.h"
+#else
 #include "hal/SimDevice.h"
 #include "hal/Types.h"
 #include "hal/Value.h"
 #include "hal/simulation/SimDeviceData.h"
+#endif
 
 namespace wpiemu::bridges::vendor {
 

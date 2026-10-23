@@ -3,6 +3,22 @@
 #include <algorithm>
 #include <cstring>
 
+#if WPIEMU_WPILIB_YEAR >= 2027
+#include <wpi/hal/AddressableLEDTypes.h>
+#include <wpi/hal/Ports.h>
+#include <wpi/hal/REVPH.h>
+#include <wpi/hal/simulation/AddressableLEDData.h>
+#include <wpi/hal/simulation/AnalogInData.h>
+#include <wpi/hal/simulation/CTREPCMData.h>
+#include <wpi/hal/simulation/CanData.h>
+#include <wpi/hal/simulation/DIOData.h>
+#include <wpi/hal/simulation/DutyCycleData.h>
+#include <wpi/hal/simulation/EncoderData.h>
+#include <wpi/hal/simulation/PWMData.h>
+#include <wpi/hal/simulation/PowerDistributionData.h>
+#include <wpi/hal/simulation/REVPHData.h>
+#include <wpi/hal/simulation/RoboRioData.h>
+#else
 #include <hal/AddressableLEDTypes.h>
 #include <hal/Ports.h>
 #include <hal/REVPH.h>
@@ -20,6 +36,7 @@
 #include <hal/simulation/REVPHData.h>
 #include <hal/simulation/RelayData.h>
 #include <hal/simulation/RoboRioData.h>
+#endif
 
 // HALSIM_* does not range-check its index argument, so every accessor guards it here.
 namespace wpiemu::bridges::hal {
