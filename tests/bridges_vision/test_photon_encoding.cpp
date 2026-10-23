@@ -106,31 +106,40 @@ TEST_CASE("vision photon encoding: 2027 metadata uses nanoseconds and refuses ov
     r.sequenceId = 1;
     r.captureTimestampMicros = 5;
     r.publishTimestampMicros = 6;
-    auto encoded = encodePhotonPipelineResult(r, PhotonSchema::Nanoseconds2027);
+    auto encoded = encodePhotonPipelineResult(r, PhotonSchema::Nanoseconds);
     REQUIRE(encoded.ok());
     CHECK(toHex(encoded.value()) ==
           "01000000000000008813000000000000701700000000000000000000000000000000");
     r.publishTimestampMicros = std::numeric_limits<std::int64_t>::max();
-    CHECK_FALSE(encodePhotonPipelineResult(r, PhotonSchema::Nanoseconds2027).ok());
+    CHECK_FALSE(encodePhotonPipelineResult(r, PhotonSchema::Nanoseconds).ok());
     r.publishTimestampMicros = std::numeric_limits<std::int64_t>::min();
-    CHECK_FALSE(encodePhotonPipelineResult(r, PhotonSchema::Nanoseconds2027).ok());
+    CHECK_FALSE(encodePhotonPipelineResult(r, PhotonSchema::Nanoseconds).ok());
     r.publishTimestampMicros = std::numeric_limits<std::int64_t>::max() / 1000;
-    CHECK(encodePhotonPipelineResult(r, PhotonSchema::Nanoseconds2027).ok());
+    CHECK(encodePhotonPipelineResult(r, PhotonSchema::Nanoseconds).ok());
     r.captureTimestampMicros = std::numeric_limits<std::int64_t>::min() / 1000;
-    CHECK(encodePhotonPipelineResult(r, PhotonSchema::Nanoseconds2027).ok());
+    CHECK(encodePhotonPipelineResult(r, PhotonSchema::Nanoseconds).ok());
     --r.captureTimestampMicros;
-    CHECK_FALSE(encodePhotonPipelineResult(r, PhotonSchema::Nanoseconds2027).ok());
+    CHECK_FALSE(encodePhotonPipelineResult(r, PhotonSchema::Nanoseconds).ok());
 }
 
 TEST_CASE("vision photon encoding: only verified photonlib versions are accepted") {
     CHECK(isVerifiedPhotonVersion("v2026.3.4"));
     CHECK(isVerifiedPhotonVersion("2026.3.4"));
-    CHECK(isVerifiedPhotonVersion(kDefaultPhotonVersion));
+    CHECK(isVerifiedPhotonVersion(photonDefaultVersion()));
     CHECK(isVerifiedPhotonVersion("v2025.3.2"));
-    CHECK(isVerifiedPhotonVersion(kPhoton2027Version));
+    CHECK(isVerifiedPhotonVersion("dev-v2027.0.0-alpha-2-86-gda55d785"));
     CHECK_FALSE(isVerifiedPhotonVersion("dev-v2027.0.0-alpha-2"));
     CHECK_FALSE(isVerifiedPhotonVersion("v2027.1.1"));
     CHECK_FALSE(isVerifiedPhotonVersion("v2024.3.1"));
     CHECK_FALSE(isVerifiedPhotonVersion("v2026.3.4-beta"));
     CHECK_FALSE(isVerifiedPhotonVersion(""));
+}
+
+TEST_CASE("vision photon encoding: the version catalog maps verified versions to their schema; unverified ones use the default") {
+    CHECK(photonSchemaForVersion("v2026.3.4") == PhotonSchema::Microseconds);
+    CHECK(photonSchemaForVersion("dev-v2027.0.0-alpha-2-86-gda55d785") == PhotonSchema::Nanoseconds);
+    CHECK(photonSchemaForVersion("v9999.1.1") == photonDefaultSchema());
+    CHECK(photonSchemaName(PhotonSchema::Microseconds) == "photon-us");
+    CHECK(photonSchemaName(PhotonSchema::Nanoseconds) == "photon-ns");
+    CHECK(isVerifiedPhotonVersion(photonDefaultVersion()));
 }

@@ -159,7 +159,7 @@ TEST_CASE("vision ntcore binding: raw topics carry their type string and bytes")
     auto backend = vis::makeNtcoreBackend();
     REQUIRE(backend->available());
     const vis::NtBytes bytes = {1, 2, 3, 0, 255};
-    const std::string typeString(vis::photonPipelineResultTypeString());
+    const std::string typeString(vis::photonPipelineResultTypeString(vis::photonDefaultSchema()));
     REQUIRE(backend->publish("/wpiemu_test/raw", vis::ntRaw(bytes), 777'000, typeString).ok());
     const Direct d = readDirect("/wpiemu_test/raw");
     CHECK(d.type == NT_RAW);
@@ -259,8 +259,9 @@ TEST_CASE("vision ntcore binding: the limelight and photonvision bridges publish
     CHECK(readDirect("/limelight-smoke/tx").d == 4.0);
     const Direct raw = readDirect("/photonvision/smoke/rawBytes");
     CHECK(raw.type == NT_RAW);
-    CHECK(raw.typeString == vis::photonPipelineResultTypeString());
-    CHECK(topicProperty("/photonvision/smoke/rawBytes", "message_uuid") == "\"4b2ff16a964b5e2bf04be0c1454d91c4\"");
+    CHECK(raw.typeString == vis::photonPipelineResultTypeString(vis::photonDefaultSchema()));
+    CHECK(topicProperty("/photonvision/smoke/rawBytes", "message_uuid") ==
+          "\"" + std::string(vis::photonPipelineResultUuid(vis::photonDefaultSchema())) + "\"");
     CHECK(raw.raw.size() == 32 + 1 + 294 + 1);  // one target with two four-corner lists, no multitag
     CHECK(readDirect("/photonvision/smoke/heartbeat").type == NT_INTEGER);
 

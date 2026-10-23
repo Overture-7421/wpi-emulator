@@ -64,7 +64,7 @@ TEST_CASE("vision photon: intrinsics are a 3x3 row-major matrix and distortion i
 
 TEST_CASE("vision photon: the pinned 2027 client gets its own schema and nanosecond capture age") {
     Rig rig;
-    configurePhoton(rig, std::string(vis::kPhoton2027Version));
+    configurePhoton(rig, "dev-v2027.0.0-alpha-2-86-gda55d785");
     rig.nt->nowTimeUs = 9'000'000;
     rig.poll(0);
     rig.apply(twoTagFrame(), 1'040'000);
@@ -194,22 +194,6 @@ TEST_CASE("vision photon: heartbeat increments at 10 Hz of simulated time") {
     CHECK(*rig.nt->lastAs<std::int64_t>(kCam + "/heartbeat") == 3);
 }
 
-TEST_CASE("vision photon: an unverified photonlib version is refused once") {
-    Rig rig;
-    configurePhoton(rig, "v2023.4.2");
-    configurePhoton(rig, "v2023.4.2");
-    rig.poll(0);
-    rig.apply({makeFrame(0, {})}, 1'040'000);
-    CHECK(rig.nt->topics.empty());
-    CHECK(rig.logger.count(sdk::LogLevel::Error) == 1);
-    CHECK(rig.logger.count(sdk::LogLevel::Warn) == 0);
-
-    configurePhoton(rig, "2026.3.4");  // a leading 'v' is optional
-    rig.poll(0);
-    CHECK(rig.nt->has(kCam + "/rawBytes"));
-    CHECK(*rig.nt->lastAs<std::string>("/photonvision/version") == "2026.3.4");
-}
-
 TEST_CASE("vision photon: no photon cameras and an unverified version is not an error") {
     Rig rig;
     rig.configure(makeSetup({makeCamera(sdk::CameraKind::Limelight, "")}, "v1.0.0"));
@@ -268,4 +252,18 @@ TEST_CASE("vision photon: stop releases the camera topics") {
     REQUIRE(rig.nt->has(kCam + "/rawBytes"));
     rig.photon->stop();
     CHECK_FALSE(rig.nt->has(kCam + "/rawBytes"));
+}
+
+TEST_CASE("vision photon: an unverified PhotonLib version warns once and still publishes with the default schema") {
+    Rig rig;
+    configurePhoton(rig, "v2026.99.9");
+    CHECK(rig.logger.count(sdk::LogLevel::Warn) == 1);
+    CHECK(rig.logger.count(sdk::LogLevel::Error) == 0);
+    configurePhoton(rig, "v2026.99.9");   // a reconfigure with the same version does not repeat the warning
+    CHECK(rig.logger.count(sdk::LogLevel::Warn) == 1);
+    rig.poll(0);
+    rig.apply(twoTagFrame(), 1'040'000);
+    CHECK(rig.nt->topic(kCam + "/rawBytes")->typeString == std::string("photonstruct:PhotonPipelineResult:") +
+                                                              std::string(vis::photonPipelineResultUuid(vis::photonDefaultSchema())));
+    CHECK(rawBytes(rig)[32] == 2);
 }
