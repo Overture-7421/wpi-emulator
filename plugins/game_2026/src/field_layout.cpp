@@ -178,16 +178,15 @@ void addBumpsAndTrenches(FieldLayout& l, const Frame& f, Alliance a) {
         l.bumps.push_back(std::move(b));
     }
 
-    // Trench: arm from the guardrail to the bump, post next to the bump; the opening under the arm is free.
-    const float armLen = cy - d::kHubSizeM / 2 - d::kBumpWidthM;  // the low-Y bump starts here
+    // Trench: short arm across the opening, with a post next to the bump.
     const float postY = d::kTrenchOpeningM + d::kTrenchPostWidthM / 2;
     const float armBottom = d::kTrenchClearanceM, armTop = d::kTrenchArmTopM;
     const std::string n = std::string("trench_") + sdk::allianceKey(a);
     for (const bool high : {false, true}) {
         const std::string tag = n + (high ? "_high_y" : "_low_y");
         auto yOf = [&](float y) { return high ? d::kFieldWidthM - y : y; };
-        addBox(l, f, tag + "_arm", at(cx, yOf(armLen / 2), (armBottom + armTop) / 2),
-               {d::kTrenchDepthM, armLen, armTop - armBottom}, color);
+        addBox(l, f, tag + "_arm", at(cx, yOf(d::kTrenchOpeningM / 2), (armBottom + armTop) / 2),
+               {d::kTrenchArmLengthM, d::kTrenchOpeningM, armTop - armBottom}, color);
         addBox(l, f, tag + "_post", at(cx, yOf(postY), armTop / 2), {d::kTrenchDepthM, d::kTrenchPostWidthM, armTop},
                color);
     }

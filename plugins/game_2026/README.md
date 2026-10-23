@@ -77,6 +77,10 @@ outpost openings/corrals. Red geometry is the blue geometry rotated about the fi
 and guardrail colliders remain solid for robots and fuel; visuals distinguish opaque structure
 from clear plastic so the field can be seen through transparent barriers.
 
+Each trench has a 12 in support beside the bump and a 6 in-long, 4 in-high arm across the 50.34 in
+opening at the 22.25 in clearance; the rest is open overhead, and the tag panels above the arm are
+not colliders.
+
 Alliance-wall visuals model the driver-station base, sponsor band, clear sheet, top rail and shelf;
 the tower wall and outpost are opaque. Guardrails are drawn as clear plastic between aluminum
 extrusions while their collision geometry remains solid.

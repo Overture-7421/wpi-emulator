@@ -63,13 +63,20 @@ TEST_CASE("field layout preserves REBUILT dimensions with flush bump approaches"
               doctest::Approx(b.ridgeHeightM).epsilon(0.001));
     }
 
-    // trench: arm underside 22.25 in, top 29.75 in (the tag panels stand on it up to 40.25 in), 47 in deep; four arms
+    // trench: 6 x 50.34 x 4 in arm over the opening, supported by 12 in posts; four arms
     const FieldBox* arm = findBox(l, "trench_blue_low_y_arm");
     REQUIRE(arm != nullptr);
     CHECK(arm->pose.position.z - arm->sizeM.z / 2 == doctest::Approx(0.56515f));
-    CHECK(arm->pose.position.z + arm->sizeM.z / 2 == doctest::Approx(0.75565f));
-    CHECK(dim::kTrenchArmTopM + dim::inch(10.5) == doctest::Approx(dim::kTrenchHeightM));
-    CHECK(arm->sizeM.x == doctest::Approx(1.1938f));
+    CHECK(arm->pose.position.z + arm->sizeM.z / 2 == doctest::Approx(0.66675f));
+    CHECK(arm->sizeM.x == doctest::Approx(0.1524f));
+    CHECK(arm->sizeM.y == doctest::Approx(dim::kTrenchOpeningM));
+    CHECK(arm->pose.position.x == doctest::Approx(dim::kHubCenterXM));
+    const FieldBox* post = findBox(l, "trench_blue_low_y_post");
+    REQUIRE(post != nullptr);
+    CHECK(post->sizeM.x == doctest::Approx(1.1938f));
+    CHECK(post->sizeM.z == doctest::Approx(0.66675f));
+    CHECK(arm->pose.position.y + arm->sizeM.y / 2 ==
+          doctest::Approx(post->pose.position.y - post->sizeM.y / 2));
     int arms = 0;
     for (const FieldBox& b : l.boxes) arms += b.name.find("_arm") != std::string::npos ? 1 : 0;
     CHECK(arms == 4);
