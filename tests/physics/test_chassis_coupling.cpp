@@ -147,9 +147,9 @@ TEST_CASE("coupling: payloads compose mass, COM and inertia and notify the mass 
     CHECK(spy.calls == 2);
     CHECK(c.composedMass().massKg == 15.f);
     CHECK(c.composedMass().comLocal.x == doctest::Approx(5.f / 15.f));
-    const PayloadMass list[] = {carriage};
-    const MassProperties expected = composeMassProperties(massOf(10.f), list);
-    CHECK(c.composedMass().inertiaDiagLocal == expected.inertiaDiagLocal);
+    CHECK(c.composedMass().inertiaDiagLocal.x == doctest::Approx(1.1f));
+    CHECK(c.composedMass().inertiaDiagLocal.y == doctest::Approx(1.1f + 10.f / 3.f));
+    CHECK(c.composedMass().inertiaDiagLocal.z == doctest::Approx(1.1f + 10.f / 3.f));
     CHECK(spy.last.massKg == 15.f);
 
     // The world now accelerates the heavier body less.
