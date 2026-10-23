@@ -2,6 +2,7 @@
 #include <wpi/nt/ntcore_c.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -81,5 +82,10 @@ private:
 
 int main(int argc, char** argv) {
     if (argc == 2 && std::string_view(argv[1]) == "--uuid-probe") return probeUuidConversion();
+    const char* skipVersionCheck = std::getenv("WPIEMU_TEST_SKIP_PHOTON_VERSION_CHECK");
+    if (skipVersionCheck != nullptr && std::string_view(skipVersionCheck) == "1") {
+        std::fputs("WARNING: PhotonLib version checks explicitly disabled for this test run.\n", stderr);
+        photon::PhotonCamera::SetVersionCheckEnabled(false);
+    }
     return wpi::StartRobot<Robot>();
 }

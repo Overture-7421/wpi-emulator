@@ -43,3 +43,13 @@ With `WPIEMU_E2E=1`, run `e2e.vendor_2027` for CTRE and `e2e.vision_2027`
 for Java vision. `WPIEMU_E2E_VISION_LANG=cpp` selects the upstream failure reproducer;
 it must not be interpreted as passing C++ coverage. `WPIEMU_E2E_LAUNCH=direct`
 selects external launch. These are desktop checks, not Systemcore hardware validation.
+
+For an explicit test-only workaround, set
+`WPIEMU_TEST_SKIP_PHOTON_VERSION_CHECK=1` together with
+`WPIEMU_E2E_VISION_LANG=cpp`. The C++ sample logs a warning and calls PhotonLib's
+`SetVersionCheckEnabled(false)`; PhotonLib itself is not patched, and checks remain
+enabled by default. With this opt-in, all 37 vision assertions pass on Windows in
+both Gradle and direct launch modes, including targets, transforms, calibration,
+latency, controls, resets and cleanup. This verifies decoding with the check
+bypassed, not normal checked compatibility. The emulator does not apply this
+workaround to arbitrary robot projects.

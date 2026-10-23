@@ -271,6 +271,12 @@ the correctly encoded property, the C++ getter returns a JSON string, implicit s
 conversion produces the quoted UUID, and `get_string()` produces the matching UUID.
 No emulator, HALSim extension or PhotonLib calls are needed to reproduce the conversion.
 The C++ sample's `--uuid-probe` mode preserves that standalone reproduction.
-The C++ robot sample reproduces PhotonLib's resulting exception. Publishing invalid JSON, suppressing version
-checks or claiming a connected heartbeat as compatibility would conceal the bug;
-none is used. Retest with a fixed upstream PhotonLib before claiming 2027 C++ support.
+The C++ robot sample reproduces PhotonLib's resulting exception by default.
+Publishing invalid JSON or claiming a connected heartbeat as compatibility would
+conceal the bug. An explicit sample-only
+`WPIEMU_TEST_SKIP_PHOTON_VERSION_CHECK=1` calls PhotonLib's public
+`SetVersionCheckEnabled(false)` and logs a warning. With that opt-in, the full
+37-assertion C++ vision test passes on Windows through Gradle and direct launch.
+This is decoding coverage with checks bypassed, not checked compatibility; no
+PhotonLib source or emulator publication is modified. Retest with a fixed upstream
+PhotonLib before claiming normal 2027 C++ support.
