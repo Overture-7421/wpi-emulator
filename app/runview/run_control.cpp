@@ -25,8 +25,8 @@ void applyProblem(StatusPresentation& p, const HostStatus& st) {
         fixSetup();
     } else if (id == QLatin1String("java_unsupported_by_gradle")) {
         p.title = tr("This Java does not work with the project's Gradle");
-        p.detail = tr("Gradle could not run on the selected Java. Select the project's WPILib Java in setup "
-                      "(Java 17 for 2026, Java 25 for 2027).");
+        p.detail = tr("Gradle could not run on the selected Java. Select the Java that comes with the project's WPILib "
+                      "season in setup.");
         fixSetup();
     } else if (id == QLatin1String("java_home_invalid") || id == QLatin1String("no_usable_java")) {
         p.title = id == QLatin1String("no_usable_java") ? tr("Java is needed to run the robot") : tr("The Java folder is not valid");

@@ -45,7 +45,13 @@ if(WPIEMU_WPILIB_ROOT)
     set(WPIEMU_WPIUTIL_INCLUDE_DIR "${WPIEMU_WPIUTIL_INCLUDE_DIR}" PARENT_SCOPE)
     set(WPIEMU_HAL_LIBRARY "${WPIEMU_HAL_LIBRARY}" PARENT_SCOPE)
     if(WPIEMU_HAL_INCLUDE_DIR AND WPIEMU_WPIUTIL_INCLUDE_DIR AND WPIEMU_HAL_LIBRARY)
-        target_sources(wpiemu_bridges_hal PRIVATE src/hal_sim_binding.cpp)
+        # The families that differ between HAL generations come from abi/<abi>/ (docs/reference/seasons.md).
+        if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/abi/${WPIEMU_HAL_ABI}/hal_sim_abi.cpp")
+            message(FATAL_ERROR "bridges/hal: HAL ABI '${WPIEMU_HAL_ABI}' has no src/abi/${WPIEMU_HAL_ABI}/hal_sim_abi.cpp")
+        endif()
+        target_sources(wpiemu_bridges_hal PRIVATE src/hal_sim_binding.cpp "src/abi/${WPIEMU_HAL_ABI}/hal_sim_abi.cpp")
+        target_include_directories(wpiemu_bridges_hal PRIVATE src)
+        target_link_libraries(wpiemu_bridges_hal PRIVATE wpiemu_hal_abi)
         # SYSTEM: WPILib headers are third-party and not warning-clean under /W4.
         target_include_directories(wpiemu_bridges_hal SYSTEM PRIVATE
             "${WPIEMU_HAL_INCLUDE_DIR}" "${WPIEMU_WPIUTIL_INCLUDE_DIR}")

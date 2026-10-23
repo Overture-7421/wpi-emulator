@@ -29,7 +29,6 @@ permissions:
 
 env:
   QT_VERSION: "6.8.3"
-  WPILIB_VERSION: "2026.2.1"
   QT_QPA_PLATFORM: offscreen
   ALLOW_STUB_EXTENSION: ${{ inputs.allow_stub_extension && 'true' || 'false' }}
 
@@ -137,8 +136,8 @@ jobs:
         with:
           path: |
             build/release/_wpilib/downloads
-            build/release/seasons/2027/_wpilib/downloads
-          key: wpilib-multi-${{ hashFiles('versions.json') }}-${{ matrix.name }}
+            build/release/seasons/*/_wpilib/downloads
+          key: wpilib-multi-${{ hashFiles('seasons/*/season.json') }}-${{ matrix.name }}
 
       - name: Configure
         shell: bash
@@ -154,7 +153,7 @@ jobs:
           cmake -S . -B build/release "${gen[@]}" \
             -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR//\\//}" \
             -DWPIEMU_BUILD_TESTS=ON \
-            '-DWPIEMU_SEASONS=2026;2027' \
+            -DWPIEMU_SEASONS=all \
             -DWPIEMU_WARNINGS_AS_ERRORS=ON \
             -DWPIEMU_WPILIB_DOWNLOAD=ON \
             -DWPIEMU_RUNVIEW_FETCH_SDL2=ON 2>&1 | tee configure.log
@@ -197,10 +196,11 @@ jobs:
           $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
           & "$dest\bin\wpiemu_app.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "wpiemu_app --version failed ($LASTEXITCODE)" }
-          foreach ($f in 'extensions\2026\halsim_wpiemu.dll', 'extensions\2027\halsim_wpiemu.dll', 'plugins\platforms\qwindows.dll', 'plugins\imageformats\qsvg.dll',
+          $files = @(python tools/seasons.py extensions --layout windows) + @('plugins\platforms\qwindows.dll', 'plugins\imageformats\qsvg.dll',
                          'plugins\iconengines\qsvgicon.dll', 'plugins\multimedia\ffmpegmediaplugin.dll',
                          'plugins\tls\qschannelbackend.dll',   # HTTPS of the in-app updater
-                         'qml\QtQuick3D\qquick3dplugin.dll', 'bin\qt.conf') {
+                         'qml\QtQuick3D\qquick3dplugin.dll', 'bin\qt.conf')
+          foreach ($f in $files) {
             if (-not (Test-Path "$dest\$f")) { throw "missing in installed tree: $f" }
           }
           # The downloaded Java gets this runtime when its own is too old (WPILib needs msvcp140 >= versions.json msvcRuntimeMin).
@@ -247,7 +247,9 @@ jobs:
           python packaging/macos/check_minimum_os.py "$app"
           env -i PATH=/usr/bin:/bin "$app/Contents/MacOS/wpiemu_app" --version
           # Both slices must be present in the app, the extension and every bundled framework/dylib that has any slice.
-          for f in "$app/Contents/MacOS/wpiemu_app" "$app/Contents/PlugIns/wpiemu/2026/libhalsim_wpiemu.dylib" "$app/Contents/PlugIns/wpiemu/2027/libhalsim_wpiemu.dylib"; do
+          extensions=()
+          while IFS= read -r f; do extensions+=("$app/$f"); done < <(python tools/seasons.py extensions --layout macos-bundle)
+          for f in "$app/Contents/MacOS/wpiemu_app" "${extensions[@]}"; do
             archs="$(lipo -archs "$f")"
             echo "$f: $archs"
             case "$archs" in *arm64*x86_64*|*x86_64*arm64*) ;; *) echo "::error::$f is not universal ($archs)"; exit 1 ;; esac
@@ -257,7 +259,7 @@ jobs:
           else
             echo "::notice::Rosetta is not available on this runner; the x86_64 slice was not executed"
           fi
-          for year in 2026 2027; do test -f "$app/Contents/PlugIns/wpiemu/$year/libhalsim_wpiemu.dylib"; done
+          for f in "${extensions[@]}"; do test -f "$f"; done
           find "$app/Contents/Resources/qml/QtQuick3D" -iname '*quick3dplugin*' -print -quit | grep -q .
           find "$app/Contents/PlugIns/multimedia" -iname '*ffmpegmediaplugin*' -print -quit | grep -q .
           find "$app/Contents/PlugIns/tls" -iname '*backend*' -print -quit | grep -q .   # HTTPS of the in-app updater

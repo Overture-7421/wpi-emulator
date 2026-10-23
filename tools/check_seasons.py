@@ -26,9 +26,11 @@ SCANNED = {".cpp", ".h", ".hpp", ".cc", ".mm", ".cmake", ".txt", ".py", ".yml", 
            ".qml", ".gradle"}
 CPP = {".cpp", ".h", ".hpp", ".cc", ".mm", ".qml"}
 EXEMPT_TOP = {"seasons", "samples", "docs", "tests", "spikes", "build", "out", "node_modules"}
+# Checker sources that name fixture years on purpose.
+EXEMPT_FILES = {"tools/check_seasons.py", "tools/check_boundaries.py"}
 EXEMPT_PARTS = {"tests", "testing", "_deps", ".git"}
-# The season-year literal: a year in code, or the legacy compile definition.
-LITERAL = re.compile(r"\b20[2-3]\d\b|WPIEMU_WPILIB_YEAR")
+# Product names that merely contain a year ("Visual Studio 18 2026", "windows-2025-vs2026") are not season literals.
+PRODUCT = re.compile(r"Visual Studio(?: \d+)? \d{4}|(?:vs|msvc)\d{4}|VisualStudio\.\d{4}", re.IGNORECASE)
 ALLOWLIST = "tools/season_literals.allow"
 MARKER = "season-literal-ok:"
 
@@ -48,20 +50,26 @@ def code_of(text: str, suffix: str) -> list[tuple[int, str]]:
     return out
 
 
-def scan_literals(root: Path, files: list[str]) -> dict[str, int]:
+def literal_pattern(years: list[str]) -> re.Pattern:
+    """The year of any season pack as a whole word, or the legacy WPIEMU_WPILIB_YEAR definition."""
+    return re.compile(r"\b(?:" + "|".join(re.escape(y) for y in years) + r")\b|WPIEMU_WPILIB_YEAR")
+
+
+def scan_literals(root: Path, files: list[str], years: list[str]) -> dict[str, int]:
+    pattern = literal_pattern(years)
     found: dict[str, int] = {}
     for rel in files:
         parts = rel.split("/")
         if parts[0] in EXEMPT_TOP or EXEMPT_PARTS.intersection(parts[:-1]) or rel == ALLOWLIST:
             continue
         suffix = Path(rel).suffix
-        if suffix not in SCANNED or rel == "tools/check_seasons.py":
+        if suffix not in SCANNED or rel in EXEMPT_FILES:
             continue
         try:
             text = common.read_text(root / rel, "replace")
         except OSError:
             continue
-        count = sum(len(LITERAL.findall(code)) for _, code in code_of(text, suffix))
+        count = sum(len(pattern.findall(PRODUCT.sub("", code))) for _, code in code_of(text, suffix))
         if count:
             found[rel] = count
     return found
@@ -80,9 +88,9 @@ def read_allowlist(root: Path) -> dict[str, int]:
     return allowed
 
 
-def literal_errors(root: Path, files: list[str]) -> list[str]:
+def literal_errors(root: Path, files: list[str], years: list[str]) -> list[str]:
     errors = []
-    found = scan_literals(root, files)
+    found = scan_literals(root, files, years)
     allowed = read_allowlist(root)
     for rel, count in sorted(found.items()):
         if rel not in allowed:
@@ -187,7 +195,7 @@ def tracked_files(root: Path) -> list[str]:
 def check(root: Path, files: list[str] | None = None) -> list[str]:
     seasons = common.load_seasons(root)
     errors = manifest_errors(root, seasons, common.load_abis(root))
-    return errors + literal_errors(root, tracked_files(root) if files is None else files)
+    return errors + literal_errors(root, tracked_files(root) if files is None else files, list(seasons))
 
 
 def main() -> int:

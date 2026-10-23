@@ -23,7 +23,6 @@ permissions:
   contents: read
 
 env:
-  WPILIB_VERSION: "2026.2.1"
   QT_QPA_PLATFORM: offscreen    # every Qt test / smoke run is headless
 
 jobs:
@@ -102,8 +101,8 @@ jobs:
         with:
           path: |
             build/${{ matrix.preset }}/_wpilib/downloads
-            build/${{ matrix.preset }}/seasons/2027/_wpilib/downloads
-          key: wpilib-multi-${{ hashFiles('versions.json') }}-${{ matrix.name }}
+            build/${{ matrix.preset }}/seasons/*/_wpilib/downloads
+          key: wpilib-multi-${{ hashFiles('seasons/*/season.json') }}-${{ matrix.name }}
 
       - name: Configure
         shell: bash
@@ -116,7 +115,7 @@ jobs:
             extra+=(-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64")
           fi
           cmake --preset ${{ matrix.preset }} -DWPIEMU_WPILIB_DOWNLOAD=ON -DWPIEMU_RUNVIEW_FETCH_SDL2=ON \
-            '-DWPIEMU_SEASONS=2026;2027' -DWPIEMU_REQUIRE_REAL_HAL=ON -DWPIEMU_WARNINGS_AS_ERRORS=ON "${extra[@]}"
+            -DWPIEMU_SEASONS=all -DWPIEMU_REQUIRE_REAL_HAL=ON -DWPIEMU_WARNINGS_AS_ERRORS=ON "${extra[@]}"
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}-release
@@ -131,12 +130,12 @@ jobs:
           cmake --install build/${{ matrix.preset }} --config Release --prefix "$PWD/stage"
           if [ "$RUNNER_OS" = "macOS" ]; then
             stage/wpiemu_app.app/Contents/MacOS/wpiemu_app --version
-            for year in 2026 2027; do test -f "stage/wpiemu_app.app/Contents/PlugIns/wpiemu/$year/libhalsim_wpiemu.dylib"; done
+            python tools/seasons.py extensions --layout macos | while read -r f; do test -f "stage/$f"; done
           elif [ "$RUNNER_OS" = "Windows" ]; then
             stage/bin/wpiemu_app.exe --version
-            for year in 2026 2027; do test -f "stage/extensions/$year/halsim_wpiemu.dll"; done
+            python tools/seasons.py extensions --layout windows | while read -r f; do test -f "stage/$f"; done
             test -f stage/plugins/platforms/qwindows.dll
           else
             stage/bin/wpiemu_app --version
-            for year in 2026 2027; do test -f "stage/lib/wpiemu/$year/libhalsim_wpiemu.so"; done
+            python tools/seasons.py extensions --layout linux | while read -r f; do test -f "stage/$f"; done
           fi

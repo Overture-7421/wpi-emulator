@@ -42,6 +42,9 @@ add_test(NAME docs.check
 add_test(NAME versions.check
     COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/check_versions.py"
             --root "${CMAKE_SOURCE_DIR}")
+add_test(NAME seasons.check
+    COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/check_seasons.py"
+            --root "${CMAKE_SOURCE_DIR}")
 add_test(NAME infrastructure.release_tools
     COMMAND Python3::Interpreter -B -m unittest discover
             -s "${CMAKE_SOURCE_DIR}/tools/tests" -v)

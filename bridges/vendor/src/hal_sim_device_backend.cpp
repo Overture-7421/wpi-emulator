@@ -10,17 +10,7 @@
 #include <set>
 #include <unordered_map>
 
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-#include "wpi/hal/SimDevice.h"
-#include "wpi/hal/Types.h"
-#include "wpi/hal/Value.h"
-#include "wpi/hal/simulation/SimDeviceData.h"
-#else
-#include "hal/SimDevice.h"
-#include "hal/Types.h"
-#include "hal/Value.h"
-#include "hal/simulation/SimDeviceData.h"
-#endif
+#include "wpiemu/hal_abi/sim_device_includes.h"
 
 namespace wpiemu::bridges::vendor {
 
@@ -168,13 +158,8 @@ private:
         info.handle = sdk::SimValueHandle(static_cast<std::uint64_t>(handle));
         info.name = name != nullptr ? name : "";
         switch (direction) {
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-            case HAL_SIM_VALUE_INPUT: info.direction = sdk::SignalDirection::Input; break;
-            case HAL_SIM_VALUE_OUTPUT: info.direction = sdk::SignalDirection::Output; break;
-#else
-            case HAL_SimValueInput: info.direction = sdk::SignalDirection::Input; break;
-            case HAL_SimValueOutput: info.direction = sdk::SignalDirection::Output; break;
-#endif
+            case hal_abi::kSimValueInput: info.direction = sdk::SignalDirection::Input; break;
+            case hal_abi::kSimValueOutput: info.direction = sdk::SignalDirection::Output; break;
             default: info.direction = sdk::SignalDirection::Bidirectional; break;
         }
         const HAL_Type type = value != nullptr ? value->type : HAL_DOUBLE;

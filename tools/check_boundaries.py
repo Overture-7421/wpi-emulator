@@ -59,11 +59,12 @@ ALLOWED: dict[str, set[str]] = {
     "sdk": set(),
     "core": {"sdk"},
     "ipc": {"sdk"},
-    "halsim_ext": {"sdk", "ipc", "bridges"},
+    "hal_abi": set(),   # per-HAL-ABI headers; they include WPILib, so only robot-process modules may use them
+    "halsim_ext": {"sdk", "ipc", "bridges", "hal_abi"},
     "bridges": {"sdk", "bridges/hal", "bridges/vendor", "bridges/vision"},
-    "bridges/hal": {"sdk"},
-    "bridges/vendor": {"sdk"},
-    "bridges/vision": {"sdk"},
+    "bridges/hal": {"sdk", "hal_abi"},
+    "bridges/vendor": {"sdk", "hal_abi"},
+    "bridges/vision": {"sdk", "hal_abi"},
     # Top-level app files (main.cpp, app/tests): the composition root and its tests may see every app layer.
     "app": {"sdk", "core", "ipc", "plugins", SHARED_APP} | APP_ALL,
     SHARED_APP: {"sdk"},
@@ -85,7 +86,7 @@ PLUGIN_ALLOWED = {"sdk"}
 AGGREGATOR = "plugins"
 AGGREGATOR_ALLOWED = {"sdk", AGGREGATOR, "plugins/*"}
 
-MODULE_OWNERS = ["sdk", "core", "ipc", "halsim_ext", "bridges", "bridges/hal", "bridges/vendor", "bridges/vision", "app",
+MODULE_OWNERS = ["sdk", "core", "ipc", "hal_abi", "halsim_ext", "bridges", "bridges/hal", "bridges/vendor", "bridges/vision", "app",
                  SHARED_APP, *sorted(APP_ALL)]
 
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]', re.MULTILINE)
@@ -111,6 +112,7 @@ TARGET_OWNERS = {
     "wpiemu_sdk": "sdk",
     "wpiemu_core": "core",
     "wpiemu_ipc": "ipc",
+    "wpiemu_hal_abi": "hal_abi",
     "halsim_wpiemu": "halsim_ext",
     "wpiemu_halsim_core": "halsim_ext",
     "wpiemu_halsim_ext_hal_tests": "halsim_ext",
@@ -181,7 +183,7 @@ def owner_of_path(rel: str) -> str | None:
         if len(parts) >= 3 and parts[1] in APP_DIRS:
             return f"app/{parts[1]}"
         return "app"
-    if parts[0] in ("sdk", "core", "ipc", "halsim_ext"):
+    if parts[0] in ("sdk", "core", "ipc", "halsim_ext", "hal_abi"):
         return parts[0]
     return None
 
@@ -259,7 +261,7 @@ def classify_include(src_rel: str, target: str, quoted: bool, known: set[str]) -
             return "plugins/_template" if parts[1] == "_template" else f"plugins/game_{parts[1]}"
         if len(parts) >= 3 and parts[0] == "bridges":
             return f"bridges/{parts[1]}"
-        if len(parts) >= 2 and quoted and parts[0] in ("core", "app", "ipc", "sdk", "halsim_ext"):
+        if len(parts) >= 2 and quoted and parts[0] in ("core", "app", "ipc", "sdk", "halsim_ext", "hal_abi"):
             # An include inside app/ that matched nothing above is generated or third-party, not another module.
             if parts[0] == "app" and src_rel.startswith("app/"):
                 continue
@@ -531,6 +533,12 @@ def self_test() -> int:
         ("bridges/vision/src/a.cpp", '#include <wpiemu/bridges/vendor/a.h>\n', 1),
         ("bridges/vision/src/a.cpp", '#include "wpiemu/core/c.h"\n#include "wpiemu/halsim_ext/x.h"\n', 2),
         ("bridges/hal/src/a.cpp", '#include <wpiemu/bridges/vision/a.h>\n', 1),
+        # per-ABI headers include WPILib: robot-process modules only
+        ("halsim_ext/src/a.cpp", '#include "wpiemu/hal_abi/hal_includes.h"\n', 0),
+        ("bridges/vision/src/a.cpp", '#include "wpiemu/hal_abi/hal_time.h"\n', 0),
+        ("core/src/c.cpp", '#include "wpiemu/hal_abi/hal_includes.h"\n', 1),
+        ("app/src/main.cpp", '#include "wpiemu/hal_abi/hal_includes.h"\n', 1),
+        ("seasons/2026/game/src/p.cpp", '#include "wpiemu/hal_abi/hal_includes.h"\n', 1),
         ("bridges/builtin_bridges.cpp", '#include <wpiemu/bridges/vision/a.h>\n#include <wpiemu/bridges/vision/nt_binding.h>\n', 0),
         # app/ layering: the contract and the page libraries see the SDK, the contract and the shared headers only
         ("app/runview/run_page.cpp", '#include "contract/runtime_host.h"\n#include "run_page.h"\n#include <wpiemu/sdk/a.h>\n', 0),
@@ -625,6 +633,10 @@ def self_test() -> int:
          "target_link_libraries(halsim_wpiemu PRIVATE wpiemu_bridges_builtin wpiemu_halsim_core wpiemu_wpilib_hal)\n", 0),
         ("halsim_ext/CMakeLists.txt",
          "target_link_libraries(halsim_wpiemu PRIVATE wpiemu_bridges_hal)\n", 1),
+        ("halsim_ext/CMakeLists.txt",
+         "target_link_libraries(halsim_wpiemu PRIVATE wpiemu_hal_abi wpiemu_wpilib_hal)\n", 0),
+        ("core/CMakeLists.txt",
+         "target_link_libraries(wpiemu_core PRIVATE wpiemu_hal_abi)\n", 1),
         ("core/CMakeLists.txt",
          "target_link_libraries(wpiemu_core PRIVATE wpiemu_bridges_builtin)\n", 1),
         ("app/CMakeLists.txt",

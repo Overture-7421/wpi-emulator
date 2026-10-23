@@ -8,13 +8,7 @@
 #include <string>
 #include <vector>
 
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-#include "wpi/hal/HAL.h"
-#include "wpi/hal/Extensions.h"
-#else
-#include "hal/HAL.h"
-#include "hal/Extensions.h"
-#endif
+#include "wpiemu/hal_abi/hal_includes.h"
 #include "ipc_bindings.h"
 #include "wpiemu/halsim_ext/config.h"
 #include "wpiemu/halsim_ext/extension_runtime.h"

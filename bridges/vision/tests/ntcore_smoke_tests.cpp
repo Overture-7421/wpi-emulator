@@ -8,15 +8,10 @@
 #include <string>
 #include <vector>
 
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-#include <wpi/hal/HAL.h>
-#include <wpi/hal/simulation/MockHooks.h>
-#include <wpi/nt/ntcore_c.h>
-#else
-#include <ntcore_c.h>
-#endif
-
 #include "wpiemu/bridges/vision/nt_binding.h"
+#include "wpiemu/hal_abi/hal_includes.h"
+#include "wpiemu/hal_abi/hal_time.h"
+#include "wpiemu/hal_abi/nt_includes.h"
 #include "wpiemu/bridges/vision/photon_encoding.h"
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/vision/vision_bridge.h"
@@ -26,11 +21,7 @@ namespace sdk = wpiemu::sdk;
 
 namespace {
 
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-constexpr std::int64_t kNativeTimePerUs = 1000;
-#else
-constexpr std::int64_t kNativeTimePerUs = 1;
-#endif
+using wpiemu::hal_abi::kNativeTimePerUs;
 
 WPI_String str(const std::string& s) { return WPI_String{s.data(), s.size()}; }
 
@@ -111,22 +102,21 @@ TEST_CASE("vision ntcore binding: attaches to the loaded ntcore and reports the 
     CHECK(now - before < 5'000'000);
 }
 
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-TEST_CASE("vision ntcore binding: 2027 HAL time and NT publication convert nanoseconds at the boundary") {
+TEST_CASE("vision ntcore binding: HAL time and NT publication convert the HAL's native unit to microseconds at the boundary") {
     const bool paused = HALSIM_IsTimingPaused();
     HALSIM_PauseTiming();
     auto backend = vis::makeNtcoreBackend();
     REQUIRE(backend->available());
     const auto before = backend->nowUs();
-    HALSIM_StepTiming(40'000'000);
+    HALSIM_StepTiming(40'000 * kNativeTimePerUs);
     CHECK(backend->nowUs() - before == 40'000);
-    REQUIRE(backend->publish("/wpiemu_test/2027_clock", vis::ntDouble(2.0), before + 40'000).ok());
-    CHECK(readDirect("/wpiemu_test/2027_clock").time == (before + 40'000) * 1000);
-    CHECK_FALSE(backend->publish("/wpiemu_test/2027_overflow", vis::ntDouble(2.0),
-                                std::numeric_limits<std::int64_t>::max()).ok());
+    REQUIRE(backend->publish("/wpiemu_test/clock", vis::ntDouble(2.0), before + 40'000).ok());
+    CHECK(readDirect("/wpiemu_test/clock").time == (before + 40'000) * kNativeTimePerUs);
+    if (kNativeTimePerUs > 1)   // a nanosecond clock cannot represent the largest microsecond value
+        CHECK_FALSE(backend->publish("/wpiemu_test/overflow", vis::ntDouble(2.0),
+                                     std::numeric_limits<std::int64_t>::max()).ok());
     if (!paused) HALSIM_ResumeTiming();
 }
-#endif
 
 TEST_CASE("vision ntcore binding: a missing ntcore module is unavailable and never fatal") {
     vis::NtcoreBackendOptions options;

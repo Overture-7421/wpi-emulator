@@ -18,11 +18,8 @@
 #include <dlfcn.h>
 #endif
 
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-#include <wpi/nt/ntcore_c.h>
-#else
-#include <ntcore_c.h>
-#endif
+#include "wpiemu/hal_abi/hal_time.h"
+#include "wpiemu/hal_abi/nt_includes.h"
 
 #include "wpiemu/bridges/vision/nt_binding.h"
 
@@ -120,13 +117,8 @@ struct NtApi {
     decltype(&NT_SetRaw) setRaw = nullptr;
 };
 
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-using HalTimeFn = std::int64_t (*)();
-constexpr std::int64_t kNativeTimePerUs = 1000;
-#else
-using HalTimeFn = std::uint64_t (*)(std::int32_t* status);
-constexpr std::int64_t kNativeTimePerUs = 1;
-#endif
+using hal_abi::HalTimeFn;
+using hal_abi::kNativeTimePerUs;
 
 WPI_String toWpiString(std::string_view s) { return WPI_String{s.data(), s.size()}; }
 
@@ -199,13 +191,8 @@ public:
         if (!available()) return 0;
         if (halFpgaTime_ == nullptr) attachHal();
         if (halFpgaTime_ != nullptr) {
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-            return halFpgaTime_() / kNativeTimePerUs;
-#else
-            std::int32_t status = 0;
-            const std::uint64_t t = halFpgaTime_(&status);
-            if (status == 0) return static_cast<std::int64_t>(t);
-#endif
+            std::int64_t us = 0;
+            if (hal_abi::halTimeUs(halFpgaTime_, &us)) return us;
         }
         return api_.now() / kNativeTimePerUs;
     }
@@ -351,11 +338,7 @@ private:
     void attachHal() {
         // wpiHal is loaded before the extension runs (HAL_Initialize loads it); never load it from here.
         if (hal_.open(options_.halModule, false)) {
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-            halFpgaTime_ = reinterpret_cast<HalTimeFn>(hal_.symbol("HAL_GetMonotonicTime"));
-#else
-            halFpgaTime_ = reinterpret_cast<HalTimeFn>(hal_.symbol("HAL_GetFPGATime"));
-#endif
+            halFpgaTime_ = reinterpret_cast<HalTimeFn>(hal_.symbol(hal_abi::kHalTimeSymbol));
         }
     }
 

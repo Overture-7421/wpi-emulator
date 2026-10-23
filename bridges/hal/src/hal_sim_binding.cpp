@@ -5,74 +5,14 @@
 #include <cmath>
 #include <stdexcept>
 
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-#include <wpi/hal/AddressableLEDTypes.h>
-#include <wpi/hal/Ports.h>
-#include <wpi/hal/REVPH.h>
-#include <wpi/hal/CANAPITypes.h>
-#include <wpi/hal/SimDevice.h>
-#include <wpi/hal/simulation/SimDeviceData.h>
-#include <wpi/hal/simulation/IMUData.h>
-#include <wpi/hal/simulation/AddressableLEDData.h>
-#include <wpi/hal/simulation/AnalogInData.h>
-#include <wpi/hal/simulation/CTREPCMData.h>
-#include <wpi/hal/simulation/CanData.h>
-#include <wpi/hal/simulation/DIOData.h>
-#include <wpi/hal/simulation/DutyCycleData.h>
-#include <wpi/hal/simulation/EncoderData.h>
-#include <wpi/hal/simulation/PWMData.h>
-#include <wpi/hal/simulation/PowerDistributionData.h>
-#include <wpi/hal/simulation/REVPHData.h>
-#include <wpi/hal/simulation/RoboRioData.h>
-#else
-#include <hal/AddressableLEDTypes.h>
-#include <hal/Ports.h>
-#include <hal/REVPH.h>
-#include <hal/simulation/AccelerometerData.h>
-#include <hal/simulation/AddressableLEDData.h>
-#include <hal/simulation/AnalogInData.h>
-#include <hal/simulation/AnalogOutData.h>
-#include <hal/simulation/CTREPCMData.h>
-#include <hal/simulation/CanData.h>
-#include <hal/simulation/DIOData.h>
-#include <hal/simulation/DutyCycleData.h>
-#include <hal/simulation/EncoderData.h>
-#include <hal/simulation/PWMData.h>
-#include <hal/simulation/PowerDistributionData.h>
-#include <hal/simulation/REVPHData.h>
-#include <hal/simulation/RelayData.h>
-#include <hal/simulation/RoboRioData.h>
-#endif
+#include "hal_sim_abi.h"
+#include "wpiemu/hal_abi/hal_includes.h"
 
 // HALSIM_* does not range-check its index argument, so every accessor guards it here.
 namespace wpiemu::bridges::hal {
 namespace {
 
 bool in(int index, int count) { return index >= 0 && index < count; }
-
-class SimPwm final : public IPwmHal {
-public:
-    int channelCount() const override { return HAL_GetNumPWMChannels(); }
-    bool initialized(int c) const override { return in(c, channelCount()) && HALSIM_GetPWMInitialized(c); }
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-    bool hasSpeed(int c) const override { return throttle(c) != 0; }
-    bool hasPosition() const override { return false; }
-    double speed(int c) const override {
-        const auto handle = throttle(c);
-        return handle != 0 ? HAL_GetSimValueDouble(handle) : 0.0;
-    }
-    double position(int) const override { throw std::logic_error("PWM position is not exposed by WPILib 2027"); }
-    static HAL_SimValueHandle throttle(int c) {
-        if (!in(c, HAL_GetNumPWMChannels())) return 0;
-        const auto device = HALSIM_GetPWMSimDevice(c);
-        return device != 0 ? HALSIM_GetSimValueHandle(device, "Throttle") : 0;
-    }
-#else
-    double speed(int c) const override { return in(c, channelCount()) ? HALSIM_GetPWMSpeed(c) : 0.0; }
-    double position(int c) const override { return in(c, channelCount()) ? HALSIM_GetPWMPosition(c) : 0.0; }
-#endif
-    int pulseMicroseconds(int c) const override { return in(c, channelCount()) ? HALSIM_GetPWMPulseMicrosecond(c) : 0; }
-};
 
 class SimDio final : public IDioHal {
 public:
@@ -95,15 +35,6 @@ public:
     }
 };
 
-#if !WPIEMU_HAL_ABI_SYSTEMCORE
-class SimAnalogOut final : public IAnalogOutHal {
-public:
-    int channelCount() const override { return HAL_GetNumAnalogOutputs(); }
-    bool initialized(int c) const override { return in(c, channelCount()) && HALSIM_GetAnalogOutInitialized(c); }
-    double voltage(int c) const override { return in(c, channelCount()) ? HALSIM_GetAnalogOutVoltage(c) : 0.0; }
-};
-#endif
-
 class SimEncoder final : public IEncoderHal {
 public:
     int channelCount() const override { return HAL_GetNumEncoders(); }
@@ -118,11 +49,7 @@ public:
     }
     void setPeriod(int i, double p) override {
         if (!in(i, channelCount())) return;
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-        HALSIM_SetEncoderRate(i, std::isfinite(p) && p != 0.0 ? HALSIM_GetEncoderDistancePerPulse(i) / p : 0.0);
-#else
-        HALSIM_SetEncoderPeriod(i, p);
-#endif
+        abi::setEncoderPeriod(i, p);
     }
     void setDirection(int i, bool positive) override {
         if (in(i, channelCount())) HALSIM_SetEncoderDirection(i, positive);
@@ -134,11 +61,7 @@ public:
     int channelCount() const override { return HAL_GetNumDutyCycles(); }
     bool initialized(int i) const override { return in(i, channelCount()) && HALSIM_GetDutyCycleInitialized(i); }
     int digitalChannel(int i) const override {
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-        return in(i, channelCount()) ? i : -1;
-#else
-        return in(i, channelCount()) ? HALSIM_GetDutyCycleDigitalChannel(i) : -1;
-#endif
+        return in(i, channelCount()) ? abi::dutyCycleDigitalChannel(i) : -1;
     }
     double output(int i) const override { return in(i, channelCount()) ? HALSIM_GetDutyCycleOutput(i) : 0.0; }
     void setOutput(int i, double v) override {
@@ -149,17 +72,6 @@ public:
         if (in(i, channelCount())) HALSIM_SetDutyCycleFrequency(i, hz);
     }
 };
-
-#if !WPIEMU_HAL_ABI_SYSTEMCORE
-class SimRelay final : public IRelayHal {
-public:
-    int headerCount() const override { return HAL_GetNumRelayHeaders(); }
-    bool forwardInitialized(int h) const override { return in(h, headerCount()) && HALSIM_GetRelayInitializedForward(h); }
-    bool reverseInitialized(int h) const override { return in(h, headerCount()) && HALSIM_GetRelayInitializedReverse(h); }
-    bool forward(int h) const override { return in(h, headerCount()) && HALSIM_GetRelayForward(h); }
-    bool reverse(int h) const override { return in(h, headerCount()) && HALSIM_GetRelayReverse(h); }
-};
-#endif
 
 class SimCtrePcm final : public IPneumaticsHal {
 public:
@@ -191,12 +103,7 @@ public:
     }
     bool compressorOn(int m) const override { return in(m, moduleCount()) && HALSIM_GetREVPHCompressorOn(m); }
     bool closedLoopEnabled(int m) const override {
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-        constexpr auto disabled = HAL_REVPH_COMPRESSOR_CONFIG_DISABLED;
-#else
-        constexpr auto disabled = HAL_REVPHCompressorConfigType_kDisabled;
-#endif
-        return in(m, moduleCount()) && HALSIM_GetREVPHCompressorConfigType(m) != disabled;
+        return in(m, moduleCount()) && abi::revPhClosedLoopEnabled(m);
     }
     bool pressureSwitch(int m) const override { return in(m, moduleCount()) && HALSIM_GetREVPHPressureSwitch(m); }
     void setPressureSwitch(int m, bool v) override {
@@ -230,198 +137,41 @@ public:
     }
 };
 
-class SimAddressableLed final : public IAddressableLedHal {
-public:
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-    bool hasOutputPort() const override { return false; }
-    bool hasRunning() const override { return false; }
-#endif
-    int channelCount() const override { return HAL_GetNumAddressableLEDs(); }
-    bool initialized(int i) const override { return in(i, channelCount()) && HALSIM_GetAddressableLEDInitialized(i); }
-    int outputPort(int i) const override {
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-        static_cast<void>(i);
-        throw std::logic_error("WPILib 2027 has no LED output port");
-#else
-        return in(i, channelCount()) ? HALSIM_GetAddressableLEDOutputPort(i) : 0;
-#endif
-    }
-    int length(int i) const override { return in(i, channelCount()) ? HALSIM_GetAddressableLEDLength(i) : 0; }
-    bool running(int i) const override {
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-        static_cast<void>(i);
-        throw std::logic_error("WPILib 2027 has no LED running state");
-#else
-        return in(i, channelCount()) && HALSIM_GetAddressableLEDRunning(i);
-#endif
-    }
-    void readPixels(int i, std::vector<LedPixel>& out) const override {
-        out.clear();
-        if (!in(i, channelCount())) return;
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-        buffer_.resize(static_cast<std::size_t>(std::max(0, length(i))));
-        const int n = std::clamp(HALSIM_GetAddressableLEDData(HALSIM_GetAddressableLEDStart(i), length(i), buffer_.data()),
-                                 0, static_cast<int>(buffer_.size()));
-#else
-        buffer_.resize(HAL_kAddressableLEDMaxLength);
-        const int n = std::clamp(HALSIM_GetAddressableLEDData(i, buffer_.data()), 0, static_cast<int>(buffer_.size()));
-#endif
-        out.reserve(static_cast<std::size_t>(n));
-        for (int k = 0; k < n; ++k) {
-            const HAL_AddressableLEDData& p = buffer_[static_cast<std::size_t>(k)];
-            out.push_back(LedPixel{p.r, p.g, p.b});
-        }
-    }
-
-private:
-    mutable std::vector<HAL_AddressableLEDData> buffer_;
-};
-
-class SimRoboRio final : public IRoboRioHal {
-public:
-    double vInVoltage() const override { return HALSIM_GetRoboRioVInVoltage(); }
-    void setVInVoltage(double v) override { HALSIM_SetRoboRioVInVoltage(v); }
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-    bool hasInputCurrent() const override { return false; }
-    double vInCurrent() const override { throw std::logic_error("WPILib 2027 has no controller input current"); }
-    void setVInCurrent(double) override { throw std::logic_error("WPILib 2027 has no controller input current"); }
-#else
-    double vInCurrent() const override { return HALSIM_GetRoboRioVInCurrent(); }
-    void setVInCurrent(double a) override { HALSIM_SetRoboRioVInCurrent(a); }
-#endif
-    double brownoutVoltage() const override { return HALSIM_GetRoboRioBrownoutVoltage(); }
-};
-
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-class SimImu final : public IImuHal {
-public:
-    void setAcceleration(double x, double y, double z) override {
-        HALSIM_SetIMUAccelX(x);
-        HALSIM_SetIMUAccelY(y);
-        HALSIM_SetIMUAccelZ(z);
-    }
-    void setAngles(double x, double y, double z) override {
-        HALSIM_SetIMUAngleX(x);
-        HALSIM_SetIMUAngleY(y);
-        HALSIM_SetIMUAngleZ(z);
-        HALSIM_SetIMUYaw(z);
-    }
-    void setRates(double x, double y, double z) override {
-        HALSIM_SetIMUGyroRateX(x);
-        HALSIM_SetIMUGyroRateY(y);
-        HALSIM_SetIMUGyroRateZ(z);
-    }
-};
-#else
-class SimAccelerometer final : public IAccelerometerHal {
-public:
-    bool active() const override { return HALSIM_GetAccelerometerActive(0); }
-    void setAcceleration(double x, double y, double z) override {
-        HALSIM_SetAccelerometerX(0, x);
-        HALSIM_SetAccelerometerY(0, y);
-        HALSIM_SetAccelerometerZ(0, z);
-    }
-};
-#endif
-
-class SimCan final : public ICanHal {
-public:
-    std::unique_ptr<ICanSubscription> subscribe(ICanFrameListener& listener) override {
-        auto sub = std::make_unique<Subscription>(listener);
-        return sub->valid() ? std::unique_ptr<ICanSubscription>(std::move(sub)) : nullptr;
-    }
-
-private:
-    class Subscription final : public ICanSubscription {
-    public:
-        explicit Subscription(ICanFrameListener& listener)
-            : uid_(HALSIM_RegisterCanSendMessageCallback(&Subscription::trampoline, &listener)) {}
-        ~Subscription() override {
-            if (uid_ != 0) HALSIM_CancelCanSendMessageCallback(uid_);
-        }
-        bool valid() const { return uid_ != 0; }
-
-    private:
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-        static void trampoline(const char*, void* param, int32_t busId, uint32_t id, const HAL_CANMessage* message,
-                               int32_t periodMs, int32_t*) {
-            const auto* data = message != nullptr ? message->data : nullptr;
-            const auto size = message != nullptr ? message->dataSize : 0;
-#else
-        static void trampoline(const char*, void* param, uint32_t id, const uint8_t* data, uint8_t size, int32_t periodMs,
-                               int32_t*) {
-#endif
-            CanFrame frame;
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-            frame.busId = busId;
-#endif
-            frame.arbitrationId = id;
-            frame.size = static_cast<std::uint8_t>(std::min<std::size_t>(size, frame.data.size()));
-            if (data != nullptr && frame.size > 0) std::memcpy(frame.data.data(), data, frame.size);
-            frame.periodMs = periodMs;
-            static_cast<ICanFrameListener*>(param)->onFrame(frame);
-        }
-        int32_t uid_;
-    };
-};
-
 class SimHalApi final : public IHalApi {
 public:
-    IPwmHal& pwm() override { return pwm_; }
+    IPwmHal& pwm() override { return *pwm_; }
     IDioHal& dio() override { return dio_; }
     IAnalogInHal& analogIn() override { return analogIn_; }
-    IAnalogOutHal* analogOut() override {
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-        return nullptr;
-#else
-        return &analogOut_;
-#endif
-    }
+    IAnalogOutHal* analogOut() override { return analogOut_.get(); }
     IEncoderHal& encoder() override { return encoder_; }
     IDutyCycleHal& dutyCycle() override { return dutyCycle_; }
-    IRelayHal* relay() override {
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-        return nullptr;
-#else
-        return &relay_;
-#endif
-    }
+    IRelayHal* relay() override { return relay_.get(); }
     IPneumaticsHal& ctrePcm() override { return pcm_; }
     IPneumaticsHal& revPh() override { return ph_; }
     IPowerDistributionHal& powerDistribution() override { return pd_; }
-    IAddressableLedHal& addressableLed() override { return led_; }
-    IRoboRioHal& roboRio() override { return rio_; }
-    IAccelerometerHal* accelerometer() override {
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-        return nullptr;
-#else
-        return &accel_;
-#endif
-    }
-#if WPIEMU_HAL_ABI_SYSTEMCORE
-    IImuHal* imu() override { return &imu_; }
-#endif
-    ICanHal& can() override { return can_; }
+    IAddressableLedHal& addressableLed() override { return *led_; }
+    IRoboRioHal& roboRio() override { return *rio_; }
+    IAccelerometerHal* accelerometer() override { return accelerometer_.get(); }
+    IImuHal* imu() override { return imu_.get(); }
+    ICanHal& can() override { return *can_; }
 
 private:
-    SimPwm pwm_;
+    // The families of the selected HAL generation come from its abi/<abi>/ source; the rest is shared.
+    std::unique_ptr<IPwmHal> pwm_ = abi::makePwm();
     SimDio dio_;
     SimAnalogIn analogIn_;
-#if !WPIEMU_HAL_ABI_SYSTEMCORE
-    SimAnalogOut analogOut_;
-    SimRelay relay_;
-    SimAccelerometer accel_;
-#else
-    SimImu imu_;
-#endif
+    std::unique_ptr<IAnalogOutHal> analogOut_ = abi::makeAnalogOut();
+    std::unique_ptr<IRelayHal> relay_ = abi::makeRelay();
+    std::unique_ptr<IAccelerometerHal> accelerometer_ = abi::makeAccelerometer();
+    std::unique_ptr<IImuHal> imu_ = abi::makeImu();
     SimEncoder encoder_;
     SimDutyCycle dutyCycle_;
     SimCtrePcm pcm_;
     SimRevPh ph_;
     SimPowerDistribution pd_;
-    SimAddressableLed led_;
-    SimRoboRio rio_;
-    SimCan can_;
+    std::unique_ptr<IAddressableLedHal> led_ = abi::makeAddressableLed();
+    std::unique_ptr<IRoboRioHal> rio_ = abi::makeRoboRio();
+    std::unique_ptr<ICanHal> can_ = abi::makeCan();
 };
 
 }  // namespace
