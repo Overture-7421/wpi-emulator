@@ -1,274 +1,240 @@
 # WPI Emulator user guide
 
-Read this when installing the app, describing a robot or running your robot code.
-Prerequisites: a WPILib 2026 Java or C++ project using GradleRIO and its complete Gradle wrapper. **You do not need to install
-WPILib.** If it is installed, the emulator uses its Java and nothing else changes; if not, setup finds a Java that works or
-offers to download one. C++ projects also need the MSVC C++ tools on Windows (setup can start their installer), Xcode command line
-tools on macOS, or a Linux C++ compiler. The 3D view needs a working graphics driver.
+Use this guide to open a team's robot project, describe its mechanisms, map its devices,
+and run robot code on the simulated field. Start with the [swerve](../samples/swerve_robot/README.md)
+or [vision](../samples/vision_robot/README.md) sample if you want a known device layout.
 
-The launcher injects a HALSim extension through Gradle without rewriting your robot source,
-build configuration or vendordeps. Normal Gradle outputs/caches and the robot setup in
-`.wpiemu\robot.json` are still written.
+You need a WPILib 2026 Java or C++ GradleRIO project with its complete Gradle wrapper.
+You do **not** need to install WPILib. C++ projects also need the platform's compiler
+(MSVC build tools on Windows, Xcode command-line tools on macOS, or a Linux C++ compiler).
+The 3D view needs a working graphics driver.
 
-For a first run, the [swerve](../samples/swerve_robot/README.md) and
-[vision](../samples/vision_robot/README.md) samples provide known device layouts and expected output.
-To change the emulator rather than a robot model, start with the [developer guides](extending.md).
+The emulator runs your robot code in a separate process. It injects its HALSim extension
+through Gradle; it does not rewrite your robot source, build files, or vendordeps. The robot
+program still builds normally and the emulator models the devices you describe and map.
 
 ## Install and launch
 
-Windows: run the NSIS installer, or extract the **whole** portable ZIP. The installed executable
-is `C:\Program Files\WPI Emulator\bin\wpiemu_app.exe`; a portable tree also uses `bin\wpiemu_app.exe`.
-macOS: open the DMG and copy `wpiemu_app.app` to Applications. Linux: make the AppImage executable
-and run it. Packages include the app's Qt runtime, not the robot's WPILib toolchain or a Java (setup downloads one only when needed).
-Artifact names and packaging caveats are in [Releasing](releasing.md);
-source-build instructions and Qt DLL setup are in [Building](BUILDING.md). The app can update itself; see [Updates](#updates).
+- **Windows:** run the installer or extract the whole portable ZIP. Launch
+  `bin\wpiemu_app.exe` (installed by default at
+  `C:\Program Files\WPI Emulator\bin\wpiemu_app.exe`).
+- **macOS:** copy `wpiemu_app.app` from the DMG to Applications.
+- **Linux:** make the AppImage executable and run it.
 
-For example, in Windows PowerShell:
+Packages include the app's Qt runtime, not a Java or WPILib toolchain. For package names and
+caveats, see [Releasing](releasing.md); for source builds, see [Building](BUILDING.md).
+
+For example, in PowerShell:
 
 ```powershell
 & "C:\Program Files\WPI Emulator\bin\wpiemu_app.exe" --project "C:\Robots\MyRobot"
 ```
 
-`--project <folder>` opens that project at startup. Without it, the app can reopen the last
-project; disable that in Settings. `--demo` substitutes scripted devices and motion without
-launching robot code; open a project to use the editor/run pages. `--version` prints the existing
-SDK, IPC, core and plugin summary without opening a window; it is not a product-release version.
+`--project <folder>` opens a project at startup. Otherwise, **Reopen the last project when the
+app starts** is enabled by default. `--demo` opens the scripted demo without launching robot
+code. `--version` prints the SDK, IPC, core, and plugin version summary; it is not the
+product-release version. An installed copy can update itself; see [Updates](#updates).
 
-## Set up your robot
+## Set up a robot
 
 Drop a project folder on the window or use **File > Open project…** (`Ctrl+O` on Windows).
-A project without a saved model opens **Set up your robot**. Use **File > Set up robot…**
-to revisit it.
+If it has no saved robot model, the app opens **Set up your robot**. Reopen the wizard with
+**File > Set up robot…**.
 
-**Project:** choose the folder containing `build.gradle`. Check the detected season, language,
-team number and vendor libraries. Missing GradleRIO or an unreadable project is an error;
-an unknown season or incomplete wrapper needs attention before running.
+1. **Project:** select the folder containing `build.gradle`. Check the detected WPILib season,
+   language, team number, and vendor libraries. An unreadable project or missing GradleRIO is
+   an error; unknown season information or an incomplete wrapper needs attention before launch.
+2. **Toolchain:** wait for the Java, wrapper, WPILib, C++ compiler (when needed), and game-module
+   checks. Use each row's fix, then **Re-check**. If no Java that can run the project is found,
+   the Java row may offer **Get Java** (with its version); on Windows, a missing C++ compiler may
+   offer **Install C++ build tools**. You can finish setup with missing tools, but robot code will
+   not launch until they are fixed. For Java selection and launch rules, see the
+   [Launcher boundary](reference/runtime.md#launcher-boundary).
 
-**Toolchain:** wait for checks of Java, the wrapper, WPILib, the C++ compiler when needed,
-and the game module. Follow each missing row's hint, then **Re-check**. If no Java on the computer can run the project, the Java row
-shows **Get Java**: after you confirm, WPI Emulator downloads Java 17 (about 190 MB, from github.com, checked against a published
-checksum, no administrator rights) and re-checks. It appears only when nothing else works: an installed WPILib's Java is always used
-as it is. On a Windows C++ project without usable build tools the C++ row offers **Install C++ build tools**, which starts Microsoft's
-installer (several GB; it shows its own window and Windows asks for permission).
-You may finish setup with missing tools, but must fix them before robot code can run.
-**Core-only mode** means no season field, game pieces or scoring; it does not promise that
-the bundled HALSim extension works with another WPILib year.
+   **Core-only mode** means the season has no game module, so its field and game pieces are not
+   simulated. It does not promise that the bundled HALSim extension works with another WPILib year.
+3. **Robot:** choose **Swerve**, **Tank**, or **Mecanum** and enter the frame, wheel, motor,
+   gearing, alliance, and station details.
+4. **Summary:** review the model and save location, then choose **Open editor**.
 
-**Robot:** choose **Swerve**, **Tank** or **Mecanum**. Enter dimensions, mass, bumpers, wheel
-diameter, motors, gearing, alliance and station. Fix highlighted values before continuing.
-**Summary:** review the model and save locations, then choose **Open editor**.
+The setup is saved in your project as `.wpiemu\robot.json`; commit it to share the same model
+with your team. Running setup again keeps existing mechanisms, cameras, zones, game settings,
+and surviving device mappings. A changed wheel layout can remove wheel mappings, so check
+them afterward. For file reload, save, and recovery behavior, see
+[Persistence responsibilities](reference/runtime.md#persistence-responsibilities).
 
-Revisiting the wizard keeps mechanisms, cameras, zones, game settings and surviving device
-mappings. Changing wheel layout can remove wheel mappings; check them again afterward.
+## Describe the robot
 
-## Build the model
+The **Editor** page has a project tree, a detected-device list, a viewport, and an inspector.
+Select **Chassis** to edit its mass, dimensions, and centre of mass; **Drivetrain** contains
+the drive type and wheels. Select a wheel to edit its position, motor, gearing, and (for
+swerve) steering. Right-click Drivetrain or a wheel to **Add wheel**.
 
-The **Editor** and **Run** tabs switch pages (`Ctrl+1` / `Ctrl+2`). In the editor, the project
-tree and detected devices are on the left, the viewport in the centre and the inspector
-on the right; the bottom panel contains Console, Validation and Telemetry.
+Use boxes and cylinders in **Shapes** for visible or colliding robot parts. Right-click Robot
+or Chassis and choose **Add mechanism > Rotary / Arm / Linear** for a roller, gravity-loaded
+pivot, or elevator/slide. **Drive** controls actuation; **Configure** holds model settings and
+sensors; **Placement** sets attachment and mount pose. Use **Add attached mechanism** to model
+parts that move together.
 
-Select **Chassis** to edit mass, dimensions and centre of mass; **Drivetrain** contains its
-settings and wheels. Select individual wheels for hub positions, motors, gearing and steering.
-Right-click Drivetrain or a wheel to add a wheel; a wheel's menu can delete it.
-Use boxes/cylinders in **Shapes** to describe visible and colliding parts.
+Select a part in the tree or viewport. The viewport toolbar's **Move**, **Rotate**, and
+**Scale** modes use `W` / `E` / `R`; **Front**, **Side**, **Top**, and **3D** choose views,
+and **Frame** (`F`) frames the selection. **Snap** uses grid and 15° increments; hold `Ctrl`
+while dragging to toggle snapping for that drag. Left/middle-drag pans, right-drag orbits,
+and the wheel zooms. `Del` deletes and `Ctrl+D` duplicates supported selections; `Ctrl+Z` /
+`Ctrl+Y` undo and redo. The bottom panel contains **Console**, **Validation**, and **Telemetry**.
 
-Right-click Robot or Chassis for **Add mechanism > Rotary / Arm / Linear**. Use Rotary for
-rollers, flywheels or turrets, Arm for gravity-loaded pivots, and Linear for elevators/slides.
-**Drive** controls actuation; **Configure** holds dynamics, limits and sensors;
-**Placement** sets the parent/link and mount pose. **Add attached mechanism** on an existing
-mechanism makes a moving assembly. Shapes move with their owning part.
+For parts sharing motion, select the follower and choose **Drive > Linked to another part**.
+Select its source and signed ratio; a negative ratio reverses direction. The follower gives
+up its own motor mapping but retains sensor slots. Link source parts to controllers.
+Links do not send follower loads back to the source and are not a torque-sharing gearbox model.
+Display units do not change saved SI values.
 
-For parts sharing motion, select the follower and choose **Drive > Linked to another part**,
-then the source and signed ratio. A negative ratio reverses motion; mixed rotary/linear
-links show their units. The follower loses its own motor mappings but keeps sensor slots.
-Map controllers to the source; choose **Own motors** to unlink. Wizard-made tank wheels
-already follow one powered wheel per side. Links do not reflect follower loads back to
-the source and are not a torque-sharing gearbox model.
+## Discover and map devices
 
-Left-click selects. Right-drag or Alt+left-drag orbits; middle-drag or left-drag on empty
-space pans; the wheel zooms. `W` / `E` / `R` choose move/rotate/scale, `F` frames selection,
-and `1`–`4` choose Front/Side/Top/3D. Hold `Ctrl` during a gizmo drag to toggle snapping.
-Use `Del` to delete and `Ctrl+D` to duplicate supported selections while the editor has focus.
-Undo/redo (`Ctrl+Z` / `Ctrl+Y`) includes gizmo drags. Display units do not change saved SI values.
+Open a configured project to launch its robot code for device discovery. The first Gradle build
+may take time. Devices appear when robot code constructs them. In the editor, **Detect devices**
+requests discovery again; **Stop detecting** stops robot code. The same robot process normally
+serves discovery and simulation; after model edits, entering Run may relaunch it with the
+updated configuration.
 
-## Map devices
+Drag a detected controller or sensor onto a compatible part or slot in the project tree.
+Map drive motors, swerve steer motors, external steer encoders, and the robot IMU separately.
+An external steer encoder measures wheel azimuth, not steer-motor rotations. For multiple
+controllers on a mechanism, increase **Motor count** or drop another controller on the part,
+then map each motor row. Use **Reversed** when a controller's positive direction opposes the
+modeled part. An unmapped additional motor row mirrors the first; map only source wheels when
+the other wheels are linked followers.
 
-Opening a configured project launches robot code for live discovery. The first Gradle build
-can take time. Devices appear as robot code constructs them; **Detect devices** in the editor
-can request discovery again; **Stop detecting** stops robot code.
-A robot instance normally serves discovery and simulation;
-entering Run after model edits can relaunch it with the changed configuration.
+`unmapped (loopback)` means a device's output is echoed as feedback without driving a physical
+model. Other unmapped slots return neutral values. `built in` devices need no mapping; `gone`
+devices keep their saved mapping but are not currently live. Fix required
+slots, incompatible or duplicate mappings, and alias conflicts in **Validation**.
 
-Drag a detected controller or sensor onto a compatible part or slot **in the project tree**.
-The inspector shows mapped devices; use a row's unmap button to remove a mapping.
-Map drive motors, swerve steer motors, external steer encoders and the robot IMU separately.
-An external steer encoder represents wheel azimuth, not steer-motor rotations.
-
-For multiple controllers on one gearbox, increase **Motor count** or drop another controller
-on the part, then map each motor row. Use **Reversed** for a controller opposing the part's
-positive direction; incorrect signs can make motors fight. An unmapped additional motor row
-mirrors the first motor. Map only source wheels when the others are linked followers.
-
-`unmapped (loopback)` means a detected device's outputs are echoed as feedback without driving
-a physical model. Other unmapped slots read neutral values. `built in` devices need no mapping;
-`gone` devices retain saved mappings but are not currently live.
-Fix required-slot, incompatible-device, duplicate-mapping and alias-conflict issues in **Validation**.
-Phoenix simulation may not distinguish CAN buses: a blank/unknown Bus is not a guessed roboRIO bus,
-and the same type/ID on separate physical buses cannot be mapped as independent simulated devices.
+Phoenix simulation may not distinguish physical CAN buses. A blank or unknown **Bus** is not
+evidence of a roboRIO bus, and the same device type and ID on separate physical buses cannot
+necessarily be mapped as independent simulated devices. See [Bridge limits](reference/bridges.md).
 
 ## Configure the game and cameras
 
-The built-in REBUILT game supplies the 2026 field, fuel and hub-shift scoring. Select its
-game node to adjust inventory/preload, field staging and match rules.
-Build the intake/shooter machines from ordinary mechanisms, then right-click the game node,
-Chassis or a mechanism for **Add Fuel pickup** / **Add Fuel shooter**.
+The built-in REBUILT module supplies the 2026 field, fuel, and hub-shift scoring. Select the
+game node to set inventory/preload, field staging, and match rules. Model the intake and
+shooter as mechanisms, then add **Fuel pickup** and **Fuel shooter** zones from the game,
+Chassis, or a mechanism's context menu. A pickup adds fuel to inventory; a shooter launches it.
+Attach each zone to the chassis or a moving mechanism link. **Activation** tests mechanism
+values (all or any conditions, optionally using absolute value); with no conditions it is
+always active. Configure rate and shooter parameters in the inspector. Missing mechanism
+references produce validation warnings. A fuel-count distance sensor estimates inventory,
+not the locations of individual balls.
 
-A pickup is a volume where fuel enters inventory; a shooter is a muzzle pointing along +X.
-Use **Placement** to attach them to the chassis or a moving mechanism link.
-**Activation** conditions test mechanism values, with all/any conditions and optional absolute
-value. No conditions means always active. **Configure** sets pickup rate or shooter flywheel,
-aiming and fire-rate parameters. Missing referenced mechanisms produce validation warnings.
-For inventory-based sensing, use **Add sensor**, choose a game value as **Source**, and map
-the sensor slot. A fuel-count distance sensor approximates inventory, not individual ball staging.
+Add a camera from **Add camera > Limelight / PhotonVision** on Robot, Chassis, a mechanism, or
+Cameras. Match the camera name to robot code: Limelight `front` publishes as `limelight-front`
+(an empty name publishes as `limelight`); PhotonVision uses the exact `PhotonCamera` name.
+Use the inspector's **Robot-to-camera (WPILib robot frame)** transform to match your code's
+mount. The editable pose is relative to its attachment; for a chassis attachment it is relative
+to the centre of mass. A mechanism-mounted camera moves with its link.
 
-Right-click Chassis, a mechanism, Robot or Cameras for **Add camera > Limelight / PhotonVision**.
-Match **Camera name** to robot code: Limelight `front` publishes as `limelight-front`
-(empty means `limelight`); PhotonVision uses the exact `PhotonCamera` name.
-In **Placement**, match the read-only **Robot-to-camera (WPILib robot frame)** transform to
-your code's mount. The editable pose is relative to its attachment, not necessarily the floor:
-chassis attachments are relative to the centre of mass. Mechanism-mounted cameras move with the link.
-
-Set **Optics** for field of view, range/incidence, frame rate, latency, resolution and pose noise.
-Results reach the robot's own NetworkTables; cameras need a season AprilTag layout.
-The app reads PhotonLib's version from vendordeps. An unsupported result definition produces a
-Console error and suppresses PhotonVision publication; Limelight is independent.
-See [bridge compatibility](reference/bridges.md) and the [sample robots](../samples/vision_robot/README.md).
+**Optics** sets field of view, range/incidence, frame rate, latency, resolution, and pose noise.
+The modeled cameras report AprilTag results to the robot's NetworkTables; they need a season
+AprilTag layout. This is geometric simulation, not image processing: there are no camera images,
+occlusion, lens distortion, lighting, or object detection, and reported robot pose is truth plus
+configured noise. PhotonVision publication depends on the project's PhotonLib result definition
+and an emulator build with ntcore support; an unsupported definition is reported in Console and
+does not suppress Limelight. See [bridge compatibility](reference/bridges.md) and the
+[vision sample](../samples/vision_robot/README.md).
 
 ## Run with the Driver Station
 
-Entering **Run** starts simulation automatically when the robot is ready. There are no
-start/stop/pause/step buttons in this run view. Robot code normally stays active between
-pages; project closure, Stop detecting or Restart robot code ends that instance.
+Switch between **Editor** and **Run** with the page tabs (`Ctrl+1` / `Ctrl+2`). Entering Run
+starts simulation when the robot is ready. Use the built-in **Driver Station**, not the real
+Driver Station application:
 
-Use the built-in **Driver Station**, not the real Driver Station application.
-Choose **Auto**, **Teleop**, **Test** or **Practice** while disabled, then **Enable**.
-Auto/Teleop/Test run until disabled. Practice runs autonomous, a disabled gap, then teleop
-using the configured match clock. Click Enable again or press `Enter` to disable.
-`Space` latches emergency stop; click the E-STOPPED control to clear it.
+- Select **Auto**, **Teleop**, or **Test** while disabled; click the large toggle, captioned
+  **Enabled** even while disabled, to run that mode. **Practice** runs autonomous,
+  a disabled gap, then teleop on a match clock.
+  Practice defaults are 20 seconds autonomous, 3 seconds gap, and 140 seconds teleop; adjust
+  them in **Driver Station settings > Setup**.
+- Click the enable toggle again or press `Enter` to disable. `Space` latches emergency stop; click
+  **E-STOPPED** to clear it. The Driver Station settings also set alliance, station, game
+  message, Practice timings, and joystick bindings.
+- The default keyboard joystick uses `W A S D` for the left stick, arrows for the right stick,
+  `U` / `O` for triggers, `Z X C V Q E R F G H N M` for buttons, and `I J K L` for the POV.
+  Click a binding to relearn it; `Esc` cancels. Gamepads require an SDL2-enabled build;
+  keyboard input works without SDL2.
 
-Practice plays the field's sounds: the start charge, the buzzer when autonomous ends, three bells when teleop begins,
-a buzzer at the end, a chime when you Restart and, in REBUILT, a pop at each alliance shift (2:10, 1:45, 1:20, 0:55),
-a whistle when the end game starts (0:30) and a chime when the final score posts. Only an E-Stop of a running
-Practice match sounds the foghorn; Disable ends a match quietly. Sounds play only while the Run page is showing.
-Turn them off or set the volume in **File > Settings… > General**.
+Practice plays field sounds for the match start, autonomous end, teleop start, and match end;
+the selected game can add cues. Restart plays a reset cue; only an emergency stop during a
+running Practice match plays the foghorn. Disable ends the match quietly. Sounds play only
+while Run is visible. Turn them off or adjust volume in **File > Settings… > General**. See
+[game sound cues](reference/game-plugin.md#sound-cues).
 
-The cog opens **Setup** (alliance/station, game message, Practice durations) and **Joysticks**.
-Game-supplied field data can override the manual game message.
-Assign the keyboard or a gamepad to the robot's joystick port and adjust bindings there.
-Default keyboard controls: `W A S D` left stick, arrows right stick, `U` / `O` triggers,
-`Z X C V Q E R F G H N M` buttons, and `I J K L` POV. Click a binding to relearn it;
-`Esc` cancels. Gamepads require an SDL2-enabled build; keyboard input remains available without it.
+The viewport controls include **Restart** (`Ctrl+R`), which resets physics and game pieces
+while keeping robot code running, and its **Restart robot code** option (`Ctrl+Shift+R`), which
+reboots code too. **Speed** changes simulation pacing (default `1×`); **Home view** (`Ctrl+0`
+or double-click the view) restores the camera. **View > Robot state** opens live mechanisms,
+sensors, zones, and camera detections; **View > Console** toggles output (`Ctrl+J`).
 
-At the viewport's bottom-right, **Restart** (`Ctrl+R`) resets physics and game pieces but keeps
-robot code running. Its dropdown's **Restart robot code** (`Ctrl+Shift+R`) reboots code too.
-**Speed** changes pacing. **Home view** (`Ctrl+0` or double-click) restores the camera.
-Orbit/pan/zoom work as in the editor. In REBUILT the alliance walls and guardrails are see-through above their
-opaque base, so you can put the camera behind a wall where the drivers stand and still see the field; the tower wall
-and outpost stay opaque, as on the real field.
+For repeatable autonomous placement, set **Use custom start pose** or add a named start
+position from Robot's context menu. A start position records alliance, field X/Y, and heading;
+**Copy to Red** / **Copy to Blue** uses game-field symmetry when available. The Run
+**Start position** control chooses where the chassis is placed on restart. It does not reset
+your robot's odometry; reset that in robot code. In REBUILT, alliance walls and guardrails are
+transparent above their opaque base, while the tower wall and outpost stay opaque.
 
-For autonomous placement, set Robot's **Use custom start pose** or **Add start position** from
-its context menu. Named starts have alliance, field X/Y and heading; **Copy to Red/Blue**
-uses the game's field symmetry when available. The Run **Start position** flag selects one,
-changes alliance and resets there; Restart keeps that choice until changed.
-The emulator places the physical chassis, not robot odometry: reset odometry in your robot code.
-
-**View > Robot state** opens live mechanisms, sensors, zones and camera detections.
-The View menu also toggles game HUD, zones, AprilTags and Console (`Ctrl+J`).
-Console can filter/search/copy robot and emulator output. Stats show simulation timing and battery.
-The REBUILT HUD shows fuel and shots; Practice adds match phase, hub activity and fuel scores.
-Tower points, penalties and ranking points are not scored.
+The REBUILT HUD shows fuel and shots; Practice adds match phase, hub activity, and fuel scores.
+Tower points, penalties, and ranking points are not scored.
 
 ## Settings and project files
 
-**File > Settings…** controls theme, dialog units, the WPILib and JDK folders, physics rate, physics threads,
-reopening the last project, the update check and Practice sound effects (on/off and volume). The folders apply to the next toolchain check and robot launch; left
-empty, Gradle runs with the first Java that works, in this order: WPILib's JDK for the project's season (all-users or this-user install), another
-installed season's WPILib JDK, `JAVA_HOME`, `java` on `PATH`, then the Java WPI Emulator downloaded. Apart from the project's own WPILib JDK, a Java must
-be a full JDK, at least the season's version, not too new for the project's Gradle (Java 23 for Gradle 8.11) and, on Windows,
-carry Visual C++ runtime 14.40 or newer; one that fails is listed as passed over with the reason. The physics-rate setting
-is copied into the model when the wizard finishes: rerun setup to apply a changed rate.
-Physics threads (Auto, 1, 2, 4 or 8) belongs to the computer, not the model: it applies at the next robot
-launch, Auto picks up to four threads from the core count, and results are identical for every choice.
-The Physics value in the run view shows the thread count in its tooltip.
-An inherited `JAVA_HOME` that has no Java executable is ignored; an explicitly selected JDK
-folder must be corrected in Settings rather than silently falling back to another JDK.
+**File > Settings…** includes theme, dialog units, WPILib and JDK folders, physics rate and
+threads, reopening the last project, update checks, and Practice sound settings. Physics rate
+defaults to **200 Hz**; physics threads default to **Auto** (up to four threads). Physics rate
+is copied into the model when setup finishes, so rerun setup to apply a changed rate. Thread
+choice applies at the next robot launch and does not change results.
 
-Edits autosave; **Save** / `Ctrl+S` saves immediately. Closing, switching projects or rerunning
-setup first saves pending edits. A save failure cancels that transition and leaves the document open.
+The robot model autosaves to `.wpiemu\robot.json` in the project. Edits made outside the app
+are reloaded; if you have unsaved edits, choose whether to load the disk copy or keep yours.
+Save and backup details are in [Persistence responsibilities](reference/runtime.md#persistence-responsibilities).
 
-The robot setup lives in the project, at `<project>\.wpiemu\robot.json`, and nowhere else.
-Commit it to share the setup with your team: what is in version control is what runs.
-The open project watches the file: when it changes outside the emulator (a git pull, a hand edit)
-the setup is loaded again on its own. With unsaved edits open, the emulator asks first whether to
-load the file or keep your edits, which the next save then writes over it. The emulator only writes
-the file after an edit, so an open project never overwrites a pull by itself.
-A file that cannot be loaded (a merge conflict, a hand edit, a newer schema) is reported: at open it
-offers setup, while a project is open the setup in memory stays. Whatever replaces an unreadable file
-first keeps it as `robot.json.unreadable.bak` beside it.
-Projects set up before this kept their setup under the app-data root
-(`projects\<folder>-<hash>\robot.json` in `%APPDATA%\WpiEmulator`, `~/Library/Application Support/WpiEmulator`
-or `~/.local/share/wpi-emulator`); opening one moves that setup into the project once and keeps
-the old file as `robot.json.migrated.bak`. UI preferences are separate Qt settings.
+### Updates
 
-## Updates
+An installed copy checks for a stable release at startup by default. When one is available,
+use the menu-bar **Update** button or **Help > Check for updates…**. The update button's action
+depends on the installed package and platform; development builds and `--demo` do not update.
+Disable the startup check in **File > Settings… > General**. For download verification,
+installation, and platform details, see [Updates](reference/app.md#updates).
 
-An installed copy asks `github.com` whether a newer stable release exists each time it starts. When one does, a green
-**Update** button appears at the right of the menu bar; the same action is under **Help**. Click it to download the installer
-(the button shows the progress and "Verifying…"), then click **Restart to update**: WPI Emulator closes, saving your work
-first and asking before it ends a running simulation, and the installer takes over (Windows asks for administrator rights; you
-can start the new version from its last page). On macOS the button reads **Open update** and opens the disk image, and on
-Linux the new AppImage is saved beside the old one and started. A portable ZIP or tree only opens the release page.
-Right-click the button for the release notes, to skip that version or to cancel a download. **Help > Check for updates…**
-checks on demand and says when you are current.
+## Troubleshooting and limits
 
-A download is deleted unless it matches the checksum published with the release. The installers are not code-signed
-yet, so Windows may show an "unknown publisher" prompt. Only the version request goes to GitHub, and nothing about you or
-your projects is sent. Turn the start-up check off in **File > Settings…**. Development builds and `--demo` never check.
+- **Robot does not start:** check Console and Validation; confirm the wrapper and its JARs,
+  build the project outside the emulator, and check the Java and (for C++) compiler rows in setup.
+  The first build downloads WPILib and vendor libraries and may take time.
+- **Old MSVC runtime:** if the launcher reports a runtime below 14.40, select WPILib's Java or
+  use the setup wizard's **Get Java** option when offered.
+- **No extension or handshake:** check the WPILib season, matching app/extension installation,
+  and robot load errors. Advanced extension-location overrides are in [Releasing](releasing.md).
+- **No devices or motion:** confirm the robot constructors ran, map the commanded devices, and
+  check enable state, motor signs, and motion links. Avoid another simulator writing the same
+  vendor simulation state.
+- **No vision:** check names, mount transform, optics, AprilTag layout, and latency; inspect
+  PhotonLib errors. Vision publication also needs an emulator build with ntcore support.
+- **Unreadable setup or save failure:** check the project file and write access; see the
+  [persistence reference](reference/runtime.md#persistence-responsibilities).
+- **Blank viewport:** check the graphics backend. Headless tests do not prove 3D rendering.
 
-## Troubleshooting
+### Limits and platforms
 
-- **Failed start/crash:** read Console and Validation. Confirm the wrapper and its JAR exist,
-  the project builds outside the emulator, and a Java and (for C++) a compiler are available. Allow time for first build.
-  Known causes get their own explanation and a fix button in the Run view.
-- **"Invalid MSVC Runtime … Expected at least 14.40":** the Java that started the robot carries an old `msvcp140.dll` in its own
-  folder, so updating Visual Studio does not help. Use WPILib's Java, or **Get Java** in setup.
-- **Download failed:** the first run downloads WPILib and the project's libraries (about 1 GB); check the internet connection,
-  proxy or firewall, or pick a JDK folder in Settings to avoid the Java download.
-- **No extension/handshake/protocol:** reinstall a matching app and extension, check robot load errors
-  and the WPILib year. Advanced extension-location overrides are described in [Releasing](releasing.md).
-- **Robot not responding:** blocked robot code can trip the watchdog; inspect output and use Restart robot code.
-- **No devices/motion:** ensure constructors ran, map the actual commanded devices, check enable state,
-  motor signs and links. Do not let another simulator also write the same vendor simulation state.
-- **No vision:** check name, mount, FOV/range, tag layout and latency; inspect PhotonLib errors.
-  Camera publication also needs an emulator build with ntcore support.
-- **Unreadable setup/save failure:** fix or remove the file (setup keeps it as `.unreadable.bak`
-  before replacing it); check disk space and that the project folder is writable. A blank viewport needs a working graphics backend; headless tests do not prove rendering.
+Only one robot and the built-in 2026 season module are supplied. Other seasons can use an empty
+field, but the bundled extension targets WPILib 2026; another year is not a compatibility
+guarantee. There is no suspension model, and field geometry and game rules are approximations.
+HAL and CTRE bridges are supplied, not universal vendor support: REV motor controllers have no
+vendor bridge, and Phoenix 5 behavior is not characterized against the real library. The
+[vision sample end-to-end check](../samples/vision_robot/README.md#end-to-end-check) exercises
+Phoenix 6 driving, wheel feedback, and camera results in Java and C++ on Windows, but does not
+characterize every Phoenix model or control mode.
 
-## Limits and platforms
+Windows is the locally exercised workflow. Linux/macOS builds, presets, and package checks do
+not establish native robot-process HAL loading or interactive 3D validation on those platforms.
+Validate real sessions on the target platform.
 
-Only one robot and the built-in 2026 season are supplied. Other seasons can use an empty field,
-but the bundled extension targets WPILib 2026; another year is not a compatibility guarantee.
-There is no suspension model. Field geometry and game rules are approximations.
-HAL and CTRE bridges are supplied, not universal vendor support: REV motor controllers lack
-a vendor bridge, and Phoenix 5 rules are not characterized against the real library.
-The [vision sample checks](../samples/vision_robot/README.md#end-to-end-check) exercise Phoenix 6
-driving, wheel feedback and camera results in both Java and C++ on Windows; this does not characterize
-every Phoenix model or control mode.
-Vision models AprilTags using geometry, latency and optional noise, not image processing:
-no occlusion, lens distortion, lighting, object detection or video streams; reported robot pose uses truth plus noise.
-
-Windows is the locally exercised workflow. Linux/macOS source, presets and CI/package checks exist,
-but do not establish native robot-process HAL loading or interactive 3D validation on those platforms.
-Headless smoke tests are not visual tests; validate real sessions on the target platform.
-
-Next: [documentation home](README.md) for task guides, or [runtime](reference/runtime.md) for file contracts.
+Next: [documentation home](README.md) for task guides, or
+[runtime reference](reference/runtime.md) for configuration and launcher contracts.

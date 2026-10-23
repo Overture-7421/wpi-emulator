@@ -1,55 +1,43 @@
 # Repository guidance
 
-WPI Emulator runs unmodified WPILib Java/C++ projects. The Qt app owns simulation;
-a HALSim extension inside the robot process exchanges feedback through local IPC.
-Season behavior belongs in game plugins, never core or UI.
+WPI Emulator runs unmodified WPILib Java and C++ robot projects. The desktop app owns the
+simulation. A HALSim extension in the robot process exchanges data with it through local IPC.
+Season-specific behavior belongs in game plugins.
 
-## Read before changing code
+## Read first
 
-- [Documentation home](../docs/README.md): reading paths and task guides.
-- [Architecture](../docs/ARCHITECTURE.md): dependency graph, ownership and tick order.
-- [Building](../docs/BUILDING.md): prerequisites, presets, focused tests and opt-in integration.
-- [Contributing](../docs/CONTRIBUTING.md): errors, units, formatting, tests and documentation policy.
-- [Extending](../docs/extending.md): choose a seam, then follow its owning `docs/guides` recipe.
-- [Runtime](../docs/reference/runtime.md), [mechanisms](../docs/reference/mechanisms.md),
-  [physics](../docs/reference/physics.md), [extension/IPC](../docs/reference/extension-ipc.md),
-  [bridges](../docs/reference/bridges.md), [games](../docs/reference/game-plugin.md) and
-  [app](../docs/reference/app.md) describe subsystem contracts.
-- [User guide](../docs/USER_GUIDE.md), [releasing](../docs/releasing.md) and the
-  [decision index](../docs/decisions/README.md) serve users, maintainers and design rationale.
+- [Documentation home](../docs/README.md) for reading paths.
+- [Architecture](../docs/ARCHITECTURE.md) and [codebase tour](../docs/CODEBASE_TOUR.md) for ownership
+  and call flows.
+- [Contributing](../docs/CONTRIBUTING.md) for code, testing, and documentation conventions.
+- [Extending](../docs/extending.md) for the right extension seam and its guide.
+- The relevant subsystem reference listed from the [documentation home](../docs/README.md).
 
-## Preserve the boundaries
+## Keep the boundaries
 
-SDK is header-only and standard-library-only. Keep Qt out of core, IPC, bridges and plugins.
-Plugins depend only on SDK. The app uses the plugin aggregator; the extension uses the
-bridge aggregator. Do not introduce direct app-to-season or extension-to-bridge coupling.
-Keep non-app headers safe from Qt macro identifiers.
+- The SDK is header-only and standard-library-only. Keep Qt out of the SDK, core, IPC, bridges,
+  and plugins. Plugins depend only on the SDK. The app uses the plugin aggregator; the extension
+  uses the bridge aggregator. Do not couple the app directly to a season plugin or the extension
+  directly to a bridge. Non-app public headers must avoid Qt macro names such as `signals`,
+  `slots`, `emit`, and `foreach`.
+- `RobotSession` owns Qt-free process orchestration. `SimulationSession` owns synchronous
+  simulation. `SessionRunner` adds queues, IPC, and pacing. The emulator owns the clock and allows
+  one outstanding tick. Preserve session/epoch rejection, acknowledgements, reset/reconnect, and
+  independent watchdog recovery. HAL callbacks must not block.
+- Use `sdk::Result<T>` and `sdk::Status` at SDK boundaries. Exceptions must not cross them.
+- Simulation uses SI units, right-handed NWU coordinates, `(x,y,z,w)` quaternions, integer
+  microseconds, and context-provided randomness. Do not use wall clocks in simulation logic.
+- UI reads immutable snapshots and edits configuration through undoable operations. Keep
+  persistence behind its owning service, use translations and theme/unit helpers, and perform
+  scene-frame conversion in QML.
+- Decode, default, validate, then construct. Preserve unrelated configuration sections and stable
+  validation keys. Use `std::locale::classic()` for numeric stream fallbacks. Keep the current
+  schema, SDK, and protocol policy. Do not infer physical CAN identity from a declared address or
+  invert mapped motors twice.
 
-`AppServices` composes the app; editor and run view share one `IRuntimeHost`.
-`RobotSession` is Qt-free process orchestration. `SimulationSession` owns synchronous
-simulation; `SessionRunner` adds queues, IPC and pacing. UI reads immutable snapshots.
-The emulator is clock master with one outstanding tick. Preserve session/epoch rejection,
-reset/reconnect, acknowledgements and independent watchdog recovery. HAL callbacks never block.
+## Verify changes
 
-Use `sdk::Result<T>` / `sdk::Status`; do not let exceptions cross SDK interfaces.
-Simulation uses SI/NWU, `(x,y,z,w)` quaternions, integer clock microseconds and context RNG.
-Keep scene-frame conversion in QML. UI edits use undoable operations, translations,
-`ThemeTokens` and `UnitFormatter`, not direct runtime or persistence access.
-Preserve unrelated config sections when changing wizard basics; core owns persistence.
-Decode, default, validate, then construct; keep validation keys stable and numeric stream
-fallbacks in the classic locale. Keep the single pre-release schema/SDK/protocol policy.
-Do not infer physical CAN bus identity from a declared address or invert mapped motors twice.
-
-## Checks and documentation
-
-Run from the repository root, using the commands in Building. Set warnings-as-errors
-when configuring, not when building. Windows Ninja needs vcvars and CMake in one process.
-Use focused doctest/Qt selectors; CTest sets the UI environment. Offscreen checks do not
-validate Quick 3D rendering. SDK headers receive automatic self-contained include checks.
-Boundary and documentation checks are `python tools\check_boundaries.py`,
-its `--self-test`, and `python tools\check_docs.py`; `python tools\check_versions.py` verifies
-the version pins that `versions.json` owns.
-
-Keep one home per fact: recipes in the guide linked from Extending, contracts in the owning reference,
-user behavior in the User guide, rationale in decisions. Link instead of copying.
-Verify named APIs, paths and commands; keep links current and remove obsolete material.
+Run checks from the repository root using [Building](../docs/BUILDING.md). Configure warnings as
+errors; Windows Ninja setup needs the Visual Studio environment and CMake in the same process.
+Use focused tests for fast feedback, then run the checks required by the changed subsystem.
+Offscreen tests do not validate Quick 3D rendering.

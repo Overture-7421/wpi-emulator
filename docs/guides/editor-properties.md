@@ -1,12 +1,9 @@
 # Add an editor property
 
-Read this when a mechanism, zone, season, or structural robot field needs an editable parameter.
-Prerequisites: [a working build](../BUILDING.md), [UI conventions](../CONTRIBUTING.md), and the
-[app contract](../reference/app.md).
-
-The normal solution is metadata, not a custom widget. `PropertySchema` describes a stable stored
-key, type, label, default, unit, range and placement; generic forms consume it.
-The owning runtime module still validates and uses the value.
+An editor property is metadata for a value owned by the SDK or its runtime module. Generic forms
+render the schema; typed bindings decode it; undoable editor operations persist user edits. Keep
+these responsibilities together rather than writing a custom widget that bypasses config flow.
+See the [app contract](../reference/app.md) for UI ownership.
 
 ## Choose the configuration owner
 
@@ -99,5 +96,3 @@ offscreen success does not verify Quick 3D rendering.
 
 If a property saves but runtime ignores it, trace binding decode and consumption before adding a
 widget workaround. If it moves to the wrong inspector card, inspect section/axis metadata first.
-
-Next: [review ownership and failure symptoms](maintenance.md).

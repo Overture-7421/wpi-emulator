@@ -1,32 +1,23 @@
 # Shared primitives live in the SDK
 
-Read this when you are about to copy a helper, table or rule between modules.
+Read this before copying a helper, table or rule between modules.
 Prerequisite: [Architecture](../ARCHITECTURE.md).
 
 ## Status
 Accepted.
 
-## Context
-A consolidation audit found the same rule stated in several modules: property builders and value
-readers, validation rules for zones, cameras and sensors, wheel layouts, wire field lists, queue
-and thread loops, test waits and fakes. Copies had already diverged in thresholds, severities
-and edge behavior.
+## Rationale
+Copies of the same rule can diverge in units, thresholds or edge behavior. Where several modules
+need the same platform-neutral contract, one implementation is easier to review and test.
 
 ## Decision
-What several modules need and can express with the standard library is defined once in the
-header-only SDK and derived from there. Test doubles and helpers that need no platform call
-live in the SDK testing headers; ones that do, such as the environment guard, live in
-`tests/support`; Qt code shared by the page libraries lives in `app/ui`. Each wire struct's field
-order is described once in the codec, driving both encode and decode. Validation rules take a small
-catalog interface so core and the editor run the same code.
+Put small, standard-library-only shared contracts and primitives in the header-only SDK. Keep
+platform effects and subsystem policies with their owners; share a helper only when behavior is
+actually equivalent.
 
-Policy stays local: queue and thread primitives are shared, but watchdogs, drop rules and
-shutdown order stay with their owner. Look-alikes are merged only with proof that behavior
-is unchanged; the deliberate differences are listed in Contributing.
+## Trade-offs
+The SDK gains compile-time and contract surface, so shared code should stay small and changes
+need focused equivalence tests. Similar-looking code is not proof of identical policy.
 
-## Consequences
-One definition per rule, so a change cannot reach only some modules. The SDK grows and every
-includer pays header compile time, so shared code stays small and inline. A shared helper is a
-dependency: changing it needs golden or equivalence tests, which the audit added first.
-
-Next: [Sound cues as events](0013-sound-cues-as-events.md).
+Current module boundaries and coding rules are in [Architecture](../ARCHITECTURE.md) and
+[Contributing](../CONTRIBUTING.md).

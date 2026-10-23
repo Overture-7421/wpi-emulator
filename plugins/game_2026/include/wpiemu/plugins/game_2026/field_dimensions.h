@@ -3,7 +3,7 @@
 // REBUILT (2026) field and game-piece dimensions, SI units, field frame = SDK frame (Z-up NWU:
 // +X from the blue alliance wall toward the red one, +Y left, origin at the blue/low-Y corner).
 //
-// Source tags (full citations and the simplifications live in docs/reference/game-plugin.md):
+// Source tags (full citations and the simplifications live in plugins/game_2026/README.md):
 //   [GM]  2026 Game Manual TU22, section 5 (ARENA) and 6 (Game Details)
 //   [AT]  WPILib 2026 AprilTag layout "2026-rebuilt-welded.json" (field size, element centres)
 //   [MS]  MapleSim REBUILT arena (community sim): hub centre, trench post, tower uprights, depot, hub exits

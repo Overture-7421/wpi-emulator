@@ -6,10 +6,6 @@ packaging tools below, and a real WPILib-enabled HALSim extension. Camera public
 ntcore support. This page owns packaging commands; general configure/build/test instructions
 remain in Building. Run examples from the repository root unless stated otherwise.
 
-Wiki publishing is a separate default-branch documentation workflow, not part of artifact release.
-Its administrator setup and recovery procedure belong in
-[documentation maintenance](guides/documentation.md).
-
 ## Artifacts and layout
 
 [Install/CPack rules](../cmake/WpiEmuInstall.cmake) derive names from the root project version, which the
@@ -21,6 +17,16 @@ Its administrator setup and recovery procedure belong in
 
 Each distributable has a SHA256 sidecar. Linux CPack also offers a TGZ of the install tree;
 that archive is not a self-contained Qt deployment.
+
+## Packaging inputs
+
+- `packaging/icons` contains original artwork, generated PNG/ICO/ICNS assets and their generator.
+- `packaging/windows` contains the executable icon/version resource template.
+- `packaging/macos` contains bundle metadata, entitlements, signing, notarization and minimum-OS
+  checks.
+- `packaging/linux` contains the AppImage builder, desktop/AppStream metadata and AppRun hook.
+- `packaging/THIRD-PARTY-NOTICES.txt` supplies installed attribution notices.
+- [`WpiEmuInstall.cmake`](../cmake/WpiEmuInstall.cmake) owns install layout and CPack rules.
 
 Keep each package's relative layout intact:
 
@@ -39,7 +45,7 @@ The [locator](../core/runtime/src/launcher/extension_locator.cpp) is the lookup 
 Do not require an original build directory for a shipped package.
 
 WPILib runtime libraries are normally supplied by the robot process, not redistributed.
-Keep app data outside the install tree; see [project files](USER_GUIDE.md#settings-and-project-files).
+Keep app data outside the install tree; see [settings and project files](USER_GUIDE.md#settings-and-project-files).
 The launcher must still leave robot source, build configuration and vendordeps unchanged.
 
 ## Windows packages
@@ -148,25 +154,19 @@ General dependency, SDL2 and build switches belong to [Building](BUILDING.md).
 
 ## Version pins
 
-[versions.json](../versions.json) is the only home of the WPILib, Qt, CMake, Python, Ubuntu and macOS pins, of the Visual C++ runtime
-WPILib requires (`msvcRuntimeMin`) and of the Java the app can download (`jdk`):
-`qt.release` is the exact kit for releases and the Docker image, `qt.ci` the pattern CI installs.
-CMake reads `wpilib` (the default of `WPIEMU_WPILIB_VERSION`) and `macosDeployment`, and generates the Java table the app compiles in. The workflows, Docker image,
-AppImage script and docs cannot read it, so `tools\check_versions.py` (CTest `versions.check`) reports every copy that
-disagrees, with file and line, and checks each Java download (https://github.com only, a SHA-256, a version that appears in its URL, under the
-downloader's 500 MiB limit). To change a pin, edit the JSON and fix what the checker lists; an existing build tree
-keeps its cached `WPIEMU_WPILIB_VERSION` until you pass the new value. The linuxdeploy versions and checksums live
-only in the [AppImage script](../packaging/linux/build-appimage.sh).
+[`versions.json`](../versions.json) is the source of truth for shared WPILib, Qt, CMake, Python,
+Ubuntu, macOS, Java-download and Visual C++ runtime pins. CMake reads the pins it needs and
+generates the app's Java toolchain table; `tools\check_versions.py` (CTest `versions.check`)
+checks copies in workflows, packaging scripts and documentation and validates managed-Java
+download metadata. Existing build trees retain their cached `WPIEMU_WPILIB_VERSION` until it is
+passed again. The linuxdeploy versions and checksums live only in the
+[AppImage script](../packaging/linux/build-appimage.sh).
 
-**A new season:** add its year to `jdk.seasons` with the Java major WPILib builds that season with; if that major has no `jdk.assets`
-entries yet, add one `<major>-<os>-<arch>` entry per platform (get the URL, size and SHA-256 from the Adoptium release page) and
-extend `kGradleJava` in `jdk_policy.cpp` if Gradle now supports a newer Java. A year missing from `jdk.seasons` gets no Java download, by design.
-Raise `msvcRuntimeMin` together with `kMinVcRuntime` in `jdk_policy.h` when WPILib raises its check. Refresh the `jdk.assets`
-entries when Temurin publishes a security release.
-
-The downloaded Java is Eclipse Temurin fetched by the user's app at run time, never redistributed in a package. The Windows installer must
-carry a Visual C++ runtime of at least `msvcRuntimeMin` beside the app (the release workflow checks it), because the app copies it into
-a downloaded Java whose own runtime is older.
+For WPILib season and JDK changes, use the source-verified
+[WPILib season checklist](guides/wpilib-upgrade.md). Downloaded Temurin JDKs are fetched by the
+app at runtime, never redistributed in packages. The Windows installer carries the minimum
+Visual C++ runtime required by the pin; the release workflow checks it and the app can copy it
+into a downloaded Java installation that bundles an older runtime.
 
 ## In-app updates
 
@@ -226,4 +226,5 @@ for NSIS's license page. Linux AppStream metadata also has no product license de
 Package generation is not license clearance. Keep the [sample WPILib notice](../samples/WPILib-License.md)
 and all upstream attributions intact.
 
-Next: [User guide](USER_GUIDE.md) for installation and controls, or [Building](BUILDING.md) for validation setup.
+Next: [User guide](USER_GUIDE.md) for installation and controls, [Building](BUILDING.md) for
+validation setup, or the [WPILib season checklist](guides/wpilib-upgrade.md) for toolchain updates.

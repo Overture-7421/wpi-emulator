@@ -7,7 +7,7 @@
 // Hello/HelloAck; a peer whose version is < the other's `kMinCompatibleProtocolVersion` is refused. Codecs
 // tolerate absent trailing fields (default value) and ignore bytes they do not know.
 //
-// Lock-step robustness (see docs/ARCHITECTURE.md section 4):
+// Lock-step robustness (see docs/ARCHITECTURE.md):
 //  * WINDOW: exactly ONE outstanding tick (kLockstepWindow). The emulator sends SensorFrame N only
 //    after the ActuatorFrame acknowledging N-1 arrived (or after a Reset/reconnect started a new
 //    run epoch). No pipelining, so a frame can never be matched to the wrong tick.

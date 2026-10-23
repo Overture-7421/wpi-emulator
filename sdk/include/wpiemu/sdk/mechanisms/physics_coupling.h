@@ -14,7 +14,7 @@
 //  * setPayload       payload mass / COM / inertia that the runtime composes with the chassis
 //                     (parallel-axis theorem, composeMassProperties) before the physics step.
 //
-// Ordering inside one tick (see docs/ARCHITECTURE.md section 4)
+// Ordering inside one tick (see docs/ARCHITECTURE.md)
 //   1. mechanisms tick: they SUBMIT wrenches, add/remove constraints, update payloads; they may READ
 //      constraintLoad(), which is the load of the LAST COMPLETED physics step (tick N-1 here);
 //   2. the runtime composes payloads into the chassis MassProperties, hands wrenches to the world and

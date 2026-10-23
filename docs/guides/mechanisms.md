@@ -1,12 +1,12 @@
 # Configure and extend mechanisms
 
-Read this when modeling a roller, arm, elevator, or a part needing custom dynamics.
-Prerequisites: [motor choices](motors.md), [a working build](../BUILDING.md), and the
-[mechanism contract](../reference/mechanisms.md), which owns slots, units and lifecycle details.
+A mechanism is the simulated robot part that turns mapped motor commands into motion and sensor
+feedback. Its plant models the load; a motor preset supplies shaft constants; a device bridge
+translates robot-process signals. These are separate layers. The
+[mechanism reference](../reference/mechanisms.md) owns slots, units and lifecycle contracts.
 
-A mechanism is a motor-driven part with mapped command/feedback slots. A plant is its local
-position/velocity model. A game interaction such as collecting fuel usually belongs in a
-[zone](game-interactions.md), not a new motorized “intake” template.
+A game interaction such as collecting a game piece usually belongs in a
+[game-plugin zone](game-plugins.md#add-a-zone-interaction), not a new motorized “intake” template.
 
 ## Start with the generic template
 
@@ -73,7 +73,7 @@ See [plant registration](simulation-strategies.md#plants) before duplicating com
   [`mechanism_templates.h`](../../core/mechanisms/include/wpiemu/core/mechanisms/mechanism_templates.h).
   Its services own shared catalog/plant collaborators for the registered factories.
 - Plugin-only templates register from `IGameModule::registerMechanisms` through
-  `MechanismFactory::registerTemplate`. See [the season walkthrough](game-years.md).
+  `MechanismFactory::registerTemplate`. See the [game-plugin guide](game-plugins.md#bring-up-a-season).
   No concrete-template switch belongs in the app.
 - Add implementation sources to the owning module's CMake list:
   [`core/mechanisms/CMakeLists.txt`](../../core/mechanisms/CMakeLists.txt) or the plugin's file.
@@ -99,4 +99,93 @@ If geometry does not move, check the published link name and frame before changi
 If an arm falls the wrong way, compare the tested arm convention, mass/length and gravity settings;
 do not silently invert mapped motors a second time.
 
-Next: [attach game interactions to the mechanism](game-interactions.md).
+## Motor data and behavior
+
+### Choose the missing layer
+
+- A **motor preset** is one motor's voltage, stall torque/current, free current and free speed.
+  It is data, independent of CAN/PWM controllers.
+- A **device bridge** adapts the robot library's simulated controller/sensor values. Follow
+  [device adapters](devices.md); adding a preset does not make a controller discoverable.
+- A **plant** models a load's position/velocity dynamics, gravity and stops. See
+  [plants](simulation-strategies.md#plants).
+- An **IMotorModel** supplies the shaft current/torque law; it is not a season plugin or another
+  physical motor preset.
+
+### Add a sourced preset
+
+The SDK owns the single built-in motor table in
+[`motor_model.h`](../../sdk/include/wpiemu/sdk/dynamics/motor_model.h). Core's
+[`MotorCatalog::builtin`](../../core/mechanisms/src/motor_catalog.cpp), the SDK defaults and editor
+and wizard choices consume it. Do not add a second vendor, core or season table.
+
+1. Source constants from a manufacturer specification or the matching WPILib `DCMotor` factory;
+   distinguish FOC and non-FOC variants.
+2. Add a unique snake-case key, label and one-motor SI values to `motors::presets()`. The helper
+   accepts free speed in RPM and converts it to rad/s.
+3. Check `motorSpecFaults`: voltage, stall torque/current and free speed must be positive and
+   finite; free current must be finite, nonnegative and below stall current.
+4. Extend independent expected-data assertions in
+   [`test_linear_system_and_motors.cpp`](../../tests/mechanisms/test_linear_system_and_motors.cpp).
+   Do not derive expected values from the table under test.
+5. Exercise selector/binding tests and inspect the editor/wizard choice. A persisted wheel stores a
+   `MotorSpec`; a mechanism selects a catalog key through `motorModel`.
+
+These existing rows illustrate the table format; they are not proposed additions:
+
+```cpp
+row("neo", "NEO", 12, 2.6, 105, 1.8, 5676),
+row("neo_550", "NEO 550", 12, 0.97, 100, 1.4, 11000),
+```
+
+The table tests check sourced operating points, unique/valid entries, and model behavior at stall
+and free speed. Expected result for a new row: the SDK catalog and selectors expose it, while the
+independent assertions verify its constants. No CMake registration is needed for a row in this
+header-only table.
+
+### Keep motor count, gearing and direction distinct
+
+Keep constants per motor. Configure `motorCount` separately: multiplying stall torque/current in
+the table and then setting a count aggregates twice. Gear ratio is motor revolutions per mechanism
+revolution; output position and motor-shaft feedback are different quantities.
+
+For multiple mapped motors, test same-direction and opposed commands: opposed motors can cancel
+torque while still drawing battery current. Unmapped followers mirror the primary according to the
+mechanism behavior. Apply mapping reversal at the hub, not again in a bridge or plant. Sensor ratio,
+inversion and offset are separate settings; see the [mechanism](../reference/mechanisms.md) and
+[bridge](../reference/bridges.md) contracts.
+
+### Inject a different behavioral model
+
+`IMotorModel` exposes `spec`, `currentA` and `torqueNm` at the motor shaft. It has no global
+registry. `MotorCatalog::createModel` currently creates `DcMotorModel`; adding a preset does not
+select a different behavioral class.
+
+Concrete composition points are explicit:
+
+- [`TractionOptions::motorModels`](../../core/physics/include/wpiemu/core/physics/drivetrains.h)
+  accepts a factory for directly constructed traction drivetrains. Normal registry construction
+  must supply another model in its drivetrain factory; saved config does not discover arbitrary
+  C++ model classes.
+- [`CurrentLimitedMotorModel`](../../core/mechanisms/include/wpiemu/core/mechanisms/motor_catalog.h)
+  composes an owned `IMotorModel`. This focused test excerpt demonstrates that composition:
+
+```cpp
+const MotorCatalog c = MotorCatalog::builtin();
+const sdk::MotorSpec neo = *c.spec("neo");
+CurrentLimitedMotorModel limited(std::make_unique<sdk::DcMotorModel>(neo), 40.0);
+```
+
+It runs in [`test_linear_system_and_motors.cpp`](../../tests/mechanisms/test_linear_system_and_motors.cpp);
+the surrounding assertions verify current/torque saturation and effective voltage at speed.
+Generic mechanism registration accepts a catalog and plant factory, not an arbitrary motor-model
+factory. A different mechanism law may need an injected plant or custom mechanism; implementing an
+interface alone does not make it selectable.
+
+```powershell
+ctest --preset windows-ninja-release -R "motor|Motor|gearbox|shared chassis and wheel|ConfigBindings"
+```
+
+Expected result: catalog/model operating-point and aggregation tests pass, as do reversal and
+shared wheel-binding cases. Add a focused failure/limit test for a new behavioral model; table
+checks cannot validate a new torque law.

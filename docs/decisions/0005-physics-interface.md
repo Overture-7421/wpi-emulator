@@ -6,36 +6,18 @@ Prerequisite: [Architecture](../ARCHITECTURE.md).
 ## Status
 Accepted.
 
-## Context
-Field and chassis interactions need general rigid-body collisions, but drivetrain
-traction needs wheel-specific behavior. Exposing an engine directly would couple
-plugins, mechanisms and tests to its types and quirks.
+## Rationale
+Field and chassis interactions need rigid-body collision behavior, while drivetrain traction needs
+wheel-specific force models. Exposing engine types to plugins, mechanisms or tests would couple
+otherwise reusable simulation code to one backend.
 
 ## Decision
-Use Box3D behind the SDK physics interface, with opaque handles and engine-independent
-geometry. Keep its headers and backend-specific corrections inside the adapter.
-A pinned engine limits dependency churn without making its API the application contract.
+Keep Box3D behind the SDK physics interface and model tire traction separately from rigid-body
+support. Mechanism loads affect the chassis through SDK coupling, not direct engine access.
 
-Separate support from traction: one rigid chassis rests on frictionless wheel pads,
-while tire models supply tangential forces. Quasi-static grounded-wheel loads avoid
-feeding transient contact-impulse spikes into grip. A coupled wheel/chassis tire update
-avoids the low-speed instability of an explicit stiff slip force.
-This deliberately avoids building a suspension or a full tire-contact solver.
+## Trade-offs
+The adapter owns backend translation and quirks; fakes cannot establish collision fidelity. The
+chosen wheel/contact model is intentionally simpler than suspension or a full tire solver, trading
+physical detail for a bounded, testable model.
 
-Use fixed steps, controlled floating-point settings and an engine default of one physics worker
-to favor reproducible behavior. Box3D gives identical results for every worker count, so the
-app chooses the count per machine at launch (default Auto) to keep real time on slower
-computers, outside the robot model. Engine-free fakes exercise consumers.
-Mechanisms affect the chassis through SDK coupling for wrenches, constraints and
-payload mass, rather than reaching into Box3D.
-
-## Consequences
-The backend can change without spreading engine dependencies through the product,
-but the adapter must maintain translation, lifetime and engine-quirk handling.
-Fakes cannot establish collision fidelity, and deterministic stepping is not a promise
-of bit-identical results across every compiler and platform.
-No suspension, approximate load transfer and simplified tires trade physical fidelity
-for stable, understandable simulation; they are not a hardware-accuracy guarantee.
-Model and coupling details belong in the [physics reference](../reference/physics.md).
-
-Next: [Mechanisms reference](../reference/mechanisms.md).
+Current physics contracts and limits are in [Physics](../reference/physics.md).

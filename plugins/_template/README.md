@@ -1,11 +1,9 @@
 # Season plugin skeleton
 
-Read this when copying a starting point for a new season.
-Prerequisites: [Architecture](../../docs/ARCHITECTURE.md) and the
-[game-year walkthrough](../../docs/guides/game-years.md).
-
-This compiling skeleton supplies an empty field, a ticking game state and a HUD counter.
-It is built by default but is deliberately absent from the built-in plugin aggregator.
+The template is a minimal compilable season plugin: its module describes the season, its field owns
+static field geometry, and its game state resets and publishes a counter. It builds by default but
+is deliberately absent from the built-in plugin aggregator. The
+[game-plugin guide](../../docs/guides/game-plugins.md) explains the full integration procedure.
 
 ## Copy and rename
 
@@ -14,8 +12,8 @@ Copy `plugins\_template` to `plugins\game_<year>`. Rename the include subtree
 Rename the `wpiemu_plugin_template` target and `wpiemu::plugin_template` alias in
 [CMakeLists.txt](CMakeLists.txt). Set `pluginId()` and `gameYear()` in
 [plugin_info.cpp](src/plugin_info.cpp), then replace the `TODO(new season)` placeholders.
-Keep the target's SDK-only dependency. Registration, implementation and validation steps
-belong to the [game-year walkthrough](../../docs/guides/game-years.md), not to this skeleton checklist.
+Keep the target's SDK-only dependency. Registration, implementation and validation steps belong to the
+[game-plugin guide](../../docs/guides/game-plugins.md), not to this rename checklist.
 
 ## Skeleton files
 
@@ -26,7 +24,5 @@ belong to the [game-year walkthrough](../../docs/guides/game-years.md), not to t
 - [game_module.cpp](src/game_module.cpp): placeholder module, field and game state.
 
 A season that plays its own sounds adds `assets/sfx/<name>.wav` and declares them with
-`contributeSoundCues()`; the template ships none and is never embedded
-([walkthrough](../../docs/guides/game-interactions.md#request-a-sound-cue)).
-
-Next: [Game years](../../docs/guides/game-years.md) to implement, register, and exercise the season.
+`contributeSoundCues()`; the template ships none and is never embedded. See
+[sound cues](../../docs/guides/game-plugins.md#request-a-sound-cue).
