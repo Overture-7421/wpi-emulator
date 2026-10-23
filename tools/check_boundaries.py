@@ -130,6 +130,7 @@ TARGET_OWNERS = {
     "wpiemu_app_tests": "app",
     "wpiemu_e2e_tests": "app/host",
     "wpiemu_season_e2e_tests": "app/host",
+    "wpiemu_vendor_2027_e2e_tests": "app/host",
     "wpiemu_app_editor_tests": "app/editor",
     "wpiemu_editor_demo": "app/editor",
     "wpiemu_runview_demo": "app/runview",

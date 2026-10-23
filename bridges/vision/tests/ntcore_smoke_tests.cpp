@@ -4,10 +4,13 @@
 
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
 #if WPIEMU_WPILIB_YEAR >= 2027
+#include <wpi/hal/HAL.h>
+#include <wpi/hal/simulation/MockHooks.h>
 #include <wpi/nt/ntcore_c.h>
 #else
 #include <ntcore_c.h>
@@ -22,6 +25,12 @@ namespace vis = wpiemu::bridges::vision;
 namespace sdk = wpiemu::sdk;
 
 namespace {
+
+#if WPIEMU_WPILIB_YEAR >= 2027
+constexpr std::int64_t kNativeTimePerUs = 1000;
+#else
+constexpr std::int64_t kNativeTimePerUs = 1;
+#endif
 
 WPI_String str(const std::string& s) { return WPI_String{s.data(), s.size()}; }
 
@@ -91,14 +100,33 @@ void robotWriteDouble(const std::string& path, double value) {
 }  // namespace
 
 TEST_CASE("vision ntcore binding: attaches to the loaded ntcore and reports the robot time base") {
-    auto backend = vis::makeNtcoreBackend();
+    vis::NtcoreBackendOptions options;
+    options.halModule = "wpiemu_no_such_hal";
+    auto backend = vis::makeNtcoreBackend(options);
     REQUIRE(backend->available());
     // No HAL in this process: the time base is NT_Now().
-    const std::int64_t before = NT_Now();
+    const std::int64_t before = NT_Now() / kNativeTimePerUs;
     const std::int64_t now = backend->nowUs();
     CHECK(now >= before);
     CHECK(now - before < 5'000'000);
 }
+
+#if WPIEMU_WPILIB_YEAR >= 2027
+TEST_CASE("vision ntcore binding: 2027 HAL time and NT publication convert nanoseconds at the boundary") {
+    const bool paused = HALSIM_IsTimingPaused();
+    HALSIM_PauseTiming();
+    auto backend = vis::makeNtcoreBackend();
+    REQUIRE(backend->available());
+    const auto before = backend->nowUs();
+    HALSIM_StepTiming(40'000'000);
+    CHECK(backend->nowUs() - before == 40'000);
+    REQUIRE(backend->publish("/wpiemu_test/2027_clock", vis::ntDouble(2.0), before + 40'000).ok());
+    CHECK(readDirect("/wpiemu_test/2027_clock").time == (before + 40'000) * 1000);
+    CHECK_FALSE(backend->publish("/wpiemu_test/2027_overflow", vis::ntDouble(2.0),
+                                std::numeric_limits<std::int64_t>::max()).ok());
+    if (!paused) HALSIM_ResumeTiming();
+}
+#endif
 
 TEST_CASE("vision ntcore binding: a missing ntcore module is unavailable and never fatal") {
     vis::NtcoreBackendOptions options;
@@ -118,12 +146,12 @@ TEST_CASE("vision ntcore binding: doubles keep their explicit timestamps") {
     const Direct d = readDirect("/wpiemu_test/double");
     CHECK(d.type == NT_DOUBLE);
     CHECK(d.d == 1.5);
-    CHECK(d.time == 123'456);
+    CHECK(d.time == 123'456 * kNativeTimePerUs);
     CHECK(d.typeString == "double");
 
     // The same value again is still a new sample with the new timestamp.
     REQUIRE(backend->publish("/wpiemu_test/double", vis::ntDouble(1.5), 223'456).ok());
-    CHECK(readDirect("/wpiemu_test/double").time == 223'456);
+    CHECK(readDirect("/wpiemu_test/double").time == 223'456 * kNativeTimePerUs);
     CHECK(vis::ntAsDouble(backend->read("/wpiemu_test/double")).value_or(-1) == 1.5);
 }
 
@@ -136,7 +164,7 @@ TEST_CASE("vision ntcore binding: raw topics carry their type string and bytes")
     const Direct d = readDirect("/wpiemu_test/raw");
     CHECK(d.type == NT_RAW);
     CHECK(d.raw == bytes);
-    CHECK(d.time == 777'000);
+    CHECK(d.time == 777'000 * kNativeTimePerUs);
     CHECK(d.typeString == typeString);
     REQUIRE(backend->setTopicProperty("/wpiemu_test/raw", "message_uuid", "\"abc\"").ok());
     CHECK(topicProperty("/wpiemu_test/raw", "message_uuid") == "\"abc\"");

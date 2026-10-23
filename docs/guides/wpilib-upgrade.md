@@ -73,6 +73,13 @@ with that season's WPILib tooling. When available, run the opt-in robot-project 
 from [Building](../BUILDING.md#opt-in-robot-project-tests); a skipped test does not validate the
 robot process.
 
+Reverify vendor desktop artifacts separately from hardware dependencies. Audit clock
+units as well as symbol names: 2027 ntcore and HAL use nanoseconds, while the emulator's
+bridge interface uses microseconds. For PhotonLib, compare the generated metadata,
+target and multi-tag schemas and test each language's actual decoder with its version
+checks enabled. A Java pass does not prove C++ compatibility; see the
+[pinned preview's upstream C++ blocker](../reference/bridges.md#photonvision).
+
 On Linux/macOS use the `Ninja` generator in `check_wpilib_configure.py` and the platform build/test
 presets. A successful configure or fake-based test does not establish vendor firmware behavior or
 native robot loading.

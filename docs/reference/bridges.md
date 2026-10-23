@@ -87,6 +87,16 @@ exposes native names and HAL directions; that fallback does not invent canonical
 signals or capabilities. Phoenix 5 exposes its native sensors and a discover-only
 Pigeon IMU; it does not use Phoenix 6's input guard or config readback.
 
+The pinned 2027 alpha-7 vendor probe uses official Phoenix 6
+`26.70.0-alpha-2` **desktop software simulation**, not substituted 2026 binaries.
+The [actual Java robot test](../../app/host/tests/e2e_vendor_2027_test.cpp)
+exercises TalonFX duty-cycle/voltage output, mapped mechanism and rotor feedback,
+CANcoder direction/offset readback and feedback, Pigeon2 yaw, and process shutdown.
+This does not characterize every Phoenix device, closed-loop control mode, C++ vendor
+client, operating system or Systemcore hardware. Phoenix 5 is not available for this
+2027 preview; REVLib's desktop artifacts alone do not give REV devices a canonical
+emulator bridge. REV is still unsupported, not validated through generic CAN traffic.
+
 For Phoenix motors, the emulator drives rotor feedback and firmware applies its own
 ratios and offsets. The plant uses firmware-resolved `motorVoltage`; only if that is
 absent does the hub fall back to duty cycle times battery voltage. Phoenix
@@ -163,7 +173,10 @@ tools/tests, not a private robot runtime. An absent module is retried lazily; mi
 required exports instead diagnose and disable the binding. Without the optional
 build-time binding, registered vision bridges are unavailable and publish nothing.
 
-`nowUs()` prefers `HAL_GetFPGATime`, then falls back to `NT_Now`. Publisher options
+`nowUs()` prefers the season's HAL clock (`HAL_GetFPGATime` in 2026,
+`HAL_GetMonotonicTime` in 2027), then falls back to `NT_Now`. The bridge interface
+remains microseconds: 2027 HAL/ntcore nanoseconds are converted on reads, and publish
+timestamps are converted back to native nanoseconds with checked overflow. Publisher options
 set `sendAll` and `keepDuplicates`, so unchanged ideal pose arrays still arrive as
 timestamped samples. A nonpositive publish timestamp becomes `1` because ntcore
 reserves zero for “now”; this is not a general monotonic clamp. Reads copy ntcore-owned
@@ -174,7 +187,7 @@ Configure rebuilds camera state but does not sweep publishers for removed camera
 Reset republishes empty/no-target results immediately if initialized and available,
 otherwise on the next available tick. Stop unpublishes current camera-prefix topics;
 the Photon root state is not swept by that loop. The SDK's
-[CameraSet](../../sdk/include/wpiemu/sdk/vision/camera_bridge.h) owns shared configure,
+[CameraSet](../../sdk/include/wpiemu/sdk/vision/camera_bridge.h) and `CameraBridgeState` own shared configure,
 index lookup, reset and heartbeat bookkeeping; each bridge owns its topics and encoding.
 
 ## Limelight
@@ -207,8 +220,15 @@ schema. `/photonvision/<name>/rawBytes` uses type
 connected heartbeat alone is insufficient. An initial empty result establishes the
 type and property before detections arrive.
 
+The pinned 2027 development version `dev-v2027.0.0-alpha-2-86-gda55d785`
+uses UUID `fd353b11f3a818e9c5b457c7dc5a8f5c` in both the type string and
+JSON property. Its metadata uses nanoseconds, not microseconds; the bridge converts
+its internal microseconds at encoding. Target and multi-tag layouts are unchanged.
+This exact version is allowed, not arbitrary 2027 versions or the moving `Dev` tag.
+
 Metadata is four little-endian `i64`s: sequence, capture microseconds, publication
-microseconds and time-since-last-pong (zero). Transforms encode translation then
+microseconds (nanoseconds for the pinned 2027 schema) and time-since-last-pong (zero).
+Transforms encode translation then
 quaternion `w,x,y,z`, unlike the SDK's `(x,y,z,w)` member order. Lists have a one-byte
 count capped at 127. Optional multi-tag data uses a presence byte and signed 16-bit
 fiducial IDs. The [packet contract](../../bridges/vision/include/wpiemu/bridges/vision/photon_encoding.h)
@@ -219,7 +239,8 @@ field-to-camera and used IDs are sorted.
 The bridge checks the encoder's explicit PhotonLib allowlist. An empty project version
 uses its built-in default; an unrecognized nonempty version logs an error and suppresses
 Photon cameras without disabling Limelight. Similar version numbers do not imply
-support. Driver mode produces empty results. Pipeline, FPS-limit and LED requests
+support. Driver mode produces empty results; 2027's `enabledRequest` also mirrors
+to `enabled` and disables detections without dropping the heartbeat. Pipeline, FPS-limit and LED requests
 mirror state but do not change capture. Intrinsics are a row-major 3×3 pinhole matrix
 with eight zero distortion coefficients. There is no time-sync server, `.schema`
 publication, image stream or object-detection pipeline.
@@ -229,3 +250,18 @@ The [ntcore smoke tests](../../bridges/vision/tests/ntcore_smoke_tests.cpp) and
 [robot integration test](../../app/host/tests/e2e_vision_test.cpp) exercise that
 boundary. [Building](../BUILDING.md) owns test commands and Java/C++ sample
 prerequisites.
+
+The [2027 vision integration test](../../app/host/tests/e2e_vision_2027_test.cpp)
+runs an actual Java PhotonLib client and Limelight NetworkTables reader with a
+synthetic two-tag test field, not a production 2027 game plugin. It checks decoded
+targets, multi-tag transforms, calibration, capture age, controls, no-target results
+and reset epochs. PhotonLib's normal version checks remain enabled.
+
+**2027 C++ PhotonLib is blocked upstream in this pin.** Its
+[PhotonCamera::VerifyVersion](https://github.com/PhotonVision/photonvision/blob/da55d785/photon-lib/src/main/native/cpp/photon/PhotonCamera.cpp)
+assigns 2027 ntcore's JSON-text `GetProperty("message_uuid")` result to a JSON
+string instead of parsing it. It then compares the unquoted local UUID with a
+remote UUID that still contains quotes and throws, despite identical definitions.
+The C++ sample reproduces that failure. Publishing invalid JSON, suppressing version
+checks or claiming a connected heartbeat as compatibility would conceal the bug;
+none is used. Retest with a fixed upstream PhotonLib before claiming 2027 C++ support.

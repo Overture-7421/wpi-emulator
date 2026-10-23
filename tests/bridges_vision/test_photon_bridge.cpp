@@ -62,6 +62,33 @@ TEST_CASE("vision photon: intrinsics are a 3x3 row-major matrix and distortion i
     CHECK(rig.nt->lastDoubles(kCam + "/cameraDistortion") == std::vector<double>(8, 0.0));
 }
 
+TEST_CASE("vision photon: the pinned 2027 client gets its own schema and nanosecond capture age") {
+    Rig rig;
+    configurePhoton(rig, std::string(vis::kPhoton2027Version));
+    rig.nt->nowTimeUs = 9'000'000;
+    rig.poll(0);
+    rig.apply(twoTagFrame(), 1'040'000);
+    CHECK(rig.nt->topic(kCam + "/rawBytes")->typeString ==
+          "photonstruct:PhotonPipelineResult:fd353b11f3a818e9c5b457c7dc5a8f5c");
+    CHECK(rig.nt->topic(kCam + "/rawBytes")->properties.at("message_uuid") ==
+          "\"fd353b11f3a818e9c5b457c7dc5a8f5c\"");
+    CHECK(readI64(rawBytes(rig), 8) == 8'960'000'000);
+    CHECK(readI64(rawBytes(rig), 16) == 9'000'000'000);
+    CHECK(rawBytes(rig)[32] == 2);
+    rig.nt->setRobotValue(kCam + "/enabledRequest", vis::ntBool(false));
+    rig.poll(1'050'000);
+    rig.apply(twoTagFrame(), 1'080'000);
+    CHECK_FALSE(*rig.nt->lastAs<bool>(kCam + "/enabled"));
+    CHECK(rawBytes(rig)[32] == 0);
+    rig.nt->setRobotValue(kCam + "/enabledRequest", vis::ntBool(true));
+    rig.poll(1'090'000);
+    rig.apply(twoTagFrame(), 1'120'000);
+    CHECK(*rig.nt->lastAs<bool>(kCam + "/enabled"));
+    CHECK(rawBytes(rig)[32] == 2);
+    rig.photon->reset();
+    CHECK(rawBytes(rig)[32] == 0);
+}
+
 TEST_CASE("vision photon: a frame publishes the pipeline result with latency compensated metadata") {
     Rig rig;
     configurePhoton(rig);

@@ -15,3 +15,25 @@ Standalone Java simulation uses `gradlew run`; native simulation uses
 
 The opt-in `e2e.season_2027` checks both projects through the normal launcher.
 See [building and testing](../../docs/BUILDING.md).
+
+## Vendor and vision probes
+
+`vendor_java` pins Phoenix 6 `26.70.0-alpha-2` from WPILib's 2027 alpha-7
+vendor registry. Unlike hardware-only Systemcore libraries, this manifest includes
+desktop software-simulation libraries.
+
+`vision_java` and `vision_cpp` pin PhotonLib
+`dev-v2027.0.0-alpha-2-86-gda55d785` rather than the moving `Dev` release.
+They use ordinary PhotonCamera APIs and Limelight NetworkTables entries, with version
+checks enabled. The Java client exercises targets, transforms, latency, driver mode,
+enabled state and pipeline requests. The host test supplies a synthetic two-tag layout;
+the installed app still has no production 2027 field plugin.
+
+**The pinned C++ PhotonLib currently throws an upstream UUID-check error.**
+The C++ project builds but is a failure reproducer, not a supported vision sample.
+See the [vision compatibility contract](../../docs/reference/bridges.md#photonvision).
+
+With `WPIEMU_E2E=1`, run `e2e.vendor_2027` for CTRE and `e2e.vision_2027`
+for Java vision. `WPIEMU_E2E_VISION_LANG=cpp` selects the upstream failure reproducer;
+it must not be interpreted as passing C++ coverage. `WPIEMU_E2E_LAUNCH=direct`
+selects external launch. These are desktop checks, not Systemcore hardware validation.

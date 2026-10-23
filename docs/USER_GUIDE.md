@@ -235,6 +235,9 @@ vendor bridge, and Phoenix 5 behavior is not characterized against the real libr
 [vision sample end-to-end check](../samples/vision_robot/README.md#end-to-end-check) exercises
 Phoenix 6 driving, wheel feedback, and camera results in Java and C++ on Windows, but does not
 characterize every Phoenix model or control mode.
+For the pinned 2027 preview, Java PhotonLib and Limelight have actual client coverage;
+the pinned C++ PhotonLib has an upstream UUID-check failure and is not supported yet.
+See the [2027 probes](../samples/season_2027/README.md) for exact versions and limits.
 
 Windows is the locally exercised workflow. Linux/macOS builds, presets, and package checks do
 not establish native robot-process HAL loading or interactive 3D validation on those platforms.

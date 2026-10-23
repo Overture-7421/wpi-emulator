@@ -3,7 +3,7 @@
 // PhotonLib wire format of PhotonPipelineResult ("photonstruct", photon-serde), little-endian packed structs:
 //
 //   PhotonPipelineResult   := PhotonPipelineMetadata, list<PhotonTrackedTarget>, optional<MultiTargetPNPResult>
-//   PhotonPipelineMetadata := int64 sequenceID, captureTimestampMicros, publishTimestampMicros, timeSinceLastPong
+//   PhotonPipelineMetadata := int64 sequenceID, captureTimestamp, publishTimestamp, timeSinceLastPong
 //   PhotonTrackedTarget    := f64 yaw, pitch, area, skew; i32 fiducialId, objDetectId; f32 objDetectConf;
 //                             Transform3d best, alt; f64 poseAmbiguity; list<TargetCorner> minAreaRect, detected
 //   Transform3d            := f64 x, y, z, qw, qx, qy, qz
@@ -12,14 +12,19 @@
 //   list<T>                := u8 count, T...      optional<T> := u8 present, T?
 //
 // Verified against photon-serde at v2026.3.4 (the message definition hashes are identical from v2025.3.2 to
-// v2026.7). The reader of the topic compares the type string, so it must match the robot's PhotonLib exactly.
+// v2026.7), and 2027 dev commit da55d785 (nanosecond metadata, a different result UUID, unchanged targets/multitag).
+// The reader of the topic compares the type string, so it must match the robot's PhotonLib exactly.
 
 #include <cstdint>
 #include <optional>
 #include <string_view>
 #include <vector>
 
+#include "wpiemu/sdk/core/result.h"
+
 namespace wpiemu::bridges::vision {
+
+enum class PhotonSchema { Microseconds2026, Nanoseconds2027 };
 
 struct PhotonTransform3d {
     double x = 0, y = 0, z = 0;                       // meters
@@ -50,6 +55,7 @@ struct PhotonMultiTag {
 };
 
 struct PhotonResult {
+    // Bridge-facing time remains microseconds; the selected schema determines wire units.
     std::int64_t sequenceId = 0;
     std::int64_t captureTimestampMicros = 0;
     std::int64_t publishTimestampMicros = 0;
@@ -59,17 +65,20 @@ struct PhotonResult {
 };
 
 // The photonlib versions whose message definitions were verified (see above), e.g. "v2026.3.4".
-// A leading 'v' is optional.
+// A leading 'v' is optional for release versions. The 2027 development version must match exactly.
 bool isVerifiedPhotonVersion(std::string_view version);
 inline constexpr std::string_view kDefaultPhotonVersion = "v2026.3.4";
+inline constexpr std::string_view kPhoton2027Version = "dev-v2027.0.0-alpha-2-86-gda55d785";
+PhotonSchema photonSchemaForVersion(std::string_view version);
 
 // "photonstruct:PhotonPipelineResult:4b2ff16a964b5e2bf04be0c1454d91c4" (PhotonPipelineResult.photonStruct.getTypeString()).
-std::string_view photonPipelineResultTypeString();
+std::string_view photonPipelineResultTypeString(PhotonSchema schema = PhotonSchema::Microseconds2026);
 
 // "photonstruct:PhotonPipelineResult:4b2ff16a964b5e2bf04be0c1454d91c4" -> the interface UUID. PhotonLib publishes it
 // as the JSON string property "message_uuid" of rawBytes and compares it in its version check.
-std::string_view photonPipelineResultUuid();
+std::string_view photonPipelineResultUuid(PhotonSchema schema = PhotonSchema::Microseconds2026);
 
-std::vector<std::uint8_t> encodePhotonPipelineResult(const PhotonResult& result);
+sdk::Result<std::vector<std::uint8_t>> encodePhotonPipelineResult(
+    const PhotonResult& result, PhotonSchema schema = PhotonSchema::Microseconds2026);
 
 }  // namespace wpiemu::bridges::vision

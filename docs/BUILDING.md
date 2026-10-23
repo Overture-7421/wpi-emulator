@@ -196,6 +196,21 @@ Vision also needs ntcore. For C++, use `samples\vision_robot\cpp` and set the la
 prerequisites were missing; a skip does not verify integration. Even a passing sample
 test covers only that project and setup, not every robot or physical hardware.
 
+For the pinned 2027 preview vendors, use a dual-season build and JDK 25:
+
+```powershell
+$env:WPIEMU_E2E = "1"
+$env:WPIEMU_E2E_VISION_LANG = "java"
+ctest --test-dir build\dual-season -C Release -R "^e2e[.](vendor|vision)_2027$" --output-on-failure
+```
+
+These copy the [2027 probes](../samples/season_2027/README.md) and use actual
+Phoenix/PhotonLib dependencies. Vision uses a synthetic test layout because no
+2027 game plugin ships. Java vision is exercised with normal version checks.
+The pinned 2027 C++ PhotonLib currently fails its upstream UUID check; setting
+`WPIEMU_E2E_VISION_LANG=cpp` reproduces that failure rather than passing coverage.
+See the [bridge compatibility reference](reference/bridges.md#photonvision).
+
 ## Linux in Docker
 
 With Docker and PowerShell, the [Linux helper](../tools/docker/linux/run.ps1) builds,

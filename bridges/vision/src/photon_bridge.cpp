@@ -36,7 +36,8 @@ void PhotonBridge::configure(const sdk::VisionSetup& setup) {
         if (anyPhoton) {
             sink_.error("PhotonLib " + version_ +
                         " has an unverified PhotonPipelineResult definition; PhotonVision cameras are not "
-                        "published (verified: v2025.3.2, v2026.1.1 - v2026.3.4, v2026.7)");
+                        "published (verified: v2025.3.2, v2026.1.1 - v2026.3.4, v2026.7, " +
+                        std::string(kPhoton2027Version) + ")");
         }
     }
 
@@ -60,6 +61,8 @@ void PhotonBridge::onInitializeCamera(Cam& cam, std::int64_t ntNow) {
     sink_.putDoubles(cam.root + "/cameraDistortion", NtDoubles(kDistortionCoefficients, 0.0), ntNow);
     sink_.putInt(cam.root + "/pipelineIndexState", cam.pipelineIndex, ntNow);
     sink_.putBool(cam.root + "/driverMode", cam.driverMode, ntNow);
+    if (photonSchemaForVersion(version_) == PhotonSchema::Nanoseconds2027)
+        sink_.putBool(cam.root + "/enabled", cam.enabled, ntNow);
     sink_.putInt(cam.root + "/fpsLimit", cam.fpsLimit, ntNow);
     sink_.putDouble(cam.root + "/fps", c.fps, ntNow);
     cam.restartHeartbeat();
@@ -67,7 +70,7 @@ void PhotonBridge::onInitializeCamera(Cam& cam, std::int64_t ntNow) {
     // The first (empty) result creates the rawBytes topic with its type string, which PhotonLib's version check reads
     // together with the message_uuid property (PacketPublisher sets it as a JSON string).
     publishFrame(cam, nullptr, ntNow);
-    const std::string uuidJson = "\"" + std::string(photonPipelineResultUuid()) + "\"";
+    const std::string uuidJson = "\"" + std::string(photonPipelineResultUuid(photonSchemaForVersion(version_))) + "\"";
     const sdk::Status property = sink_.backend().setTopicProperty(cam.root + "/rawBytes", "message_uuid", uuidJson);
     if (!property.ok()) sink_.error("could not set message_uuid on " + cam.root + "/rawBytes: " + property.error().message);
 }
@@ -80,6 +83,12 @@ void PhotonBridge::onPollCamera(Cam& cam, sdk::SimTimeUs simTimeUs, std::int64_t
     if (const auto v = ntAsBool(sink_.read(cam.root + "/driverModeRequest")); v && *v != cam.driverMode) {
         cam.driverMode = *v;
         sink_.putBool(cam.root + "/driverMode", cam.driverMode, ntNow);
+    }
+    if (photonSchemaForVersion(version_) == PhotonSchema::Nanoseconds2027) {
+        if (const auto v = ntAsBool(sink_.read(cam.root + "/enabledRequest")); v && *v != cam.enabled) {
+            cam.enabled = *v;
+            sink_.putBool(cam.root + "/enabled", cam.enabled, ntNow);
+        }
     }
     if (const auto v = ntAsInt(sink_.read(cam.root + "/fpsLimitRequest")); v && *v != cam.fpsLimit) {
         cam.fpsLimit = *v;
@@ -102,7 +111,7 @@ void PhotonBridge::onFrame(Cam& cam, const sdk::CameraFrame& frame, std::int64_t
 void PhotonBridge::publishFrame(Cam& cam, const sdk::CameraFrame* frame, std::int64_t ntNow) {
     PhotonResult result;
     double latencyMs = 0.0;
-    const bool detect = frame != nullptr && !cam.driverMode;
+    const bool detect = frame != nullptr && !cam.driverMode && cam.enabled;
 
     if (frame != nullptr) {
         cam.sequence = static_cast<std::int64_t>(frame->sequence);
@@ -146,8 +155,14 @@ void PhotonBridge::publishFrame(Cam& cam, const sdk::CameraFrame* frame, std::in
         }
     }
 
-    sink_.put(cam.root + "/rawBytes", ntRaw(encodePhotonPipelineResult(result)), ntNow,
-              photonPipelineResultTypeString());
+    const auto schema = photonSchemaForVersion(version_);
+    auto encoded = encodePhotonPipelineResult(result, schema);
+    if (!encoded.ok()) {
+        sink_.error(encoded.error().message);
+        return;
+    }
+    sink_.put(cam.root + "/rawBytes", ntRaw(std::move(encoded).value()), ntNow,
+              photonPipelineResultTypeString(schema));
 
     const bool has = !result.targets.empty();
     const PhotonTarget* best = has ? &result.targets.front() : nullptr;
