@@ -10,6 +10,7 @@
 #include "wpiemu/core/launcher/jdk_policy.h"
 #include "wpiemu/core/launcher/project_inspector.h"
 #include "wpiemu/sdk/game/plugin_registry.h"
+#include "wpiemu/sdk/season/season_registry.h"
 
 namespace wpiemu::app {
 
@@ -24,6 +25,7 @@ inline constexpr const char* kGradle = "gradle";
 inline constexpr const char* kWpilib = "wpilib";
 inline constexpr const char* kCppToolchain = "cpp";
 inline constexpr const char* kGameModule = "game";
+inline constexpr const char* kWpilibVersion = "wpilib_version";
 inline constexpr const char* kHalExtension = "no_extension_for_season";
 }  // namespace check_id
 
@@ -41,6 +43,7 @@ struct ToolchainInput {
     QString projectPath;
     QString language;          // "java" | "cpp" | ""
     int wpilibYear = 0;
+    QString wpilibVersion;     // the GradleRIO version the project declares; empty = unknown
     QString gradleVersion;     // the wrapper's Gradle; empty = unknown (assumes the WPILib template's)
     int minJavaMajor = core::launcher::kMinJdkMajor;   // the Java the project's season builds with (ToolchainProvisioner::javaMajorForSeason)
     QString wpilibHomeOverride;
@@ -92,8 +95,8 @@ struct ToolchainReport {
 class ToolchainChecker {
     Q_DECLARE_TR_FUNCTIONS(ToolchainChecker)
 public:
-    ToolchainChecker(const ISystemProbe& probe, const sdk::GamePluginRegistry& plugins)
-        : probe_(probe), plugins_(plugins) {}
+    ToolchainChecker(const ISystemProbe& probe, const sdk::GamePluginRegistry& plugins, const sdk::SeasonRegistry& seasons)
+        : probe_(probe), plugins_(plugins), seasons_(seasons) {}
 
     ToolchainReport run(const ToolchainInput& input) const;
 
@@ -102,6 +105,8 @@ public:
     ToolchainCheck checkWpilibInstall(const ToolchainInput& input) const;
     ToolchainCheck checkCppToolchain(const ToolchainInput& input) const;
     ToolchainCheck checkGameModule(const ToolchainInput& input, ToolchainReport& report) const;
+    // Warns when the project's WPILib version is not one its season pack verified; the run continues.
+    ToolchainCheck checkWpilibVersion(const ToolchainInput& input) const;
 
     // Existing WPILib install folder for the season (override, then the installer's locations in core's order), else empty.
     QString findWpilibHome(const ToolchainInput& input) const;
@@ -120,7 +125,11 @@ private:
     std::optional<QString> judgeJdk(const QString& java, bool trusted, const ToolchainInput& input, int* majorOut) const;
 
     const ISystemProbe& probe_;
+    // WPILib installer folder of a season: its season pack's folder, else the year.
+    QString installFolder(int year) const;
+
     const sdk::GamePluginRegistry& plugins_;
+    const sdk::SeasonRegistry& seasons_;
 };
 
 }  // namespace wpiemu::app

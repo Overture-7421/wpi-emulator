@@ -133,7 +133,7 @@ TARGET_OWNERS = {
     "wpiemu_app_tests": "app",
     "wpiemu_e2e_tests": "app/host",
     "wpiemu_season_e2e_tests": "app/host",
-    "wpiemu_vendor_2027_e2e_tests": "app/host",
+    "wpiemu_season_vendor_e2e_tests": "app/host",
     "wpiemu_app_editor_tests": "app/editor",
     "wpiemu_editor_demo": "app/editor",
     "wpiemu_runview_demo": "app/runview",
@@ -141,6 +141,7 @@ TARGET_OWNERS = {
     "wpiemu_sdk_header_check": "tests",
     "wpiemu_runview_tests": "tests",
     "wpiemu_plugins_builtin": AGGREGATOR,
+    "wpiemu_seasons_builtin": AGGREGATOR,
 }
 
 # Imported third-party WPILib targets (declared by halsim_ext/cmake/WpiEmuWpilib.cmake).

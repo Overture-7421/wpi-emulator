@@ -21,6 +21,7 @@
 #include "wpiemu/core/config/json_codec.h"
 #include "wpiemu/core/config/robot_config_codec.h"
 #include "wpiemu/sdk/game/plugin_registry.h"
+#include "wpiemu/sdk/season/season_registry.h"
 
 namespace wpiemu::app {
 
@@ -74,6 +75,7 @@ public:
     void bindRuntime(std::shared_ptr<const sdk::RobotConfig> config);
 
     const sdk::GamePluginRegistry& plugins() const { return plugins_; }
+    const sdk::SeasonRegistry& seasons() const { return seasons_; }
     sdk::MechanismFactory& mechanisms() { return mechanisms_; }
     sdk::DrivetrainRegistry& drivetrains() { return drivetrains_; }
     sdk::TireModelRegistry& tireModels() { return tireModels_; }
@@ -87,6 +89,7 @@ private:
     bool demo_ = false;
     QStringList startupProblems_;
     sdk::GamePluginRegistry plugins_;
+    sdk::SeasonRegistry seasons_;
     sdk::MechanismFactory mechanisms_;
     sdk::DrivetrainRegistry drivetrains_;
     sdk::TireModelRegistry tireModels_;

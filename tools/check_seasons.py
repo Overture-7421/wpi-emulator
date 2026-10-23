@@ -151,6 +151,8 @@ def manifest_errors(root: Path, seasons: dict[str, dict], abis: dict[str, dict])
             errors.append(f"{where}: game.plugin {game.get('plugin')!r} needs the directory seasons/{year}/game")
         if game is None and (root / "seasons" / year / "game").is_dir():
             errors.append(f"{where}: seasons/{year}/game exists but the manifest has \"game\": null")
+        if "probes" in season and not (root / season["probes"]).is_dir():
+            errors.append(f"{where}: probes folder {season['probes']} does not exist")
         for sample in season.get("samples", []):
             if sample in sample_owner:
                 errors.append(f"{where}: sample {sample} is also listed by season {sample_owner[sample]}")

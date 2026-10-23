@@ -97,7 +97,7 @@ struct TestProject {
     explicit TestProject(const QString& lang = QStringLiteral("java"), int yr = 2026, bool gradleRio = true) : language(lang), year(yr) {
         const QString root = dir.path();
         const QString plugin =
-            gradleRio ? QStringLiteral("id \"%1\" version \"%2.1.1\"")
+            gradleRio ? QStringLiteral("id \"%1\" version \"%2.2.1\"")
                             .arg(year >= 2027 ? QStringLiteral("org.wpilib.GradleRIO") : QStringLiteral("edu.wpi.first.GradleRIO"))
                             .arg(yr)
                       : QStringLiteral("id \"java\"");

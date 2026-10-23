@@ -78,7 +78,7 @@ TEST_CASE("gradle launch plan: wrapper, flags, init script written to the scratc
     r.language = "cpp";
     CHECK(planGradleLaunch(r, false).value().args.back() == "simulateNative");
     r.language = "java";
-    r.wpilibYear = 2027;
+    r.launchProfile = std::string(kLaunchModern);
     CHECK(gradleTaskName(r) == "run");
     CHECK(planGradleLaunch(r, false).value().args.back() == "run");
     r.language = "cpp";
@@ -184,7 +184,7 @@ TEST_CASE("external launch plan: describe task names and descriptor paths") {
     LaunchRequest r = makeRequest(dir, LaunchMode::ExternalDirect);
     CHECK(externalTaskName(r) == "simulateExternalJavaRelease");
     CHECK(externalDescriptorPath(r) == r.projectDir / "build" / "sim" / "release_java.json");
-    r.wpilibYear = 2027;
+    r.launchProfile = std::string(kLaunchModern);
     CHECK(externalTaskName(r) == "simulateExternalJava");
     CHECK(externalDescriptorPath(r) == r.projectDir / "build" / "sim" / "java.json");
     const auto modernDescribe = planExternalDescribe(r, false);
@@ -278,10 +278,10 @@ TEST_CASE("external launch plan: Java descriptor -> JVM command line") {
     }
 }
 
-TEST_CASE("external launch plan: 2027 Java uses the descriptor runtime classpath and main class") {
+TEST_CASE("external launch plan: a classpath-launch profile uses the descriptor runtime classpath and main class") {
     ScratchDir dir;
     LaunchRequest r = makeRequest(dir, LaunchMode::ExternalDirect);
-    r.wpilibYear = 2027;
+    r.launchProfile = std::string(kLaunchModern);
     const JsonValueCodec codec;
     const auto host = envOf({});
     const std::string descriptor = R"json([{
@@ -348,4 +348,16 @@ TEST_CASE("external launch plan: native descriptor -> the exe") {
     REQUIRE(absolute.ok());
     CHECK(absolute.value().program == elsewhere.string());  // already absolute: not re-based on the project
     CHECK(planExternalLaunch(r, "{}", codec, host, true, false).error().code == ErrorCode::InvalidArgument);
+}
+
+TEST_CASE("launch profiles: classic is the default, modern runs the project's run task, unknown ids are refused") {
+    CHECK(findLaunchProfile("") == findLaunchProfile(kLaunchClassic));
+    REQUIRE(findLaunchProfile(kLaunchModern) != nullptr);
+    CHECK(findLaunchProfile(kLaunchModern)->javaClasspathLaunch);
+    CHECK_FALSE(findLaunchProfile(kLaunchClassic)->javaClasspathLaunch);
+    CHECK(findLaunchProfile("gradlerio-unknown") == nullptr);
+    ScratchDir dir;
+    LaunchRequest r = makeRequest(dir);
+    r.launchProfile = "gradlerio-unknown";
+    CHECK(planGradleLaunch(r, false).error().code == ErrorCode::InvalidArgument);
 }

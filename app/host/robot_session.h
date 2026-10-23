@@ -24,6 +24,7 @@
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/game/plugin_registry.h"
 #include "wpiemu/sdk/game/sound_cue_queue.h"
+#include "wpiemu/sdk/season/season_registry.h"
 #include "wpiemu/sdk/telemetry/session_status.h"
 #include "wpiemu/sdk/telemetry/snapshot.h"
 
@@ -31,6 +32,7 @@ namespace wpiemu::app::host {
 
 struct Registries {
     const sdk::GamePluginRegistry* plugins = nullptr;
+    const sdk::SeasonRegistry* seasons = nullptr;   // optional: without it every project launches with the classic profile
     sdk::MechanismFactory* mechanisms = nullptr;
     const sdk::DrivetrainRegistry* drivetrains = nullptr;
     const sdk::TireModelRegistry* tireModels = nullptr;

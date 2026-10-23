@@ -19,7 +19,7 @@ add_executable(wpiemu_tests ${WPIEMU_TEST_SOURCES} $<TARGET_OBJECTS:wpiemu_sdk_h
 target_link_libraries(wpiemu_tests PRIVATE
     wpiemu_sdk wpiemu_core wpiemu_ipc wpiemu_halsim_core wpiemu_app_host
     wpiemu_bridges_hal wpiemu_bridges_vendor wpiemu_bridges_vision
-    wpiemu_plugins_builtin ${_wpiemu_builtin_plugin_targets})
+    wpiemu_plugins_builtin wpiemu_seasons_builtin ${_wpiemu_builtin_plugin_targets})
 if(WPIEMU_BUILD_PLUGIN_TEMPLATE)
     target_link_libraries(wpiemu_tests PRIVATE wpiemu_plugin_template)
 endif()

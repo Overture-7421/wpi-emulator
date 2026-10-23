@@ -89,7 +89,7 @@ Pigeon IMU; it does not use Phoenix 6's input guard or config readback.
 
 The pinned 2027 alpha-7 vendor probe uses official Phoenix 6
 `26.70.0-alpha-2` **desktop software simulation**, not substituted 2026 binaries.
-The [actual Java robot test](../../app/host/tests/e2e_vendor_2027_test.cpp)
+The [actual Java robot test](../../app/host/tests/e2e_vendor_season_test.cpp)
 exercises TalonFX duty-cycle/voltage output, mapped mechanism and rotor feedback,
 CANcoder direction/offset readback and feedback, Pigeon2 yaw, and process shutdown.
 This does not characterize every Phoenix device, closed-loop control mode, C++ vendor
@@ -251,7 +251,7 @@ The [ntcore smoke tests](../../bridges/vision/tests/ntcore_smoke_tests.cpp) and
 boundary. [Building](../BUILDING.md) owns test commands and Java/C++ sample
 prerequisites.
 
-The [2027 vision integration test](../../app/host/tests/e2e_vision_2027_test.cpp)
+The [2027 vision integration test](../../app/host/tests/e2e_vision_season_test.cpp)
 runs an actual Java PhotonLib client and Limelight NetworkTables reader with a
 synthetic two-tag test field, not a production 2027 game plugin. It checks decoded
 targets, multi-tag transforms, calibration, capture age, controls, no-target results

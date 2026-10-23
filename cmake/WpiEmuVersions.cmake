@@ -75,6 +75,22 @@ function(wpiemu_season_abi_value out year)
     set(${out} "${_value}" PARENT_SCOPE)
 endfunction()
 
+# wpiemu_season_array(<out> <year> <key>...) is the elements of a JSON array member of a season manifest, as a CMake list.
+function(wpiemu_season_array out year)
+    set(_file "${_WPIEMU_SEASONS_DIR}/${year}/season.json")
+    file(READ "${_file}" _json)
+    string(JSON _count LENGTH "${_json}" ${ARGN})
+    set(_items "")
+    if(_count GREATER 0)
+        math(EXPR _last "${_count} - 1")
+        foreach(_i RANGE ${_last})
+            string(JSON _item GET "${_json}" ${ARGN} ${_i})
+            list(APPEND _items "${_item}")
+        endforeach()
+    endif()
+    set(${out} "${_items}" PARENT_SCOPE)
+endfunction()
+
 # The game plugin id a season names ("" for a platform-only season whose manifest has "game": null).
 function(wpiemu_season_game_plugin out year)
     set(_file "${_WPIEMU_SEASONS_DIR}/${year}/season.json")

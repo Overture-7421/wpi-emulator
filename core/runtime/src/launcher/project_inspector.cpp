@@ -242,15 +242,27 @@ std::optional<WpilibInstall> wpilibInstallAt(const fs::path& home, int year) {
     return install;
 }
 
-std::string wpilibInstallFolderName(int year) {
-    if (year == 2027) return "2027_alpha7";
-    return std::to_string(year);
+std::string wpilibInstallFolderName(int year, std::string_view preferred) {
+    return preferred.empty() ? std::to_string(year) : std::string(preferred);
 }
 
-std::optional<WpilibInstall> findWpilibInstall(int year, const std::vector<fs::path>& roots) {
+std::optional<WpilibInstall> findWpilibInstall(int year, const std::vector<fs::path>& roots, std::string_view preferredFolder) {
     const std::vector<fs::path> candidates = roots.empty() ? wpilibRootCandidates(config::currentPlatform(), &sdk::readEnvironment) : roots;
-    for (const fs::path& root : candidates)
-        if (auto install = wpilibInstallAt(root / wpilibInstallFolderName(year), year)) return install;
+    const std::string yearName = std::to_string(year);
+    for (const fs::path& root : candidates) {
+        if (!preferredFolder.empty())
+            if (auto install = wpilibInstallAt(root / std::string(preferredFolder), year)) return install;
+        if (auto install = wpilibInstallAt(root / yearName, year)) return install;
+        std::vector<std::string> suffixed;
+        std::error_code ec;
+        for (fs::directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+            const std::string name = it->path().filename().string();
+            if (name.size() > yearName.size() + 1 && name.compare(0, yearName.size() + 1, yearName + "_") == 0) suffixed.push_back(name);
+        }
+        std::sort(suffixed.rbegin(), suffixed.rend());
+        for (const std::string& name : suffixed)
+            if (auto install = wpilibInstallAt(root / name, year)) return install;
+    }
     return std::nullopt;
 }
 

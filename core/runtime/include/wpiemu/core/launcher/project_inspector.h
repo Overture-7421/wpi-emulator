@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "wpiemu/core/config/config_store.h"
@@ -76,10 +77,13 @@ std::vector<std::filesystem::path> wpilibRootCandidates(config::Platform platfor
 std::vector<std::filesystem::path> wpilibRootCandidates(config::Platform platform, const sdk::EnvLookup& env);
 // The install at `home`, a season folder such as <root>/2026 or <root>/2027_alpha7; nullopt when it is not a directory.
 std::optional<WpilibInstall> wpilibInstallAt(const std::filesystem::path& home, int year);
-// WPILib installer folder for a season. Alpha releases may include a suffix (for example 2027_alpha7).
-std::string wpilibInstallFolderName(int year);
-// First root containing "<year>/" wins. `roots` empty => wpilibRootCandidates().
-std::optional<WpilibInstall> findWpilibInstall(int year, const std::vector<std::filesystem::path>& roots);
+// WPILib installer folder of a season: `preferred` (the season pack's installFolder, for example one with a preview suffix)
+// when given, else the year.
+std::string wpilibInstallFolderName(int year, std::string_view preferred = {});
+// First root containing the season's folder wins: `preferredFolder` (see above), then "<year>", then any "<year>_*" folder
+// (newest name first), so a preview revision the manifest does not name yet is still found. `roots` empty => wpilibRootCandidates().
+std::optional<WpilibInstall> findWpilibInstall(int year, const std::vector<std::filesystem::path>& roots,
+                                               std::string_view preferredFolder = {});
 
 // Where the JDK that runs Gradle comes from, in the order the launcher tries: the explicit setting, the season's WPILib JDK
 // (trusted), another installed season's WPILib JDK, JAVA_HOME, `java` on PATH, then the emulator's own downloaded Java.

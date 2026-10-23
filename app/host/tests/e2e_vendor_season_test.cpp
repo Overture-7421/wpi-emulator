@@ -11,6 +11,7 @@
 #include <sstream>
 #include <string>
 
+#include "season_probe.h"
 #include "test_support.h"
 #include "wpiemu/core/launcher/extension_locator.h"
 #include "wpiemu/sdk/testing/wait.h"
@@ -20,15 +21,6 @@ using namespace wpiemu::app::host::testing;
 using namespace std::chrono_literals;
 namespace fs = std::filesystem;
 
-#ifndef WPIEMU_SEASON_BINARY_DIR
-#define WPIEMU_SEASON_BINARY_DIR ""
-#endif
-#ifndef WPIEMU_SEASON_EXTENSION
-#define WPIEMU_SEASON_EXTENSION ""
-#endif
-#ifndef WPIEMU_SEASON_SAMPLES
-#define WPIEMU_SEASON_SAMPLES ""
-#endif
 
 namespace {
 
@@ -62,15 +54,15 @@ bool hasDevice(const sdk::ISimSnapshot& snapshot, const char* type, int id, bool
 
 sdk::RobotConfig configForMappedPlant() {
     sdk::RobotConfig config;
-    config.name = "2027 Phoenix vendor e2e";
+    config.name = "season Phoenix vendor e2e";
     config.project.language = "java";
-    config.project.wpilibYear = 2027;
-    config.project.gradleRioVersion = "2027.0.0-alpha-7";
+    config.project.wpilibYear = season::year();
+    config.project.gradleRioVersion = season::wpilibVersion();
 
     sdk::MechanismConfig axis;
     axis.id = "phoenix_plant";
     axis.type = "mechanism";
-    axis.label = "Phoenix 2027 mapped plant";
+    axis.label = "Phoenix season mapped plant";
     axis.properties["motion"] = "rotary";
     axis.properties["motorModel"] = "kraken_x60";
     axis.properties["motorCount"] = 1;
@@ -86,26 +78,26 @@ sdk::RobotConfig configForMappedPlant() {
 
 }  // namespace
 
-TEST_CASE("e2e: real Phoenix 6 2027 devices configure, drive a mapped plant, and report feedback") {
+TEST_CASE("e2e: real Phoenix 6 season devices configure, drive a mapped plant, and report feedback") {
     if (env("WPIEMU_E2E").empty()) {
         MESSAGE(
-            "SKIPPED: set WPIEMU_E2E=1; requires JDK 25 and the real 2027 Phoenix desktop "
+            "SKIPPED: set WPIEMU_E2E=1; requires the season's JDK and the real Phoenix desktop "
             "artifacts");
         return;
     }
 
     const fs::path extension = core::launcher::locateHalsimExtension(
-        WPIEMU_SEASON_BINARY_DIR, &sdk::readEnvironment, 2027, WPIEMU_SEASON_EXTENSION);
+        season::binaryDir(), &sdk::readEnvironment, season::year(), season::buildExtension());
     if (extension.empty()) {
         MESSAGE(
-            "SKIPPED: build with WPIEMU_SEASONS=2026;2027 or set WPIEMU_EXTENSION to the 2027 "
+            "SKIPPED: build with WPIEMU_SEASONS=all or set WPIEMU_EXTENSION to the season's "
             "extension");
         return;
     }
 
-    Scratch scratch("wpiemu-phoenix-2027-e2e-");
+    Scratch scratch("wpiemu-phoenix-season-e2e-");
     const fs::path project = scratch.root / "robot";
-    copyProject(fs::path(WPIEMU_SEASON_SAMPLES) / "vendor_java", project);
+    copyProject(season::samples() / "vendor_java", project);
 
     TestRegistries registries;
     app::host::Options options;
@@ -178,7 +170,7 @@ TEST_CASE("e2e: real Phoenix 6 2027 devices configure, drive a mapped plant, and
                     "Phoenix bridge did not read back the firmware TalonFX/CANcoder configuration");
     REQUIRE(snapshot != nullptr);
     REQUIRE(session.runner().robotHello());
-    CHECK(session.runner().robotHello()->wpilibYear == 2027);
+    CHECK(session.runner().robotHello()->wpilibYear == season::year());
     CHECK(snapshot->simTimeUs() >= 1'000'000);
     CHECK(hasDevice(*snapshot, "talonfx", 1, true));
     CHECK(hasDevice(*snapshot, "cancoder", 2, true));
@@ -260,13 +252,13 @@ TEST_CASE("e2e: real Phoenix 6 2027 devices configure, drive a mapped plant, and
 
 int main(int argc, char** argv) {
     if (env("WPIEMU_E2E").empty()) {
-        std::puts("SKIPPED: set WPIEMU_E2E=1; requires JDK 25 and 2027 Phoenix desktop artifacts");
+        std::puts("SKIPPED: set WPIEMU_E2E=1; requires the season's JDK and Phoenix desktop artifacts");
         return kSkipExitCode;
     }
     const auto extension = core::launcher::locateHalsimExtension(
-        WPIEMU_SEASON_BINARY_DIR, &sdk::readEnvironment, 2027, WPIEMU_SEASON_EXTENSION);
+        season::binaryDir(), &sdk::readEnvironment, season::year(), season::buildExtension());
     if (extension.empty()) {
-        std::puts("SKIPPED: no matching 2027 HALSim extension is available");
+        std::puts("SKIPPED: no matching HALSim extension is available for the season");
         return kSkipExitCode;
     }
     return doctest::Context(argc, argv).run();

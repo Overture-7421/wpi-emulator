@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "host/robot_session.h"
+#include "season_probe.h"
 #include "test_support.h"
 #include "wpiemu/core/launcher/extension_locator.h"
 #include "wpiemu/sdk/testing/fake_game_module.h"
@@ -22,10 +23,10 @@ using namespace std::chrono_literals;
 
 namespace {
 
-// A synthetic test field, not a claimed 2027 game layout.
+// A synthetic test field, not a claimed game layout.
 class VisionTestModule final : public sdk::testing::FakeGameModule {
 public:
-    VisionTestModule() : FakeGameModule("vision_test_2027", 2027) {}
+    VisionTestModule() : FakeGameModule("vision_test_season", season::year()) {}
 
     sdk::Result<std::unique_ptr<sdk::IField>> createField(sdk::IPhysicsWorld& world) override {
         sdk::BodyDesc body;
@@ -42,7 +43,7 @@ public:
 
     sdk::AprilTagLayout aprilTagLayout() const override {
         sdk::AprilTagLayout layout;
-        layout.name = "synthetic-2027-vision-test";
+        layout.name = "synthetic-season-vision-test";
         layout.fieldLengthM = 16.f;
         layout.fieldWidthM = 8.f;
         layout.tags = {{3, {{5.f, 3.75f, 0.5f}, sdk::Quat::fromYaw(static_cast<float>(sdk::kPi))}},
@@ -79,22 +80,22 @@ double get(const Fields& fields, const char* key) {
 }  // namespace
 
 TEST_CASE(
-    "e2e: 2027 vision - actual PhotonLib and Limelight decode targets, timing, controls and "
+    "e2e: season vision - actual PhotonLib and Limelight decode targets, timing, controls and "
     "reset") {
     const std::string language =
         env("WPIEMU_E2E_VISION_LANG").empty() ? "java" : env("WPIEMU_E2E_VISION_LANG");
     REQUIRE((language == "java" || language == "cpp"));
-    Scratch scratch("wpiemu-vision-2027-");
+    Scratch scratch("wpiemu-vision-season-");
     const std::filesystem::path project = scratch.root / "project";
-    copyProject(std::filesystem::path(WPIEMU_SEASON_SAMPLES) / ("vision_" + language), project);
+    copyProject(season::samples() / ("vision_" + language), project);
     TestRegistries registries;
     REQUIRE(registries.plugins.add(std::make_unique<VisionTestModule>()).ok());
 
     sdk::RobotConfig config;
-    config.name = "2027 vision integration";
+    config.name = "season vision integration";
     config.project.language = language;
-    config.project.wpilibYear = 2027;
-    config.project.gradleRioVersion = "2027.0.0-alpha-7";
+    config.project.wpilibYear = season::year();
+    config.project.gradleRioVersion = season::wpilibVersion();
     config.chassis.sizeM = {0.8f, 0.8f, 0.4f};
     config.chassis.comHeightM = 0.2f;
     for (const auto kind : {sdk::CameraKind::Limelight, sdk::CameraKind::PhotonVision}) {
@@ -111,7 +112,7 @@ TEST_CASE(
     app::host::Options options;
     options.projectDir = project;
     options.extensionLibrary = core::launcher::locateHalsimExtension(
-        WPIEMU_SEASON_BINARY_DIR, &sdk::readEnvironment, 2027, WPIEMU_SEASON_EXTENSION);
+        season::binaryDir(), &sdk::readEnvironment, season::year(), season::buildExtension());
     options.scratchDir = scratch.root / "scratch";
     options.handshakeTimeout = 5min;
     options.extraGradleArgs = {"--no-daemon"};

@@ -31,10 +31,24 @@ enum class LaunchMode {
     ExternalDirect,    // GradleRIO describe task (build + describe), then launch the JVM / exe ourselves
 };
 
+// How a GradleRIO generation launches a robot, named by the season manifest (platform.launch, docs/reference/seasons.md).
+// Core knows the profiles by name; it never names a season.
+struct LaunchProfile {
+    std::string_view id;
+    std::string_view javaTask;          // Gradle task that runs the Java robot under the init script
+    std::string_view javaExternalTask;  // Java task whose descriptor drives the direct launch; empty = simulateExternalJava<Release|Debug>
+    bool javaClasspathLaunch;           // direct Java launch from {classpath, mainClassName, jvmArgs} instead of a fat jar
+};
+inline constexpr std::string_view kLaunchClassic = "gradlerio-classic";
+inline constexpr std::string_view kLaunchModern = "gradlerio-modern";
+// The profile with this id; nullptr when unknown. An empty id selects the classic profile.
+const LaunchProfile* findLaunchProfile(std::string_view id);
+
 struct LaunchRequest {
     std::filesystem::path projectDir;
     std::string language = "java";                // "java" | "cpp"
     int wpilibYear = 0;                             // season from the live project inspection; 0 when unknown
+    std::string launchProfile;                      // the season's launch profile id (findLaunchProfile); empty = classic
     LaunchMode mode = LaunchMode::GradleInitScript;
     bool release = true;                          // ExternalDirect: Release vs Debug variant
     std::filesystem::path extensionLibrary;       // absolute path of halsim_wpiemu.{dll,so,dylib}
@@ -66,17 +80,17 @@ std::string halExtensionsValue(const LaunchRequest& request, bool windows);
 std::map<std::string, std::string> emulatorEnvironment(const LaunchRequest& request, bool windows);
 
 std::filesystem::path gradleWrapperPath(const std::filesystem::path& projectDir, bool windows);
-std::string gradleTaskName(const LaunchRequest& request);          // 2027 Java uses run; otherwise simulateJava|simulateNative
-std::string externalTaskName(const LaunchRequest& request);        // 2027 Java uses simulateExternalJava
+std::string gradleTaskName(const LaunchRequest& request);          // the profile's Java task, else simulateNative
+std::string externalTaskName(const LaunchRequest& request);        // the profile's external Java task, else simulateExternal<Java|Native><Release|Debug>
 std::filesystem::path externalDescriptorPath(const LaunchRequest& request);  // <project>/build/sim/java.json or release_java.json ...
 
 // gradlew --no-daemon --console=plain -I <script> <simulation task>. Writes <scratchDir>/wpiemu-init.gradle.
 // Errors: NotFound (no wrapper), InvalidArgument (no extension library / endpoint / scratch dir / unknown language).
 sdk::Result<ProcessSpec> planGradleLaunch(const LaunchRequest& request, bool windows = (std::filesystem::path::preferred_separator == '\\'));
-// GradleRIO build + describe; 2027 Java also injects the init script to export its runtime classpath.
+// GradleRIO build + describe; a classpath-launch Java profile also injects the init script to export its runtime classpath.
 sdk::Result<ProcessSpec> planExternalDescribe(const LaunchRequest& request, bool windows = (std::filesystem::path::preferred_separator == '\\'));
 // The direct launch from the JSON Gradle wrote (Java: {libraryDir, mainClassName, environment, extensions[]} + the jar in
-// build/libs; 2027 Java uses {classpath[], mainClassName, jvmArgs[]} instead of a fat jar.
+// build/libs; a classpath-launch Java profile uses {classpath[], mainClassName, jvmArgs[]} instead of a fat jar.
 // Native: {launchfile, libpaths, environment, extensions[]}). `macos` adds -XstartOnFirstThread for the JVM.
 // `hostEnv` is only used to find JAVA_HOME when the request has none.
 sdk::Result<ProcessSpec> planExternalLaunch(const LaunchRequest& request, std::string_view descriptorJson, const sdk::IValueTextCodec& json,

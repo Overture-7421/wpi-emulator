@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdio>
 
+#include "season_probe.h"
 #include "test_support.h"
 #include "wpiemu/core/launcher/extension_locator.h"
 #include "wpiemu/sdk/testing/wait.h"
@@ -14,20 +15,20 @@ using namespace wpiemu::app::host::testing;
 using namespace std::chrono_literals;
 namespace fs = std::filesystem;
 
-TEST_CASE("e2e: 2027 Java and C++ projects use the matching extension and receive teleop") {
+TEST_CASE("e2e: season probe Java and C++ projects use the matching extension and receive teleop") {
     for (const char* language : {"java", "cpp"}) {
         CAPTURE(language);
         Scratch scratch("wpiemu-season-e2e-");
-        copyProject(fs::path(WPIEMU_SEASON_SAMPLES) / language, scratch.root / "robot");
+        copyProject(season::samples() / language, scratch.root / "robot");
         TestRegistries registries;
         sdk::RobotConfig config;
         config.project.language = language;
-        config.project.wpilibYear = 2027;
+        config.project.wpilibYear = season::year();
         app::host::Options options;
         options.projectDir = scratch.root / "robot";
         options.scratchDir = scratch.root / "scratch";
         options.extensionLibrary = core::launcher::locateHalsimExtension(
-            WPIEMU_SEASON_BINARY_DIR, &sdk::readEnvironment, 2027, WPIEMU_SEASON_EXTENSION);
+            season::binaryDir(), &sdk::readEnvironment, season::year(), season::buildExtension());
         options.driverStation.enabled = true;
         options.driverStation.mode = sdk::proto::RobotMode::Teleop;
         options.handshakeTimeout = 8min;
@@ -54,7 +55,7 @@ TEST_CASE("e2e: 2027 Java and C++ projects use the matching extension and receiv
         REQUIRE(snapshot);
         CHECK(session.coreOnly());
         REQUIRE(session.runner().robotHello());
-        CHECK(session.runner().robotHello()->wpilibYear == 2027);
+        CHECK(session.runner().robotHello()->wpilibYear == season::year());
         CHECK(snapshot->simTimeUs() >= 200000);
         CHECK(std::any_of(snapshot->devices().begin(), snapshot->devices().end(), [](const auto& device) {
             return device.live && device.descriptor.type == "pwm" && device.descriptor.id == 0 &&
@@ -69,13 +70,13 @@ TEST_CASE("e2e: 2027 Java and C++ projects use the matching extension and receiv
 
 int main(int argc, char** argv) {
     if (env("WPIEMU_E2E").empty()) {
-        std::puts("SKIPPED: set WPIEMU_E2E=1; requires JDK 25 and the 2027 native desktop toolchain");
+        std::puts("SKIPPED: set WPIEMU_E2E=1; requires the season's JDK and native desktop toolchain");
         return kSkipExitCode;
     }
     const auto extension = core::launcher::locateHalsimExtension(
-        WPIEMU_SEASON_BINARY_DIR, &sdk::readEnvironment, 2027, WPIEMU_SEASON_EXTENSION);
+        season::binaryDir(), &sdk::readEnvironment, season::year(), season::buildExtension());
     if (extension.empty()) {
-        std::puts("SKIPPED: build with WPIEMU_SEASONS=2026;2027 or set WPIEMU_EXTENSION to the 2027 extension");
+        std::puts("SKIPPED: build with WPIEMU_SEASONS=all or set WPIEMU_EXTENSION to the season's extension");
         return kSkipExitCode;
     }
     return doctest::Context(argc, argv).run();

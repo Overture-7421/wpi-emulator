@@ -19,6 +19,8 @@ using namespace wpiemu::app::testing;
 
 namespace {
 
+const std::vector<int> kSeasons{2026, 2027};   // the seasons whose extensions a packaged layout carries
+
 struct Rig {
     MemoryKeyValueStore store;
     FakeProbe probe;
@@ -36,7 +38,7 @@ struct Rig {
         auto i = std::make_unique<FakeInstaller>();
         transport = t.get();
         installer = i.get();
-        service = std::make_unique<UpdateService>(store, probe, std::move(t), std::move(i), version, appDir);
+        service = std::make_unique<UpdateService>(store, probe, std::move(t), std::move(i), version, appDir, kSeasons);
     }
 };
 
@@ -151,27 +153,27 @@ TEST_CASE("install kind follows the packaged layout") {
     FakeProbe probe;
     probe.os = HostOs::Windows;
     const QString bin = QStringLiteral("C:/Program Files/WPI Emulator/bin");
-    CHECK(detectInstall(probe, bin, QStringLiteral("0.0.5")).kind == InstallKind::Dev);
+    CHECK(detectInstall(probe, bin, QStringLiteral("0.0.5"), kSeasons).kind == InstallKind::Dev);
     probe.files.insert(QStringLiteral("C:/Program Files/WPI Emulator/extensions/2026/halsim_wpiemu.dll"));
-    CHECK(detectInstall(probe, bin, QStringLiteral("0.0.5")).kind == InstallKind::Portable);
+    CHECK(detectInstall(probe, bin, QStringLiteral("0.0.5"), kSeasons).kind == InstallKind::Portable);
     probe.files.insert(QStringLiteral("C:/Program Files/WPI Emulator/Uninstall.exe"));
-    CHECK(detectInstall(probe, bin, QStringLiteral("0.0.5")).kind == InstallKind::Nsis);
-    CHECK(detectInstall(probe, bin, QStringLiteral("0.0.0")).kind == InstallKind::Dev);
+    CHECK(detectInstall(probe, bin, QStringLiteral("0.0.5"), kSeasons).kind == InstallKind::Nsis);
+    CHECK(detectInstall(probe, bin, QStringLiteral("0.0.0"), kSeasons).kind == InstallKind::Dev);
 
     probe.os = HostOs::MacOs;
-    CHECK(detectInstall(probe, QStringLiteral("/Applications/wpiemu_app.app/Contents/MacOS"), QStringLiteral("0.0.5")).kind == InstallKind::MacBundle);
-    CHECK(detectInstall(probe, QStringLiteral("/Volumes/WPI Emulator/wpiemu_app.app/Contents/MacOS"), QStringLiteral("0.0.5")).kind == InstallKind::Dev);
+    CHECK(detectInstall(probe, QStringLiteral("/Applications/wpiemu_app.app/Contents/MacOS"), QStringLiteral("0.0.5"), kSeasons).kind == InstallKind::MacBundle);
+    CHECK(detectInstall(probe, QStringLiteral("/Volumes/WPI Emulator/wpiemu_app.app/Contents/MacOS"), QStringLiteral("0.0.5"), kSeasons).kind == InstallKind::Dev);
 
     probe.os = HostOs::Linux;
     probe.environment[QStringLiteral("APPIMAGE")] = QStringLiteral("/apps/WPI.AppImage");
-    CHECK(detectInstall(probe, QStringLiteral("/tmp/.mount/usr/bin"), QStringLiteral("0.0.5")).kind == InstallKind::Dev);
+    CHECK(detectInstall(probe, QStringLiteral("/tmp/.mount/usr/bin"), QStringLiteral("0.0.5"), kSeasons).kind == InstallKind::Dev);
     probe.files.insert(QStringLiteral("/apps/WPI.AppImage"));
-    const InstallInfo appImage = detectInstall(probe, QStringLiteral("/tmp/.mount/usr/bin"), QStringLiteral("0.0.5"));
+    const InstallInfo appImage = detectInstall(probe, QStringLiteral("/tmp/.mount/usr/bin"), QStringLiteral("0.0.5"), kSeasons);
     CHECK(appImage.kind == InstallKind::AppImage);
     CHECK(appImage.appImagePath == QStringLiteral("/apps/WPI.AppImage"));
     probe.environment.clear();
     probe.files.insert(QStringLiteral("/opt/wpi/lib/wpiemu/2027/libhalsim_wpiemu.so"));
-    CHECK(detectInstall(probe, QStringLiteral("/opt/wpi/bin"), QStringLiteral("0.0.5")).kind ==
+    CHECK(detectInstall(probe, QStringLiteral("/opt/wpi/bin"), QStringLiteral("0.0.5"), kSeasons).kind ==
           InstallKind::Portable);
 }
 

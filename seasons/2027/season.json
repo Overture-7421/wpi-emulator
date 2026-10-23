@@ -17,6 +17,7 @@
     }
   },
   "game": null,
+  "probes": "samples/season_2027",
   "samples": [
     "samples/season_2027/java",
     "samples/season_2027/cpp",

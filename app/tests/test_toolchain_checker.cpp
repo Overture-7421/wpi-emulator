@@ -8,6 +8,7 @@
 #include "common/toolchain_checker.h"
 #include "test_support.h"
 #include "wpiemu/sdk/game/builtin_plugins.h"
+#include "wpiemu/sdk/season/builtin_seasons.h"
 
 using namespace wpiemu::app;
 using namespace wpiemu::app::testing;
@@ -16,9 +17,13 @@ namespace {
 
 struct Fixture {
     wpiemu::sdk::GamePluginRegistry plugins;
+    wpiemu::sdk::SeasonRegistry seasons;
     FakeProbe probe;
-    Fixture() { (void)wpiemu::sdk::registerBuiltinGamePlugins(plugins); }
-    ToolchainChecker checker() { return ToolchainChecker(probe, plugins); }
+    Fixture() {
+        (void)wpiemu::sdk::registerBuiltinGamePlugins(plugins);
+        (void)wpiemu::sdk::registerBuiltinSeasons(seasons);
+    }
+    ToolchainChecker checker() { return ToolchainChecker(probe, plugins, seasons); }
 };
 
 ToolchainInput inputFor(const QString& language, int year, const QString& project = QStringLiteral("/proj")) {
@@ -410,4 +415,22 @@ TEST_CASE("jdk setting: an explicit folder that cannot run the project is report
     const ToolchainCheck check = f.checker().checkJdk(in);
     CHECK(check.fixAction == FixAction::OpenSettings);
     CHECK(check.detail.contains(QStringLiteral("Java 8")));
+}
+
+TEST_CASE("wpilib version: an unverified version of a known season warns and the run continues") {
+    Fixture f;
+    ToolchainInput in = inputFor(QStringLiteral("java"), 2026);
+    in.wpilibVersion = QStringLiteral("2026.2.1");
+    CHECK(f.checker().checkWpilibVersion(in).status == CheckStatus::Ok);
+    CHECK(f.checker().run(in).find(QString::fromLatin1(check_id::kWpilibVersion)) == nullptr);   // verified: no row
+    in.wpilibVersion = QStringLiteral("2026.9.9");
+    const ToolchainCheck check = f.checker().checkWpilibVersion(in);
+    CHECK(check.status == CheckStatus::Warning);
+    CHECK_FALSE(check.requiredToRun);
+    CHECK(check.detail.contains(QStringLiteral("2026.9.9")));
+    const ToolchainReport report = f.checker().run(in);
+    REQUIRE(report.find(QString::fromLatin1(check_id::kWpilibVersion)) != nullptr);
+    CHECK(report.find(QString::fromLatin1(check_id::kWpilibVersion))->status == CheckStatus::Warning);
+    in.wpilibYear = 1999;   // a year without a season pack has nothing to verify against
+    CHECK(f.checker().checkWpilibVersion(in).status == CheckStatus::NotApplicable);
 }

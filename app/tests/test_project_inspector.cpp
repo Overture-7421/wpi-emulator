@@ -14,7 +14,7 @@ TEST_CASE("inspector reads season, language, team and vendor libraries") {
     const ProjectInspection in = GradleProjectInspector().inspect(java.path());
     CHECK(in.usable());
     CHECK(in.wpilibYear == 2026);
-    CHECK(in.gradleRioVersion == QStringLiteral("2026.1.1"));
+    CHECK(in.gradleRioVersion == QStringLiteral("2026.2.1"));
     CHECK(in.language == QStringLiteral("java"));
     CHECK(in.teamNumber == 1234);
     CHECK(in.hasGradleWrapper);

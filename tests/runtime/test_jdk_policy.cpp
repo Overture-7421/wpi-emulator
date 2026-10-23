@@ -79,10 +79,17 @@ TEST_CASE("wpilib installs: every season, newest first, first root wins") {
     CHECK(installs[2].year == 2025);
     CHECK(!installs[2].jdkHome.empty());
     CHECK(installs[3].year == 2024);
-    CHECK(wpilibInstallFolderName(2027) == "2027_alpha7");
+    CHECK(wpilibInstallFolderName(2027, "2027_alpha7") == "2027_alpha7");
+    CHECK(wpilibInstallFolderName(2027) == "2027");
+    // A suffixed folder is found without the manifest naming it.
     const auto alphaInstall = findWpilibInstall(2027, {dir.path() / "a"});
     REQUIRE(alphaInstall.has_value());
     CHECK(alphaInstall->home == dir.path() / "a" / "2027_alpha7");
+    // A newer revision wins by name, unless the season pack names the folder it was verified with.
+    dir.write("a/2027_alpha8/jdk/bin/java", "x");
+    CHECK(findWpilibInstall(2027, {dir.path() / "a"})->home == dir.path() / "a" / "2027_alpha8");
+    CHECK(findWpilibInstall(2027, {dir.path() / "a"}, "2027_alpha7")->home == dir.path() / "a" / "2027_alpha7");
+    CHECK_FALSE(findWpilibInstall(2028, {dir.path() / "a"}).has_value());
 }
 
 TEST_CASE("managed jdk: only finished installs count, newest wins") {

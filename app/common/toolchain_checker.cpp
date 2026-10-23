@@ -22,8 +22,7 @@ QString join(const QString& a, const QString& b) { return QDir::cleanPath(a + QL
 QString display(const QString& path) { return QDir::toNativeSeparators(path); }
 
 constexpr int kProbeTimeoutMs = 8000;
-constexpr int kFirstSeasonYear = 2024;   // oldest WPILib season whose JDK is considered as a fallback
-constexpr int kLastSeasonYear = 2031;
+constexpr int kFirstSeasonYear = 2024;   // season-literal-ok: oldest WPILib season whose JDK is considered as a fallback
 
 core::config::Platform platformOf(HostOs os) {
     switch (os) {
@@ -61,14 +60,19 @@ QStringList ToolchainChecker::wpilibRoots() const {
 QString ToolchainChecker::defaultWpilibHome(int year) const {
     const QStringList roots = wpilibRoots();
     if (roots.isEmpty()) return {};
-    return year > 0 ? join(roots.first(), QString::fromStdString(core::launcher::wpilibInstallFolderName(year))) : roots.first();
+    return year > 0 ? join(roots.first(), installFolder(year)) : roots.first();
+}
+
+QString ToolchainChecker::installFolder(int year) const {
+    const sdk::SeasonProfile* season = seasons_.find(year);
+    return QString::fromStdString(core::launcher::wpilibInstallFolderName(year, season != nullptr ? season->installFolder : std::string_view()));
 }
 
 QString ToolchainChecker::findWpilibHome(const ToolchainInput& input) const {
     if (!input.wpilibHomeOverride.isEmpty())
         return probe_.dirExists(input.wpilibHomeOverride) ? QDir::cleanPath(input.wpilibHomeOverride) : QString();
     if (input.wpilibYear <= 0) return {};
-    const QString folder = QString::fromStdString(core::launcher::wpilibInstallFolderName(input.wpilibYear));
+    const QString folder = installFolder(input.wpilibYear);
     for (const QString& root : wpilibRoots()) {
         const QString home = join(root, folder);
         if (probe_.dirExists(home)) return home;
@@ -154,9 +158,10 @@ JdkResolution ToolchainChecker::resolveJdk(const ToolchainInput& input) const {
                 }
                 break;
             case JdkSource::WpilibOtherSeason:
-                for (int year = kLastSeasonYear; year >= kFirstSeasonYear; --year) {
+                // Every season the emulator knows, newest first, then the older ones down to the first considered season.
+                for (int year = seasons_.size() > 0 ? seasons_.list().back().year : kFirstSeasonYear; year >= kFirstSeasonYear; --year) {
                     if (year == input.wpilibYear) continue;
-                    const QString folder = QString::fromStdString(core::launcher::wpilibInstallFolderName(year));
+                    const QString folder = installFolder(year);
                     for (const QString& root : wpilibRoots()) {
                         const QString home = join(join(root, folder), QStringLiteral("jdk"));
                         if (probe_.fileExists(inBin(home)) && consider(source, inBin(home), home, false)) return res;
@@ -379,6 +384,28 @@ ToolchainCheck ToolchainChecker::checkGameModule(const ToolchainInput& input, To
     return check;
 }
 
+ToolchainCheck ToolchainChecker::checkWpilibVersion(const ToolchainInput& input) const {
+    ToolchainCheck check;
+    check.id = QString::fromLatin1(check_id::kWpilibVersion);
+    check.title = tr("WPILib version");
+    const sdk::SeasonProfile* season = seasons_.find(input.wpilibYear);
+    if (season == nullptr || input.wpilibVersion.isEmpty()) {
+        check.status = CheckStatus::NotApplicable;
+        check.detail = tr("The project does not declare a WPILib version the emulator knows.");
+        return check;
+    }
+    if (season->verifiesWpilib(input.wpilibVersion.toStdString())) {
+        check.status = CheckStatus::Ok;
+        check.detail = input.wpilibVersion;
+        return check;
+    }
+    check.status = CheckStatus::Warning;
+    check.detail = tr("%1 has not been verified with the emulator (verified: %2). The run continues on a best-effort basis.")
+                       .arg(input.wpilibVersion, QString::fromStdString(season->wpilibVersion));
+    check.fixHint = tr("If the robot misbehaves, use the verified WPILib version or report the version you use.");
+    return check;
+}
+
 ToolchainReport ToolchainChecker::run(const ToolchainInput& input) const {
     ToolchainReport report;
     if (input.extensionLibrary) {
@@ -401,6 +428,8 @@ ToolchainReport ToolchainChecker::run(const ToolchainInput& input) const {
     report.checks.push_back(checkWpilibInstall(input));
     report.checks.push_back(checkCppToolchain(input));
     report.checks.push_back(checkGameModule(input, report));
+    if (const ToolchainCheck version = checkWpilibVersion(input); version.status == CheckStatus::Warning)
+        report.checks.push_back(version);   // a version that is fine (or unknown) adds no row
     return report;
 }
 

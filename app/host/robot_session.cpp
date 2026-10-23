@@ -54,10 +54,10 @@ std::string detectLanguage(const fs::path& dir, const std::string& configured) {
 }
 
 // The JDK Gradle runs with: the first of launcher::kJdkSources that is present. Empty means `java` on PATH.
-fs::path pickJdkHome(const Options& options, int wpilibYear) {
+fs::path pickJdkHome(const Options& options, int wpilibYear, std::string_view installFolder) {
     std::optional<launcher::WpilibInstall> install;
     if (!options.wpilibHome.empty()) install = launcher::wpilibInstallAt(options.wpilibHome, wpilibYear);
-    else if (wpilibYear > 0) install = launcher::findWpilibInstall(wpilibYear, {});
+    else if (wpilibYear > 0) install = launcher::findWpilibInstall(wpilibYear, {}, installFolder);
     const std::optional<std::string> javaHomeEnv = sdk::readEnvironment("JAVA_HOME");
     for (const launcher::JdkSource source : launcher::kJdkSources) {
         switch (source) {
@@ -261,6 +261,18 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
                                                  ") was not found. Reinstall the emulator, build the halsim_wpiemu target, or set WPIEMU_EXTENSION_PATH.");
     const auto projectReport = launcher::ProjectInspector(*reg.json).inspect(options.projectDir);
     const int expectedWpilibYear = projectReport ? projectReport.value().wpilibYear : 0;
+    // The season pack of the project's year; an unknown year launches like the default season (its extension is the one tried).
+    const sdk::SeasonProfile* season = reg.seasons != nullptr ? reg.seasons->find(expectedWpilibYear) : nullptr;
+    if (season == nullptr && reg.seasons != nullptr) {
+        season = reg.seasons->defaultSeason();
+        if (expectedWpilibYear > 0 && season != nullptr)
+            log.warn("session", "WPILib " + std::to_string(expectedWpilibYear) + " has no season pack; launching like the default season " +
+                                    std::to_string(season->year));
+    } else if (season != nullptr && projectReport && !projectReport.value().gradleRioVersion.empty() &&
+               !season->verifiesWpilib(projectReport.value().gradleRioVersion)) {
+        log.warn("session", "WPILib " + projectReport.value().gradleRioVersion + " has not been verified with the emulator (verified: " +
+                                season->wpilibVersion + "); continuing on a best-effort basis");
+    }
 
     // ---- config: defaults, validation ----
     if (expectedWpilibYear > 0) config.project.wpilibYear = expectedWpilibYear;
@@ -334,12 +346,13 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     req.projectDir = options.projectDir;
     req.language = detectLanguage(options.projectDir, cfg.project.language);
     req.wpilibYear = projectReport ? projectReport.value().wpilibYear : cfg.project.wpilibYear;
+    if (season != nullptr) req.launchProfile = season->launchProfile;
     req.mode = options.launchMode;
     req.release = options.release;
     req.extensionLibrary = options.extensionLibrary;
     req.ipcEndpoint = self->endpoint_;
     req.scratchDir = options.scratchDir.empty() ? fs::temp_directory_path() / "wpiemu" : options.scratchDir;
-    req.javaHome = pickJdkHome(options, req.wpilibYear);
+    req.javaHome = pickJdkHome(options, req.wpilibYear, season != nullptr ? std::string_view(season->installFolder) : std::string_view());
     req.gradleOffline = options.gradleOffline;
     req.extraGradleArgs = options.extraGradleArgs;
     req.extraEnv[sdk::env_names::kLiveDiscovery] = options.preStartPolling ? "1" : "0";

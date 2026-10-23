@@ -24,7 +24,6 @@ namespace wpiemu::app {
 namespace {
 
 using ui::qs;
-constexpr int kDefaultWpilibYear = 2026;
 
 std::string envString(const char* name) { return sdk::readEnvironment(name).value_or(std::string()); }
 
@@ -149,7 +148,8 @@ void RealRuntimeHost::launch() {
         return;
     }
     const int inspectedYear = inspected.value().wpilibYear;
-    const int extensionYear = inspectedYear > 0 ? inspectedYear : kDefaultWpilibYear;
+    const sdk::SeasonProfile* defaultSeason = registries_.seasons != nullptr ? registries_.seasons->defaultSeason() : nullptr;
+    const int extensionYear = inspectedYear > 0 ? inspectedYear : (defaultSeason != nullptr ? defaultSeason->year : 0);
     if (inspectedYear == 0)
         emitLog(sdk::LogLevel::Warn, QStringLiteral("runtime"),
                 tr("The WPILib year could not be determined; trying the default %1 extension.").arg(extensionYear));

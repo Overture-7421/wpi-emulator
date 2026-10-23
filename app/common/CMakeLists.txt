@@ -53,7 +53,7 @@ if(WIN32)
 endif()
 target_link_libraries(wpiemu_app_common
     PUBLIC wpiemu_sdk wpiemu_core wpiemu_app_host wpiemu_app_ui Qt6::Core Qt6::Gui     Qt6::Widgets Qt6::Svg Qt6::Network
-    PRIVATE wpiemu_plugins_builtin)
+    PRIVATE wpiemu_plugins_builtin wpiemu_seasons_builtin)
 target_compile_definitions(wpiemu_app_common PRIVATE WPIEMU_APP_VERSION="${PROJECT_VERSION}")
 wpiemu_target_defaults(wpiemu_app_common)
 
