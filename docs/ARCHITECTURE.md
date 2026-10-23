@@ -47,7 +47,7 @@ These are the production dependency rules. Tests may combine modules to verify t
 
 Qt stays out of SDK, core, IPC, bridges, and plugins. Box3D and robot-process backend headers do
 not leak into SDK headers. The app registers seasons through
-[`plugins/builtin_plugins.cpp`](../plugins/builtin_plugins.cpp); the extension registers adapters
+[`seasons/builtin_plugins.cpp`](../seasons/builtin_plugins.cpp); the extension registers adapters
 through [`bridges/builtin_bridges.cpp`](../bridges/builtin_bridges.cpp). Neither consumer links
 directly to an individual season or bridge. The [boundary checker](../tools/check_boundaries.py)
 enforces these ownership rules.

@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
 #include <wpi/hal/HAL.h>
 #include <wpi/hal/simulation/MockHooks.h>
 #include <wpi/nt/ntcore_c.h>
@@ -26,7 +26,7 @@ namespace sdk = wpiemu::sdk;
 
 namespace {
 
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
 constexpr std::int64_t kNativeTimePerUs = 1000;
 #else
 constexpr std::int64_t kNativeTimePerUs = 1;
@@ -111,7 +111,7 @@ TEST_CASE("vision ntcore binding: attaches to the loaded ntcore and reports the 
     CHECK(now - before < 5'000'000);
 }
 
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
 TEST_CASE("vision ntcore binding: 2027 HAL time and NT publication convert nanoseconds at the boundary") {
     const bool paused = HALSIM_IsTimingPaused();
     HALSIM_PauseTiming();

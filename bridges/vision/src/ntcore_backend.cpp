@@ -18,7 +18,7 @@
 #include <dlfcn.h>
 #endif
 
-#if defined(WPIEMU_WPILIB_YEAR) && WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
 #include <wpi/nt/ntcore_c.h>
 #else
 #include <ntcore_c.h>
@@ -120,7 +120,7 @@ struct NtApi {
     decltype(&NT_SetRaw) setRaw = nullptr;
 };
 
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
 using HalTimeFn = std::int64_t (*)();
 constexpr std::int64_t kNativeTimePerUs = 1000;
 #else
@@ -199,7 +199,7 @@ public:
         if (!available()) return 0;
         if (halFpgaTime_ == nullptr) attachHal();
         if (halFpgaTime_ != nullptr) {
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
             return halFpgaTime_() / kNativeTimePerUs;
 #else
             std::int32_t status = 0;
@@ -351,7 +351,7 @@ private:
     void attachHal() {
         // wpiHal is loaded before the extension runs (HAL_Initialize loads it); never load it from here.
         if (hal_.open(options_.halModule, false)) {
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
             halFpgaTime_ = reinterpret_cast<HalTimeFn>(hal_.symbol("HAL_GetMonotonicTime"));
 #else
             halFpgaTime_ = reinterpret_cast<HalTimeFn>(hal_.symbol("HAL_GetFPGATime"));

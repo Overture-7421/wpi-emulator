@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline configure-only regression matrix for WPILib root discovery and bridge selection.
+"""Offline configure-only regression matrix for WPILib root discovery and bridge selection, once per season pack.
 
 Uses synthetic headers/libraries, never builds or downloads. Run in its own build tree:
   python tools\\check_wpilib_configure.py --generator "Visual Studio 17 2022" --architecture x64
@@ -21,17 +21,17 @@ def main() -> None:
     parser.add_argument("--directory", type=Path, default=Path("build/wpilib-root-fixture"))
     args = parser.parse_args()
     repo = common.REPO_ROOT
-    wpilib_pin = common.load_versions(repo)["wpilib"]
-    if args.season and args.season not in wpilib_pin["seasons"]:
+    seasons = common.load_seasons(repo)
+    abis = common.load_abis(repo)
+    if args.season and args.season not in seasons:
         parser.error(f"unknown season {args.season}")
-    for season in wpilib_pin["seasons"]:
+    for season, manifest in seasons.items():
         if args.season and args.season != season:
             continue
-        check_season(args, repo, season, wpilib_pin["seasons"][season])
+        check_season(args, repo, season, manifest["wpilib"]["version"], abis[manifest["platform"]["abi"]])
 
 
-def check_season(args, repo: Path, season: str, profile: dict) -> None:
-    wpilib = profile["version"]
+def check_season(args, repo: Path, season: str, wpilib: str, profile: dict) -> None:
     header_roots = profile["headers"]
     work = args.directory.resolve() / season
     extracted = work / "extracted"
@@ -40,9 +40,8 @@ def check_season(args, repo: Path, season: str, profile: dict) -> None:
                f"{hal_header_dir}/simulation/SimDeviceData.h": "", header_roots["wpiutil"]: "",
                header_roots["ntcore"]: ""}
     libraries = {}
-    modules = {"hal": "wpiHal", "wpiutil": "wpiutil", "ntcore": "ntcore", "wpinet": "wpinet"}
-    if int(season) >= 2027:
-        modules["datalog"] = "datalog"
+    library_names = {"hal": "wpiHal"}
+    modules = {module: library_names.get(module, module) for module in profile["groups"]}
     for platform, extensions, prefix in (
             ("windows/x86-64", ("dll", "lib"), ""),
             ("osx/universal", ("dylib",), "lib"),

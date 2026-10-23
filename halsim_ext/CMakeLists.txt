@@ -42,12 +42,8 @@ set_target_properties(halsim_wpiemu PROPERTIES
 wpiemu_target_defaults(halsim_wpiemu)
 
 if(WPIEMU_BUILD_TESTS AND WPIEMU_WPILIB_FOUND)
-    if(WPIEMU_WPILIB_SEASON STREQUAL "2027")
-        set(_hal_test_sources tests/hal/test_hal_2027.cpp)
-    else()
-        set(_hal_test_sources tests/hal/test_hal_integration.cpp
-            tests/hal/test_builtin_bridges.cpp tests/hal/test_extension_dll.cpp)
-    endif()
+    # Each HAL ABI has its own real-HAL suites: tests/hal/abi/<abi>/*.cpp.
+    file(GLOB _hal_test_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/hal/abi/${WPIEMU_HAL_ABI}/*.cpp")
     # Real sim HAL in-process: stepping, DS, device I/O against a scripted fake emulator.
     add_executable(wpiemu_halsim_ext_hal_tests
         src/hal/hal_sim_platform.cpp
@@ -56,12 +52,13 @@ if(WPIEMU_BUILD_TESTS AND WPIEMU_WPILIB_FOUND)
     target_include_directories(wpiemu_halsim_ext_hal_tests PRIVATE tests "${CMAKE_SOURCE_DIR}/tests/support")
     target_link_libraries(wpiemu_halsim_ext_hal_tests PRIVATE
         wpiemu_halsim_core wpiemu_wpilib_hal wpiemu_ipc wpiemu_bridges_builtin wpiemu_sdk)
-    if(WPIEMU_WPILIB_SEASON STREQUAL "2027")
-        set(_hal_binding_tests "${CMAKE_SOURCE_DIR}/bridges/hal/tests/hal_2027_tests.cpp")
-        target_sources(wpiemu_halsim_ext_hal_tests PRIVATE "${_hal_binding_tests}")
-        set_property(SOURCE "${_hal_binding_tests}" APPEND PROPERTY INCLUDE_DIRECTORIES
+    # HALSIM binding suites of the ABI, compiled against the real headers: bridges/hal/tests/abi/<abi>/*.cpp.
+    file(GLOB _hal_binding_tests CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/bridges/hal/tests/abi/${WPIEMU_HAL_ABI}/*.cpp")
+    foreach(_binding_test IN LISTS _hal_binding_tests)
+        target_sources(wpiemu_halsim_ext_hal_tests PRIVATE "${_binding_test}")
+        set_property(SOURCE "${_binding_test}" APPEND PROPERTY INCLUDE_DIRECTORIES
             "$<TARGET_PROPERTY:wpiemu_bridges_hal,INTERFACE_INCLUDE_DIRECTORIES>")
-    endif()
+    endforeach()
     if(TARGET wpiemu_wpilib_ntcore)
         target_sources(wpiemu_halsim_ext_hal_tests PRIVATE
             "${CMAKE_SOURCE_DIR}/bridges/vision/tests/ntcore_smoke_tests.cpp")

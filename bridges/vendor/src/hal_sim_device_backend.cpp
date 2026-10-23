@@ -10,7 +10,7 @@
 #include <set>
 #include <unordered_map>
 
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
 #include "wpi/hal/SimDevice.h"
 #include "wpi/hal/Types.h"
 #include "wpi/hal/Value.h"
@@ -168,7 +168,7 @@ private:
         info.handle = sdk::SimValueHandle(static_cast<std::uint64_t>(handle));
         info.name = name != nullptr ? name : "";
         switch (direction) {
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
             case HAL_SIM_VALUE_INPUT: info.direction = sdk::SignalDirection::Input; break;
             case HAL_SIM_VALUE_OUTPUT: info.direction = sdk::SignalDirection::Output; break;
 #else

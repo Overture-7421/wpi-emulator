@@ -1,5 +1,5 @@
 // Proof that a new season is "copy the template, register one line": a complete year plugin (field, game state,
-// mechanism template, config schema, HUD) written exactly like plugins/_template, registered next to
+// mechanism template, config schema, HUD) written exactly like seasons/_template/game, registered next to
 // the built-in 2026 plugin, and driven by the REAL core config pipeline and simulation session. Neither core nor
 // any other plugin is touched. (tools/check_boundaries.py, run by CTest, separately proves core contains no
 // season-specific code and plugins link only the SDK.)

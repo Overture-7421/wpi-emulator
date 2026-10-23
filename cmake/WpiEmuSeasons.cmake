@@ -6,7 +6,7 @@ endif()
 include(ExternalProject)
 
 foreach(_season IN LISTS WPIEMU_SEASONS)
-    wpiemu_pinned_version(_version wpilib seasons "${_season}" version)
+    wpiemu_season_value(_version "${_season}" wpilib version)   # fails configure for a season without a pack
     if(_season STREQUAL WPIEMU_WPILIB_SEASON)
         continue()
     endif()

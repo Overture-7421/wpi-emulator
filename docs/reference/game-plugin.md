@@ -4,7 +4,7 @@ Game plugins own season-specific fields, rules and metadata while core and the a
 season-agnostic. For the implementation procedure see the
 [game-plugin guide](../guides/game-plugins.md). Season behavior and limitations belong in the
 owning plugin's README; for the built-in season see
-[`plugins/game_2026/README.md`](../../plugins/game_2026/README.md).
+[`seasons/2026/game/README.md`](../../seasons/2026/game/README.md).
 
 ## Module, field and state
 
@@ -24,7 +24,7 @@ HUD values to immutable snapshots. `onTick()` is an optional post-game hook. The
 [runtime reference](runtime.md) defines tick order and session lifecycle.
 
 `WPIEMU_REGISTER_GAME_PLUGIN` defines the namespaced `registerPlugin()` entry point. Built-ins are
-registered through [`plugins/builtin_plugins.cpp`](../../plugins/builtin_plugins.cpp) and the app
+registered through [`seasons/builtin_plugins.cpp`](../../seasons/builtin_plugins.cpp) and the app
 links the plugin aggregator, not individual seasons. This is static registration, not a shared
 library ABI. Selection honors `RobotConfig::gamePluginId` when present, otherwise
 `project.wpilibYear`; an unavailable plugin leaves core features available.
@@ -78,7 +78,7 @@ model, not ray casting or conveyor simulation; response details belong to the
 
 A plugin declares its own `SoundCueInfo` records through `contributeSoundCues()` and requests a
 cue ID with `SimContext::requestSound(id)`. Plugin cue IDs begin with the plugin ID plus `.`.
-Each `asset` names `plugins/<id>/assets/sfx/<asset>.wav`; the plugin ships that file and the
+Each `asset` names `seasons/<year>/game/assets/sfx/<asset>.wav`; the plugin ships that file and the
 plugins aggregation seam embeds it, so a season needs no app or audio dependency. Common cues use
 `app/runview/assets/sfx/<asset>.wav` and the SDK's shared IDs.
 
@@ -89,4 +89,4 @@ cues; use the shared IDs for lifecycle cues rather than declaring or requesting 
 
 For a verified season procedure, including how to request cues only on rule boundaries, see
 [request a sound cue](../guides/game-plugins.md#request-a-sound-cue). Cue ownership and timing for
-the built-in season are documented in its [season README](../../plugins/game_2026/README.md#sound-cues).
+the built-in season are documented in its [season README](../../seasons/2026/game/README.md#sound-cues).

@@ -30,7 +30,7 @@ struct GameMetadata {
     int minSdkMinor = 0;        // minimum SDK minor the plugin needs (refused otherwise)
 };
 
-// The YEAR PLUGIN contract. One implementation per season, living entirely in plugins/game_<year>/.
+// The YEAR PLUGIN contract. One implementation per season, living entirely in seasons/<year>/game/.
 // Core and UI know only this interface; there is no `if (year == ...)` anywhere outside plugins.
 //
 // Dependencies: a plugin includes ONLY wpiemu/sdk/** (enforced by tools/check_boundaries.py).
@@ -76,7 +76,7 @@ public:
     virtual std::vector<GameValueInfo> contributeGameValues() const { return {}; }
 
     // Sound cues this plugin owns, beyond the common ones in sound_cue.h. Every id must start with metadata().id + '.';
-    // `asset` names plugins/<id>/assets/sfx/<asset>.wav, which the app embeds and plays when game state calls
+    // `asset` names seasons/<year>/game/assets/sfx/<asset>.wav, which the app embeds and plays when game state calls
     // SimContext::requestSound(id).
     virtual std::vector<SoundCueInfo> contributeSoundCues() const { return {}; }
 

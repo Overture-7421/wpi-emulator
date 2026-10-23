@@ -6,7 +6,7 @@
 
 #include <cstdio>
 
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
 #include "wpi/hal/HAL.h"
 #else
 #include "hal/HAL.h"
@@ -14,7 +14,7 @@
 
 int main(int argc, char** argv) {
     // No HALSIM_EXTENSIONS here: the extension under test is driven in-process.
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
     if (!HAL_Initialize()) {
 #else
     if (!HAL_Initialize(500, 0)) {

@@ -5,7 +5,7 @@
 #include <cmath>
 #include <stdexcept>
 
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
 #include <wpi/hal/AddressableLEDTypes.h>
 #include <wpi/hal/Ports.h>
 #include <wpi/hal/REVPH.h>
@@ -54,7 +54,7 @@ class SimPwm final : public IPwmHal {
 public:
     int channelCount() const override { return HAL_GetNumPWMChannels(); }
     bool initialized(int c) const override { return in(c, channelCount()) && HALSIM_GetPWMInitialized(c); }
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
     bool hasSpeed(int c) const override { return throttle(c) != 0; }
     bool hasPosition() const override { return false; }
     double speed(int c) const override {
@@ -95,7 +95,7 @@ public:
     }
 };
 
-#if WPIEMU_WPILIB_YEAR < 2027
+#if !WPIEMU_HAL_ABI_SYSTEMCORE
 class SimAnalogOut final : public IAnalogOutHal {
 public:
     int channelCount() const override { return HAL_GetNumAnalogOutputs(); }
@@ -118,7 +118,7 @@ public:
     }
     void setPeriod(int i, double p) override {
         if (!in(i, channelCount())) return;
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
         HALSIM_SetEncoderRate(i, std::isfinite(p) && p != 0.0 ? HALSIM_GetEncoderDistancePerPulse(i) / p : 0.0);
 #else
         HALSIM_SetEncoderPeriod(i, p);
@@ -134,7 +134,7 @@ public:
     int channelCount() const override { return HAL_GetNumDutyCycles(); }
     bool initialized(int i) const override { return in(i, channelCount()) && HALSIM_GetDutyCycleInitialized(i); }
     int digitalChannel(int i) const override {
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
         return in(i, channelCount()) ? i : -1;
 #else
         return in(i, channelCount()) ? HALSIM_GetDutyCycleDigitalChannel(i) : -1;
@@ -150,7 +150,7 @@ public:
     }
 };
 
-#if WPIEMU_WPILIB_YEAR < 2027
+#if !WPIEMU_HAL_ABI_SYSTEMCORE
 class SimRelay final : public IRelayHal {
 public:
     int headerCount() const override { return HAL_GetNumRelayHeaders(); }
@@ -191,7 +191,7 @@ public:
     }
     bool compressorOn(int m) const override { return in(m, moduleCount()) && HALSIM_GetREVPHCompressorOn(m); }
     bool closedLoopEnabled(int m) const override {
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
         constexpr auto disabled = HAL_REVPH_COMPRESSOR_CONFIG_DISABLED;
 #else
         constexpr auto disabled = HAL_REVPHCompressorConfigType_kDisabled;
@@ -232,14 +232,14 @@ public:
 
 class SimAddressableLed final : public IAddressableLedHal {
 public:
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
     bool hasOutputPort() const override { return false; }
     bool hasRunning() const override { return false; }
 #endif
     int channelCount() const override { return HAL_GetNumAddressableLEDs(); }
     bool initialized(int i) const override { return in(i, channelCount()) && HALSIM_GetAddressableLEDInitialized(i); }
     int outputPort(int i) const override {
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
         static_cast<void>(i);
         throw std::logic_error("WPILib 2027 has no LED output port");
 #else
@@ -248,7 +248,7 @@ public:
     }
     int length(int i) const override { return in(i, channelCount()) ? HALSIM_GetAddressableLEDLength(i) : 0; }
     bool running(int i) const override {
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
         static_cast<void>(i);
         throw std::logic_error("WPILib 2027 has no LED running state");
 #else
@@ -258,7 +258,7 @@ public:
     void readPixels(int i, std::vector<LedPixel>& out) const override {
         out.clear();
         if (!in(i, channelCount())) return;
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
         buffer_.resize(static_cast<std::size_t>(std::max(0, length(i))));
         const int n = std::clamp(HALSIM_GetAddressableLEDData(HALSIM_GetAddressableLEDStart(i), length(i), buffer_.data()),
                                  0, static_cast<int>(buffer_.size()));
@@ -281,7 +281,7 @@ class SimRoboRio final : public IRoboRioHal {
 public:
     double vInVoltage() const override { return HALSIM_GetRoboRioVInVoltage(); }
     void setVInVoltage(double v) override { HALSIM_SetRoboRioVInVoltage(v); }
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
     bool hasInputCurrent() const override { return false; }
     double vInCurrent() const override { throw std::logic_error("WPILib 2027 has no controller input current"); }
     void setVInCurrent(double) override { throw std::logic_error("WPILib 2027 has no controller input current"); }
@@ -292,7 +292,7 @@ public:
     double brownoutVoltage() const override { return HALSIM_GetRoboRioBrownoutVoltage(); }
 };
 
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
 class SimImu final : public IImuHal {
 public:
     void setAcceleration(double x, double y, double z) override {
@@ -342,7 +342,7 @@ private:
         bool valid() const { return uid_ != 0; }
 
     private:
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
         static void trampoline(const char*, void* param, int32_t busId, uint32_t id, const HAL_CANMessage* message,
                                int32_t periodMs, int32_t*) {
             const auto* data = message != nullptr ? message->data : nullptr;
@@ -352,7 +352,7 @@ private:
                                int32_t*) {
 #endif
             CanFrame frame;
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
             frame.busId = busId;
 #endif
             frame.arbitrationId = id;
@@ -371,7 +371,7 @@ public:
     IDioHal& dio() override { return dio_; }
     IAnalogInHal& analogIn() override { return analogIn_; }
     IAnalogOutHal* analogOut() override {
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
         return nullptr;
 #else
         return &analogOut_;
@@ -380,7 +380,7 @@ public:
     IEncoderHal& encoder() override { return encoder_; }
     IDutyCycleHal& dutyCycle() override { return dutyCycle_; }
     IRelayHal* relay() override {
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
         return nullptr;
 #else
         return &relay_;
@@ -392,13 +392,13 @@ public:
     IAddressableLedHal& addressableLed() override { return led_; }
     IRoboRioHal& roboRio() override { return rio_; }
     IAccelerometerHal* accelerometer() override {
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
         return nullptr;
 #else
         return &accel_;
 #endif
     }
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
     IImuHal* imu() override { return &imu_; }
 #endif
     ICanHal& can() override { return can_; }
@@ -407,7 +407,7 @@ private:
     SimPwm pwm_;
     SimDio dio_;
     SimAnalogIn analogIn_;
-#if WPIEMU_WPILIB_YEAR < 2027
+#if !WPIEMU_HAL_ABI_SYSTEMCORE
     SimAnalogOut analogOut_;
     SimRelay relay_;
     SimAccelerometer accel_;

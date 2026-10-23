@@ -28,6 +28,20 @@ def load_versions(root: Path = REPO_ROOT) -> dict:
     return json.loads(read_text(root / "versions.json"))
 
 
+def load_seasons(root: Path = REPO_ROOT) -> dict[str, dict]:
+    """The season manifests of <root>/seasons/<year>/season.json, keyed by year, in ascending year order."""
+    found = {}
+    for manifest in sorted((root / "seasons").glob("*/season.json")):
+        if not manifest.parent.name.startswith("_"):   # seasons/_template is a skeleton, not a season
+            found[manifest.parent.name] = json.loads(read_text(manifest))
+    return found
+
+
+def load_abis(root: Path = REPO_ROOT) -> dict[str, dict]:
+    """The HAL ABI profiles of <root>/seasons/abi/<id>.json, keyed by id."""
+    return {path.stem: json.loads(read_text(path)) for path in sorted((root / "seasons" / "abi").glob("*.json"))}
+
+
 def root_parser(description: str, **options) -> argparse.ArgumentParser:
     """Argument parser with the --root option every repository check takes."""
     parser = argparse.ArgumentParser(description=description, **options)

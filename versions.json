@@ -1,40 +1,4 @@
 {
-  "wpilib": {
-    "default": 2026,
-    "seasons": {
-      "2026": {
-        "version": "2026.2.1",
-        "groups": {
-          "hal": "edu.wpi.first.hal",
-          "wpiutil": "edu.wpi.first.wpiutil",
-          "ntcore": "edu.wpi.first.ntcore",
-          "wpinet": "edu.wpi.first.wpinet"
-        },
-        "headers": {
-          "hal": "hal/HAL.h",
-          "wpiutil": "wpi/string.h",
-          "ntcore": "ntcore_c.h"
-        },
-        "installFolder": "2026"
-      },
-      "2027": {
-        "version": "2027.0.0-alpha-7",
-        "groups": {
-          "hal": "org.wpilib.hal",
-          "wpiutil": "org.wpilib.wpiutil",
-          "ntcore": "org.wpilib.ntcore",
-          "wpinet": "org.wpilib.wpinet",
-          "datalog": "org.wpilib.datalog"
-        },
-        "headers": {
-          "hal": "wpi/hal/HAL.h",
-          "wpiutil": "wpi/util/string.h",
-          "ntcore": "wpi/nt/ntcore_c.h"
-        },
-        "installFolder": "2027_alpha7"
-      }
-    }
-  },
   "qt": {
     "release": "6.8.3",
     "ci": "6.8.*"
@@ -47,7 +11,6 @@
   "msvcRuntimeMin": "14.40",
   "jdk": {
     "vendor": "temurin",
-    "seasons": { "2026": 17, "2027": 25 },
     "assets": {
       "17-windows-x64": {
         "version": "17.0.20.1",

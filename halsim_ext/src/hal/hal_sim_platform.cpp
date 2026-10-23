@@ -9,7 +9,7 @@
 #include <string>
 #include <stdexcept>
 
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
 #include "wpi/hal/HAL.h"
 #include "wpi/hal/Ports.h"
 #include "wpi/hal/simulation/DriverStationData.h"
@@ -45,14 +45,14 @@ public:
     bool isTimingPaused() const override { return HALSIM_IsTimingPaused() != 0; }
     bool programStarted() const override { return HALSIM_GetProgramStarted() != 0; }
     bool schedulerArmed() const override {
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
         return HALSIM_GetNextNotifierTimeout() != std::numeric_limits<std::int64_t>::max();
 #else
         return HALSIM_GetNextNotifierTimeout() != std::numeric_limits<std::uint64_t>::max();
 #endif
     }
     void stepTiming(std::uint64_t deltaUs) override {
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
         constexpr auto limit = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max() / 1000);
         if (deltaUs > limit) throw std::overflow_error("HAL timing step exceeds nanosecond range");
         HALSIM_StepTiming(static_cast<std::int64_t>(deltaUs) * 1000);
@@ -76,7 +76,7 @@ public:
         HALSIM_SetDriverStationDsAttached(s.dsAttached);
         HALSIM_SetDriverStationFmsAttached(s.fmsAttached);
         HALSIM_SetDriverStationEStop(s.eStop);
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
         HALSIM_SetDriverStationRobotMode(s.mode == proto::RobotMode::Autonomous ? HAL_ROBOT_MODE_AUTONOMOUS :
                                         s.mode == proto::RobotMode::Test ? HAL_ROBOT_MODE_UTILITY : HAL_ROBOT_MODE_TELEOPERATED);
 #else
@@ -88,7 +88,7 @@ public:
         if (!gameMessageValid_ || s.gameSpecificMessage != gameMessage_) {
             gameMessage_ = s.gameSpecificMessage;
             gameMessageValid_ = true;
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
             const WPI_String message{gameMessage_.data(), gameMessage_.size()};
             HALSIM_SetGameDataString(&message);
 #else
@@ -103,13 +103,13 @@ public:
     }
 
 private:
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
     static constexpr std::size_t kMaxJoysticks = HAL_MAX_JOYSTICKS;
 #else
     static constexpr std::size_t kMaxJoysticks = HAL_kMaxJoysticks;
 #endif
     static HAL_AllianceStationID allianceStation(proto::AllianceStation station) {
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
         switch (station) {
             case proto::AllianceStation::Red1: return HAL_ALLIANCE_STATION_RED_1;
             case proto::AllianceStation::Red2: return HAL_ALLIANCE_STATION_RED_2;
@@ -148,7 +148,7 @@ private:
         HAL_JoystickButtons buttons{};
         HAL_JoystickDescriptor descriptor{};
         if (j.present) {
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
             const auto axisCount = std::min<std::size_t>(j.axes.size(), HAL_MAX_JOYSTICK_AXES);
             axes.available = static_cast<std::uint16_t>((1u << axisCount) - 1u);
             for (std::size_t a = 0; a < axisCount; ++a) {
@@ -206,7 +206,7 @@ class HalSimPlatform::Power final : public IRobotPowerSink {
 public:
     void setBattery(double volts, double amps) override {
         HALSIM_SetRoboRioVInVoltage(volts);
-#if WPIEMU_WPILIB_YEAR < 2027
+#if !WPIEMU_HAL_ABI_SYSTEMCORE
         HALSIM_SetRoboRioVInCurrent(amps);
 #else
         (void)amps;  // The 2027 controller has no HAL input-current channel.
@@ -235,7 +235,7 @@ RobotInfo HalSimPlatform::describeRobot(const ExtensionConfig& config) {
         {"pwm", HAL_GetNumPWMChannels()},
         {"dio", HAL_GetNumDigitalChannels()},
         {"analog_in", HAL_GetNumAnalogInputs()},
-#if WPIEMU_WPILIB_YEAR < 2027
+#if !WPIEMU_HAL_ABI_SYSTEMCORE
         {"analog_out", HAL_GetNumAnalogOutputs()},
         {"relay", HAL_GetNumRelayHeaders()},
 #else

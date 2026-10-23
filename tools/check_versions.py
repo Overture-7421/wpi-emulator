@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Check that every version pin the build cannot read from versions.json repeats its value.
 
-versions.json is the single home of the repository's version pins (docs/guides/wpilib-upgrade.md).
+versions.json is the single home of the repository's non-season version pins; WPILib seasons live in
+seasons/<year>/season.json (docs/guides/wpilib-upgrade.md).
 CMake and the Python tools read it directly; the workflows, the Docker image, the AppImage script
 and the documentation cannot, so each copy listed in PINS is matched against it and any disagreement
 is reported as file:line.
@@ -29,8 +30,6 @@ QT_KIT_PATH = r"Qt[\\/](\d+\.\d+\.\d+)[\\/]"
 UBUNTU = r"(?i)\bubuntu[-: ](\d+\.\d+)"
 
 PINS = [
-    Pin("wpilib.seasons.2026.version", WORKFLOWS, r'^\s*WPILIB_VERSION:\s*"([^"]+)"',
-        "WPILIB_VERSION (WPILib download cache key)"),
     Pin("qt.release", (".github/workflows/release.yml",), r'^\s*QT_VERSION:\s*"([^"]+)"', "QT_VERSION"),
     Pin("qt.release", ("tools/docker/linux/Dockerfile",), r"^ARG QT_VERSION=(\S+)", "QT_VERSION build argument"),
     Pin("qt.release", ("tools/docker/linux/Dockerfile",), r"\bQt (\d+\.\d+\.\d+)", "Qt version in the description"),
@@ -54,9 +53,9 @@ PINS = [
 ]
 
 
-def check_jdk_assets(versions: dict) -> list[str]:
+def check_jdk_assets(versions: dict, java_majors: dict[str, int] | None = None) -> list[str]:
     """The managed-JDK pins the app downloads: every asset must be self-consistent (the app trusts the SHA-256 only), and
-    every season must name a Java major that has a download for each platform."""
+    every season (java_majors maps a year to the Java major its season pack names) must have a download for each platform."""
     errors = []
     jdk = versions.get("jdk")
     if not isinstance(jdk, dict):
@@ -84,68 +83,10 @@ def check_jdk_assets(versions: dict) -> list[str]:
             errors.append(f"{where}: version {asset.get('version')!r} does not appear in the url")
         if not isinstance(asset.get("size"), int) or asset["size"] <= 0 or asset["size"] > 500 * 1024 * 1024:
             errors.append(f"{where}: size must be a positive byte count below the downloader's 500 MiB limit")
-    seasons = jdk.get("seasons", {})
-    if not seasons:
-        errors.append("versions.json: jdk.seasons is empty (it maps a WPILib year to the Java major that season builds with)")
-    for year, major in seasons.items():
-        if not re.fullmatch(r"\d{4}", str(year)) or not isinstance(major, int):
-            errors.append(f"versions.json jdk.seasons.{year}: expected a four-digit year mapped to a Java major number")
-            continue
+    for year, major in (java_majors or {}).items():
         for platform in sorted(platforms):
             if f"{major}-{platform}" not in assets:
-                errors.append(f"versions.json jdk.seasons.{year}: Java {major} has no download for {platform}")
-    return errors
-
-
-def check_wpilib_seasons(versions: dict) -> list[str]:
-    errors = []
-    wpilib = versions.get("wpilib")
-    if not isinstance(wpilib, dict):
-        return ["versions.json: wpilib must contain a default season and season profiles"]
-    seasons = wpilib.get("seasons", {})
-    default = str(wpilib.get("default", ""))
-    if default not in seasons:
-        errors.append(f"versions.json wpilib.default: {default!r} has no matching season profile")
-    if not seasons:
-        errors.append("versions.json wpilib.seasons is empty")
-    for year, profile in seasons.items():
-        where = f"versions.json wpilib.seasons.{year}"
-        if not re.fullmatch(r"\d{4}", str(year)) or not isinstance(profile, dict):
-            errors.append(f"{where}: expected a four-digit year mapped to a season profile")
-            continue
-        if not str(profile.get("version", "")).startswith(str(year) + "."):
-            errors.append(f"{where}.version: must begin with {year}.")
-        if not str(profile.get("installFolder", "")):
-            errors.append(f"{where}.installFolder: missing WPILib installation folder")
-        for key in ("hal", "wpiutil", "ntcore", "wpinet"):
-            if not str(profile.get("groups", {}).get(key, "")):
-                errors.append(f"{where}.groups.{key}: missing Maven group")
-        for key in ("hal", "wpiutil", "ntcore"):
-            if not str(profile.get("headers", {}).get(key, "")):
-                errors.append(f"{where}.headers.{key}: missing header probe")
-    return errors
-
-
-def check_sample_wpilib_versions(root: Path, versions: dict) -> list[str]:
-    errors = []
-    profiles = versions.get("wpilib", {}).get("seasons", {})
-    pattern = re.compile(r'(?:edu\.wpi\.first|org\.wpilib)\.GradleRIO"\s+version\s+"([^"]+)"')
-    for file in sorted(root.glob("samples/*/*/build.gradle")):
-        text = common.read_text(file)
-        matches = list(pattern.finditer(text))
-        rel = file.relative_to(root).as_posix()
-        if not matches:
-            errors.append(f"{rel}: no literal GradleRIO version found")
-        for match in matches:
-            found = match.group(1)
-            year_match = re.match(r"(\d{4})\.", found)
-            year = year_match.group(1) if year_match else ""
-            profile = profiles.get(year)
-            if profile is None:
-                errors.append(f"{rel}:{text.count(chr(10), 0, match.start(1)) + 1}: GradleRIO version {found!r} has no WPILib season pin")
-            elif found != profile.get("version"):
-                line = text.count("\n", 0, match.start(1)) + 1
-                errors.append(f'{rel}:{line}: GradleRIO version is "{found}", but versions.json wpilib.seasons.{year}.version is "{profile["version"]}"')
+                errors.append(f"seasons/{year}/season.json toolchain.javaMajor: Java {major} has no download for {platform}")
     return errors
 
 
@@ -187,8 +128,8 @@ def main() -> int:
     root = args.root.resolve()
     try:
         versions = common.load_versions(root)
-        errors = check(root, versions) + check_jdk_assets(versions) + check_wpilib_seasons(versions)
-        errors += check_sample_wpilib_versions(root, versions)
+        majors = {year: season["toolchain"]["javaMajor"] for year, season in common.load_seasons(root).items()}
+        errors = check(root, versions) + check_jdk_assets(versions, majors)
     except (OSError, ValueError) as error:
         print(f"versions: cannot check repository: {error}", file=sys.stderr)
         return 2

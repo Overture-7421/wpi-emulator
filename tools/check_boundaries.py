@@ -14,9 +14,12 @@ Rules (see docs/ARCHITECTURE.md):
   * Inside app/, the host contract, the shared UI scene support and the page libraries (editor, run view) see only
     the SDK, their allowed siblings (the page libraries link app/ui; the run view also the contract) and the shared
     Qt-free headers; the shell, wizard and common layers sit above them.
-  * Registration: a plugins/ or bridges/ module directory must be added by its parent CMakeLists.txt, linked into the
-    aggregator target and called from the aggregator source, and a tests/ suite must be built (docs/extending.md);
-    CMake would otherwise ignore the half-registered directory without a message.
+  * Season packs: a game plugin lives in seasons/<year>/game (or seasons/_template/game). Files directly in seasons/ are
+    the aggregation seam (target wpiemu_plugins_builtin); seasons/<year>/game/** is plugin wpiemu_plugin_game_<year>.
+  * Registration: a seasons/<year>/game plugin must be called from seasons/builtin_plugins.cpp (CMake links it from the
+    manifest), a bridges/ module directory must be added by its parent CMakeLists.txt, linked into the aggregator
+    target and called from the aggregator source, and a tests/ suite must be built (docs/extending.md); CMake would
+    otherwise ignore the half-registered directory without a message.
 
 Owners are directories; ALLOWED maps an owner to the owners it may depend on.
 Run:  check_boundaries.py [--root DIR]     |     check_boundaries.py --self-test
@@ -147,9 +150,8 @@ WPILIB_TARGETS = {"wpiemu_wpilib_hal", "wpiemu_wpilib_wpiutil", "wpiemu_wpilib_w
 WPILIB_USERS = {"halsim_ext", "bridges/vision"}
 
 # Module families wired in by hand: (directory, target prefix, aggregator target). The aggregator source is
-# <directory>/builtin_<directory>.cpp. plugins/_template is built but never registered.
+# <directory>/builtin_<directory>.cpp. Game plugins have their own wiring check (plugin_registration_errors).
 AGGREGATED_FAMILIES = (
-    ("plugins", "wpiemu_plugin_", "wpiemu_plugins_builtin"),
     ("bridges", "wpiemu_bridges_", "wpiemu_bridges_builtin"),
 )
 # tests/CMakeLists.txt globs *.cpp for the Qt-free wpiemu_tests; app/editor/CMakeLists.txt globs tests/app_editor/*.cc
@@ -164,10 +166,10 @@ def strip_cmake_comments(text: str) -> str:
 def owner_of_path(rel: str) -> str | None:
     """Owner for a repo-relative posix path, or None if not part of a checked module."""
     parts = rel.split("/")
-    if parts[0] == "plugins" and len(parts) >= 3:
-        return f"plugins/{parts[1]}"
-    if parts[0] == "plugins" and len(parts) == 2:
-        return AGGREGATOR
+    if parts[0] == "seasons":
+        if len(parts) >= 4 and parts[2] == "game":
+            return "plugins/_template" if parts[1] == "_template" else f"plugins/game_{parts[1]}"
+        return AGGREGATOR if len(parts) == 2 else None
     if parts[0] == "bridges" and len(parts) >= 3:
         return f"bridges/{parts[1]}"
     if parts[0] == "bridges" and len(parts) == 2:
@@ -224,7 +226,7 @@ def classify_include(src_rel: str, target: str, quoted: bool, known: set[str]) -
         cand = posixpath.normpath(posixpath.join(src_dir, t))
         if cand in known:
             return owner_of_path(cand)
-        # Relative to repo root (e.g. "plugins/game_2026/foo.h").
+        # Relative to repo root (e.g. "seasons/2026/game/foo.h").
         if posixpath.normpath(t) in known:
             return owner_of_path(posixpath.normpath(t))
         # Relative to any module's include/ or src/ root.
@@ -248,12 +250,12 @@ def classify_include(src_rel: str, target: str, quoted: bool, known: set[str]) -
             return f"bridges/{m.group(4)}"
         return m.group(5)
 
-    # Textual fallbacks for path-style includes ("../plugins/x/y.h", "plugins/x/y.h").
+    # Textual fallbacks for path-style includes ("../seasons/2026/game/y.h").
     norm = posixpath.normpath(posixpath.join(src_dir, t)) if quoted else posixpath.normpath(t)
     for candidate in (norm, posixpath.normpath(t)):
         parts = candidate.split("/")
-        if len(parts) >= 3 and parts[0] == "plugins":
-            return f"plugins/{parts[1]}"
+        if len(parts) >= 4 and parts[0] == "seasons" and parts[2] == "game":
+            return "plugins/_template" if parts[1] == "_template" else f"plugins/game_{parts[1]}"
         if len(parts) >= 3 and parts[0] == "bridges":
             return f"bridges/{parts[1]}"
         if len(parts) >= 2 and quoted and parts[0] in ("core", "app", "ipc", "sdk", "halsim_ext"):
@@ -403,6 +405,28 @@ def registration_errors(known: set[str], read: Callable[[str], str]) -> list[str
     return errors
 
 
+def plugin_registration_errors(known: set[str], read: Callable[[str], str]) -> list[str]:
+    """Game plugins under seasons/<year>/game must be registered; CMake links them from the season manifest."""
+    errors = []
+    cmake = strip_cmake_comments(read("seasons/CMakeLists.txt")) if "seasons/CMakeLists.txt" in known else ""
+    source = "seasons/builtin_plugins.cpp"
+    registered = re.sub(r"//[^\n]*", "", read(source)) if source in known else ""
+    for rel in sorted(known):
+        match = re.fullmatch(r"seasons/([^/]+)/game/CMakeLists\.txt", rel)
+        if not match:
+            continue
+        season = match.group(1)
+        if season.startswith("_"):
+            if not re.search(rf"add_subdirectory\s*\(\s*{re.escape(season)}/game\s*\)", cmake):
+                errors.append(f"{rel}: seasons/CMakeLists.txt never calls add_subdirectory({season}/game), so CMake ignores it")
+        elif f"plugins::game_{season}::" not in registered:
+            errors.append(f"{rel}: {source} never calls a plugins::game_{season}:: registration function")
+    for module in sorted(set(re.findall(r"plugins::(game_\d+)::", registered))):
+        if f"seasons/{module[len('game_'):]}/game/CMakeLists.txt" not in known:
+            errors.append(f"{source}: registers plugins::{module}:: but seasons/{module[len('game_'):]}/game does not exist")
+    return errors
+
+
 def suite_registration_errors(known: set[str], read: Callable[[str], str]) -> list[str]:
     """Test sources and suite directories that no CMake target builds."""
     errors = []
@@ -451,7 +475,7 @@ def check_tree(root: Path) -> list[str]:
     def read(rel: str) -> str:
         return common.read_text(root / rel, "replace")
 
-    return errors + registration_errors(known, read) + suite_registration_errors(known, read)
+    return errors + registration_errors(known, read) + plugin_registration_errors(known, read) + suite_registration_errors(known, read)
 
 
 def self_test() -> int:
@@ -459,10 +483,10 @@ def self_test() -> int:
         "sdk/include/wpiemu/sdk/a.h",
         "core/include/wpiemu/core/c.h",
         "core/src/c.cpp",
-        "plugins/game_2026/include/wpiemu/plugins/game_2026/p.h",
-        "plugins/game_2026/src/p.cpp",
-        "plugins/game_2027/include/wpiemu/plugins/game_2027/q.h",
-        "plugins/builtin_plugins.cpp",
+        "seasons/2026/game/include/wpiemu/plugins/game_2026/p.h",
+        "seasons/2026/game/src/p.cpp",
+        "seasons/2027/game/include/wpiemu/plugins/game_2027/q.h",
+        "seasons/builtin_plugins.cpp",
         "bridges/builtin_bridges.cpp",
         "app/contract/runtime_host.h",
         "app/ui/scene_support.h",
@@ -480,21 +504,21 @@ def self_test() -> int:
         # (rel, text, expected_error_count)
         ("core/src/c.cpp", '#include "wpiemu/core/c.h"\n#include <wpiemu/sdk/a.h>\n#include <vector>\n', 0),
         ("core/src/c.cpp", '#include "wpiemu/plugins/game_2026/p.h"\n', 1),
-        ("core/src/c.cpp", '#include "../../plugins/game_2026/src/p.cpp"\n', 1),
+        ("core/src/c.cpp", '#include "../../seasons/2026/game/src/p.cpp"\n', 1),
         ("app/src/main.cpp", '#include <wpiemu/plugins/game_2026/p.h>\n', 1),
         ("sdk/include/wpiemu/sdk/a.h", '#include "wpiemu/core/c.h"\n', 1),
-        ("plugins/game_2026/src/p.cpp", '#include "wpiemu/sdk/a.h"\n#include "wpiemu/plugins/game_2026/p.h"\n', 0),
-        ("plugins/game_2026/src/p.cpp", '#include "wpiemu/core/c.h"\n', 1),
-        ("plugins/game_2026/src/p.cpp", '#include <wpiemu/app/x.h>\n', 1),
-        ("plugins/game_2026/src/p.cpp", '#include "wpiemu/plugins/game_2027/q.h"\n', 1),
-        ("plugins/game_2026/src/p.cpp", '#include "../../game_2027/include/wpiemu/plugins/game_2027/q.h"\n', 1),
-        ("plugins/game_2026/src/p.cpp", '#include "wpiemu/bridges/hal/x.h"\n', 1),
-        ("plugins/game_2026/src/p.cpp", '#include <box3d/box3d.h>\n#include <string>\n', 0),
+        ("seasons/2026/game/src/p.cpp", '#include "wpiemu/sdk/a.h"\n#include "wpiemu/plugins/game_2026/p.h"\n', 0),
+        ("seasons/2026/game/src/p.cpp", '#include "wpiemu/core/c.h"\n', 1),
+        ("seasons/2026/game/src/p.cpp", '#include <wpiemu/app/x.h>\n', 1),
+        ("seasons/2026/game/src/p.cpp", '#include "wpiemu/plugins/game_2027/q.h"\n', 1),
+        ("seasons/2026/game/src/p.cpp", '#include "../../../2027/game/include/wpiemu/plugins/game_2027/q.h"\n', 1),
+        ("seasons/2026/game/src/p.cpp", '#include "wpiemu/bridges/hal/x.h"\n', 1),
+        ("seasons/2026/game/src/p.cpp", '#include <box3d/box3d.h>\n#include <string>\n', 0),
         # aggregation seam: may see sdk + every plugin; nobody else may include it
-        ("plugins/builtin_plugins.cpp", '#include "wpiemu/sdk/game/builtin_plugins.h"\n#include "wpiemu/plugins/game_2026/p.h"\n#include "wpiemu/plugins/game_2027/q.h"\n', 0),
-        ("plugins/builtin_plugins.cpp", '#include "wpiemu/core/c.h"\n', 1),
+        ("seasons/builtin_plugins.cpp", '#include "wpiemu/sdk/game/builtin_plugins.h"\n#include "wpiemu/plugins/game_2026/p.h"\n#include "wpiemu/plugins/game_2027/q.h"\n', 0),
+        ("seasons/builtin_plugins.cpp", '#include "wpiemu/core/c.h"\n', 1),
         ("app/src/main.cpp", '#include "wpiemu/plugins/builtin_plugins.h"\n', 1),
-        ("plugins/game_2026/src/p.cpp", '#include "wpiemu/plugins/builtin_plugins.h"\n', 1),
+        ("seasons/2026/game/src/p.cpp", '#include "wpiemu/plugins/builtin_plugins.h"\n', 1),
         ("bridges/builtin_bridges.cpp", '#include <wpiemu/bridges/hal/a.h>\n#include <wpiemu/bridges/vendor/a.h>\n#include <wpiemu/sdk/a.h>\n', 0),
         ("bridges/builtin_bridges.cpp", '#include <wpiemu/core/c.h>\n#include <wpiemu/plugins/game_2026/p.h>\n', 2),
         ("core/src/c.cpp", '#include "../../bridges/builtin_bridges.cpp"\n', 1),
@@ -549,15 +573,15 @@ def self_test() -> int:
             print(f"SELF-TEST FAIL source {rel}: expected {expected} errors, got {got}\n{text}")
 
     cmake_cases = [
-        ("plugins/game_2026/CMakeLists.txt",
+        ("seasons/2026/game/CMakeLists.txt",
          "target_link_libraries(wpiemu_plugin_game_2026 PUBLIC wpiemu_sdk)\n", 0),
-        ("plugins/game_2026/CMakeLists.txt",
+        ("seasons/2026/game/CMakeLists.txt",
          "target_link_libraries(wpiemu_plugin_game_2026 PUBLIC wpiemu_sdk wpiemu_core)\n", 1),
-        ("plugins/game_2026/CMakeLists.txt",
+        ("seasons/2026/game/CMakeLists.txt",
          "target_link_libraries(wpiemu_plugin_game_2026 PRIVATE wpiemu::app)\n", 1),
-        ("plugins/game_2026/CMakeLists.txt",
+        ("seasons/2026/game/CMakeLists.txt",
          "target_link_libraries(wpiemu_plugin_game_2026 PRIVATE wpiemu_plugin_game_2027)\n", 1),
-        ("plugins/game_2026/CMakeLists.txt",
+        ("seasons/2026/game/CMakeLists.txt",
          "# target_link_libraries(x PUBLIC wpiemu_core)\n", 0),
         ("core/CMakeLists.txt",
          "target_link_libraries(wpiemu_core PUBLIC wpiemu_sdk PRIVATE box3d)\n", 0),
@@ -567,28 +591,28 @@ def self_test() -> int:
          "target_link_libraries(wpiemu_app PRIVATE wpiemu_core wpiemu_ipc wpiemu_sdk Qt6::Core)\n", 0),
         ("app/CMakeLists.txt",
          "target_link_libraries(wpiemu_app PRIVATE wpiemu::plugin_game_2026)\n", 1),
-        ("plugins/_template/CMakeLists.txt",
+        ("seasons/_template/game/CMakeLists.txt",
          "target_link_libraries(wpiemu_plugin_template PUBLIC wpiemu::sdk)\n", 0),
         ("app/CMakeLists.txt",
          "target_link_libraries(wpiemu_app PRIVATE wpiemu_plugin_game_2026)\n", 1),
         ("sdk/CMakeLists.txt",
          "target_link_libraries(wpiemu_sdk INTERFACE wpiemu_core)\n", 1),
-        ("plugins/game_2026/CMakeLists.txt",
+        ("seasons/2026/game/CMakeLists.txt",
          "target_include_directories(wpiemu_plugin_game_2026 PUBLIC ../../core/include)\n", 1),
         ("halsim_ext/CMakeLists.txt",
          'target_include_directories(wpiemu_halsim_ext_hal_tests PRIVATE tests "${CMAKE_SOURCE_DIR}/tests/support")\n', 0),
         ("halsim_ext/CMakeLists.txt",
          'target_include_directories(wpiemu_halsim_ext_hal_tests PRIVATE "${CMAKE_SOURCE_DIR}/core/runtime/include")\n', 1),
         # aggregation seam
-        ("plugins/CMakeLists.txt",
+        ("seasons/CMakeLists.txt",
          "target_link_libraries(wpiemu_plugins_builtin PUBLIC wpiemu_sdk PRIVATE wpiemu_plugin_game_2026 wpiemu_plugin_game_2027)\n", 0),
-        ("plugins/CMakeLists.txt",
+        ("seasons/CMakeLists.txt",
          "target_link_libraries(wpiemu_plugins_builtin PRIVATE wpiemu_core)\n", 1),
         ("app/CMakeLists.txt",
          "target_link_libraries(wpiemu_app PRIVATE wpiemu_core wpiemu_ipc wpiemu_sdk wpiemu_plugins_builtin)\n", 0),
         ("core/CMakeLists.txt",
          "target_link_libraries(wpiemu_core PUBLIC wpiemu_plugins_builtin)\n", 1),
-        ("plugins/game_2026/CMakeLists.txt",
+        ("seasons/2026/game/CMakeLists.txt",
          "target_link_libraries(wpiemu_plugin_game_2026 PUBLIC wpiemu::plugins_builtin)\n", 1),
         ("sdk/CMakeLists.txt",
          "target_link_libraries(wpiemu_sdk INTERFACE wpiemu_plugins_builtin)\n", 1),
@@ -604,7 +628,7 @@ def self_test() -> int:
          "target_link_libraries(wpiemu_core PRIVATE wpiemu_bridges_builtin)\n", 1),
         ("app/CMakeLists.txt",
          "target_link_libraries(wpiemu_app_common PRIVATE wpiemu_bridges_builtin wpiemu_wpilib_hal)\n", 2),
-        ("plugins/game_2026/CMakeLists.txt",
+        ("seasons/2026/game/CMakeLists.txt",
          "target_link_libraries(wpiemu_plugin_game_2026 PRIVATE wpiemu_core wpiemu_app_common wpiemu_halsim_core wpiemu_bridges_hal wpiemu_bridges_builtin)\n", 5),
         ("bridges/vendor/CMakeLists.txt",
          "target_link_libraries(wpiemu_bridges_vendor PRIVATE wpiemu_bridges_hal)\n", 1),
@@ -634,7 +658,7 @@ def self_test() -> int:
          "add_library(wpiemu_app_common STATIC source.cpp)\n", 1),
         ("core/physics/CMakeLists.txt",
          "target_link_libraries(wpiemu_core PUBLIC wpiemu_sdk PRIVATE box3d)\n", 0),
-        ("plugins/game_2026/CMakeLists.txt",
+        ("seasons/2026/game/CMakeLists.txt",
          "add_library(wpiemu_wpilib_hal STATIC source.cpp)\n", 1),
         ("tests/CMakeLists.txt",
          "add_executable(wpiemu_tests main.cpp)\ntarget_link_libraries(wpiemu_tests PRIVATE wpiemu_bridges_hal wpiemu_core)\n", 0),
@@ -693,12 +717,11 @@ def self_test() -> int:
         print("SELF-TEST FAIL module-map completeness: MODULE_OWNERS differs from ALLOWED")
 
     plugin_wiring = {
-        "plugins/CMakeLists.txt": "add_subdirectory(game_2026)\nadd_subdirectory(_template)\n"
-                                  "target_link_libraries(wpiemu_plugins_builtin PUBLIC wpiemu_sdk PRIVATE wpiemu_plugin_game_2026)\n",
-        "plugins/builtin_plugins.cpp": "keepFirstError(plugins::game_2026::registerPlugin(registry));\n"
+        "seasons/CMakeLists.txt": "add_subdirectory(_template/game)\n",
+        "seasons/builtin_plugins.cpp": "keepFirstError(plugins::game_2026::registerPlugin(registry));\n"
                                        "// keepFirstError(plugins::game_2027::registerPlugin(registry));\n",
-        "plugins/game_2026/CMakeLists.txt": "",
-        "plugins/_template/CMakeLists.txt": "",
+        "seasons/2026/game/CMakeLists.txt": "",
+        "seasons/_template/game/CMakeLists.txt": "",
     }
     bridge_wiring = {
         "bridges/CMakeLists.txt": "add_subdirectory(hal)\n"
@@ -717,15 +740,12 @@ def self_test() -> int:
     }
     wiring_cases = [
         # (check, files, expected_error_count)
-        (registration_errors, plugin_wiring, 0),
-        (registration_errors, {**plugin_wiring, "plugins/game_2027/CMakeLists.txt": ""}, 3),
-        (registration_errors, {**plugin_wiring, "plugins/CMakeLists.txt": "# add_subdirectory(game_2027)\n"
-                               + plugin_wiring["plugins/CMakeLists.txt"], "plugins/game_2027/CMakeLists.txt": ""}, 3),
-        (registration_errors, {**plugin_wiring, "plugins/CMakeLists.txt":
-                               plugin_wiring["plugins/CMakeLists.txt"].replace("add_subdirectory(game_2026)\n", "")}, 1),
-        (registration_errors, {**plugin_wiring, "plugins/CMakeLists.txt":
-                               plugin_wiring["plugins/CMakeLists.txt"].replace("add_subdirectory(_template)\n", "")}, 1),
-        (registration_errors, {**plugin_wiring, "plugins/builtin_plugins.cpp": ""}, 1),
+        (plugin_registration_errors, plugin_wiring, 0),
+        (plugin_registration_errors, {**plugin_wiring, "seasons/2027/game/CMakeLists.txt": ""}, 1),
+        (plugin_registration_errors, {**plugin_wiring, "seasons/CMakeLists.txt": "# add_subdirectory(_template/game)\n"}, 1),
+        (plugin_registration_errors, {**plugin_wiring, "seasons/builtin_plugins.cpp": ""}, 1),
+        (plugin_registration_errors, {**plugin_wiring, "seasons/builtin_plugins.cpp":
+                                      plugin_wiring["seasons/builtin_plugins.cpp"] + "plugins::game_2028::registerPlugin(r);\n"}, 1),
         (registration_errors, bridge_wiring, 0),
         (registration_errors, {**bridge_wiring, "bridges/audio/CMakeLists.txt": ""}, 4),
         (registration_errors, {**bridge_wiring, "bridges/vision/CMakeLists.txt": ""}, 3),
@@ -746,7 +766,7 @@ def self_test() -> int:
         ("sdk/include/wpiemu/sdk/a.h", "std::vector<int> signals;\n", 1),
         ("sdk/include/wpiemu/sdk/a.h", "int slots() const;\n", 1),
         ("sdk/include/wpiemu/sdk/a.h", "// the slots and signals\nconst char* s = \"slots\";\n/* emit */ int ok;\n", 0),
-        ("plugins/game_2026/include/wpiemu/plugins/game_2026/p.h", "int emit;\n", 1),
+        ("seasons/2026/game/include/wpiemu/plugins/game_2026/p.h", "int emit;\n", 1),
         ("app/src/main.cpp", "int signals;\n", 0),
         ("app/contract/runtime_host.h", "signals:\n    void changed();\n", 0),
         ("app/common/orbit_camera.h", "int emit;\n", 1),

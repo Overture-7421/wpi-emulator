@@ -2,7 +2,7 @@
 
 // A plugin config section declared once: every field is a PropertySpec (key, default, range, group) bound to the
 // member of the typed config that stores it. The same table yields the schema, decodes a section Value into the typed
-// config and encodes it back, so a key is spelled exactly once. Worked example: plugins/game_2026/src/config.cpp.
+// config and encodes it back, so a key is spelled exactly once. Worked example: seasons/2026/game/src/config.cpp.
 
 #include <algorithm>
 #include <cmath>

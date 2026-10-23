@@ -23,8 +23,8 @@ wpiemu_target_defaults(wpiemu_bridges_hal)
 # When unset (default) the target is simply not created and halsim_ext must be built without it.
 set(WPIEMU_WPILIB_ROOT "" CACHE PATH "Directory with extracted WPILib HAL headers + wpiHal for the real HALSIM binding")
 if(WPIEMU_WPILIB_ROOT)
-    wpiemu_pinned_version(_wpiemu_hal_header wpilib seasons "${WPIEMU_WPILIB_SEASON}" headers hal)
-    wpiemu_pinned_version(_wpiemu_wpiutil_header wpilib seasons "${WPIEMU_WPILIB_SEASON}" headers wpiutil)
+    wpiemu_season_abi_value(_wpiemu_hal_header "${WPIEMU_WPILIB_SEASON}" headers hal)
+    wpiemu_season_abi_value(_wpiemu_wpiutil_header "${WPIEMU_WPILIB_SEASON}" headers wpiutil)
     set(_wpi_hints
         "${WPIEMU_WPILIB_ROOT}" "${WPIEMU_WPILIB_ROOT}/include"
         "${WPIEMU_WPILIB_ROOT}/hal-headers" "${WPIEMU_WPILIB_ROOT}/hal-headers/include"
@@ -50,7 +50,7 @@ if(WPIEMU_WPILIB_ROOT)
         target_include_directories(wpiemu_bridges_hal SYSTEM PRIVATE
             "${WPIEMU_HAL_INCLUDE_DIR}" "${WPIEMU_WPIUTIL_INCLUDE_DIR}")
         target_link_libraries(wpiemu_bridges_hal PUBLIC "${WPIEMU_HAL_LIBRARY}")
-        target_compile_definitions(wpiemu_bridges_hal PUBLIC WPIEMU_HAS_HALSIM_BINDING=1 WPIEMU_WPILIB_YEAR=${WPIEMU_WPILIB_YEAR})
+        target_compile_definitions(wpiemu_bridges_hal PUBLIC WPIEMU_HAS_HALSIM_BINDING=1 WPIEMU_HAL_ABI_${WPIEMU_HAL_ABI_ID}=1)
         message(STATUS "wpiemu: HALSIM binding enabled (${WPIEMU_HAL_LIBRARY})")
     else()
         message(WARNING "WPIEMU_WPILIB_ROOT is set but HAL headers/wpiutil headers/wpiHal were not all found "

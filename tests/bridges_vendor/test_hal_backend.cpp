@@ -16,7 +16,7 @@
 #include <thread>
 #include <vector>
 
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
 #include "wpi/hal/Types.h"
 #include "wpi/hal/Value.h"
 #include "wpi/hal/SimDevice.h"

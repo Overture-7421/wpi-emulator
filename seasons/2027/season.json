@@ -1,0 +1,27 @@
+{
+  "year": 2027,
+  "channel": "preview",
+  "default": false,
+  "wpilib": {
+    "version": "2027.0.0-alpha-7",
+    "verified": ["2027.0.0-alpha-7"],
+    "installFolder": "2027_alpha7"
+  },
+  "platform": { "abi": "systemcore", "launch": "gradlerio-modern" },
+  "toolchain": { "javaMajor": 25 },
+  "vendors": {
+    "photonvision": {
+      "schema": "photon-ns",
+      "defaultVersion": "dev-v2027.0.0-alpha-2-86-gda55d785",
+      "verified": ["dev-v2027.0.0-alpha-2-86-gda55d785"]
+    }
+  },
+  "game": null,
+  "samples": [
+    "samples/season_2027/java",
+    "samples/season_2027/cpp",
+    "samples/season_2027/vendor_java",
+    "samples/season_2027/vision_java",
+    "samples/season_2027/vision_cpp"
+  ]
+}

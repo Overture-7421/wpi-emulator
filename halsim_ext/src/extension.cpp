@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#if WPIEMU_WPILIB_YEAR >= 2027
+#if WPIEMU_HAL_ABI_SYSTEMCORE
 #include "wpi/hal/HAL.h"
 #include "wpi/hal/Extensions.h"
 #else
