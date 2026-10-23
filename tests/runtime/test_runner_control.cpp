@@ -105,7 +105,7 @@ TEST_CASE("runner: Pause and Resume are forwarded so the extension's watchdog st
     pause.command = proto::SimCommand::Pause;
     rig.runner->control(pause);
     REQUIRE(rig.run([&] { return rig.ext->remotePaused; }));
-    const proto::SimControl& sent = rig.ext->controls.back();
+    const proto::SimControl sent = rig.ext->controls.back();
     CHECK(sent.command == proto::SimCommand::Pause);
     CHECK(sent.commandId != 0);
     CHECK(sent.sessionId == 1);

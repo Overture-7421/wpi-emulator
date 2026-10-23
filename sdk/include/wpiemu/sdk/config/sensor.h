@@ -131,7 +131,7 @@ inline PropertySchema sensorResponseSchema(SensorKind kind) {
 
 inline SlotSpec sensorSlotSpec(SensorKind kind) {
     const SensorKindInfo& info = sensorKindInfo(kind);
-    return {kSensorSlot, info.displayName, info.slotType, false, info.description};
+    return {kSensorSlot, info.displayName, info.slotType, false, info.description, {}, 0};
 }
 
 struct SensorConfig {
