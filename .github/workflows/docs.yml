@@ -1,4 +1,4 @@
-name: Documentation and Wiki
+name: Documentation
 
 on:
   pull_request:
@@ -19,14 +19,9 @@ permissions:
 
 jobs:
   validate:
-    name: Validate and preview (no Wiki credential)
+    name: Validate documentation
     runs-on: ubuntu-latest
     steps:
-      - name: Reject manual publication from untrusted branches
-        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
-        run: |
-          echo "::error::Manual Wiki publication must run from main."
-          exit 1
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -42,75 +37,3 @@ jobs:
         run: |
           python tools/check_docs.py
           python tools/check_versions.py
-      - name: Generate deterministic Wiki preview
-        run: |
-          python tools/export_wiki.py --output build/wiki-preview
-          python tools/export_wiki.py --output build/wiki-preview --dry-run
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wiki-preview-${{ github.sha }}
-          path: build/wiki-preview/
-          include-hidden-files: true
-          if-no-files-found: error
-
-  publish:
-    name: Publish reviewed main to Wiki
-    needs: validate
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
-    # Serialize all publication, including manual reruns; never cancel an in-flight push.
-    concurrency:
-      group: wiki-publication
-      cancel-in-progress: false
-    environment: wiki
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - id: pins
-        name: Read Python pin
-        run: echo "python=$(python3 -c 'import json; print(json.load(open("versions.json"))["python"])')" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ steps.pins.outputs.python }}
-      - name: Generate and publish with dedicated Wiki credential
-        shell: bash
-        env:
-          WIKI_PUBLISH_TOKEN: ${{ secrets.WIKI_PUBLISH_TOKEN }}
-          REPOSITORY: ${{ github.repository }}
-          SOURCE_REVISION: ${{ github.sha }}
-          PUBLISH_SESSION: ${{ github.run_id }}-${{ github.run_attempt }}
-        run: |
-          set -euo pipefail
-          if [ -z "$WIKI_PUBLISH_TOKEN" ]; then
-            echo "::error::Missing WIKI_PUBLISH_TOKEN in the wiki environment. See docs/guides/documentation.md administrator setup."
-            exit 1
-          fi
-          mkdir -p build
-          # No token in arguments, Git config, remote URLs, artifacts or script contents.
-          cat > build/wiki-askpass.sh <<'ASKPASS'
-          #!/bin/sh
-          case "$1" in
-            *Username*) printf '%s\n' 'x-access-token' ;;
-            *Password*) printf '%s\n' "$WIKI_PUBLISH_TOKEN" ;;
-            *) exit 1 ;;
-          esac
-          ASKPASS
-          chmod 700 build/wiki-askpass.sh
-          trap 'rm -f build/wiki-askpass.sh' EXIT
-          export GIT_ASKPASS="$PWD/build/wiki-askpass.sh"
-          export GIT_TERMINAL_PROMPT=0
-          export GIT_CONFIG_COUNT=1
-          export GIT_CONFIG_KEY_0=credential.helper
-          export GIT_CONFIG_VALUE_0=
-          python tools/export_wiki.py \
-            --repository "https://github.com/$REPOSITORY" \
-            --revision "$SOURCE_REVISION" \
-            --output build/wiki-preview \
-            --publish \
-            --wiki-remote "https://github.com/$REPOSITORY.wiki.git" \
-            --wiki-worktree build/wiki-publish \
-            --source-remote origin --source-branch main \
-            --session "$PUBLISH_SESSION"

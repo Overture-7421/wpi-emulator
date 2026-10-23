@@ -98,7 +98,7 @@ private:
     void stepRecycling(sdk::SimContext& ctx, double dt);
     void stepHumanPlayers(sdk::SimContext& ctx, double dt);
     void refreshPositions();
-    // Table 5-4 cues owned by the season: shift starts, end game and the posted result (docs/reference/game-plugin.md).
+    // Table 5-4 cues owned by the season (plugins/game_2026/README.md).
     void requestSoundCues(sdk::SimContext& ctx, const MatchStatus& previous, bool resultEdge, bool eStop);
     sdk::Pose3 chassisPose(sdk::SimContext& ctx) const;
 

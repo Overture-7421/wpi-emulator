@@ -1,12 +1,12 @@
 # Extend a simulation strategy
 
-Read this when an existing drivetrain, tire, plant, physics world or transport cannot model a need.
-Prerequisites: [Architecture](../ARCHITECTURE.md), [a working build](../BUILDING.md), and the
-[physics](../reference/physics.md) / [runtime](../reference/runtime.md) contracts.
+Each strategy owns one physical or transport responsibility: a drivetrain maps chassis motion to
+wheels, a tire model computes contact forces, a plant models one mechanism axis, a physics world
+implements contacts, and a transport carries messages. Change the narrowest seam that expresses
+the behavior. The [physics](../reference/physics.md) and
+[runtime](../reference/runtime.md) references define the shared contracts.
 
-Choose the narrowest interface. Changing a tire law should not require a new physics world;
-changing a load model should not require a new device bridge. For physical motor data or shaft laws,
-use [the motor guide](motors.md).
+For physical motor data and shaft laws, use [motor data and behavior](mechanisms.md#motor-data-and-behavior).
 
 ## Drivetrains
 
@@ -117,5 +117,3 @@ This executes the factory excerpt and existing seam/behavior cases. Add tests fo
 actually introduced, including its error/reset path; a passing unrelated built-in is only a baseline.
 If a selection finds no tests, list CTest cases using [Building](../BUILDING.md) rather than accepting
 an empty run.
-
-Next: [diagnose problems by their owning layer](maintenance.md).

@@ -1,212 +1,162 @@
 # Runtime and configuration
 
-**Read this when:** changing the persisted robot model, composing a simulation, or tracing
-robot feedback and reset placement.
+**Read this when:** changing robot configuration, building a simulation, choosing Java for a
+robot project, or tracing a reset or feedback problem.
 **Prerequisites:** [Architecture](../ARCHITECTURE.md) for ownership and tick order;
-[Contributing](../CONTRIBUTING.md) for conventions.
+[Contributing](../CONTRIBUTING.md) for project conventions.
 
-Follow [Editor properties](../guides/editor-properties.md) when adding a model field, or
-[Maintenance](../guides/maintenance.md) when tracing a load, launch, or feedback failure.
+This page owns the core runtime contract: `robot.json`, load and construction order, project
+setup persistence, Java selection, and robot placement. Follow [Editor properties](../guides/editor-properties.md)
+to add a model field; use [Maintenance](../guides/maintenance.md) to trace a failure.
+Subsystem details live in [mechanisms](mechanisms.md), [physics](physics.md),
+[bridges](bridges.md), and [extension/IPC](extension-ipc.md).
+For orientation, see [simulation and physics](../concepts/simulation-and-physics.md) and
+[WPILib simulation](../concepts/wpilib-simulation.md).
 
-## The robot.json contract
+## Configuration and loading
 
-[RobotConfig](../../sdk/include/wpiemu/sdk/config/robot_config.h) defines the model;
-[RobotConfigCodec](../../core/runtime/include/wpiemu/core/config/robot_config_codec.h) defines JSON spelling
-([decode](../../core/runtime/src/config/robot_config_decode.cpp), [encode](../../core/runtime/src/config/robot_config_encode.cpp)).
-The core schema is `1`: an omitted `schemaVersion` defaults to it; another version is
-rejected, not migrated. Selected plugin sections also use schema version `1`.
+[`RobotConfig`](../../sdk/include/wpiemu/sdk/config/robot_config.h) is the model and
+[`RobotConfigCodec`](../../core/runtime/include/wpiemu/core/config/robot_config_codec.h)
+defines its JSON representation. The core schema is version `1`: an omitted version means
+`1`; other versions are rejected, not migrated. Plugin sections have their own version.
 
-| Root members | Responsibility |
-|---|---|
-| `name`, `project`, `gamePluginId` | Robot identity, project/toolchain metadata, explicit plugin selection; an empty plugin id selects by `project.wpilibYear`. |
-| `chassis`, `drivetrain` | Body dimensions/mass, wheel specifications, drivetrain/tire registry keys and drivetrain mappings; see [Physics](physics.md). |
-| `mechanisms` | Instances with stable `id`, template `type`, `properties`, `geometry`, `mount`, structured `attachment` and mappings; see [Mechanisms](mechanisms.md). |
-| `robotMappings` | Robot-level slots, including the optional `robot.imu`. |
-| `motionLinks` | One-way modeled-axis relationships, not device aliases or attachment frames; see [motion links](mechanisms.md#one-way-motion-links). |
-| `zones` | Plugin-owned kinds/properties on robot attachment frames; see [Game plugins](game-plugin.md). |
-| `cameras` | Core-owned camera models on attachment frames; vendor output is described in [Bridges](bridges.md). |
-| `sensors` | Core-owned game-value-to-device responses, described below. |
-| `startPose`, `startPositions` | Default physical start and optional named placements, described below. |
-| `battery`, `sim` | Electrical model, fixed step, seed and physics settings. |
-| `plugins` | Sections keyed by plugin id, each with `schemaVersion` and opaque object `data`. |
+The root object stores robot identity and project metadata; chassis, drivetrain, mechanisms
+and mappings; plugin data, zones, cameras and sensors; start placement; and simulation and
+battery settings. `project` records language, WPILib year and GradleRIO version, not a
+filesystem path. A mapping's declared device address is not necessarily a unique physical
+device; retain the identity and alias rules in [Bridges](bridges.md).
 
-`project` stores `language`, `wpilibYear` and `gradleRioVersion`, not a filesystem path.
-The app obtains the build/launch folder from the opened project session, so the model
-can be shared between checkouts.
+Missing fields receive defaults. Unknown structural members are ignored and are not
+round-tripped; property bags and plugin data remain values owned by their respective
+features. Invalid types or out-of-range numbers produce path-specific parse errors.
+`sim.seed` is signed 64-bit in JSON, so negative values can encode unsigned seeds.
+Numeric stream fallbacks use the classic locale.
 
-A mapping stores `owner`, `slot`, a declared `device` address and optional `reversed`
-(omitted when false). Owners are `robot`, `drivetrain`, a mechanism id or a sensor id.
-The declared address is not necessarily a unique physical identity; preserve
-[alias validation](bridges.md) rather than treating bus labels as independent hardware.
+[`ConfigPipeline`](../../core/runtime/src/config/config_pipeline.cpp) always decodes, selects
+and registers the plugin, fills missing defaults, then validates. Defaults do not replace
+present or unknown property keys. Decode, registration, or unsupported plugin-schema failures
+return errors; semantic problems are issues on the loaded model. A successful load does not
+mean the configuration is valid, and validation does not modify it. Preserve stable issue
+codes and paths.
 
-Absent fields receive model defaults. Unknown structural members are ignored and not
-round-tripped; property bags and plugin `data` remain `Value` objects.
-Wrong types produce pathed `ParseError`s. Typed integers must be finite, integral and
-in range before conversion; geometry numbers must also fit `float`. The persisted
-`sim.seed` is signed int64, so negative on-disk values can represent uint64 seeds.
-The JSON text codec keeps insertion order and integer/double distinctions without a
-second tree dependency. Its numeric stream fallbacks explicitly use
-`std::locale::classic()`; see [JSON conversion](../../core/runtime/src/config/json_codec.cpp).
+The editor and runtime use the same SDK validation rules. Required unmapped mechanism slots
+are errors; missing drivetrain mappings are warnings. Motion-link followers do not require
+motors. If a device is not known, optional capability checks are skipped so projects remain
+editable offline.
 
-## Decode, default, validate, build
-
-[ConfigPipeline](../../core/runtime/src/config/config_pipeline.cpp) is the common loading path.
-`load(Value)` decodes, then calls `process(RobotConfig)`. Processing selects the plugin,
-registers its templates through the idempotent `PluginRegistrar`, fills missing defaults
-for its section, mechanisms, zone kinds and sensor responses, then validates.
-Defaults fill missing property keys without replacing present values or unknown keys.
-
-Decode failures, failed plugin registration and an unsupported selected-plugin section
-version return an error. Semantic problems return `LoadedConfig` with issues:
-successful loading alone does **not** imply `valid()`. Validation does not mutate the
-model. Keep stable issue codes and paths; the authoritative rules are in
-[ConfigValidator](../../core/runtime/src/config/config_validator.cpp), which sequences the steps of
-`config_validator_robot.cpp` (chassis, drivetrain, sim, battery) and `config_validator_slots.cpp`
-(mechanisms and slot mappings), and the
-[SDK validation keys](../../sdk/include/wpiemu/sdk/config/validation_codes.h). The chassis, wheel/tire/motor,
-start-position, zone, camera and sensor rules exist once, in
-[config_checks.h](../../sdk/include/wpiemu/sdk/config/config_checks.h); they ask an `IConfigCatalog`
-for mechanism templates, the selected plugin id, zone kinds and game values, so the validator and
-the editor's fake backend apply identical checks.
-
-Required unmapped mechanism slots are errors; missing drivetrain mappings are warnings.
-Motion-link followers are exempt from motor requirements. Device-capability checking
-uses an optional lookup and skips unknown devices, allowing offline editing.
-The default step is 5,000 microseconds; a valid step must be positive and divide the
-20,000-microsecond robot period exactly.
-
-`SessionBuilder` expects defaulted, validated input and already-created collaborators;
-it is not a replacement for the pipeline. It constructs field, chassis/coupling,
-tire/drivetrain, slots/mappings, mechanisms and game state in dependency order.
-Missing collaborators, unknown factory keys or construction failures return errors
-without exposing a partly built session. With no selected plugin, the app host supplies
-a floor and runs core features only.
+[`SessionBuilder`](../../core/runtime/include/wpiemu/core/runtime/simulation_session.h) builds
+only from defaulted and validated input, with its collaborators already created. It reports
+construction failures rather than exposing a partial session. Without a selected game plugin,
+the app can run core simulation on a floor.
 
 ## Persistence responsibilities
 
-[ProjectConfigRepository](../../core/runtime/include/wpiemu/core/config/config_store.h)
-owns disk policy. The app's
-[ConfigRepository](../../app/common/config_repository.cpp) adapts it and processes loaded
-models through the pipeline; it does not implement another store.
+[`ProjectConfigRepository`](../../core/runtime/include/wpiemu/core/config/config_store.h)
+owns disk behavior; the app repository adapts it and runs loaded models through the pipeline.
+The project's only robot setup file is `<project>/.wpiemu/robot.json`.
 
-The robot setup is one file, `<project>/.wpiemu/robot.json`; there is no second copy.
-`open()` reads it. An unreadable file is reported as it is, never replaced by anything else.
-With no file, a setup left by an older version under the platform app-data root at
-`projects/<project-key>/robot.json` (the key incorporates the canonical project path,
-case-folded on Windows) is moved into the project once: it is written to the project, then
-the app-data file is kept as `robot.json.migrated.bak`. If the project cannot be written, the
-app-data setup is used as is and kept until a later move succeeds.
+Opening an existing project file never falls back to an older copy if that file is unreadable.
+For projects created by older versions, a setup under the platform app-data directory at
+`projects/<project-key>/robot.json` is moved into the project once. After a successful write,
+the old file is retained as `robot.json.migrated.bak` and the app-data copy is removed. If
+the project write fails, the app-data setup remains available for a later move; if preserving
+the old file fails, the original is left in app data.
 
-Writes flush a sibling scratch file and atomically replace one target, so a failed
-replacement does not leave partial JSON. `save()` keeps an existing file that does not load
-as `robot.json.unreadable.bak` (never overwriting another backup) before replacing it; backup
-failure aborts the save. Platform paths and error handling are implemented in
-[the store](../../core/runtime/src/config/config_store.cpp).
-Edits to wizard basics must preserve the existing mechanisms, mappings and plugin
-sections, not replace the whole model. User-facing file management is in the
-[User guide](../USER_GUIDE.md).
-
-## Session, runner and host
-
-[SimulationSession](../../core/runtime/include/wpiemu/core/runtime/simulation_session.h)
-owns simulation state and advances synchronously: no I/O, wall-clock pacing or threads of its own.
-Borrowed registries and the logger must outlive it. The complete tick sequence
-has one home in [Architecture](../ARCHITECTURE.md).
-
-[SessionRunner](../../core/runtime/include/wpiemu/core/runtime/session_runner.h)
-adds the thread-safe controller queue, link handling, snapshots, watchdog and pacing.
-`poll()` is a bounded iteration; `start()` drives it on the sim thread. It preserves
-the single-outstanding-tick and session/epoch rules in [Extension and IPC](extension-ipc.md).
-Reset clears cached actuation and sensor history while retaining mappings and discovered
-devices; the next sensor frame is full. Reconnect additionally clears discovered devices.
-Old motor commands must never power the first tick of a new run.
-
-The app's [RobotSession](../../app/host/robot_session.cpp) composes the world, IPC,
-runner and launcher. Run refuses validation errors; Armed discovery can warn and attempt
-a bare model if full construction fails. Armed operation handles discovery and loopback
-without stepping; Begin/End lock-step keep the robot process alive. The host waits for
-the extension's program-start lifecycle signal before ticking or starting its tick
-watchdog, so a slow robot constructor is not mistaken for a stalled tick.
-UI host state and restart policy belong to [App](app.md). `SessionParts::sounds` receives the game's sound cue
-requests; `RobotSession` queues them for the UI to drain like logs ([sound cues](game-plugin.md#sound-cues)).
-
-The session's battery model uses supply current from mechanisms and drivetrain plus
-baseline draw. `Vnext = clamp(Vnominal - I * R, 0, Vnominal)` becomes the next tick's
-available voltage: the one-tick lag avoids solving an electrical feedback loop.
-Brownout disables the outgoing Driver Station state; recovery requires voltage at least
-0.5 V above the configured brownout threshold. See
-[BatteryModel](../../core/runtime/src/runtime/battery_model.cpp).
+Saving writes a flushed sibling scratch file and replaces the target, avoiding partial JSON.
+If the existing project file cannot be loaded, it is first preserved as
+`robot.json.unreadable.bak` (or a numbered variant if that name exists). If making that backup
+fails, the save fails too. A wizard edit must preserve mechanisms, mappings and plugin
+sections rather than replacing the whole model. See the [User guide](../USER_GUIDE.md) for
+user-facing file behavior.
 
 ## Launcher boundary
 
-[RobotLauncher](../../core/runtime/include/wpiemu/core/launcher/robot_launcher.h) supervises unmodified robot code.
-Default launch injects a generated Gradle init script; external-direct mode builds/describes
-the simulation target, then starts its JVM/native binary. Neither edits sources/build scripts.
-`ProjectInspector` reads metadata without executing Gradle; the wizard words its report and
-adds nothing of its own. The JDK Gradle runs with is chosen in one order,
-[`kJdkSources`](../../core/runtime/include/wpiemu/core/launcher/project_inspector.h): the Settings JDK folder,
-the project season's WPILib JDK (all-users or this-user install, or the Settings WPILib folder), another installed season's
-WPILib JDK, `JAVA_HOME`, `java` on `PATH`, then the emulator's own downloaded Java ([Emulator Java](app.md#emulator-java-and-build-tools)).
-Only the first two are taken as they are. The rest must pass [`jdk_policy`](../../core/runtime/include/wpiemu/core/launcher/jdk_policy.h):
-a runnable JDK with `javac`, the season's Java major or newer, not newer than `maxJavaForGradle` of the project's wrapper
-(8.11 when unknown), and on Windows a Visual C++ runtime of at least `kMinVcRuntime`, the `msvcp140.dll` that `java.exe` loads
-(the JDK's own copy first; WPILib's `checkMsvcRuntime` compares it). The Settings folder is judged too but never replaced. An inherited
-`JAVA_HOME` without a Java executable is ignored. Both the session launch and the wizard's toolchain check use this order, and
-the launcher adds `-Dorg.gradle.java.home=<that JDK>` so a path in the project's `gradle.properties` cannot override it. The host requests protocol Stop
-before cleanup; cancellation remains latched through startup and escalates to whole-tree kill
-after the grace deadline. Destruction joins the worker and cleans up the process tree.
-Robot console lines get a level from [`classifyOutputLine`](../../core/runtime/include/wpiemu/core/launcher/output_level.h)
-(`ERROR`/`Exception`/stack frames, `Warning`, `DEBUG`, `TRACE` as whole words; plain stderr defaults to Warn).
-[`diagnoseLaunchOutput`](../../core/runtime/include/wpiemu/core/launcher/launch_diagnosis.h) recognises the failures a user can act
-on (WPILib's stale Visual C++ runtime, Java Gradle cannot run on, an invalid Java home, a failed download, a broken wrapper, no C++
-toolchain) and gives them stable ids; unknown output keeps the raw tail.
+The same JDK resolution is used by the setup check and by a run. Candidates are tried in this
+order: the JDK folder explicitly selected in Settings; the project's season WPILib JDK; another
+installed season's WPILib JDK; `JAVA_HOME`; `java` on `PATH`; then Java downloaded by the
+emulator. An explicit Settings choice is never silently replaced: if it fails validation,
+the launch is blocked until the choice is changed or cleared.
 
-## Device feedback and game-fed sensors
+Candidates must be runnable JDKs with `javac`, and meet that WPILib season's minimum Java
+major. They must also be no newer than the project's Gradle wrapper supports (defaulting to
+Gradle 8.11 when its version is unknown). The project's own season WPILib JDK is trusted for
+Gradle compatibility, compiler presence and Visual C++ runtime; it still must run and meet
+the minimum Java major. Other candidates must pass all checks. On Windows, if the JDK's
+`java.exe` loads a Visual C++ runtime, it must be version 14.40 or newer. These rules are
+shared by [`kJdkSources`](../../core/runtime/include/wpiemu/core/launcher/project_inspector.h)
+and [`jdk_policy`](../../core/runtime/include/wpiemu/core/launcher/jdk_policy.h).
 
-[DeviceHub](../../core/runtime/src/runtime/device_hub.cpp) resolves slots on the sim thread.
-Missing/unusable motor outputs are neutral and writes to unresolved slots are ignored.
-Unmapped live devices stay in extension-side loopback; discovery never auto-binds them.
-Warnings are derived from current state, so fixing a mapping removes its warning.
-Per-motor mounting orientation is applied only at this boundary; see
-[multi-motor actuation](mechanisms.md#motor-commands-and-multiple-controllers).
+[`ProjectInspector`](../../core/runtime/include/wpiemu/core/launcher/project_inspector.h)
+reads project metadata without running Gradle. The default launcher injects a generated
+Gradle init script; direct-launch mode uses Gradle to describe the simulation target before
+starting its JVM or native program. Neither mode edits the robot project's sources or build
+scripts. The selected JDK is passed to Gradle so the project's `gradle.properties` cannot
+override it. The wizard's Java result and the launch must agree; if no candidate works, do
+not start Gradle.
 
-Drivetrain motor slots receive rotor-side turns and turns/s, including their gearing.
-Only drivetrains whose registered slots include a wheel's steer slots (swerve) expose
-`<wheel>.steer` and the optional `<wheel>.steerEncoder`; tank and mecanum never do, whatever
-`WheelSpec::steered` says. `steerEncoder` reports output-side azimuth
-in rotations and rotations/s, with no steer gear ratio. A remote/fused steering encoder
-belongs there, not on the steer motor slot. Generic mechanism feedback conversions are
-specified in [Mechanisms](mechanisms.md#feedback-units).
-Slots carry calibrated model-frame readings; `sensorOffsetRot` is a model offset, not
-a second firmware magnet calibration. Vendor calibration and reported-current versus
-current-request normalization belong to [Bridges](bridges.md).
-The optional `robot.imu` reports attitude, body-frame angular rates and specific force
-(+g at rest), not gravity-free linear acceleration.
+The host requests protocol Stop before cleanup. Cancellation stays active through startup
+and escalates to terminating the process tree after its grace period. Shutdown joins the
+worker and cleans up the process tree.
 
-[SensorConfig](../../sdk/include/wpiemu/sdk/config/sensor.h) has no pose: each sensor maps
-a game value to its single `<id>.sensor` slot. Distance responses are metres, never
-analog volts; beam-break responses are digital levels. `SensorSystem` samples after
-the game update. Missing/non-finite published values produce the configured idle reading
-and, for a nonempty source, `sensor_source_unavailable`. Snapshots include source value
-and reading.
+## Session, runner and host
+
+[`SimulationSession`](../../core/runtime/include/wpiemu/core/runtime/simulation_session.h)
+owns synchronous simulation state; it does no I/O, pacing or threading. Its borrowed
+registries and logger must outlive it. [`SessionRunner`](../../core/runtime/include/wpiemu/core/runtime/session_runner.h)
+adds command queues, IPC, pacing, snapshots and watchdog handling. The authoritative tick
+order and clock-master contract are in [Architecture](../ARCHITECTURE.md).
+
+Run mode refuses configuration errors. Armed discovery may continue with warnings; if the
+full model cannot be built, it can fall back to an empty model so the robot process can still
+discover devices.
+
+The default fixed step is 5,000 microseconds and must divide the 20,000-microsecond robot
+period. A reset clears cached actuation and sensor history but keeps mappings and discovered
+devices; its next sensor frame is full. Reconnect also clears discovered devices. Old motor
+commands must never actuate the first tick of a new run. See [Extension and IPC](extension-ipc.md)
+for identity, acknowledgement and reconnect rules.
+
+The battery model uses supply current from the drivetrain and mechanisms plus a baseline
+draw. The next tick's voltage is `clamp(Vnominal - I * R, 0, Vnominal)`, which avoids
+solving an electrical feedback loop within one tick. Brownout disables the outgoing Driver
+Station state; recovery requires voltage at least 0.5 V above the configured threshold.
+See [BatteryModel](../../core/runtime/src/runtime/battery_model.cpp).
 
 ## Physical start placement
 
-When present, `startPose` requires finite `xM`, `yM`, `headingRad`. The host uses those
-field-frame coordinates and yaw; chassis construction still determines spawn height.
-Without it, the host chooses a placement inside the described field, or the origin
-without a field description. This moves physics, not robot odometry or gyro offsets.
+`startPose`, when present, is a finite field-frame position `(xM, yM, headingRad)`. It changes
+the physical spawn pose, not robot odometry or gyro offsets; chassis construction still sets
+spawn height. Without it, the host places the robot at the origin if there is no field
+description; otherwise it uses `x = min(2 m, 15% of field length)` and the field's mid-width.
 
-`startPositions` is an optional list of `{id, label, alliance, xM, yM, headingRad}`;
-the coordinates are required, ids are nonempty and unique within the list, and alliance
-is `blue` or `red` (default blue). An absent list is empty; none are built in.
-Selection never implicitly flips a pose. Alliance-copy tooling uses the plugin's
-field symmetry, described in [Game plugins](game-plugin.md).
+`startPositions` is an optional list of named placements. Each entry has a unique, nonempty
+`id`, a label, `xM`, `yM`, `headingRad`, and an alliance (`blue` or `red`, default `blue`).
+There are no built-in positions, and selecting one never flips it for alliance. Alliance
+copying uses the game plugin's field symmetry; see [Game plugins](game-plugin.md).
 
-`ISimController::setStartPlacement(optional<RobotStartPose>)` queues an override in order
-with Reset. Setting it alone never teleports: the next reset restores override X/Y/yaw
-at the built spawn height. `nullopt` restores the built default placement.
-`host::Options::startPose` seeds this override for a new session. Reset/restart UI
-semantics and selected-position lifetime are documented in [App](app.md).
+The selected named position is retained through a same-project robot restart, and cleared
+when the project changes or the selected entry is removed. `ISimController::setStartPlacement`
+queues a placement override; it does not teleport the robot. The next Reset restores the
+override at the built spawn height. Passing no override restores the configured default.
+This also applies to a session's initial start placement. Reset and restart are distinct:
+reset does not restart robot code or reset its odometry.
+
+## Device feedback and game-fed sensors
+
+[`DeviceHub`](../../core/runtime/src/runtime/device_hub.cpp) resolves mappings on the
+simulation thread. Missing or unusable motor outputs are neutral; writes to unresolved slots
+are ignored. Unmapped live devices remain in extension-side loopback and discovery never
+auto-binds them. Fixing a mapping removes warnings derived from the old state.
+
+Mechanism and drivetrain feedback units, motor orientation and steering slots belong to
+[Mechanisms](mechanisms.md). Vendor calibration and current normalization belong to
+[Bridges](bridges.md). The optional `robot.imu` reports attitude, body-frame angular rates
+and specific force (including +g at rest).
+
+Each configured game-fed sensor maps a game value to one `<id>.sensor` slot. Distance values
+are metres, not analogue volts; beam breaks are digital. Sensors sample after the game
+update. An unavailable or non-finite source produces the configured idle reading; a named
+but unavailable source also reports `sensor_source_unavailable`. See [Game plugins](game-plugin.md)
+for the game-value contract.
 
 **Next:** [Mechanisms](mechanisms.md).

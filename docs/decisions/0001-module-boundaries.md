@@ -1,37 +1,21 @@
 # Module boundaries
 
-Read this when changing a dependency or adding a module.
+Read this when considering a dependency or a new module.
 Prerequisite: [Architecture](../ARCHITECTURE.md).
 
 ## Status
 Accepted.
 
-## Context
-Supporting another season must not require editing simulation or UI internals.
-Device support must not couple vendor libraries to physics. Directory layout alone
-cannot prevent these dependencies from creeping back in.
+## Rationale
+Season rules and robot-device adapters change for different reasons. If either spreads into core
+or the UI, adding a season or device family requires unrelated edits and makes ownership unclear.
 
 ## Decision
-Make the standard-library-only, header-only SDK the shared boundary. Keep simulation
-game-agnostic and Qt-free; contain Qt and HAL/vendor backends at their respective edges.
-Whatever several modules need (data tables, validation rules, helpers, test fakes) is defined
-once in the SDK and derived from there, never copied between modules.
-The dependency graph in Architecture is authoritative rather than a collection of
-per-module exceptions.
+Use the SDK as the narrow shared contract, keep backend and UI dependencies at their owning edges,
+and compose built-in plugins and bridges through aggregators.
 
-Compose built-in plugins through the plugin aggregator and robot-process bridges
-through the bridge aggregator. Consumers depend on those seams, not concrete seasons
-or bridge modules. Individual plugins and bridge modules remain independent.
+## Trade-offs
+Explicit registration and dependency wiring take maintenance. In return, individual plugins and
+bridges can evolve without making core or the app depend on their concrete implementations.
 
-Enforce includes and CMake dependencies with the
-[boundary checker](../../tools/check_boundaries.py). Internal build targets inherit
-their module's rules rather than providing a way around them.
-
-## Consequences
-A season or device family can evolve without spreading its implementation across
-the app and core, and SDK fakes allow independent development.
-Shared behavior must be expressed deliberately in the SDK, which adds contract work.
-Registration and aggregation wiring are explicit maintenance costs; adding a feature
-does not justify bypassing the boundary.
-
-Next: [Extension recipes](../extending.md).
+Current dependencies and owners are listed in [Architecture](../ARCHITECTURE.md).

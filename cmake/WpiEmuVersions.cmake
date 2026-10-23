@@ -1,4 +1,5 @@
-# Reads versions.json, the single home of the repository's version pins (docs/BUILDING.md#version-pins).
+# Reads versions.json, the single home of repository version pins; see the season upgrade guide
+# (docs/guides/wpilib-upgrade.md).
 #
 #   wpiemu_pinned_version(<out-var> <key> [<sub-key>...])    e.g. wpiemu_pinned_version(v qt release)
 #

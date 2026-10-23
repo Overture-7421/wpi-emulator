@@ -1,12 +1,10 @@
 # Add a device adapter
 
-Read this when robot code creates a device that the emulator does not discover or cannot map.
-Prerequisites: [Architecture](../ARCHITECTURE.md), [a development build](../BUILDING.md), and the
-[bridge contract](../reference/bridges.md). That reference owns identity, units and feedback semantics.
+A device bridge lives in the robot process. It translates backend device descriptions and signals
+to the emulator's canonical SDK contract; it does not simulate the physical mechanism or choose
+motor constants. The [bridge reference](../reference/bridges.md) owns identity, units and feedback.
 
-A bridge runs inside the **robot process**. It translates a backend's device names and values into
-SDK descriptors and canonical signals; it does not simulate a mechanism or choose its motor physics.
-For physical motor data, use [the motor guide](motors.md).
+For physical motor data, use [the motor section in the mechanism guide](mechanisms.md#motor-data-and-behavior).
 
 ## Choose the smallest change
 
@@ -97,5 +95,3 @@ If a motor moves but its encoder drifts, trace raw input versus firmware-reporte
 gearbox units before adding compensation. Preserve the single mapping-inversion owner.
 Fake tests verify translation; they do not prove a real vendor wrapper exports those values.
 Use a real robot project when introducing wrapper support.
-
-Next: [configure or extend a mechanism](mechanisms.md).

@@ -1,6 +1,7 @@
 #pragma once
 
-// Sound cues the 2026 plugin owns (docs/reference/game-plugin.md, IGameModule::contributeSoundCues). The audio file
+// Sound cues the 2026 plugin owns (plugins/game_2026/README.md); IGameModule::contributeSoundCues
+// defines the shared contract (docs/reference/game-plugin.md). The audio file
 // ships with the plugin in plugins/game_2026/assets/sfx/. Cues every season shares (end game, result) are the SDK's.
 
 #include <vector>

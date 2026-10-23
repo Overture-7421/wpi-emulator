@@ -1,110 +1,117 @@
 # Contributing
 
-Read this when preparing a change or reviewing someone else's.
-Prerequisites: [Architecture](ARCHITECTURE.md) for ownership and [Building](BUILDING.md) for commands.
+Read this before changing code or reviewing a change.
+For build and test commands, start with [Build and test](BUILDING.md).
 
 ## Before you push
 
-Keep each change focused and preserve behavior outside its scope. Configure with warnings as errors,
-run the relevant tests, then the applicable full suite and boundary/documentation checks from
-[Building](BUILDING.md#tests-and-checks). Explain anything you could not validate.
+- Keep the change focused. Avoid behavior changes outside its purpose.
+- Configure with warnings as errors and run focused tests, then the relevant full suite.
+- Run applicable boundary and documentation checks from [Build and test](BUILDING.md#run-tests-and-repository-checks).
+- Explain any check you could not run and why.
+- Do not commit build output, per-project `.wpiemu` data, generated screenshots, or logs.
+- Keep scratch experiments in the git-ignored `spikes/` directory; do not commit them.
 
-Do not commit build output, per-project `.wpiemu` data, generated screenshots or logs.
-Scratch experiments go in the git-ignored `spikes/`; never commit them.
+If you are new to the code, start with [How WPILib simulation works](concepts/wpilib-simulation.md)
+for the robot-process flow, [Simulation, physics, and units](concepts/simulation-and-physics.md)
+for how commands become motion, and [Qt in this project](concepts/qt-in-this-project.md)
+for the desktop app. [Architecture](ARCHITECTURE.md) explains module ownership and how
+a simulation tick moves through the program. The [runtime](reference/runtime.md),
+[mechanism](reference/mechanisms.md), [physics](reference/physics.md),
+[extension and IPC](reference/extension-ipc.md), [bridge](reference/bridges.md), and
+[application](reference/app.md) references own the detailed contracts.
+The [first-change tutorial](tutorials/first-change.md) walks through a small motor-preset
+change and its test.
 
 ## Coding conventions
 
-- Use C++20 without compiler extensions. [`.clang-format`](../.clang-format) defines Google-based
-  formatting with four spaces and a 100-column limit. Comment only what needs clarification.
-- Non-app module public headers live under `<module>/include/wpiemu/...`; keep paths and namespaces
-  consistent with their owner when copying an extension skeleton.
-- Non-app public headers must not use Qt macro names (`signals`, `slots`, `emit`, `foreach`)
-  as identifiers, even when the header itself includes no Qt.
-- Recoverable errors are `sdk::Result<T>` / `sdk::Status`. Catch third-party exceptions at the
-  boundary and convert them: exceptions must not cross SDK interfaces. Programming-contract
-  violations use `contractViolation`, not recoverable error handling.
-- Use `std::unique_ptr` for owners and constructor/`SimContext` injection for collaborators.
-  Borrowed services must outlive their consumers. Registries are instances, not globals/singletons.
-- Internal units are SI in right-handed Z-up NWU coordinates: chassis +X forward, field +X toward
-  the opposing wall, +Y left, +Z up. Quaternions are `(x,y,z,w)`; add unit suffixes to plain scalar
-  names, such as `massKg`, `radiusM` and `timeUs`.
-- Simulation time is integer microseconds from `ISimClock`; randomness comes from `SimContext::rng()`.
-  Do not use wall clocks or independent randomness in simulation logic.
-- Follow [thread ownership](ARCHITECTURE.md#processes-and-threads); do not add cross-thread mutable
-  access or blocking HAL callbacks to make a local feature work.
-- UI follows MVVM: widgets use view-models, not persistence/runtime services directly. Use `tr()`
-  (`ETR()` in editor models), `ThemeTokens` and `UnitFormatter`. Editor edits go through undoable
-  config operations. Keep the Z-up to Qt Y-up scene conversion in QML, not persisted coordinates.
-- Preserve unrelated mechanisms, mappings and plugin sections when editing configuration.
-  Persistence and load ordering are defined by the [runtime contract](reference/runtime.md).
-  Validation issue codes are stable SDK keys; numeric JSON stream fallbacks use `std::locale::classic()`.
-- For device changes, preserve the [identity and feedback contracts](reference/bridges.md);
-  a declared CAN address is not necessarily a distinguishable physical simulator device.
-- Define anything several modules need once in the SDK and derive from it, as the
-  [motor table](../sdk/include/wpiemu/sdk/dynamics/motor_model.h) and
-  [`Alliance`](../sdk/include/wpiemu/sdk/game/alliance.h) do; do not copy tables, validation rules or helpers between
-  modules.
+- Write C++20 without compiler extensions. Format C++ with [`.clang-format`](../.clang-format),
+  which uses Google-based rules, four spaces, and a 100-column limit.
+- Put non-app public headers under `<module>/include/wpiemu/...`. Keep paths and namespaces
+  consistent with the owning module, including when copying an extension skeleton.
+- Do not use Qt macro names (`signals`, `slots`, `emit`, `foreach`) as identifiers in
+  non-app public headers. Those headers must stay safe to include from code that uses Qt.
+- Return `sdk::Result<T>` or `sdk::Status` for recoverable errors. Catch third-party
+  exceptions at the boundary and convert them; exceptions must not cross SDK interfaces.
+  Use `contractViolation` for programming-contract violations.
+- Use `std::unique_ptr` for owned objects. Inject collaborators through constructors or
+  `SimContext`; borrowed services must outlive their users. Registries are instances,
+  not globals or singletons.
+- Simulation uses SI units and right-handed Z-up NWU coordinates. Chassis +X points
+  forward, field +X points toward the opposing wall, +Y points left, and +Z points up.
+  Store quaternions as `(x,y,z,w)` and add unit suffixes to plain scalar names such as
+  `massKg`, `radiusM`, and `timeUs`. See [Physics](reference/physics.md).
+- Simulation time is integer microseconds from `ISimClock`. Use `SimContext::rng()` for
+  randomness. Do not use wall clocks or independent random generators in simulation.
+- Follow the [thread ownership and tick order](ARCHITECTURE.md#processes-and-threads).
+  Do not add cross-thread mutable access or make HAL callbacks block.
+- The app uses MVVM: widgets talk to view-models, not runtime or persistence services.
+  Use `tr()` (`ETR()` in editor models), `ThemeTokens`, and `UnitFormatter`. Make editor
+  changes through undoable config operations. Keep the Z-up to Qt Y-up scene conversion
+  in QML, not in saved coordinates. See [Application](reference/app.md).
+- Preserve unrelated mechanisms, mappings, and plugin sections when changing config.
+  Core owns persistence. Decode, apply defaults, validate, then construct. Validation
+  issue codes are stable SDK keys; numeric JSON stream fallbacks use
+  `std::locale::classic()`. See [Runtime](reference/runtime.md).
+- Preserve the [device identity and feedback contracts](reference/bridges.md). A declared
+  CAN address does not always identify a distinct physical simulator device.
+- Define shared behavior once in the SDK. Derive consumers from that source instead of
+  copying tables, validation rules, or helpers. See the motor table in
+  [`motor_model.h`](../sdk/include/wpiemu/sdk/dynamics/motor_model.h) and
+  [`Alliance`](../sdk/include/wpiemu/sdk/game/alliance.h).
 
 ## Reuse without changing contracts
 
-Similar code can differ in precision, threading, lifecycle or dependency direction.
-For example, the IPC and Photon codecs share scalar byte helpers, not packet layouts;
-demo and real hosts share an interface, not process behavior. Merge implementations only
-with evidence that behavior is unchanged and no forbidden dependency is added.
-Keep policies such as watchdog recovery and queue overflow with their owning subsystem.
+Similar code may differ in precision, threading, lifetime, or dependency direction.
+For example, IPC and Photon codecs share scalar byte helpers, not packet layouts.
+Demo and real hosts share an interface, not process behavior. Merge implementations
+only when evidence shows behavior stays the same and no forbidden dependency is added.
+Keep watchdog recovery and queue-overflow policies with their owning subsystem.
 
 ## Tests
 
-Add a focused regression test for changed behavior, next to the tests for that module. Prefer public
-interfaces and the header-only [SDK fakes](../sdk/include/wpiemu/sdk/testing) over implementation access.
-Wait on another thread or process with that folder's `waitUntil`, not a hand-written sleep loop, and build device
-announcements and hub-warning checks with its `device_fixtures.h`. Play the robot-process side of the protocol with its
-`fake_extension.h` (a failing robot is configuration, not a new fake) and the emulator side with `fake_emulator.h`.
-Test helpers that need platform calls, such as the `ScopedEnv` environment guard, live in [tests/support](../tests/support).
-Cover the important failure/reset edge as well as the happy path; do not test constants or language
-behavior merely to increase coverage.
+Add a focused regression test near the tests for the changed module. Prefer public
+interfaces and the header-only [SDK fakes](../sdk/include/wpiemu/sdk/testing) over
+implementation access.
 
-Use real physics when geometry/contact behavior cannot be judged by a fake. Keep deterministic tests
-on a fixed step and seed. Robot-project integration is opt-in, not a prerequisite for every unit test.
-Source discovery, naming restrictions, Qt suite handling and visual checks have one home in
-[Building](BUILDING.md#tests-and-checks).
+Use that folder's `waitUntil` to wait for another thread or process; do not write a sleep
+loop. Use `device_fixtures.h` for device announcements and hub-warning checks.
+Use `fake_extension.h` for the robot-process side of the protocol and
+`fake_emulator.h` for the emulator side. A failing robot is configuration, not a new fake.
+Helpers that need platform calls, such as the `ScopedEnv` environment guard, live in
+[tests/support](../tests/support).
+
+Test the important failure or reset edge as well as the normal path. Do not add tests
+for constants or language behavior merely to increase coverage. Use real physics when
+geometry or contact behavior cannot be judged with a fake. Keep deterministic tests on
+a fixed step and seed. Robot-project integration tests are opt-in, not required for
+every unit test.
+
+See [Build and test](BUILDING.md#run-tests-and-repository-checks) for test discovery,
+CTest selectors, Qt test setup, and what a passing check does and does not prove.
 
 ## SDK and configuration changes
 
-Before release, change the single current SDK/protocol/schema in place. Do not add compatibility
-shims, migrations, legacy fields or version bumps. Update callers, contract tests and documentation
-in the same change. The current schema and wire contracts are in
-[runtime](reference/runtime.md) and [extension/IPC](reference/extension-ipc.md).
+Before release, change the current SDK, protocol, and schema in place. Do not add
+compatibility shims, migrations, legacy fields, or version bumps. Update callers,
+contract tests, and documentation in the same change. The current contracts live in
+[Runtime](reference/runtime.md) and [Extension and IPC](reference/extension-ipc.md).
 
-A plugin's config changes must stay within its ownership, not rewrite the whole robot model.
-For additions, use [Extending](extending.md). A new boundary or SDK design decision needs a short
-decision record; use the [decision index](decisions/README.md), not an old implementation narrative.
+A plugin's config change must stay within the plugin's ownership; do not rewrite the
+whole robot model. For additions, start with [Extending](extending.md). Record a new
+boundary or SDK design decision in the [decision index](decisions/README.md), not as an
+old implementation narrative.
 
-## Documentation
+## Writing documentation
 
-One fact has one home; link instead of copying:
+Give each fact one authoritative home and link to it instead of copying it. Use plain,
+direct prose and explain unfamiliar terms when readers first need them. Put procedures
+in guides, subsystem behavior in references, user-visible behavior in the user guide,
+and design rationale in decisions.
 
-- [Architecture](ARCHITECTURE.md): module/dependency table, ownership overview and vocabulary.
-- [Building](BUILDING.md): prerequisites, commands, options and running tests.
-- [Extending](extending.md): extension decision map; [guides](README.md#extension-guides): task recipes.
-  [Reference](reference/runtime.md): subsystem contracts, not duplicate tutorials.
-- [User guide](USER_GUIDE.md): user-visible behavior; [releasing](releasing.md): artifacts/deployment.
-- [Decision index](decisions/README.md): design rationale, not subsystem manuals.
+Verify names, APIs, commands, and behavior against the source or by running the
+documented command. Keep links and anchors current; run
+`python tools\check_docs.py` from the repository root. That check finds broken local
+links and anchors, but it does not prove a factual claim is correct.
 
-Keep overview ceilings: Architecture 200 lines, Building 120, this page 110, Extending 220.
-Guides may be longer when a complete walkthrough needs it; keep one task family per page,
-with prerequisites, ordered changes, a source-backed example, expected results and focused checks.
-Reference pages stay within their topic; decision records are at most 45 lines each.
-Remove duplication rather than hiding it in oversized lines or creating forwarding stubs.
-
-Use descriptive, unnumbered H2 headings with stable anchors. Open with “Read this when” and
-prerequisites, end with an actionable Next link, and keep links, anchors and repository paths valid.
-Pass `docs.check`; a successful link check does not prove an API or behavioral claim is correct.
-Verify named APIs, flags and commands against source. Drop status/history, roadmap, product-version
-and test-count inventories. Outside the decisions directory, link only to its index, never a
-numbered record or citation.
-Execute instructional snippets in their documented context; compile alone is not runtime evidence.
-Keep legal notices unchanged. For Wiki preview, publication and adding pages, use
-[documentation maintenance](guides/documentation.md); edit repository sources, not generated pages.
-
-Next: [extend a feature through the SDK](extending.md).
+Next: [make your first change](tutorials/first-change.md).

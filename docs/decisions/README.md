@@ -24,12 +24,12 @@ These records explain adopted design constraints, not implementation inventories
 | [0013](0013-sound-cues-as-events.md) | Sound cues travel as events, not snapshots |
 | [0014](0014-updater-without-api-or-silent-install.md) | The updater needs no API and installs nothing silently |
 | [0015](0015-managed-java-after-wpilib.md) | The emulator finds a working Java first and downloads one only when none works |
+| [0016](0016-robot-setup-lives-in-the-project.md) | Robot setup lives in the project |
 
 ## Maintaining the set
 
-Use Status, Context, Decision and Consequences sections; explain why and what is sacrificed.
-Keep each record within 45 physical lines and this index within 35.
-Contracts belong in [reference pages](../ARCHITECTURE.md#extension-points), not API inventories here.
-For future decisions, choose the next unused number and add it here; never reuse or renumber one. Update rationale and links together.
+Records explain rationale and trade-offs; current rules belong in the owning reference, not here.
+Keep each record within 45 physical lines and this index within 35. Choose the next unused number;
+never reuse or renumber one. Update the record and index together.
 
 Next: [Contributing](../CONTRIBUTING.md).

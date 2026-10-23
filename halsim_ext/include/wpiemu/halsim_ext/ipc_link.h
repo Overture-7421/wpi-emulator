@@ -17,7 +17,7 @@
 
 namespace wpiemu::halsim {
 
-// The extension's single IPC endpoint (docs/reference/extension-ipc.md: "one IPC thread owns the socket"). Two private
+// The extension's single IPC endpoint (docs/reference/extension-ipc.md). Two private
 // threads move messages between the transport and two queues, so HAL callbacks, bridges and the
 // clock thread only ever enqueue and never touch the socket:
 //   reader : MessageChannel::receive -> inbound queue

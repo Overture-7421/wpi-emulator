@@ -1,6 +1,7 @@
 #pragma once
 
-// Gets the emulator its own Java when the computer has none that can run a WPILib project (docs/reference/app.md, "Emulator Java").
+// Gets the emulator its own Java when the computer has none that can run a WPILib project
+// (docs/reference/runtime.md).
 // It runs only when asked: the Toolchain page offers it when no other JDK is usable, and never over an installed WPILib's JDK.
 
 #include <QObject>

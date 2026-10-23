@@ -1,12 +1,10 @@
 # Add a vision coprocessor adapter
 
-Read this when presenting simulated camera results through another robot-facing vendor protocol.
-Prerequisites: [Architecture](../ARCHITECTURE.md), [a working build](../BUILDING.md), and the
-[vision bridge contract](../reference/bridges.md).
+Core decides what a camera sees and when its result is due. A vision bridge only converts and
+publishes that due result in the robot-facing vendor protocol. Keeping those owners separate
+prevents timestamp, visibility and scheduling rules from leaking into encoders.
 
-Core owns visibility, captures and delayed delivery. An `IVisionBridge` runs in the robot process
-and encodes/publishes those results. Keep camera physics out of the encoder and keep NetworkTables
-headers out of SDK/core.
+See the [vision bridge contract](../reference/bridges.md) for publication semantics.
 
 ## Start from a tested camera path
 
@@ -87,5 +85,3 @@ For end-to-end checks use the existing
 A skipped test proves nothing about publication; neither does an offscreen UI test.
 If poses disagree, check field dimensions/alliance frames, camera attachment and timestamp mapping
 before adjusting the encoder. Vendor topic/packet details stay in the bridge reference.
-
-Next: [diagnose a live simulation](maintenance.md).

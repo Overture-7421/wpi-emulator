@@ -1,73 +1,67 @@
 # Documentation
 
-Read this when finding your way around WPI Emulator or choosing where to make a change.
-Prerequisites: none; [the project overview](../README.md) explains what the emulator does.
+Read this when choosing what to read or where to make a change.
 
-The emulator runs ordinary WPILib robot code in a separate process. You configure the robot's
-physical model in the desktop app; you do not need to add emulator-specific hooks to robot code.
-Extending the simulator itself is a different task from configuring a robot.
+WPI Emulator runs ordinary WPILib robot code in a separate process. The app configures and
+simulates the robot; it does not require changes to the robot project.
 
-## Choose your path
+## Reading path
 
-| I want to... | Start here | Then |
-|---|---|---|
-| Run my team's robot | [User guide](USER_GUIDE.md) | [Swerve sample](../samples/swerve_robot/README.md) or [vision samples](../samples/vision_robot/README.md) |
-| Build or contribute | [Building](BUILDING.md) | [Architecture](ARCHITECTURE.md), then [Contributing](CONTRIBUTING.md) |
-| Add simulator support | [Extension decision guide](extending.md) | A task guide below, then its owning reference |
-| Diagnose a failure | [Maintenance guide](guides/maintenance.md) | The relevant subsystem reference below |
-| Produce a release | [Releasing](releasing.md) | [User installation instructions](USER_GUIDE.md#install-and-launch) |
-| Change or publish documentation | [Documentation maintenance](guides/documentation.md) | [Contribution policy](CONTRIBUTING.md#documentation) |
-| Understand a design trade-off | [Architecture decisions](decisions/README.md) | The current reference, not historical implementation assumptions |
-
-## Extension guides
-
-Choose the smallest existing seam before adding code. A new motor's physical constants are not
-a new controller bridge, and a new intake is often a configuration of the generic mechanism rather
-than a new mechanism class.
-
-| Task | Guide |
+| If you are… | Read in this order |
 |---|---|
-| Add a HAL device family, SimDevice binding, or vendor adapter | [Devices and bridges](guides/devices.md) |
-| Add motor data or understand model/controller responsibilities | [Motors](guides/motors.md) |
-| Configure or implement a mechanism and plant | [Mechanisms](guides/mechanisms.md) |
-| Bring up another game year | [Game years](guides/game-years.md) |
-| Connect pickup/shooter zones, game-fed sensors and sound cues | [Game interactions](guides/game-interactions.md) |
-| Add a camera vendor or test robot-facing results | [Vision](guides/vision.md) |
-| Add configurable editor fields | [Editor properties](guides/editor-properties.md) |
-| Add drivetrain, tire, physics, or protocol strategies | [Simulation strategies](guides/simulation-strategies.md) |
+| New to the codebase | [WPILib simulation](concepts/wpilib-simulation.md) → [NetworkTables and cameras](concepts/networktables-and-cameras.md) → [simulation and physics](concepts/simulation-and-physics.md) → [Qt in this project](concepts/qt-in-this-project.md) → [architecture](ARCHITECTURE.md) → [codebase tour](CODEBASE_TOUR.md) |
+| Building or contributing | [Building](BUILDING.md) → [Contributing](CONTRIBUTING.md) → [first-change tutorial](tutorials/first-change.md) |
+| Extending simulator behavior | [Architecture](ARCHITECTURE.md) → [Extending](extending.md) → the owning guide and reference |
+| Running a team's robot | [User guide](USER_GUIDE.md) → [robot samples](../samples/swerve_robot/README.md) |
+| Diagnosing or maintaining a build | [Maintenance guide](guides/maintenance.md) → the relevant reference |
+| Preparing a new WPILib season | [WPILib upgrade guide](guides/wpilib-upgrade.md) → [releasing](releasing.md) |
 
-The guides own procedures and examples. The reference pages own behavioral contracts; link to
-them instead of copying their defaults, equations, or lifecycle rules into another manual.
+## Concepts
 
-## Subsystem references
+These pages explain unfamiliar tools and ideas before the architecture and code traces:
 
-| Reference | Questions it answers |
-|---|---|
-| [Runtime and configuration](reference/runtime.md) | How is `robot.json` decoded, validated, saved, and turned into a session? Who owns the process? |
-| [Mechanisms](reference/mechanisms.md) | What do slots, motor commands, sensors, attachments, and motion links mean? |
-| [Physics](reference/physics.md) | How do chassis contact, tire forces, coupling, and deterministic stepping work? |
-| [Extension and IPC](reference/extension-ipc.md) | How does the robot attach, acknowledge ticks, reset, reconnect, and recover from stalls? |
-| [Bridges](reference/bridges.md) | Which device and camera semantics must an adapter preserve? |
-| [Game plugins](reference/game-plugin.md) | Who owns season data, field objects, game state, zones, and HUD values? |
-| [Application](reference/app.md) | How do the shell, editor, run view, host, and immutable snapshots fit together? |
+- [Glossary](GLOSSARY.md)
+- [How WPILib simulation works](concepts/wpilib-simulation.md)
+- [NetworkTables and simulated cameras](concepts/networktables-and-cameras.md)
+- [Qt in this project](concepts/qt-in-this-project.md)
+- [Simulation, physics, and units](concepts/simulation-and-physics.md)
 
-## Working examples and evidence
+## Project map and contracts
 
-The [season skeleton](../plugins/_template/README.md) is the starting point for a plugin;
-the [new-season integration test](../tests/plugins/test_new_year_plugin.cpp) demonstrates wiring.
-The [swerve](../samples/swerve_robot/README.md) and [vision](../samples/vision_robot/README.md)
-projects are robot programs, not templates for simulator internals.
+- [Codebase tour](CODEBASE_TOUR.md): repository map and guided traces through real code.
+- [Architecture](ARCHITECTURE.md): dependencies, thread ownership, tick order, and recovery rules.
+- [Extending](extending.md): the single map from a change to its smallest extension seam.
+- [Runtime and configuration](reference/runtime.md)
+- [Mechanisms](reference/mechanisms.md)
+- [Physics](reference/physics.md)
+- [Extension and IPC](reference/extension-ipc.md)
+- [Bridges](reference/bridges.md)
+- [Game plugins](reference/game-plugin.md)
+- [Application](reference/app.md)
 
-Follow each example's prerequisites and expected results. A successful build does not prove robot
-integration; a skipped opt-in test is not a pass. [Building](BUILDING.md#opt-in-robot-project-tests)
-explains how to run those checks. Windows results do not establish Linux/macOS robot loading or
-interactive rendering. Known limits remain explicit in the [user guide](USER_GUIDE.md#limits-and-platforms).
+## Guides and examples
 
-## Repository and Wiki
+- [Building and testing](BUILDING.md)
+- [Contributing](CONTRIBUTING.md)
+- [First change](tutorials/first-change.md)
+- [Devices and bridges](guides/devices.md)
+- [Editor properties](guides/editor-properties.md)
+- [Game plugins and interactions](guides/game-plugins.md)
+- [Maintenance](guides/maintenance.md)
+- [Mechanisms](guides/mechanisms.md)
+- [Simulation strategies](guides/simulation-strategies.md)
+- [Vision](guides/vision.md)
+- [WPILib season upgrade](guides/wpilib-upgrade.md)
+- [Season plugin template](../plugins/_template/README.md)
+- [Robot samples](../samples/swerve_robot/README.md) and [vision samples](../samples/vision_robot/README.md)
 
-Repository Markdown is authoritative. The [GitHub Wiki](https://github.com/Overture-7421/wpi-emulator/wiki)
-is a generated reading surface published from reviewed default-branch content, once publishing is
-configured. Edit repository files through a pull request, not generated Wiki pages.
-See [documentation maintenance](guides/documentation.md) for preview, setup, and publication failures.
+## Users, maintainers, and decisions
 
-Next: [build the project](BUILDING.md), or [choose an extension seam](extending.md).
+- [User guide](USER_GUIDE.md)
+- [Releasing](releasing.md)
+- [Architecture decisions](decisions/README.md)
+
+The guides explain procedures; references define subsystem behavior. Use links rather than
+copying a contract into a second page.
+
+Next: [learn how WPILib simulation works](concepts/wpilib-simulation.md).

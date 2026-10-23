@@ -1,7 +1,8 @@
 #pragma once
 
-// Numbers the 2026 game state publishes each tick for generic core sensors (docs/reference/game-plugin.md,
-// IGameModule::contributeGameValues). Read back through Game2026State::gameValue.
+// Numbers the 2026 game state publishes each tick live in plugins/game_2026/README.md.
+// IGameModule::contributeGameValues defines the shared contract (docs/reference/game-plugin.md).
+// Read back through Game2026State::gameValue.
 
 #include <vector>
 

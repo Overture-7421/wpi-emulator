@@ -1,110 +1,129 @@
 # Physics
 
-**Read this when:** changing chassis contact, traction, determinism or mechanism-to-chassis
-loads without leaking an engine dependency into models.
-**Prerequisites:** [Architecture](../ARCHITECTURE.md) for tick ownership;
-[Mechanisms](mechanisms.md) for plants and modeled motion axes.
+Read this when changing chassis contact, traction, determinism or mechanism loads.
 
-Use [Simulation strategies](../guides/simulation-strategies.md) for drivetrain, tire, and backend
-implementation steps; this page defines the physical contract they must preserve.
+## Overview
 
-## Rigid-body boundary
+The physics world moves the robot chassis and other rigid bodies. A drivetrain turns
+motor commands into tire forces; mechanisms remain separate local models unless they
+use the explicit chassis-coupling interface. For shared frames and units, see
+[simulation and physics concepts](../concepts/simulation-and-physics.md). Implementation
+steps are in [Simulation strategies](../guides/simulation-strategies.md).
 
-[IPhysicsWorld](../../sdk/include/wpiemu/sdk/physics/physics_world.h) is the engine-neutral
-contract; [the Box3D adapter](../../core/physics/src/box3d_world.cpp) contains engine calls.
-Keeping that boundary allows physics fakes and isolates upstream API changes.
-The pinned dependency is defined in [dependency configuration](../../cmake/WpiEmuDependencies.cmake).
-The adapter tolerates stale ids with neutral results, retains explicit mass overrides
-when shapes change, and copies mesh input; mesh shapes are static-body-only.
-Sensor events require compatible filters and `sensorEvents` on both shapes.
-`contactEvents()` exposes hits, not touch begin/end; destroyed-shape events are discarded.
+## Rigid-body boundary and chassis frame
 
-The chassis is one dynamic rigid body with no suspension. One zero-friction pad sphere
-per wheel supplies support contact; custom tires supply tangential force at the ground
-point. Pad friction must stay zero or the contact solver fights the tire model.
-Ground rays find point/normal only; they are not springs and query `layer::Field`,
-so drivable field geometry must use that category.
+[IPhysicsWorld](../../sdk/include/wpiemu/sdk/physics/physics_world.h) is the
+engine-neutral contract. Core supplies the Box3D adapter; engine types do not enter
+SDK headers. The world uses Z-up NWU and SI units; vectors and poses are world-frame
+unless named `Local`. SDK quaternions use `(x, y, z, w)`. Only the simulation thread
+calls world methods; other threads read snapshots. `step(dtSeconds)` advances exactly
+the supplied fixed interval and has no internal accumulator. Forces and torques last
+for the next step only, so reapply them each step.
 
-The base chassis origin is its COM; the hull is offset relative to it.
-Wheel X/Y are chassis-local, but `positionM.z` is hub height above the rest floor
-(`<= 0` means one wheel radius). Spawn height is derived from COM height and wheel
-geometry, not from a start position's X/Y/yaw. Derived box inertia includes the offset
-to the actual COM. See [chassis construction](../../core/physics/src/chassis_builder.cpp)
-and [ChassisSpec](../../sdk/include/wpiemu/sdk/physics/chassis_spec.h) for dimensions/defaults. The default
-wheels of the built-in kinds, shared by the wizard, the editor's add-wheel and the demo robots, are in
-[wheel_layout.h](../../sdk/include/wpiemu/sdk/physics/wheel_layout.h).
+Creation failure returns an invalid ID. Invalid or stale body/shape IDs return neutral
+query values and setters ignore them. Destroying a body destroys its shapes. Do not
+create or destroy bodies while iterating event spans; copy needed events first.
+Explicit mass overrides remain authoritative when shapes change. Mesh shapes are
+static-body-only. Sensor events require compatible filters and `sensorEvents` enabled
+on both shapes.
+`contactEvents()` reports hits, not touch begin/end, and events for destroyed shapes
+are discarded.
 
-## Traction and load model
+The chassis is one dynamic rigid body with no suspension. Each wheel has a
+zero-friction sphere pad for support; the tire model supplies tangential force at the
+ground point. Keep pad friction at zero so the contact solver does not fight the tire
+model. Ground rays find a contact point and normal; they are not springs and query
+`layer::Field`, so drivable field geometry must use that category.
 
-`IDrivetrain` applies forces before the world step; it never steps the world itself.
-Built-in kinds are `swerve`, `tank` and `mecanum`. Tank grouping is caller wiring,
-not a fixed wheel count. Swerve integrates continuous azimuth motor motion.
-Mecanum uses the X-layout traction axes (FL/RR -45°, FR/RL +45°), unless overridden
-by a nonzero `tractionAngleRad`. Roller wheels cap lateral scale at 0.15.
-See [drivetrain implementation](../../core/physics/src/drivetrains.cpp).
+The chassis body origin is its center of mass (COM); the hull is offset from it.
+Wheel X/Y positions are chassis-local. `positionM.z` is hub height above the rest
+floor; a value at or below zero means one wheel radius. Spawn height comes from COM
+height and wheel geometry, not start X/Y/yaw. Derived box inertia includes the
+offset to the COM. Dimensions and defaults are in
+[ChassisSpec](../../sdk/include/wpiemu/sdk/physics/chassis_spec.h); built-in wheel
+layouts are in [wheel_layout.h](../../sdk/include/wpiemu/sdk/physics/wheel_layout.h).
 
-Normal loads use a quasi-static minimum-norm balance over **grounded** wheels:
-`sum(N) = m*gNormal`, `sum(N*x) = -h*m*ax`, `sum(N*y) = -h*m*ay`.
-Negative loads become zero and remaining loads are renormalized; collinear or fewer
-than three grounded wheels fall back to equal shares. Chassis acceleration is low-pass
-filtered (`loadTransferTauS`, default 20 ms). Payload-composed mass/COM affect this solve.
-This avoids contact-impulse spikes at edges becoming enormous traction impulses.
-It is an approximate grip/load-transfer model, not a suspension or tipping solver.
-The equations and degenerate-layout handling live in
-[quasi-static loads](../../core/physics/src/quasi_static_loads.cpp).
-`TractionOptions::gravityMps2` defaults to `sdk::kDefaultGravityMps2` (9.81) but is not linked to a
-configured `PhysicsConfig::gravity`; changing world gravity alone does not retune the load estimator.
+## Traction and loads
 
-The default `brush` and alternative `pacejka_lite` implement
-[ITireModel](../../sdk/include/wpiemu/sdk/physics/tire_model.h). Slip uses wheel rim speed
-minus contact-point speed, with a finite reference speed near rest. The semi-implicit
-solve couples wheel inertia, motor back-EMF and a chassis mass share so a stiff tire
-curve remains stable at the fixed step; the same longitudinal force produces the wheel
-reaction torque. Airborne wheels free-spin without traction.
-Curve equations and friction limits belong to [tire models](../../core/physics/src/tire_models.cpp).
+`IDrivetrain` applies forces before the world step; it never steps the world. Built-in
+drivetrain kinds are `swerve`, `tank` and `mecanum`. Tank grouping is caller wiring,
+not a fixed wheel count. Swerve integrates continuous azimuth motion. Mecanum defaults
+to the X layout: FL/RR -45°, FR/RL +45°, unless a nonzero `tractionAngleRad`
+overrides it. Roller wheels cap lateral scale at 0.15.
 
-Drive current limits apply per motor. Reported wheel currents are nonnegative supply
-draw, using positive electrical power divided by motor nominal voltage, not stator
-current or regeneration. `WheelCommand` contains voltage only: **0 V brakes**, it does
-not model a disconnected/coasting controller. Steering has neither tire scrub torque
-nor a steer-current limit. One-way follower traction is approximate and adds no reflected
-drive load; see [motion links](mechanisms.md#one-way-motion-links).
+Normal loads are estimated over grounded wheels using a quasi-static minimum-norm
+balance:
+
+```text
+sum(N)   = m * gNormal
+sum(N*x) = -h * m * ax
+sum(N*y) = -h * m * ay
+```
+
+Here `x` and `y` are grounded wheel coordinates relative to the composed COM; `h` is
+its height, and `ax` and `ay` are filtered chassis accelerations.
+Negative loads are set to zero, then the remaining loads are renormalized. Fewer than
+three grounded wheels or a collinear layout uses equal shares. Chassis acceleration
+is low-pass filtered; `loadTransferTauS` defaults to 20 ms. Payload-composed mass and
+COM affect the estimate. This approximates grip and load transfer; it is not a
+suspension or tipping solver. `TractionOptions::gravityMps2` defaults to
+`sdk::kDefaultGravityMps2` (9.81 m/s²), independently of
+`PhysicsConfig::gravity`; changing world gravity alone does not retune the estimator.
+
+The default `brush` and alternative `pacejka_lite` models implement
+[ITireModel](../../sdk/include/wpiemu/sdk/physics/tire_model.h). Slip compares wheel
+rim speed with contact-point speed and uses a finite reference speed near rest. The
+fixed-step solve couples wheel inertia, motor back-EMF and chassis mass share so stiff
+tire curves remain stable; the same longitudinal force applies wheel reaction torque.
+Airborne wheels spin freely without traction. The curves and friction limits are
+defined in [tire_models.cpp](../../core/physics/src/tire_models.cpp).
+
+Drive current limits apply per motor. Reported wheel current is nonnegative supply
+draw: positive electrical power divided by motor nominal voltage, not stator current
+or regenerated power. `WheelCommand` carries voltage only: **0 V brakes** and does
+not represent a disconnected or coasting controller. Steering has no tire-scrub
+torque or steer-current limit. One-way follower traction is approximate and adds no
+reflected drive load; see [motion links](mechanisms.md#one-way-motion-links).
 
 ## Chassis coupling
 
-Mechanisms reach [IMechanismPhysicsCoupling](../../sdk/include/wpiemu/sdk/mechanisms/physics_coupling.h)
-through `SimContext::coupling()`, rather than manipulating chassis body ids.
-Check `capabilities()`: unsupported operations are no-ops or return invalid handles.
-The Box3D-backed implementation supports wrenches/payloads and field-anchored distance,
-prismatic and contact-anchor constraints.
+Mechanisms access
+[IMechanismPhysicsCoupling](../../sdk/include/wpiemu/sdk/mechanisms/physics_coupling.h)
+through `SimContext::coupling()`, not chassis body IDs. Check `capabilities()`:
+unsupported operations are no-ops or return invalid handles. The Box3D-backed
+implementation supports wrenches, payloads and field-anchored distance, prismatic and
+contact-anchor constraints.
 
-Wrenches are chassis-frame force/couple at a chassis-local point, consumed by the next
-physics step; resubmit each tick. Constraints persist until removed, broken or reset.
-`constraintLoad()` returns the **last completed step's** world-frame reaction on the
-chassis; a new/unknown constraint has no valid load yet. A load exceeding `maxForceN`
-breaks the constraint and marks it disengaged. Submissions after physics affect the next step.
-Payloads latch per owner until changed/cleared/reset. Mass composition uses the
-parallel-axis theorem with diagonal inertia only; the body origin stays fixed as the
-combined COM moves inside it. The drivetrain receives the composed mass too.
-See [coupling implementation](../../core/physics/src/chassis_coupling.cpp).
+A wrench is a chassis-frame force and couple at a chassis-local point. It applies to
+the next physics step only, so submit it each tick. Constraints persist until removed,
+broken or reset. `constraintLoad()` reports the last completed step's world-frame
+reaction on the chassis; new or unknown constraints have no valid load yet. A load
+above `maxForceN` breaks the constraint and marks it disengaged. Submissions after a
+physics step affect the next step.
+
+Payloads latch per owner until changed, cleared or reset. Mass composition uses the
+parallel-axis theorem with diagonal inertia only; the body origin stays fixed while
+the combined COM moves inside it. The drivetrain receives the composed mass too.
+Reset removes constraints and clears payloads. See
+[coupling implementation](../../core/physics/src/chassis_coupling.cpp).
 
 ## Determinism and limits
 
-The engine defaults are one worker and four substeps. Results do not depend on the worker
-count, so the app picks it per machine at launch (Settings > Simulation, default Auto:
-under four logical cores 1, four to seven 2, eight or more 4) instead of storing it in the
-robot model; [resolveWorkerCount](../../core/physics/include/wpiemu/core/physics/box3d_world.h)
-holds the rule and `PhysicsStats::workerCount` reports it. With more than one worker Box3D
-owns helper threads for the world's lifetime: they are created with the world, sleep between
-steps, work only inside `step()` and are joined when the world is destroyed, which must
-happen after the sim thread has stopped. Preserve fixed inputs, creation
-order and physics settings when comparing runs. Floating-point contraction is disabled
-for first-party physics with `/fp:precise` on MSVC and `-ffp-contract=off` elsewhere;
-do not add fast-math. The flags live in [physics CMake](../../core/physics/CMakeLists.txt).
-`stateHash()` hashes user-body poses and velocities in creation order, folds -0 into +0,
-and excludes internal anchor bodies; it is not a serialization of the whole session.
-Regressions compare repeated runs and worker counts, but do not guarantee cross-OS or
-cross-compiler bit equality: tire math still uses platform math-library functions.
-See [determinism coverage](../../tests/physics/test_physics_determinism.cpp).
+Physics uses fixed inputs and a fixed step; wall-clock pacing is separate. Engine
+defaults are one worker and four substeps. The app's worker setting defaults to Auto:
+one worker below four logical cores, two for four to seven, and four at eight or more.
+The selected count is machine-specific, not stored in the robot model. Results do not
+depend on worker count, and `PhysicsStats::workerCount` reports the resolved value.
+The default simulation step is 5 ms and must divide the robot's 20 ms period.
 
-**Next:** [Extension and IPC](extension-ipc.md).
+With multiple workers, Box3D owns helper threads for the world's lifetime. They are
+created with the world, work only inside `step()`, and are joined when the world is
+destroyed. Stop the simulation thread before destroying that world. Preserve fixed
+inputs, body creation order and physics settings when comparing runs. First-party
+physics disables floating-point contraction; do not add fast-math.
+
+`stateHash()` hashes user-body poses and velocities in creation order, folds -0 into
++0 and excludes internal anchor bodies. It is not a serialization of the whole
+session. Tests compare repeated runs and worker counts but do not promise bit equality
+across operating systems or compilers; tire math still uses platform math libraries.
+See [determinism coverage](../../tests/physics/test_physics_determinism.cpp).
