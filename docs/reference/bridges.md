@@ -259,9 +259,18 @@ and reset epochs. PhotonLib's normal version checks remain enabled.
 
 **2027 C++ PhotonLib is blocked upstream in this pin.** Its
 [PhotonCamera::VerifyVersion](https://github.com/PhotonVision/photonvision/blob/da55d785/photon-lib/src/main/native/cpp/photon/PhotonCamera.cpp)
-assigns 2027 ntcore's JSON-text `GetProperty("message_uuid")` result to a JSON
-string instead of parsing it. It then compares the unquoted local UUID with a
-remote UUID that still contains quotes and throws, despite identical definitions.
-The C++ sample reproduces that failure. Publishing invalid JSON, suppressing version
+correctly receives a decoded JSON string from `GetProperty("message_uuid")`, but then
+uses `std::string remote_uuid{remote_uuid_json}`. In the pinned 2027 JSON implementation,
+`operator std::string()` calls `to_string()`: it serializes the JSON value, adding
+quotes, rather than extracting its string contents. The comparison therefore fails
+despite identical UUIDs. After its existing `is_string()` guard, the correct extraction
+is `remote_uuid_json.get_string()`.
+
+A standalone native probe reproduces this with only ntcore/wpiutil: the C API accepts
+the correctly encoded property, the C++ getter returns a JSON string, implicit string
+conversion produces the quoted UUID, and `get_string()` produces the matching UUID.
+No emulator, HALSim extension or PhotonLib calls are needed to reproduce the conversion.
+The C++ sample's `--uuid-probe` mode preserves that standalone reproduction.
+The C++ robot sample reproduces PhotonLib's resulting exception. Publishing invalid JSON, suppressing version
 checks or claiming a connected heartbeat as compatibility would conceal the bug;
 none is used. Retest with a fixed upstream PhotonLib before claiming 2027 C++ support.

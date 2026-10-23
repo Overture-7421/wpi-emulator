@@ -32,6 +32,12 @@ the installed app still has no production 2027 field plugin.
 **The pinned C++ PhotonLib currently throws an upstream UUID-check error.**
 The C++ project builds but is a failure reproducer, not a supported vision sample.
 See the [vision compatibility contract](../../docs/reference/bridges.md#photonvision).
+The built `vision_cpp` executable also accepts `--uuid-probe` without starting a
+robot or loading HALSim. It publishes the UUID using ntcore's C API, reads the typed
+JSON value using its C++ API, and compares implicit serialization with `get_string()`.
+For this pin it reports `implicitMatches=0 decodedMatches=1`: the property is correct,
+but PhotonLib's implicit conversion adds JSON quotes. The necessary upstream fix is
+to extract the string with `get_string()`, not to parse `GetProperty()` again.
 
 With `WPIEMU_E2E=1`, run `e2e.vendor_2027` for CTRE and `e2e.vision_2027`
 for Java vision. `WPIEMU_E2E_VISION_LANG=cpp` selects the upstream failure reproducer;

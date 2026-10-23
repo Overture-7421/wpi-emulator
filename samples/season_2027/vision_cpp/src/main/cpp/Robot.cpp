@@ -1,11 +1,36 @@
 #include <photon/PhotonCamera.h>
+#include <wpi/nt/ntcore_c.h>
 
 #include <cstdio>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <wpi/framework/RobotBase.hpp>
 #include <wpi/framework/TimedRobot.hpp>
 #include <wpi/nt/NetworkTableInstance.hpp>
+#include <wpi/nt/RawTopic.hpp>
 #include <wpi/system/Timer.hpp>
+#include <wpi/util/json.hpp>
+
+int probeUuidConversion() {
+    const std::string uuid = "fd353b11f3a818e9c5b457c7dc5a8f5c";
+    auto instance = wpi::nt::NetworkTableInstance::Create();
+    auto topic = instance.GetRawTopic("/uuid-probe");
+    auto publisher = topic.Publish("raw");
+    const std::string jsonText = "\"" + uuid + "\"";
+    const WPI_String name{"message_uuid", 12};
+    const WPI_String value{jsonText.data(), jsonText.size()};
+    const bool published = NT_SetTopicProperty(topic.GetHandle(), &name, &value) != 0;
+    const auto property = topic.GetProperty("message_uuid");
+    const std::string converted{property};
+    const bool decodedMatches = property.is_string() && property.get_string() == uuid;
+    std::printf(
+        "UUID_PROBE published=%d isString=%d implicit=[%s] implicitMatches=%d decodedMatches=%d\n",
+        published ? 1 : 0, property.is_string() ? 1 : 0, converted.c_str(),
+        converted == uuid ? 1 : 0, decodedMatches ? 1 : 0);
+    wpi::nt::NetworkTableInstance::Destroy(instance);
+    return published && decodedMatches ? 0 : 1;
+}
 
 class Robot final : public wpi::TimedRobot {
 public:
@@ -54,6 +79,7 @@ private:
     double lastPrint_ = 0;
 };
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc == 2 && std::string_view(argv[1]) == "--uuid-probe") return probeUuidConversion();
     return wpi::StartRobot<Robot>();
 }
