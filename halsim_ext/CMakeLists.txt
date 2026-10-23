@@ -6,6 +6,9 @@
 #                        WPILib HAL (cmake/WpiEmuWpilib.cmake); without it a stub that fails loudly is
 #                        built so the target (and everything that references it) still exists.
 include(cmake/WpiEmuWpilib.cmake)
+if(WPIEMU_REQUIRE_REAL_HAL AND NOT WPIEMU_WPILIB_FOUND)
+    message(FATAL_ERROR "WPILib ${WPIEMU_WPILIB_SEASON} HAL artifacts are required; refusing to build a stub")
+endif()
 
 find_package(Threads REQUIRED)
 
@@ -39,16 +42,26 @@ set_target_properties(halsim_wpiemu PROPERTIES
 wpiemu_target_defaults(halsim_wpiemu)
 
 if(WPIEMU_BUILD_TESTS AND WPIEMU_WPILIB_FOUND)
+    if(WPIEMU_WPILIB_SEASON STREQUAL "2027")
+        set(_hal_test_sources tests/hal/test_hal_2027.cpp)
+    else()
+        set(_hal_test_sources tests/hal/test_hal_integration.cpp
+            tests/hal/test_builtin_bridges.cpp tests/hal/test_extension_dll.cpp)
+    endif()
     # Real sim HAL in-process: stepping, DS, device I/O against a scripted fake emulator.
     add_executable(wpiemu_halsim_ext_hal_tests
         src/hal/hal_sim_platform.cpp
         tests/hal/main.cpp
-        tests/hal/test_hal_integration.cpp
-        tests/hal/test_builtin_bridges.cpp
-        tests/hal/test_extension_dll.cpp)
+        ${_hal_test_sources})
     target_include_directories(wpiemu_halsim_ext_hal_tests PRIVATE tests "${CMAKE_SOURCE_DIR}/tests/support")
     target_link_libraries(wpiemu_halsim_ext_hal_tests PRIVATE
         wpiemu_halsim_core wpiemu_wpilib_hal wpiemu_ipc wpiemu_bridges_builtin wpiemu_sdk)
+    if(WPIEMU_WPILIB_SEASON STREQUAL "2027")
+        set(_hal_binding_tests "${CMAKE_SOURCE_DIR}/bridges/hal/tests/hal_2027_tests.cpp")
+        target_sources(wpiemu_halsim_ext_hal_tests PRIVATE "${_hal_binding_tests}")
+        set_property(SOURCE "${_hal_binding_tests}" APPEND PROPERTY INCLUDE_DIRECTORIES
+            "$<TARGET_PROPERTY:wpiemu_bridges_hal,INTERFACE_INCLUDE_DIRECTORIES>")
+    endif()
     if(TARGET wpiemu_wpilib_ntcore)
         target_sources(wpiemu_halsim_ext_hal_tests PRIVATE
             "${CMAKE_SOURCE_DIR}/bridges/vision/tests/ntcore_smoke_tests.cpp")

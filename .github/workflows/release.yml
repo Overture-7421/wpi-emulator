@@ -68,7 +68,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: windows, os: windows-2022, qt_arch: win64_msvc2022_64 }
+          - { name: windows, os: windows-2025-vs2026, qt_arch: win64_msvc2022_64 }
           - { name: linux, os: ubuntu-22.04, qt_arch: "" }   # oldest supported glibc for the AppImage and the extension
           - { name: macos, os: macos-14, qt_arch: "" }       # Apple Silicon; see docs/releasing.md for universal builds
     env:
@@ -98,6 +98,11 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y g++-14
+          echo "CC=gcc-14" >> "$GITHUB_ENV"
+          echo "CXX=g++-14" >> "$GITHUB_ENV"
           sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-0 \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
             libxcb-xinerama0 libxcb-shape0 libxcb-xkb1 libegl1 libvulkan-dev libfontconfig1 \
@@ -130,14 +135,16 @@ jobs:
       - name: Cache WPILib downloads
         uses: actions/cache@v4
         with:
-          path: build/release/_wpilib/downloads
-          key: wpilib-${{ env.WPILIB_VERSION }}-${{ matrix.name }}
+          path: |
+            build/release/_wpilib/downloads
+            build/release/seasons/2027/_wpilib/downloads
+          key: wpilib-multi-${{ hashFiles('versions.json') }}-${{ matrix.name }}
 
       - name: Configure
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
-            gen=(-G "Visual Studio 17 2022" -A x64)
+            gen=(-G "Visual Studio 18 2026" -A x64)
           elif [ "$RUNNER_OS" = "macOS" ]; then
             # Universal binary: arm64 + x86_64 slices; WPILib's osxuniversal libraries and the official Qt kit are universal.
             gen=(--preset macos -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64")
@@ -147,6 +154,8 @@ jobs:
           cmake -S . -B build/release "${gen[@]}" \
             -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR//\\//}" \
             -DWPIEMU_BUILD_TESTS=ON \
+            '-DWPIEMU_SEASONS=2026;2027' \
+            -DWPIEMU_WARNINGS_AS_ERRORS=ON \
             -DWPIEMU_WPILIB_DOWNLOAD=ON \
             -DWPIEMU_RUNVIEW_FETCH_SDL2=ON 2>&1 | tee configure.log
 
@@ -181,7 +190,6 @@ jobs:
         shell: pwsh
         run: |
           $installer = (Get-ChildItem build/release/pkg -Filter *.exe | Select-Object -First 1).FullName
-          $wpilibYear = $env:WPILIB_VERSION.Substring(0, 4)
           $dest = Join-Path $env:RUNNER_TEMP 'wpiemu-installed'
           $p = Start-Process $installer -ArgumentList '/S', "/D=$dest" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
@@ -189,7 +197,7 @@ jobs:
           $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
           & "$dest\bin\wpiemu_app.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "wpiemu_app --version failed ($LASTEXITCODE)" }
-          foreach ($f in "extensions\$wpilibYear\halsim_wpiemu.dll", 'plugins\platforms\qwindows.dll', 'plugins\imageformats\qsvg.dll',
+          foreach ($f in 'extensions\2026\halsim_wpiemu.dll', 'extensions\2027\halsim_wpiemu.dll', 'plugins\platforms\qwindows.dll', 'plugins\imageformats\qsvg.dll',
                          'plugins\iconengines\qsvgicon.dll', 'plugins\multimedia\ffmpegmediaplugin.dll',
                          'plugins\tls\qschannelbackend.dll',   # HTTPS of the in-app updater
                          'qml\QtQuick3D\qquick3dplugin.dll', 'bin\qt.conf') {
@@ -231,7 +239,6 @@ jobs:
       - name: Verify the dmg
         if: runner.os == 'macOS'
         run: |
-          wpilib_year="${WPILIB_VERSION:0:4}"
           dmg="$(ls build/release/pkg/*.dmg | head -n1)"
           mount="$RUNNER_TEMP/wpiemu-dmg"
           mkdir -p "$mount"
@@ -240,7 +247,7 @@ jobs:
           python packaging/macos/check_minimum_os.py "$app"
           env -i PATH=/usr/bin:/bin "$app/Contents/MacOS/wpiemu_app" --version
           # Both slices must be present in the app, the extension and every bundled framework/dylib that has any slice.
-          for f in "$app/Contents/MacOS/wpiemu_app" "$app/Contents/PlugIns/wpiemu/$wpilib_year/libhalsim_wpiemu.dylib"; do
+          for f in "$app/Contents/MacOS/wpiemu_app" "$app/Contents/PlugIns/wpiemu/2026/libhalsim_wpiemu.dylib" "$app/Contents/PlugIns/wpiemu/2027/libhalsim_wpiemu.dylib"; do
             archs="$(lipo -archs "$f")"
             echo "$f: $archs"
             case "$archs" in *arm64*x86_64*|*x86_64*arm64*) ;; *) echo "::error::$f is not universal ($archs)"; exit 1 ;; esac
@@ -250,7 +257,7 @@ jobs:
           else
             echo "::notice::Rosetta is not available on this runner; the x86_64 slice was not executed"
           fi
-          test -f "$app/Contents/PlugIns/wpiemu/$wpilib_year/libhalsim_wpiemu.dylib"
+          for year in 2026 2027; do test -f "$app/Contents/PlugIns/wpiemu/$year/libhalsim_wpiemu.dylib"; done
           find "$app/Contents/Resources/qml/QtQuick3D" -iname '*quick3dplugin*' -print -quit | grep -q .
           find "$app/Contents/PlugIns/multimedia" -iname '*ffmpegmediaplugin*' -print -quit | grep -q .
           find "$app/Contents/PlugIns/tls" -iname '*backend*' -print -quit | grep -q .   # HTTPS of the in-app updater

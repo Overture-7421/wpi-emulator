@@ -14,6 +14,7 @@ enum class LaunchProblemCode {
     DownloadFailed,           // Gradle could not fetch the wrapper, WPILib or a vendor library (offline, proxy, TLS)
     GradleWrapperBroken,      // gradle-wrapper.jar missing or damaged
     NoNativeToolchain,        // C++ build without a usable compiler
+    ExtensionLoadFailed,     // HAL could not load or initialize this emulator's extension
 };
 
 struct LaunchProblem {

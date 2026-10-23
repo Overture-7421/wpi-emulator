@@ -19,7 +19,8 @@ The emulator determines the project year from the GradleRIO version, falling bac
 `.wpilib/wpilib_preferences.json` or `settings.gradle`; this is implemented by
 [ProjectInspector](../../core/runtime/src/launcher/project_inspector.cpp). Its CMake integration
 uses the `wpilib` version for `hal-cpp` and `wpiutil-cpp`, with `ntcore-cpp` and `wpinet-cpp`
-optional for vision ([WPILib discovery](../../halsim_ext/cmake/WpiEmuWpilib.cmake)).
+optional for vision in 2026. In 2027 the HAL itself requires ntcore/wpinet, and ntcore also
+loads `datalog-cpp` ([WPILib discovery](../../halsim_ext/cmake/WpiEmuWpilib.cmake)).
 
 ## Update the pins and Java policy
 

@@ -45,6 +45,7 @@ class RealRuntimeHost final : public IProjectRuntimeHost {
 public:
     RealRuntimeHost(host::Registries registries, RealRuntimeOptions options = {}, QObject* parent = nullptr);
     ~RealRuntimeHost() override;
+    static std::filesystem::path installedExtension(int wpilibYear, const std::filesystem::path& appDir = {});
 
     HostStatus status() const override { return status_; }
     HostScene scene() const override { return scene_; }

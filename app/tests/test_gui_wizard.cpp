@@ -63,7 +63,7 @@ TEST_CASE("wizard dialog: first-run happy path from project to a saved robot") {
     dlg.nextButton()->click();
     CHECK(dlg.model().step() == WizardStep::Toolchain);
     REQUIRE(waitFor([&] { return dlg.model().toolchainChecked(); }));
-    CHECK(dlg.toolchainPage()->rowCount() == 5);
+    CHECK(dlg.toolchainPage()->rowCount() == 6);
     CHECK(dlg.toolchainPage()->rowStatus(QStringLiteral("jdk")) == CheckStatus::Ok);
     CHECK(dlg.toolchainPage()->rowStatus(QStringLiteral("gradle")) == CheckStatus::Ok);
     CHECK(dlg.toolchainPage()->rowStatus(QStringLiteral("cpp")) == CheckStatus::NotApplicable);

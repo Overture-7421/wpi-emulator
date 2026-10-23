@@ -68,7 +68,10 @@ is not a disconnect; keep the listener and accept again.
 ## Handshake and identity
 
 `Hello` reports the robot identity, language, HAL port counts, watchdog preference and Armed
-capability. `HelloAck` accepts or refuses the peer and assigns `sessionId`, `runEpoch`, step
+capability, plus its compiled WPILib year and version. The emulator refuses a year that differs
+from the live robot project's season (`season_mismatch`). An explicit `WPIEMU_EXTENSION`
+override downgrades that check to a warning; it does not bypass protocol compatibility.
+`HelloAck` accepts or refuses the peer and assigns `sessionId`, `runEpoch`, step
 size, clock mode and watchdog policy. The emulator assigns a new session id on reconnect and
 owns the increasing epoch within a session. Tick numbers can restart, so a tick number alone
 does not identify a frame.

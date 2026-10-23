@@ -40,7 +40,10 @@ interfaces. See [Extension and IPC](extension-ipc.md) for thread and recovery ow
 retires them when freed. The [HAL registration](../../bridges/hal/src/registration.cpp)
 defines the shipped families. These details affect how robot configurations bind:
 
-- PWM speed is already a normalized robot command. DIO direction is fixed at
+- PWM speed is already a normalized robot command. In 2027 it comes from the
+  associated motor-controller SimDevice's `Throttle`, including robot-side inversion.
+  Raw PWM without that value exposes pulse microseconds, not an invented speed or
+  motor capability; position is absent in 2027. DIO direction is fixed at
   discovery; the bridge never writes a robot-configured output pin.
 - HAL does not report encoder gearing. Rotation and velocity feedback therefore need
   an injected counts-per-revolution assumption. Encoder reversal is honored. A newly
@@ -48,8 +51,15 @@ defines the shipped families. These details affect how robot configurations bind
 - A solenoid channel discovered after first `ON` stays latched until its module is
   freed, unless the bridge option enables all channels.
 - HAL CAN records sent frames and announces observations later. It does not answer CAN
-  traffic or emulate a controller. Its callback provides no bus identity, so the
-  descriptor uses `rio`. Observing an unknown vendor's frames is not a vendor bridge.
+  traffic or emulate a controller. 2026's callback has no bus identity and uses `rio`;
+  2027 carries an observed bus ID (`rio` for 0, `can<N>` otherwise) and up to 64 bytes.
+  `lastDataSize` and the sixteen 32-bit data words retain the CAN-FD payload.
+  Observing an unknown vendor's frames is not a vendor bridge.
+- 2027 omits relay, analog output, built-in accelerometer and controller input-current
+  signals. Its onboard IMU accepts acceleration in m/s^2, angles in radians and rates
+  in rad/s. The 2026 accelerometer retains its HAL-specific gravity conversion.
+- 2027 LED banks expose length and pixel summaries, but no `running` or `outputPort`
+  signals: initialization is not a running state, and a bank index is not a physical port.
 
 ### Declared CAN address and physical identity
 

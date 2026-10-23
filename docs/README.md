@@ -53,7 +53,8 @@ These pages explain unfamiliar tools and ideas before the architecture and code 
 - [Vision](guides/vision.md)
 - [WPILib season upgrade](guides/wpilib-upgrade.md)
 - [Season plugin template](../plugins/_template/README.md)
-- [Robot samples](../samples/swerve_robot/README.md) and [vision samples](../samples/vision_robot/README.md)
+- [Robot samples](../samples/swerve_robot/README.md), [vision samples](../samples/vision_robot/README.md),
+  and [2027 preview samples](../samples/season_2027/README.md)
 
 ## Users, maintainers, and decisions
 

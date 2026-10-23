@@ -24,6 +24,7 @@ inline constexpr const char* kGradle = "gradle";
 inline constexpr const char* kWpilib = "wpilib";
 inline constexpr const char* kCppToolchain = "cpp";
 inline constexpr const char* kGameModule = "game";
+inline constexpr const char* kHalExtension = "no_extension_for_season";
 }  // namespace check_id
 
 struct ToolchainCheck {
@@ -47,6 +48,8 @@ struct ToolchainInput {
     QString managedJdkHome;    // the emulator's downloaded Java when one is installed (empty = none)
     bool managedJavaAvailable = false;   // the emulator can download Java for this computer (a pin exists for it)
     bool buildToolsInstallAvailable = false;   // the emulator can offer to install the C++ build tools on this computer
+    std::optional<QString> extensionLibrary;   // unset = not inspected; empty = no matching extension installed
+    QStringList installedExtensionSeasons;
 };
 
 // The JDK a launch will use, and why other candidates were passed over.

@@ -74,8 +74,10 @@ std::vector<std::filesystem::path> wpilibRootCandidates(config::Platform platfor
                                                         const std::filesystem::path& homeDir);
 // The same with the folders taken from the environment: PUBLIC, and USERPROFILE on Windows or HOME elsewhere.
 std::vector<std::filesystem::path> wpilibRootCandidates(config::Platform platform, const sdk::EnvLookup& env);
-// The install at `home`, a season folder such as <root>/2026; nullopt when it is not a directory.
+// The install at `home`, a season folder such as <root>/2026 or <root>/2027_alpha7; nullopt when it is not a directory.
 std::optional<WpilibInstall> wpilibInstallAt(const std::filesystem::path& home, int year);
+// WPILib installer folder for a season. Alpha releases may include a suffix (for example 2027_alpha7).
+std::string wpilibInstallFolderName(int year);
 // First root containing "<year>/" wins. `roots` empty => wpilibRootCandidates().
 std::optional<WpilibInstall> findWpilibInstall(int year, const std::vector<std::filesystem::path>& roots);
 
@@ -87,7 +89,7 @@ enum class JdkSource { Setting, WpilibInstall, WpilibOtherSeason, JavaHome, Path
 inline constexpr std::array<JdkSource, 6> kJdkSources{JdkSource::Setting, JdkSource::WpilibInstall, JdkSource::WpilibOtherSeason,
                                                       JdkSource::JavaHome, JdkSource::Path,         JdkSource::Managed};
 
-// Every season folder (<root>/<year>, year numeric) under `roots`, newest year first; the first root wins per year.
+// Every season folder under `roots`, newest year first; the first root wins per year. Numeric and alpha-suffixed folders count.
 // `roots` empty => wpilibRootCandidates().
 std::vector<WpilibInstall> listWpilibInstalls(const std::vector<std::filesystem::path>& roots);
 

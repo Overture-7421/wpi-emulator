@@ -46,6 +46,11 @@ The [locator](../core/runtime/src/launcher/extension_locator.cpp) is the lookup 
 Do not require an original build directory for a shipped package.
 
 WPILib runtime libraries are normally supplied by the robot process, not redistributed.
+Release builds set `WPIEMU_SEASONS=2026;2027`; each directory contains a separately
+built extension, never a renamed copy of another year's binary. Build every season before
+installing or running CPack. Extra-season configuration rejects stubs, and its real-HAL
+test runs through the parent CTest suite. See [multi-season builds](BUILDING.md#multi-season-builds)
+for compiler requirements and local commands.
 Keep app data outside the install tree; see [settings and project files](USER_GUIDE.md#settings-and-project-files).
 The launcher must still leave robot source, build configuration and vendordeps unchanged.
 

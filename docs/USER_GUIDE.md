@@ -223,9 +223,13 @@ installation, and platform details, see [Updates](reference/app.md#updates).
 
 ### Limits and platforms
 
-Only one robot and the built-in 2026 season module are supplied. Other seasons can use an empty
-field, but the bundled extension targets WPILib 2026; another year is not a compatibility
-guarantee. There is no suspension model, and field geometry and game rules are approximations.
+One robot runs at a time. Multi-season packages contain separate WPILib 2026 and 2027
+extensions, selected from the live project's year. The Toolchain page reports a missing
+season extension before launch. `WPIEMU_EXTENSION` explicitly overrides selection and
+permits a year mismatch with a warning; it does not make incompatible HAL ABIs compatible.
+2027 is preview support pinned to an alpha; it uses Java 25, Gradle 9.2 and the new native
+toolchain. Only the 2026 game module is supplied: 2027 runs core-only on an empty field.
+There is no suspension model, and field geometry and game rules are approximations.
 HAL and CTRE bridges are supplied, not universal vendor support: REV motor controllers have no
 vendor bridge, and Phoenix 5 behavior is not characterized against the real library. The
 [vision sample end-to-end check](../samples/vision_robot/README.md#end-to-end-check) exercises

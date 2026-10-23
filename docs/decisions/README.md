@@ -25,6 +25,7 @@ These records explain adopted design constraints, not implementation inventories
 | [0014](0014-updater-without-api-or-silent-install.md) | The updater needs no API and installs nothing silently |
 | [0015](0015-managed-java-after-wpilib.md) | The emulator finds a working Java first and downloads one only when none works |
 | [0016](0016-robot-setup-lives-in-the-project.md) | Robot setup lives in the project |
+| [0017](0017-multi-season-wpilib.md) | One isolated HALSim extension per WPILib season |
 
 ## Maintaining the set
 

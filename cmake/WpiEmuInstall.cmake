@@ -47,6 +47,11 @@ if(TARGET halsim_wpiemu)
     if(WPIEMU_PACKAGE_WPILIB_RUNTIME AND TARGET wpiemu_wpilib_hal)
         install(FILES $<TARGET_FILE:wpiemu_wpilib_hal> $<TARGET_FILE:wpiemu_wpilib_wpiutil>
             DESTINATION "${WPIEMU_INSTALL_EXTENSION_DIR}" COMPONENT Runtime)
+        foreach(_runtime IN ITEMS wpiemu_wpilib_ntcore wpiemu_wpilib_wpinet wpiemu_wpilib_datalog)
+            if(TARGET ${_runtime})
+                install(FILES $<TARGET_FILE:${_runtime}> DESTINATION "${WPIEMU_INSTALL_EXTENSION_DIR}" COMPONENT Runtime)
+            endif()
+        endforeach()
     endif()
 endif()
 
@@ -110,7 +115,7 @@ endif()
 install(FILES "${_packaging_dir}/THIRD-PARTY-NOTICES.txt"
     DESTINATION "${WPIEMU_INSTALL_DOC_DIR}" COMPONENT Runtime)
 
-if(UNIX AND NOT APPLE)
+if(UNIX AND NOT APPLE AND NOT WPIEMU_EXTENSION_ONLY)
     install(FILES "${_packaging_dir}/linux/wpiemu.desktop" DESTINATION share/applications COMPONENT Runtime)
     install(FILES "${_packaging_dir}/linux/wpiemu.metainfo.xml" DESTINATION share/metainfo COMPONENT Runtime)
     install(FILES "${_packaging_dir}/icons/wpiemu.svg" DESTINATION share/icons/hicolor/scalable/apps COMPONENT Runtime)

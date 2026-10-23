@@ -6,11 +6,19 @@
 
 #include <cstdio>
 
+#if WPIEMU_WPILIB_YEAR >= 2027
+#include "wpi/hal/HAL.h"
+#else
 #include "hal/HAL.h"
+#endif
 
 int main(int argc, char** argv) {
     // No HALSIM_EXTENSIONS here: the extension under test is driven in-process.
+#if WPIEMU_WPILIB_YEAR >= 2027
+    if (!HAL_Initialize()) {
+#else
     if (!HAL_Initialize(500, 0)) {
+#endif
         std::fprintf(stderr, "HAL_Initialize failed\n");
         return 2;
     }

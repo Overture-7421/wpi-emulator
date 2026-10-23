@@ -128,6 +128,22 @@ TEST_CASE("status presentation words a recognised launch failure and offers the 
     const auto d = presentStatus(offline, false);
     CHECK(d.action == ProblemAction::None);
     CHECK(d.detail.contains(QStringLiteral("internet")));
+
+    for (const auto* id : {"no_extension_for_season", "season_mismatch"}) {
+        HostStatus season = status(ProcessState::FailedToStart);
+        season.problem = QString::fromLatin1(id);
+        season.detail = QStringLiteral("WPILib year 2027 does not match project year 2026");
+        const auto p = presentStatus(season, false);
+        CHECK(p.action == ProblemAction::FixSetup);
+        CHECK(p.detail == season.detail);
+        CHECK(p.offerShowConsole);
+    }
+    HostStatus loader = status(ProcessState::FailedToStart);
+    loader.problem = QStringLiteral("extension_load_failed");
+    const auto l = presentStatus(loader, false);
+    CHECK(l.action == ProblemAction::FixSetup);
+    CHECK(l.detail.contains(QStringLiteral("WPILib season")));
+    CHECK(l.offerShowConsole);
 }
 
 TEST_CASE("console model is bounded and filterable") {

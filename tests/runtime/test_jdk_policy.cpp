@@ -27,9 +27,11 @@ TEST_CASE("jdk policy: the newest Java a Gradle version runs on") {
     CHECK(maxJavaForGradle("8.11") == 23);
     CHECK(maxJavaForGradle("8.11.1") == 23);
     CHECK(maxJavaForGradle("7.3") == 17);
+    CHECK(maxJavaForGradle("9.1") == 25);
     CHECK(maxJavaForGradle("9.2.0") == 25);
     CHECK(maxJavaForGradle("12.0") == 25);   // newer than the table: its last row
     CHECK(maxJavaForGradle("") == 23);       // unknown: the WPILib 2026 template's Gradle
+    CHECK(maxJavaForGradle("", 25) == 25);   // unknown: the WPILib 2027 template's Gradle
 }
 
 TEST_CASE("jdk policy: verdicts name the first problem") {
@@ -66,14 +68,21 @@ TEST_CASE("wpilib installs: every season, newest first, first root wins") {
     dir.write("a/2026/maven/x", "x");
     dir.write("a/notes/readme", "x");
     dir.write("b/2026/jdk/bin/java", "x");
+    dir.write("a/2027_alpha7/jdk/bin/java", "x");
     dir.write("b/2024/jdk/bin/java", "x");
     const auto installs = listWpilibInstalls({dir.path() / "a", dir.path() / "b", dir.path() / "missing"});
-    REQUIRE(installs.size() == 3);
-    CHECK(installs[0].year == 2026);
-    CHECK(installs[0].home == dir.path() / "a" / "2026");   // the first root
-    CHECK(installs[1].year == 2025);
-    CHECK(!installs[1].jdkHome.empty());
-    CHECK(installs[2].year == 2024);
+    REQUIRE(installs.size() == 4);
+    CHECK(installs[0].year == 2027);
+    CHECK(installs[0].home == dir.path() / "a" / "2027_alpha7");
+    CHECK(installs[1].year == 2026);
+    CHECK(installs[1].home == dir.path() / "a" / "2026");   // the first root
+    CHECK(installs[2].year == 2025);
+    CHECK(!installs[2].jdkHome.empty());
+    CHECK(installs[3].year == 2024);
+    CHECK(wpilibInstallFolderName(2027) == "2027_alpha7");
+    const auto alphaInstall = findWpilibInstall(2027, {dir.path() / "a"});
+    REQUIRE(alphaInstall.has_value());
+    CHECK(alphaInstall->home == dir.path() / "a" / "2027_alpha7");
 }
 
 TEST_CASE("managed jdk: only finished installs count, newest wins") {

@@ -58,6 +58,23 @@ void readVersions(std::string_view text, LaunchProblem& p) {
     if (found != std::string_view::npos) p.found = number(rest.substr(found + 6), used);
 }
 
+std::string extensionLoadFailure(std::string_view output) {
+    bool emulatorExtension = false;
+    while (!output.empty()) {
+        const auto newline = output.find('\n');
+        const auto line = trim(output.substr(0, newline));
+        if (line.find("HAL Extensions: Attempting to load:") != std::string_view::npos)
+            emulatorExtension = line.find("halsim_wpiemu") != std::string_view::npos;
+        if (emulatorExtension &&
+            (line.find("HAL Extensions: Failed to load library:") != std::string_view::npos ||
+             line.find("HAL Extensions: Failed to load extension") != std::string_view::npos))
+            return std::string(line);
+        if (newline == std::string_view::npos) break;
+        output.remove_prefix(newline + 1);
+    }
+    return {};
+}
+
 }  // namespace
 
 LaunchProblem diagnoseLaunchOutput(std::string_view output) {
@@ -69,6 +86,11 @@ LaunchProblem diagnoseLaunchOutput(std::string_view output) {
         p.jvmPath = valueAfter(output, "JVM Location:");
         p.runtimePath = valueAfter(output, "Runtime DLL Location:");
         p.detail = lineWith(output, "Expected at least");
+        return p;
+    }
+    p.detail = extensionLoadFailure(output);
+    if (!p.detail.empty()) {
+        p.code = LaunchProblemCode::ExtensionLoadFailed;
         return p;
     }
     if (output.find("org.gradle.java.home") != std::string_view::npos && output.find("is invalid") != std::string_view::npos) {
@@ -114,14 +136,16 @@ const char* launchProblemId(LaunchProblemCode code) {
         case LaunchProblemCode::DownloadFailed: return "download_failed";
         case LaunchProblemCode::GradleWrapperBroken: return "gradle_wrapper_broken";
         case LaunchProblemCode::NoNativeToolchain: return "no_native_toolchain";
+        case LaunchProblemCode::ExtensionLoadFailed: return "extension_load_failed";
     }
     return "";
 }
 
 LaunchProblemCode launchProblemFromId(std::string_view id) {
-    constexpr std::array<LaunchProblemCode, 6> all{LaunchProblemCode::StaleVcRuntime,      LaunchProblemCode::JavaUnsupportedByGradle,
+    constexpr std::array<LaunchProblemCode, 7> all{LaunchProblemCode::StaleVcRuntime,      LaunchProblemCode::JavaUnsupportedByGradle,
                                                   LaunchProblemCode::JavaHomeInvalid,      LaunchProblemCode::DownloadFailed,
-                                                  LaunchProblemCode::GradleWrapperBroken,  LaunchProblemCode::NoNativeToolchain};
+                                                  LaunchProblemCode::GradleWrapperBroken,  LaunchProblemCode::NoNativeToolchain,
+                                                  LaunchProblemCode::ExtensionLoadFailed};
     for (const LaunchProblemCode c : all)
         if (id == launchProblemId(c)) return c;
     return LaunchProblemCode::None;

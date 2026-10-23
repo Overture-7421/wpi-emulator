@@ -49,8 +49,8 @@ int compareVersions(std::string_view a, std::string_view b) {
     return 0;
 }
 
-int maxJavaForGradle(std::string_view gradleVersion) {
-    if (components(gradleVersion).empty()) gradleVersion = "8.11";
+int maxJavaForGradle(std::string_view gradleVersion, int seasonJavaMajor) {
+    if (components(gradleVersion).empty()) gradleVersion = seasonJavaMajor >= 25 ? "9.1" : "8.11";
     int best = kGradleJava[0].java;
     for (const GradleRow& row : kGradleJava)
         if (compareVersions(gradleVersion, row.gradle) >= 0) best = row.java;

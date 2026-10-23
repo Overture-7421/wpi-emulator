@@ -17,41 +17,55 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--generator")
     parser.add_argument("--architecture")
+    parser.add_argument("--season", help="Check one profile instead of every configured season")
     parser.add_argument("--directory", type=Path, default=Path("build/wpilib-root-fixture"))
     args = parser.parse_args()
     repo = common.REPO_ROOT
     wpilib_pin = common.load_versions(repo)["wpilib"]
-    season = str(wpilib_pin["default"])
-    wpilib = wpilib_pin["seasons"][season]["version"]
-    profile = wpilib_pin["seasons"][season]
+    if args.season and args.season not in wpilib_pin["seasons"]:
+        parser.error(f"unknown season {args.season}")
+    for season in wpilib_pin["seasons"]:
+        if args.season and args.season != season:
+            continue
+        check_season(args, repo, season, wpilib_pin["seasons"][season])
+
+
+def check_season(args, repo: Path, season: str, profile: dict) -> None:
+    wpilib = profile["version"]
     header_roots = profile["headers"]
-    work = args.directory.resolve()
+    work = args.directory.resolve() / season
     extracted = work / "extracted"
     hal_header_dir = Path(header_roots["hal"]).parent.as_posix()
     headers = {header_roots["hal"]: "", f"{hal_header_dir}/Ports.h": "",
-               f"{hal_header_dir}/simulation/SimDeviceData.h": "", header_roots["wpiutil"]: ""}
+               f"{hal_header_dir}/simulation/SimDeviceData.h": "", header_roots["wpiutil"]: "",
+               header_roots["ntcore"]: ""}
     libraries = {}
-    for platform, names in (
-            ("windows/x86-64", ("wpiHal.dll", "wpiHal.lib", "wpiutil.dll", "wpiutil.lib")),
-            ("osx/universal", ("libwpiHal.dylib", "libwpiutil.dylib")),
-            ("linux/x86-64", ("libwpiHal.so", "libwpiutil.so")),
-            ("linux/arm64", ("libwpiHal.so", "libwpiutil.so"))):
-        libraries.update({f"{platform}/shared/{name}": "" for name in names})
+    modules = {"hal": "wpiHal", "wpiutil": "wpiutil", "ntcore": "ntcore", "wpinet": "wpinet"}
+    if int(season) >= 2027:
+        modules["datalog"] = "datalog"
+    for platform, extensions, prefix in (
+            ("windows/x86-64", ("dll", "lib"), ""),
+            ("osx/universal", ("dylib",), "lib"),
+            ("linux/x86-64", ("so",), "lib"),
+            ("linux/arm64", ("so",), "lib")):
+        for name in modules.values():
+            libraries.update({f"{platform}/shared/{prefix}{name}.{ext}": "" for ext in extensions})
     for name, content in {**{f"include/{key}": value for key, value in headers.items()},
                           **libraries}.items():
         common.write_text(extracted / name, content)
     maven = work / "maven"
-    for module in ("hal", "wpiutil"):
+    for module, library in modules.items():
         group = profile["groups"][module].replace(".", "/")
-        artifact = "hal-cpp" if module == "hal" else "wpiutil-cpp"
+        artifact = module + "-cpp"
         prefix = maven / group / artifact / wpilib / f"{artifact}-{wpilib}"
         prefix.parent.mkdir(parents=True, exist_ok=True)
         for classifier, entries in (
                 ("headers", {key: value for key, value in headers.items()
-                             if key.startswith("hal/" if module == "hal" else "wpi/")}),
+                             if key == header_roots.get(module) or
+                             (module == "hal" and key.startswith(hal_header_dir + "/"))}),
                 *[(classifier, {key: value for key, value in libraries.items()
                                if key.startswith(platform + "/") and
-                               ("wpiHal" in key if module == "hal" else "wpiutil" in key)})
+                               library in key})
                   for classifier, platform in (("windowsx86-64", "windows/x86-64"),
                                                ("osxuniversal", "osx/universal"),
                                                ("linuxx86-64", "linux/x86-64"),
@@ -73,13 +87,14 @@ def main() -> None:
                            f"-DWPIEMU_FIXTURE_LAYOUT={layout}", f"-DWPIEMU_FIXTURE_ROOT={root.as_posix()}",
                            f"-DWPIEMU_FIXTURE_CACHE_ROOT={cache_root}",
                            f"-DWPIEMU_WPILIB_ROOT={cache_root}", "-DWPIEMU_WPILIB_DOWNLOAD=OFF",
+                           f"-DWPIEMU_WPILIB_SEASON={season}",
                            f"-DWPIEMU_BUILD_TESTS={tests}"]
                 if args.generator:
                     command += ["-G", args.generator]
                 if args.architecture:
                     command += ["-A", args.architecture]
                 subprocess.run(command, env=env, check=True)
-                print(f"WPILib configure: {case}: ok", flush=True)
+                print(f"WPILib configure: {season}/{case}: ok", flush=True)
 
 
 if __name__ == "__main__":

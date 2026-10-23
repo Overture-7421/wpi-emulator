@@ -155,7 +155,7 @@ TEST_CASE("real HAL: describeRobot reports the runtime and port counts") {
     ExtensionConfig cfg;
     const RobotInfo info = HalSimPlatform::describeRobot(cfg);
     CHECK(info.pid == currentProcessId());
-    CHECK(info.wpilibYear == 2026);
+    CHECK(info.wpilibYear == WPIEMU_WPILIB_YEAR);
     CHECK(info.language == proto::RobotLanguage::Cpp);
     CHECK_FALSE(info.programName.empty());
     bool hasPwm = false;

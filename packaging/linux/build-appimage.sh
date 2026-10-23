@@ -94,6 +94,8 @@ fi
 VERSION="$(sed -n 's/^CMAKE_PROJECT_VERSION:[A-Z]*=//p' "$BUILD_DIR/CMakeCache.txt")"
 [[ -n "$VERSION" ]] || die "could not read the project version from $BUILD_DIR/CMakeCache.txt"
 WPILIB_YEAR="$(sed -n 's/^WPIEMU_WPILIB_SEASON:STRING=//p' "$BUILD_DIR/CMakeCache.txt")"
+WPILIB_SEASONS="$(sed -n 's/^WPIEMU_SEASONS:STRING=//p' "$BUILD_DIR/CMakeCache.txt")"
+[[ -n "$WPILIB_SEASONS" ]] || die "could not read the requested WPILib seasons from $BUILD_DIR/CMakeCache.txt"
 [[ "$WPILIB_YEAR" =~ ^20[0-9]{2}$ ]] || die "could not read the WPILib season from $BUILD_DIR/CMakeCache.txt"
 
 step "install into $APPDIR/usr"
@@ -115,8 +117,9 @@ export EXTRA_QT_PLUGINS="tls"                # HTTPS backends of the in-app upda
 export PATH="$TOOLS_DIR:$PATH"               # linuxdeploy finds linuxdeploy-plugin-qt next to itself / on PATH
 # libwpiHal.so is resolved at run time by the robot process that loads the extension, so it is never bundled
 # (--exclude-library below), but linuxdeploy fails unless it can locate the library while scanning the extension.
-wpihal="$(find "$BUILD_DIR/_wpilib" "${WPIEMU_WPILIB_ROOT:-/nonexistent}" -name 'libwpiHal.so' -print -quit 2>/dev/null || true)"
-[[ -z "$wpihal" ]] || export LD_LIBRARY_PATH="$(dirname "$wpihal")${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+while IFS= read -r wpihal; do
+    export LD_LIBRARY_PATH="$(dirname "$wpihal")${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+done < <(find "$BUILD_DIR/_wpilib" "$BUILD_DIR/seasons" "${WPIEMU_WPILIB_ROOT:-/nonexistent}" -name 'libwpiHal.so' -print 2>/dev/null || true)
 rm -f "$OUT_DIR"/*.AppImage
 (
     cd "$OUT_DIR"
@@ -125,6 +128,10 @@ rm -f "$OUT_DIR"/*.AppImage
         --appdir "$APPDIR" \
         --plugin qt \
         --exclude-library 'libwpiHal.so*' \
+        --exclude-library 'libwpiutil.so*' \
+        --exclude-library 'libntcore.so*' \
+        --exclude-library 'libwpinet.so*' \
+        --exclude-library 'libdatalog.so*' \
         --executable "$APPDIR/usr/bin/wpiemu_app" \
         --desktop-file "$APPDIR/usr/share/applications/wpiemu.desktop" \
         --icon-file "$APPDIR/usr/share/icons/hicolor/256x256/apps/wpiemu.png" \
@@ -143,9 +150,11 @@ step "verify $FINAL"
 env -i PATH=/usr/bin:/bin HOME="${HOME:-/tmp}" APPIMAGE_EXTRACT_AND_RUN=1 "$FINAL" --version
 verify_dir="$BUILD_DIR/verify"
 rm -rf "$verify_dir"; mkdir -p "$verify_dir"
-(cd "$verify_dir" && APPIMAGE_EXTRACT_AND_RUN=1 "$FINAL" --appimage-extract "usr/lib/wpiemu/$WPILIB_YEAR/*" >/dev/null)
+for year in ${WPILIB_SEASONS//;/ }; do
+    (cd "$verify_dir" && APPIMAGE_EXTRACT_AND_RUN=1 "$FINAL" --appimage-extract "usr/lib/wpiemu/$year/*" >/dev/null)
+    [[ -f "$verify_dir/squashfs-root/usr/lib/wpiemu/$year/libhalsim_wpiemu.so" ]] || die "extension for $year missing from the AppImage"
+done
 (cd "$verify_dir" && APPIMAGE_EXTRACT_AND_RUN=1 "$FINAL" --appimage-extract 'usr/plugins/tls/*' >/dev/null)
-[[ -f "$verify_dir/squashfs-root/usr/lib/wpiemu/$WPILIB_YEAR/libhalsim_wpiemu.so" ]] || die "extension missing from the AppImage"
 compgen -G "$verify_dir/squashfs-root/usr/plugins/tls/*backend*" >/dev/null || die "Qt TLS backend missing from the AppImage (the updater needs HTTPS)"
 rm -rf "$verify_dir"
 

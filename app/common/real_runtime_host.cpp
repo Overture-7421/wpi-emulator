@@ -45,8 +45,12 @@ RealRuntimeHost::~RealRuntimeHost() {
 
 std::filesystem::path RealRuntimeHost::extensionPath(int wpilibYear) const {
     if (!options_.extensionPath.empty()) return options_.extensionPath;
-    const std::filesystem::path appDir = options_.appDir.empty() ? std::filesystem::path(QCoreApplication::applicationDirPath().toStdU16String())
-                                                                 : options_.appDir;
+    return installedExtension(wpilibYear, options_.appDir);
+}
+
+std::filesystem::path RealRuntimeHost::installedExtension(int wpilibYear, const std::filesystem::path& applicationDir) {
+    const std::filesystem::path appDir = applicationDir.empty() ? std::filesystem::path(QCoreApplication::applicationDirPath().toStdU16String())
+                                                              : applicationDir;
     const std::filesystem::path buildTree = wpilibYear == WPIEMU_BUILD_EXTENSION_YEAR
                                                 ? std::filesystem::path(WPIEMU_BUILD_EXTENSION_PATH)
                                                 : std::filesystem::path();
@@ -152,10 +156,10 @@ void RealRuntimeHost::launch() {
     o.extensionLibrary = extensionPath(extensionYear);
     if (o.extensionLibrary.empty()) {
         failToStart(tr("No HALSim extension for WPILib %1 is installed. Reinstall the emulator or set WPIEMU_EXTENSION.")
-                        .arg(extensionYear));
+                        .arg(extensionYear), QStringLiteral("no_extension_for_season"));
         return;
     }
-    o.allowWpilibYearMismatch = !options_.extensionPath.empty() || sdk::readEnvironment("WPIEMU_EXTENSION").has_value();
+    o.allowWpilibYearMismatch = !options_.extensionPath.empty() || !envString("WPIEMU_EXTENSION").empty();
     o.scratchDir = options_.scratchDir;
     o.handshakeTimeout = options_.handshakeTimeout;
     o.launchMode = envString("WPIEMU_LAUNCH_MODE") == "direct" ? core::launcher::LaunchMode::ExternalDirect : core::launcher::LaunchMode::GradleInitScript;

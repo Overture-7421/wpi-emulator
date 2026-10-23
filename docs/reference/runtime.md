@@ -94,6 +94,15 @@ scripts. The selected JDK is passed to Gradle so the project's `gradle.propertie
 override it. The wizard's Java result and the launch must agree; if no candidate works, do
 not start Gradle.
 
+The live GradleRIO version selects the HAL extension and default game module, rather than the
+saved setup's year. Extensions are installed in year-qualified directories. Known handshake
+year mismatches are refused; an explicit `WPIEMU_EXTENSION` permits them with a warning.
+A missing matching extension is `no_extension_for_season` in the Toolchain report.
+2026 uses `simulateJava`; 2027 uses `run` (JavaExec) and `simulateExternalJava`,
+with Java 25 and Gradle 9.2+. The 2027 native simulation task package is `org.wpilib`.
+The alpha install folder is `2027_alpha7`, searched under Windows public WPILib,
+Linux XDG data (`~/.local/share` by default), and macOS `~/.wpilib`.
+
 The host requests protocol Stop before cleanup. Cancellation stays active through startup
 and escalates to terminating the process tree after its grace period. Shutdown joins the
 worker and cleans up the process tree.

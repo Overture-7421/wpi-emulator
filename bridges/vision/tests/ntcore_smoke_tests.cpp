@@ -7,7 +7,11 @@
 #include <string>
 #include <vector>
 
+#if WPIEMU_WPILIB_YEAR >= 2027
+#include <wpi/nt/ntcore_c.h>
+#else
 #include <ntcore_c.h>
+#endif
 
 #include "wpiemu/bridges/vision/nt_binding.h"
 #include "wpiemu/bridges/vision/photon_encoding.h"

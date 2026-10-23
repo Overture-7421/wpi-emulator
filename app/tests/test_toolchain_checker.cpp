@@ -46,6 +46,23 @@ TEST_CASE("java version parsing") {
     CHECK(!ToolchainChecker::parseJavaMajor(QStringLiteral("command not found")).has_value());
 }
 
+TEST_CASE("toolchain report diagnoses a missing season extension before launch") {
+    Fixture f;
+    auto in = inputFor(QStringLiteral("java"), 2027);
+    in.extensionLibrary = QString();
+    in.installedExtensionSeasons = {QStringLiteral("2026")};
+    const auto missing = f.checker().run(in);
+    const auto* row = missing.find(QString::fromLatin1(check_id::kHalExtension));
+    REQUIRE(row);
+    CHECK(row->status == CheckStatus::Missing);
+    CHECK(row->requiredToRun);
+    CHECK(row->detail.contains(QStringLiteral("2026")));
+    CHECK_FALSE(row->fixHint.isEmpty());
+    in.extensionLibrary = QStringLiteral("/extensions/2027/halsim_wpiemu.dll");
+    const auto installed = f.checker().run(in);
+    CHECK(installed.find(QString::fromLatin1(check_id::kHalExtension))->status == CheckStatus::Ok);
+}
+
 TEST_CASE("jdk check finds JAVA_HOME, rejects old versions and explains the fix") {
     Fixture f;
     f.probe.environment[QStringLiteral("JAVA_HOME")] = QStringLiteral("/jdk");
@@ -134,9 +151,13 @@ TEST_CASE("gradle wrapper and wpilib install checks") {
 
     const ToolchainChecker c = f.checker();
     CHECK(c.defaultWpilibHome(2026) == QStringLiteral("C:/Users/Public/wpilib/2026"));
+    CHECK(c.defaultWpilibHome(2027) == QStringLiteral("C:/Users/Public/wpilib/2027_alpha7"));
     CHECK(c.checkWpilibInstall(inputFor(QStringLiteral("java"), 2026)).status == CheckStatus::Warning);
     f.probe.dirs.insert(QStringLiteral("C:/Users/Public/wpilib/2026"));
     CHECK(c.checkWpilibInstall(inputFor(QStringLiteral("java"), 2026)).status == CheckStatus::Ok);
+    f.probe.dirs.insert(QStringLiteral("C:/Users/Public/wpilib/2027_alpha7"));
+    CHECK(c.findWpilibHome(inputFor(QStringLiteral("java"), 2027)) == QStringLiteral("C:/Users/Public/wpilib/2027_alpha7"));
+    CHECK(c.checkWpilibInstall(inputFor(QStringLiteral("java"), 2027)).status == CheckStatus::Ok);
 }
 
 TEST_CASE("c++ toolchain is only required for c++ projects") {
@@ -337,8 +358,8 @@ TEST_CASE("jdk order: another installed season's JDK is a validated fallback; th
     Fixture f;
     f.probe.dirs.insert(QStringLiteral("/home/user/wpilib/2025"));
     f.probe.addJava(QStringLiteral("/home/user/wpilib/2025/jdk/bin/java"), kJava17);
-    f.probe.dirs.insert(QStringLiteral("/home/user/wpilib/2027"));
-    f.probe.addJava(QStringLiteral("/home/user/wpilib/2027/jdk/bin/java"), kJava25);   // too new: passed over
+    f.probe.dirs.insert(QStringLiteral("/home/user/wpilib/2027_alpha7"));
+    f.probe.addJava(QStringLiteral("/home/user/wpilib/2027_alpha7/jdk/bin/java"), kJava25);   // too new: passed over
     ToolchainInput in = inputFor(QStringLiteral("java"), 2026);
     in.managedJdkHome = QStringLiteral("/managed");
     f.probe.addJava(QStringLiteral("/managed/bin/java"), kJava17);
@@ -362,14 +383,17 @@ TEST_CASE("jdk validation: the minimum Java comes from the project's season") {
     f.probe.addJava(QStringLiteral("/jdk/bin/java"), kJava17);
     ToolchainInput in = inputFor(QStringLiteral("java"), 2027);
     in.minJavaMajor = 25;
-    in.gradleVersion = QStringLiteral("9.2.0");
     ToolchainCheck check = f.checker().checkJdk(in);
+    CHECK(check.status == CheckStatus::Missing);
+    f.probe.addJava(QStringLiteral("/jdk/bin/java"), kJava25);
+    CHECK(f.checker().checkJdk(in).status == CheckStatus::Ok);   // the 2027 template default supports Java 25
+
+    f.probe.addJava(QStringLiteral("/jdk/bin/java"), kJava17);
+    in.gradleVersion = QStringLiteral("9.2.0");
+    check = f.checker().checkJdk(in);
     CHECK(check.status == CheckStatus::Missing);
     CHECK(check.detail.contains(QStringLiteral("needs Java 25")));
     CHECK(check.title.contains(QStringLiteral("25")));
-
-    f.probe.addJava(QStringLiteral("/jdk/bin/java"), kJava25);
-    CHECK(f.checker().checkJdk(in).status == CheckStatus::Ok);
 }
 
 TEST_CASE("jdk setting: an explicit folder that cannot run the project is reported, never replaced") {

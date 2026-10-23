@@ -263,6 +263,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     const int expectedWpilibYear = projectReport ? projectReport.value().wpilibYear : 0;
 
     // ---- config: defaults, validation ----
+    if (expectedWpilibYear > 0) config.project.wpilibYear = expectedWpilibYear;
     auto loaded = reg.pipeline->process(std::move(config));
     if (!loaded) return makeError(loaded.error().code, "The robot configuration cannot be used: " + loaded.error().message);
     self->issues_ = loaded.value().issues;
@@ -332,12 +333,13 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     launcher::LaunchRequest req;
     req.projectDir = options.projectDir;
     req.language = detectLanguage(options.projectDir, cfg.project.language);
+    req.wpilibYear = projectReport ? projectReport.value().wpilibYear : cfg.project.wpilibYear;
     req.mode = options.launchMode;
     req.release = options.release;
     req.extensionLibrary = options.extensionLibrary;
     req.ipcEndpoint = self->endpoint_;
     req.scratchDir = options.scratchDir.empty() ? fs::temp_directory_path() / "wpiemu" : options.scratchDir;
-    req.javaHome = pickJdkHome(options, cfg.project.wpilibYear);
+    req.javaHome = pickJdkHome(options, req.wpilibYear);
     req.gradleOffline = options.gradleOffline;
     req.extraGradleArgs = options.extraGradleArgs;
     req.extraEnv[sdk::env_names::kLiveDiscovery] = options.preStartPolling ? "1" : "0";
@@ -348,7 +350,9 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     self->startedAt_ = std::chrono::steady_clock::now();
     if (Status s = self->launcher_->launch(req, *self->sink_); !s) return makeError(s.error().code, "The robot could not be launched: " + s.error().message);
     log.info("session", std::string(options.mode == SessionMode::Armed ? "launching the robot (armed)" : "starting the robot") + " (" + req.language + ", " +
-                            (req.mode == launcher::LaunchMode::GradleInitScript ? "gradle simulate task" : "simulateExternal direct launch") + ")");
+                            (req.mode == launcher::LaunchMode::GradleInitScript ? std::string("gradle ") + launcher::gradleTaskName(req)
+                                                                               : std::string("simulateExternal direct launch")) +
+                            ")");
     self->status_.process = ProcessState::Starting;
     self->status_.link = LinkState::Connecting;
     self->status_.detail = "Building and starting the robot project...";
@@ -405,6 +409,7 @@ SessionStatus RobotSession::status() {
                  ? "The HALSim extension speaks an incompatible protocol (" + refusal + "). Rebuild or reinstall the emulator so the app and halsim_wpiemu match."
                  : "The HALSim extension was refused (" + refusal +
                        "). Install the extension built for this project or explicitly override WPIEMU_EXTENSION.");
+        if (refusal.starts_with("WPILib year ")) s.problem = "season_mismatch";
         return s;
     }
 
@@ -456,7 +461,7 @@ SessionStatus RobotSession::status() {
         fail(ProcessState::FailedToStart, LinkState::HandshakeTimeout,
              "The robot project is running but the HALSim extension did not connect within " +
                  std::to_string(std::chrono::duration_cast<std::chrono::seconds>(options_.handshakeTimeout).count()) +
-                 " s. Check the console for errors (extension not loaded, antivirus, or a blocked named pipe).");
+                 " s. Check the console for errors (extension not loaded, antivirus, or a blocked named pipe)." + outputTail());
         return s;
     }
     s.process = ProcessState::Starting;

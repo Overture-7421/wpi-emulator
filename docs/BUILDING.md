@@ -34,7 +34,8 @@ CTest runs registered checks and reports opt-in robot tests as skipped unless en
   artifact root, or allow CMake to download them.
   Without HAL, the extension is a failing stub and real-HAL tests are not built.
 - Optional ntcore/wpinet artifacts enable vision publishing. Without them, camera
-  publishing is inactive.
+  publishing is inactive in 2026. The 2027 HAL requires ntcore, wpinet and datalog even
+  without cameras; an incomplete extracted 2027 root fails configuration.
 
 You can omit Qt by configuring with `-DWPIEMU_BUILD_APP=OFF`. The Qt UI and its tests
 will then be unavailable.
@@ -96,11 +97,38 @@ Pass these options to `cmake --preset`, not `cmake --build`.
 | `WPIEMU_WARNINGS_AS_ERRORS` | OFF | Promote first-party warnings to errors. |
 | `WPIEMU_BUILD_UI_DEMOS` | ON | Build the editor and run-view demo applications. |
 | `WPIEMU_WPILIB_SEASON` | The season pinned by `wpilib.default` | Select a WPILib season profile from `versions.json`. |
+| `WPIEMU_SEASONS` | The selected build season | Semicolon-separated extensions to compose, for example `"2026;2027"`. Extra seasons use isolated, Qt-free sub-builds and must have real HAL artifacts. |
+| `WPIEMU_EXTENSION_ONLY` | OFF | Build just the extension and its real-HAL tests, without app, physics or plugins. |
+| `WPIEMU_REQUIRE_REAL_HAL` | OFF | Fail configuration instead of producing a stub when HAL is missing. |
 | `WPIEMU_WPILIB_ROOT` | auto | Use a Maven cache, year directory, or extracted artifacts. Also read from the environment. |
 | `WPIEMU_WPILIB_VERSION` | the selected season's pin | Override the profile's WPILib artifact version. |
 | `WPIEMU_WPILIB_DOWNLOAD` | OFF; presets set ON | Download missing WPILib artifacts. On Windows, this can also copy a local JDK into the public WPILib year folder; bundled VC++ runtime DLLs are omitted. |
 | `WPIEMU_RUNVIEW_SDL2` | ON | Enable SDL2 gamepads when available. Keyboard input works without SDL2. |
 | `WPIEMU_RUNVIEW_FETCH_SDL2` | ON | Fetch SDL2 when no system package is found. Set OFF to avoid this download. |
+
+## Multi-season builds
+
+The normal developer build selects one season. Distribution builds compose both:
+
+```powershell
+cmake -S . -B build\dual-season -G "Visual Studio 18 2026" -A x64 -DCMAKE_PREFIX_PATH="C:\Qt\6.8.3\msvc2022_64" "-DWPIEMU_SEASONS=2026;2027" -DWPIEMU_WPILIB_DOWNLOAD=ON -DWPIEMU_REQUIRE_REAL_HAL=ON -DWPIEMU_WARNINGS_AS_ERRORS=ON
+cmake --build build\dual-season --config Release --parallel
+ctest --test-dir build\dual-season -C Release -R halsim_ext --output-on-failure
+```
+
+The primary build remains 2026/C++20; the 2027 extension sub-build uses C++23.
+Building both requires Visual Studio 2026 or GCC 14+ (an appropriate recent Xcode on macOS).
+Use a separate build directory rather than changing generators in an existing one.
+`WPIEMU_WPILIB_ROOT_<year>` optionally supplies artifacts for an extra season;
+the primary `WPIEMU_WPILIB_ROOT` is never reused across seasons.
+Extra extensions stage under `seasons/<year>/stage` and are copied to the app's
+build-tree `<year>` directory. Install and CPack include every requested season.
+
+With JDK 25 and the native toolchain installed, set `WPIEMU_E2E=1` and run
+`ctest --test-dir build\dual-season -C Release -R "^e2e.season_2027$" --output-on-failure`.
+This runs both [2027 sample robots](../samples/season_2027/README.md).
+`WPIEMU_E2E_JAVA_HOME` optionally chooses their JDK; `WPIEMU_E2E_LAUNCH=direct`
+exercises external launch instead of Gradle init-script injection.
 
 ## Run tests and repository checks
 

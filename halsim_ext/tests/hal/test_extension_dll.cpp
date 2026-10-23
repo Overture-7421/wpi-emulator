@@ -91,7 +91,7 @@ TEST_CASE("real extension library: loads through the HAL extension loader and ru
 
     const auto hello = emulator->take<proto::Hello>(2000ms);
     REQUIRE(hello.has_value());
-    CHECK(hello->wpilibYear == 2026);
+    CHECK(hello->wpilibYear == WPIEMU_WPILIB_YEAR);
     CHECK(hello->language == proto::RobotLanguage::Cpp);
     CHECK(hello->halPortCounts.size() > 5);
     CHECK(hello->pid > 0);

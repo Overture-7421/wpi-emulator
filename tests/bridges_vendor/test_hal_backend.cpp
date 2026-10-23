@@ -16,10 +16,20 @@
 #include <thread>
 #include <vector>
 
+#if WPIEMU_WPILIB_YEAR >= 2027
+#include "wpi/hal/Types.h"
+#include "wpi/hal/Value.h"
+#include "wpi/hal/SimDevice.h"
+#include "wpi/hal/simulation/SimDeviceData.h"
+constexpr auto HAL_SimValueInput = HAL_SIM_VALUE_INPUT;
+constexpr auto HAL_SimValueOutput = HAL_SIM_VALUE_OUTPUT;
+constexpr auto HAL_SimValueBidir = HAL_SIM_VALUE_BIDIR;
+#else
 #include "hal/Types.h"
 #include "hal/Value.h"
 #include "hal/SimDevice.h"
 #include "hal/simulation/SimDeviceData.h"
+#endif
 #include "fakes.h"
 #include "wpiemu/bridges/vendor/ctre_rules.h"
 #include "wpiemu/bridges/vendor/hal_sim_device_backend.h"

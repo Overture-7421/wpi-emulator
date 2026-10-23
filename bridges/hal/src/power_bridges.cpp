@@ -63,20 +63,22 @@ sdk::DeviceDescriptor RoboRioBridge::describe(int) const {
 }
 
 std::vector<sdk::SignalSpec> RoboRioBridge::signalsOf(int) const {
-    return {
+    std::vector<sdk::SignalSpec> specs{
         sig(sdk::signal::kSupplyVoltage, SignalDirection::Input, SignalType::Double, "V"),
         sig("vInCurrent", SignalDirection::Input, SignalType::Double, "A"),
         sig("brownoutVoltage", SignalDirection::Output, SignalType::Double, "V"),
     };
+    if (!hal_->hasInputCurrent()) specs.erase(specs.begin() + kRioVInCurrent);
+    return specs;
 }
 
 double RoboRioBridge::readSignal(int, std::size_t signalIndex) const {
-    return signalIndex == kRioBrownout ? hal_->brownoutVoltage() : 0.0;
+    return signalIndex == (hal_->hasInputCurrent() ? kRioBrownout : kRioVInCurrent) ? hal_->brownoutVoltage() : 0.0;
 }
 
 void RoboRioBridge::writeSignal(int, std::size_t signalIndex, double value) {
     if (signalIndex == kRioSupplyVoltage) hal_->setVInVoltage(value);
-    else if (signalIndex == kRioVInCurrent) hal_->setVInCurrent(value);
+    else if (hal_->hasInputCurrent() && signalIndex == kRioVInCurrent) hal_->setVInCurrent(value);
 }
 
 // ---- accelerometer -----------------------------------------------------------------------------
@@ -100,6 +102,32 @@ void AccelerometerBridge::writeSignal(int, std::size_t signalIndex, double value
     accelMps2_[signalIndex] = value;
     hal_->setAcceleration(accelMps2_[0] / sdk::kStandardGravityMps2, accelMps2_[1] / sdk::kStandardGravityMps2,
                           accelMps2_[2] / sdk::kStandardGravityMps2);
+}
+
+sdk::DeviceDescriptor ImuBridge::describe(int) const {
+    return makeDescriptor("imu", 0, -1, Capability::Imu, "HALSIM IMU", "Onboard IMU");
+}
+
+std::vector<sdk::SignalSpec> ImuBridge::signalsOf(int) const {
+    return {
+        sig(sdk::signal::kAccelX, SignalDirection::Input, SignalType::Double, "m/s^2"),
+        sig(sdk::signal::kAccelY, SignalDirection::Input, SignalType::Double, "m/s^2"),
+        sig(sdk::signal::kAccelZ, SignalDirection::Input, SignalType::Double, "m/s^2"),
+        sig(sdk::signal::kRoll, SignalDirection::Input, SignalType::Double, "rad"),
+        sig(sdk::signal::kPitch, SignalDirection::Input, SignalType::Double, "rad"),
+        sig(sdk::signal::kYaw, SignalDirection::Input, SignalType::Double, "rad"),
+        sig(sdk::signal::kAngularVelX, SignalDirection::Input, SignalType::Double, "rad/s"),
+        sig(sdk::signal::kAngularVelY, SignalDirection::Input, SignalType::Double, "rad/s"),
+        sig(sdk::signal::kAngularVelZ, SignalDirection::Input, SignalType::Double, "rad/s"),
+    };
+}
+
+void ImuBridge::writeSignal(int, std::size_t index, double value) {
+    if (index >= values_.size()) return;
+    values_[index] = value;
+    if (index < 3) hal_->setAcceleration(values_[0], values_[1], values_[2]);
+    else if (index < 6) hal_->setAngles(values_[3], values_[4], values_[5]);
+    else hal_->setRates(values_[6], values_[7], values_[8]);
 }
 
 }  // namespace wpiemu::bridges::hal

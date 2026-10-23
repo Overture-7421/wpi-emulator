@@ -27,13 +27,14 @@ inline constexpr const char* kHalExtensions = "HALSIM_EXTENSIONS";
 }  // namespace env_var
 
 enum class LaunchMode {
-    GradleInitScript,  // gradlew --no-daemon -I <generated init script> simulateJava|simulateNative
-    ExternalDirect,    // gradlew simulateExternal{Java,Native}{Release,Debug} (build + describe), then launch the JVM / exe ourselves
+    GradleInitScript,  // generated init script + season's Gradle simulation task
+    ExternalDirect,    // GradleRIO describe task (build + describe), then launch the JVM / exe ourselves
 };
 
 struct LaunchRequest {
     std::filesystem::path projectDir;
     std::string language = "java";                // "java" | "cpp"
+    int wpilibYear = 0;                             // season from the live project inspection; 0 when unknown
     LaunchMode mode = LaunchMode::GradleInitScript;
     bool release = true;                          // ExternalDirect: Release vs Debug variant
     std::filesystem::path extensionLibrary;       // absolute path of halsim_wpiemu.{dll,so,dylib}
@@ -65,17 +66,18 @@ std::string halExtensionsValue(const LaunchRequest& request, bool windows);
 std::map<std::string, std::string> emulatorEnvironment(const LaunchRequest& request, bool windows);
 
 std::filesystem::path gradleWrapperPath(const std::filesystem::path& projectDir, bool windows);
-std::string gradleTaskName(const LaunchRequest& request);          // simulateJava | simulateNative
-std::string externalTaskName(const LaunchRequest& request);        // simulateExternalJavaRelease ...
-std::filesystem::path externalDescriptorPath(const LaunchRequest& request);  // <project>/build/sim/release_java.json ...
+std::string gradleTaskName(const LaunchRequest& request);          // 2027 Java uses run; otherwise simulateJava|simulateNative
+std::string externalTaskName(const LaunchRequest& request);        // 2027 Java uses simulateExternalJava
+std::filesystem::path externalDescriptorPath(const LaunchRequest& request);  // <project>/build/sim/java.json or release_java.json ...
 
-// gradlew --no-daemon --console=plain -I <script> simulateJava|simulateNative. Writes <scratchDir>/wpiemu-init.gradle.
+// gradlew --no-daemon --console=plain -I <script> <simulation task>. Writes <scratchDir>/wpiemu-init.gradle.
 // Errors: NotFound (no wrapper), InvalidArgument (no extension library / endpoint / scratch dir / unknown language).
 sdk::Result<ProcessSpec> planGradleLaunch(const LaunchRequest& request, bool windows = (std::filesystem::path::preferred_separator == '\\'));
-// gradlew simulateExternal<Java|Native><Release|Debug> (build + describe; nothing is run).
+// GradleRIO build + describe; 2027 Java also injects the init script to export its runtime classpath.
 sdk::Result<ProcessSpec> planExternalDescribe(const LaunchRequest& request, bool windows = (std::filesystem::path::preferred_separator == '\\'));
 // The direct launch from the JSON Gradle wrote (Java: {libraryDir, mainClassName, environment, extensions[]} + the jar in
-// build/libs; native: {launchfile, libpaths, environment, extensions[]}). `macos` adds -XstartOnFirstThread for the JVM.
+// build/libs; 2027 Java uses {classpath[], mainClassName, jvmArgs[]} instead of a fat jar.
+// Native: {launchfile, libpaths, environment, extensions[]}). `macos` adds -XstartOnFirstThread for the JVM.
 // `hostEnv` is only used to find JAVA_HOME when the request has none.
 sdk::Result<ProcessSpec> planExternalLaunch(const LaunchRequest& request, std::string_view descriptorJson, const sdk::IValueTextCodec& json,
                                             const sdk::EnvLookup& hostEnv, bool windows, bool macos);

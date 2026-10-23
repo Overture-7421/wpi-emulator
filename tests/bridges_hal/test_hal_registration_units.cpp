@@ -63,6 +63,38 @@ TEST_CASE("registerHalBridges rejects a null api and duplicate registration") {
     CHECK(hal::registerHalBridges(registry, api).error().code == sdk::ErrorCode::AlreadyExists);
 }
 
+TEST_CASE("HAL season capabilities omit removed families and unavailable PWM/current signals") {
+    auto api = std::make_shared<hal::testing::FakeHalApi>();
+    api->legacyFamilies = false;
+    api->onboardImu = true;
+    api->pwmHal.normalizedSpeed = false;
+    api->pwmHal.positionSupported = false;
+    api->pwmHal.init[0] = true;
+    api->pwmHal.pulse[0] = 1750;
+    api->rioHal.inputCurrentSupported = false;
+    Rig rig({}, api);
+    CHECK(rig.registry.info("hal.analog_out") == nullptr);
+    CHECK(rig.registry.info("hal.relay") == nullptr);
+    CHECK(rig.registry.info("hal.accelerometer") == nullptr);
+    REQUIRE(rig.registry.info("hal.imu") != nullptr);
+    rig.poll();
+    const auto pwm = rig.find("pwm", 0).value();
+    CHECK(rig.info(pwm).signalSpecs.size() == 1);
+    CHECK_FALSE(rig.info(pwm).descriptor.capabilities.has(sdk::Capability::MotorOutput));
+    CHECK(rig.output(pwm, "pulseMicroseconds").value() == 1750);
+    const auto rio = rig.find("roborio", 0).value();
+    CHECK_FALSE(rig.write(rio, "vInCurrent", 10.0));
+    CHECK(rig.output(rio, "brownoutVoltage").value() == api->rioHal.brownout);
+    const auto imu = rig.find("imu", 0).value();
+    CHECK(rig.write(imu, sdk::signal::kAccelZ, 9.81));
+    CHECK(rig.write(imu, sdk::signal::kYaw, 0.5));
+    CHECK(rig.write(imu, sdk::signal::kAngularVelX, -2.0));
+    CHECK(api->imuHal.acceleration[2] == doctest::Approx(9.81));
+    CHECK(api->imuHal.angles[2] == doctest::Approx(0.5));
+    CHECK(api->imuHal.rates[0] == doctest::Approx(-2.0));
+    CHECK(api->imuHal.acceleration[0] == 0.0);
+}
+
 TEST_CASE("bridges outlive the registering scope: the registry factories share the api") {
     sdk::DeviceBridgeRegistry registry;
     {

@@ -190,6 +190,7 @@ TEST_CASE("the handshake timeout reports HandshakeTimeout and stops the process 
     REQUIRE(waitForStatus(s, 20s, [](const SessionStatus& x) { return x.link == LinkState::HandshakeTimeout; }, &st));
     CHECK(st.process == ProcessState::FailedToStart);
     CHECK(st.detail.find("did not connect") != std::string::npos);
+    CHECK(st.detail.find("fake gradle started") != std::string::npos);
     s.waitUntilFinished();
     CHECK(s.finished());
 }
@@ -221,6 +222,7 @@ TEST_CASE("the live project year is checked against the extension handshake; exp
         auto r = RobotSession::start(reg.view(), p.config(2099), p.options());
         REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
         RobotSession& s = *r.value();
+        CHECK_FALSE(s.coreOnly());
         auto ext = connectFakeExtension(s.endpoint());
         REQUIRE(ext != nullptr);
         ext->hello(0, sdk::proto::kProtocolVersion, true, 2027);
@@ -229,6 +231,7 @@ TEST_CASE("the live project year is checked against the extension handshake; exp
         SessionStatus st;
         REQUIRE(waitForStatus(s, 10s, [](const SessionStatus& x) { return x.link == LinkState::ProtocolMismatch; }, &st));
         CHECK(st.detail.find("project year 2026") != std::string::npos);
+        CHECK(st.problem == "season_mismatch");
         s.waitUntilFinished();
     }
     {

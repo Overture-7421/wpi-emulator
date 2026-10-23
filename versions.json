@@ -23,7 +23,8 @@
           "hal": "org.wpilib.hal",
           "wpiutil": "org.wpilib.wpiutil",
           "ntcore": "org.wpilib.ntcore",
-          "wpinet": "org.wpilib.wpinet"
+          "wpinet": "org.wpilib.wpinet",
+          "datalog": "org.wpilib.datalog"
         },
         "headers": {
           "hal": "wpi/hal/HAL.h",
@@ -46,7 +47,7 @@
   "msvcRuntimeMin": "14.40",
   "jdk": {
     "vendor": "temurin",
-    "seasons": { "2026": 17 },
+    "seasons": { "2026": 17, "2027": 25 },
     "assets": {
       "17-windows-x64": {
         "version": "17.0.20.1",
@@ -71,6 +72,30 @@
         "url": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.21%2B9/OpenJDK17U-jdk_aarch64_mac_hotspot_17.0.21_9.tar.gz",
         "sha256": "78b08c7f5a0598242d5719c022e19479cb4a3aa45c37c19726a757a469ed1c15",
         "size": 186192554
+      },
+      "25-windows-x64": {
+        "version": "25.0.2",
+        "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.2%2B10/OpenJDK25U-jdk_x64_windows_hotspot_25.0.2_10.zip",
+        "sha256": "06ac5f5444a1269dd11d11cbb7ab6ebaecedc60dc1caca82cdb56f29100b7b8c",
+        "size": 141062656
+      },
+      "25-linux-x64": {
+        "version": "25.0.2",
+        "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.2%2B10/OpenJDK25U-jdk_x64_linux_hotspot_25.0.2_10.tar.gz",
+        "sha256": "987387933b64b9833846dee373b640440d3e1fd48a04804ec01a6dbf718e8ab8",
+        "size": 140949044
+      },
+      "25-macos-x64": {
+        "version": "25.0.2",
+        "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.2%2B10/OpenJDK25U-jdk_x64_mac_hotspot_25.0.2_10.tar.gz",
+        "sha256": "7caddeb2d1d06a21487fdf55198349f122ba7b24bfc613b8923a42a133a92dc5",
+        "size": 120443487
+      },
+      "25-macos-arm64": {
+        "version": "25.0.2",
+        "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.2%2B10/OpenJDK25U-jdk_aarch64_mac_hotspot_25.0.2_10.tar.gz",
+        "sha256": "74ff6e892924a49767c35eb61251b1969c03213819d51065d9b8f9e0238c4f97",
+        "size": 136512710
       }
     }
   }

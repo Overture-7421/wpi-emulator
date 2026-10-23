@@ -55,4 +55,19 @@ private:
     std::array<double, 3> accelMps2_{0.0, 0.0, 0.0};
 };
 
+class ImuBridge final : public HalFamilyBridge<IImuHal> {
+public:
+    explicit ImuBridge(std::shared_ptr<IImuHal> hal) : HalFamilyBridge("hal.imu", std::move(hal)) {}
+
+protected:
+    int channelCount() const override { return 1; }
+    bool isInitialized(int) const override { return true; }
+    sdk::DeviceDescriptor describe(int) const override;
+    std::vector<sdk::SignalSpec> signalsOf(int) const override;
+    void writeSignal(int, std::size_t signalIndex, double value) override;
+
+private:
+    std::array<double, 9> values_{};
+};
+
 }  // namespace wpiemu::bridges::hal

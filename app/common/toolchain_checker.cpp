@@ -61,15 +61,16 @@ QStringList ToolchainChecker::wpilibRoots() const {
 QString ToolchainChecker::defaultWpilibHome(int year) const {
     const QStringList roots = wpilibRoots();
     if (roots.isEmpty()) return {};
-    return year > 0 ? join(roots.first(), QString::number(year)) : roots.first();
+    return year > 0 ? join(roots.first(), QString::fromStdString(core::launcher::wpilibInstallFolderName(year))) : roots.first();
 }
 
 QString ToolchainChecker::findWpilibHome(const ToolchainInput& input) const {
     if (!input.wpilibHomeOverride.isEmpty())
         return probe_.dirExists(input.wpilibHomeOverride) ? QDir::cleanPath(input.wpilibHomeOverride) : QString();
     if (input.wpilibYear <= 0) return {};
+    const QString folder = QString::fromStdString(core::launcher::wpilibInstallFolderName(input.wpilibYear));
     for (const QString& root : wpilibRoots()) {
-        const QString home = join(root, QString::number(input.wpilibYear));
+        const QString home = join(root, folder);
         if (probe_.dirExists(home)) return home;
     }
     return {};
@@ -93,7 +94,7 @@ std::optional<QString> ToolchainChecker::judgeJdk(const QString& java, bool trus
         if (!version.isEmpty()) facts.vcRuntime = version.toStdString();
     }
 
-    const int maxMajor = maxJavaForGradle(input.gradleVersion.toStdString());
+    const int maxMajor = maxJavaForGradle(input.gradleVersion.toStdString(), input.minJavaMajor);
     JdkVerdict verdict = evaluateJdk(facts, input.minJavaMajor, maxMajor, windows);
     // The WPILib JDK of the project's season is what WPILib ships and tests; it is not second-guessed.
     if (trusted && (verdict.problem == JdkProblem::TooNewForGradle || verdict.problem == JdkProblem::StaleVcRuntime ||
@@ -155,8 +156,9 @@ JdkResolution ToolchainChecker::resolveJdk(const ToolchainInput& input) const {
             case JdkSource::WpilibOtherSeason:
                 for (int year = kLastSeasonYear; year >= kFirstSeasonYear; --year) {
                     if (year == input.wpilibYear) continue;
+                    const QString folder = QString::fromStdString(core::launcher::wpilibInstallFolderName(year));
                     for (const QString& root : wpilibRoots()) {
-                        const QString home = join(join(root, QString::number(year)), QStringLiteral("jdk"));
+                        const QString home = join(join(root, folder), QStringLiteral("jdk"));
                         if (probe_.fileExists(inBin(home)) && consider(source, inBin(home), home, false)) return res;
                     }
                 }
@@ -379,6 +381,21 @@ ToolchainCheck ToolchainChecker::checkGameModule(const ToolchainInput& input, To
 
 ToolchainReport ToolchainChecker::run(const ToolchainInput& input) const {
     ToolchainReport report;
+    if (input.extensionLibrary) {
+        ToolchainCheck extension;
+        extension.id = QString::fromLatin1(check_id::kHalExtension);
+        extension.title = input.wpilibYear > 0 ? tr("WPILib %1 HALSim extension").arg(input.wpilibYear)
+                                              : tr("Default HALSim extension (project year unknown)");
+        extension.requiredToRun = true;
+        extension.status = input.extensionLibrary->isEmpty() ? CheckStatus::Missing : CheckStatus::Ok;
+        extension.detail = input.extensionLibrary->isEmpty()
+            ? tr("No matching extension is installed. Installed seasons: %1.")
+                  .arg(input.installedExtensionSeasons.isEmpty() ? tr("none") : input.installedExtensionSeasons.join(QStringLiteral(", ")))
+            : display(*input.extensionLibrary);
+        if (extension.status == CheckStatus::Missing)
+            extension.fixHint = tr("Reinstall an emulator package with this season, or explicitly set WPIEMU_EXTENSION.");
+        report.checks.push_back(std::move(extension));
+    }
     report.checks.push_back(checkJdk(input));
     report.checks.push_back(checkGradleWrapper(input));
     report.checks.push_back(checkWpilibInstall(input));

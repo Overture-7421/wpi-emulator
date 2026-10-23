@@ -125,6 +125,9 @@ ToolchainInput AppServices::toolchainInput(const ProjectInspection& inspection) 
     in.language = inspection.language;
     in.wpilibYear = inspection.wpilibYear;
     in.gradleVersion = inspection.gradleVersion;
+    in.extensionLibrary = QString::fromStdU16String(RealRuntimeHost::installedExtension(inspection.wpilibYear > 0 ? inspection.wpilibYear : 2026).u16string());
+    for (const int year : {2026, 2027})
+        if (!RealRuntimeHost::installedExtension(year).empty()) in.installedExtensionSeasons << QString::number(year);
     in.wpilibHomeOverride = settings_->data().wpilibHome;
     in.jdkHomeOverride = settings_->data().jdkHome;
     in.buildToolsInstallAvailable = buildTools_->available();

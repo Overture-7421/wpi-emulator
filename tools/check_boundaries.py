@@ -116,6 +116,7 @@ TARGET_OWNERS = {
     "wpiemu_wpilib_wpiutil": "wpilib",
     "wpiemu_wpilib_wpinet": "wpilib",
     "wpiemu_wpilib_ntcore": "wpilib",
+    "wpiemu_wpilib_datalog": "wpilib",
     "wpiemu_bridges_builtin": "bridges",
     "wpiemu_bridges_hal": "bridges/hal",
     "wpiemu_bridges_vendor": "bridges/vendor",
@@ -128,6 +129,7 @@ TARGET_OWNERS = {
     "wpiemu_app_runview": "app/runview",
     "wpiemu_app_tests": "app",
     "wpiemu_e2e_tests": "app/host",
+    "wpiemu_season_e2e_tests": "app/host",
     "wpiemu_app_editor_tests": "app/editor",
     "wpiemu_editor_demo": "app/editor",
     "wpiemu_runview_demo": "app/runview",
@@ -138,7 +140,8 @@ TARGET_OWNERS = {
 }
 
 # Imported third-party WPILib targets (declared by halsim_ext/cmake/WpiEmuWpilib.cmake).
-WPILIB_TARGETS = {"wpiemu_wpilib_hal", "wpiemu_wpilib_wpiutil", "wpiemu_wpilib_wpinet", "wpiemu_wpilib_ntcore"}
+WPILIB_TARGETS = {"wpiemu_wpilib_hal", "wpiemu_wpilib_wpiutil", "wpiemu_wpilib_wpinet", "wpiemu_wpilib_ntcore",
+                 "wpiemu_wpilib_datalog"}
 # Owners allowed to link them: the extension and the optional ntcore binding of the vision bridges.
 WPILIB_USERS = {"halsim_ext", "bridges/vision"}
 

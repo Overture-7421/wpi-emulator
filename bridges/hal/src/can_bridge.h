@@ -15,9 +15,8 @@
 namespace wpiemu::bridges::hal {
 
 // Observe-only view of frames the robot sends through the HAL CAN API (HAL_CAN_SendMessage / CANAPI /
-// WPILib CAN class). One device per (manufacturer, device type, device id). Vendor libraries that use
-// SimDevices (Phoenix 6) never show up here. HALSIM 2026.2.1 callbacks carry no bus id, so every device
-// is on "rio". Frames are recorded on robot threads and announced from poll() on the clock thread.
+// WPILib CAN class). One device per observed (bus, manufacturer, device type, device id).
+// 2026 has no bus field and uses bus 0 ("rio"). Vendor SimDevices are separate.
 class CanFrameBridge final : public sdk::IDeviceBridge, private ICanFrameListener {
 public:
     explicit CanFrameBridge(std::shared_ptr<ICanHal> hal);
@@ -33,7 +32,7 @@ public:
     void stop() noexcept override;
 
 private:
-    using Key = std::tuple<int, int, int>;  // manufacturer, device type, device id
+    using Key = std::tuple<int, int, int, int>;  // bus, manufacturer, device type, device id
     struct State {
         sdk::DeviceId id;
         bool announced = false;
@@ -42,6 +41,8 @@ private:
         int lastPeriodMs = 0;
         std::uint32_t lastLow = 0;
         std::uint32_t lastHigh = 0;
+        std::array<std::uint32_t, 14> lastRemaining{};
+        std::uint8_t lastSize = 0;
     };
 
     void onFrame(const CanFrame& frame) override;
