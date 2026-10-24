@@ -191,6 +191,10 @@ jobs:
           $p = Start-Process $installer -ArgumentList '/S', "/D=$dest" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
           # System PATH only: proves the Qt runtime is deployed with the app and not picked up from the runner's Qt.
+          $files = @(python tools/seasons.py extensions --layout windows) + @('plugins\platforms\qwindows.dll', 'plugins\imageformats\qsvg.dll',
+                         'plugins\iconengines\qsvgicon.dll', 'plugins\multimedia\ffmpegmediaplugin.dll',
+                         'plugins\tls\qschannelbackend.dll',   # HTTPS of the in-app updater
+                         'qml\QtQuick3D\qquick3dplugin.dll', 'bin\qt.conf')
           $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
           & "$dest\bin\wpiemu_app.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "wpiemu_app --version failed ($LASTEXITCODE)" }
