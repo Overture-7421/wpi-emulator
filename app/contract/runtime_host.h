@@ -17,6 +17,7 @@
 
 #include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/core/logger.h"
+#include "wpiemu/sdk/game/default_field.h"
 #include "wpiemu/sdk/game/field.h"
 #include "wpiemu/sdk/game/game_module.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
@@ -113,7 +114,7 @@ inline HostLogLine emulatorLogLine(sdk::LogLevel level, const QString& source, c
 // What a viewport needs to draw the loaded project.
 struct HostScene {
     std::shared_ptr<const sdk::RobotConfig> config;
-    std::shared_ptr<const sdk::FieldDescription> field;   // null = generic floor
+    std::shared_ptr<const sdk::FieldDescription> field;   // null = no project yet: the viewport draws a bare floor
     std::vector<sdk::HudWidgetDescriptor> hud;
     std::vector<sdk::EditorPanelDescriptor> panels;
     std::vector<sdk::ZoneKindInfo> zoneKinds;             // the game module's contributeZoneKinds()
@@ -151,6 +152,9 @@ inline HostScene makeHostScene(const HostProject& project) {
         scene.tags = game->aprilTagLayout();
         scene.gameName = QString::fromStdString(game->metadata().displayName);
         scene.gameId = QString::fromStdString(game->metadata().id);
+    } else {
+        // Core-only: no game module, so the field is the generic FRC one the simulation builds as well.
+        scene.field = std::make_shared<const sdk::FieldDescription>(sdk::defaultFieldDescription());
     }
     return scene;
 }

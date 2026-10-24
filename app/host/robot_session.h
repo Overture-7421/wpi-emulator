@@ -66,10 +66,11 @@ struct Options {
     std::chrono::milliseconds stopGrace{500};             // how long the robot may leave by itself before its tree is killed
 };
 
-// Static field the plugin would build (for drawing it before a run). Null when `module` is null or fails.
+// Static field for drawing it before a run: the plugin's field, or the generic FRC field when `module` is null
+// (core-only). Null only when the plugin's field cannot be built.
 std::shared_ptr<const sdk::FieldDescription> describeField(sdk::IGameModule* module);
 
-// Where the robot starts: inside the plugin's field when it has one, else at the origin.
+// Where the robot starts: inside the field (the plugin's, or the generic one), else at the origin.
 struct StartPlacement {
     float xM = 0.f, yM = 0.f;
     float headingRad = 0.f;

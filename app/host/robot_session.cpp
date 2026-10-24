@@ -14,6 +14,7 @@
 #include "wpiemu/ipc/binary_codec.h"
 #include "wpiemu/ipc/endpoint.h"
 #include "wpiemu/ipc/local_ipc.h"
+#include "wpiemu/sdk/game/default_field.h"
 
 namespace wpiemu::app::host {
 
@@ -176,7 +177,7 @@ private:
 // ---- field -----------------------------------------------------------------------------------------------------------------------
 
 std::shared_ptr<const FieldDescription> describeField(IGameModule* module) {
-    if (module == nullptr) return nullptr;
+    if (module == nullptr) return std::make_shared<const FieldDescription>(defaultFieldDescription());
     auto world = core::physics::createBox3dWorld(PhysicsConfig{});
     if (!world) return nullptr;
     auto field = module->createField(*world);
@@ -203,22 +204,11 @@ RobotSession::RobotSession() {
 namespace {
 
 Result<std::unique_ptr<runtime::SimulationSession>> buildSession(const Registries& reg, RobotConfig config, ILogger& logger, ISoundCueSink& sounds,
-                                                                  IGameModule* module, const FieldDescription* field) {
+                                                                  const FieldDescription* field) {
     runtime::SessionParts parts;
     parts.world = core::physics::createBox3dWorld(config.sim.physics);
     if (!parts.world) return makeError(ErrorCode::Internal, "the physics world could not be created (invalid physics settings)");
-    if (module == nullptr) {
-        // Core-only mode (no game plugin for this season): the robot still needs a floor to drive on.
-        BodyDesc floor;
-        floor.type = BodyType::Static;
-        floor.pose.position = Vec3{0.f, 0.f, -0.5f};
-        const BodyId body = parts.world->createBody(floor);
-        ShapeDesc slab;
-        slab.geometry = BoxShape{Vec3{50.f, 50.f, 0.5f}};
-        slab.material = Material{0.8f, 0.f, 0.f};
-        slab.category = layer::Field;
-        if (!body.valid() || !parts.world->addShape(body, slab).valid()) return makeError(ErrorCode::Internal, "could not create the floor");
-    }
+    parts.fallbackField = createDefaultField;   // core-only mode: a generic FRC field instead of an empty world
     const StartPlacement start = startPlacementFor(field, config.startPose);
     core::physics::ChassisPlacement placement;
     placement.xM = start.xM;
@@ -299,7 +289,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
 
     // ---- simulation session ----
     const std::shared_ptr<const FieldDescription> field = describeField(module);
-    auto built = buildSession(reg, cfg, log, self->cues_, module, field.get());
+    auto built = buildSession(reg, cfg, log, self->cues_, field.get());
     if (!built && options.mode == SessionMode::Armed) {
         // An armed session only needs the device hub until the simulation starts: fall back to the bare chassis when the full model cannot be built.
         log.warn("session", "the robot model could not be built (" + built.error().message + "); discovering with an empty model");
@@ -308,7 +298,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
         bare.drivetrain.spec.wheels.clear();
         bare.drivetrain.mappings.clear();
         bare.chassis = sdk::ChassisSpec{};
-        built = buildSession(reg, std::move(bare), log, self->cues_, module, field.get());
+        built = buildSession(reg, std::move(bare), log, self->cues_, field.get());
     }
     if (!built) return makeError(built.error().code, "The simulation could not be built: " + built.error().message);
     self->session_ = std::move(built).value();

@@ -375,7 +375,7 @@ ToolchainCheck ToolchainChecker::checkGameModule(const ToolchainInput& input, To
     check.status = CheckStatus::Warning;
     if (input.wpilibYear > 0) {
         check.detail = tr("No game module for the %1 season yet. Running in core-only mode: the robot, drivetrain "
-                          "and mechanisms simulate on an empty field.").arg(input.wpilibYear);
+                          "and mechanisms simulate on a generic FRC field (carpet, alliance walls and guardrails).").arg(input.wpilibYear);
         check.fixHint = tr("Core-only mode is fully usable. A %1 module can be added as a plugin later.").arg(input.wpilibYear);
     } else {
         check.detail = tr("The season could not be detected, so no game module was selected (core-only mode).");
