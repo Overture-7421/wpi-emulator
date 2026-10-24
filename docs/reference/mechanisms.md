@@ -75,12 +75,13 @@ and is independent of rigid-body world gravity.
 ## Motor commands and multiple controllers
 
 Each motor has its own controller output. A torque-current request resolves to
-`V = I * R + omega / Kv`; otherwise the drive uses applied voltage, or duty cycle
-times battery voltage when voltage is absent. Non-neutral commands are limited to
-battery voltage and then stator current. An invalid or zero command is neutral:
-brake supplies 0 V, while coast supplies back-EMF voltage for zero current. Reported
-current is not a new current request; vendor signal normalization is in
-[Bridges](bridges.md).
+`V = I * R + omega / Kv` with the motor the plant simulates; otherwise the drive uses
+applied voltage, or duty cycle times battery voltage when voltage is absent.
+Non-neutral commands are limited to battery voltage and then stator current. An
+invalid or zero command is neutral: brake supplies 0 V, while coast supplies back-EMF
+voltage for zero current. Which controllers regulate current, and when a reported
+current is a request rather than telemetry, is decided by vendor signal normalization
+in [Bridges](bridges.md).
 
 Unmapped additional motor slots mirror the primary motor. Mapped motors with valid
 outputs contribute their own voltage. The plant receives the mean voltage across

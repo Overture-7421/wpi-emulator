@@ -712,6 +712,51 @@ TEST_CASE("wheels with opposed motors do not move the robot but still draw curre
     for (const WheelState& s : rig.sim->drivetrain().wheelStates()) CHECK(s.driveMotorCurrentA > 1.0);
 }
 
+TEST_CASE("drivetrain: a torque-current command is resolved against the simulated motor") {
+    // At rest the torque current I is the voltage I*R of the drivetrain's OWN motor: one step must match a
+    // voltage command exactly. As the motor spins up the current command keeps its torque while the voltage
+    // command loses torque to back-EMF, so the two then part ways.
+    Rig current(swerveSpec());
+    Rig volts(swerveSpec());
+    REQUIRE(current.sim);
+    REQUIRE(volts.sim);
+    const WheelSpec& wheel = current.drivetrainSpec.wheels[0];
+    const double steerAmps = 20.0;
+    const double driveAmps = 40.0;
+    for (WheelCommand& c : current.cmd) {
+        c.steerHasTorqueCurrent = true;
+        c.steerTorqueCurrentA = steerAmps;
+        c.driveMotors = 1;
+        c.driveHasTorqueCurrent[0] = true;
+        c.driveTorqueCurrentsA[0] = driveAmps;
+        c.steerVoltageV = 99.0;            // must be ignored while the current is the command
+        c.driveMotorVoltagesV[0] = 99.0;
+    }
+    for (WheelCommand& c : volts.cmd) {
+        c.steerVoltageV = steerAmps * wheel.steerMotor.resistanceOhm();
+        c.driveMotors = 1;
+        c.driveMotorVoltagesV[0] = driveAmps * wheel.driveMotor.resistanceOhm();
+    }
+    current.step();
+    volts.step();
+    const auto& a = current.sim->drivetrain().wheelStates();
+    const auto& b = volts.sim->drivetrain().wheelStates();
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        CHECK(a[i].steerOmegaRadPerSec == doctest::Approx(b[i].steerOmegaRadPerSec));
+        CHECK(a[i].steerOmegaRadPerSec > 0.0);
+        CHECK(a[i].driveWheelOmegaRadPerSec == doctest::Approx(b[i].driveWheelOmegaRadPerSec));
+    }
+
+    current.run(0.5f);
+    volts.run(0.5f);
+    const auto& a2 = current.sim->drivetrain().wheelStates();
+    const auto& b2 = volts.sim->drivetrain().wheelStates();
+    // The current command still delivers I*R above back-EMF: it keeps accelerating where the voltage one stalls.
+    CHECK(a2[0].steerOmegaRadPerSec > b2[0].steerOmegaRadPerSec * 1.5);
+    CHECK(std::isfinite(a2[0].steerAngleRad));
+    CHECK(std::fabs(a2[0].driveWheelOmegaRadPerSec) > std::fabs(b2[0].driveWheelOmegaRadPerSec));
+}
+
 TEST_CASE("every drive motor of a wheel gets its own slot") {
     Rig rig(multiMotorTank(3));
     std::vector<std::string> names;

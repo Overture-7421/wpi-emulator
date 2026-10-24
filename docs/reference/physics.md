@@ -112,7 +112,9 @@ defined in [tire_models.cpp](../../core/physics/src/tire_models.cpp).
 
 Drive current limits apply per motor. Reported wheel current is nonnegative supply
 draw: positive electrical power divided by motor nominal voltage, not stator current
-or regenerated power. `WheelCommand` carries voltage only: **0 V brakes** and does
+or regenerated power. `WheelCommand` carries a voltage, or a torque current that the
+drivetrain resolves against its own motor model at the motor's present speed
+([Bridges](bridges.md#vendor-rules-and-firmware-feedback)): **0 V brakes** and does
 not represent a disconnected or coasting controller. Steering has no tire-scrub
 torque or steer-current limit. One-way follower traction is approximate and adds no
 reflected drive load; see [motion links](mechanisms.md#one-way-motion-links).

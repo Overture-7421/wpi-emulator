@@ -98,11 +98,39 @@ client, operating system or Systemcore hardware. Phoenix 5 is not available for 
 emulator bridge. REV is still unsupported, not validated through generic CAN traffic.
 
 For Phoenix motors, the emulator drives rotor feedback and firmware applies its own
-ratios and offsets. The plant uses firmware-resolved `motorVoltage`; only if that is
-absent does the hub fall back to duty cycle times battery voltage. Phoenix
-`torqueCurrentReported` is telemetry, not a torque-current request. Using it as a
-request would model the controller twice. Robot controller inversion is already in
-the output. Physical mounting reversal is separate and belongs to the
+ratios and offsets. In the voltage and duty-cycle control modes the plant uses
+firmware-resolved `motorVoltage`; only if that is absent does the hub fall back to duty
+cycle times battery voltage. There `torqueCurrentReported` is telemetry derived from
+that voltage; using it as a request would model the controller twice.
+
+The FOC control modes invert this. The firmware regulates torque current: it resolves
+the request to a current with **its** motor model and reports the voltage that model
+needs at the rotor speed the emulator fed it. That voltage fits only CTRE's motor;
+applied to the motor the emulator simulates, the two models disagree about back-EMF,
+and a swerve steer module ran away to free speed while its controller asked for the
+opposite sign; the [architecture decisions](../decisions/README.md) record the reasoning.
+So the vendor bridge announces a canonical `torqueCurrent` next to the telemetry and
+fills it every tick: the firmware's torque current while the device's `ControlMode`
+status signal is an FOC mode, `0` otherwise. The plant then resolves the current
+against its own motor (`MotorOutput::hasTorqueCurrent`). The mode is read through the
+read-only native seam below; without it, or for a `Follower` whose leader is unknown,
+the voltage path is kept and said once at debug level.
+
+The firmware sim also has to know which motor is attached. Left alone it models a
+Kraken X60 for every TalonFX, and its current limits, its published motor constants
+(`MotorKV`, `MotorKT`, `MotorStallCurrent`) and the voltage it derives in the FOC modes
+all describe that motor, whatever the robot has. The plant knows what it simulates: each
+motor feedback carries the slot's motor family, the hub writes it to the `motorFamily`
+input the vendor bridge announces on every TalonFX, and the bridge sets the matching
+`TalonFXSimState` motor type through the native physics API, once per device and again
+when the plant changes its mind. Only the Kraken X60 and X44 exist in the firmware sim; a
+Falcon 500 or a Minion leaves the default in place, said once at debug level. A real
+Talon reports its motor and its constants itself, and they differ by one to a few percent
+from the WPILib `DCMotor` table the presets carry, so the two models agree closely but
+never exactly; the torque-current path above is what keeps that harmless.
+
+Robot controller inversion is already in the output. Physical mounting reversal is
+separate and belongs to the
 [mechanism mapping](mechanisms.md#motor-commands-and-multiple-controllers); do not
 invert it again in a vendor rule.
 

@@ -18,7 +18,7 @@ double MotorDrive::voltage(const sdk::MotorOutput& out, double omega, double bat
     bool neutral = !out.valid;
     if (out.valid) {
         if (out.hasTorqueCurrent) {
-            commanded = out.torqueCurrentA * spec().resistanceOhm() + backEmf;
+            commanded = sdk::voltageForTorqueCurrent(spec(), out.torqueCurrentA, omega);
             neutral = std::abs(out.torqueCurrentA) < kNeutralEps;
         } else {
             commanded = out.voltageV;
