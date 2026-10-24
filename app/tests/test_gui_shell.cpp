@@ -1,12 +1,17 @@
 #include <doctest/doctest.h>
+#include <QAbstractSpinBox>
 #include <QApplication>
+#include <QComboBox>
 #include <QMenuBar>
+#include <QSlider>
+#include <QWheelEvent>
 #include <cmath>
 #include <QToolBar>
 
 #include <QFileInfo>
 #include <QSignalSpy>
 #include <QTest>
+#include <QtTest/qtestspontaneevent.h>
 
 #include "gui_support.h"
 #include "shell/about_dialog.h"
@@ -638,6 +643,40 @@ TEST_CASE("settings dialog edits a copy and applies on OK") {
     dlg.themeCombo()->setCurrentIndex(dlg.themeCombo()->findData(static_cast<int>(ThemeMode::Light)));
     dlg.buttons()->button(QDialogButtonBox::Ok)->click();
     CHECK(!env.theme.isDark());
+}
+
+TEST_CASE("settings dialog and setup robot page: the mouse wheel does not change unfocused inputs") {
+    GuiEnvironment env;
+    SettingsDialog settings(env.services->settings(), env.services->probe(), env.ui);
+    WizardDialog wizard(*env.services, env.ui);
+
+    int inputs = 0;
+    for (QWidget* page : {static_cast<QWidget*>(&settings), static_cast<QWidget*>(wizard.robotPage())}) {
+        const auto wheel = [](QWidget* w) {
+            QWheelEvent e(QPointF(2, 2), QPointF(2, 2), QPoint(), QPoint(0, -120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QSpontaneKeyEvent::setSpontaneous(&e);
+            qApp->notify(w, &e);
+        };
+        for (auto* combo : page->findChildren<QComboBox*>()) {
+            const int before = combo->currentIndex();
+            wheel(combo);
+            CHECK(combo->currentIndex() == before);
+            ++inputs;
+        }
+        for (auto* spin : page->findChildren<QAbstractSpinBox*>()) {
+            const QString before = spin->text();
+            wheel(spin);
+            CHECK(spin->text() == before);
+            ++inputs;
+        }
+        for (auto* slider : page->findChildren<QSlider*>()) {
+            const int before = slider->value();
+            wheel(slider);
+            CHECK(slider->value() == before);
+            ++inputs;
+        }
+    }
+    CHECK(inputs > 10);
 }
 
 TEST_CASE("settings dialog refuses folders that do not exist") {

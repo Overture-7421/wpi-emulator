@@ -450,3 +450,35 @@ TEST_CASE("run page: joystick editor learns a key binding and a gamepad appears"
     CHECK(f.backend.lastDriverStation().joysticks[1].present);
     CHECK(f.backend.lastDriverStation().joysticks[1].axes[0] > 0.9f);
 }
+
+TEST_CASE("run page: keys rebind a binding while the settings window itself has focus") {
+    Fixture f;
+    f.connectRobot();
+    auto* panel = f.page.driverStationPanel();
+    auto* editor = panel->joystickEditor();
+    editor->setCurrentSlot(0);
+    panel->showSettings(1);
+    QApplication::processEvents();
+    QDialog* dialog = panel->settingsDialog();
+    REQUIRE(QApplication::activeWindow() == dialog);
+
+    editor->buttonBindButton(0)->click();
+    REQUIRE(f.page.joysticks().learning());
+    QTest::keyClick(dialog, Qt::Key_G);
+    CHECK_FALSE(f.page.joysticks().learning());
+    CHECK(f.page.joysticks().profile(0).buttons[0] == joy::Input::key(Qt::Key_G));
+
+    editor->buttonBindButton(1)->click();
+    REQUIRE(f.page.joysticks().learning());
+    QTest::keyClick(dialog, Qt::Key_Escape);
+    CHECK_FALSE(f.page.joysticks().learning());
+    CHECK(dialog->isVisible());
+    CHECK(f.page.joysticks().profile(0).buttons[1] != joy::Input::key(Qt::Key_Escape));
+
+    // Outside rebinding the popup does not drive the robot.
+    QTest::keyPress(dialog, Qt::Key_W);
+    f.page.publishDriverStation();
+    CHECK(f.backend.lastDriverStation().joysticks[0].axes[1] == doctest::Approx(0.f));
+    QTest::keyRelease(dialog, Qt::Key_W);
+    dialog->hide();
+}

@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "ui/widget_support.h"
+
 namespace wpiemu::app {
 
 namespace {
@@ -68,7 +70,7 @@ QFrame* sectionCard(const QString& title, QFormLayout*& formOut) {
 }  // namespace
 
 QDoubleSpinBox* RobotPage::makeSpin(double decimals) {
-    auto* s = new QDoubleSpinBox;
+    auto* s = ui::quietWheel(new QDoubleSpinBox);
     s->setDecimals(static_cast<int>(decimals));
     s->setKeyboardTracking(true);
     s->setAlignment(Qt::AlignRight);
@@ -89,17 +91,17 @@ RobotPage::RobotPage(WizardViewModel& model, const UiResources& ui, QWidget* par
       width_(makeSpin(2)),
       mass_(makeSpin(1)),
       wheelDiameter_(makeSpin(2)),
-      wheelsPerSide_(new QSpinBox),
+      wheelsPerSide_(ui::quietWheel(new QSpinBox)),
       wheelCountLabel_(makeLabel({}, "muted")),
-      driveMotor_(new QComboBox),
-      motorsPerWheel_(new QSpinBox),
+      driveMotor_(ui::quietWheel(new QComboBox)),
+      motorsPerWheel_(ui::quietWheel(new QSpinBox)),
       driveRatio_(makeSpin(2)),
-      steerMotor_(new QComboBox),
+      steerMotor_(ui::quietWheel(new QComboBox)),
       steerRatio_(makeSpin(2)),
       bumper_(makeSpin(2)),
       redButton_(makeSegment(tr("Red"), "first")),
       blueButton_(makeSegment(tr("Blue"), "last")),
-      station_(new QComboBox),
+      station_(ui::quietWheel(new QComboBox)),
       motorForm_(nullptr),
       dimensionForm_(nullptr),
       banner_(new Banner(ui)),

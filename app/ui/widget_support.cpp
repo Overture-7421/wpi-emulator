@@ -1,5 +1,7 @@
 #include "ui/widget_support.h"
 
+#include <QComboBox>
+#include <QEvent>
 #include <QFont>
 #include <QLabel>
 #include <QTimer>
@@ -31,6 +33,32 @@ QLabel* headingLabel(const QString& text, QWidget* parent) {
     l->setFont(f);
     l->setEnabled(false);
     return l;
+}
+
+namespace {
+
+// Qt focuses a WheelFocus widget on the first wheel notch and a combo box accepts the event, which stops the enclosing
+// scroll area from ever seeing it. Ignoring the event here lets it propagate to the parent.
+class WheelGuard : public QObject {
+public:
+    explicit WheelGuard(QWidget* input) : QObject(input), input_(input) {}
+
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched != input_ || event->type() != QEvent::Wheel) return false;
+        if (qobject_cast<QComboBox*>(input_) == nullptr && input_->hasFocus()) return false;
+        event->ignore();
+        return true;
+    }
+
+private:
+    QWidget* input_;
+};
+
+}  // namespace
+
+void setQuietWheel(QWidget* input) {
+    input->setFocusPolicy(Qt::StrongFocus);
+    input->installEventFilter(new WheelGuard(input));
 }
 
 void flashWidget(QWidget* widget, const QString& styleSheet) {

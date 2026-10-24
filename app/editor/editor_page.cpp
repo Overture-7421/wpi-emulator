@@ -168,7 +168,7 @@ void EditorPage::buildTopBar(QVBoxLayout* root) {
         b->setToolButtonStyle(Qt::ToolButtonTextOnly);
         barLayout->addWidget(b);
     }
-    s.units = new QComboBox(bar);
+    s.units = ui::quietWheel(new QComboBox(bar));
     s.units->addItem(ETR("Units: in / lb"), static_cast<int>(UnitSystem::Imperial));
     s.units->addItem(ETR("Units: cm / kg"), static_cast<int>(UnitSystem::Metric));
     s.units->setToolTip(ETR("Display units. The saved robot model always uses SI units."));

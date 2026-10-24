@@ -156,7 +156,7 @@ DriverStationPanel::DriverStationPanel(DriverStationModel& model, JoystickManage
     blueAlliance_ = new QRadioButton(tr("Blue"), this);
     redAlliance_->setStyleSheet(QStringLiteral("QRadioButton { color: #e5484d; font-weight: bold; }"));
     blueAlliance_->setStyleSheet(QStringLiteral("QRadioButton { color: #4f8cff; font-weight: bold; }"));
-    station_ = new QComboBox(this);
+    station_ = ui::quietWheel(new QComboBox(this));
     for (int s = 1; s <= 3; ++s) station_->addItem(tr("Station %1").arg(s), s);
     auto* allianceRow = new QHBoxLayout;
     allianceRow->addWidget(redAlliance_);
@@ -169,7 +169,7 @@ DriverStationPanel::DriverStationPanel(DriverStationModel& model, JoystickManage
     message_->setMaxLength(64);
 
     auto makeSeconds = [this](const SecondsRange& range) {
-        auto* box = new QDoubleSpinBox(this);
+        auto* box = ui::quietWheel(new QDoubleSpinBox(this));
         box->setRange(range.min, range.max);
         box->setDecimals(0);
         box->setSuffix(tr(" s"));

@@ -1,4 +1,4 @@
-# Builds / tests / packages the Linux target in a ubuntu:22.04 container (see docs/BUILDING.md).
+# Builds / tests / packages the Linux target in a ubuntu:24.04 container (see docs/BUILDING.md).
 #   .\tools\docker\linux\run.ps1 [all|configure|build|test|install|appimage|shell] [-Rebuild] [-CtestArgs '-R "^launcher"']
 # Build output and downloads live in the named volume wpiemu-linux-build, so repeated runs are incremental.
 # Copy artifacts out with: docker run --rm -v wpiemu-linux-build:/build -v ${PWD}:/out --entrypoint cp wpiemu-linux-ci -r /build/release/pkg /out/

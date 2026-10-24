@@ -44,7 +44,7 @@ PINS = [
     Pin("cmake", ("docs/BUILDING.md",), r"CMake (\d+\.\d+)\+", "minimum CMake in the prerequisites"),
     Pin("cmake", ("tools/docker/linux/Dockerfile",), r"presets need (\d+\.\d+)\+", "minimum CMake for the presets"),
     Pin("cmake", ("packaging/linux/build-appimage.sh",), r"cmake >= (\d+\.\d+)", "minimum CMake in the requirements"),
-    Pin("ubuntu", (".github/workflows/release.yml", "tools/docker/linux/Dockerfile", "tools/docker/linux/run.ps1",
+    Pin("ubuntu",     (*WORKFLOWS, "tools/docker/linux/Dockerfile", "tools/docker/linux/run.ps1",
                    "packaging/linux/build-appimage.sh", "docs/releasing.md"), UBUNTU, "Ubuntu release"),
     Pin("macosRunner", WORKFLOWS, r"\bmacos-(\d+)\b", "macOS runner image"),
     Pin("macosDeployment", ("docs/releasing.md",), r"defaults to macOS (\d+\.\d+)", "default macOS deployment target"),

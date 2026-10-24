@@ -15,7 +15,7 @@
 #
 # Needs: cmake >= 3.25, ninja, a C++20 compiler, curl, sha256sum, and the Qt runtime libraries' system
 # dependencies (libxcb*, libxkbcommon*, libgl1, libegl1, ...). Build on the OLDEST distro you want to support
-# (CI uses ubuntu-22.04): an AppImage runs wherever the glibc of the build machine or newer is present.
+# (CI uses ubuntu-24.04): an AppImage needs a host with glibc/libstdc++ at least as new as the build machine's.
 # The tools are downloaded here (pinned release + sha256) and run with --appimage-extract-and-run, so no FUSE is needed.
 set -euo pipefail
 

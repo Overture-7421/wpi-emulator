@@ -94,7 +94,7 @@ TEST_CASE("watchdog: a robot that never finishes the step is reported RobotStall
     CHECK(ack->sessionId == 7);
     CHECK(waited >= 300ms);
     CHECK(waited < 2500ms);
-    CHECK(t.rig.clock.resumeCalls >= 1);
+    REQUIRE(waitUntil([&] { return t.rig.clock.resumeCalls >= 1; }, 1000ms));
     CHECK_FALSE(t.rig.clock.paused);
     CHECK(t.rig.runtime->stats().stalls == 1);
     CHECK(t.rig.process.calls == 0);  // default policy resumes real time, it does not kill the robot

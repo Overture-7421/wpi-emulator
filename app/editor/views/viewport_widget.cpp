@@ -12,6 +12,7 @@
 #include <QVBoxLayout>
 
 #include "model/tr.h"
+#include "ui/widget_support.h"
 
 namespace wpiemu::app::editor {
 
@@ -129,7 +130,7 @@ void ViewportWidget::buildToolbar(QLayout* layout) {
         auto* tag = new QLabel(QString::fromLatin1(i == 0 ? "X" : i == 1 ? "Y" : "Z"), this);
         tag->setEnabled(false);
         layout->addWidget(tag);
-        auto* spin = new QDoubleSpinBox(this);
+        auto* spin = ui::quietWheel(new QDoubleSpinBox(this));
         spin->setRange(-kTransformFieldLimit, kTransformFieldLimit);
         spin->setDecimals(2);
         spin->setKeyboardTracking(true);

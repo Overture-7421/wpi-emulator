@@ -83,10 +83,10 @@ void ValueBar::paintEvent(QPaintEvent*) {
 JoystickEditor::JoystickEditor(JoystickManager& manager, QWidget* parent) : QWidget(parent), manager_(manager) {
     setObjectName(QStringLiteral("runview.joystickEditor"));
 
-    slot_ = new QComboBox(this);
+    slot_ = ui::quietWheel(new QComboBox(this));
     slot_->setAccessibleName(tr("Joystick port"));
     slot_->setToolTip(tr("Driver Station joystick port the robot code reads (0 = first)"));
-    device_ = new QComboBox(this);
+    device_ = ui::quietWheel(new QComboBox(this));
     device_->setAccessibleName(tr("Input device"));
     device_->setToolTip(tr("Keyboard or gamepad that drives this joystick port"));
     notice_ = new QLabel(this);
