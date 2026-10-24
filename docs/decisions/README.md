@@ -27,12 +27,11 @@ These records explain adopted design constraints, not implementation inventories
 | [0016](0016-robot-setup-lives-in-the-project.md) | Robot setup lives in the project |
 | [0017](0017-multi-season-wpilib.md) | One isolated HALSim extension per WPILib season |
 | [0018](0018-season-packs.md) | Season packs describe WPILib support as data |
-| [0019](0019-foc-requests-carry-torque-current.md) | FOC requests reach the plant as torque current |
 
 ## Maintaining the set
 
-Records explain rationale and trade-offs; current rules belong in the owning reference, not here. Keep each
-record within 45 physical lines and this index within 35. Choose the next unused number; never reuse or
-renumber one. Update the record and index together.
+Records explain rationale and trade-offs; current rules belong in the owning reference, not here.
+Keep each record within 45 physical lines and this index within 35. Choose the next unused number;
+never reuse or renumber one. Update the record and index together.
 
 Next: [Contributing](../CONTRIBUTING.md).

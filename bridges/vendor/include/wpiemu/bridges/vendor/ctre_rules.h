@@ -35,7 +35,7 @@ inline constexpr const char* kTypePigeonImu = "pigeonimu";
 // publishes back (readonly in the Sim GUI): they include the robot's own setPosition/setYaw offsets.
 namespace vsignal {
 inline constexpr const char* kTorqueCurrentReported =
-    "torqueCurrentReported";  // A; telemetry in the voltage modes, the command in the FOC modes (vendor_sim_bridge.cpp)
+    "torqueCurrentReported";  // A, telemetry, not a current request
 inline constexpr const char* kRotorPositionReported = "rotorPositionReported";  // rot
 inline constexpr const char* kPositionReported = "positionReported";            // rot
 inline constexpr const char* kYawReported = "yawReported";                      // rad

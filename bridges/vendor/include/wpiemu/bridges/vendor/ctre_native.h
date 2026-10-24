@@ -19,7 +19,6 @@
 #include <vector>
 
 #include "wpiemu/bridges/vendor/symbol_resolver.h"
-#include "wpiemu/sdk/dynamics/motor_model.h"
 #include "wpiemu/sdk/core/interface.h"
 #include "wpiemu/sdk/core/result.h"
 
@@ -69,47 +68,7 @@ inline constexpr int kFeedbackSensorSource = 1920;
 inline constexpr int kFeedbackRemoteSensorId = 1921;
 inline constexpr int kForwardLimitType = 1928;
 inline constexpr int kReverseLimitType = 1934;
-// Status signal (not a config): the active ControlModeValue of a TalonFX / TalonFXS.
-inline constexpr int kTalonFxControlMode = 1799;
 }  // namespace spn
-
-// ctre::phoenix6::signals::ControlModeValue (SpnEnums.hpp, verified against 26.3.0): the members the bridge decides on.
-namespace control_mode {
-inline constexpr int kDisabledOutput = 0;
-inline constexpr int kDutyCycleFOC = 7;
-inline constexpr int kMotionMagicDutyCycleFOC = 10;
-inline constexpr int kPositionVoltage = 12;
-inline constexpr int kVoltageFOC = 15;
-inline constexpr int kPositionVoltageFOC = 16;
-inline constexpr int kTorqueCurrentFOC = 19;
-inline constexpr int kMotionMagicTorqueCurrentFOC = 22;
-inline constexpr int kFollower = 23;
-inline constexpr int kMotionMagicVelocityDutyCycleFOC = 29;
-inline constexpr int kMotionMagicVelocityVoltageFOC = 31;
-inline constexpr int kMotionMagicVelocityTorqueCurrentFOC = 32;
-inline constexpr int kMotionMagicExpoDutyCycleFOC = 34;
-inline constexpr int kMotionMagicExpoVoltageFOC = 36;
-inline constexpr int kMotionMagicExpoTorqueCurrentFOC = 37;
-}  // namespace control_mode
-
-// True for every control mode in which the firmware regulates torque current: the FOC modes. In those the
-// firmware sim resolves the request to a current with ITS motor model and reports the voltage that model implies
-// at the rotor speed we feed it, so the current is the command to carry to the plant (docs/reference/bridges.md).
-// Follower is not decided here (its leader's mode is unknown) and keeps the voltage path.
-bool ctreControlModeRegulatesCurrent(int controlMode);
-
-// TalonFXSimState::SetMotorType, as the firmware sim takes it: the physics input `MotorType` with these values
-// (sim/TalonFXSimState.hpp, 26.3.0). Without it the firmware sim models a Kraken X60 for every TalonFX, whatever
-// is on the robot, and publishes that motor's constants (MotorKV, MotorKT, MotorStallCurrent).
-inline constexpr const char* kPhysicsMotorType = "MotorType";
-namespace sim_motor_type {
-inline constexpr int kKrakenX60 = 0;
-inline constexpr int kKrakenX44 = 1;
-}  // namespace sim_motor_type
-
-// The firmware sim's motor type for the motor the plant simulates; nullopt when the sim cannot represent it
-// (a Falcon 500 or a Minion stays on the firmware's default) or the family is unknown.
-std::optional<int> ctreSimMotorTypeFor(sdk::MotorFamily family);
 
 // Parsed `<spn>,<token>\n` lines of c_ctre_phoenix6_get_configs. Tokens: `s_<n>` (serialized: IEEE-754 float bits
 // for float SPNs, integer otherwise) or `f_<decimal>`. Unknown SPNs stay available as raw text.
@@ -147,12 +106,8 @@ class ICtreSimNative {
 public:
     virtual bool hasConfigReadback() const = 0;
     virtual bool hasPhysicsApi() const = 0;
-    virtual bool hasSignalRead() const = 0;
     // Read-only. Error when the API is absent, the device model is unknown or CTRE reports a failure.
     virtual sdk::Result<std::string> readConfigs(CtreDeviceType type, int id, std::string_view bus) const = 0;
-    // Latest value of one status signal (`spn`, see namespace spn), without waiting for an update. Read-only; the
-    // same errors as readConfigs.
-    virtual sdk::Result<double> readSignal(CtreDeviceType type, int id, std::string_view bus, int spn) const = 0;
     // CTRE return code (0 = OK, 1200 device missing, 1201 key unsupported) or kCtreNativeUnavailable.
     virtual int getPhysicsValue(CtreDeviceType type, int id, const char* key, double* value) const = 0;
     virtual int setPhysicsInput(CtreDeviceType type, int id, const char* key, double value) = 0;
@@ -165,9 +120,7 @@ public:
 
     bool hasConfigReadback() const override { return encodeDevice_ != nullptr && getConfigs_ != nullptr; }
     bool hasPhysicsApi() const override { return getPhysics_ != nullptr && setPhysics_ != nullptr; }
-    bool hasSignalRead() const override { return encodeDevice_ != nullptr && getSignal_ != nullptr; }
     sdk::Result<std::string> readConfigs(CtreDeviceType type, int id, std::string_view bus) const override;
-    sdk::Result<double> readSignal(CtreDeviceType type, int id, std::string_view bus, int spn) const override;
     int getPhysicsValue(CtreDeviceType type, int id, const char* key, double* value) const override;
     int setPhysicsInput(CtreDeviceType type, int id, const char* key, double value) override;
 
@@ -178,17 +131,12 @@ private:
     using GetConfigsNoMallocFn = int (*)(int, const char*, int, double, char*, std::uint32_t, bool);
     using GetPhysicsFn = std::int32_t (*)(int, int, const char*, double*);
     using SetPhysicsFn = std::int32_t (*)(int, int, const char*, double);
-    // c_ctre_phoenix6_get_signal_simplified (StatusGetter_Simplified_Interface.h): network, wait, timeout,
-    // count, device hashes, spns, values, hw/sw/ecu timestamps.
-    using GetSignalSimplifiedFn = int (*)(const char*, int, double, std::uint32_t, const std::uint32_t*,
-                                          const std::uint32_t*, double*, double*, double*, double*);
 
     std::shared_ptr<const ISymbolResolver> resolver_;
     EncodeDeviceFn encodeDevice_ = nullptr;
     GetConfigsNoMallocFn getConfigs_ = nullptr;
     GetPhysicsFn getPhysics_ = nullptr;
     SetPhysicsFn setPhysics_ = nullptr;
-    GetSignalSimplifiedFn getSignal_ = nullptr;
 };
 
 // Attach-only native supplement for the already-loaded CTRE module; absent module => nullptr.

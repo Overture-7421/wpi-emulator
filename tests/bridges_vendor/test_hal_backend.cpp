@@ -346,9 +346,8 @@ TEST_CASE("vendor HAL binding: polling while another thread constructs devices i
         const wpiemu::sdk::DeviceId dev = host.idOf("talonfx", id);
         REQUIRE(dev.valid());
         CAPTURE(id);
-        // 5 motor values + 4 rotor values + the synthesized torqueCurrent and motorFamily, whatever the
-        // interleaving of the polls with the construction.
-        CHECK(host.announced.at(dev).signalSpecs.size() == 11);
+        // 5 motor values + 4 rotor values, whatever the interleaving of the polls with the construction.
+        CHECK(host.announced.at(dev).signalSpecs.size() == 9);
         CHECK(host.signalSpec(dev, sg::kSupplyCurrentOut) != nullptr);
         CHECK(host.signalSpec(dev, sg::kRotorAcceleration) != nullptr);
     }

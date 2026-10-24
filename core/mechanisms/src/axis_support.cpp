@@ -320,7 +320,6 @@ void MechanismAxis::writeFeedback(sdk::ISensorWriter& hub, double previousVeloci
     const double rps2 = dt > 0.0 ? outputRotations(x.velocity - previousVelocity) / dt : 0.0;
 
     sdk::MotorFeedback feedback = rotor_.sample(rot, rps, rps2);
-    feedback.motorFamily = sdk::motorFamilyOf(drive_.spec());
     if (settings_.reportMotorLimits && settings_.limited) {
         feedback.forwardLimit = forwardSwitch_.pressed(x.position);
         feedback.reverseLimit = reverseSwitch_.pressed(x.position);

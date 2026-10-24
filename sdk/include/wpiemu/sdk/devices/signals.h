@@ -28,7 +28,6 @@ inline constexpr const char* kVelocity = "velocity";            // rps
 inline constexpr const char* kSupplyVoltage = "supplyVoltage";  // V
 inline constexpr const char* kForwardLimit = "forwardLimit";    // bool (true = limit pressed)
 inline constexpr const char* kReverseLimit = "reverseLimit";    // bool
-inline constexpr const char* kMotorFamily = "motorFamily";      // sdk::MotorFamily as a number: the motor the plant simulates
 inline constexpr const char* kDigitalIn = "digitalIn";          // bool
 inline constexpr const char* kAnalogVoltage = "analogVoltage";  // V
 inline constexpr const char* kDistance = "distance";            // m

@@ -21,42 +21,12 @@ public:
     RecordingHost(VendorSimDeviceBridge& owner, sdk::IBridgeHost& real) : owner_(&owner), real_(&real) {}
 
     sdk::DeviceId announce(const sdk::DeviceDescriptor& descriptor, std::vector<sdk::SignalSpec> signalSpecs) override {
-        std::optional<std::uint32_t> position, velocity, torqueReported, torqueCommand, motorFamily;
+        std::optional<std::uint32_t> position, velocity;
         for (std::size_t i = 0; i < signalSpecs.size(); ++i) {
             if (signalSpecs[i].name == sdk::signal::kPosition)
                 position = static_cast<std::uint32_t>(i);
             if (signalSpecs[i].name == sdk::signal::kVelocity)
                 velocity = static_cast<std::uint32_t>(i);
-            if (signalSpecs[i].name == ctre::vsignal::kTorqueCurrentReported)
-                torqueReported = static_cast<std::uint32_t>(i);
-            if (signalSpecs[i].name == sdk::signal::kTorqueCurrent)
-                torqueCommand = static_cast<std::uint32_t>(i);
-            if (signalSpecs[i].name == sdk::signal::kMotorFamily)
-                motorFamily = static_cast<std::uint32_t>(i);
-        }
-        const bool phoenixMotor = descriptor.family == ctre::kFamilyPhoenix6 &&
-                                  (descriptor.type == ctre::kTypeTalonFx || descriptor.type == ctre::kTypeTalonFxs);
-        if (phoenixMotor && torqueReported && !torqueCommand) {
-            // Declared here so the hub can index it; appendTorqueCommands fills it every tick: the firmware's
-            // torque current in the FOC control modes, 0 in every other mode (the voltage path).
-            sdk::SignalSpec spec;
-            spec.name = sdk::signal::kTorqueCurrent;
-            spec.direction = sdk::SignalDirection::Output;
-            spec.type = sdk::SignalType::Double;
-            spec.unit = "A";
-            torqueCommand = static_cast<std::uint32_t>(signalSpecs.size());
-            signalSpecs.push_back(std::move(spec));
-        }
-        if (phoenixMotor && descriptor.type == ctre::kTypeTalonFx && torqueReported && !motorFamily) {
-            // The plant says which motor it simulates; applyMotorTypes tells the firmware sim (TalonFX only: a
-            // TalonFXS takes its motor from its configuration, not from the simulation). Like the torque command
-            // above it appears once the motor's own values are there, so a half-built device grows in one step.
-            sdk::SignalSpec spec;
-            spec.name = sdk::signal::kMotorFamily;
-            spec.direction = sdk::SignalDirection::Input;
-            spec.type = sdk::SignalType::Double;
-            motorFamily = static_cast<std::uint32_t>(signalSpecs.size());
-            signalSpecs.push_back(std::move(spec));
         }
         const sdk::DeviceId id = real_->announce(descriptor, std::move(signalSpecs));
         if (id.valid()) {
@@ -64,9 +34,6 @@ public:
             announced.descriptor = descriptor;
             announced.positionSignal = position;
             announced.velocitySignal = velocity;
-            announced.torqueReportedSignal = torqueReported;
-            announced.torqueCommandSignal = torqueCommand;
-            announced.motorFamilySignal = motorFamily;
             if (descriptor.type == ctre::kTypeCanCoder && !owner_->options_.nativeProvider &&
                 !announced.configDone) {
                 announced.configDone = true;
@@ -138,102 +105,8 @@ void VendorSimDeviceBridge::poll() {
 }
 
 void VendorSimDeviceBridge::collectOutputs(std::vector<sdk::SignalSample>& out) {
-    const std::size_t first = out.size();
     inner_.collectOutputs(out);
-    // Everything below enters CTRE's native sim; collectOutputs is only called while the robot is quiescent.
-    applyMotorTypes();
-    appendTorqueCommands(out, first);
-    readOneConfig();
-}
-
-// The firmware sim models a Kraken X60 for every TalonFX unless told otherwise, so its current limits, its
-// published motor constants and the voltage it derives in the FOC modes all describe the wrong motor when the
-// robot has, say, Kraken X44 steer motors. The plant knows what it simulates and says so through the motorFamily
-// input (frames.h); this writes the matching TalonFXSimState motor type once per device, and again whenever the
-// plant changes its mind (a new mapping, a new run of the robot program).
-void VendorSimDeviceBridge::applyMotorTypes() {
-    if (host_ == nullptr) return;
-    for (auto& [id, a] : announced_) {
-        if (!a.wantedMotorType || a.wantedMotorType == a.appliedMotorType || a.motorTypeUnavailable) continue;
-        if (!ensureNative()) return;  // the CTRE module is not loaded yet: keep the wish for a later tick
-        if (!native_->hasPhysicsApi()) {
-            a.motorTypeUnavailable = true;
-            host_->logger().debug(kCategory, a.descriptor.key().toString() +
-                                                 ": simulated motor type not settable (no CTRE physics API); the "
-                                                 "firmware keeps its default motor");
-            continue;
-        }
-        const int status = native_->setPhysicsInput(CtreDeviceType::P6_TalonFX, a.descriptor.id, kPhysicsMotorType,
-                                                    static_cast<double>(*a.wantedMotorType));
-        if (status == 0) {
-            a.appliedMotorType = a.wantedMotorType;
-            host_->logger().info(kCategory, a.descriptor.key().toString() + ": simulated motor set to " +
-                                                (*a.wantedMotorType == sim_motor_type::kKrakenX44 ? "Kraken X44" : "Kraken X60"));
-        } else if (status != kCtreSimDeviceNotFound) {  // not found: the device may still be coming up, retry
-            a.motorTypeUnavailable = true;
-            host_->logger().debug(kCategory, a.descriptor.key().toString() + ": simulated motor type refused: " +
-                                                 std::to_string(status) + "; the firmware keeps its default motor");
-        }
-    }
-}
-
-bool VendorSimDeviceBridge::ensureNative() {
-    if (native_) return true;
-    if (!options_.nativeProvider) return false;
-    if (nativeRetryIn_ > 0) {
-        --nativeRetryIn_;
-        return false;
-    }
-    native_ = options_.nativeProvider();
-    if (!native_) {  // CTRE module not loaded (yet): look again later
-        nativeRetryIn_ = kNativeRetryPolls;
-        return false;
-    }
-    return true;
-}
-
-// Phoenix 6 FOC. In the FOC control modes the firmware regulates torque current; the voltage it reports is the
-// one ITS motor model needs to pass that current at the rotor speed we fed it. Applying that voltage to the
-// motor the emulator simulates lets two models disagree about back-EMF, and a swerve steer module ran away to
-// free speed while its controller asked for the opposite sign. In those modes the plant gets the firmware's
-// torque current (MotorOutput::hasTorqueCurrent, resolved against our own motor); in every other mode the
-// canonical torqueCurrent carries 0 and the voltage path stays as documented. The mode is a status signal read
-// natively (L2, read-only). Without that API the voltage path is kept and said once, at debug level.
-void VendorSimDeviceBridge::appendTorqueCommands(std::vector<sdk::SignalSample>& out, std::size_t first) {
-    if (host_ == nullptr) return;
-    const bool native = ensureNative();
-    for (auto& [id, a] : announced_) {
-        if (!a.torqueCommandSignal || !a.torqueReportedSignal) continue;
-        if (native && !a.controlModeUnavailable) {
-            const auto type = ctreDeviceTypeFromDescriptorType(a.descriptor.type);
-            if (!type || !native_->hasSignalRead()) {
-                a.controlModeUnavailable = true;
-                host_->logger().debug(kCategory, a.descriptor.key().toString() +
-                                                     ": control mode unavailable; FOC requests are applied as voltage");
-            } else {
-                const sdk::Result<double> mode =
-                    native_->readSignal(*type, a.descriptor.id, options_.configBus, spn::kTalonFxControlMode);
-                if (mode) {
-                    a.controlMode = static_cast<int>(mode.value());
-                } else if (mode.error().code == sdk::ErrorCode::Unsupported) {
-                    a.controlModeUnavailable = true;
-                    host_->logger().debug(kCategory, a.descriptor.key().toString() + ": control mode unavailable: " +
-                                                         mode.error().message + "; FOC requests are applied as voltage");
-                }
-                // Any other failure keeps the last mode for this tick.
-            }
-        }
-        double command = 0.0;
-        if (ctreControlModeRegulatesCurrent(a.controlMode)) {
-            for (std::size_t i = out.size(); i-- > first;) {
-                if (out[i].device == id && out[i].signal == *a.torqueReportedSignal) {
-                    command = out[i].value;
-                    break;
-                }
-            }
-        }
-        out.push_back({id, static_cast<std::uint16_t>(*a.torqueCommandSignal), command});
-    }
+    readOneConfig();  // collectOutputs is only called while the robot is quiescent
 }
 
 std::size_t VendorSimDeviceBridge::readPendingConfigs(std::size_t maxDevices) {
@@ -248,20 +121,6 @@ void VendorSimDeviceBridge::applyInputs(std::span<const sdk::SignalSample> sampl
     for (auto sample : samples) {
         if (disabled_.contains(sample.device)) continue;
         const auto device = announced_.find(sample.device);
-        if (device != announced_.end() && device->second.motorFamilySignal &&
-            *device->second.motorFamilySignal == sample.signal) {
-            // Not a SimDevice value: remembered here and written natively from collectOutputs (quiescent).
-            Announced& a = device->second;
-            const auto family = static_cast<sdk::MotorFamily>(static_cast<int>(sample.value));
-            a.wantedMotorType = ctreSimMotorTypeFor(family);
-            if (!a.wantedMotorType && family != sdk::MotorFamily::Unknown && a.unsupportedFamilyLogged != family) {
-                a.unsupportedFamilyLogged = family;
-                host_->logger().debug(kCategory, a.descriptor.key().toString() +
-                                                     ": the firmware sim has no motor type for the plant's motor; "
-                                                     "it keeps its default Kraken X60");
-            }
-            continue;
-        }
         const auto config = configs_.find(sample.device);
         if (device != announced_.end() && device->second.descriptor.type == ctre::kTypeCanCoder &&
             config != configs_.end()) {
@@ -366,7 +225,18 @@ bool VendorSimDeviceBridge::readOneConfig() {
     const auto pending = std::find_if(announced_.begin(), announced_.end(),
                                       [&](const auto& kv) { return wantsConfig(kv.second); });
     if (pending == announced_.end()) return false;
-    if (!ensureNative()) return false;
+
+    if (!native_) {
+        if (nativeRetryIn_ > 0) {
+            --nativeRetryIn_;
+            return false;
+        }
+        native_ = options_.nativeProvider();
+        if (!native_) {  // CTRE module not loaded (yet): look again later
+            nativeRetryIn_ = kNativeRetryPolls;
+            return false;
+        }
+    }
 
     Announced& a = pending->second;
     const sdk::DeviceId id = pending->first;

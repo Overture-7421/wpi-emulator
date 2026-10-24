@@ -20,8 +20,7 @@ public:
     // Voltage across ONE motor. `motorOmegaRadPerSec` is the motor SHAFT speed in the direction of the
     // command, `batteryVoltageV` the present supply (the command saturates at +-battery).
     //  * !valid / no data: neutral (Brake = 0 V shorted, Coast = the back-EMF, i.e. no current)
-    //  * hasTorqueCurrent: V = I*R + omega/Kv (a controller that regulates current: TorqueCurrentFOC, or any
-    //    Phoenix 6 FOC mode, whose reported voltage fits only the controller's own motor model)
+    //  * hasTorqueCurrent: V = I*R + omega/Kv (a TorqueCurrentFOC request)
     //  * otherwise voltageV (or dutyCycle * battery if only duty is present)
     double voltage(const sdk::MotorOutput& out, double motorOmegaRadPerSec, double batteryVoltageV) const;
 

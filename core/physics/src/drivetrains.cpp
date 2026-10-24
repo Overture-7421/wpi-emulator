@@ -19,15 +19,11 @@ double finiteOrZero(double v) { return std::isfinite(v) ? v : 0.0; }
 
 int driveMotorCount(const WheelSpec& w) { return std::clamp(w.driveMotorCount, 1, kMaxMotorsPerAxis); }
 
-// Voltage across drive motor `i`: its own entry when the command lists motors (extras repeat motor 0). A
-// torque-current command is resolved against the motor this drivetrain simulates at its present shaft speed;
-// the controller's own voltage report only fits the controller's motor model (sdk/physics/drivetrain.h).
-double driveVoltage(const WheelCommand& cmd, int i, const IMotorModel& motor, double motorOmega) {
+// Voltage of drive motor `i`: its own entry when the command lists motors (extras repeat motor 0).
+double driveVoltage(const WheelCommand& cmd, int i) {
     if (cmd.driveMotors <= 0) return cmd.driveVoltageV;
     const int n = std::min(cmd.driveMotors, kMaxMotorsPerAxis);
-    const auto k = static_cast<std::size_t>(i < n ? i : 0);
-    if (cmd.driveHasTorqueCurrent[k]) return voltageForTorqueCurrent(motor.spec(), cmd.driveTorqueCurrentsA[k], motorOmega);
-    return cmd.driveMotorVoltagesV[k];
+    return cmd.driveMotorVoltagesV[static_cast<std::size_t>(i < n ? i : 0)];
 }
 
 bool isRoller(WheelKind kind) { return kind == WheelKind::Omni || kind == WheelKind::Mecanum; }
@@ -122,7 +118,7 @@ WheelDrive TractionDrivetrain::driveFor(const Wheel& w, const WheelCommand& cmd,
     double torqueSum = 0.0, dampingSum = 0.0;
     supplyCurrentA = 0.0;
     for (int i = 0; i < count; ++i) {
-        const double voltageV = finiteOrZero(driveVoltage(cmd, i, *w.driveMotor, motorOmega));
+        const double voltageV = finiteOrZero(driveVoltage(cmd, i));
         torqueSum += w.driveMotor->limitedTorqueNm(voltageV, motorOmega, limit);
         dampingSum += w.driveMotor->dampingNmS(voltageV, motorOmega, limit);
         supplyCurrentA += w.driveMotor->supplyCurrentA(voltageV, motorOmega, limit);
@@ -242,12 +238,7 @@ void TractionDrivetrain::advanceWheel(std::size_t i, WheelCommand cmd, float dt,
     const Quat rot = world_->isValid(body_) ? world_->pose(body_).rotation : Quat{};
     Wheel& w = wheels_[i];
     WheelState& st = states_[i];
-    // A steer torque-current command is resolved like a drive one: against our steer motor at its rotor speed.
-    const double steerV = finiteOrZero(
-        cmd.steerHasTorqueCurrent && w.steerMotor
-            ? voltageForTorqueCurrent(w.steerMotor->spec(), cmd.steerTorqueCurrentA,
-                                      std::max(static_cast<double>(w.spec->steerGearRatio), 1e-6) * w.steerOmega)
-            : cmd.steerVoltageV);
+    const double steerV = finiteOrZero(cmd.steerVoltageV);
 
     double supply = 0.0;
     WheelDrive drive;
