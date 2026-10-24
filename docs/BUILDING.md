@@ -93,11 +93,11 @@ Pass these options to `cmake --preset`, not `cmake --build`.
 |---|---|---|
 | `WPIEMU_BUILD_APP` | ON | Build the Qt application. OFF removes the Qt requirement. |
 | `WPIEMU_BUILD_TESTS` | ON | Build tests and register CTest checks. |
-| `WPIEMU_BUILD_PLUGIN_TEMPLATE` | ON | Compile the season-plugin skeleton. |
+| `WPIEMU_BUILD_PLUGIN_TEMPLATE` | ON | Compile the game-plugin skeleton in `seasons/_template/game`. |
 | `WPIEMU_WARNINGS_AS_ERRORS` | OFF | Promote first-party warnings to errors. |
 | `WPIEMU_BUILD_UI_DEMOS` | ON | Build the editor and run-view demo applications. |
-| `WPIEMU_WPILIB_SEASON` | The season pinned by `wpilib.default` | Select a WPILib season profile from `versions.json`. |
-| `WPIEMU_SEASONS` | The selected build season | Semicolon-separated extensions to compose, for example `"2026;2027"`. Extra seasons use isolated, Qt-free sub-builds and must have real HAL artifacts. |
+| `WPIEMU_WPILIB_SEASON` | The season whose manifest sets `"default": true` | Select a season pack from `seasons/`. |
+| `WPIEMU_SEASONS` | The selected build season | Semicolon-separated extensions to compose, or `all` for every season pack. Extra seasons use isolated, Qt-free sub-builds and must have real HAL artifacts. |
 | `WPIEMU_EXTENSION_ONLY` | OFF | Build just the extension and its real-HAL tests, without app, physics or plugins. |
 | `WPIEMU_REQUIRE_REAL_HAL` | OFF | Fail configuration instead of producing a stub when HAL is missing. |
 | `WPIEMU_WPILIB_ROOT` | auto | Use a Maven cache, year directory, or extracted artifacts. Also read from the environment. |
@@ -108,16 +108,17 @@ Pass these options to `cmake --preset`, not `cmake --build`.
 
 ## Multi-season builds
 
-The normal developer build selects one season. Distribution builds compose both:
+The normal developer build selects one season. Distribution builds compose every [season pack](reference/seasons.md):
 
 ```powershell
-cmake -S . -B build\dual-season -G "Visual Studio 18 2026" -A x64 -DCMAKE_PREFIX_PATH="C:\Qt\6.8.3\msvc2022_64" "-DWPIEMU_SEASONS=2026;2027" -DWPIEMU_WPILIB_DOWNLOAD=ON -DWPIEMU_REQUIRE_REAL_HAL=ON -DWPIEMU_WARNINGS_AS_ERRORS=ON
+cmake -S . -B build\dual-season -G "Visual Studio 18 2026" -A x64 -DCMAKE_PREFIX_PATH="C:\Qt\6.8.3\msvc2022_64" -DWPIEMU_SEASONS=all -DWPIEMU_WPILIB_DOWNLOAD=ON -DWPIEMU_REQUIRE_REAL_HAL=ON -DWPIEMU_WARNINGS_AS_ERRORS=ON
 cmake --build build\dual-season --config Release --parallel
 ctest --test-dir build\dual-season -C Release -R halsim_ext --output-on-failure
 ```
 
-The primary build remains 2026/C++20; the 2027 extension sub-build uses C++23.
-Building both requires Visual Studio 2026 or GCC 14+ (an appropriate recent Xcode on macOS).
+The C++ standard of each extension follows its season's HAL ABI profile (`cxxStandard`), so the primary build
+and each extension sub-build can differ. A season whose profile needs C++23 requires Visual Studio 2026 or
+GCC 14+ (an appropriate recent Xcode on macOS).
 Use a separate build directory rather than changing generators in an existing one.
 `WPIEMU_WPILIB_ROOT_<year>` optionally supplies artifacts for an extra season;
 the primary `WPIEMU_WPILIB_ROOT` is never reused across seasons.
@@ -126,7 +127,8 @@ build-tree `<year>` directory. Install and CPack include every requested season.
 
 With JDK 25 and the native toolchain installed, set `WPIEMU_E2E=1` and run
 `ctest --test-dir build\dual-season -C Release -R "^e2e.season_2027$" --output-on-failure`.
-This runs both [2027 sample robots](../samples/season_2027/README.md).
+Every season pack that declares `probes` registers `e2e.season_<year>`, `e2e.vision_<year>` and
+`e2e.vendor_<year>` (the preview season's [sample robots](../samples/season_2027/README.md)); the tests read their season from the environment CTest sets.
 `WPIEMU_E2E_JAVA_HOME` optionally chooses their JDK; `WPIEMU_E2E_LAUNCH=direct`
 exercises external launch instead of Gradle init-script injection.
 
@@ -142,11 +144,14 @@ python tools\check_boundaries.py
 python tools\check_boundaries.py --self-test
 python tools\check_docs.py
 python tools\check_versions.py
+python tools\check_seasons.py
 python -B -m unittest discover -s tools\tests -v
 python tools\check_wpilib_configure.py --generator "Visual Studio 17 2022" --architecture x64
 ```
 
-The WPILib configure check uses synthetic artifacts and does not build or load a robot.
+The season check validates the [season packs](reference/seasons.md) and rejects season-year literals
+outside them. The WPILib configure check runs once per season pack with synthetic artifacts and does
+not build or load a robot.
 On Linux/macOS, pass only `--generator Ninja`. The Qt-free doctest executable discovers
 `tests/**/*.cpp`; the run-view suite is separate. Editor tests use `tests/app_editor/*.cc`
 to avoid that source glob. CMake watches this source glob, and building the test
@@ -201,7 +206,7 @@ For the pinned 2027 preview vendors, use a dual-season build and JDK 25:
 ```powershell
 $env:WPIEMU_E2E = "1"
 $env:WPIEMU_E2E_VISION_LANG = "java"
-ctest --test-dir build\dual-season -C Release -R "^e2e[.](vendor|vision)_2027$" --output-on-failure
+ctest --test-dir build\dual-season -C Release -R "^e2e[.](vendor|vision)_2027$" --output-on-failure   # the season whose pack declares probes
 ```
 
 These copy the [2027 probes](../samples/season_2027/README.md) and use actual

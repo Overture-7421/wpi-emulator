@@ -173,9 +173,9 @@ tools/tests, not a private robot runtime. An absent module is retried lazily; mi
 required exports instead diagnose and disable the binding. Without the optional
 build-time binding, registered vision bridges are unavailable and publish nothing.
 
-`nowUs()` prefers the season's HAL clock (`HAL_GetFPGATime` in 2026,
-`HAL_GetMonotonicTime` in 2027), then falls back to `NT_Now`. The bridge interface
-remains microseconds: 2027 HAL/ntcore nanoseconds are converted on reads, and publish
+`nowUs()` prefers the HAL clock of the extension's ABI (the `hal_abi` module names the symbol and unit:
+microseconds for `HAL_GetFPGATime`, nanoseconds for `HAL_GetMonotonicTime`), then falls back to `NT_Now`. The bridge interface
+remains microseconds: nanosecond HAL/ntcore time is converted on reads, and publish
 timestamps are converted back to native nanoseconds with checked overflow. Publisher options
 set `sendAll` and `keepDuplicates`, so unchanged ideal pose arrays still arrive as
 timestamped samples. A nonpositive publish timestamp becomes `1` because ntcore
@@ -220,14 +220,19 @@ schema. `/photonvision/<name>/rawBytes` uses type
 connected heartbeat alone is insufficient. An initial empty result establishes the
 type and property before detections arrive.
 
-The pinned 2027 development version `dev-v2027.0.0-alpha-2-86-gda55d785`
-uses UUID `fd353b11f3a818e9c5b457c7dc5a8f5c` in both the type string and
-JSON property. Its metadata uses nanoseconds, not microseconds; the bridge converts
+A second wire schema, `photon-ns`, uses UUID `fd353b11f3a818e9c5b457c7dc5a8f5c` in both the type
+string and JSON property. Its metadata uses nanoseconds, not microseconds; the bridge converts
 its internal microseconds at encoding. Target and multi-tag layouts are unchanged.
-This exact version is allowed, not arbitrary 2027 versions or the moving `Dev` tag.
+
+Which PhotonLib versions speak which schema is data: `vendors.photonvision` of each
+[season pack](seasons.md) lists the verified versions, the schema and the default version. CMake
+generates the catalog into the bridge, so a new verified release needs no code change. A version
+no pack lists (including the moving `Dev` tag) is **not refused**: the bridge warns once and
+publishes with the default schema of the season the extension was built for, and PhotonLib's own
+UUID check remains the final guard. A genuinely new wire format needs a new named schema in the encoder.
 
 Metadata is four little-endian `i64`s: sequence, capture microseconds, publication
-microseconds (nanoseconds for the pinned 2027 schema) and time-since-last-pong (zero).
+microseconds (nanoseconds for the `photon-ns` schema) and time-since-last-pong (zero).
 Transforms encode translation then
 quaternion `w,x,y,z`, unlike the SDK's `(x,y,z,w)` member order. Lists have a one-byte
 count capped at 127. Optional multi-tag data uses a presence byte and signed 16-bit

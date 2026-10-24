@@ -1,6 +1,6 @@
 # 0017: One HALSim extension per WPILib season
 
-**Status:** Accepted
+**Status:** Accepted. Season facts moved into data by [0018](0018-season-packs.md).
 
 ## Context
 

@@ -9,7 +9,8 @@ owning plugin's README; for the built-in season see
 ## Module, field and state
 
 A season implements [`IGameModule`](../../sdk/include/wpiemu/sdk/game/game_module.h) and depends
-only on the SDK: not core, Qt, IPC, bridges or another season. The registry owns module instances;
+only on the SDK: not core, Qt, IPC, bridges, the HAL or another season. WPILib support is declared by the
+[season pack](seasons.md) that names the plugin (`game.plugin`), never linked into it. The registry owns module instances;
 keep mutable per-session data in the `IField` and `IGameState` they create. Descriptor queries,
 including tag layouts and field frames, must be pure and thread-safe.
 
@@ -24,8 +25,9 @@ HUD values to immutable snapshots. `onTick()` is an optional post-game hook. The
 [runtime reference](runtime.md) defines tick order and session lifecycle.
 
 `WPIEMU_REGISTER_GAME_PLUGIN` defines the namespaced `registerPlugin()` entry point. Built-ins are
-registered through [`seasons/builtin_plugins.cpp`](../../seasons/builtin_plugins.cpp) and the app
-links the plugin aggregator, not individual seasons. This is static registration, not a shared
+registered through [`seasons/builtin_plugins.cpp`](../../seasons/builtin_plugins.cpp), whose plugin must
+match the season manifest, and the app links the plugin aggregator, not individual seasons. A season
+without a plugin (`"game": null`) runs core-only. This is static registration, not a shared
 library ABI. Selection honors `RobotConfig::gamePluginId` when present, otherwise
 `project.wpilibYear`; an unavailable plugin leaves core features available.
 

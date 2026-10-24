@@ -19,10 +19,14 @@ explanation or contract.
   [simulation and physics](concepts/simulation-and-physics.md).
 - **HAL** — WPILib's hardware abstraction layer; see
   [WPILib simulation](concepts/wpilib-simulation.md).
+- **HAL ABI** — One generation of WPILib's HAL interface (headers, types, units, device families); a
+  season names its ABI and the extension selects per-ABI sources; see [season packs](reference/seasons.md).
 - **HALSim** — WPILib's simulation APIs for HAL; see
   [WPILib simulation](concepts/wpilib-simulation.md).
 - **HALSim extension** — A library that adds simulator behavior inside the robot process; see
   [WPILib simulation](concepts/wpilib-simulation.md).
+- **Launch profile** — A named way a GradleRIO generation launches a robot (Gradle tasks and descriptor);
+  see [season packs](reference/seasons.md).
 - **NetworkTables (ntcore)** — WPILib's typed, named-value messaging system; see
   [camera concepts](concepts/networktables-and-cameras.md).
 - **NetworkTables topic** — A named, typed value that publishers update and subscribers read; see
@@ -43,6 +47,10 @@ explanation or contract.
   [simulation and physics](concepts/simulation-and-physics.md).
 - **Robot process** — The separate process running robot code and its HALSim extension; see
   [WPILib simulation](concepts/wpilib-simulation.md).
+- **Season pack** — `seasons/<year>/season.json` plus an optional game plugin: every WPILib fact the
+  emulator needs for one year; see [season packs](reference/seasons.md).
+- **Season pack** — `seasons/<year>/season.json` plus an optional game plugin: every WPILib fact the
+  emulator needs for one year; see [season packs](reference/seasons.md).
 - **SI units** — The International System of Units used for core geometry and physics; see
   [simulation and physics](concepts/simulation-and-physics.md).
 - **SimDevice** — A named set of simulated HAL values; see

@@ -10,6 +10,7 @@ The [architecture](ARCHITECTURE.md) explains module ownership and runtime constr
 
 | Change you need | Use this seam | Guide | Contract |
 |---|---|---|---|
+| Support a new WPILib year, patch, preview revision or vendor-library release | A season pack: `seasons/<year>/season.json` (data only on an existing HAL generation) | [WPILib upgrade](guides/wpilib-upgrade.md) | [Season packs](reference/seasons.md) |
 | Add a game's field, entities, rules, or metadata | An `IGameModule` in `plugins/<name>`; register it through the plugin aggregator | [Game plugins](guides/game-plugins.md) | [Game plugins](reference/game-plugin.md) |
 | Add a game zone, game-fed value, or sound cue | Plugin metadata and `IGameState`; use generic sensor responses for game values | [Game plugins](guides/game-plugins.md) | [Game plugins](reference/game-plugin.md) |
 | Adapt an indexed HAL device family | `ChannelFamilyBridge` and the HAL bridge module | [Devices and bridges](guides/devices.md) | [Bridges](reference/bridges.md) |

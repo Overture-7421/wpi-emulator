@@ -29,28 +29,40 @@ These are the production dependency rules. Tests may combine modules to verify t
 
 | Module | May depend on | Owns |
 |---|---|---|
-| `sdk` | C++ standard library | Header-only interfaces, values, registries, protocol types, and fakes |
+| `sdk` | C++ standard library | Header-only interfaces, values, registries (game plugins, seasons), protocol types, and fakes |
 | `core` | SDK; Box3D privately | Configuration/runtime, mechanisms, plants, and physics adapter |
 | `ipc` | SDK | Local transport and message codec |
-| `bridges/hal` | SDK; HAL headers inside its binding | WPILib HAL device families |
-| `bridges/vendor` | SDK; backend headers inside the module | Vendor devices exposed through SimDevices |
-| `bridges/vision` | SDK; ntcore headers inside its binding | Camera-coprocessor encoders and publishing |
+| `hal_abi` | WPILib headers | Per-HAL-ABI includes, HAL clock and SimDevice constants for robot-process modules |
+| `bridges/hal` | SDK, `hal_abi`; HAL headers inside its binding | WPILib HAL device families; per-ABI sources in `abi/<abi>` |
+| `bridges/vendor` | SDK, `hal_abi`; backend headers inside the module | Vendor devices exposed through SimDevices |
+| `bridges/vision` | SDK, `hal_abi`; ntcore headers inside its binding | Camera-coprocessor encoders and publishing; generated PhotonLib catalog |
 | `bridges/` | SDK and bridge modules | Built-in bridge registration |
-| `halsim_ext` | SDK, IPC, bridge aggregator, WPILib HAL | Robot-process extension |
-| Each `plugins/<name>` | SDK only | One game's field, entities, rules, and metadata |
-| `plugins/` | SDK and game plugins | Built-in plugin registration |
-| `app` | SDK, core, IPC, plugin aggregator, Qt | Desktop composition, host, editor, and run view |
+| `halsim_ext` | SDK, IPC, bridge aggregator, `hal_abi`, WPILib HAL | Robot-process extension; per-ABI platform calls in `src/hal/abi/<abi>` |
+| Each `seasons/<year>/game` | SDK only | One game's field, entities, rules, and metadata |
+| `seasons/` | SDK and game plugins | Season packs (`season.json`), built-in plugin registration and the generated season catalog |
+| `app` | SDK, core, IPC, season and plugin aggregators, Qt | Desktop composition, host, editor, and run view |
 | `app/contract` | SDK and Qt | Host interface shared by editor and run view |
 | `app/ui` | SDK and Qt | Shared Qt support, including 3D scene helpers |
 | `app/editor` | SDK, Qt, `app/ui` | Editor page |
 | `app/runview` | SDK, Qt, `app/ui`, `app/contract` | Run page |
 
 Qt stays out of SDK, core, IPC, bridges, and plugins. Box3D and robot-process backend headers do
-not leak into SDK headers. The app registers seasons through
-[`seasons/builtin_plugins.cpp`](../seasons/builtin_plugins.cpp); the extension registers adapters
+not leak into SDK headers. The app registers game plugins through
+[`seasons/builtin_plugins.cpp`](../seasons/builtin_plugins.cpp) and WPILib season profiles through
+the catalog generated from the season manifests; the extension registers adapters
 through [`bridges/builtin_bridges.cpp`](../bridges/builtin_bridges.cpp). Neither consumer links
 directly to an individual season or bridge. The [boundary checker](../tools/check_boundaries.py)
 enforces these ownership rules.
+
+## WPILib seasons
+
+WPILib support is data plus a small number of per-ABI adapters ([Season packs](reference/seasons.md)).
+A season pack (`seasons/<year>/season.json`) declares the WPILib pin, verified versions, install
+folder, Java major, HAL ABI, launch profile, vendor schemas and an optional game plugin. Core and the
+app read the generated `SeasonRegistry` and never name a year. HAL differences follow the ABI, not the
+year: each season builds its own HALSim extension, and only robot-process code includes `hal_abi` and
+the per-ABI sources. A season therefore needs a game plugin only for game rules; a platform-only season
+runs core-only.
 
 ## Processes and threads
 

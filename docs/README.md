@@ -37,6 +37,7 @@ These pages explain unfamiliar tools and ideas before the architecture and code 
 - [Extension and IPC](reference/extension-ipc.md)
 - [Bridges](reference/bridges.md)
 - [Game plugins](reference/game-plugin.md)
+- [Season packs](reference/seasons.md)
 - [Application](reference/app.md)
 
 ## Guides and examples

@@ -19,14 +19,15 @@ formatted HUD string. These distinctions keep season rules out of core, UI and d
 
 ## Bring up a season
 
-1. Copy [`seasons/_template/game`](../../seasons/_template/game) to `seasons/<year>/game` and follow its
+1. Create the [season pack](../reference/seasons.md) `seasons/<year>/` (copy `seasons/_template`) and set its
+   `"game": {"plugin": "game_<year>"}`. Copy [`seasons/_template/game`](../../seasons/_template/game) to `seasons/<year>/game` and follow its
    [identity checklist](../../seasons/_template/game/README.md). Keep the CMake target, namespace,
    include tree, plugin ID and game year consistent; depend on SDK only.
 2. Implement a stateless `IGameModule`, an `IField` that destroys its bodies before its world, and
    an `IGameState` that resets all per-session state. Use simulation time and context RNG.
-3. Return plugin-prefixed metadata and register the module through `seasons/CMakeLists.txt`,
-   `seasons/builtin_plugins.cpp`, and the test target. The app uses the aggregator, not a direct
-   season dependency.
+3. Return plugin-prefixed metadata and register the module in `seasons/builtin_plugins.cpp` (CMake links it
+   from the manifest). The app uses the aggregator, not a direct season dependency.
+   [`check_seasons.py`](../../tools/check_seasons.py) and the boundary checker verify the wiring.
 4. Start with a selectable year, a resettable state and one observable HUD value. Then add config
    with `ConfigBindings`, field fidelity, rules and entities.
 5. Add focused tests for registration, selection, defaults, field cleanup, repeated reset, rule

@@ -17,7 +17,7 @@
 #   WPIEMU_WPILIB_ROOT      either layout (or the year dir containing maven/). Also read from the
 #                           environment variable of the same name. Default search for a maven cache:
 #                           <PUBLIC|HOME|USERPROFILE>/wpilib/<year>/maven.
-#   WPIEMU_WPILIB_SEASON    WPILib profile year (default: `wpilib.default` in versions.json).
+#   WPIEMU_WPILIB_SEASON    season pack year (default: the pack with "default": true, seasons/<year>/season.json).
 #   WPIEMU_WPILIB_VERSION   optional artifact-version override for the selected season profile.
 #   WPIEMU_WPILIB_DOWNLOAD  OFF by default. ON: fetch missing zips from frcmaven (CI on a clean machine).
 #

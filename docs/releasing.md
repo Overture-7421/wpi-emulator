@@ -46,7 +46,7 @@ The [locator](../core/runtime/src/launcher/extension_locator.cpp) is the lookup 
 Do not require an original build directory for a shipped package.
 
 WPILib runtime libraries are normally supplied by the robot process, not redistributed.
-Release builds set `WPIEMU_SEASONS=2026;2027`; each directory contains a separately
+Release builds set `WPIEMU_SEASONS=all`; each directory contains a separately
 built extension, never a renamed copy of another year's binary. Build every season before
 installing or running CPack. Extra-season configuration rejects stubs, and its real-HAL
 test runs through the parent CTest suite. See [multi-season builds](BUILDING.md#multi-season-builds)
@@ -160,11 +160,14 @@ General dependency, SDL2 and build switches belong to [Building](BUILDING.md).
 
 ## Version pins
 
-[`versions.json`](../versions.json) is the source of truth for shared WPILib, Qt, CMake, Python,
-Ubuntu, macOS, Java-download and Visual C++ runtime pins. CMake reads the pins it needs and
-generates the app's Java toolchain table; `tools\check_versions.py` (CTest `versions.check`)
-checks copies in workflows, packaging scripts and documentation and validates managed-Java
-download metadata. Existing build trees retain their cached `WPIEMU_WPILIB_VERSION` until it is
+[`versions.json`](../versions.json) is the source of truth for shared Qt, CMake, Python,
+Ubuntu, macOS, Java-download and Visual C++ runtime pins. WPILib pins, verified versions, install
+folders and each season's Java major live in the [season packs](reference/seasons.md)
+(`seasons/<year>/season.json`). CMake reads what it needs and generates the app's Java toolchain table
+and season catalog; `tools\check_versions.py` (CTest `versions.check`) checks copies in workflows,
+packaging scripts and documentation and validates managed-Java download metadata, and
+`tools\check_seasons.py` (CTest `seasons.check`) validates the packs. The workflows and packaging
+scripts take the season list from `tools\seasons.py` rather than repeating years. Existing build trees retain their cached `WPIEMU_WPILIB_VERSION` until it is
 passed again. The linuxdeploy versions and checksums live only in the
 [AppImage script](../packaging/linux/build-appimage.sh).
 
