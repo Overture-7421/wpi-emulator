@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "wpiemu/bridges/vendor/symbol_resolver.h"
+#include "wpiemu/sdk/dynamics/motor_model.h"
 #include "wpiemu/sdk/core/interface.h"
 #include "wpiemu/sdk/core/result.h"
 
@@ -96,6 +97,19 @@ inline constexpr int kMotionMagicExpoTorqueCurrentFOC = 37;
 // at the rotor speed we feed it, so the current is the command to carry to the plant (docs/reference/bridges.md).
 // Follower is not decided here (its leader's mode is unknown) and keeps the voltage path.
 bool ctreControlModeRegulatesCurrent(int controlMode);
+
+// TalonFXSimState::SetMotorType, as the firmware sim takes it: the physics input `MotorType` with these values
+// (sim/TalonFXSimState.hpp, 26.3.0). Without it the firmware sim models a Kraken X60 for every TalonFX, whatever
+// is on the robot, and publishes that motor's constants (MotorKV, MotorKT, MotorStallCurrent).
+inline constexpr const char* kPhysicsMotorType = "MotorType";
+namespace sim_motor_type {
+inline constexpr int kKrakenX60 = 0;
+inline constexpr int kKrakenX44 = 1;
+}  // namespace sim_motor_type
+
+// The firmware sim's motor type for the motor the plant simulates; nullopt when the sim cannot represent it
+// (a Falcon 500 or a Minion stays on the firmware's default) or the family is unknown.
+std::optional<int> ctreSimMotorTypeFor(sdk::MotorFamily family);
 
 // Parsed `<spn>,<token>\n` lines of c_ctre_phoenix6_get_configs. Tokens: `s_<n>` (serialized: IEEE-754 float bits
 // for float SPNs, integer otherwise) or `f_<decimal>`. Unknown SPNs stay available as raw text.

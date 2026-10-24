@@ -116,6 +116,19 @@ against its own motor (`MotorOutput::hasTorqueCurrent`). The mode is read throug
 read-only native seam below; without it, or for a `Follower` whose leader is unknown,
 the voltage path is kept and said once at debug level.
 
+The firmware sim also has to know which motor is attached. Left alone it models a
+Kraken X60 for every TalonFX, and its current limits, its published motor constants
+(`MotorKV`, `MotorKT`, `MotorStallCurrent`) and the voltage it derives in the FOC modes
+all describe that motor, whatever the robot has. The plant knows what it simulates: each
+motor feedback carries the slot's motor family, the hub writes it to the `motorFamily`
+input the vendor bridge announces on every TalonFX, and the bridge sets the matching
+`TalonFXSimState` motor type through the native physics API, once per device and again
+when the plant changes its mind. Only the Kraken X60 and X44 exist in the firmware sim; a
+Falcon 500 or a Minion leaves the default in place, said once at debug level. A real
+Talon reports its motor and its constants itself, and they differ by one to a few percent
+from the WPILib `DCMotor` table the presets carry, so the two models agree closely but
+never exactly; the torque-current path above is what keeps that harmless.
+
 Robot controller inversion is already in the output. Physical mounting reversal is
 separate and belongs to the
 [mechanism mapping](mechanisms.md#motor-commands-and-multiple-controllers); do not

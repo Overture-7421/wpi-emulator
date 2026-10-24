@@ -571,3 +571,37 @@ TEST_CASE("hub: wheel commands carry a torque-current command through to the dri
     CHECK(cmd.steerHasTorqueCurrent);
     CHECK(cmd.steerTorqueCurrentA == 12.5);
 }
+
+TEST_CASE("hub: the plant's motor family reaches a device that announces the input, once per change") {
+    DeviceHub hub;
+    proto::DeviceAnnounce withFamily = talonFxAnnounce(1, 1);
+    withFamily.signalSpecs.push_back(doubleSignal(signal::kMotorFamily, SignalDirection::Input));  // index 7
+    hub.onAnnounce(withFamily);
+    hub.onAnnounce(talonFxAnnounce(2, 2));  // a device without the input never receives it
+    REQUIRE(hub.bind(kSlotA, kTalon1).ok());
+    REQUIRE(hub.bind(kSlotB, DeviceKey{"phoenix6", "talonfx", 2, "rio", -1}).ok());
+
+    MotorFeedback fb;
+    fb.rotorPositionRot = 0.5;
+    fb.motorFamily = MotorFamily::KrakenX44;
+    hub.writeMotorFeedback(kSlotA, fb);
+    hub.writeMotorFeedback(kSlotB, fb);
+    proto::SensorFrame out;
+    hub.buildSensorFrame(out, false);
+    auto valueOf = [&](DeviceId d, std::uint16_t index) {
+        for (const auto& s : out.samples)
+            if (s.device == d && s.signal == index) return s.value;
+        return -999.0;
+    };
+    CHECK(valueOf(DeviceId{1}, 7) == static_cast<double>(static_cast<int>(MotorFamily::KrakenX44)));
+    CHECK(valueOf(DeviceId{2}, 7) == -999.0);
+
+    // Unchanged: not resent. Unknown: never sent, the previous value stands.
+    hub.writeMotorFeedback(kSlotA, fb);
+    hub.buildSensorFrame(out, false);
+    CHECK(valueOf(DeviceId{1}, 7) == -999.0);
+    fb.motorFamily = MotorFamily::Unknown;
+    hub.writeMotorFeedback(kSlotA, fb);
+    hub.buildSensorFrame(out, true);
+    CHECK(valueOf(DeviceId{1}, 7) == static_cast<double>(static_cast<int>(MotorFamily::KrakenX44)));
+}

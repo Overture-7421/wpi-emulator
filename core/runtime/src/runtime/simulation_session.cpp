@@ -287,6 +287,7 @@ void SimulationSession::stepDrivetrain(double dt, double& currentA) {
         MotorFeedback drive;
         drive.rotorPositionRot = radToRot(st.driveWheelAngleRad) * w.driveGearRatio;
         drive.rotorVelocityRps = radToRot(st.driveWheelOmegaRadPerSec) * w.driveGearRatio;
+        drive.motorFamily = motorFamilyOf(w.driveMotor);
         for (int m = 0; m < std::clamp(w.driveMotorCount, 1, kMaxMotorsPerAxis); ++m)
             hub_.writeMotorFeedback({slot_owner::kDrivetrain, driveSlotName(w.name, m)}, drive);
         const SlotAddress steerSlot{slot_owner::kDrivetrain, steerSlotName(w.name)};
@@ -294,6 +295,7 @@ void SimulationSession::stepDrivetrain(double dt, double& currentA) {
             MotorFeedback steer;
             steer.rotorPositionRot = radToRot(st.steerAngleRad) * w.steerGearRatio;
             steer.rotorVelocityRps = radToRot(st.steerOmegaRadPerSec) * w.steerGearRatio;
+            steer.motorFamily = motorFamilyOf(w.steerMotor);
             hub_.writeMotorFeedback(steerSlot, steer);
             hub_.writeEncoder({slot_owner::kDrivetrain, steerEncoderSlotName(w.name)},
                               {radToRot(st.steerAngleRad), radToRot(st.steerOmegaRadPerSec)});

@@ -7,6 +7,7 @@
 #include <optional>
 
 #include "wpiemu/sdk/core/math.h"
+#include "wpiemu/sdk/dynamics/motor_model.h"
 
 namespace wpiemu::sdk {
 
@@ -32,6 +33,9 @@ struct MotorFeedback {
     double rotorAccelerationRps2 = 0.0;
     std::optional<bool> forwardLimit;
     std::optional<bool> reverseLimit;
+    // The motor the plant simulates on this slot, for a firmware sim that can be told what is attached
+    // (devices/signals.h kMotorFamily). Unknown: not sent.
+    MotorFamily motorFamily = MotorFamily::Unknown;
 };
 
 struct EncoderFeedback {

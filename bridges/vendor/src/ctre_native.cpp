@@ -153,6 +153,14 @@ bool ctreControlModeRegulatesCurrent(int mode) {
            mode == cm::kMotionMagicExpoVoltageFOC || mode == cm::kMotionMagicExpoTorqueCurrentFOC;
 }
 
+std::optional<int> ctreSimMotorTypeFor(sdk::MotorFamily family) {
+    switch (family) {
+        case sdk::MotorFamily::KrakenX60: return sim_motor_type::kKrakenX60;
+        case sdk::MotorFamily::KrakenX44: return sim_motor_type::kKrakenX44;
+        default: return std::nullopt;
+    }
+}
+
 sdk::Result<double> CtreSimNative::readSignal(CtreDeviceType type, int id, std::string_view bus, int spn) const {
     if (!hasSignalRead()) return sdk::makeError(sdk::ErrorCode::Unsupported, "CTRE signal API not available");
     const std::string_view model = ctreModelName(type);
