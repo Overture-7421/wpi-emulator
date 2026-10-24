@@ -319,7 +319,7 @@ TEST_CASE("hub: distance slots accept CANrange and deliver metres rather than vo
     DeviceHub hub;
     proto::DeviceAnnounce range;
     range.id = DeviceId{1};
-    range.descriptor = {"phoenix6", "canrange", "ctre", 33, kBusUnknown};
+    range.descriptor = {"phoenix6", "canrange", "ctre", 33, kBusUnknown, -1, {}, "", ""};
     range.descriptor.capabilities = Capability::Distance;
     range.signalSpecs = {doubleSignal(signal::kDistance, SignalDirection::Input)};
     const SlotSpec sensor{"sensor", "Distance", SlotType::DistanceSensor, false, "", "", 0};
@@ -329,7 +329,7 @@ TEST_CASE("hub: distance slots accept CANrange and deliver metres rather than vo
     REQUIRE(hub.bind({"hopper", "sensor"}, range.descriptor.key()).ok());
     CHECK_FALSE(hasWarning(hub, "unmapped_loopback"));
     CHECK(isCompatible(sensor, range.descriptor));
-    CHECK_FALSE(isCompatible({"voltage", "", SlotType::AnalogSensor}, range.descriptor));
+    CHECK_FALSE(isCompatible({"voltage", "", SlotType::AnalogSensor, true, "", "", 0}, range.descriptor));
     hub.writeDistance({"hopper", "sensor"}, 0.12);
     proto::SensorFrame out;
     hub.buildSensorFrame(out, true);

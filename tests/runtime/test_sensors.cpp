@@ -158,7 +158,7 @@ TEST_CASE("sensors: a session feeds game values to the mapped device and reports
 
     proto::DeviceAnnounce rangeDevice;
     rangeDevice.id = DeviceId{201};
-    rangeDevice.descriptor = {"phoenix6", "canrange", "ctre", 33, kBusUnknown};
+    rangeDevice.descriptor = {"phoenix6", "canrange", "ctre", 33, kBusUnknown, -1, {}, "", ""};
     rangeDevice.descriptor.capabilities = Capability::Distance;
     rangeDevice.signalSpecs = {SignalSpec{signal::kDistance, SignalDirection::Input, SignalType::Double, "m"}};
 
