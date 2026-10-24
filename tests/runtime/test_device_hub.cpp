@@ -4,6 +4,7 @@
 
 #include "wpiemu/core/runtime/device_hub.h"
 #include "wpiemu/sdk/devices/signals.h"
+#include "wpiemu/sdk/physics/drivetrain.h"
 #include "wpiemu/sdk/testing/device_fixtures.h"
 
 using namespace wpiemu::sdk;
@@ -537,4 +538,36 @@ TEST_CASE("hub: a reversed motor slot flips its command and its rotor feedback")
     CHECK(std::find(exported.begin(), exported.end(), SlotMapping{second, talon2, true}) != exported.end());
     hub.unbind(second);
     CHECK_FALSE(hub.isReversed(second));
+}
+
+TEST_CASE("hub: wheel commands carry a torque-current command through to the drivetrain") {
+    DeviceHub hub;
+    hub.onAnnounce(talonFxAnnounce(1, 1));
+    hub.onAnnounce(talonFxAnnounce(2, 2));
+    WheelSpec wheel;
+    wheel.name = "fl";
+    wheel.driveMotorCount = 2;
+    REQUIRE(hub.bind({slot_owner::kDrivetrain, driveSlotName("fl", 0)}, kTalon1).ok());
+    REQUIRE(hub.bind({slot_owner::kDrivetrain, steerSlotName("fl")}, DeviceKey{"phoenix6", "talonfx", 2, "rio", -1}).ok());
+    hub.setBatteryVoltage(12.0);
+
+    // Drive: an FOC request (torque current present); steer: a voltage request (torque current 0).
+    hub.onActuatorFrame(frame({{DeviceId{1}, 0, 0.9}, {DeviceId{1}, 1, 11.0}, {DeviceId{1}, 2, -156.0},
+                               {DeviceId{2}, 0, 0.25}, {DeviceId{2}, 1, 3.0}, {DeviceId{2}, 2, 0.0}}));
+    WheelCommand cmd = wheelCommandFromHub(hub, wheel);
+    CHECK(cmd.driveMotors == 2);
+    CHECK(cmd.driveHasTorqueCurrent[0]);
+    CHECK(cmd.driveTorqueCurrentsA[0] == -156.0);
+    CHECK(cmd.driveMotorVoltagesV[0] == 11.0);  // still carried, the drivetrain decides which to use
+    CHECK(cmd.driveHasTorqueCurrent[1]);         // the unmapped second motor mirrors motor 0 in full
+    CHECK(cmd.driveTorqueCurrentsA[1] == -156.0);
+    CHECK_FALSE(cmd.steerHasTorqueCurrent);
+    CHECK(cmd.steerVoltageV == 3.0);
+
+    // The next tick the robot leaves FOC: the zero clears the torque path.
+    hub.onActuatorFrame(frame({{DeviceId{1}, 2, 0.0}, {DeviceId{2}, 2, 12.5}}));
+    cmd = wheelCommandFromHub(hub, wheel);
+    CHECK_FALSE(cmd.driveHasTorqueCurrent[0]);
+    CHECK(cmd.steerHasTorqueCurrent);
+    CHECK(cmd.steerTorqueCurrentA == 12.5);
 }

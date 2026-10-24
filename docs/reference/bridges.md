@@ -78,11 +78,26 @@ signals or capabilities. Phoenix 5 exposes its native sensors and a discover-onl
 Pigeon IMU; it does not use Phoenix 6's input guard or config readback.
 
 For Phoenix motors, the emulator drives rotor feedback and firmware applies its own
-ratios and offsets. The plant uses firmware-resolved `motorVoltage`; only if that is
-absent does the hub fall back to duty cycle times battery voltage. Phoenix
-`torqueCurrentReported` is telemetry, not a torque-current request. Using it as a
-request would model the controller twice. Robot controller inversion is already in
-the output. Physical mounting reversal is separate and belongs to the
+ratios and offsets. In the voltage and duty-cycle control modes the plant uses
+firmware-resolved `motorVoltage`; only if that is absent does the hub fall back to duty
+cycle times battery voltage. There `torqueCurrentReported` is telemetry derived from
+that voltage; using it as a request would model the controller twice.
+
+The FOC control modes invert this. The firmware regulates torque current: it resolves
+the request to a current with **its** motor model and reports the voltage that model
+needs at the rotor speed the emulator fed it. That voltage fits only CTRE's motor;
+applied to the motor the emulator simulates, the two models disagree about back-EMF,
+and a swerve steer module ran away to free speed while its controller asked for the
+opposite sign ([ADR 0017](../decisions/0017-foc-requests-carry-torque-current.md)).
+So the vendor bridge announces a canonical `torqueCurrent` next to the telemetry and
+fills it every tick: the firmware's torque current while the device's `ControlMode`
+status signal is an FOC mode, `0` otherwise. The plant then resolves the current
+against its own motor (`MotorOutput::hasTorqueCurrent`). The mode is read through the
+read-only native seam below; without it, or for a `Follower` whose leader is unknown,
+the voltage path is kept and said once at debug level.
+
+Robot controller inversion is already in the output. Physical mounting reversal is
+separate and belongs to the
 [mechanism mapping](mechanisms.md#motor-commands-and-multiple-controllers); do not
 invert it again in a vendor rule.
 

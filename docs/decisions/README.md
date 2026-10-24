@@ -25,11 +25,12 @@ These records explain adopted design constraints, not implementation inventories
 | [0014](0014-updater-without-api-or-silent-install.md) | The updater needs no API and installs nothing silently |
 | [0015](0015-managed-java-after-wpilib.md) | The emulator finds a working Java first and downloads one only when none works |
 | [0016](0016-robot-setup-lives-in-the-project.md) | Robot setup lives in the project |
+| [0017](0017-foc-requests-carry-torque-current.md) | FOC requests reach the plant as torque current |
 
 ## Maintaining the set
 
-Records explain rationale and trade-offs; current rules belong in the owning reference, not here.
-Keep each record within 45 physical lines and this index within 35. Choose the next unused number;
-never reuse or renumber one. Update the record and index together.
+Records explain rationale and trade-offs; current rules belong in the owning reference, not here. Keep each
+record within 45 physical lines and this index within 35. Choose the next unused number; never reuse or
+renumber one. Update the record and index together.
 
 Next: [Contributing](../CONTRIBUTING.md).

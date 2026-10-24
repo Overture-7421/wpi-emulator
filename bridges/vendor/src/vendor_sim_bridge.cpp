@@ -21,12 +21,29 @@ public:
     RecordingHost(VendorSimDeviceBridge& owner, sdk::IBridgeHost& real) : owner_(&owner), real_(&real) {}
 
     sdk::DeviceId announce(const sdk::DeviceDescriptor& descriptor, std::vector<sdk::SignalSpec> signalSpecs) override {
-        std::optional<std::uint32_t> position, velocity;
+        std::optional<std::uint32_t> position, velocity, torqueReported, torqueCommand;
         for (std::size_t i = 0; i < signalSpecs.size(); ++i) {
             if (signalSpecs[i].name == sdk::signal::kPosition)
                 position = static_cast<std::uint32_t>(i);
             if (signalSpecs[i].name == sdk::signal::kVelocity)
                 velocity = static_cast<std::uint32_t>(i);
+            if (signalSpecs[i].name == ctre::vsignal::kTorqueCurrentReported)
+                torqueReported = static_cast<std::uint32_t>(i);
+            if (signalSpecs[i].name == sdk::signal::kTorqueCurrent)
+                torqueCommand = static_cast<std::uint32_t>(i);
+        }
+        const bool phoenixMotor = descriptor.family == ctre::kFamilyPhoenix6 &&
+                                  (descriptor.type == ctre::kTypeTalonFx || descriptor.type == ctre::kTypeTalonFxs);
+        if (phoenixMotor && torqueReported && !torqueCommand) {
+            // Declared here so the hub can index it; appendTorqueCommands fills it every tick: the firmware's
+            // torque current in the FOC control modes, 0 in every other mode (the voltage path).
+            sdk::SignalSpec spec;
+            spec.name = sdk::signal::kTorqueCurrent;
+            spec.direction = sdk::SignalDirection::Output;
+            spec.type = sdk::SignalType::Double;
+            spec.unit = "A";
+            torqueCommand = static_cast<std::uint32_t>(signalSpecs.size());
+            signalSpecs.push_back(std::move(spec));
         }
         const sdk::DeviceId id = real_->announce(descriptor, std::move(signalSpecs));
         if (id.valid()) {
@@ -34,6 +51,8 @@ public:
             announced.descriptor = descriptor;
             announced.positionSignal = position;
             announced.velocitySignal = velocity;
+            announced.torqueReportedSignal = torqueReported;
+            announced.torqueCommandSignal = torqueCommand;
             if (descriptor.type == ctre::kTypeCanCoder && !owner_->options_.nativeProvider &&
                 !announced.configDone) {
                 announced.configDone = true;
@@ -105,8 +124,70 @@ void VendorSimDeviceBridge::poll() {
 }
 
 void VendorSimDeviceBridge::collectOutputs(std::vector<sdk::SignalSample>& out) {
+    const std::size_t first = out.size();
     inner_.collectOutputs(out);
-    readOneConfig();  // collectOutputs is only called while the robot is quiescent
+    // Both below enter CTRE's native sim; collectOutputs is only called while the robot is quiescent.
+    appendTorqueCommands(out, first);
+    readOneConfig();
+}
+
+bool VendorSimDeviceBridge::ensureNative() {
+    if (native_) return true;
+    if (!options_.nativeProvider) return false;
+    if (nativeRetryIn_ > 0) {
+        --nativeRetryIn_;
+        return false;
+    }
+    native_ = options_.nativeProvider();
+    if (!native_) {  // CTRE module not loaded (yet): look again later
+        nativeRetryIn_ = kNativeRetryPolls;
+        return false;
+    }
+    return true;
+}
+
+// Phoenix 6 FOC. In the FOC control modes the firmware regulates torque current; the voltage it reports is the
+// one ITS motor model needs to pass that current at the rotor speed we fed it. Applying that voltage to the
+// motor the emulator simulates lets two models disagree about back-EMF, and a swerve steer module ran away to
+// free speed while its controller asked for the opposite sign. In those modes the plant gets the firmware's
+// torque current (MotorOutput::hasTorqueCurrent, resolved against our own motor); in every other mode the
+// canonical torqueCurrent carries 0 and the voltage path stays as documented. The mode is a status signal read
+// natively (L2, read-only). Without that API the voltage path is kept and said once, at debug level.
+void VendorSimDeviceBridge::appendTorqueCommands(std::vector<sdk::SignalSample>& out, std::size_t first) {
+    if (host_ == nullptr) return;
+    const bool native = ensureNative();
+    for (auto& [id, a] : announced_) {
+        if (!a.torqueCommandSignal || !a.torqueReportedSignal) continue;
+        if (native && !a.controlModeUnavailable) {
+            const auto type = ctreDeviceTypeFromDescriptorType(a.descriptor.type);
+            if (!type || !native_->hasSignalRead()) {
+                a.controlModeUnavailable = true;
+                host_->logger().debug(kCategory, a.descriptor.key().toString() +
+                                                     ": control mode unavailable; FOC requests are applied as voltage");
+            } else {
+                const sdk::Result<double> mode =
+                    native_->readSignal(*type, a.descriptor.id, options_.configBus, spn::kTalonFxControlMode);
+                if (mode) {
+                    a.controlMode = static_cast<int>(mode.value());
+                } else if (mode.error().code == sdk::ErrorCode::Unsupported) {
+                    a.controlModeUnavailable = true;
+                    host_->logger().debug(kCategory, a.descriptor.key().toString() + ": control mode unavailable: " +
+                                                         mode.error().message + "; FOC requests are applied as voltage");
+                }
+                // Any other failure keeps the last mode for this tick.
+            }
+        }
+        double command = 0.0;
+        if (ctreControlModeRegulatesCurrent(a.controlMode)) {
+            for (std::size_t i = out.size(); i-- > first;) {
+                if (out[i].device == id && out[i].signal == *a.torqueReportedSignal) {
+                    command = out[i].value;
+                    break;
+                }
+            }
+        }
+        out.push_back({id, static_cast<std::uint16_t>(*a.torqueCommandSignal), command});
+    }
 }
 
 std::size_t VendorSimDeviceBridge::readPendingConfigs(std::size_t maxDevices) {
@@ -225,18 +306,7 @@ bool VendorSimDeviceBridge::readOneConfig() {
     const auto pending = std::find_if(announced_.begin(), announced_.end(),
                                       [&](const auto& kv) { return wantsConfig(kv.second); });
     if (pending == announced_.end()) return false;
-
-    if (!native_) {
-        if (nativeRetryIn_ > 0) {
-            --nativeRetryIn_;
-            return false;
-        }
-        native_ = options_.nativeProvider();
-        if (!native_) {  // CTRE module not loaded (yet): look again later
-            nativeRetryIn_ = kNativeRetryPolls;
-            return false;
-        }
-    }
+    if (!ensureNative()) return false;
 
     Announced& a = pending->second;
     const sdk::DeviceId id = pending->first;

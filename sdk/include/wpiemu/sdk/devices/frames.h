@@ -11,11 +11,16 @@
 namespace wpiemu::sdk {
 
 // What the robot commanded a motor controller to do this tick (robot -> sim).
+//
+// A controller that regulates current rather than voltage (Phoenix 6 FOC modes, TorqueCurrentFOC) sets
+// `hasTorqueCurrent`: the plant then resolves `torqueCurrentA` against the motor it simulates
+// (dynamics/motor_model.h voltageForTorqueCurrent) and ignores `voltageV`, which such a controller derives from
+// its own motor model and the speed we fed it.
 struct MotorOutput {
     bool valid = false;           // false: slot unmapped or no data yet; use neutral (0 V)
     double dutyCycle = 0.0;       // [-1, 1]
     double voltageV = 0.0;        // voltage across the motor; the hub derives duty * battery V if the device only reports duty
-    double torqueCurrentA = 0.0;  // TorqueCurrentFOC request, 0 otherwise
+    double torqueCurrentA = 0.0;  // the controller's torque-current command, 0 when it regulates voltage
     bool hasTorqueCurrent = false;
 };
 

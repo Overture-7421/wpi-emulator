@@ -141,6 +141,34 @@ CtreSimNative::CtreSimNative(std::shared_ptr<const ISymbolResolver> resolver) : 
     getConfigs_ = reinterpret_cast<GetConfigsNoMallocFn>(resolver_->resolve("c_ctre_phoenix6_get_configs_no_malloc"));
     getPhysics_ = reinterpret_cast<GetPhysicsFn>(resolver_->resolve("c_ctre_phoenix6_platform_sim_get_physics_value"));
     setPhysics_ = reinterpret_cast<SetPhysicsFn>(resolver_->resolve("c_ctre_phoenix6_platform_sim_set_physics_input"));
+    getSignal_ = reinterpret_cast<GetSignalSimplifiedFn>(resolver_->resolve("c_ctre_phoenix6_get_signal_simplified"));
+}
+
+bool ctreControlModeRegulatesCurrent(int mode) {
+    namespace cm = control_mode;
+    return (mode >= cm::kDutyCycleFOC && mode <= cm::kMotionMagicDutyCycleFOC) ||
+           (mode >= cm::kVoltageFOC && mode <= cm::kMotionMagicTorqueCurrentFOC) ||
+           mode == cm::kMotionMagicVelocityDutyCycleFOC || mode == cm::kMotionMagicVelocityVoltageFOC ||
+           mode == cm::kMotionMagicVelocityTorqueCurrentFOC || mode == cm::kMotionMagicExpoDutyCycleFOC ||
+           mode == cm::kMotionMagicExpoVoltageFOC || mode == cm::kMotionMagicExpoTorqueCurrentFOC;
+}
+
+sdk::Result<double> CtreSimNative::readSignal(CtreDeviceType type, int id, std::string_view bus, int spn) const {
+    if (!hasSignalRead()) return sdk::makeError(sdk::ErrorCode::Unsupported, "CTRE signal API not available");
+    const std::string_view model = ctreModelName(type);
+    if (model.empty()) return sdk::makeError(sdk::ErrorCode::Unsupported, "no signal API for this CTRE device type");
+    const std::string modelStr(model);
+    const std::string busStr(bus.empty() ? std::string_view("rio") : bus);
+    std::uint32_t hash = 0;
+    const int encoded = encodeDevice_(id, modelStr.c_str(), busStr.c_str(), &hash);
+    if (encoded < 0) return sdk::makeError(sdk::ErrorCode::InvalidArgument, "encode_device failed: " + std::to_string(encoded));
+    const auto spnId = static_cast<std::uint32_t>(spn);
+    double value = 0.0, hwTimestamp = 0.0, swTimestamp = 0.0, ecuTimestamp = 0.0;
+    // No wait, zero timeout: the latest value the firmware sim published, never a block on the robot thread.
+    const int status = getSignal_(busStr.c_str(), 0, 0.0, 1, &hash, &spnId, &value, &hwTimestamp, &swTimestamp,
+                                  &ecuTimestamp);
+    if (status < 0) return sdk::makeError(sdk::ErrorCode::IoError, "get_signal failed: " + std::to_string(status));
+    return value;
 }
 
 sdk::Result<std::string> CtreSimNative::readConfigs(CtreDeviceType type, int id, std::string_view bus) const {
@@ -181,7 +209,7 @@ std::shared_ptr<ICtreSimNative> makeCtreSimNative(std::shared_ptr<const ISymbolR
         resolver = std::move(module);
     }
     auto native = std::make_shared<CtreSimNative>(std::move(resolver));
-    if (!native->hasConfigReadback() && !native->hasPhysicsApi()) return nullptr;
+    if (!native->hasConfigReadback() && !native->hasPhysicsApi() && !native->hasSignalRead()) return nullptr;
     return native;
 }
 

@@ -20,6 +20,7 @@ class FakeNative final : public vendor::ICtreSimNative {
 public:
     bool hasConfigReadback() const override { return configApi; }
     bool hasPhysicsApi() const override { return false; }
+    bool hasSignalRead() const override { return signalApi; }
     Result<std::string> readConfigs(vendor::CtreDeviceType type, int id, std::string_view bus) const override {
         ++reads;
         lastBus = std::string(bus);
@@ -28,8 +29,23 @@ public:
         if (failWith) return Error{*failWith, "forced failure"};
         return text;
     }
+    Result<double> readSignal(vendor::CtreDeviceType, int id, std::string_view, int spn) const override {
+        ++signalReads;
+        lastSignalId = id;
+        lastSpn = spn;
+        if (!signalApi) return Error{ErrorCode::Unsupported, "no signal API"};
+        if (signalFailWith) return Error{*signalFailWith, "forced signal failure"};
+        return static_cast<double>(controlMode);
+    }
     int getPhysicsValue(vendor::CtreDeviceType, int, const char*, double*) const override { return -1; }
     int setPhysicsInput(vendor::CtreDeviceType, int, const char*, double) override { return -1; }
+
+    bool signalApi = false;
+    int controlMode = vendor::control_mode::kDisabledOutput;
+    std::optional<ErrorCode> signalFailWith;
+    mutable int signalReads = 0;
+    mutable int lastSignalId = -1;
+    mutable int lastSpn = -1;
 
     bool configApi = true;
     std::string text = "1901,s_1\n1918,s_1070945649\n1919,s_1065353216\n1920,s_1\n1921,s_7\n";
@@ -447,6 +463,114 @@ TEST_CASE("vendor bridge: no native provider means no L2 activity at all") {
     rig.start();
     rig.bridge->poll();
     CHECK(rig.bridge->configOf(rig.host.idOf("talonfx", 4)) == nullptr);
+}
+
+namespace {
+
+double sampleOf(const std::vector<SignalSample>& samples, const FakeHost& host, DeviceId id, const std::string& name) {
+    const std::uint16_t idx = host.signalIndex(id, name);
+    REQUIRE(idx != 0xFFFF);
+    double value = 0.0;
+    bool found = false;
+    for (const auto& s : samples)
+        if (s.device == id && s.signal == idx) {
+            value = s.value;
+            found = true;  // the last sample of the tick wins, as in the hub
+        }
+    REQUIRE(found);
+    return value;
+}
+
+}  // namespace
+
+TEST_CASE("vendor bridge: FOC control modes hand the plant the firmware's torque current, other modes a zero") {
+    auto native = std::make_shared<FakeNative>();
+    native->signalApi = true;
+    native->controlMode = vendor::control_mode::kPositionVoltageFOC;
+    auto options = BridgeRig::defaultOptions();
+    options.nativeProvider = [native] { return native; };
+    BridgeRig rig(options);
+    const auto t = addTalonFx(*rig.backend, 4);
+    rig.start();
+    rig.bridge->poll();
+    const DeviceId id = rig.host.idOf("talonfx", 4);
+    REQUIRE(id.valid());
+
+    // The canonical torqueCurrent is announced next to the vendor telemetry, as an output in amps.
+    const SignalSpec* command = rig.host.signalSpec(id, sg::kTorqueCurrent);
+    REQUIRE(command != nullptr);
+    CHECK(command->direction == SignalDirection::Output);
+    CHECK(command->unit == "A");
+    CHECK(rig.host.signalSpec(id, ctre::vsignal::kTorqueCurrentReported) != nullptr);
+
+    // The runaway case from a real log: the firmware brakes with -156 A while reporting +11 V at the supply.
+    rig.backend->poke(t.motor, "motorVoltage", 11.17);
+    rig.backend->poke(t.motor, "torqueCurrent", -156.0);
+    std::vector<SignalSample> out;
+    rig.bridge->collectOutputs(out);
+    CHECK(native->signalReads == 1);
+    CHECK(native->lastSignalId == 4);
+    CHECK(native->lastSpn == vendor::spn::kTalonFxControlMode);
+    CHECK(sampleOf(out, rig.host, id, sg::kMotorVoltage) == doctest::Approx(11.17));  // still reported
+    CHECK(sampleOf(out, rig.host, id, ctre::vsignal::kTorqueCurrentReported) == doctest::Approx(-156.0));
+    CHECK(sampleOf(out, rig.host, id, sg::kTorqueCurrent) == doctest::Approx(-156.0));  // the plant's command
+
+    // A voltage mode: the same telemetry stays telemetry.
+    native->controlMode = vendor::control_mode::kPositionVoltage;
+    out.clear();
+    rig.bridge->collectOutputs(out);
+    CHECK(sampleOf(out, rig.host, id, ctre::vsignal::kTorqueCurrentReported) == doctest::Approx(-156.0));
+    CHECK(sampleOf(out, rig.host, id, sg::kTorqueCurrent) == 0.0);
+
+    // Followers are not decided (their leader's mode is unknown) and keep the voltage path.
+    native->controlMode = vendor::control_mode::kFollower;
+    out.clear();
+    rig.bridge->collectOutputs(out);
+    CHECK(sampleOf(out, rig.host, id, sg::kTorqueCurrent) == 0.0);
+
+    // A plain TorqueCurrentFOC request behaves like every other FOC mode.
+    native->controlMode = vendor::control_mode::kTorqueCurrentFOC;
+    rig.backend->poke(t.motor, "torqueCurrent", 40.0);
+    out.clear();
+    rig.bridge->collectOutputs(out);
+    CHECK(sampleOf(out, rig.host, id, sg::kTorqueCurrent) == doctest::Approx(40.0));
+
+    // A transient read failure keeps the last known mode for that tick.
+    native->signalFailWith = ErrorCode::IoError;
+    out.clear();
+    rig.bridge->collectOutputs(out);
+    CHECK(sampleOf(out, rig.host, id, sg::kTorqueCurrent) == doctest::Approx(40.0));
+}
+
+TEST_CASE("vendor bridge: without the signal API every request stays on the voltage path, said once") {
+    auto native = std::make_shared<FakeNative>();
+    native->signalApi = false;
+    auto options = BridgeRig::defaultOptions();
+    options.nativeProvider = [native] { return native; };
+    BridgeRig rig(options);
+    const auto t = addTalonFx(*rig.backend, 4);
+    rig.start();
+    rig.bridge->poll();
+    const DeviceId id = rig.host.idOf("talonfx", 4);
+    rig.backend->poke(t.motor, "torqueCurrent", -156.0);
+    std::vector<SignalSample> out;
+    for (int i = 0; i < 3; ++i) {
+        out.clear();
+        rig.bridge->collectOutputs(out);
+        CHECK(sampleOf(out, rig.host, id, sg::kTorqueCurrent) == 0.0);
+    }
+    CHECK(native->signalReads == 0);
+    CHECK(rig.host.log.count(LogLevel::Debug) == 1);
+
+    // No native provider at all: the canonical signal still exists and reads 0.
+    BridgeRig plain;
+    const auto t2 = addTalonFx(*plain.backend, 5);
+    plain.start();
+    plain.bridge->poll();
+    plain.backend->poke(t2.motor, "torqueCurrent", 20.0);
+    out.clear();
+    plain.bridge->collectOutputs(out);
+    CHECK(sampleOf(out, plain.host, plain.host.idOf("talonfx", 5), sg::kTorqueCurrent) == 0.0);
 }
 
 TEST_CASE("vendor bridge: stop is idempotent and clears the session") {

@@ -32,6 +32,13 @@ struct MotorSpec {
     double ktNmPerAmp() const { return stallTorqueNm / stallCurrentA; }
 };
 
+// Voltage that drives `torqueCurrentA` through this motor at shaft speed `omegaRadPerSec`: V = I*R + omega/Kv.
+// A controller that regulates current (Phoenix FOC, TorqueCurrentFOC) reports a voltage that only its own motor
+// model can interpret; the plant resolves the current against the motor it actually simulates.
+inline double voltageForTorqueCurrent(const MotorSpec& m, double torqueCurrentA, double omegaRadPerSec) {
+    return torqueCurrentA * m.resistanceOhm() + omegaRadPerSec / m.kvRadPerSecPerVolt();
+}
+
 // One way a MotorSpec is not physical; `field` is the MotorSpec member name.
 struct MotorSpecFault {
     const char* field;

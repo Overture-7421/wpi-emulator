@@ -20,8 +20,10 @@
 
 namespace wpiemu::sdk {
 
-// Per-wheel actuation for ONE step, taken from the mapped motor slots (MotorOutput::voltageV, already in the
-// wheel frame: positive spins the wheel forward).
+// Per-wheel actuation for ONE step, taken from the mapped motor slots (MotorOutput, already in the wheel frame:
+// positive spins the wheel forward). A motor whose controller regulates current (MotorOutput::hasTorqueCurrent)
+// carries its torque current instead; the drivetrain resolves it against the motor it simulates at that motor's
+// present speed, since the controller's own voltage report only fits the controller's motor model.
 struct WheelCommand {
     double driveVoltageV = 0.0;   // every drive motor, unless `driveMotorVoltagesV` is filled
     double steerVoltageV = 0.0;   // swerve only
@@ -29,24 +31,37 @@ struct WheelCommand {
     // repeat motor 0.
     std::array<double, kMaxMotorsPerAxis> driveMotorVoltagesV{};
     int driveMotors = 0;
+    // Torque-current commands, per drive motor and for the steer motor; `has...` false means use the voltage.
+    std::array<double, kMaxMotorsPerAxis> driveTorqueCurrentsA{};
+    std::array<bool, kMaxMotorsPerAxis> driveHasTorqueCurrent{};
+    double steerTorqueCurrentA = 0.0;
+    bool steerHasTorqueCurrent = false;
 };
 
 // Reads the wheel's drive/steer motor slots (owner = slot_owner::kDrivetrain). Every drive slot up to
-// WheelSpec::driveMotorCount contributes its own voltage; unmapped ones mirror drive motor 0.
+// WheelSpec::driveMotorCount contributes its own command; unmapped ones mirror drive motor 0.
 inline WheelCommand wheelCommandFromHub(const IActuatorReader& hub, const WheelSpec& wheel) {
     WheelCommand cmd;
     const int count = std::clamp(wheel.driveMotorCount, 1, kMaxMotorsPerAxis);
     for (int i = 0; i < count; ++i) {
+        const auto k = static_cast<std::size_t>(i);
         const MotorOutput out = hub.motorOutput({slot_owner::kDrivetrain, driveSlotName(wheel.name, i)});
-        if (out.valid)
-            cmd.driveMotorVoltagesV[static_cast<std::size_t>(i)] = out.voltageV;
-        else if (i > 0)
-            cmd.driveMotorVoltagesV[static_cast<std::size_t>(i)] = cmd.driveMotorVoltagesV[0];
+        if (out.valid) {
+            cmd.driveMotorVoltagesV[k] = out.voltageV;
+            cmd.driveTorqueCurrentsA[k] = out.torqueCurrentA;
+            cmd.driveHasTorqueCurrent[k] = out.hasTorqueCurrent;
+        } else if (i > 0) {
+            cmd.driveMotorVoltagesV[k] = cmd.driveMotorVoltagesV[0];
+            cmd.driveTorqueCurrentsA[k] = cmd.driveTorqueCurrentsA[0];
+            cmd.driveHasTorqueCurrent[k] = cmd.driveHasTorqueCurrent[0];
+        }
     }
     cmd.driveMotors = count;
     cmd.driveVoltageV = cmd.driveMotorVoltagesV[0];
     const MotorOutput steer = hub.motorOutput({slot_owner::kDrivetrain, steerSlotName(wheel.name)});
     cmd.steerVoltageV = steer.valid ? steer.voltageV : 0.0;
+    cmd.steerTorqueCurrentA = steer.valid ? steer.torqueCurrentA : 0.0;
+    cmd.steerHasTorqueCurrent = steer.valid && steer.hasTorqueCurrent;
     return cmd;
 }
 
