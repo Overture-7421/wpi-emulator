@@ -142,7 +142,9 @@ inline ConfigBindings<ChassisSpec> chassisEditorBindings() {
     b.add(withRange(comz, 0.02, 1.5, 0.005), &ChassisSpec::comHeightM);
 
     auto mu = makeSpec("friction", "Hull friction", PropertyType::Double, PropertyUnit::None, d.material.friction,
-                       "Contact", "Friction coefficient of bumpers/frame against walls and fuel.");
+                       "Contact",
+                       "Friction of bumpers and frame. Each contact uses the geometric mean with the surface it "
+                       "touches, so lower values slide along walls more easily.");
     b.add(withRange(mu, 0.0, 2.0, 0.05), &ChassisSpec::material, &Material::friction);
 
     auto rest = makeSpec("restitution", "Hull bounciness", PropertyType::Double, PropertyUnit::None,

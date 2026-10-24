@@ -74,7 +74,10 @@ TireOutput solveImpl(const Curve& g, const TireParams& p, const TireInput& in, c
     }
 
     const float vRefLong = std::max({p.vRefMps, std::fabs(in.vLongMps), std::fabs(rim)});
-    const float vRefLat = std::max(p.vRefMps, std::hypot(in.vLongMps, in.vLatMps));
+    // A spinning wheel pressed against an obstacle keeps a high rim speed with a low ground speed. The lateral channel
+    // uses the same reference so it is not far more saturated than the longitudinal one, which would glue the robot
+    // to the obstacle instead of letting it slide along it.
+    const float vRefLat = std::max({p.vRefMps, std::hypot(in.vLongMps, in.vLatMps), std::fabs(rim)});
     const float uL = rim - in.vLongMps;
     const float uT = -in.vLatMps;
     const FricForce f0 = frictionForce(g, p, in.normalLoadN, uL, uT, vRefLong, vRefLat);

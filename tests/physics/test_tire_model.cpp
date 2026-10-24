@@ -118,6 +118,29 @@ TEST_CASE("tire model: lateral velocity is opposed and capped by mu N times the 
     CHECK(std::fabs(roller.fLatN) < std::fabs(o.fLatN));
 }
 
+TEST_CASE("tire model: a spinning wheel with little ground speed gives up sideways grip, a rolling wheel keeps it") {
+    phys::BrushTireModel brush;
+    phys::PacejkaLiteTireModel pacejka;
+    const TireParams p;
+    for (const sdk::ITireModel* tire : {static_cast<const sdk::ITireModel*>(&brush), static_cast<const sdk::ITireModel*>(&pacejka)}) {
+        // Pressed against a wall: the rim turns at 3 m/s while the contact point creeps sideways at 0.3 m/s.
+        TireInput pinned = groundedInput();
+        pinned.vLatMps = 0.3f;
+        const float rimOmega = 3.f / pinned.wheelRadiusM;
+        const TireOutput spinning = tire->solve(p, pinned, freeWheel(0.f, rimOmega));
+        CHECK(spinning.fLatN < 0.f);
+        CHECK(std::fabs(spinning.fLatN) < 0.15f * p.mu * pinned.normalLoadN);
+
+        // The same sideways creep while rolling at 3 m/s is resisted with most of the available grip.
+        TireInput rolling = groundedInput();
+        rolling.vLongMps = 3.f;
+        rolling.vLatMps = 0.3f;
+        const TireOutput grip = tire->solve(p, rolling, freeWheel(0.f, rimOmega));
+        CHECK(grip.fLatN < 0.f);
+        CHECK(std::fabs(grip.fLatN) > 0.4f * p.mu * rolling.normalLoadN);
+    }
+}
+
 TEST_CASE("tire model: airborne wheels spin freely and apply no force") {
     phys::PacejkaLiteTireModel tire;
     TireInput in = groundedInput(0.f);

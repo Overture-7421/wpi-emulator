@@ -51,7 +51,7 @@ float bumpRampAngleRad(const BumpSpec& b) {
 }
 
 void addBox(FieldLayout& l, const Frame& f, std::string name, const Pose3& pose, const Vec3& size, const char* color,
-            const sdk::Material& material = {}) {
+            const sdk::Material& material = sdk::materials::kFieldStructure) {
     l.boxes.push_back({std::move(name), f.pose(pose), size, color, material, true});
 }
 
@@ -62,14 +62,12 @@ void addAllianceWall(FieldLayout& l, const Frame& f, Alliance a) {
     const float lo = d::kOutpostCenterYM - d::kCorralOpeningWidthM * 0.5f;
     const float hi = d::kOutpostCenterYM + d::kCorralOpeningWidthM * 0.5f;
     const float gapBottom = d::kCorralOpeningBottomM, gapTop = gapBottom + d::kCorralOpeningHeightM;
-    sdk::Material wall;
-    wall.restitution = 0.3f;
-    addBox(l, f, n + "_low_y", at(-t / 2, lo / 2, h / 2), {t, lo, h}, kSteelColor, wall);
+    addBox(l, f, n + "_low_y", at(-t / 2, lo / 2, h / 2), {t, lo, h}, kSteelColor);
     addBox(l, f, n + "_outpost_lip", at(-t / 2, (lo + hi) / 2, gapBottom / 2), {t, hi - lo, gapBottom},
-           allianceColor(a), wall);
+           allianceColor(a));
     addBox(l, f, n + "_outpost_top", at(-t / 2, (lo + hi) / 2, (gapTop + h) / 2), {t, hi - lo, h - gapTop},
-           allianceColor(a), wall);
-    addBox(l, f, n + "_high_y", at(-t / 2, (hi + w) / 2, h / 2), {t, w - hi, h}, kSteelColor, wall);
+           allianceColor(a));
+    addBox(l, f, n + "_high_y", at(-t / 2, (hi + w) / 2, h / 2), {t, w - hi, h}, kSteelColor);
     l.boxes.back().visible = false;  // drawn by addAllianceWallVisuals: opaque base, see-through sheet, opaque tower wall
 }
 
@@ -277,18 +275,15 @@ FieldLayout buildFieldLayout() {
     FieldLayout l;
     const float len = d::kFieldLengthM, wid = d::kFieldWidthM, m = d::kGroundMarginM;
 
-    sdk::Material carpet;
-    carpet.friction = 0.8f;
-    carpet.restitution = 0.f;
-    l.boxes.push_back({"ground", at(len / 2, wid / 2, -0.25f), {len + 2 * m, wid + 2 * m, 0.5f}, kCarpetColor, carpet, true});
+    l.boxes.push_back({"ground", at(len / 2, wid / 2, -0.25f), {len + 2 * m, wid + 2 * m, 0.5f}, kCarpetColor,
+                       sdk::materials::kCarpet, true});
 
-    sdk::Material rail;
-    rail.restitution = 0.3f;
     for (const bool high : {false, true}) {
         const float y = high ? wid + d::kGuardrailThicknessM / 2 : -d::kGuardrailThicknessM / 2;
         const std::string name = high ? "guardrail_high_y" : "guardrail_low_y";
         l.boxes.push_back({name, at(len / 2, y, d::kGuardrailHeightM / 2),
-                           {len, d::kGuardrailThicknessM, d::kGuardrailHeightM}, kRailColor, rail, true, false});
+                           {len, d::kGuardrailThicknessM, d::kGuardrailHeightM}, kRailColor,
+                           sdk::materials::kFieldStructure, true, false});
         addGuardrailVisuals(l, name, y);
     }
 
