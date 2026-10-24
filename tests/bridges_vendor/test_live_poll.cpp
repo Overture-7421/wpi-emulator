@@ -40,10 +40,14 @@ class BusyAwareNative final : public vendor::ICtreSimNative {
 public:
     bool hasConfigReadback() const override { return true; }
     bool hasPhysicsApi() const override { return false; }
+    bool hasSignalRead() const override { return false; }
     Result<std::string> readConfigs(vendor::CtreDeviceType, int, std::string_view) const override {
         ++reads;
         if (robotBusy.load()) ++readsWhileBusy;
         return std::string("1901,s_0\n");
+    }
+    Result<double> readSignal(vendor::CtreDeviceType, int, std::string_view, int) const override {
+        return Error{ErrorCode::Unsupported, "no signal API"};
     }
     int getPhysicsValue(vendor::CtreDeviceType, int, const char*, double*) const override { return -1; }
     int setPhysicsInput(vendor::CtreDeviceType, int, const char*, double) override { return -1; }
@@ -204,7 +208,8 @@ TEST_CASE("vendor live poll: concurrent construction, nothing lost and no native
         const DeviceId dev = rig.host.idOf("talonfx", id);
         REQUIRE(dev.valid());
         CAPTURE(id);
-        CHECK(rig.host.announced.at(dev).signalSpecs.size() == 10);  // 5 motor + 4 rotor + fwd limit
+        // 5 motor + 4 rotor + fwd limit + the synthesized torqueCurrent and motorFamily
+        CHECK(rig.host.announced.at(dev).signalSpecs.size() == 12);
         CHECK(rig.host.signalSpec(dev, sg::kForwardLimit) != nullptr);
     }
     for (int i = 0; i < kDevices; ++i) rig.bridge->collectOutputs(out);

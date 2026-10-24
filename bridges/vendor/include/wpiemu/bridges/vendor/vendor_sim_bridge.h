@@ -119,11 +119,27 @@ private:
         sdk::DeviceDescriptor descriptor;
         std::optional<std::uint32_t> positionSignal;
         std::optional<std::uint32_t> velocitySignal;
+        // Phoenix 6 motors: the firmware's torque current (vendor telemetry) and the canonical torqueCurrent this
+        // bridge synthesizes from it in the FOC control modes (see appendTorqueCommands).
+        std::optional<std::uint32_t> torqueReportedSignal;
+        std::optional<std::uint32_t> torqueCommandSignal;
+        int controlMode = -1;  // last ControlModeValue read, -1 = never
+        bool controlModeUnavailable = false;
+        // TalonFX only: the motorFamily input this bridge announces, the firmware-sim motor type the plant asked
+        // for through it, and the one last written (see applyMotorTypes).
+        std::optional<std::uint32_t> motorFamilySignal;
+        std::optional<int> wantedMotorType;
+        std::optional<int> appliedMotorType;
+        std::optional<sdk::MotorFamily> unsupportedFamilyLogged;
+        bool motorTypeUnavailable = false;
         int configAttempts = 0;
         bool configDone = false;
     };
 
     void drainObservations();
+    bool ensureNative();
+    void applyMotorTypes();
+    void appendTorqueCommands(std::vector<sdk::SignalSample>& out, std::size_t first);
     bool readOneConfig();
 
     std::shared_ptr<sdk::ISimDeviceBackend> backend_;

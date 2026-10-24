@@ -19,7 +19,8 @@ namespace {
 class FakeNative final : public vendor::ICtreSimNative {
 public:
     bool hasConfigReadback() const override { return configApi; }
-    bool hasPhysicsApi() const override { return false; }
+    bool hasPhysicsApi() const override { return physicsApi; }
+    bool hasSignalRead() const override { return signalApi; }
     Result<std::string> readConfigs(vendor::CtreDeviceType type, int id, std::string_view bus) const override {
         ++reads;
         lastBus = std::string(bus);
@@ -28,8 +29,37 @@ public:
         if (failWith) return Error{*failWith, "forced failure"};
         return text;
     }
+    Result<double> readSignal(vendor::CtreDeviceType, int id, std::string_view, int spn) const override {
+        ++signalReads;
+        lastSignalId = id;
+        lastSpn = spn;
+        if (!signalApi) return Error{ErrorCode::Unsupported, "no signal API"};
+        if (signalFailWith) return Error{*signalFailWith, "forced signal failure"};
+        return static_cast<double>(controlMode);
+    }
     int getPhysicsValue(vendor::CtreDeviceType, int, const char*, double*) const override { return -1; }
-    int setPhysicsInput(vendor::CtreDeviceType, int, const char*, double) override { return -1; }
+    int setPhysicsInput(vendor::CtreDeviceType type, int id, const char* key, double value) override {
+        if (!physicsApi) return -1;
+        physicsWrites.push_back({type, id, key, value});
+        return physicsStatus;
+    }
+
+    struct PhysicsWrite {
+        vendor::CtreDeviceType type;
+        int id;
+        std::string key;
+        double value;
+    };
+    bool physicsApi = false;
+    int physicsStatus = 0;
+    std::vector<PhysicsWrite> physicsWrites;
+
+    bool signalApi = false;
+    int controlMode = vendor::control_mode::kDisabledOutput;
+    std::optional<ErrorCode> signalFailWith;
+    mutable int signalReads = 0;
+    mutable int lastSignalId = -1;
+    mutable int lastSpn = -1;
 
     bool configApi = true;
     std::string text = "1901,s_1\n1918,s_1070945649\n1919,s_1065353216\n1920,s_1\n1921,s_7\n";
@@ -447,6 +477,189 @@ TEST_CASE("vendor bridge: no native provider means no L2 activity at all") {
     rig.start();
     rig.bridge->poll();
     CHECK(rig.bridge->configOf(rig.host.idOf("talonfx", 4)) == nullptr);
+}
+
+namespace {
+
+double sampleOf(const std::vector<SignalSample>& samples, const FakeHost& host, DeviceId id, const std::string& name) {
+    const std::uint16_t idx = host.signalIndex(id, name);
+    REQUIRE(idx != 0xFFFF);
+    double value = 0.0;
+    bool found = false;
+    for (const auto& s : samples)
+        if (s.device == id && s.signal == idx) {
+            value = s.value;
+            found = true;  // the last sample of the tick wins, as in the hub
+        }
+    REQUIRE(found);
+    return value;
+}
+
+}  // namespace
+
+TEST_CASE("vendor bridge: FOC control modes hand the plant the firmware's torque current, other modes a zero") {
+    auto native = std::make_shared<FakeNative>();
+    native->signalApi = true;
+    native->controlMode = vendor::control_mode::kPositionVoltageFOC;
+    auto options = BridgeRig::defaultOptions();
+    options.nativeProvider = [native] { return native; };
+    BridgeRig rig(options);
+    const auto t = addTalonFx(*rig.backend, 4);
+    rig.start();
+    rig.bridge->poll();
+    const DeviceId id = rig.host.idOf("talonfx", 4);
+    REQUIRE(id.valid());
+
+    // The canonical torqueCurrent is announced next to the vendor telemetry, as an output in amps.
+    const SignalSpec* command = rig.host.signalSpec(id, sg::kTorqueCurrent);
+    REQUIRE(command != nullptr);
+    CHECK(command->direction == SignalDirection::Output);
+    CHECK(command->unit == "A");
+    CHECK(rig.host.signalSpec(id, ctre::vsignal::kTorqueCurrentReported) != nullptr);
+
+    // The runaway case from a real log: the firmware brakes with -156 A while reporting +11 V at the supply.
+    rig.backend->poke(t.motor, "motorVoltage", 11.17);
+    rig.backend->poke(t.motor, "torqueCurrent", -156.0);
+    std::vector<SignalSample> out;
+    rig.bridge->collectOutputs(out);
+    CHECK(native->signalReads == 1);
+    CHECK(native->lastSignalId == 4);
+    CHECK(native->lastSpn == vendor::spn::kTalonFxControlMode);
+    CHECK(sampleOf(out, rig.host, id, sg::kMotorVoltage) == doctest::Approx(11.17));  // still reported
+    CHECK(sampleOf(out, rig.host, id, ctre::vsignal::kTorqueCurrentReported) == doctest::Approx(-156.0));
+    CHECK(sampleOf(out, rig.host, id, sg::kTorqueCurrent) == doctest::Approx(-156.0));  // the plant's command
+
+    // A voltage mode: the same telemetry stays telemetry.
+    native->controlMode = vendor::control_mode::kPositionVoltage;
+    out.clear();
+    rig.bridge->collectOutputs(out);
+    CHECK(sampleOf(out, rig.host, id, ctre::vsignal::kTorqueCurrentReported) == doctest::Approx(-156.0));
+    CHECK(sampleOf(out, rig.host, id, sg::kTorqueCurrent) == 0.0);
+
+    // Followers are not decided (their leader's mode is unknown) and keep the voltage path.
+    native->controlMode = vendor::control_mode::kFollower;
+    out.clear();
+    rig.bridge->collectOutputs(out);
+    CHECK(sampleOf(out, rig.host, id, sg::kTorqueCurrent) == 0.0);
+
+    // A plain TorqueCurrentFOC request behaves like every other FOC mode.
+    native->controlMode = vendor::control_mode::kTorqueCurrentFOC;
+    rig.backend->poke(t.motor, "torqueCurrent", 40.0);
+    out.clear();
+    rig.bridge->collectOutputs(out);
+    CHECK(sampleOf(out, rig.host, id, sg::kTorqueCurrent) == doctest::Approx(40.0));
+
+    // A transient read failure keeps the last known mode for that tick.
+    native->signalFailWith = ErrorCode::IoError;
+    out.clear();
+    rig.bridge->collectOutputs(out);
+    CHECK(sampleOf(out, rig.host, id, sg::kTorqueCurrent) == doctest::Approx(40.0));
+}
+
+TEST_CASE("vendor bridge: without the signal API every request stays on the voltage path, said once") {
+    auto native = std::make_shared<FakeNative>();
+    native->signalApi = false;
+    auto options = BridgeRig::defaultOptions();
+    options.nativeProvider = [native] { return native; };
+    BridgeRig rig(options);
+    const auto t = addTalonFx(*rig.backend, 4);
+    rig.start();
+    rig.bridge->poll();
+    const DeviceId id = rig.host.idOf("talonfx", 4);
+    rig.backend->poke(t.motor, "torqueCurrent", -156.0);
+    std::vector<SignalSample> out;
+    for (int i = 0; i < 3; ++i) {
+        out.clear();
+        rig.bridge->collectOutputs(out);
+        CHECK(sampleOf(out, rig.host, id, sg::kTorqueCurrent) == 0.0);
+    }
+    CHECK(native->signalReads == 0);
+    CHECK(rig.host.log.count(LogLevel::Debug) == 1);
+
+    // No native provider at all: the canonical signal still exists and reads 0.
+    BridgeRig plain;
+    const auto t2 = addTalonFx(*plain.backend, 5);
+    plain.start();
+    plain.bridge->poll();
+    plain.backend->poke(t2.motor, "torqueCurrent", 20.0);
+    out.clear();
+    plain.bridge->collectOutputs(out);
+    CHECK(sampleOf(out, plain.host, plain.host.idOf("talonfx", 5), sg::kTorqueCurrent) == 0.0);
+}
+
+TEST_CASE("vendor bridge: the plant's motor family becomes the firmware sim's motor type, once per change") {
+    auto native = std::make_shared<FakeNative>();
+    native->physicsApi = true;
+    auto options = BridgeRig::defaultOptions();
+    options.nativeProvider = [native] { return native; };
+    BridgeRig rig(options);
+    addTalonFx(*rig.backend, 4);
+    rig.backend->addDevice("CANMotor:Talon FXS (v6)[9]", {{"supplyVoltage", kIn, SignalType::Double, 12.0},
+                                                        {"dutyCycle", kOut}, {"motorVoltage", kOut}, {"torqueCurrent", kOut}});
+    rig.start();
+    rig.bridge->poll();
+    const DeviceId fx = rig.host.idOf("talonfx", 4);
+    const DeviceId fxs = rig.host.idOf("talonfxs", 9);
+    REQUIRE(fx.valid());
+    REQUIRE(fxs.valid());
+
+    // Announced as an input on the TalonFX only.
+    const SignalSpec* family = rig.host.signalSpec(fx, sg::kMotorFamily);
+    REQUIRE(family != nullptr);
+    CHECK(family->direction == SignalDirection::Input);
+    CHECK(rig.host.signalSpec(fxs, sg::kMotorFamily) == nullptr);
+    const std::uint16_t idx = rig.host.signalIndex(fx, sg::kMotorFamily);
+
+    std::vector<SignalSample> out;
+    const auto send = [&](MotorFamily f) {
+        std::vector<SignalSample> in{{fx, idx, static_cast<double>(static_cast<int>(f))}};
+        rig.bridge->applyInputs(in);
+        out.clear();
+        rig.bridge->collectOutputs(out);  // the native write happens here, while the robot is quiescent
+    };
+
+    send(MotorFamily::KrakenX44);
+    REQUIRE(native->physicsWrites.size() == 1);
+    CHECK(native->physicsWrites[0].type == vendor::CtreDeviceType::P6_TalonFX);
+    CHECK(native->physicsWrites[0].id == 4);
+    CHECK(native->physicsWrites[0].key == vendor::kPhysicsMotorType);
+    CHECK(native->physicsWrites[0].value == vendor::sim_motor_type::kKrakenX44);
+    CHECK(rig.host.log.count(LogLevel::Info) >= 1);
+
+    send(MotorFamily::KrakenX44);  // same wish: nothing written again
+    CHECK(native->physicsWrites.size() == 1);
+
+    send(MotorFamily::KrakenX60);  // a change: written again
+    REQUIRE(native->physicsWrites.size() == 2);
+    CHECK(native->physicsWrites[1].value == vendor::sim_motor_type::kKrakenX60);
+
+    // A motor the firmware sim cannot represent leaves the default alone and says so once, at debug level.
+    const std::size_t debugBefore = rig.host.log.count(LogLevel::Debug);
+    send(MotorFamily::Falcon500);
+    send(MotorFamily::Falcon500);
+    CHECK(native->physicsWrites.size() == 2);
+    CHECK(rig.host.log.count(LogLevel::Debug) == debugBefore + 1);
+}
+
+TEST_CASE("vendor bridge: without the physics API the motor family is accepted and ignored, said once") {
+    auto native = std::make_shared<FakeNative>();  // physicsApi false
+    auto options = BridgeRig::defaultOptions();
+    options.nativeProvider = [native] { return native; };
+    BridgeRig rig(options);
+    addTalonFx(*rig.backend, 4);
+    rig.start();
+    rig.bridge->poll();
+    const DeviceId fx = rig.host.idOf("talonfx", 4);
+    const std::uint16_t idx = rig.host.signalIndex(fx, sg::kMotorFamily);
+    std::vector<SignalSample> out;
+    for (int i = 0; i < 3; ++i) {
+        std::vector<SignalSample> in{{fx, idx, static_cast<double>(static_cast<int>(MotorFamily::KrakenX44))}};
+        rig.bridge->applyInputs(in);
+        out.clear();
+        rig.bridge->collectOutputs(out);
+    }
+    CHECK(native->physicsWrites.empty());
+    CHECK(rig.host.log.count(LogLevel::Debug) >= 1);
 }
 
 TEST_CASE("vendor bridge: stop is idempotent and clears the session") {

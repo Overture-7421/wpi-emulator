@@ -52,6 +52,18 @@ std::int32_t fakeSetPhysics(int, int, const char* key, double value) {
     return 0;
 }
 
+// c_ctre_phoenix6_get_signal_simplified: device 4 runs VoltageFOC, device 99 fails, other SPNs read 0.
+int fakeGetSignalSimplified(const char* /*network*/, int /*wait*/, double /*timeout*/, std::uint32_t count,
+                            const std::uint32_t* hashes, const std::uint32_t* spns, double* values, double* hw,
+                            double* sw, double* ecu) {
+    for (std::uint32_t i = 0; i < count; ++i) {
+        if (hashes[i] == 0x80 + 99) return -3;
+        values[i] = spns[i] == 1799 && hashes[i] == 0x80 + 4 ? 15.0 : 0.0;
+        hw[i] = sw[i] = ecu[i] = 1.0;
+    }
+    return 0;
+}
+
 class FakeResolver final : public ISymbolResolver {
 public:
     void* resolve(std::string_view symbol) const override {
@@ -66,11 +78,49 @@ public:
         r->symbols["c_ctre_phoenix6_get_configs_no_malloc"] = reinterpret_cast<void*>(&fakeGetConfigsNoMalloc);
         r->symbols["c_ctre_phoenix6_platform_sim_get_physics_value"] = reinterpret_cast<void*>(&fakeGetPhysics);
         r->symbols["c_ctre_phoenix6_platform_sim_set_physics_input"] = reinterpret_cast<void*>(&fakeSetPhysics);
+        r->symbols["c_ctre_phoenix6_get_signal_simplified"] = reinterpret_cast<void*>(&fakeGetSignalSimplified);
         return r;
     }
 };
 
 }  // namespace
+
+TEST_CASE("vendor native: reads a status signal through the exported C ABI") {
+    CtreSimNative native(FakeResolver::full());
+    REQUIRE(native.hasSignalRead());
+    const auto mode = native.readSignal(CtreDeviceType::P6_TalonFX, 4, "rio", spn::kTalonFxControlMode);
+    REQUIRE(mode.ok());
+    CHECK(mode.value() == 15.0);
+    CHECK(g_lastModel == "talon fx");
+    CHECK(native.readSignal(CtreDeviceType::P6_TalonFX, 7, "rio", spn::kTalonFxControlMode).value() == 0.0);
+    const auto failed = native.readSignal(CtreDeviceType::P6_TalonFX, 99, "rio", spn::kTalonFxControlMode);
+    CHECK_FALSE(failed.ok());
+    CHECK(failed.error().code == ErrorCode::IoError);
+
+    auto none = std::make_shared<FakeResolver>();
+    none->symbols["c_ctre_phoenix6_encode_device"] = reinterpret_cast<void*>(&fakeEncodeDevice);
+    CtreSimNative noSignals(none);
+    CHECK_FALSE(noSignals.hasSignalRead());
+    CHECK(noSignals.readSignal(CtreDeviceType::P6_TalonFX, 4, "rio", spn::kTalonFxControlMode).error().code ==
+          ErrorCode::Unsupported);
+}
+
+TEST_CASE("vendor native: the FOC control modes are the ones that regulate current") {
+    namespace cm = control_mode;
+    CHECK(ctreControlModeRegulatesCurrent(cm::kVoltageFOC));
+    CHECK(ctreControlModeRegulatesCurrent(cm::kPositionVoltageFOC));
+    CHECK(ctreControlModeRegulatesCurrent(cm::kTorqueCurrentFOC));
+    CHECK(ctreControlModeRegulatesCurrent(cm::kDutyCycleFOC));
+    CHECK(ctreControlModeRegulatesCurrent(cm::kMotionMagicExpoTorqueCurrentFOC));
+    CHECK_FALSE(ctreControlModeRegulatesCurrent(cm::kDisabledOutput));
+    CHECK_FALSE(ctreControlModeRegulatesCurrent(cm::kPositionVoltage));
+    CHECK_FALSE(ctreControlModeRegulatesCurrent(cm::kFollower));
+    CHECK_FALSE(ctreControlModeRegulatesCurrent(-1));
+    // 4 DutyCycle FOC + 8 Voltage/TorqueCurrent FOC + 3 MotionMagicVelocity FOC + 3 MotionMagicExpo FOC.
+    int count = 0;
+    for (int mode = -2; mode <= 40; ++mode) count += ctreControlModeRegulatesCurrent(mode) ? 1 : 0;
+    CHECK(count == 18);
+}
 
 TEST_CASE("vendor config snapshot: decodes a sample snapshot and typed accessors") {
     const auto snap = CtreConfigSnapshot::parse(

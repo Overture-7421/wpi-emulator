@@ -128,6 +128,31 @@ TEST_CASE("every gearbox system equals WPILib's n-motor DCMotor equations for ev
     CHECK(worst < 1e-12);
 }
 
+TEST_CASE("motor family is read from the preset name, FOC variants included") {
+    using sdk::MotorFamily;
+    int krakenX60 = 0, krakenX44 = 0, falcon = 0, minion = 0, unknown = 0;
+    for (const auto& preset : sdk::motors::presets()) {
+        switch (sdk::motorFamilyOf(preset.spec)) {
+            case MotorFamily::KrakenX60: ++krakenX60; break;
+            case MotorFamily::KrakenX44: ++krakenX44; break;
+            case MotorFamily::Falcon500: ++falcon; break;
+            case MotorFamily::Minion: ++minion; break;
+            default: ++unknown; break;
+        }
+    }
+    CHECK(krakenX60 == 2);  // plain and FOC
+    CHECK(krakenX44 == 2);
+    CHECK(falcon == 2);
+    CHECK(minion == 1);
+    CHECK(unknown == static_cast<int>(sdk::motors::presets().size()) - 7);
+
+    sdk::MotorSpec custom;
+    custom.name = "kraken x44 on a 2:1 belt";  // a robot.json edited by hand
+    CHECK(sdk::motorFamilyOf(custom) == MotorFamily::KrakenX44);
+    custom.name = "generic";
+    CHECK(sdk::motorFamilyOf(custom) == MotorFamily::Unknown);
+}
+
 TEST_CASE("motor catalog carries the WPILib DCMotor table") {
     const MotorCatalog c = MotorCatalog::builtin();
     struct Row {
