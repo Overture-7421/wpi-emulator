@@ -1,0 +1,17 @@
+{
+  "id": "systemcore",
+  "cxxStandard": 23,
+  "groups": {
+    "hal": "org.wpilib.hal",
+    "wpiutil": "org.wpilib.wpiutil",
+    "ntcore": "org.wpilib.ntcore",
+    "wpinet": "org.wpilib.wpinet",
+    "datalog": "org.wpilib.datalog"
+  },
+  "headers": {
+    "hal": "wpi/hal/HAL.h",
+    "wpiutil": "wpi/util/string.h",
+    "ntcore": "wpi/nt/ntcore_c.h"
+  },
+  "ntcoreRequired": true
+}

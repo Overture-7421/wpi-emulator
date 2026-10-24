@@ -14,7 +14,7 @@ target_include_directories(wpiemu_bridges_hal PUBLIC include)
 target_link_libraries(wpiemu_bridges_hal PUBLIC wpiemu_sdk)
 wpiemu_target_defaults(wpiemu_bridges_hal)
 
-# Real HALSIM_* binding, built only when the WPILib HAL (2026.2.1) is available:
+# Real HALSIM_* binding, built only when the selected WPILib HAL is available:
 #   -DWPIEMU_WPILIB_ROOT=<dir>   containing the extracted hal-cpp / wpiutil-cpp "headers" zips and the
 #                                platform hal-cpp zip (any layout below is searched), e.g.
 #       <root>/hal-headers/hal/Ports.h      or  <root>/include/hal/Ports.h
@@ -23,21 +23,35 @@ wpiemu_target_defaults(wpiemu_bridges_hal)
 # When unset (default) the target is simply not created and halsim_ext must be built without it.
 set(WPIEMU_WPILIB_ROOT "" CACHE PATH "Directory with extracted WPILib HAL headers + wpiHal for the real HALSIM binding")
 if(WPIEMU_WPILIB_ROOT)
+    wpiemu_season_abi_value(_wpiemu_hal_header "${WPIEMU_WPILIB_SEASON}" headers hal)
+    wpiemu_season_abi_value(_wpiemu_wpiutil_header "${WPIEMU_WPILIB_SEASON}" headers wpiutil)
     set(_wpi_hints
         "${WPIEMU_WPILIB_ROOT}" "${WPIEMU_WPILIB_ROOT}/include"
         "${WPIEMU_WPILIB_ROOT}/hal-headers" "${WPIEMU_WPILIB_ROOT}/hal-headers/include"
         "${WPIEMU_WPILIB_ROOT}/wpiutil-headers" "${WPIEMU_WPILIB_ROOT}/wpiutil-headers/include")
-    find_path(WPIEMU_HAL_INCLUDE_DIR hal/Ports.h HINTS ${_wpi_hints} NO_DEFAULT_PATH)
-    find_path(WPIEMU_WPIUTIL_INCLUDE_DIR wpi/string.h HINTS ${_wpi_hints} NO_DEFAULT_PATH)
+    unset(WPIEMU_HAL_INCLUDE_DIR CACHE)
+    unset(WPIEMU_WPIUTIL_INCLUDE_DIR CACHE)
+    unset(WPIEMU_HAL_LIBRARY CACHE)
+    find_path(WPIEMU_HAL_INCLUDE_DIR "${_wpiemu_hal_header}" HINTS ${_wpi_hints} NO_DEFAULT_PATH NO_CACHE)
+    find_path(WPIEMU_WPIUTIL_INCLUDE_DIR "${_wpiemu_wpiutil_header}" HINTS ${_wpi_hints} NO_DEFAULT_PATH NO_CACHE)
     find_library(WPIEMU_HAL_LIBRARY NAMES wpiHal HINTS
         "${WPIEMU_WPILIB_ROOT}" "${WPIEMU_WPILIB_ROOT}/lib"
         "${WPIEMU_WPILIB_ROOT}/hal-bin/windows/x86-64/shared" "${WPIEMU_WPILIB_ROOT}/hal-bin/linux/x86-64/shared"
         "${WPIEMU_WPILIB_ROOT}/hal-bin/osx/universal/shared"
         "${WPIEMU_WPILIB_ROOT}/windows/x86-64/shared" "${WPIEMU_WPILIB_ROOT}/linux/x86-64/shared"
         "${WPIEMU_WPILIB_ROOT}/osx/universal/shared"
-        NO_DEFAULT_PATH)
+        NO_DEFAULT_PATH NO_CACHE)
+    set(WPIEMU_HAL_INCLUDE_DIR "${WPIEMU_HAL_INCLUDE_DIR}" PARENT_SCOPE)
+    set(WPIEMU_WPIUTIL_INCLUDE_DIR "${WPIEMU_WPIUTIL_INCLUDE_DIR}" PARENT_SCOPE)
+    set(WPIEMU_HAL_LIBRARY "${WPIEMU_HAL_LIBRARY}" PARENT_SCOPE)
     if(WPIEMU_HAL_INCLUDE_DIR AND WPIEMU_WPIUTIL_INCLUDE_DIR AND WPIEMU_HAL_LIBRARY)
-        target_sources(wpiemu_bridges_hal PRIVATE src/hal_sim_binding.cpp)
+        # The families that differ between HAL generations come from abi/<abi>/ (docs/reference/seasons.md).
+        if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/abi/${WPIEMU_HAL_ABI}/hal_sim_abi.cpp")
+            message(FATAL_ERROR "bridges/hal: HAL ABI '${WPIEMU_HAL_ABI}' has no src/abi/${WPIEMU_HAL_ABI}/hal_sim_abi.cpp")
+        endif()
+        target_sources(wpiemu_bridges_hal PRIVATE src/hal_sim_binding.cpp "src/abi/${WPIEMU_HAL_ABI}/hal_sim_abi.cpp")
+        target_include_directories(wpiemu_bridges_hal PRIVATE src)
+        target_link_libraries(wpiemu_bridges_hal PRIVATE wpiemu_hal_abi)
         # SYSTEM: WPILib headers are third-party and not warning-clean under /W4.
         target_include_directories(wpiemu_bridges_hal SYSTEM PRIVATE
             "${WPIEMU_HAL_INCLUDE_DIR}" "${WPIEMU_WPIUTIL_INCLUDE_DIR}")

@@ -96,7 +96,11 @@ struct TestProject {
 
     explicit TestProject(const QString& lang = QStringLiteral("java"), int yr = 2026, bool gradleRio = true) : language(lang), year(yr) {
         const QString root = dir.path();
-        const QString plugin = gradleRio ? QStringLiteral("id \"edu.wpi.first.GradleRIO\" version \"%1.1.1\"").arg(yr) : QStringLiteral("id \"java\"");
+        const QString plugin =
+            gradleRio ? QStringLiteral("id \"%1\" version \"%2.2.1\"")
+                            .arg(year >= 2027 ? QStringLiteral("org.wpilib.GradleRIO") : QStringLiteral("edu.wpi.first.GradleRIO"))
+                            .arg(yr)
+                      : QStringLiteral("id \"java\"");
         writeFile(root + "/build.gradle", QStringLiteral("plugins {\n  id \"%1\"\n  %2\n}\n").arg(lang == "cpp" ? "cpp" : "java", plugin).toUtf8());
         writeFile(root + "/gradlew", "#!/bin/sh\n");
         writeFile(root + "/gradlew.bat", "@echo off\n");

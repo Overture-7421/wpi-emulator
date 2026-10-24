@@ -75,13 +75,13 @@ std::vector<sdk::SlotSpec> axisSlots() {
         out.push_back(std::move(s));
     }
     out.push_back({names.encoder, "Position sensor", sdk::SlotType::PositionSensor, false,
-                   "Encoder / CANcoder on the mechanism output (see the sensor ratio property)."});
+                   "Encoder / CANcoder on the mechanism output (see the sensor ratio property).", {}, 0});
     out.push_back({names.velocity, "Velocity sensor", sdk::SlotType::VelocitySensor, false,
-                   "Velocity-only sensor on the mechanism output."});
+                   "Velocity-only sensor on the mechanism output.", {}, 0});
     out.push_back({names.reverseLimit, "Reverse limit switch", sdk::SlotType::LimitSwitch, false,
-                   "Closes at the lower (minimum position) stop."});
+                   "Closes at the lower (minimum position) stop.", {}, 0});
     out.push_back({names.forwardLimit, "Forward limit switch", sdk::SlotType::LimitSwitch, false,
-                   "Closes at the upper (maximum position) stop."});
+                   "Closes at the upper (maximum position) stop.", {}, 0});
     return out;
 }
 

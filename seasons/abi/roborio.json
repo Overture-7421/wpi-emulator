@@ -1,0 +1,16 @@
+{
+  "id": "roborio",
+  "cxxStandard": 20,
+  "groups": {
+    "hal": "edu.wpi.first.hal",
+    "wpiutil": "edu.wpi.first.wpiutil",
+    "ntcore": "edu.wpi.first.ntcore",
+    "wpinet": "edu.wpi.first.wpinet"
+  },
+  "headers": {
+    "hal": "hal/HAL.h",
+    "wpiutil": "wpi/string.h",
+    "ntcore": "ntcore_c.h"
+  },
+  "ntcoreRequired": false
+}

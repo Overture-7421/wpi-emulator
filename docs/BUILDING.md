@@ -28,12 +28,14 @@ CTest runs registered checks and reports opt-in robot tests as skipped unless en
   See the [version pins](releasing.md#version-pins) before choosing another kit.
 - CMake fetches pinned [Box3D](../cmake/WpiEmuDependencies.cmake) and
   [doctest](../cmake/WpiEmuTests.cmake) sources.
-- The real HAL extension needs WPILib desktop HAL and wpiutil artifacts. CMake searches
-  `C:\Users\Public\wpilib\2026\maven` or `~/wpilib/2026/maven`. Set `WPIEMU_WPILIB_ROOT`
-  to another Maven cache or extracted artifact root, or allow CMake to download them.
+- The real HAL extension needs WPILib desktop HAL and wpiutil artifacts. CMake searches the
+  selected season's Maven cache (for example, `C:\Users\Public\wpilib\<year>\maven` or
+  `~/wpilib/<year>/maven`). Set `WPIEMU_WPILIB_ROOT` to another Maven cache or extracted
+  artifact root, or allow CMake to download them.
   Without HAL, the extension is a failing stub and real-HAL tests are not built.
 - Optional ntcore/wpinet artifacts enable vision publishing. Without them, camera
-  publishing is inactive.
+  publishing is inactive in 2026. The 2027 HAL requires ntcore, wpinet and datalog even
+  without cameras; an incomplete extracted 2027 root fails configuration.
 
 You can omit Qt by configuring with `-DWPIEMU_BUILD_APP=OFF`. The Qt UI and its tests
 will then be unavailable.
@@ -91,14 +93,44 @@ Pass these options to `cmake --preset`, not `cmake --build`.
 |---|---|---|
 | `WPIEMU_BUILD_APP` | ON | Build the Qt application. OFF removes the Qt requirement. |
 | `WPIEMU_BUILD_TESTS` | ON | Build tests and register CTest checks. |
-| `WPIEMU_BUILD_PLUGIN_TEMPLATE` | ON | Compile the season-plugin skeleton. |
+| `WPIEMU_BUILD_PLUGIN_TEMPLATE` | ON | Compile the game-plugin skeleton in `seasons/_template/game`. |
 | `WPIEMU_WARNINGS_AS_ERRORS` | OFF | Promote first-party warnings to errors. |
 | `WPIEMU_BUILD_UI_DEMOS` | ON | Build the editor and run-view demo applications. |
+| `WPIEMU_WPILIB_SEASON` | The season whose manifest sets `"default": true` | Select a season pack from `seasons/`. |
+| `WPIEMU_SEASONS` | The selected build season | Semicolon-separated extensions to compose, or `all` for every season pack. Extra seasons use isolated, Qt-free sub-builds and must have real HAL artifacts. |
+| `WPIEMU_EXTENSION_ONLY` | OFF | Build just the extension and its real-HAL tests, without app, physics or plugins. |
+| `WPIEMU_REQUIRE_REAL_HAL` | OFF | Fail configuration instead of producing a stub when HAL is missing. |
 | `WPIEMU_WPILIB_ROOT` | auto | Use a Maven cache, year directory, or extracted artifacts. Also read from the environment. |
-| `WPIEMU_WPILIB_VERSION` | the `wpilib` [pin](releasing.md#version-pins) | Select the WPILib artifact version. |
+| `WPIEMU_WPILIB_VERSION` | the selected season's pin | Override the profile's WPILib artifact version. |
 | `WPIEMU_WPILIB_DOWNLOAD` | OFF; presets set ON | Download missing WPILib artifacts. On Windows, this can also copy a local JDK into the public WPILib year folder; bundled VC++ runtime DLLs are omitted. |
 | `WPIEMU_RUNVIEW_SDL2` | ON | Enable SDL2 gamepads when available. Keyboard input works without SDL2. |
 | `WPIEMU_RUNVIEW_FETCH_SDL2` | ON | Fetch SDL2 when no system package is found. Set OFF to avoid this download. |
+
+## Multi-season builds
+
+The normal developer build selects one season. Distribution builds compose every [season pack](reference/seasons.md):
+
+```powershell
+cmake -S . -B build\dual-season -G "Visual Studio 18 2026" -A x64 -DCMAKE_PREFIX_PATH="C:\Qt\6.8.3\msvc2022_64" -DWPIEMU_SEASONS=all -DWPIEMU_WPILIB_DOWNLOAD=ON -DWPIEMU_REQUIRE_REAL_HAL=ON -DWPIEMU_WARNINGS_AS_ERRORS=ON
+cmake --build build\dual-season --config Release --parallel
+ctest --test-dir build\dual-season -C Release -R halsim_ext --output-on-failure
+```
+
+The C++ standard of each extension follows its season's HAL ABI profile (`cxxStandard`), so the primary build
+and each extension sub-build can differ. A season whose profile needs C++23 requires Visual Studio 2026 or
+GCC 14+ (an appropriate recent Xcode on macOS).
+Use a separate build directory rather than changing generators in an existing one.
+`WPIEMU_WPILIB_ROOT_<year>` optionally supplies artifacts for an extra season;
+the primary `WPIEMU_WPILIB_ROOT` is never reused across seasons.
+Extra extensions stage under `seasons/<year>/stage` and are copied to the app's
+build-tree `<year>` directory. Install and CPack include every requested season.
+
+With JDK 25 and the native toolchain installed, set `WPIEMU_E2E=1` and run
+`ctest --test-dir build\dual-season -C Release -R "^e2e.season_2027$" --output-on-failure`.
+Every season pack that declares `probes` registers `e2e.season_<year>`, `e2e.vision_<year>` and
+`e2e.vendor_<year>` (the preview season's [sample robots](../samples/season_2027/README.md)); the tests read their season from the environment CTest sets.
+`WPIEMU_E2E_JAVA_HOME` optionally chooses their JDK; `WPIEMU_E2E_LAUNCH=direct`
+exercises external launch instead of Gradle init-script injection.
 
 ## Run tests and repository checks
 
@@ -112,11 +144,14 @@ python tools\check_boundaries.py
 python tools\check_boundaries.py --self-test
 python tools\check_docs.py
 python tools\check_versions.py
+python tools\check_seasons.py
 python -B -m unittest discover -s tools\tests -v
 python tools\check_wpilib_configure.py --generator "Visual Studio 17 2022" --architecture x64
 ```
 
-The WPILib configure check uses synthetic artifacts and does not build or load a robot.
+The season check validates the [season packs](reference/seasons.md) and rejects season-year literals
+outside them. The WPILib configure check runs once per season pack with synthetic artifacts and does
+not build or load a robot.
 On Linux/macOS, pass only `--generator Ninja`. The Qt-free doctest executable discovers
 `tests/**/*.cpp`; the run-view suite is separate. Editor tests use `tests/app_editor/*.cc`
 to avoid that source glob. CMake watches this source glob, and building the test
@@ -165,6 +200,21 @@ Vision also needs ntcore. For C++, use `samples\vision_robot\cpp` and set the la
 `WPIEMU_E2E_VERBOSE=1` to show robot output. A skipped test means its opt-in or
 prerequisites were missing; a skip does not verify integration. Even a passing sample
 test covers only that project and setup, not every robot or physical hardware.
+
+For the pinned 2027 preview vendors, use a dual-season build and JDK 25:
+
+```powershell
+$env:WPIEMU_E2E = "1"
+$env:WPIEMU_E2E_VISION_LANG = "java"
+ctest --test-dir build\dual-season -C Release -R "^e2e[.](vendor|vision)_2027$" --output-on-failure   # the season whose pack declares probes
+```
+
+These copy the [2027 probes](../samples/season_2027/README.md) and use actual
+Phoenix/PhotonLib dependencies. Vision uses a synthetic test layout because no
+2027 game plugin ships. Java vision is exercised with normal version checks.
+The pinned 2027 C++ PhotonLib currently fails its upstream UUID check; setting
+`WPIEMU_E2E_VISION_LANG=cpp` reproduces that failure rather than passing coverage.
+See the [bridge compatibility reference](reference/bridges.md#photonvision).
 
 ## Linux in Docker
 

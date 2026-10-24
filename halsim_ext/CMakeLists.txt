@@ -6,6 +6,9 @@
 #                        WPILib HAL (cmake/WpiEmuWpilib.cmake); without it a stub that fails loudly is
 #                        built so the target (and everything that references it) still exists.
 include(cmake/WpiEmuWpilib.cmake)
+if(WPIEMU_REQUIRE_REAL_HAL AND NOT WPIEMU_WPILIB_FOUND)
+    message(FATAL_ERROR "WPILib ${WPIEMU_WPILIB_SEASON} HAL artifacts are required; refusing to build a stub")
+endif()
 
 find_package(Threads REQUIRED)
 
@@ -24,12 +27,19 @@ wpiemu_target_defaults(wpiemu_halsim_core)
 
 if(WPIEMU_WPILIB_FOUND)
     # wpiemu_bridges_builtin is defined in bridges/ (the aggregation seam, docs/ARCHITECTURE.md addendum).
+    # The HAL calls that differ between HAL generations come from src/hal/abi/<abi>/ (docs/reference/seasons.md).
+    set(_wpiemu_platform_abi "${CMAKE_CURRENT_SOURCE_DIR}/src/hal/abi/${WPIEMU_HAL_ABI}/hal_platform_abi.cpp")
+    if(NOT EXISTS "${_wpiemu_platform_abi}")
+        message(FATAL_ERROR "halsim_ext: HAL ABI '${WPIEMU_HAL_ABI}' has no src/hal/abi/${WPIEMU_HAL_ABI}/hal_platform_abi.cpp")
+    endif()
     add_library(halsim_wpiemu SHARED
         src/extension.cpp
         src/ipc_bindings.cpp
-        src/hal/hal_sim_platform.cpp)
+        src/hal/hal_sim_platform.cpp
+        "${_wpiemu_platform_abi}")
+    target_include_directories(halsim_wpiemu PRIVATE src/hal)
     target_link_libraries(halsim_wpiemu PRIVATE
-        wpiemu_halsim_core wpiemu_wpilib_hal wpiemu_ipc wpiemu_bridges_builtin wpiemu_sdk)
+        wpiemu_halsim_core wpiemu_wpilib_hal wpiemu_hal_abi wpiemu_ipc wpiemu_bridges_builtin wpiemu_sdk)
 else()
     add_library(halsim_wpiemu SHARED src/extension_stub.cpp)
 endif()
@@ -39,16 +49,25 @@ set_target_properties(halsim_wpiemu PROPERTIES
 wpiemu_target_defaults(halsim_wpiemu)
 
 if(WPIEMU_BUILD_TESTS AND WPIEMU_WPILIB_FOUND)
+    # Each HAL ABI has its own real-HAL suites: tests/hal/abi/<abi>/*.cpp.
+    file(GLOB _hal_test_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/hal/abi/${WPIEMU_HAL_ABI}/*.cpp")
     # Real sim HAL in-process: stepping, DS, device I/O against a scripted fake emulator.
     add_executable(wpiemu_halsim_ext_hal_tests
         src/hal/hal_sim_platform.cpp
+        "${_wpiemu_platform_abi}"
         tests/hal/main.cpp
-        tests/hal/test_hal_integration.cpp
-        tests/hal/test_builtin_bridges.cpp
-        tests/hal/test_extension_dll.cpp)
+        ${_hal_test_sources})
     target_include_directories(wpiemu_halsim_ext_hal_tests PRIVATE tests "${CMAKE_SOURCE_DIR}/tests/support")
+    target_include_directories(wpiemu_halsim_ext_hal_tests PRIVATE src/hal)
     target_link_libraries(wpiemu_halsim_ext_hal_tests PRIVATE
-        wpiemu_halsim_core wpiemu_wpilib_hal wpiemu_ipc wpiemu_bridges_builtin wpiemu_sdk)
+        wpiemu_halsim_core wpiemu_wpilib_hal wpiemu_hal_abi wpiemu_ipc wpiemu_bridges_builtin wpiemu_sdk)
+    # HALSIM binding suites of the ABI, compiled against the real headers: bridges/hal/tests/abi/<abi>/*.cpp.
+    file(GLOB _hal_binding_tests CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/bridges/hal/tests/abi/${WPIEMU_HAL_ABI}/*.cpp")
+    foreach(_binding_test IN LISTS _hal_binding_tests)
+        target_sources(wpiemu_halsim_ext_hal_tests PRIVATE "${_binding_test}")
+        set_property(SOURCE "${_binding_test}" APPEND PROPERTY INCLUDE_DIRECTORIES
+            "$<TARGET_PROPERTY:wpiemu_bridges_hal,INTERFACE_INCLUDE_DIRECTORIES>")
+    endforeach()
     if(TARGET wpiemu_wpilib_ntcore)
         target_sources(wpiemu_halsim_ext_hal_tests PRIVATE
             "${CMAKE_SOURCE_DIR}/bridges/vision/tests/ntcore_smoke_tests.cpp")

@@ -223,14 +223,23 @@ installation, and platform details, see [Updates](reference/app.md#updates).
 
 ### Limits and platforms
 
-Only one robot and the built-in 2026 season module are supplied. Other seasons can use an empty
-field, but the bundled extension targets WPILib 2026; another year is not a compatibility
-guarantee. There is no suspension model, and field geometry and game rules are approximations.
+One robot runs at a time. Multi-season packages contain separate WPILib 2026 and 2027
+extensions, selected from the live project's year. The Toolchain page reports a missing
+season extension before launch. `WPIEMU_EXTENSION` explicitly overrides selection and
+permits a year mismatch with a warning; it does not make incompatible HAL ABIs compatible.
+2027 is preview support pinned to an alpha; it uses Java 25, Gradle 9.2 and the new native
+toolchain. A season without a game module runs core-only on an empty field. A project on a different
+WPILib release of a known season than the emulator was built for still runs: the Toolchain page and run
+console warn that it is best effort.
+There is no suspension model, and field geometry and game rules are approximations.
 HAL and CTRE bridges are supplied, not universal vendor support: REV motor controllers have no
 vendor bridge, and Phoenix 5 behavior is not characterized against the real library. The
 [vision sample end-to-end check](../samples/vision_robot/README.md#end-to-end-check) exercises
 Phoenix 6 driving, wheel feedback, and camera results in Java and C++ on Windows, but does not
 characterize every Phoenix model or control mode.
+For the pinned 2027 preview, Java PhotonLib and Limelight have actual client coverage;
+the pinned C++ PhotonLib has an upstream UUID-check failure and is not supported yet.
+See the [2027 probes](../samples/season_2027/README.md) for exact versions and limits.
 
 Windows is the locally exercised workflow. Linux/macOS builds, presets, and package checks do
 not establish native robot-process HAL loading or interactive 3D validation on those platforms.

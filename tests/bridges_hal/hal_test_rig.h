@@ -27,7 +27,9 @@ using RecordingHost = sdk::testing::FakeBridgeHost;
 
 class Rig {
 public:
-    explicit Rig(hal::HalBridgeOptions options = {}) : api(std::make_shared<hal::testing::FakeHalApi>()) {
+    explicit Rig(hal::HalBridgeOptions options = {},
+                 std::shared_ptr<hal::testing::FakeHalApi> binding = std::make_shared<hal::testing::FakeHalApi>())
+        : api(std::move(binding)) {
         REQUIRE(hal::registerHalBridges(registry, api, options).ok());
         auto all = registry.createAll();
         REQUIRE(all.ok());

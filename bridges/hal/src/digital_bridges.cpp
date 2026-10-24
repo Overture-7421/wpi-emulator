@@ -16,27 +16,34 @@ using sdk::SignalType;
 // ---- PWM ---------------------------------------------------------------------------------------
 
 sdk::DeviceDescriptor PwmBridge::describe(int channel) const {
-    return makeDescriptor("pwm", channel, -1, Capability::MotorOutput | Capability::PwmOutput,
+    return makeDescriptor("pwm", channel, -1, speedAvailable_[static_cast<std::size_t>(channel)] ? Capability::MotorOutput | Capability::PwmOutput
+                                                                   : sdk::CapabilitySet{Capability::PwmOutput},
                           "HALSIM PWM[" + std::to_string(channel) + "]", "PWM " + std::to_string(channel));
 }
 
-std::vector<sdk::SignalSpec> PwmBridge::signalsOf(int) const {
-    return {
-        sig(sdk::signal::kDutyCycle, SignalDirection::Output, SignalType::Double),
-        sig(sdk::signal::kPwmSpeed, SignalDirection::Output, SignalType::Double),
-        sig("pwmPosition", SignalDirection::Output, SignalType::Double),
-        sig("pulseMicroseconds", SignalDirection::Output, SignalType::Int, "us"),
-    };
+std::vector<sdk::SignalSpec> PwmBridge::signalsOf(int channel) const {
+    std::vector<sdk::SignalSpec> specs;
+    const bool speed = hal_->hasSpeed(channel);
+    speedAvailable_[static_cast<std::size_t>(channel)] = speed;
+    if (speed) {
+        specs.push_back(sig(sdk::signal::kDutyCycle, SignalDirection::Output, SignalType::Double));
+        specs.push_back(sig(sdk::signal::kPwmSpeed, SignalDirection::Output, SignalType::Double));
+    }
+    if (positionAvailable_) specs.push_back(sig("pwmPosition", SignalDirection::Output, SignalType::Double));
+    specs.push_back(sig("pulseMicroseconds", SignalDirection::Output, SignalType::Int, "us"));
+    return specs;
 }
 
 double PwmBridge::readSignal(int channel, std::size_t signalIndex) const {
-    switch (signalIndex) {
-        case 0:
-        case 1: return normalizeSpeed(hal_->speed(channel));
-        case 2: return hal_->position(channel);
-        case 3: return static_cast<double>(hal_->pulseMicroseconds(channel));
-        default: return 0.0;
+    if (speedAvailable_[static_cast<std::size_t>(channel)]) {
+        if (signalIndex < 2) return normalizeSpeed(hal_->speed(channel));
+        signalIndex -= 2;
     }
+    if (positionAvailable_) {
+        if (signalIndex == 0) return hal_->position(channel);
+        --signalIndex;
+    }
+    return signalIndex == 0 ? static_cast<double>(hal_->pulseMicroseconds(channel)) : 0.0;
 }
 
 // ---- DIO ---------------------------------------------------------------------------------------

@@ -27,6 +27,8 @@ class IPwmHal {
 public:
     virtual int channelCount() const = 0;
     virtual bool initialized(int channel) const = 0;
+    virtual bool hasSpeed(int) const { return true; }
+    virtual bool hasPosition() const { return true; }
     virtual double speed(int channel) const = 0;            // HALSIM_GetPWMSpeed, [-1, 1]
     virtual double position(int channel) const = 0;         // HALSIM_GetPWMPosition, [0, 1] (servos)
     virtual int pulseMicroseconds(int channel) const = 0;   // HALSIM_GetPWMPulseMicrosecond
@@ -143,6 +145,8 @@ class IAddressableLedHal {
 public:
     virtual int channelCount() const = 0;
     virtual bool initialized(int index) const = 0;
+    virtual bool hasOutputPort() const { return true; }
+    virtual bool hasRunning() const { return true; }
     virtual int outputPort(int index) const = 0;
     virtual int length(int index) const = 0;
     virtual bool running(int index) const = 0;
@@ -152,11 +156,20 @@ public:
 class IRoboRioHal {
     WPIEMU_INTERFACE(IRoboRioHal)
 public:
+    virtual bool hasInputCurrent() const { return true; }
     virtual double vInVoltage() const = 0;
     virtual void setVInVoltage(double volts) = 0;
     virtual double vInCurrent() const = 0;
     virtual void setVInCurrent(double amps) = 0;
     virtual double brownoutVoltage() const = 0;
+};
+
+class IImuHal {
+    WPIEMU_INTERFACE(IImuHal)
+public:
+    virtual void setAcceleration(double xMps2, double yMps2, double zMps2) = 0;
+    virtual void setAngles(double rollRad, double pitchRad, double yawRad) = 0;
+    virtual void setRates(double xRadPerS, double yRadPerS, double zRadPerS) = 0;
 };
 
 // Built-in roboRIO accelerometer. Values are in g, like HALSIM_SetAccelerometer{X,Y,Z}.
@@ -169,9 +182,10 @@ public:
 
 struct CanFrame {
     std::uint32_t arbitrationId = 0;
-    std::array<std::uint8_t, 8> data{};
+    std::array<std::uint8_t, 64> data{};
     std::uint8_t size = 0;
     std::int32_t periodMs = 0;  // 0 = one shot; > 0 repeating send; HAL_CAN_SEND_PERIOD_STOP_REPEATING (-1) = stop
+    int busId = 0;
 };
 
 // Called on whatever ROBOT thread sent the frame; must be quick and non-blocking.
@@ -193,23 +207,24 @@ public:
     virtual std::unique_ptr<ICanSubscription> subscribe(ICanFrameListener& listener) = 0;
 };
 
-// Aggregate handed to registerHalBridges. Accessors never return null.
+// Optional device families return null when absent in the selected HAL.
 class IHalApi {
     WPIEMU_INTERFACE(IHalApi)
 public:
     virtual IPwmHal& pwm() = 0;
     virtual IDioHal& dio() = 0;
     virtual IAnalogInHal& analogIn() = 0;
-    virtual IAnalogOutHal& analogOut() = 0;
+    virtual IAnalogOutHal* analogOut() = 0;
     virtual IEncoderHal& encoder() = 0;
     virtual IDutyCycleHal& dutyCycle() = 0;
-    virtual IRelayHal& relay() = 0;
+    virtual IRelayHal* relay() = 0;
     virtual IPneumaticsHal& ctrePcm() = 0;
     virtual IPneumaticsHal& revPh() = 0;
     virtual IPowerDistributionHal& powerDistribution() = 0;
     virtual IAddressableLedHal& addressableLed() = 0;
     virtual IRoboRioHal& roboRio() = 0;
-    virtual IAccelerometerHal& accelerometer() = 0;
+    virtual IAccelerometerHal* accelerometer() = 0;
+    virtual IImuHal* imu() { return nullptr; }
     virtual ICanHal& can() = 0;
 };
 

@@ -2,7 +2,7 @@
 
 Use this guide to add a season, connect robot mechanisms to game behavior, or expose game state to
 robot sensors. Start with the [plugin contract](../reference/game-plugin.md); the
-[2026 plugin notes](../../plugins/game_2026/README.md) are season-specific and are not a template
+[2026 plugin notes](../../seasons/2026/game/README.md) are season-specific and are not a template
 for other games.
 
 ## Mental model
@@ -19,14 +19,15 @@ formatted HUD string. These distinctions keep season rules out of core, UI and d
 
 ## Bring up a season
 
-1. Copy [`plugins/_template`](../../plugins/_template) to `plugins/game_<year>` and follow its
-   [identity checklist](../../plugins/_template/README.md). Keep the CMake target, namespace,
+1. Create the [season pack](../reference/seasons.md) `seasons/<year>/` (copy `seasons/_template`) and set its
+   `"game": {"plugin": "game_<year>"}`. Copy [`seasons/_template/game`](../../seasons/_template/game) to `seasons/<year>/game` and follow its
+   [identity checklist](../../seasons/_template/game/README.md). Keep the CMake target, namespace,
    include tree, plugin ID and game year consistent; depend on SDK only.
 2. Implement a stateless `IGameModule`, an `IField` that destroys its bodies before its world, and
    an `IGameState` that resets all per-session state. Use simulation time and context RNG.
-3. Return plugin-prefixed metadata and register the module through `plugins/CMakeLists.txt`,
-   `plugins/builtin_plugins.cpp`, and the test target. The app uses the aggregator, not a direct
-   season dependency.
+3. Return plugin-prefixed metadata and register the module in `seasons/builtin_plugins.cpp` (CMake links it
+   from the manifest). The app uses the aggregator, not a direct season dependency.
+   [`check_seasons.py`](../../tools/check_seasons.py) and the boundary checker verify the wiring.
 4. Start with a selectable year, a resettable state and one observable HUD value. Then add config
    with `ConfigBindings`, field fidelity, rules and entities.
 5. Add focused tests for registration, selection, defaults, field cleanup, repeated reset, rule
@@ -66,8 +67,8 @@ The SDK case `zone activation: All/Any combination, empty list and missing mecha
 [`test_zone.cpp`](../../tests/sdk/test_zone.cpp) verifies that an empty condition list is active,
 including with no mechanism directory. Its fixture also exercises `All`, `Any`, and missing
 mechanisms. For a complete season implementation, follow
-[`fuel_zones.cpp`](../../plugins/game_2026/src/fuel_zones.cpp) and
-[`game_state.cpp`](../../plugins/game_2026/src/game_state.cpp): metadata defines pickup/muzzle
+[`fuel_zones.cpp`](../../seasons/2026/game/src/fuel_zones.cpp) and
+[`game_state.cpp`](../../seasons/2026/game/src/game_state.cpp): metadata defines pickup/muzzle
 zones, while game state resolves poses, activation, and inventory behavior.
 
 ```powershell
@@ -105,7 +106,7 @@ snapshot that the UI may skip. The plugin declares its own cues and requests an 
 the app owns embedding and playback.
 
 1. Return plugin-prefixed `SoundCueInfo` records from `contributeSoundCues()`.
-2. Put each declared WAV at `plugins/<id>/assets/sfx/<asset>.wav`. The plugins aggregation seam
+2. Put each declared WAV at `seasons/<year>/game/assets/sfx/<asset>.wav`. The plugins aggregation seam
    embeds it; no app or Qt dependency is needed.
 3. Request the cue on a rule boundary, not every tick. Use the common SDK IDs for shared match
    lifecycle cues; the Driver Station owns those requests.
@@ -120,7 +121,7 @@ ctest --preset windows-ninja-release -R "^sim context: requestSound stamps the s
 ```
 
 Season timing and cue ownership vary; see the
-[2026 season notes](../../plugins/game_2026/README.md#sound-cues) for that implementation, and the
+[2026 season notes](../../seasons/2026/game/README.md#sound-cues) for that implementation, and the
 [game-plugin contract](../reference/game-plugin.md#sound-cues) for the shared lifecycle.
 
 ## Finish and verify

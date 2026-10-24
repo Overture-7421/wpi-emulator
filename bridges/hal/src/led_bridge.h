@@ -34,6 +34,8 @@ private:
 
     std::vector<Summary> summaries_;
     std::vector<LedPixel> scratch_;
+    bool hasOutputPort_ = true;
+    bool hasRunning_ = true;
 };
 
 }  // namespace wpiemu::bridges::hal

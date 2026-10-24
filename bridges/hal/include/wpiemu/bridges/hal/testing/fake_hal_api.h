@@ -27,6 +27,8 @@ protected:
 
 class FakePwmHal final : public IPwmHal, private ArrayAccess {
 public:
+    bool hasSpeed(int) const override { return normalizedSpeed; }
+    bool hasPosition() const override { return positionSupported; }
     int channelCount() const override { return static_cast<int>(init.size()); }
     bool initialized(int channel) const override { return at(init, channel); }
     double speed(int channel) const override { return at(spd, channel); }
@@ -37,6 +39,8 @@ public:
     std::array<double, 20> spd{};
     std::array<double, 20> pos{};
     std::array<int, 20> pulse{};
+    bool normalizedSpeed = true;
+    bool positionSupported = true;
 };
 
 class FakeDioHal final : public IDioHal, private ArrayAccess {
@@ -194,6 +198,8 @@ private:
 
 class FakeAddressableLedHal final : public IAddressableLedHal, private ArrayAccess {
 public:
+    bool hasOutputPort() const override { return outputPortSupported; }
+    bool hasRunning() const override { return runningSupported; }
     int channelCount() const override { return static_cast<int>(init.size()); }
     bool initialized(int index) const override { return at(init, index); }
     int outputPort(int index) const override { return at(port, index); }
@@ -204,6 +210,8 @@ public:
         else out.clear();
     }
 
+    bool outputPortSupported = true;
+    bool runningSupported = true;
     std::array<bool, 8> init{};
     std::array<int, 8> port{};
     std::array<int, 8> len{};
@@ -213,6 +221,7 @@ public:
 
 class FakeRoboRioHal final : public IRoboRioHal {
 public:
+    bool hasInputCurrent() const override { return inputCurrentSupported; }
     double vInVoltage() const override { return vIn; }
     void setVInVoltage(double value) override { vIn = value; }
     double vInCurrent() const override { return vInAmps; }
@@ -222,6 +231,17 @@ public:
     double vIn = 12.0;
     double vInAmps = 0.0;
     double brownout = 6.75;
+    bool inputCurrentSupported = true;
+};
+
+class FakeImuHal final : public IImuHal {
+public:
+    void setAcceleration(double x, double y, double z) override { acceleration = {x, y, z}; }
+    void setAngles(double roll, double pitch, double yaw) override { angles = {roll, pitch, yaw}; }
+    void setRates(double x, double y, double z) override { rates = {x, y, z}; }
+    std::array<double, 3> acceleration{};
+    std::array<double, 3> angles{};
+    std::array<double, 3> rates{};
 };
 
 class FakeAccelerometerHal final : public IAccelerometerHal {
@@ -283,18 +303,22 @@ public:
     IPwmHal& pwm() override { return pwmHal; }
     IDioHal& dio() override { return dioHal; }
     IAnalogInHal& analogIn() override { return analogInHal; }
-    IAnalogOutHal& analogOut() override { return analogOutHal; }
+    IAnalogOutHal* analogOut() override { return legacyFamilies ? &analogOutHal : nullptr; }
     IEncoderHal& encoder() override { return encoderHal; }
     IDutyCycleHal& dutyCycle() override { return dutyCycleHal; }
-    IRelayHal& relay() override { return relayHal; }
+    IRelayHal* relay() override { return legacyFamilies ? &relayHal : nullptr; }
     IPneumaticsHal& ctrePcm() override { return pcmHal; }
     IPneumaticsHal& revPh() override { return phHal; }
     IPowerDistributionHal& powerDistribution() override { return pdHal; }
     IAddressableLedHal& addressableLed() override { return ledHal; }
     IRoboRioHal& roboRio() override { return rioHal; }
-    IAccelerometerHal& accelerometer() override { return accelHal; }
+    IAccelerometerHal* accelerometer() override { return legacyFamilies ? &accelHal : nullptr; }
+    IImuHal* imu() override { return onboardImu ? &imuHal : nullptr; }
     ICanHal& can() override { return canHal; }
 
+    bool legacyFamilies = true;
+    bool onboardImu = false;
+    FakeImuHal imuHal;
     FakePwmHal pwmHal;
     FakeDioHal dioHal;
     FakeAnalogInHal analogInHal;

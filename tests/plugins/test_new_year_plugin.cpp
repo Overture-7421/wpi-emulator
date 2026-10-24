@@ -1,5 +1,5 @@
 // Proof that a new season is "copy the template, register one line": a complete year plugin (field, game state,
-// mechanism template, config schema, HUD) written exactly like plugins/_template, registered next to
+// mechanism template, config schema, HUD) written exactly like seasons/_template/game, registered next to
 // the built-in 2026 plugin, and driven by the REAL core config pipeline and simulation session. Neither core nor
 // any other plugin is touched. (tools/check_boundaries.py, run by CTest, separately proves core contains no
 // season-specific code and plugins link only the SDK.)
@@ -90,7 +90,7 @@ public:
         info.type = "game_2998.counter";
         info.displayName = "Counter";
         info.origin = "game_2998";
-        info.slotSpecs.push_back({"motor", "Motor", SlotType::Motor, false, ""});
+        info.slotSpecs.push_back({"motor", "Motor", SlotType::Motor, false, "", "", 0});
         return f.registerTemplate(std::move(info), [](const MechanismBuildContext& c) { return std::make_unique<CounterMechanism>(c); });
     }
     Result<std::unique_ptr<IField>> createField(IPhysicsWorld& w) override {

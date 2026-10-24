@@ -82,6 +82,32 @@ TEST_CASE("runner: a peer with a protocol version below the minimum is refused")
     CHECK(rig.run([&] { return rig.ext->disconnected; }));  // the link was closed
 }
 
+TEST_CASE("runner: a known WPILib season mismatch is refused unless the extension was explicitly overridden") {
+    {
+        RunnerOptions options = Rig::fast();
+        options.expectedWpilibYear = 2026;
+        Rig rig(options);
+        rig.connect();
+        rig.ext->hello(0, proto::kProtocolVersion, true, 2027);
+        REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value(); }));
+        CHECK_FALSE(rig.ext->helloAck->accepted);
+        CHECK(rig.ext->helloAck->reason.find("project year 2026") != std::string::npos);
+        CHECK(rig.runner->ticksSent() == 0);
+        CHECK(rig.run([&] { return rig.ext->disconnected; }));
+    }
+    {
+        RunnerOptions options = Rig::fast();
+        options.expectedWpilibYear = 2026;
+        options.allowWpilibYearMismatch = true;
+        Rig rig(options);
+        rig.connect();
+        rig.ext->hello(0, proto::kProtocolVersion, true, 2027);
+        REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value() && rig.runner->ticksSent() > 0; }));
+        CHECK(rig.ext->helloAck->accepted);
+        CHECK(rig.logger.count(LogLevel::Warn) > 0);
+    }
+}
+
 TEST_CASE("runner: lock-step - consecutive ticks, one outstanding, identity on every frame") {
     Rig rig;
     rig.ext = nullptr;
@@ -429,4 +455,18 @@ TEST_CASE("runner: runs on its own thread against a robot thread, then stops cle
     robot.join();
     rig.runner->stop();  // joins the already-finished thread
     CHECK(rig.slot.latest()->tick() > 0);
+}
+
+TEST_CASE("runner: a different release of the same WPILib year warns once and still connects") {
+    for (const bool differs : {true, false}) {
+        RunnerOptions options = Rig::fast();
+        options.expectedWpilibYear = 2026;
+        options.expectedWpilibVersion = differs ? "2026.3.0" : "2026.2.1";   // the fake extension reports <year>.2.1
+        Rig rig(options);
+        rig.connect();
+        rig.ext->hello(0, proto::kProtocolVersion, true, 2026);
+        REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value() && rig.runner->ticksSent() > 0; }));
+        CHECK(rig.ext->helloAck->accepted);
+        CHECK(rig.logger.count(LogLevel::Warn) == (differs ? 1u : 0u));
+    }
 }

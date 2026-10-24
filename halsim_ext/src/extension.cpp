@@ -8,8 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "hal/HAL.h"
-#include "hal/Extensions.h"
+#include "wpiemu/hal_abi/hal_includes.h"
 #include "ipc_bindings.h"
 #include "wpiemu/halsim_ext/config.h"
 #include "wpiemu/halsim_ext/extension_runtime.h"

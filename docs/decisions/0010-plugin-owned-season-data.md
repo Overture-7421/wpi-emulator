@@ -4,7 +4,7 @@ Read this when season, field or tag data appears to belong in core, a bridge or 
 Prerequisite: [Architecture](../ARCHITECTURE.md).
 
 ## Status
-Accepted.
+Accepted. WPILib platform facts live in the season pack beside the plugin ([0018](0018-season-packs.md)).
 
 ## Rationale
 Embedding a season's dimensions, tags or identifiers in shared consumers turns each new game year

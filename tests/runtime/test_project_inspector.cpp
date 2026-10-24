@@ -145,10 +145,13 @@ TEST_CASE("inspector: an out-of-range or malformed team number is ignored with a
 TEST_CASE("inspector: build script dialects for the GradleRIO version") {
     struct Case { const char* name; const char* build; const char* version; int year; };
     const Case cases[] = {
-        {"groovy-double", "plugins { id \"edu.wpi.first.GradleRIO\" version \"2027.0.0-alpha-1\" }", "2027.0.0-alpha-1", 2027},
+        {"groovy-2027", "plugins { id \"org.wpilib.GradleRIO\" version \"2027.0.0-alpha-7\" }", "2027.0.0-alpha-7", 2027},
+        {"groovy-double", "plugins { id \"edu.wpi.first.GradleRIO\" version \"2026.2.1\" }", "2026.2.1", 2026},
         {"groovy-single", "plugins { id 'edu.wpi.first.GradleRIO' version '2024.3.2' }", "2024.3.2", 2024},
         {"kotlin", "plugins { id(\"edu.wpi.first.GradleRIO\") version \"2025.1.1\" }", "2025.1.1", 2025},
         {"classpath", "buildscript { dependencies { classpath \"edu.wpi.first:GradleRIO:2023.4.3\" } }", "2023.4.3", 2023},
+        {"2027-classpath", "buildscript { dependencies { classpath \"org.wpilib:GradleRIO:2027.0.0-alpha-7\" } }",
+         "2027.0.0-alpha-7", 2027},
     };
     for (const Case& c : cases) {
         ScratchDir d;
@@ -176,6 +179,8 @@ TEST_CASE("inspector: version from a variable falls back to the preferences / se
 
     ScratchDir s;
     s.write("p/build.gradle", "plugins { id 'edu.wpi.first.GradleRIO' version project.ext.v }");
+    s.write("p/settings.gradle", "String wpilibYear = '2027_alpha7'\n");
+    CHECK(inspect(s.path() / "p").wpilibYear == 2027);
     s.write("p/settings.gradle", "String frcYear = '2024'\n");
     CHECK(inspect(s.path() / "p").wpilibYear == 2024);
 }

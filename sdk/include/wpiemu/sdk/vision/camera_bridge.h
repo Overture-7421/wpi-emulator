@@ -19,7 +19,7 @@
 namespace wpiemu::sdk {
 
 // What every encoder keeps per camera; an encoder derives from it to add the settings it mirrors.
-struct CameraState {
+struct CameraBridgeState {
     CameraConfig config;
     std::string root;                  // topic prefix of the camera, e.g. "/limelight-front"
     bool initialized = false;          // its topics exist

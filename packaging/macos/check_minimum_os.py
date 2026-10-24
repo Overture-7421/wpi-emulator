@@ -16,8 +16,11 @@ def main() -> None:
     bundle = Path(sys.argv[1])
     with (bundle / "Contents" / "Info.plist").open("rb") as stream:
         minimum = plistlib.load(stream)["LSMinimumSystemVersion"]
-    for relative in ("MacOS/wpiemu_app", "PlugIns/wpiemu/libhalsim_wpiemu.dylib"):
-        binary = bundle / "Contents" / relative
+    extensions = sorted((bundle / "Contents" / "PlugIns" / "wpiemu").glob("*/libhalsim_wpiemu.dylib"))
+    if not extensions:
+        raise SystemExit(f"{bundle}: no season-specific HALSim extension found")
+    binaries = [bundle / "Contents" / "MacOS" / "wpiemu_app", *extensions]
+    for binary in binaries:
         output = subprocess.check_output(["otool", "-arch", "all", "-l", str(binary)], text=True)
         values = re.findall(r"\bminos\s+([\d.]+)", output)
         values += re.findall(r"cmd LC_VERSION_MIN_MACOSX\b.*?\bversion\s+([\d.]+)",

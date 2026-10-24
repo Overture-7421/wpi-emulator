@@ -5,10 +5,6 @@
 #include "ui/qt_text.h"
 
 namespace wpiemu::app::runview {
-namespace {
-constexpr ui::Tr tr{"Sound"};
-}  // namespace
-
 SfxPlayer::SfxPlayer(ISfxOutput* output, QObject* parent) : QObject(parent), output_(output) {}
 
 void SfxPlayer::setCatalog(const QString& gameId, const std::vector<sdk::SoundCueInfo>& gameCues) {

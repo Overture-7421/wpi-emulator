@@ -24,6 +24,13 @@ TEST_CASE("init script: ADR 0003 content, no machine specific paths") {
     CHECK(s.find("defaultEnabled.set(false)") != std::string::npos);
     CHECK(s.find("JavaSimulationTask") != std::string::npos);
     CHECK(s.find("NativeSimulationTask") != std::string::npos);
+    CHECK(s.find("org.wpilib.gradlerio.simulation.NativeSimulationTask") != std::string::npos);
+    CHECK(s.find("p.plugins.hasPlugin('org.wpilib.GradleRIO')") != std::string::npos);
+    CHECK(s.find("org.gradle.api.tasks.JavaExec") != std::string::npos);
+    CHECK(s.find("wpi.sim.environment.put('HALSIM_EXTENSIONS', emuExt)") != std::string::npos);
+    CHECK(s.find("entry.classpath = run.get().classpath.files") != std::string::npos);
+    CHECK(s.find("t.dependsOn(run.map") == std::string::npos);
+    CHECK(s.find("t.dependsOn(p.configurations.getByName('runtimeClasspath'), p.tasks.named('classes'))") != std::string::npos);
     CHECK(s.find("C:\\") == std::string::npos);
     CHECK(s.find("/home/") == std::string::npos);
 }
@@ -70,6 +77,12 @@ TEST_CASE("gradle launch plan: wrapper, flags, init script written to the scratc
 
     r.language = "cpp";
     CHECK(planGradleLaunch(r, false).value().args.back() == "simulateNative");
+    r.language = "java";
+    r.launchProfile = std::string(kLaunchModern);
+    CHECK(gradleTaskName(r) == "run");
+    CHECK(planGradleLaunch(r, false).value().args.back() == "run");
+    r.language = "cpp";
+    CHECK(gradleTaskName(r) == "simulateNative");
 }
 
 TEST_CASE("gradle launch plan: failure modes") {
@@ -171,6 +184,18 @@ TEST_CASE("external launch plan: describe task names and descriptor paths") {
     LaunchRequest r = makeRequest(dir, LaunchMode::ExternalDirect);
     CHECK(externalTaskName(r) == "simulateExternalJavaRelease");
     CHECK(externalDescriptorPath(r) == r.projectDir / "build" / "sim" / "release_java.json");
+    r.launchProfile = std::string(kLaunchModern);
+    CHECK(externalTaskName(r) == "simulateExternalJava");
+    CHECK(externalDescriptorPath(r) == r.projectDir / "build" / "sim" / "java.json");
+    const auto modernDescribe = planExternalDescribe(r, false);
+    REQUIRE(modernDescribe.ok());
+    CHECK(modernDescribe.value().args.back() == "simulateExternalJava");
+    CHECK(modernDescribe.value().env.at(env_var::kExtension) == r.extensionLibrary.string());
+    CHECK(std::find(modernDescribe.value().args.begin(), modernDescribe.value().args.end(), "-I") != modernDescribe.value().args.end());
+    CHECK(ScratchDir::read(r.scratchDir / "wpiemu-init.gradle") == generateInitScript());
+    LaunchRequest noScratch = r;
+    noScratch.scratchDir.clear();
+    CHECK(planExternalDescribe(noScratch, false).error().code == ErrorCode::InvalidArgument);
     r.release = false;
     r.language = "cpp";
     CHECK(externalTaskName(r) == "simulateExternalNativeDebug");
@@ -253,6 +278,52 @@ TEST_CASE("external launch plan: Java descriptor -> JVM command line") {
     }
 }
 
+TEST_CASE("external launch plan: a classpath-launch profile uses the descriptor runtime classpath and main class") {
+    ScratchDir dir;
+    LaunchRequest r = makeRequest(dir, LaunchMode::ExternalDirect);
+    r.launchProfile = std::string(kLaunchModern);
+    const JsonValueCodec codec;
+    const auto host = envOf({});
+    const std::string descriptor = R"json([{
+        "type": "java", "libraryDir": "/jni", "mainClassName": "frc.robot.Main",
+        "classpath": ["build/classes/java/main", "build/resources/main", "/cached libraries/wpilibj.jar"],
+        "jvmArgs": ["--enable-native-access=ALL-UNNAMED", "--add-opens", "java.base/java.lang=ALL-UNNAMED"],
+        "environment": {"HALSIM_EXTENSIONS": "stock-gui", "KEEP": "1"}
+    }])json";
+    for (const bool windows : {false, true}) {
+        const auto plan = planExternalLaunch(r, descriptor, codec, host, windows, false);
+        REQUIRE_MESSAGE(plan.ok(), (plan.ok() ? "" : plan.error().message));
+        const auto& spec = plan.value();
+        const std::string classpath = windows
+                                         ? "build/classes/java/main;build/resources/main;/cached libraries/wpilibj.jar"
+                                         : "build/classes/java/main:build/resources/main:/cached libraries/wpilibj.jar";
+        const std::vector<std::string> expected = {
+            "--enable-native-access=ALL-UNNAMED", "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+            "-Djava.library.path=/jni", "-classpath", classpath, "frc.robot.Main"};
+        CHECK(spec.args == expected);
+        CHECK(spec.workingDir == r.projectDir);
+        CHECK(spec.env.at(env_var::kHalExtensions) == r.extensionLibrary.string());
+        CHECK(spec.env.at("KEEP") == "1");
+    }
+    const std::string macDescriptor = R"json({"libraryDir":"/jni", "mainClassName":"Main",
+        "classpath":["robot.jar"], "jvmArgs":["-XstartOnFirstThread"]})json";
+    const auto macPlan = planExternalLaunch(r, macDescriptor, codec, host, false, true);
+    REQUIRE(macPlan.ok());
+    CHECK(std::count(macPlan.value().args.begin(), macPlan.value().args.end(), "-XstartOnFirstThread") == 1);
+
+    for (const char* malformed : {
+             R"json({"libraryDir":"/jni", "mainClassName":"Main"})json",
+             R"json({"libraryDir":"/jni", "mainClassName":"Main", "classpath":[]})json",
+             R"json({"libraryDir":"/jni", "mainClassName":"Main", "classpath":[""]})json",
+             R"json({"libraryDir":"/jni", "mainClassName":"Main", "classpath":[5]})json",
+             R"json({"libraryDir":"/jni", "classpath":["robot.jar"]})json",
+             R"json({"libraryDir":"/jni", "mainClassName":"Main", "classpath":["robot.jar"], "jvmArgs":[5]})json"}) {
+        const auto plan = planExternalLaunch(r, malformed, codec, host, false, false);
+        REQUIRE_FALSE(plan.ok());
+        CHECK(plan.error().code == ErrorCode::InvalidArgument);
+    }
+}
+
 TEST_CASE("external launch plan: native descriptor -> the exe") {
     ScratchDir dir;
     LaunchRequest r = makeRequest(dir, LaunchMode::ExternalDirect, "cpp");
@@ -277,4 +348,16 @@ TEST_CASE("external launch plan: native descriptor -> the exe") {
     REQUIRE(absolute.ok());
     CHECK(absolute.value().program == elsewhere.string());  // already absolute: not re-based on the project
     CHECK(planExternalLaunch(r, "{}", codec, host, true, false).error().code == ErrorCode::InvalidArgument);
+}
+
+TEST_CASE("launch profiles: classic is the default, modern runs the project's run task, unknown ids are refused") {
+    CHECK(findLaunchProfile("") == findLaunchProfile(kLaunchClassic));
+    REQUIRE(findLaunchProfile(kLaunchModern) != nullptr);
+    CHECK(findLaunchProfile(kLaunchModern)->javaClasspathLaunch);
+    CHECK_FALSE(findLaunchProfile(kLaunchClassic)->javaClasspathLaunch);
+    CHECK(findLaunchProfile("gradlerio-unknown") == nullptr);
+    ScratchDir dir;
+    LaunchRequest r = makeRequest(dir);
+    r.launchProfile = "gradlerio-unknown";
+    CHECK(planGradleLaunch(r, false).error().code == ErrorCode::InvalidArgument);
 }

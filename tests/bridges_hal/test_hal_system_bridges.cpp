@@ -8,6 +8,25 @@ using namespace hal_test;
 using sdk::Capability;
 namespace sig = wpiemu::sdk::signal;
 
+TEST_CASE("LED: unavailable running and output-port signals are omitted without shifting color values") {
+    auto api = std::make_shared<hal::testing::FakeHalApi>();
+    api->ledHal.outputPortSupported = false;
+    api->ledHal.runningSupported = false;
+    Rig rig({}, api);
+    api->ledHal.init[0] = true;
+    api->ledHal.len[0] = 1;
+    api->ledHal.pixels[0] = {{12, 34, 56}};
+    rig.poll();
+    const auto id = rig.find("addressable_led", 0).value();
+    CHECK_FALSE(rig.output(id, "running").has_value());
+    CHECK_FALSE(rig.output(id, "outputPort").has_value());
+    CHECK(rig.output(id, "length").value() == 1.0);
+    CHECK(rig.output(id, "avgRed").value() == 12.0);
+    CHECK(rig.output(id, "avgGreen").value() == 34.0);
+    CHECK(rig.output(id, "avgBlue").value() == 56.0);
+    CHECK(rig.output(id, "firstPixelRgb").value() == double(0x0c2238));
+}
+
 TEST_CASE("PCM: module device carries compressor state and sim-driven pressure switch") {
     Rig rig;
     auto& p = rig.api->pcmHal;
@@ -250,6 +269,37 @@ TEST_CASE("CAN: broadcast frames and unknown ids are handled safely") {
     CHECK(rig.host.announced.size() == 2);  // + roboRIO only
     CHECK(wpiemu::bridges::hal::canManufacturerName(5) == "rev");
     CHECK(wpiemu::bridges::hal::canDeviceTypeName(31) == "firmware_update");
+}
+
+TEST_CASE("CAN FD: observed buses separate identical ids and all 64 payload bytes are retained") {
+    Rig rig;
+    auto frame = frameFor(5, 2, 1, 12, {});
+    frame.size = 64;
+    for (std::size_t i = 0; i < frame.data.size(); ++i) frame.data[i] = static_cast<std::uint8_t>(i);
+    rig.api->canHal.send(frame);
+    frame.busId = 2;
+    rig.api->canHal.send(frame);
+    rig.poll();
+    CHECK(rig.countType("can_rev_motor_controller") == 2);
+    bool rio = false, external = false;
+    for (const auto& [id, info] : rig.host.announced) {
+        if (info.descriptor.type != "can_rev_motor_controller") continue;
+        rio |= info.descriptor.bus == "rio";
+        external |= info.descriptor.bus == "can2";
+        CHECK(rig.output(id, "lastDataSize").value() == 64);
+        CHECK(rig.output(id, "lastDataWord15").value() == double(0x3f3e3d3cu));
+    }
+    CHECK(rio);
+    CHECK(external);
+    frame.size = 1;
+    frame.data[0] = 0xff;
+    rig.api->canHal.send(frame);
+    for (const auto& [id, info] : rig.host.announced)
+        if (info.descriptor.bus == "can2") {
+            CHECK(rig.output(id, "lastDataSize").value() == 1);
+            CHECK(rig.output(id, "lastDataWord15").value() == 0);
+            CHECK(rig.output(id, "lastDataHigh").value() == 0);
+        }
 }
 
 TEST_CASE("CAN: stop unsubscribes and a refused subscription fails start") {

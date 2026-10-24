@@ -41,7 +41,7 @@ ProjectPage::ProjectPage(WizardViewModel& model, RecentProjects& recent, const U
     auto* orText = makeLabel(tr("or paste its location"), "muted");
     orText->setAlignment(Qt::AlignCenter);
     auto* pathRow = new QHBoxLayout;
-    pathEdit_->setPlaceholderText(tr("C:\\Users\\you\\robot-2026"));
+    pathEdit_->setPlaceholderText(tr("C:\\Users\\you\\robot-project"));
     pathEdit_->setClearButtonEnabled(true);
     pathEdit_->setAccessibleName(tr("Project folder"));
     pathRow->addWidget(pathEdit_, 1);

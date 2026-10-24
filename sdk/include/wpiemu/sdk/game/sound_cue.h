@@ -5,7 +5,7 @@
 //
 // Ownership: an id's prefix decides who owns its sound file. The ids below (the FMS audio cues every season shares,
 // manual Table 5-4) belong to the app: `asset` names app/runview/assets/sfx/<asset>.wav. A plugin's ids start with
-// its plugin id and `asset` names plugins/<id>/assets/sfx/<asset>.wav.
+// its plugin id and `asset` names seasons/<year>/game/assets/sfx/<asset>.wav.
 
 #include <string>
 #include <string_view>

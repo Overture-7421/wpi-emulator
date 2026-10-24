@@ -320,17 +320,17 @@ TEST_CASE("hub: distance slots accept CANrange and deliver metres rather than vo
     DeviceHub hub;
     proto::DeviceAnnounce range;
     range.id = DeviceId{1};
-    range.descriptor = {"phoenix6", "canrange", "ctre", 33, kBusUnknown};
+    range.descriptor = {"phoenix6", "canrange", "ctre", 33, kBusUnknown, -1, {}, "", ""};
     range.descriptor.capabilities = Capability::Distance;
     range.signalSpecs = {doubleSignal(signal::kDistance, SignalDirection::Input)};
-    const SlotSpec sensor{"sensor", "Distance", SlotType::DistanceSensor, false, ""};
+    const SlotSpec sensor{"sensor", "Distance", SlotType::DistanceSensor, false, "", "", 0};
     hub.declareSlots("hopper", {sensor});
     hub.onAnnounce(range);
     CHECK(hasWarning(hub, "unmapped_loopback"));
     REQUIRE(hub.bind({"hopper", "sensor"}, range.descriptor.key()).ok());
     CHECK_FALSE(hasWarning(hub, "unmapped_loopback"));
     CHECK(isCompatible(sensor, range.descriptor));
-    CHECK_FALSE(isCompatible({"voltage", "", SlotType::AnalogSensor}, range.descriptor));
+    CHECK_FALSE(isCompatible({"voltage", "", SlotType::AnalogSensor, true, "", "", 0}, range.descriptor));
     hub.writeDistance({"hopper", "sensor"}, 0.12);
     proto::SensorFrame out;
     hub.buildSensorFrame(out, true);
@@ -466,7 +466,7 @@ TEST_CASE("hub: slot_missing_device only after discovery completed, slot_incompa
     hub.onAnnounce(talonFxAnnounce(1, 1));
     CHECK_FALSE(hasWarning(hub, "slot_missing_device"));
 
-    hub.declareSlots("arm", {{"motor", "Motor", SlotType::Motor, true, ""}, {"encoder", "Enc", SlotType::LimitSwitch, false, ""}});
+    hub.declareSlots("arm", {{"motor", "Motor", SlotType::Motor, true, "", "", 0}, {"encoder", "Enc", SlotType::LimitSwitch, false, "", "", 0}});
     CHECK_FALSE(hasWarning(hub, "slot_incompatible"));
     hub.unbind(kSlotA);
     REQUIRE(hub.bind(kSlotB, kTalon1).ok());  // a TalonFX cannot be a limit switch (no DigitalInput capability)

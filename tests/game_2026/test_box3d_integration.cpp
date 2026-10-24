@@ -211,7 +211,8 @@ TEST_CASE("Box3D: just-shot fuel still scores in the hub") {
     rig.makeState(noRecycle);
     rig.ds.enabled = true;
     rig.ds.mode = sdk::proto::RobotMode::Autonomous;
-    const HubSpec& blue = buildFieldLayout().hub(Alliance::Blue);
+    const FieldLayout layout = buildFieldLayout();
+    const HubSpec& blue = layout.hub(Alliance::Blue);
     FuelPool::SpawnOptions ghost;
     ghost.ghostUntilUs = 10'000'000;
     rig.state->pool().spawn({blue.center.x, blue.center.y, 2.6f}, ghost);

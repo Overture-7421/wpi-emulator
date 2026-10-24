@@ -4,12 +4,13 @@
 #include <vector>
 
 #include "wpiemu/sdk/vision/camera_bridge.h"
+#include "wpiemu/sdk/telemetry/snapshot.h"
 
 using namespace wpiemu::sdk;
 
 namespace {
 
-struct TestCam : CameraState {
+struct TestCam : CameraBridgeState {
     int mirrored = 0;
 };
 
@@ -69,7 +70,7 @@ TEST_CASE("reconfiguring a camera set drops the previous state") {
 }
 
 TEST_CASE("heartbeat beats on the first call and then once per period") {
-    CameraState cam;
+    CameraBridgeState cam;
     CHECK(cam.beat(0, 100));
     CHECK(cam.heartbeat == 1);
     CHECK_FALSE(cam.beat(99, 100));

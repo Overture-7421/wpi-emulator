@@ -18,9 +18,10 @@ The [glossary](GLOSSARY.md) defines shared terms. For background on the technolo
 | `core/mechanisms/` | Mechanism templates, motor drives, and physical plants |
 | `core/physics/` | Drivetrains, tire models, chassis, and the Box3D adapter |
 | `ipc/` | Local transport and binary message codec |
+| `hal_abi/` | Per-HAL-ABI headers, HAL clock and SimDevice constants for the robot-process modules |
 | `halsim_ext/` | Extension loaded into the robot process; HAL timing, message handling, and bridge lifecycle |
 | `bridges/` | HAL, vendor SimDevice, and camera adapters; `builtin_bridges.cpp` aggregates them |
-| `plugins/` | Season modules; `builtin_plugins.cpp` aggregates built-in plugins |
+| `seasons/` | Season packs: `<year>/season.json` plus an optional `game/` plugin, `abi/<id>.json` HAL profiles; `builtin_plugins.cpp` aggregates the plugins and CMake generates the season catalog |
 | `app/` | Qt composition root, shell, setup wizard, editor, run view, and process host |
 | `tests/` | Shared SDK, runtime, mechanism, bridge, plugin, and editor tests |
 | `halsim_ext/tests/` | Extension lifecycle, lock-step, bridge, and reconnect tests |
@@ -28,8 +29,8 @@ The [glossary](GLOSSARY.md) defines shared terms. For background on the technolo
 | `cmake/`, `tools/` | Build configuration, repository checks, and test helpers |
 | `docs/` | User guide, concepts, architecture, tour, extension guides, and contracts |
 
-The root [`CMakeLists.txt`](../CMakeLists.txt) adds the SDK, core, IPC, extension, bridges, plugins,
-app, and tests. [`tests/CMakeLists.txt`](../tests/CMakeLists.txt) builds the main test executable
+The root [`CMakeLists.txt`](../CMakeLists.txt) adds the SDK, core, IPC, HAL ABI headers, extension, bridges,
+season packs (game plugins and the season catalog), app, and tests. [`tests/CMakeLists.txt`](../tests/CMakeLists.txt) builds the main test executable
 from test sources, including `halsim_ext/tests/test_*.cpp`. When real WPILib HAL artifacts are
 available, [`halsim_ext/CMakeLists.txt`](../halsim_ext/CMakeLists.txt) also defines a separate
 HAL integration target. See [Building](BUILDING.md) for focused test commands.

@@ -3,9 +3,9 @@
 # version resources (Windows .rc, macOS bundle metadata) that are attached to wpiemu_app.
 #
 # Install layout (relative to the install prefix; the app finds the extension relative to its own location):
-#   Windows   bin/wpiemu_app.exe (+ Qt DLLs)   extensions/halsim_wpiemu.dll   plugins/ qml/ (Qt, via windeployqt)
-#   macOS     wpiemu_app.app/Contents/MacOS/wpiemu_app   .../Contents/PlugIns/wpiemu/libhalsim_wpiemu.dylib
-#   Linux     bin/wpiemu_app   lib/wpiemu/libhalsim_wpiemu.so   share/{applications,icons,metainfo}
+#   Windows   bin/wpiemu_app.exe (+ Qt DLLs)   extensions/<year>/halsim_wpiemu.dll   plugins/ qml/ (Qt, via windeployqt)
+#   macOS     wpiemu_app.app/Contents/MacOS/wpiemu_app   .../Contents/PlugIns/wpiemu/<year>/libhalsim_wpiemu.dylib
+#   Linux     bin/wpiemu_app   lib/wpiemu/<year>/libhalsim_wpiemu.so   share/{applications,icons,metainfo}
 #             (Qt libraries are bundled by linuxdeploy for the AppImage, see packaging/linux/build-appimage.sh)
 include_guard(GLOBAL)
 
@@ -16,19 +16,20 @@ set(WPIEMU_MACOS_BUNDLE_ID "org.wpiemulator.app" CACHE STRING "CFBundleIdentifie
 
 set(_packaging_dir "${CMAKE_CURRENT_LIST_DIR}/../packaging")
 cmake_path(NORMAL_PATH _packaging_dir)
+set(WPIEMU_INSTALL_WPILIB_YEAR "${WPIEMU_WPILIB_SEASON}")
 
 # ---- layout ---------------------------------------------------------------------------------------------------------
 if(APPLE)
     set(WPIEMU_INSTALL_APP_DIR ".")
-    set(WPIEMU_INSTALL_EXTENSION_DIR "wpiemu_app.app/Contents/PlugIns/wpiemu")
+    set(WPIEMU_INSTALL_EXTENSION_DIR "wpiemu_app.app/Contents/PlugIns/wpiemu/${WPIEMU_INSTALL_WPILIB_YEAR}")
     set(WPIEMU_INSTALL_DOC_DIR ".")
 elseif(WIN32)
     set(WPIEMU_INSTALL_APP_DIR "bin")
-    set(WPIEMU_INSTALL_EXTENSION_DIR "extensions")
+    set(WPIEMU_INSTALL_EXTENSION_DIR "extensions/${WPIEMU_INSTALL_WPILIB_YEAR}")
     set(WPIEMU_INSTALL_DOC_DIR ".")
 else()
     set(WPIEMU_INSTALL_APP_DIR "bin")
-    set(WPIEMU_INSTALL_EXTENSION_DIR "lib/wpiemu")
+    set(WPIEMU_INSTALL_EXTENSION_DIR "lib/wpiemu/${WPIEMU_INSTALL_WPILIB_YEAR}")
     set(WPIEMU_INSTALL_DOC_DIR "share/doc/wpi-emulator")
 endif()
 
@@ -46,6 +47,11 @@ if(TARGET halsim_wpiemu)
     if(WPIEMU_PACKAGE_WPILIB_RUNTIME AND TARGET wpiemu_wpilib_hal)
         install(FILES $<TARGET_FILE:wpiemu_wpilib_hal> $<TARGET_FILE:wpiemu_wpilib_wpiutil>
             DESTINATION "${WPIEMU_INSTALL_EXTENSION_DIR}" COMPONENT Runtime)
+        foreach(_runtime IN ITEMS wpiemu_wpilib_ntcore wpiemu_wpilib_wpinet wpiemu_wpilib_datalog)
+            if(TARGET ${_runtime})
+                install(FILES $<TARGET_FILE:${_runtime}> DESTINATION "${WPIEMU_INSTALL_EXTENSION_DIR}" COMPONENT Runtime)
+            endif()
+        endforeach()
     endif()
 endif()
 
@@ -109,7 +115,7 @@ endif()
 install(FILES "${_packaging_dir}/THIRD-PARTY-NOTICES.txt"
     DESTINATION "${WPIEMU_INSTALL_DOC_DIR}" COMPONENT Runtime)
 
-if(UNIX AND NOT APPLE)
+if(UNIX AND NOT APPLE AND NOT WPIEMU_EXTENSION_ONLY)
     install(FILES "${_packaging_dir}/linux/wpiemu.desktop" DESTINATION share/applications COMPONENT Runtime)
     install(FILES "${_packaging_dir}/linux/wpiemu.metainfo.xml" DESTINATION share/metainfo COMPONENT Runtime)
     install(FILES "${_packaging_dir}/icons/wpiemu.svg" DESTINATION share/icons/hicolor/scalable/apps COMPONENT Runtime)

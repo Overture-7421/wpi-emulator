@@ -37,6 +37,7 @@ These pages explain unfamiliar tools and ideas before the architecture and code 
 - [Extension and IPC](reference/extension-ipc.md)
 - [Bridges](reference/bridges.md)
 - [Game plugins](reference/game-plugin.md)
+- [Season packs](reference/seasons.md)
 - [Application](reference/app.md)
 
 ## Guides and examples
@@ -52,8 +53,9 @@ These pages explain unfamiliar tools and ideas before the architecture and code 
 - [Simulation strategies](guides/simulation-strategies.md)
 - [Vision](guides/vision.md)
 - [WPILib season upgrade](guides/wpilib-upgrade.md)
-- [Season plugin template](../plugins/_template/README.md)
-- [Robot samples](../samples/swerve_robot/README.md) and [vision samples](../samples/vision_robot/README.md)
+- [Season plugin template](../seasons/_template/game/README.md)
+- [Robot samples](../samples/swerve_robot/README.md), [vision samples](../samples/vision_robot/README.md),
+  and [2027 preview samples](../samples/season_2027/README.md)
 
 ## Users, maintainers, and decisions
 

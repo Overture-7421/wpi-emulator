@@ -78,6 +78,7 @@ inline LaunchRequest makeRequest(const ScratchDir& dir, LaunchMode mode = Launch
     r.scratchDir = dir.path() / "scratch";
     r.mode = mode;
     r.language = language;
+    r.wpilibYear = 2026;
     return r;
 }
 

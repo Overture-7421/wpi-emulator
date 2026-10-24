@@ -16,7 +16,7 @@
 
 namespace wpiemu::bridges::vision {
 
-struct LimelightCam : sdk::CameraState {
+struct LimelightCam : sdk::CameraBridgeState {
     double pipeline = 0;
     sdk::Pose3 robotToCamera;  // last captured, for camerapose_robotspace
     bool hasRobotToCamera = false;

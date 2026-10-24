@@ -145,7 +145,7 @@ public:
     const DrivetrainSpec& spec() const override { return spec_; }
     std::vector<SlotSpec> slotSpecs() const override {
         std::vector<SlotSpec> out;
-        for (const auto& w : spec_.wheels) out.push_back({w.name + ".drive", w.name + " drive", SlotType::Motor, true, ""});
+        for (const auto& w : spec_.wheels) out.push_back({w.name + ".drive", w.name + " drive", SlotType::Motor, true, "", "", 0});
         return out;
     }
     void step(std::span<const WheelCommand> cmds, float dt) override {

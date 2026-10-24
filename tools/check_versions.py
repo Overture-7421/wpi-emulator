@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Check that every version pin the build cannot read from versions.json repeats its value.
 
-versions.json is the single home of the repository's version pins (docs/guides/wpilib-upgrade.md).
+versions.json is the single home of the repository's non-season version pins; WPILib seasons live in
+seasons/<year>/season.json (docs/guides/wpilib-upgrade.md).
 CMake and the Python tools read it directly; the workflows, the Docker image, the AppImage script
 and the documentation cannot, so each copy listed in PINS is matched against it and any disagreement
 is reported as file:line.
@@ -29,9 +30,6 @@ QT_KIT_PATH = r"Qt[\\/](\d+\.\d+\.\d+)[\\/]"
 UBUNTU = r"(?i)\bubuntu[-: ](\d+\.\d+)"
 
 PINS = [
-    Pin("wpilib", WORKFLOWS, r'^\s*WPILIB_VERSION:\s*"([^"]+)"', "WPILIB_VERSION (WPILib download cache key)"),
-    Pin("wpilib", ("samples/*/*/build.gradle",), r'edu\.wpi\.first\.GradleRIO"\s+version\s+"([^"]+)"',
-        "GradleRIO version of the sample robot"),
     Pin("qt.release", (".github/workflows/release.yml",), r'^\s*QT_VERSION:\s*"([^"]+)"', "QT_VERSION"),
     Pin("qt.release", ("tools/docker/linux/Dockerfile",), r"^ARG QT_VERSION=(\S+)", "QT_VERSION build argument"),
     Pin("qt.release", ("tools/docker/linux/Dockerfile",), r"\bQt (\d+\.\d+\.\d+)", "Qt version in the description"),
@@ -55,9 +53,9 @@ PINS = [
 ]
 
 
-def check_jdk_assets(versions: dict) -> list[str]:
+def check_jdk_assets(versions: dict, java_majors: dict[str, int] | None = None) -> list[str]:
     """The managed-JDK pins the app downloads: every asset must be self-consistent (the app trusts the SHA-256 only), and
-    every season must name a Java major that has a download for each platform."""
+    every season (java_majors maps a year to the Java major its season pack names) must have a download for each platform."""
     errors = []
     jdk = versions.get("jdk")
     if not isinstance(jdk, dict):
@@ -85,16 +83,10 @@ def check_jdk_assets(versions: dict) -> list[str]:
             errors.append(f"{where}: version {asset.get('version')!r} does not appear in the url")
         if not isinstance(asset.get("size"), int) or asset["size"] <= 0 or asset["size"] > 500 * 1024 * 1024:
             errors.append(f"{where}: size must be a positive byte count below the downloader's 500 MiB limit")
-    seasons = jdk.get("seasons", {})
-    if not seasons:
-        errors.append("versions.json: jdk.seasons is empty (it maps a WPILib year to the Java major that season builds with)")
-    for year, major in seasons.items():
-        if not re.fullmatch(r"\d{4}", str(year)) or not isinstance(major, int):
-            errors.append(f"versions.json jdk.seasons.{year}: expected a four-digit year mapped to a Java major number")
-            continue
+    for year, major in (java_majors or {}).items():
         for platform in sorted(platforms):
             if f"{major}-{platform}" not in assets:
-                errors.append(f"versions.json jdk.seasons.{year}: Java {major} has no download for {platform}")
+                errors.append(f"seasons/{year}/season.json toolchain.javaMajor: Java {major} has no download for {platform}")
     return errors
 
 
@@ -102,7 +94,7 @@ def lookup(versions: dict, key: str) -> str:
     value = versions
     for part in key.split("."):
         value = value[part]
-    return value
+    return str(value)
 
 
 def check(root: Path, versions: dict, pins: list[Pin] = PINS) -> list[str]:
@@ -135,7 +127,9 @@ def main() -> int:
     args = common.root_parser(__doc__).parse_args()
     root = args.root.resolve()
     try:
-        errors = check(root, common.load_versions(root)) + check_jdk_assets(common.load_versions(root))
+        versions = common.load_versions(root)
+        majors = {year: season["toolchain"]["javaMajor"] for year, season in common.load_seasons(root).items()}
+        errors = check(root, versions) + check_jdk_assets(versions, majors)
     except (OSError, ValueError) as error:
         print(f"versions: cannot check repository: {error}", file=sys.stderr)
         return 2

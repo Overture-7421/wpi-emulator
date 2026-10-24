@@ -190,6 +190,7 @@ TEST_CASE("the handshake timeout reports HandshakeTimeout and stops the process 
     REQUIRE(waitForStatus(s, 20s, [](const SessionStatus& x) { return x.link == LinkState::HandshakeTimeout; }, &st));
     CHECK(st.process == ProcessState::FailedToStart);
     CHECK(st.detail.find("did not connect") != std::string::npos);
+    CHECK(st.detail.find("fake gradle started") != std::string::npos);
     s.waitUntilFinished();
     CHECK(s.finished());
 }
@@ -211,6 +212,43 @@ TEST_CASE("an extension with an unsupported protocol version is reported as Prot
     CHECK(st.process == ProcessState::FailedToStart);
     CHECK(st.detail.find("protocol") != std::string::npos);
     s.waitUntilFinished();
+}
+
+TEST_CASE("the live project year is checked against the extension handshake; explicit override warns instead") {
+    TestRegistries reg;
+    SyntheticProject p(kWaitScript);
+    std::ofstream(p.dir() / "build.gradle") << "plugins { id 'edu.wpi.first.GradleRIO' version '2026.2.1' }\n";
+    {
+        auto r = RobotSession::start(reg.view(), p.config(2099), p.options());
+        REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+        RobotSession& s = *r.value();
+        CHECK_FALSE(s.coreOnly());
+        auto ext = connectFakeExtension(s.endpoint());
+        REQUIRE(ext != nullptr);
+        ext->hello(0, sdk::proto::kProtocolVersion, true, 2027);
+        CHECK_FALSE(awaitHandshake(*ext));
+
+        SessionStatus st;
+        REQUIRE(waitForStatus(s, 10s, [](const SessionStatus& x) { return x.link == LinkState::ProtocolMismatch; }, &st));
+        CHECK(st.detail.find("project year 2026") != std::string::npos);
+        CHECK(st.problem == "season_mismatch");
+        s.waitUntilFinished();
+    }
+    {
+        Options o = p.options();
+        o.allowWpilibYearMismatch = true;
+        auto r = RobotSession::start(reg.view(), p.config(2099), o);
+        REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+        RobotSession& s = *r.value();
+        auto ext = connectFakeExtension(s.endpoint());
+        REQUIRE(ext != nullptr);
+        ext->hello(0, sdk::proto::kProtocolVersion, true, 2027);
+        CHECK(awaitHandshake(*ext));
+        SessionStatus st;
+        REQUIRE(waitForStatus(s, 10s, [](const SessionStatus& x) { return x.link == LinkState::Connected; }, &st));
+        s.requestStop();
+        s.waitUntilFinished();
+    }
 }
 
 TEST_CASE("a connected robot that then dies is Crashed with its exit code, stop reports Exited") {

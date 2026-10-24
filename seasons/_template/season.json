@@ -1,0 +1,17 @@
+{
+  "year": 0,
+  "channel": "preview",
+  "default": false,
+  "wpilib": {
+    "version": "0000.0.0",
+    "verified": ["0000.0.0"],
+    "installFolder": "0000"
+  },
+  "platform": { "abi": "systemcore", "launch": "gradlerio-modern" },
+  "toolchain": { "javaMajor": 25 },
+  "vendors": {
+    "photonvision": { "schema": "photon-ns", "defaultVersion": "0.0.0", "verified": ["0.0.0"] }
+  },
+  "game": null,
+  "samples": []
+}

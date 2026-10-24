@@ -4,7 +4,7 @@
 
 namespace wpiemu::app {
 
-InstallInfo detectInstall(const ISystemProbe& probe, const QString& appDir, const QString& version) {
+InstallInfo detectInstall(const ISystemProbe& probe, const QString& appDir, const QString& version, const std::vector<int>& seasonYears) {
     InstallInfo info;
     if (version.isEmpty() || version == QLatin1String("0.0.0")) return info;
     const QString dir = QDir::cleanPath(appDir);
@@ -14,7 +14,16 @@ InstallInfo detectInstall(const ISystemProbe& probe, const QString& appDir, cons
         case HostOs::Windows:
             // Installed: <root>\bin\wpiemu_app.exe with <root>\Uninstall.exe; the ZIP has the same layout without it.
             if (probe.fileExists(root + QStringLiteral("/Uninstall.exe"))) info.kind = InstallKind::Nsis;
-            else if (probe.fileExists(root + QStringLiteral("/extensions/halsim_wpiemu.dll"))) info.kind = InstallKind::Portable;
+            else {
+                for (const int seasonYear : seasonYears) {
+                    const QString year = QString::number(seasonYear);
+                    if (probe.fileExists(root + QStringLiteral("/extensions/") + year +
+                                         QStringLiteral("/halsim_wpiemu.dll"))) {
+                        info.kind = InstallKind::Portable;
+                        break;
+                    }
+                }
+            }
             break;
         case HostOs::MacOs:
             // Running from a mounted disk image cannot be updated; an .app elsewhere can.
@@ -25,8 +34,15 @@ InstallInfo detectInstall(const ISystemProbe& probe, const QString& appDir, cons
             if (!appImage.isEmpty() && probe.fileExists(appImage)) {
                 info.kind = InstallKind::AppImage;
                 info.appImagePath = QDir::cleanPath(appImage);
-            } else if (probe.fileExists(root + QStringLiteral("/lib/wpiemu/libhalsim_wpiemu.so"))) {
-                info.kind = InstallKind::Portable;
+            } else {
+                for (const int seasonYear : seasonYears) {
+                    const QString year = QString::number(seasonYear);
+                    if (probe.fileExists(root + QStringLiteral("/lib/wpiemu/") + year +
+                                         QStringLiteral("/libhalsim_wpiemu.so"))) {
+                        info.kind = InstallKind::Portable;
+                        break;
+                    }
+                }
             }
             break;
         }

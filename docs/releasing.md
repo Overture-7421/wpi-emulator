@@ -30,21 +30,27 @@ that archive is not a self-contained Qt deployment.
 
 Keep each package's relative layout intact:
 
-- Windows: `bin\wpiemu_app.exe` and Qt/runtime DLLs, `extensions\halsim_wpiemu.dll`,
+- Windows: `bin\wpiemu_app.exe` and Qt/runtime DLLs, `extensions\<year>\halsim_wpiemu.dll`,
   Qt plugins/QML beside those directories, and `THIRD-PARTY-NOTICES.txt` at the install root.
 - macOS: `wpiemu_app.app/Contents/MacOS/wpiemu_app`, the extension at
-  `wpiemu_app.app/Contents/PlugIns/wpiemu/libhalsim_wpiemu.dylib`, plus bundled frameworks,
+  `wpiemu_app.app/Contents/PlugIns/wpiemu/<year>/libhalsim_wpiemu.dylib`, plus bundled frameworks,
   Qt plugins and QML resources. The notice is installed beside the app bundle.
-- Linux AppImage: `usr/bin/wpiemu_app`, `usr/lib/wpiemu/libhalsim_wpiemu.so`,
+- Linux AppImage: `usr/bin/wpiemu_app`, `usr/lib/wpiemu/<year>/libhalsim_wpiemu.so`,
   bundled Qt dependencies and desktop integration; notices under `usr/share/doc/wpi-emulator`.
 
-The app resolves the extension relative to its executable, not a registry entry.
-`WPIEMU_EXTENSION` (file) and `WPIEMU_EXTENSION_DIR` (directory) are checked first;
-existing packaged/build-tree candidates follow, with an optional development fallback last.
+The app resolves the extension for the live robot project's WPILib year relative to its
+executable, not a registry entry. `WPIEMU_EXTENSION` (file) is an explicit override and is
+tried alone. `WPIEMU_EXTENSION_DIR` (root directory) is checked before installed-layout
+candidates; the app looks under `<year>` inside that root. Build-tree candidates follow.
 The [locator](../core/runtime/src/launcher/extension_locator.cpp) is the lookup contract.
 Do not require an original build directory for a shipped package.
 
 WPILib runtime libraries are normally supplied by the robot process, not redistributed.
+Release builds set `WPIEMU_SEASONS=all`; each directory contains a separately
+built extension, never a renamed copy of another year's binary. Build every season before
+installing or running CPack. Extra-season configuration rejects stubs, and its real-HAL
+test runs through the parent CTest suite. See [multi-season builds](BUILDING.md#multi-season-builds)
+for compiler requirements and local commands.
 Keep app data outside the install tree; see [settings and project files](USER_GUIDE.md#settings-and-project-files).
 The launcher must still leave robot source, build configuration and vendordeps unchanged.
 
@@ -154,11 +160,14 @@ General dependency, SDL2 and build switches belong to [Building](BUILDING.md).
 
 ## Version pins
 
-[`versions.json`](../versions.json) is the source of truth for shared WPILib, Qt, CMake, Python,
-Ubuntu, macOS, Java-download and Visual C++ runtime pins. CMake reads the pins it needs and
-generates the app's Java toolchain table; `tools\check_versions.py` (CTest `versions.check`)
-checks copies in workflows, packaging scripts and documentation and validates managed-Java
-download metadata. Existing build trees retain their cached `WPIEMU_WPILIB_VERSION` until it is
+[`versions.json`](../versions.json) is the source of truth for shared Qt, CMake, Python,
+Ubuntu, macOS, Java-download and Visual C++ runtime pins. WPILib pins, verified versions, install
+folders and each season's Java major live in the [season packs](reference/seasons.md)
+(`seasons/<year>/season.json`). CMake reads what it needs and generates the app's Java toolchain table
+and season catalog; `tools\check_versions.py` (CTest `versions.check`) checks copies in workflows,
+packaging scripts and documentation and validates managed-Java download metadata, and
+`tools\check_seasons.py` (CTest `seasons.check`) validates the packs. The workflows and packaging
+scripts take the season list from `tools\seasons.py` rather than repeating years. Existing build trees retain their cached `WPIEMU_WPILIB_VERSION` until it is
 passed again. The linuxdeploy versions and checksums live only in the
 [AppImage script](../packaging/linux/build-appimage.sh).
 
