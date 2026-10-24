@@ -1,12 +1,22 @@
 #include <doctest/doctest.h>
 
+#include <QApplication>
+#include <QComboBox>
 #include <QDate>
 #include <QDateTime>
+#include <QDoubleSpinBox>
 #include <QLabel>
+#include <QLineEdit>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QSlider>
 #include <QTest>
 #include <QTime>
 #include <QTranslator>
+#include <QVBoxLayout>
+#include <QWheelEvent>
 #include <QWidget>
+#include <QtTest/qtestspontaneevent.h>
 
 #include <string_view>
 
@@ -100,6 +110,60 @@ TEST_CASE("heading labels are upper-cased bold letter-spaced captions") {
     CHECK(heading->font().letterSpacing() == doctest::Approx(108.0));
     CHECK(heading->font().pointSizeF() == doctest::Approx(plain.font().pointSizeF() * 0.8));
     CHECK_FALSE(heading->isEnabled());
+}
+
+TEST_CASE("quiet wheel: dropdowns and unfocused inputs let the wheel scroll the form instead") {
+    QScrollArea area;
+    auto* content = new QWidget;
+    auto* layout = new QVBoxLayout(content);
+    auto* holder = new QLineEdit(content);   // keeps focus, so a wheel notch giving focus to an input is detectable
+    layout->addWidget(holder);
+    auto* combo = ui::quietWheel(new QComboBox(content));
+    combo->addItems({QStringLiteral("a"), QStringLiteral("b"), QStringLiteral("c")});
+    auto* spin = ui::quietWheel(new QDoubleSpinBox(content));
+    spin->setRange(0, 100);
+    spin->setValue(50);
+    auto* slider = ui::quietWheel(new QSlider(Qt::Horizontal, content));
+    slider->setRange(0, 100);
+    slider->setValue(50);
+    layout->addWidget(combo);
+    layout->addWidget(spin);
+    layout->addWidget(slider);
+    auto* filler = new QWidget(content);
+    filler->setMinimumHeight(1500);
+    layout->addWidget(filler);
+
+    area.setWidget(content);
+    area.setWidgetResizable(true);
+    area.resize(300, 200);
+    area.show();
+    QApplication::processEvents();
+    holder->setFocus();
+    QApplication::processEvents();
+    REQUIRE(area.verticalScrollBar()->maximum() > 0);
+
+    const auto wheelOver = [&](QWidget* w) {
+        QWheelEvent e(QPointF(w->width() / 2, w->height() / 2), w->mapToGlobal(QPointF(w->width() / 2, w->height() / 2)), QPoint(),
+                      QPoint(0, -120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QSpontaneKeyEvent::setSpontaneous(&e);
+        qApp->notify(w, &e);
+    };
+
+    for (QWidget* w : std::initializer_list<QWidget*>{combo, spin, slider}) {
+        area.verticalScrollBar()->setValue(0);
+        wheelOver(w);
+        CHECK(area.verticalScrollBar()->value() > 0);
+        CHECK_FALSE(w->hasFocus());
+    }
+    CHECK(combo->currentIndex() == 0);
+    CHECK(spin->value() == doctest::Approx(50.0));
+    CHECK(slider->value() == 50);
+
+    spin->setFocus();
+    QApplication::processEvents();
+    REQUIRE(spin->hasFocus());
+    wheelOver(spin);
+    CHECK(spin->value() == doctest::Approx(49.0));
 }
 
 TEST_CASE("flashWidget styles a widget and clears the style after kFlashMs") {

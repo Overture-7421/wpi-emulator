@@ -21,6 +21,7 @@
 
 #include <algorithm>
 
+#include "joystick_editor.h"
 #include "wpiemu/sdk/core/units.h"
 
 namespace wpiemu::app::runview {
@@ -404,6 +405,12 @@ bool RunPage::handleKey(int qtKey, bool down) {
     return joysticks_.handleKey(qtKey, down);
 }
 
+// The Driver Station settings popup is a separate window: it only receives keys while a binding is being learned.
+bool RunPage::keysReachJoystick() const {
+    if (window()->isActiveWindow()) return true;
+    return joysticks_.learning() && QApplication::activeWindow() == dsPanel_->joystickEditor()->window();
+}
+
 bool RunPage::eventFilter(QObject* watched, QEvent* event) {
     switch (event->type()) {
         case QEvent::ShortcutOverride:
@@ -415,7 +422,7 @@ bool RunPage::eventFilter(QObject* watched, QEvent* event) {
         case QEvent::KeyPress:
         case QEvent::KeyRelease: {
             const auto* key = static_cast<QKeyEvent*>(event);
-            if (key->isAutoRepeat() || !isVisible() || !window()->isActiveWindow()) break;
+            if (key->isAutoRepeat() || !isVisible() || !keysReachJoystick()) break;
             const bool down = event->type() == QEvent::KeyPress;
             if (down && !joysticks_.learning() && typingInto(QApplication::focusWidget())) break;
             if (handleKey(key->key(), down)) return true;

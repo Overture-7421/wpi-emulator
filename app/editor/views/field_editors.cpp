@@ -5,7 +5,6 @@
 #include <QLabel>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
-#include <QWheelEvent>
 
 #include <cmath>
 
@@ -18,15 +17,10 @@
 namespace wpiemu::app::editor {
 
 QuietSpinBox::QuietSpinBox(QWidget* parent) : QDoubleSpinBox(parent) {
-    setFocusPolicy(Qt::StrongFocus);
+    ui::setQuietWheel(this);
     setKeyboardTracking(true);
     setButtonSymbols(QAbstractSpinBox::NoButtons);
     setAlignment(Qt::AlignRight);
-}
-
-void QuietSpinBox::wheelEvent(QWheelEvent* event) {
-    if (!hasFocus()) event->ignore();
-    else QDoubleSpinBox::wheelEvent(event);
 }
 
 // ---- bool ---------------------------------------------------------------------------------------
@@ -99,7 +93,7 @@ ChoiceEditor::ChoiceEditor(const sdk::PropertySpec& spec, QWidget* parent) : Fie
     auto* l = new QHBoxLayout(this);
     l->setContentsMargins(0, 0, 0, 0);
     l->addWidget(combo_);
-    combo_->setFocusPolicy(Qt::StrongFocus);
+    ui::setQuietWheel(combo_);
     // Long option labels must not widen the inspector; the box clips instead.
     combo_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     combo_->setMinimumContentsLength(8);

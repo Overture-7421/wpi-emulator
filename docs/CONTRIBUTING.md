@@ -49,6 +49,8 @@ change and its test.
   Use `tr()` (`ETR()` in editor models), `ThemeTokens`, and `UnitFormatter`. Make editor
   changes through undoable config operations. Keep the Z-up to Qt Y-up scene conversion
   in QML, not in saved coordinates. See [Application](reference/app.md).
+- Wrap every combo box, spin box and slider in `ui::quietWheel` (`ui/widget_support.h`) so the
+  mouse wheel scrolls the surrounding form instead of changing values.
 - Preserve unrelated mechanisms, mappings, and plugin sections when changing config.
   Core owns persistence. Decode, apply defaults, validate, then construct. Validation
   issue codes are stable SDK keys; numeric JSON stream fallbacks use

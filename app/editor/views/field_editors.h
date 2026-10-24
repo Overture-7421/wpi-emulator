@@ -25,9 +25,6 @@ class QuietSpinBox : public QDoubleSpinBox {
     Q_OBJECT
 public:
     explicit QuietSpinBox(QWidget* parent = nullptr);
-
-protected:
-    void wheelEvent(QWheelEvent* event) override;
 };
 
 class FieldEditor : public QWidget {

@@ -9,6 +9,7 @@
 #include <QVBoxLayout>
 
 #include "common/ui_helpers.h"
+#include "ui/widget_support.h"
 
 namespace wpiemu::app {
 
@@ -17,16 +18,16 @@ SettingsDialog::SettingsDialog(AppSettings& settings, const ISystemProbe& probe,
       settings_(settings),
       probe_(probe),
       java_(java),
-      theme_(new QComboBox),
-      units_(new QComboBox),
-      rate_(new QComboBox),
-      threads_(new QComboBox),
+      theme_(ui::quietWheel(new QComboBox)),
+      units_(ui::quietWheel(new QComboBox)),
+      rate_(ui::quietWheel(new QComboBox)),
+      threads_(ui::quietWheel(new QComboBox)),
       wpilib_(new QLineEdit),
       jdk_(new QLineEdit),
       reopen_(new QCheckBox(tr("Reopen the last project when the app starts"))),
       sound_(new QCheckBox(tr("Play match sound effects during Practice"))),
       updates_(new QCheckBox(tr("Check for updates when the app starts"))),
-      volume_(new QSlider(Qt::Horizontal)),
+      volume_(ui::quietWheel(new QSlider(Qt::Horizontal))),
       problemLabel_(makeLabel({}, "error", nullptr, true)),
       buttons_(new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel)) {
     setWindowTitle(tr("Settings"));
