@@ -43,6 +43,35 @@ offset to the COM. Dimensions and defaults are in
 [ChassisSpec](../../sdk/include/wpiemu/sdk/physics/chassis_spec.h); built-in wheel
 layouts are in [wheel_layout.h](../../sdk/include/wpiemu/sdk/physics/wheel_layout.h).
 
+## Contact materials
+
+A contact mixes the materials of its two shapes: friction is the geometric mean
+(`sqrt(muA * muB)`) and restitution is the larger value. Wheel traction does not come from
+these values, because the wheel pads are frictionless; they decide how the hull and bumpers
+touch walls, posts and fuel. The hull material is `ChassisSpec::material` (friction 0.3,
+restitution 0.1 by default; "Hull friction" and "Hull bounciness" in the editor).
+
+[materials.h](../../sdk/include/wpiemu/sdk/physics/materials.h) names the presets fields share:
+`kCarpet` for the floor and `kFieldStructure` (friction 0.15, restitution 0.1) for walls, rails,
+posts and other rigid structure. Against the default hull, `kFieldStructure` gives an effective
+friction of about 0.21 and little bounce. A driven robot is pinned only when it pushes within
+`atan(mu)` of the wall normal (about 12 degrees) and slides along the wall at any shallower angle,
+as a robot with fabric bumpers does on a polycarbonate wall. A field should use the presets for
+rigid structure instead of the engine default (friction 0.6); a plugin keeps materials that are
+specific to its game, such as fuel.
+
+## Default field
+
+A season without a game plugin runs core-only on a generic FRC field so the robot is not
+floating in empty space.
+[`createDefaultField`](../../sdk/include/wpiemu/sdk/game/default_field.h) builds the carpet,
+two 2 m alliance walls (blue at x = 0, red at x = length) and two 0.5 m guardrails of a 16.46 m by
+8.23 m (54 ft by 27 ft) field from the shared materials above, and `defaultFieldDescription()`
+describes the same field for the renderer. It has no game structure and names no season. The
+application passes it as `SessionParts::fallbackField`; the session owns it and destroys it before
+the world, like a plugin's field. Without a configured start pose the robot starts 2 m from the
+blue wall, centered across the field, facing +X.
+
 ## Traction and loads
 
 `IDrivetrain` applies forces before the world step; it never steps the world. Built-in
@@ -72,8 +101,11 @@ suspension or tipping solver. `TractionOptions::gravityMps2` defaults to
 
 The default `brush` and alternative `pacejka_lite` models implement
 [ITireModel](../../sdk/include/wpiemu/sdk/physics/tire_model.h). Slip compares wheel
-rim speed with contact-point speed and uses a finite reference speed near rest. The
-fixed-step solve couples wheel inertia, motor back-EMF and chassis mass share so stiff
+rim speed with contact-point speed and uses a finite reference speed near rest. Both the
+longitudinal and the lateral slip are normalized by the larger of the rim speed and the contact
+speed, so a wheel that spins against an obstacle gives up sideways grip and the chassis slides
+along the obstacle instead of sticking to it. The fixed-step solve couples wheel inertia, motor
+back-EMF and chassis mass share so stiff
 tire curves remain stable; the same longitudinal force applies wheel reaction torque.
 Airborne wheels spin freely without traction. The curves and friction limits are
 defined in [tire_models.cpp](../../core/physics/src/tire_models.cpp).

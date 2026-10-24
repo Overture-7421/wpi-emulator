@@ -10,6 +10,7 @@
 #include "test_support.h"
 #include "wpiemu/ipc/binary_codec.h"
 #include "wpiemu/ipc/local_ipc.h"
+#include "wpiemu/sdk/game/default_field.h"
 #include "wpiemu/sdk/testing/fake_extension.h"
 #include "wpiemu/sdk/testing/wait.h"
 
@@ -292,7 +293,7 @@ TEST_CASE("a connected robot that then dies is Crashed with its exit code, stop 
     }
 }
 
-TEST_CASE("a season without a game plugin runs core-only with a floor under the robot") {
+TEST_CASE("a season without a game plugin runs core-only on the default FRC field") {
     TestRegistries reg;
     SyntheticProject p(kWaitScript);
     sdk::RobotConfig c = p.config(2099);
@@ -304,9 +305,23 @@ TEST_CASE("a season without a game plugin runs core-only with a floor under the 
     CHECK(s.gameModule() == nullptr);
     const auto snap = s.latestSnapshot();
     REQUIRE(snap != nullptr);
-    CHECK(snap->chassis().pose.position.z > 0.f);
+    const sdk::Vec3 start = snap->chassis().pose.position;
+    CHECK(start.z > 0.f);   // on the carpet
+    CHECK(start.x == doctest::Approx(2.f));   // inside the field, like a game field's start
+    CHECK(start.y == doctest::Approx(sdk::default_field::kWidthM / 2));
     s.requestStop();
     s.waitUntilFinished();
+}
+
+TEST_CASE("describing the field without a game module gives the default FRC field") {
+    const auto field = describeField(nullptr);
+    REQUIRE(field != nullptr);
+    CHECK(field->lengthM == sdk::default_field::kLengthM);
+    CHECK(field->widthM == sdk::default_field::kWidthM);
+    const auto start = startPlacementFor(field.get());
+    CHECK(start.xM > 0.f);
+    CHECK(start.xM < field->lengthM);
+    CHECK(start.yM == doctest::Approx(field->widthM / 2));
 }
 
 TEST_CASE("the launch's physics worker count reaches the world and its threads are torn down with the session") {

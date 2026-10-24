@@ -292,6 +292,16 @@ TEST_CASE("field parts centre the floor on the visuals") {
     CHECK(none.lengthM > 0.f);
 }
 
+TEST_CASE("field parts frame the default FRC field around its centre") {
+    const sdk::FieldDescription field = sdk::defaultFieldDescription();
+    const FieldParts fp = buildFieldParts(&field);
+    CHECK(fp.parts.size() == field.visuals.size() + 1);
+    CHECK(fp.center.x == doctest::Approx(sdk::default_field::kLengthM / 2).epsilon(0.02));
+    CHECK(fp.center.y == doctest::Approx(sdk::default_field::kWidthM / 2).epsilon(0.02));
+    CHECK(fp.lengthM == sdk::default_field::kLengthM);
+    CHECK(fp.widthM == sdk::default_field::kWidthM);
+}
+
 TEST_CASE("field parts keep opaque visuals opaque and draw see-through ones translucent") {
     sdk::FieldDescription field;
     field.lengthM = 10.f;

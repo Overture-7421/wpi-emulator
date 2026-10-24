@@ -202,7 +202,7 @@ void ToolchainPage::refresh() {
     else summary_->setMessage(BannerKind::Warning, tr("Something needed to launch the robot is missing. You can finish the setup now and fix it before running."));
 
     if (report.coreOnly() && model_.projectValid())
-        coreOnly_->setMessage(BannerKind::Info, tr("Core-only mode: this season has no game module yet, so the field and game pieces are not simulated. Everything else works."));
+        coreOnly_->setMessage(BannerKind::Info, tr("Core-only mode: this season has no game module yet, so game pieces and scoring are not simulated and the robot drives on a generic FRC field. Everything else works."));
     else
         coreOnly_->clear();
 }

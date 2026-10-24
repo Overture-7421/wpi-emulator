@@ -13,6 +13,7 @@
 #include "wpiemu/plugins/game_2026/types.h"
 #include "wpiemu/sdk/core/result.h"
 #include "wpiemu/sdk/game/field.h"
+#include "wpiemu/sdk/physics/materials.h"
 #include "wpiemu/sdk/physics/physics_world.h"
 
 namespace wpiemu::plugins::game_2026 {
@@ -22,7 +23,7 @@ struct FieldBox {
     sdk::Pose3 pose;
     sdk::Vec3 sizeM;  // full extents
     std::string color;
-    sdk::Material material;
+    sdk::Material material = sdk::materials::kFieldStructure;
     bool collides = true;
     bool visible = true;  // false: a collider only; `FieldLayout::decor` draws it instead
 };
@@ -33,7 +34,7 @@ struct FieldCylinder {
     float radiusM = 0.f;
     float heightM = 0.f;  // axis = local Z
     std::string color;
-    sdk::Material material;
+    sdk::Material material = sdk::materials::kFieldStructure;
 };
 
 // Two ramps from the carpet to a ridge; symmetric about both horizontal axes.

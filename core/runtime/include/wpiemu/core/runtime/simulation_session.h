@@ -54,6 +54,9 @@ struct ChassisInfo {
     sdk::Pose3 spawnPose;           // where reset() puts the chassis
 };
 using ChassisBuilder = std::function<sdk::Result<ChassisInfo>(sdk::IPhysicsWorld&, const sdk::ChassisSpec&, const sdk::DrivetrainSpec&)>;
+// Builds the static field of a session without a game plugin (for example sdk::createDefaultField). The session owns
+// the result and destroys it before the world.
+using FieldFactory = std::function<sdk::Result<std::unique_ptr<sdk::IField>>(sdk::IPhysicsWorld&)>;
 
 // Reference builder used when none is injected (docs/reference/physics.md chassis model): one dynamic body whose origin is the COM, a
 // hull box, collidable primitives, one frictionless pad sphere per wheel, explicit mass properties.
@@ -73,6 +76,7 @@ struct SessionParts {
     const sdk::DrivetrainRegistry* drivetrains = nullptr;   // required when the config has wheels
     const sdk::TireModelRegistry* tireModels = nullptr;     // required when the config has wheels
     const sdk::GamePluginRegistry* plugins = nullptr;       // null => core features only
+    FieldFactory fallbackField;                       // used when no game plugin is selected; empty => no field
     sdk::ILogger* logger = nullptr;                   // null => NullLogger
     sdk::ISoundCueSink* sounds = nullptr;             // where the game's sound cue requests go (thread-safe); null => discarded
     ChassisBuilder chassisBuilder;                    // empty => buildReferenceChassis

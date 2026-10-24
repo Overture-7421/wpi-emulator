@@ -12,6 +12,7 @@
 
 #include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/core/geometry.h"
+#include "wpiemu/sdk/game/default_field.h"
 #include "wpiemu/sdk/game/field.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
 #include "wpiemu/sdk/game/zone_kind.h"
@@ -152,9 +153,9 @@ private:
     std::vector<char> changed_;
 };
 
-// The floor drawn when a project has no plugin field: an FRC-field-sized placeholder, not any season's field.
-inline constexpr float kGenericFieldLengthM = 16.46f;
-inline constexpr float kGenericFieldWidthM = 8.23f;
+// The floor drawn when no field description is given. Same size as the default core-only field (sdk/game/default_field.h).
+inline constexpr float kGenericFieldLengthM = sdk::default_field::kLengthM;
+inline constexpr float kGenericFieldWidthM = sdk::default_field::kWidthM;
 
 // Static field parts (floor + visuals) and the XY centre of the playing area.
 struct FieldParts {

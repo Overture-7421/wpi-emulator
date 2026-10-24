@@ -51,8 +51,10 @@ If it has no saved robot model, the app opens **Set up your robot**. Reopen the 
    not launch until they are fixed. For Java selection and launch rules, see the
    [Launcher boundary](reference/runtime.md#launcher-boundary).
 
-   **Core-only mode** means the season has no game module, so its field and game pieces are not
-   simulated. It does not promise that the bundled HALSim extension works with another WPILib year.
+   **Core-only mode** means the season has no game module, so game pieces, scoring and
+   season-specific field structure are not simulated. The robot drives on a generic FRC field
+   (carpet, alliance walls and guardrails). It does not promise that the bundled HALSim extension
+   works with another WPILib year.
 3. **Robot:** choose **Swerve**, **Tank**, or **Mecanum** and enter the frame, wheel, motor,
    gearing, alliance, and station details.
 4. **Summary:** review the model and save location, then choose **Open editor**.
@@ -229,7 +231,7 @@ extensions, selected from the live project's year. The Toolchain page reports a 
 season extension before launch. `WPIEMU_EXTENSION` explicitly overrides selection and
 permits a year mismatch with a warning; it does not make incompatible HAL ABIs compatible.
 2027 is preview support pinned to an alpha; it uses Java 25, Gradle 9.2 and the new native
-toolchain. A season without a game module runs core-only on an empty field. A project on a different
+toolchain. A season without a game module runs core-only on a generic FRC field. A project on a different
 WPILib release of a known season than the emulator was built for still runs: the Toolchain page and run
 console warn that it is best effort.
 There is no suspension model, and field geometry and game rules are approximations.

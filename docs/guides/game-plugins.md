@@ -24,7 +24,9 @@ formatted HUD string. These distinctions keep season rules out of core, UI and d
    [identity checklist](../../seasons/_template/game/README.md). Keep the CMake target, namespace,
    include tree, plugin ID and game year consistent; depend on SDK only.
 2. Implement a stateless `IGameModule`, an `IField` that destroys its bodies before its world, and
-   an `IGameState` that resets all per-session state. Use simulation time and context RNG.
+   an `IGameState` that resets all per-session state. Use simulation time and context RNG. Give
+   rigid field structure the shared [contact materials](../reference/physics.md#contact-materials)
+   so robots slide along it instead of sticking.
 3. Return plugin-prefixed metadata and register the module in `seasons/builtin_plugins.cpp` (CMake links it
    from the manifest). The app uses the aggregator, not a direct season dependency.
    [`check_seasons.py`](../../tools/check_seasons.py) and the boundary checker verify the wiring.

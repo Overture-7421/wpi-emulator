@@ -168,6 +168,10 @@ Status SimulationSession::build(SessionParts& parts) {
         Result<std::unique_ptr<IField>> field = module_->createField(*world_);
         if (!field) return makeError(field.error().code, "plugin field: " + field.error().message);
         field_ = std::move(field).value();
+    } else if (parts.fallbackField) {
+        Result<std::unique_ptr<IField>> field = parts.fallbackField(*world_);
+        if (!field) return makeError(field.error().code, "default field: " + field.error().message);
+        field_ = std::move(field).value();
     }
 
     // 2. chassis + drivetrain

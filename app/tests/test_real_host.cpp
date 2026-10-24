@@ -101,6 +101,16 @@ TEST_CASE("real host: pending Run intent belongs to the project across config ed
     CHECK_FALSE(host.simulationStartPending());
 }
 
+TEST_CASE("real host: a core-only project is shown on the generic FRC field") {
+    RealRuntimeHost host({});
+    host.setProject({QStringLiteral("A"), std::make_shared<const sdk::RobotConfig>()});
+    const std::shared_ptr<const sdk::FieldDescription> field = host.scene().field;
+    REQUIRE(field != nullptr);
+    CHECK(field->lengthM == sdk::default_field::kLengthM);
+    CHECK(field->widthM == sdk::default_field::kWidthM);
+    CHECK_FALSE(field->visuals.empty());
+}
+
 TEST_CASE("real host: the selected start position belongs to the project and its config") {
     auto withPositions = [](std::initializer_list<const char*> ids) {
         sdk::RobotConfig c;

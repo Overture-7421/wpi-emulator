@@ -75,7 +75,10 @@ defaults, ranges and descriptions come from [`config.cpp`](src/config.cpp).
 The field models alliance walls, guardrails, hollow hubs, bumps, trenches, tower rungs, depots and
 outpost openings/corrals. Red geometry is the blue geometry rotated about the field center. Wall
 and guardrail colliders remain solid for robots and fuel; visuals distinguish opaque structure
-from clear plastic so the field can be seen through transparent barriers.
+from clear plastic so the field can be seen through transparent barriers. Rigid structure uses the
+shared `kFieldStructure` [contact material](../../../docs/reference/physics.md#contact-materials)
+(slick, low bounce) so a robot driven at an angle into a wall slides along it; bump ramps and fuel
+keep their own materials.
 
 Each trench has a 12 in support beside the bump and a 6 in-long, 4 in-high arm across the 50.34 in
 opening at the 22.25 in clearance; the rest is open overhead, and the tag panels above the arm are
