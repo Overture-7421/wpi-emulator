@@ -68,7 +68,7 @@ jobs:
       matrix:
         include:
           - { name: windows, os: windows-2025-vs2026, qt_arch: win64_msvc2022_64 }
-          - { name: linux, os: ubuntu-22.04, qt_arch: "" }   # oldest supported glibc for the AppImage and the extension
+          - { name: linux, os: ubuntu-24.04, qt_arch: "" }   # glibc supports all season WPILib binaries
           - { name: macos, os: macos-14, qt_arch: "" }       # Apple Silicon; see docs/releasing.md for universal builds
     env:
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
@@ -96,8 +96,6 @@ jobs:
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
           sudo apt-get update
           sudo apt-get install -y g++-14
           echo "CC=gcc-14" >> "$GITHUB_ENV"

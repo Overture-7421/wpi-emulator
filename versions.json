@@ -5,7 +5,7 @@
   },
   "python": "3.12",
   "cmake": "3.25",
-  "ubuntu": "22.04",
+  "ubuntu": "24.04",
   "macosRunner": "14",
   "macosDeployment": "13.0",
   "msvcRuntimeMin": "14.40",

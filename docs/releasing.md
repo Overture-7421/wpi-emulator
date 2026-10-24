@@ -127,7 +127,8 @@ this checks metadata, not execution on the minimum OS or loading the extension i
 Build on Linux x86_64 with the Qt kit and system dependencies listed in the release workflow.
 The kit needs the `qtquick3d`, `qtshadertools` and `qtmultimedia` modules; the Windows and macOS workflow
 steps check that the Multimedia backend plugin was deployed.
-The release runner is Ubuntu 22.04; choose the oldest compatible build environment for your users.
+CI, release and packaging use Ubuntu 24.04, so Linux builds require glibc 2.39 / libstdc++ from GCC 14 or newer;
+older distributions are no longer supported.
 Bundling does not remove glibc/libstdc++ requirements or provide graphics drivers.
 
 ```sh
