@@ -94,6 +94,7 @@ signals:
 
 private:
     void build();
+    bool keysReachJoystick() const;
     void buildActions();
     void applyStatus();
     void refreshControls(const sdk::ISimSnapshot* snapshot);

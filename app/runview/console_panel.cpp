@@ -17,6 +17,7 @@
 #include <QVBoxLayout>
 
 #include "status_chip.h"
+#include "ui/widget_support.h"
 
 namespace wpiemu::app::runview {
 namespace {
@@ -52,7 +53,7 @@ ConsolePanel::ConsolePanel(QWidget* parent) : QWidget(parent), model_(nullptr), 
     bold.setBold(true);
     title->setFont(bold);
 
-    levelCombo_ = new QComboBox(this);
+    levelCombo_ = ui::quietWheel(new QComboBox(this));
     levelCombo_->setToolTip(tr("Show messages of at least this level"));
     levelCombo_->addItem(tr("All levels"), static_cast<int>(sdk::LogLevel::Trace));
     levelCombo_->addItem(tr("Debug and up"), static_cast<int>(sdk::LogLevel::Debug));

@@ -158,8 +158,9 @@ Driver Station application:
   message, Practice timings, and joystick bindings.
 - The default keyboard joystick uses `W A S D` for the left stick, arrows for the right stick,
   `U` / `O` for triggers, `Z X C V Q E R F G H N M` for buttons, and `I J K L` for the POV.
-  Click a binding to relearn it; `Esc` cancels. Gamepads require an SDL2-enabled build;
-  keyboard input works without SDL2.
+  Click a binding to relearn it; `Esc` cancels. Rebinding works while the Driver Station
+  settings window itself is focused; you do not need to click the main window first. Gamepads
+  require an SDL2-enabled build; keyboard input works without SDL2.
 
 Practice plays field sounds for the match start, autonomous end, teleop start, and match end;
 the selected game can add cues. Restart plays a reset cue; only an emergency stop during a

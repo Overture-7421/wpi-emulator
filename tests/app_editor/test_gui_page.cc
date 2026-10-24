@@ -9,8 +9,12 @@
 #include <QMimeData>
 #include <QPushButton>
 #include <QQuickItem>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QTableView>
 #include <QToolButton>
+#include <QWheelEvent>
+#include <QtTest/qtestspontaneevent.h>
 
 #include "editor_page.h"
 #include "model/motion_links.h"
@@ -765,6 +769,31 @@ TEST_CASE("inspector: Drive is device-agnostic and a swerve wheel's steering liv
     for (auto* row : f.page.inspector()->slotRows())
         if (row->address().slot == "fl.drive") CHECK(row->titleText() == "Motor 1");   // refreshes keep the generic label
     for (auto* row : f.page.inspector()->slotRows()) CHECK(row->address().slot != "fl.steer");
+}
+
+TEST_CASE("inspector: the wheel scrolls the panel instead of changing a dropdown") {
+    PageFixture f;
+    f.page.resize(1400, 420);
+    f.c().selection().set(SelectionRef::wheel("fl"));
+    pumpEvents(40);
+    auto* insp = f.page.inspector();
+    auto* configure = insp->form("wheel");
+    REQUIRE(configure != nullptr);
+    auto* combo = qobject_cast<QComboBox*>(configure->editorFor("kind")->focusTarget());
+    REQUIRE(combo != nullptr);
+    auto* scroll = insp->findChild<QScrollArea*>();
+    REQUIRE(scroll != nullptr);
+    REQUIRE(scroll->verticalScrollBar()->maximum() > 0);
+
+    const int before = combo->currentIndex();
+    const QPointF pos(combo->width() / 2, combo->height() / 2);
+    QWheelEvent e(pos, combo->mapToGlobal(pos), QPoint(), QPoint(0, -120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QSpontaneKeyEvent::setSpontaneous(&e);
+    scroll->verticalScrollBar()->setValue(0);
+    qApp->notify(combo, &e);
+    CHECK(combo->currentIndex() == before);
+    CHECK_FALSE(combo->hasFocus());
+    CHECK(scroll->verticalScrollBar()->value() > 0);
 }
 
 TEST_CASE("inspector: the Robot and Drivetrain pages have no Getting started or Wheels card") {

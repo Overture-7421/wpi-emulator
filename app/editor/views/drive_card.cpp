@@ -139,7 +139,7 @@ DriveCard::DriveCard(EditorController& controller, const IconFactory& icons, con
         lv->setContentsMargins(0, 0, 0, 0);
         lv->setSpacing(4);
         lv->addWidget(mutedLabel(ETR("Follows its source's motion and sensors, so it takes no motor of its own. Negative ratios reverse the motion."), linkBox));
-        auto* source = new QComboBox(linkBox);
+        auto* source = ui::quietWheel(new QComboBox(linkBox));
         source->setObjectName(QStringLiteral("drivenBy.source:") + name);
         source->addItem(ETR("Choose a source..."), -1);
         int current = 0;
@@ -155,7 +155,7 @@ DriveCard::DriveCard(EditorController& controller, const IconFactory& icons, con
         auto* h = new QHBoxLayout(ratioRow);
         h->setContentsMargins(0, 0, 0, 0);
         h->addWidget(new QLabel(ETR("Ratio"), ratioRow));
-        auto* ratio = new QDoubleSpinBox(ratioRow);
+        auto* ratio = ui::quietWheel(new QDoubleSpinBox(ratioRow));
         ratio->setObjectName(QStringLiteral("drivenBy.ratio:") + name);
         ratio->setRange(-1e9, 1e9);
         ratio->setDecimals(6);

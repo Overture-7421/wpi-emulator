@@ -12,6 +12,7 @@
 #include "model/config_ops.h"
 #include "model/tr.h"
 #include "ui/qt_text.h"
+#include "ui/widget_support.h"
 
 namespace wpiemu::app::editor {
 
@@ -38,7 +39,7 @@ ActivationCard::ActivationCard(EditorController& controller, const std::string& 
     auto* h = new QHBoxLayout(head);
     h->setContentsMargins(0, 0, 0, 0);
     h->addWidget(new QLabel(ETR("Active when"), head));
-    mode_ = new QComboBox(head);
+    mode_ = ui::quietWheel(new QComboBox(head));
     mode_->setObjectName(QStringLiteral("activation.mode"));
     mode_->addItem(ETR("all conditions hold"), static_cast<int>(sdk::ActivationMode::All));
     mode_->addItem(ETR("any condition holds"), static_cast<int>(sdk::ActivationMode::Any));
@@ -106,7 +107,7 @@ ActivationCard::Row ActivationCard::makeRow(int index) {
     g->setHorizontalSpacing(6);
     g->setVerticalSpacing(4);
 
-    r.mechanism = new QComboBox(r.frame);
+    r.mechanism = ui::quietWheel(new QComboBox(r.frame));
     r.mechanism->setObjectName(QStringLiteral("activation.mechanism:") + n);
     r.mechanism->setToolTip(ETR("Mechanism whose published value is tested."));
     g->addWidget(r.mechanism, 0, 0, 1, 3);
@@ -124,21 +125,21 @@ ActivationCard::Row ActivationCard::makeRow(int index) {
     r.value->setToolTip(ETR("Name of the published value: velocity, position, ..."));
     g->addWidget(r.value, 1, 0, 1, 2);
 
-    r.op = new QComboBox(r.frame);
+    r.op = ui::quietWheel(new QComboBox(r.frame));
     r.op->setObjectName(QStringLiteral("activation.op:") + n);
     r.op->addItem(ETR("Above"), static_cast<int>(sdk::ConditionOp::Above));
     r.op->addItem(ETR("Below"), static_cast<int>(sdk::ConditionOp::Below));
     r.op->addItem(ETR("Within"), static_cast<int>(sdk::ConditionOp::Within));
     g->addWidget(r.op, 1, 2, 1, 2);
 
-    r.threshold = new QDoubleSpinBox(r.frame);
+    r.threshold = ui::quietWheel(new QDoubleSpinBox(r.frame));
     r.threshold->setObjectName(QStringLiteral("activation.threshold:") + n);
     r.threshold->setRange(-1e6, 1e6);
     r.threshold->setDecimals(3);
     r.threshold->setToolTip(ETR("Threshold in SI units (m, rad, m/s, rad/s)."));
     g->addWidget(r.threshold, 2, 0, 1, 2);
 
-    r.tolerance = new QDoubleSpinBox(r.frame);
+    r.tolerance = ui::quietWheel(new QDoubleSpinBox(r.frame));
     r.tolerance->setObjectName(QStringLiteral("activation.tolerance:") + n);
     r.tolerance->setRange(0.0, 1e6);
     r.tolerance->setDecimals(3);
