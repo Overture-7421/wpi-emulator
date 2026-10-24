@@ -205,7 +205,7 @@ TEST_CASE("slot compatibility follows device capabilities") {
     dio.capabilities = Capability::DigitalInput;
     CHECK(isCompatible(motorSlot, talon));
     CHECK_FALSE(isCompatible(motorSlot, dio));
-    CHECK(isCompatible(SlotSpec{"lim", "Limit", SlotType::LimitSwitch, true, ""}, dio));
+    CHECK(isCompatible(SlotSpec{"lim", "Limit", SlotType::LimitSwitch, true, "", "", 0}, dio));
 }
 
 TEST_CASE("one steering rule and one traction slot generator serve every drivetrain consumer") {

@@ -63,7 +63,7 @@ public:
         info.type = id_ + ".fake_mechanism";
         info.displayName = "Fake mechanism";
         info.origin = id_;
-        info.slotSpecs.push_back({"motor", "Motor", SlotType::Motor, true, ""});
+        info.slotSpecs.push_back({"motor", "Motor", SlotType::Motor, true, "", "", 0});
         PropertySpec gearRatio;
         gearRatio.key = "gearRatio";
         gearRatio.label = "Gear ratio";
