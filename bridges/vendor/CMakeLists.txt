@@ -31,7 +31,7 @@ if(WPIEMU_WPILIB_ROOT)
     if(WPIEMU_VENDOR_HAL_INCLUDE_DIR)
         message(STATUS "bridges/vendor: WPILib HAL binding enabled (${WPIEMU_VENDOR_HAL_INCLUDE_DIR})")
         # PUBLIC so unit tests can build a fake HAL against the same headers.
-        target_compile_definitions(wpiemu_bridges_vendor PUBLIC WPIEMU_VENDOR_HAS_WPILIB=1 WPIEMU_HAL_ABI_${WPIEMU_HAL_ABI_ID}=1)
+        target_compile_definitions(wpiemu_bridges_vendor PUBLIC WPIEMU_VENDOR_HAS_WPILIB=1)
         target_link_libraries(wpiemu_bridges_vendor PUBLIC wpiemu_hal_abi)
         target_include_directories(wpiemu_bridges_vendor SYSTEM PUBLIC "${WPIEMU_VENDOR_HAL_INCLUDE_DIR}")
     else()

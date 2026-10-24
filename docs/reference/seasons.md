@@ -40,10 +40,12 @@ Maven groups and header probes of the WPILib artifacts, the required C++ standar
 is mandatory and, when present, a `datalog` group that ntcore loads. A year that keeps the same
 HAL names the same ABI; a new HAL needs a new profile and per-ABI adapters.
 
-The build defines `WPIEMU_HAL_ABI_<ID>=1` (for example `WPIEMU_HAL_ABI_SYSTEMCORE`) for code that
-binds the HAL. Per-ABI sources live in `abi/<id>/` folders of the module that owns them, and each
-ABI has its own real-HAL suites. The HAL is linked only into the robot-process extension, never
-into a game plugin.
+The robot-process modules include the per-ABI headers of [`hal_abi`](../../hal_abi) (for example
+`wpiemu/hal_abi/hal_includes.h`) and never a WPILib include root. Behavior that differs between HAL
+generations lives in `abi/<id>/` source folders of the module that owns it (`halsim_ext/src/hal`,
+`bridges/hal/src`), selected by the season's ABI at configure time, so shared code carries no
+`#if` on a year or ABI. Each ABI has its own real-HAL suites under `tests/hal/abi/<id>` and
+`tests/abi/<id>`. The HAL is linked only into the robot-process extension, never into a game plugin.
 
 ## Launch profiles
 

@@ -51,8 +51,9 @@ def code_of(text: str, suffix: str) -> list[tuple[int, str]]:
 
 
 def literal_pattern(years: list[str]) -> re.Pattern:
-    """The year of any season pack as a whole word, or the legacy WPIEMU_WPILIB_YEAR definition."""
-    return re.compile(r"\b(?:" + "|".join(re.escape(y) for y in years) + r")\b|WPIEMU_WPILIB_YEAR")
+    """The year of any season pack as a whole word, or a year/ABI compile definition: HAL differences belong in abi/<abi>/
+    sources (docs/reference/seasons.md), not behind a preprocessor test."""
+    return re.compile(r"\b(?:" + "|".join(re.escape(y) for y in years) + r")\b|WPIEMU_WPILIB_YEAR|WPIEMU_HAL_ABI_[A-Z]+")
 
 
 def scan_literals(root: Path, files: list[str], years: list[str]) -> dict[str, int]:

@@ -434,3 +434,27 @@ TEST_CASE("wpilib version: an unverified version of a known season warns and the
     in.wpilibYear = 1999;   // a year without a season pack has nothing to verify against
     CHECK(f.checker().checkWpilibVersion(in).status == CheckStatus::NotApplicable);
 }
+
+TEST_CASE("new season: a profile on an existing ABI is enough for install discovery, the Java minimum and the version warning") {
+    Fixture f;
+    wpiemu::sdk::SeasonProfile season;
+    season.year = 2999;
+    season.wpilibVersion = "2999.0.0-beta-1";
+    season.verifiedWpilibVersions = {season.wpilibVersion};
+    season.installFolder = "2999_beta1";
+    season.halAbi = "systemcore";
+    season.launchProfile = "gradlerio-modern";
+    season.javaMajor = 25;
+    REQUIRE(f.seasons.add(season).ok());
+
+    f.probe.os = HostOs::Windows;
+    f.probe.home = QStringLiteral("C:/Users/me");
+    f.probe.dirs.insert(QStringLiteral("C:/Users/Public/wpilib/2999_beta1"));
+    ToolchainInput in = inputFor(QStringLiteral("java"), 2999);
+    CHECK(f.checker().findWpilibHome(in) == QStringLiteral("C:/Users/Public/wpilib/2999_beta1"));
+    CHECK(f.checker().defaultWpilibHome(2999) == QStringLiteral("C:/Users/Public/wpilib/2999_beta1"));
+    in.wpilibVersion = QStringLiteral("2999.0.0-beta-1");
+    CHECK(f.checker().run(in).find(QString::fromLatin1(check_id::kWpilibVersion)) == nullptr);
+    in.wpilibVersion = QStringLiteral("2999.0.0-beta-2");
+    CHECK(f.checker().run(in).find(QString::fromLatin1(check_id::kWpilibVersion))->status == CheckStatus::Warning);
+}

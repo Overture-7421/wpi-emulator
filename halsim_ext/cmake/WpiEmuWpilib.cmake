@@ -51,7 +51,6 @@ wpiemu_season_abi_value(_wpiemu_hal_header "${WPIEMU_WPILIB_SEASON}" headers hal
 wpiemu_season_abi_value(_wpiemu_wpiutil_header "${WPIEMU_WPILIB_SEASON}" headers wpiutil)
 wpiemu_season_abi_value(_wpiemu_ntcore_header "${WPIEMU_WPILIB_SEASON}" headers ntcore)
 wpiemu_season_abi_value(_wpiemu_ntcore_required "${WPIEMU_WPILIB_SEASON}" ntcoreRequired)
-string(TOUPPER "${WPIEMU_HAL_ABI}" WPIEMU_HAL_ABI_ID)
 set(WPIEMU_WPILIB_VERSION "${_wpiemu_wpilib_pinned}" CACHE STRING "WPILib version of hal-cpp/wpiutil-cpp to link against")
 if(DEFINED WPIEMU_WPILIB_AUTO_VERSION AND WPIEMU_WPILIB_VERSION STREQUAL WPIEMU_WPILIB_AUTO_VERSION)
     set(WPIEMU_WPILIB_VERSION "${_wpiemu_wpilib_pinned}" CACHE STRING
@@ -220,7 +219,6 @@ if(_wpiemu_extracted_root)
     set(WPIEMU_WPILIB_ROOT "${_wpiemu_extracted_root}" PARENT_SCOPE)
 endif()
 set(WPIEMU_HAL_ABI "${WPIEMU_HAL_ABI}" PARENT_SCOPE)
-set(WPIEMU_HAL_ABI_ID "${WPIEMU_HAL_ABI_ID}" PARENT_SCOPE)
 
 # ---- 3. imported targets ----------------------------------------------------------------------------------
 if(_wpiemu_extracted_root)
@@ -248,7 +246,7 @@ if(_wpiemu_extracted_root)
             IMPORTED_LOCATION "${_hal_loc}"
             INTERFACE_INCLUDE_DIRECTORIES "${_wpiemu_extracted_root}/include"
             INTERFACE_LINK_LIBRARIES wpiemu_wpilib_wpiutil
-            INTERFACE_COMPILE_DEFINITIONS "WPIEMU_WPILIB_VERSION=\"${WPIEMU_WPILIB_VERSION}\";WPIEMU_HAL_ABI_${WPIEMU_HAL_ABI_ID}=1")
+            INTERFACE_COMPILE_DEFINITIONS "WPIEMU_WPILIB_VERSION=\"${WPIEMU_WPILIB_VERSION}\"")
         if(WIN32)
             set_target_properties(wpiemu_wpilib_hal PROPERTIES IMPORTED_IMPLIB "${_hal_imp}")
             set_target_properties(wpiemu_wpilib_wpiutil PROPERTIES IMPORTED_IMPLIB "${_util_imp}")

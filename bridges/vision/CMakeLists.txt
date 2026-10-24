@@ -73,6 +73,6 @@ if(TARGET wpiemu_wpilib_ntcore AND TARGET wpiemu_wpilib_hal)
     # SYSTEM: WPILib headers are third-party and not warning-clean under /W4.
     target_include_directories(wpiemu_bridges_vision SYSTEM PRIVATE ${_wpiemu_nt_include})
     target_link_libraries(wpiemu_bridges_vision PUBLIC wpiemu_hal_abi PRIVATE ${CMAKE_DL_LIBS})
-    target_compile_definitions(wpiemu_bridges_vision PUBLIC WPIEMU_HAS_VISION_NT=1 WPIEMU_HAL_ABI_${WPIEMU_HAL_ABI_ID}=1)
+    target_compile_definitions(wpiemu_bridges_vision PUBLIC WPIEMU_HAS_VISION_NT=1)
     message(STATUS "bridges/vision: ntcore binding enabled")
 endif()

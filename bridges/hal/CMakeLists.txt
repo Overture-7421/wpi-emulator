@@ -56,7 +56,7 @@ if(WPIEMU_WPILIB_ROOT)
         target_include_directories(wpiemu_bridges_hal SYSTEM PRIVATE
             "${WPIEMU_HAL_INCLUDE_DIR}" "${WPIEMU_WPIUTIL_INCLUDE_DIR}")
         target_link_libraries(wpiemu_bridges_hal PUBLIC "${WPIEMU_HAL_LIBRARY}")
-        target_compile_definitions(wpiemu_bridges_hal PUBLIC WPIEMU_HAS_HALSIM_BINDING=1 WPIEMU_HAL_ABI_${WPIEMU_HAL_ABI_ID}=1)
+        target_compile_definitions(wpiemu_bridges_hal PUBLIC WPIEMU_HAS_HALSIM_BINDING=1)
         message(STATUS "wpiemu: HALSIM binding enabled (${WPIEMU_HAL_LIBRARY})")
     else()
         message(WARNING "WPIEMU_WPILIB_ROOT is set but HAL headers/wpiutil headers/wpiHal were not all found "
