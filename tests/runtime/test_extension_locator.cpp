@@ -31,18 +31,18 @@ TEST_CASE("extension locator: every documented layout is found relative to the e
         const char* library;  // where the extension sits
     };
     const Layout layouts[] = {
-        {"build tree / portable", "bin", "bin/"},
-        {"windows install", "inst/bin", "inst/extensions/"},
-        {"linux prefix / AppImage", "usr/bin", "usr/lib/wpiemu/"},
-        {"macOS bundle", "App.app/Contents/MacOS", "App.app/Contents/PlugIns/wpiemu/"},
-        {"macOS build tree", "out/bin/Release/App.app/Contents/MacOS", "out/bin/Release/"},
+        {"portable archive", "bin", "bin/2026/"},
+        {"windows install", "inst/bin", "inst/extensions/2026/"},
+        {"linux prefix / AppImage", "usr/bin", "usr/lib/wpiemu/2026/"},
+        {"macOS bundle", "App.app/Contents/MacOS", "App.app/Contents/PlugIns/wpiemu/2026/"},
+        {"macOS build tree", "out/bin/Release/App.app/Contents/MacOS", "out/bin/Release/2026/"},
     };
     for (const Layout& l : layouts) {
         CAPTURE(l.name);
         ScratchDir sub;
         fs::create_directories(sub.path() / l.appDir);
         const fs::path lib = sub.write(std::string(l.library) + kLib, "x");
-        const fs::path found = locateHalsimExtension(sub.path() / l.appDir, envOf({}));
+        const fs::path found = locateHalsimExtension(sub.path() / l.appDir, envOf({}), 2026);
         REQUIRE_FALSE(found.empty());
         CHECK(found.is_absolute());
         CHECK(sameFile(found, lib));
@@ -56,57 +56,62 @@ TEST_CASE("extension locator: priority order and the fallback") {
     const fs::path appDir = dir.path() / "app" / "Contents" / "MacOS";
     fs::create_directories(appDir);
     const fs::path build = dir.write("build/" + kLib, "build");
-    const fs::path macTree = dir.write("" + kLib, "mac-tree");   // appDir/../../.. == dir
-    const fs::path macBundle = dir.write("app/Contents/PlugIns/wpiemu/" + kLib, "bundle");
-    const fs::path linux = dir.write("app/Contents/lib/wpiemu/" + kLib, "linux");
-    const fs::path windows = dir.write("app/Contents/extensions/" + kLib, "windows");
-    const fs::path beside = dir.write("app/Contents/MacOS/" + kLib, "beside");
-    const fs::path extDir = dir.write("extdir/" + kLib, "extdir");
+    const fs::path macTree = dir.write("2026/" + kLib, "mac-tree");   // appDir/../../.. == dir
+    const fs::path macBundle = dir.write("app/Contents/PlugIns/wpiemu/2026/" + kLib, "bundle");
+    const fs::path linux = dir.write("app/Contents/lib/wpiemu/2026/" + kLib, "linux");
+    const fs::path windows = dir.write("app/Contents/extensions/2026/" + kLib, "windows");
+    const fs::path beside = dir.write("app/Contents/MacOS/2026/" + kLib, "beside");
+    const fs::path extDir = dir.write("extdir/2026/" + kLib, "extdir");
     const fs::path explicitFile = dir.write("explicit/custom.dll", "explicit");
 
     // exercise the list from the last candidate upwards
-    CHECK(sameFile(locateHalsimExtension(appDir, envOf({}), build), beside));
+    CHECK(sameFile(locateHalsimExtension(appDir, envOf({}), 2026, build), beside));
     fs::remove(beside);
-    CHECK(sameFile(locateHalsimExtension(appDir, envOf({}), build), windows));
+    CHECK(sameFile(locateHalsimExtension(appDir, envOf({}), 2026, build), windows));
     fs::remove(windows);
-    CHECK(sameFile(locateHalsimExtension(appDir, envOf({}), build), linux));
+    CHECK(sameFile(locateHalsimExtension(appDir, envOf({}), 2026, build), linux));
     fs::remove(linux);
-    CHECK(sameFile(locateHalsimExtension(appDir, envOf({}), build), macBundle));
+    CHECK(sameFile(locateHalsimExtension(appDir, envOf({}), 2026, build), macBundle));
     fs::remove(macBundle);
-    CHECK(sameFile(locateHalsimExtension(appDir, envOf({}), build), macTree));
+    CHECK(sameFile(locateHalsimExtension(appDir, envOf({}), 2026, build), macTree));
     fs::remove(macTree);
-    CHECK(sameFile(locateHalsimExtension(appDir, envOf({}), build), build));
-    CHECK(locateHalsimExtension(appDir, envOf({})).empty());  // no fallback given, nothing left
+    CHECK(sameFile(locateHalsimExtension(appDir, envOf({}), 2026, build), build));
+    CHECK(locateHalsimExtension(appDir, envOf({}), 2026).empty());  // no fallback given, nothing left
 
     // environment wins over everything; a missing file is skipped, not an error
-    dir.write("app/Contents/MacOS/" + kLib, "beside");
-    CHECK(sameFile(locateHalsimExtension(appDir, envOf({{"WPIEMU_EXTENSION_DIR", (dir.path() / "extdir").string()}}), build), extDir));
+    dir.write("app/Contents/MacOS/2026/" + kLib, "beside");
+    CHECK(sameFile(locateHalsimExtension(appDir, envOf({{"WPIEMU_EXTENSION_DIR", (dir.path() / "extdir").string()}}), 2026, build), extDir));
     CHECK(sameFile(locateHalsimExtension(appDir, envOf({{"WPIEMU_EXTENSION", explicitFile.string()},
-                                                         {"WPIEMU_EXTENSION_DIR", (dir.path() / "extdir").string()}}), build), explicitFile));
-    CHECK(sameFile(locateHalsimExtension(appDir, envOf({{"WPIEMU_EXTENSION", (dir.path() / "nope.dll").string()},
-                                                         {"WPIEMU_EXTENSION_DIR", (dir.path() / "extdir").string()}}), build), extDir));
-    CHECK(sameFile(locateHalsimExtension(appDir, envOf({{"WPIEMU_EXTENSION_DIR", (dir.path() / "missing").string()}}), build),
-                   appDir / kLib));
+                                                         {"WPIEMU_EXTENSION_DIR", (dir.path() / "extdir").string()}}), 2026, build), explicitFile));
+    CHECK(locateHalsimExtension(appDir, envOf({{"WPIEMU_EXTENSION", (dir.path() / "nope.dll").string()},
+                                                {"WPIEMU_EXTENSION_DIR", (dir.path() / "extdir").string()}}), 2026, build).empty());
+    CHECK(sameFile(locateHalsimExtension(appDir, envOf({{"WPIEMU_EXTENSION_DIR", (dir.path() / "missing").string()}}), 2026, build),
+                   appDir / "2026" / kLib));
 }
 
 TEST_CASE("extension locator: candidate list is the documented one and a directory is not a library") {
     const fs::path appDir = fs::path("/opt/app/bin");
     std::vector<fs::path> searched;
-    CHECK(locateHalsimExtension(appDir, envOf({{"WPIEMU_EXTENSION", "/x/y.dll"}, {"WPIEMU_EXTENSION_DIR", "/z"}}), "/b/lib", &searched).empty());
-    const std::vector<fs::path> expected = {fs::path("/x/y.dll"),
-                                            fs::path("/z") / kLib,
-                                            (appDir / kLib).lexically_normal(),
-                                            (appDir / ".." / "extensions" / kLib).lexically_normal(),
-                                            (appDir / ".." / "lib" / "wpiemu" / kLib).lexically_normal(),
-                                            (appDir / ".." / "PlugIns" / "wpiemu" / kLib).lexically_normal(),
-                                            (appDir / ".." / ".." / ".." / kLib).lexically_normal(),
-                                            fs::path("/b/lib")};
+    CHECK(locateHalsimExtension(appDir, envOf({{"WPIEMU_EXTENSION", "/x/y.dll"}, {"WPIEMU_EXTENSION_DIR", "/z"}}), 2026, "/b/lib",
+                               &searched).empty());
+    const std::vector<fs::path> expected = {fs::path("/x/y.dll")};
     CHECK(searched == expected);
 
     ScratchDir dir;
-    fs::create_directories(dir.path() / "bin" / kLib);  // a folder named like the library
-    CHECK(locateHalsimExtension(dir.path() / "bin", envOf({})).empty());
-    CHECK(locateHalsimExtension({}, nullptr).empty());   // no app dir, no environment
+    fs::create_directories(dir.path() / "bin" / "2026" / kLib);  // a folder named like the library
+    CHECK(locateHalsimExtension(dir.path() / "bin", envOf({}), 2026).empty());
+    CHECK(locateHalsimExtension({}, nullptr, 2026).empty());   // no app dir, no environment
+}
+
+TEST_CASE("extension locator: the requested season is selected without a flat-layout fallback") {
+    ScratchDir dir;
+    const fs::path appDir = dir.path() / "bin";
+    const fs::path extension2026 = dir.write("bin/2026/" + kLib, "2026");
+    const fs::path extension2027 = dir.write("bin/2027/" + kLib, "2027");
+    CHECK(sameFile(locateHalsimExtension(appDir, envOf({}), 2026), extension2026));
+    CHECK(sameFile(locateHalsimExtension(appDir, envOf({}), 2027), extension2027));
+    fs::remove(extension2027);
+    CHECK(locateHalsimExtension(appDir, envOf({}), 2027).empty());
 }
 
 // ---- packaged environment ---------------------------------------------------------------------------------------------

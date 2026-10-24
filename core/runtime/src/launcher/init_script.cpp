@@ -16,11 +16,41 @@ allprojects { p ->
         if (wpi == null) return
         // GradleRIO overwrites HALSIM_EXTENSIONS whenever one of its extensions is defaultEnabled
         wpi.sim.halExtensions.each { it.defaultEnabled.set(false) }
+        def modern = p.plugins.hasPlugin('org.wpilib.GradleRIO')
+        // The 2027 run task merges this map in doFirst, after task configuration.
+        if (modern) wpi.sim.environment.put('HALSIM_EXTENSIONS', emuExt)
         p.tasks.matching {
             def n = it.class.name   // decorated class names carry a suffix -> startsWith
             n.startsWith('edu.wpi.first.gradlerio.simulation.JavaSimulationTask') ||
-            n.startsWith('edu.wpi.first.gradlerio.simulation.NativeSimulationTask')
-        }.configureEach { t -> t.environment('HALSIM_EXTENSIONS', emuExt) }
+            n.startsWith('edu.wpi.first.gradlerio.simulation.NativeSimulationTask') ||
+            n.startsWith('org.wpilib.gradlerio.simulation.NativeSimulationTask') ||
+            (modern &&
+             it.name == 'run' && it instanceof org.gradle.api.tasks.JavaExec)
+        }.configureEach { t ->
+            t.environment('HALSIM_EXTENSIONS', emuExt)
+            if (modern && t instanceof org.gradle.api.tasks.JavaExec) {
+                t.doFirst { wpi.sim.environment.put('HALSIM_EXTENSIONS', emuExt) }
+            }
+        }
+        if (modern && p.plugins.hasPlugin('application')) {
+            p.tasks.named('simulateExternalJava').configure { t ->
+                def run = p.tasks.named('run', org.gradle.api.tasks.JavaExec)
+                // A provider mapped from the run TaskProvider also depends on run itself.
+                t.dependsOn(p.configurations.getByName('runtimeClasspath'), p.tasks.named('classes'))
+                t.doLast {
+                    // Alpha 7 omits the runtime classpath from its external descriptor.
+                    def file = t.simulationFile.get().asFile
+                    def entries = new groovy.json.JsonSlurper().parse(file)
+                    entries.each { entry ->
+                        if (entry.type == 'java') {
+                            entry.classpath = run.get().classpath.files.collect { it.absolutePath }
+                            entry.jvmArgs = run.get().jvmArgs
+                        }
+                    }
+                    file.setText(groovy.json.JsonOutput.toJson(entries), 'UTF-8')
+                }
+            }
+        }
     }
 }
 )groovy";

@@ -100,15 +100,17 @@ std::unique_ptr<IUpdateInstaller> createQtUpdateInstaller() { return std::make_u
 bool updateRestartsApp(InstallKind kind) { return kind == InstallKind::Nsis || kind == InstallKind::AppImage; }
 
 UpdateService::UpdateService(IKeyValueStore& store, const ISystemProbe& probe, std::unique_ptr<IUpdateTransport> transport,
-                             std::unique_ptr<IUpdateInstaller> installer, QString appVersion, QString appDir, QObject* parent)
+                             std::unique_ptr<IUpdateInstaller> installer, QString appVersion, QString appDir,
+                             std::vector<int> seasonYears, QObject* parent)
     : QObject(parent),
       store_(store),
       probe_(probe),
       transport_(std::move(transport)),
       installer_(std::move(installer)),
       version_(std::move(appVersion)),
-      appDir_(std::move(appDir)) {
-    install_ = detectInstall(probe_, appDir_, version_);
+      appDir_(std::move(appDir)),
+      seasonYears_(std::move(seasonYears)) {
+    install_ = detectInstall(probe_, appDir_, version_, seasonYears_);
     if (install_.kind == InstallKind::Nsis) installer_->discard({});   // the folder of an earlier update
     if (auto* app = QCoreApplication::instance()) connect(app, &QCoreApplication::aboutToQuit, this, &UpdateService::aboutToQuit);
 }
@@ -138,7 +140,7 @@ void UpdateService::check(bool manual) {
     error_.clear();
     offer_ = {};
     if (manual) store_.remove(QLatin1String(kSkippedKey));
-    install_ = detectInstall(probe_, appDir_, version_);
+    install_ = detectInstall(probe_, appDir_, version_, seasonYears_);
     if (install_.kind == InstallKind::Dev || QVersionNumber::fromString(version_).isNull()) return endCheck(UpdateState::Unsupported);
     setState(UpdateState::Checking);
     transport_->head(latestReleaseUrl(), [this](const HttpResult& result) { onLatest(result); });

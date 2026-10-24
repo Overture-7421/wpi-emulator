@@ -8,11 +8,15 @@
 
 #include "ui/qt_text.h"
 #include "wpiemu/core/launcher/extension_locator.h"
+#include "wpiemu/core/launcher/project_inspector.h"
 #include "wpiemu/sdk/core/environment.h"
 #include "wpiemu/sdk/core/strings.h"
 
 #ifndef WPIEMU_BUILD_EXTENSION_PATH
 #define WPIEMU_BUILD_EXTENSION_PATH ""
+#endif
+#ifndef WPIEMU_BUILD_EXTENSION_YEAR
+#define WPIEMU_BUILD_EXTENSION_YEAR 0
 #endif
 
 namespace wpiemu::app {
@@ -38,13 +42,19 @@ RealRuntimeHost::~RealRuntimeHost() {
     session_.reset();   // synchronous: the robot process tree is killed before the app exits
 }
 
-std::filesystem::path RealRuntimeHost::extensionPath() const {
+std::filesystem::path RealRuntimeHost::extensionPath(int wpilibYear) const {
     if (!options_.extensionPath.empty()) return options_.extensionPath;
-    const std::filesystem::path appDir = options_.appDir.empty() ? std::filesystem::path(QCoreApplication::applicationDirPath().toStdU16String())
-                                                                 : options_.appDir;
-    const std::filesystem::path buildTree(WPIEMU_BUILD_EXTENSION_PATH);
+    return installedExtension(wpilibYear, options_.appDir);
+}
+
+std::filesystem::path RealRuntimeHost::installedExtension(int wpilibYear, const std::filesystem::path& applicationDir) {
+    const std::filesystem::path appDir = applicationDir.empty() ? std::filesystem::path(QCoreApplication::applicationDirPath().toStdU16String())
+                                                              : applicationDir;
+    const std::filesystem::path buildTree = wpilibYear == WPIEMU_BUILD_EXTENSION_YEAR
+                                                ? std::filesystem::path(WPIEMU_BUILD_EXTENSION_PATH)
+                                                : std::filesystem::path();
     // The packaged-layout contract of docs/releasing.md (WPIEMU_EXTENSION, WPIEMU_EXTENSION_DIR, install layouts, build tree).
-    return core::launcher::locateHalsimExtension(appDir, &sdk::readEnvironment, buildTree);
+    return core::launcher::locateHalsimExtension(appDir, &sdk::readEnvironment, wpilibYear, buildTree);
 }
 
 std::shared_ptr<const sdk::ISimSnapshot> RealRuntimeHost::latestSnapshot() const {
@@ -128,12 +138,28 @@ void RealRuntimeHost::launch() {
     host::Options o;
     o.mode = sdk::SessionMode::Armed;
     o.projectDir = std::filesystem::path(projectPath_.toStdU16String());
-    o.extensionLibrary = extensionPath();
-    if (o.extensionLibrary.empty()) {
-        failToStart(tr("The HALSim extension (%1) was not found next to the application. Reinstall the emulator or set WPIEMU_EXTENSION.")
-                        .arg(qs(core::launcher::halsimExtensionFileName())));
+    if (registries_.json == nullptr) {
+        failToStart(tr("The project inspector is unavailable."));
         return;
     }
+    const auto inspected = core::launcher::ProjectInspector(*registries_.json).inspect(std::filesystem::path(projectPath_.toStdU16String()));
+    if (!inspected) {
+        failToStart(tr("The robot project could not be inspected: %1").arg(qs(inspected.error().message)));
+        return;
+    }
+    const int inspectedYear = inspected.value().wpilibYear;
+    const sdk::SeasonProfile* defaultSeason = registries_.seasons != nullptr ? registries_.seasons->defaultSeason() : nullptr;
+    const int extensionYear = inspectedYear > 0 ? inspectedYear : (defaultSeason != nullptr ? defaultSeason->year : 0);
+    if (inspectedYear == 0)
+        emitLog(sdk::LogLevel::Warn, QStringLiteral("runtime"),
+                tr("The WPILib year could not be determined; trying the default %1 extension.").arg(extensionYear));
+    o.extensionLibrary = extensionPath(extensionYear);
+    if (o.extensionLibrary.empty()) {
+        failToStart(tr("No HALSim extension for WPILib %1 is installed. Reinstall the emulator or set WPIEMU_EXTENSION.")
+                        .arg(extensionYear), QStringLiteral("no_extension_for_season"));
+        return;
+    }
+    o.allowWpilibYearMismatch = !options_.extensionPath.empty() || !envString("WPIEMU_EXTENSION").empty();
     o.scratchDir = options_.scratchDir;
     o.handshakeTimeout = options_.handshakeTimeout;
     o.launchMode = envString("WPIEMU_LAUNCH_MODE") == "direct" ? core::launcher::LaunchMode::ExternalDirect : core::launcher::LaunchMode::GradleInitScript;

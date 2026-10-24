@@ -4,6 +4,8 @@
 
 #include <QString>
 
+#include <vector>
+
 #include "common/system_probe.h"
 
 namespace wpiemu::app {
@@ -21,7 +23,8 @@ struct InstallInfo {
     QString appImagePath;   // the running AppImage file, for InstallKind::AppImage
 };
 
-// `appDir` is the directory of the running executable; `version` the app version (QCoreApplication::applicationVersion).
-InstallInfo detectInstall(const ISystemProbe& probe, const QString& appDir, const QString& version);
+// `appDir` is the directory of the running executable; `version` the app version (QCoreApplication::applicationVersion);
+// `seasonYears` the seasons whose year-qualified HALSim extension a packaged layout carries.
+InstallInfo detectInstall(const ISystemProbe& probe, const QString& appDir, const QString& version, const std::vector<int>& seasonYears);
 
 }  // namespace wpiemu::app

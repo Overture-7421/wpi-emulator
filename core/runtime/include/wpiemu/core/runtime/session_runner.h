@@ -38,6 +38,9 @@ struct RunnerOptions {
     bool discoveryOnly = false;
     bool enableL3Hooks = false;
     bool startPaused = false;
+    int expectedWpilibYear = 0;           // 0 = unknown / no season check
+    bool allowWpilibYearMismatch = false; // explicit extension override: warn rather than refuse
+    std::string expectedWpilibVersion;    // the project's WPILib version; a different extension release only warns (empty = unknown)
     // Hold the first SensorFrame (and the watchdog) until the extension reports `program_started` (lifecycle Log, sdk/ipc/lifecycle.h):
     // a robot constructor may legitimately take longer than the watchdog. False = tick right after the handshake (peers without the signal).
     bool awaitProgramStart = false;

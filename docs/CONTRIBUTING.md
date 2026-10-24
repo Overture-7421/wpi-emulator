@@ -55,6 +55,10 @@ change and its test.
   `std::locale::classic()`. See [Runtime](reference/runtime.md).
 - Preserve the [device identity and feedback contracts](reference/bridges.md). A declared
   CAN address does not always identify a distinct physical simulator device.
+- Season and WPILib facts live in the season packs (`seasons/<year>/season.json`). Do not write a season
+  year, `#if` on a year or ABI, or a per-year branch in core, the app, bridges, CMake or workflows: read
+  the generated `SeasonRegistry`, add per-ABI sources under `abi/<abi>/`, or add a launch profile.
+  `python tools\check_seasons.py` enforces this. See [Season packs](reference/seasons.md).
 - Define shared behavior once in the SDK. Derive consumers from that source instead of
   copying tables, validation rules, or helpers. See the motor table in
   [`motor_model.h`](../sdk/include/wpiemu/sdk/dynamics/motor_model.h) and

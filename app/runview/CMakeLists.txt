@@ -72,7 +72,7 @@ qt_add_resources(wpiemu_app_runview runview_sfx
         assets/sfx/field_reset.wav
         assets/sfx/match_result.wav)
 
-# Sounds the built-in game plugins ship (plugins/<id>/assets/sfx/<asset>.wav). The plugins/ aggregation seam lists them as
+# Sounds the built-in game plugins ship (seasons/<year>/game/assets/sfx/<asset>.wav). The plugins/ aggregation seam lists them as
 # "<file>|<id>/sfx/<asset>.wav" entries; they are embedded under /wpiemu/plugins without this file naming any plugin.
 get_property(_wpiemu_plugin_sounds GLOBAL PROPERTY WPIEMU_BUILTIN_PLUGIN_SOUNDS)
 set(_wpiemu_plugin_sound_files "")

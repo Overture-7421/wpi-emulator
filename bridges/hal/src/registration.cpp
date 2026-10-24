@@ -47,6 +47,10 @@ private:
 sdk::Status registerHalBridges(sdk::DeviceBridgeRegistry& registry, std::shared_ptr<IHalApi> api, HalBridgeOptions options) {
     if (!api) return sdk::makeError(sdk::ErrorCode::InvalidArgument, "registerHalBridges: null IHalApi");
 
+    const bool analogOut = api->analogOut() != nullptr;
+    const bool relay = api->relay() != nullptr;
+    const bool accelerometer = api->accelerometer() != nullptr;
+    const bool imu = api->imu() != nullptr;
     Registrar r(registry, std::move(api));
     const HalBridgeOptions o = options;
 
@@ -56,16 +60,16 @@ sdk::Status registerHalBridges(sdk::DeviceBridgeRegistry& registry, std::shared_
           [](const std::shared_ptr<IHalApi>& a) { return std::make_unique<DioBridge>(share(a, a->dio())); });
     r.add("hal.analog_in", "Analog inputs", "wpilib",
           [](const std::shared_ptr<IHalApi>& a) { return std::make_unique<AnalogInBridge>(share(a, a->analogIn())); });
-    r.add("hal.analog_out", "Analog outputs (observe)", "wpilib",
-          [](const std::shared_ptr<IHalApi>& a) { return std::make_unique<AnalogOutBridge>(share(a, a->analogOut())); });
+    if (analogOut) r.add("hal.analog_out", "Analog outputs (observe)", "wpilib",
+          [](const std::shared_ptr<IHalApi>& a) { return std::make_unique<AnalogOutBridge>(share(a, *a->analogOut())); });
     r.add("hal.encoder", "Quadrature encoders (A/B pairs)", "wpilib", [o](const std::shared_ptr<IHalApi>& a) {
         return std::make_unique<EncoderBridge>(share(a, a->encoder()), o.encoderCountsPerRevolution);
     });
     r.add("hal.duty_cycle", "DutyCycle inputs / absolute encoders", "wpilib", [o](const std::shared_ptr<IHalApi>& a) {
         return std::make_unique<DutyCycleBridge>(share(a, a->dutyCycle()), o.dutyCycleDefaultFrequencyHz);
     });
-    r.add("hal.relay", "Relay outputs (forward / reverse)", "wpilib",
-          [](const std::shared_ptr<IHalApi>& a) { return std::make_unique<RelayBridge>(share(a, a->relay())); });
+    if (relay) r.add("hal.relay", "Relay outputs (forward / reverse)", "wpilib",
+          [](const std::shared_ptr<IHalApi>& a) { return std::make_unique<RelayBridge>(share(a, *a->relay())); });
 
     const PneumaticsKind pcm = PneumaticsKind::ctrePcm();
     r.add(pcm.bridgeName, "CTRE PCM modules (compressor, pressure switch)", "ctre", [pcm](const std::shared_ptr<IHalApi>& a) {
@@ -90,8 +94,11 @@ sdk::Status registerHalBridges(sdk::DeviceBridgeRegistry& registry, std::shared_
     });
     r.add("hal.roborio", "roboRIO battery voltage / current and brownout threshold", "wpilib",
           [](const std::shared_ptr<IHalApi>& a) { return std::make_unique<RoboRioBridge>(share(a, a->roboRio())); });
-    r.add("hal.accelerometer", "roboRIO built-in accelerometer", "wpilib", [](const std::shared_ptr<IHalApi>& a) {
-        return std::make_unique<AccelerometerBridge>(share(a, a->accelerometer()));
+    if (accelerometer) r.add("hal.accelerometer", "roboRIO built-in accelerometer", "wpilib", [](const std::shared_ptr<IHalApi>& a) {
+        return std::make_unique<AccelerometerBridge>(share(a, *a->accelerometer()));
+    });
+    if (imu) r.add("hal.imu", "Onboard IMU", "wpilib", [](const std::shared_ptr<IHalApi>& a) {
+        return std::make_unique<ImuBridge>(share(a, *a->imu()));
     });
     r.add("hal.can", "Generic HAL CAN frames (observe only)", "wpilib",
           [](const std::shared_ptr<IHalApi>& a) { return std::make_unique<CanFrameBridge>(share(a, a->can())); });

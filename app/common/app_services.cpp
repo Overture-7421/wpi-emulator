@@ -13,6 +13,7 @@
 #include "wpiemu/core/physics/box3d_world.h"
 #include "wpiemu/core/physics/chassis_simulator.h"
 #include "wpiemu/sdk/game/builtin_plugins.h"
+#include "wpiemu/sdk/season/builtin_seasons.h"
 
 namespace wpiemu::app {
 
@@ -43,6 +44,7 @@ AppServices::AppServices(AppServicesOptions options)
         if (!status) startupProblems_.push_back(QStringLiteral("%1: %2").arg(QLatin1String(what), QString::fromStdString(status.error().message)));
     };
     note("game plugins", sdk::registerBuiltinGamePlugins(plugins_));
+    note("seasons", sdk::registerBuiltinSeasons(seasons_));
     note("drivetrains", core::physics::registerPhysicsComponents(drivetrains_, tireModels_));
     note("mechanisms", core::mechanisms::registerGenericMechanisms(mechanisms_));
 
@@ -52,7 +54,7 @@ AppServices::AppServices(AppServicesOptions options)
     prefs_ = std::make_unique<ProjectPrefsStore>(*store_);
     probe_ = options.probe ? std::move(options.probe) : std::make_unique<QtSystemProbe>();
     inspector_ = options.inspector ? std::move(options.inspector) : std::make_unique<GradleProjectInspector>();
-    toolchain_ = std::make_unique<ToolchainChecker>(*probe_, plugins_);
+    toolchain_ = std::make_unique<ToolchainChecker>(*probe_, plugins_, seasons_);
 
     const std::filesystem::path root = options.appDataRoot.empty() ? defaultAppDataRoot() : options.appDataRoot;
     const std::filesystem::path localRoot = !options.localDataRoot.empty() ? options.localDataRoot
@@ -80,6 +82,7 @@ AppServices::AppServices(AppServicesOptions options)
     } else {
         host::Registries registries;
         registries.plugins = &plugins_;
+        registries.seasons = &seasons_;
         registries.mechanisms = &mechanisms_;
         registries.drivetrains = &drivetrains_;
         registries.tireModels = &tireModels_;
@@ -114,7 +117,11 @@ AppServices::AppServices(AppServicesOptions options)
 
     updates_ = std::make_unique<UpdateService>(
         *store_, *probe_, options.updateTransport ? std::move(options.updateTransport) : createQtUpdateTransport(appVersion),
-        options.updateInstaller ? std::move(options.updateInstaller) : createQtUpdateInstaller(), appVersion, appDir);
+        options.updateInstaller ? std::move(options.updateInstaller) : createQtUpdateInstaller(), appVersion, appDir, [this] {
+            std::vector<int> years;
+            for (const sdk::SeasonProfile& season : seasons_.list()) years.push_back(season.year);
+            return years;
+        }());
 }
 
 AppServices::~AppServices() = default;
@@ -124,15 +131,22 @@ ToolchainInput AppServices::toolchainInput(const ProjectInspection& inspection) 
     in.projectPath = inspection.path;
     in.language = inspection.language;
     in.wpilibYear = inspection.wpilibYear;
+    in.wpilibVersion = inspection.gradleRioVersion;
     in.gradleVersion = inspection.gradleVersion;
+    // An unknown project year tries the default season's extension, as the launch does.
+    const sdk::SeasonProfile* fallback = seasons_.defaultSeason();
+    const int extensionYear = inspection.wpilibYear > 0 ? inspection.wpilibYear : (fallback != nullptr ? fallback->year : 0);
+    in.extensionLibrary = QString::fromStdU16String(RealRuntimeHost::installedExtension(extensionYear).u16string());
+    for (const sdk::SeasonProfile& season : seasons_.list())
+        if (!RealRuntimeHost::installedExtension(season.year).empty()) in.installedExtensionSeasons << QString::number(season.year);
     in.wpilibHomeOverride = settings_->data().wpilibHome;
     in.jdkHomeOverride = settings_->data().jdkHome;
     in.buildToolsInstallAvailable = buildTools_->available();
     // The Java comes from the season: an unknown season has no download and keeps the default minimum.
-    if (const std::optional<int> major = ToolchainProvisioner::javaMajorForSeason(inspection.wpilibYear)) {
-        in.minJavaMajor = *major;
-        in.managedJdkHome = provisioner_->installedHome(*major);
-        in.managedJavaAvailable = provisioner_->availableFor(*major);
+    if (const sdk::SeasonProfile* season = seasons_.find(inspection.wpilibYear); season != nullptr && season->javaMajor > 0) {
+        in.minJavaMajor = season->javaMajor;
+        in.managedJdkHome = provisioner_->installedHome(season->javaMajor);
+        in.managedJavaAvailable = provisioner_->availableFor(season->javaMajor);
     }
     return in;
 }

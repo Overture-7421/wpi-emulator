@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "wpiemu/core/config/config_store.h"
@@ -74,10 +75,15 @@ std::vector<std::filesystem::path> wpilibRootCandidates(config::Platform platfor
                                                         const std::filesystem::path& homeDir);
 // The same with the folders taken from the environment: PUBLIC, and USERPROFILE on Windows or HOME elsewhere.
 std::vector<std::filesystem::path> wpilibRootCandidates(config::Platform platform, const sdk::EnvLookup& env);
-// The install at `home`, a season folder such as <root>/2026; nullopt when it is not a directory.
+// The install at `home`, a season folder such as <root>/2026 or <root>/2027_alpha7; nullopt when it is not a directory.
 std::optional<WpilibInstall> wpilibInstallAt(const std::filesystem::path& home, int year);
-// First root containing "<year>/" wins. `roots` empty => wpilibRootCandidates().
-std::optional<WpilibInstall> findWpilibInstall(int year, const std::vector<std::filesystem::path>& roots);
+// WPILib installer folder of a season: `preferred` (the season pack's installFolder, for example one with a preview suffix)
+// when given, else the year.
+std::string wpilibInstallFolderName(int year, std::string_view preferred = {});
+// First root containing the season's folder wins: `preferredFolder` (see above), then "<year>", then any "<year>_*" folder
+// (newest name first), so a preview revision the manifest does not name yet is still found. `roots` empty => wpilibRootCandidates().
+std::optional<WpilibInstall> findWpilibInstall(int year, const std::vector<std::filesystem::path>& roots,
+                                               std::string_view preferredFolder = {});
 
 // Where the JDK that runs Gradle comes from, in the order the launcher tries: the explicit setting, the season's WPILib JDK
 // (trusted), another installed season's WPILib JDK, JAVA_HOME, `java` on PATH, then the emulator's own downloaded Java.
@@ -87,7 +93,7 @@ enum class JdkSource { Setting, WpilibInstall, WpilibOtherSeason, JavaHome, Path
 inline constexpr std::array<JdkSource, 6> kJdkSources{JdkSource::Setting, JdkSource::WpilibInstall, JdkSource::WpilibOtherSeason,
                                                       JdkSource::JavaHome, JdkSource::Path,         JdkSource::Managed};
 
-// Every season folder (<root>/<year>, year numeric) under `roots`, newest year first; the first root wins per year.
+// Every season folder under `roots`, newest year first; the first root wins per year. Numeric and alpha-suffixed folders count.
 // `roots` empty => wpilibRootCandidates().
 std::vector<WpilibInstall> listWpilibInstalls(const std::vector<std::filesystem::path>& roots);
 

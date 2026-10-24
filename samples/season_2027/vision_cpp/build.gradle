@@ -1,0 +1,21 @@
+plugins {
+    id "cpp"
+    id "org.wpilib.GradleRIO" version "2027.0.0-alpha-7"
+}
+
+wpi.cpp.debugSimulation = false
+model {
+    components {
+        wpilibUserProgram(NativeExecutableSpec) {
+            targetPlatform wpi.platforms.desktop
+            sources.cpp {
+                source { srcDir "src/main/cpp" }
+                exportedHeaders { srcDir "src/main/include" }
+            }
+            wpi.cpp.enableExternalTasks(it)
+            wpi.sim.enable(it)
+            wpi.cpp.vendor.cpp(it)
+            wpi.cpp.deps.wpilib(it)
+        }
+    }
+}

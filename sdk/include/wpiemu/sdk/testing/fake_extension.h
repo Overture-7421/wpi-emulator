@@ -47,12 +47,12 @@ public:
     bool send(const proto::Message& m) { return ch.send(m).ok(); }
 
     void hello(std::uint32_t proposedWatchdogMs = 0, std::uint32_t version = proto::kProtocolVersion,
-               bool supportsArmed = true) {
+               bool supportsArmed = true, std::int32_t wpilibYear = 2026) {
         proto::Hello h;
         h.protocolVersion = version;
         h.language = proto::RobotLanguage::Java;
-        h.wpilibYear = 2026;
-        h.wpilibVersion = "2026.2.1";
+        h.wpilibYear = wpilibYear;
+        h.wpilibVersion = wpilibYear > 0 ? std::to_string(wpilibYear) + ".2.1" : "";
         h.pid = 4242;
         h.programName = "TestRobot";
         h.proposedWatchdogMs = proposedWatchdogMs;

@@ -24,6 +24,8 @@
 #include "wpiemu/sdk/core/environment.h"
 #include "wpiemu/sdk/devices/device_descriptor.h"
 #include "wpiemu/sdk/game/builtin_plugins.h"
+#include "wpiemu/sdk/season/builtin_seasons.h"
+#include "wpiemu/sdk/season/season_registry.h"
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -124,6 +126,7 @@ inline sdk::DeviceKey phoenixKey(const char* type, int id) { return sdk::DeviceK
 // What AppServices builds, for tests that have no Qt.
 struct TestRegistries {
     sdk::GamePluginRegistry plugins;
+    sdk::SeasonRegistry seasons;
     sdk::MechanismFactory mechanisms;
     sdk::DrivetrainRegistry drivetrains;
     sdk::TireModelRegistry tireModels;
@@ -135,12 +138,14 @@ struct TestRegistries {
 
     TestRegistries() {
         REQUIRE(sdk::registerBuiltinGamePlugins(plugins).ok());
+        REQUIRE(sdk::registerBuiltinSeasons(seasons).ok());
         REQUIRE(core::physics::registerPhysicsComponents(drivetrains, tireModels).ok());
         REQUIRE(core::mechanisms::registerGenericMechanisms(mechanisms).ok());
     }
     Registries view() {
         Registries r;
         r.plugins = &plugins;
+        r.seasons = &seasons;
         r.mechanisms = &mechanisms;
         r.drivetrains = &drivetrains;
         r.tireModels = &tireModels;

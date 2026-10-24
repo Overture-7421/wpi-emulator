@@ -13,9 +13,17 @@ namespace {
 
 bool isJava(const LaunchRequest& r) { return r.language == "java"; }
 
+const LaunchProfile& profileOf(const LaunchRequest& r) {
+    const LaunchProfile* profile = findLaunchProfile(r.launchProfile);
+    return profile != nullptr ? *profile : *findLaunchProfile(kLaunchClassic);
+}
+bool classpathLaunch(const LaunchRequest& r) { return isJava(r) && profileOf(r).javaClasspathLaunch; }
+
 Status validateCommon(const LaunchRequest& r) {
     if (r.language != "java" && r.language != "cpp")
         return makeError(ErrorCode::InvalidArgument, "unknown robot language '" + r.language + "' (java|cpp)");
+    if (findLaunchProfile(r.launchProfile) == nullptr)
+        return makeError(ErrorCode::InvalidArgument, "unknown launch profile '" + r.launchProfile + "'");
     if (r.projectDir.empty()) return makeError(ErrorCode::InvalidArgument, "no project directory");
     if (r.extensionLibrary.empty()) return makeError(ErrorCode::InvalidArgument, "no HALSim extension library given");
     if (r.ipcEndpoint.empty()) return makeError(ErrorCode::InvalidArgument, "no IPC endpoint given");
@@ -71,6 +79,17 @@ Status setWrapperInvocation(ProcessSpec& spec, const LaunchRequest& r, bool wind
 }
 
 }  // namespace
+
+const LaunchProfile* findLaunchProfile(std::string_view id) {
+    static constexpr LaunchProfile kProfiles[] = {
+        {kLaunchClassic, "simulateJava", "", false},
+        {kLaunchModern, "run", "simulateExternalJava", true},
+    };
+    if (id.empty()) id = kLaunchClassic;
+    for (const LaunchProfile& profile : kProfiles)
+        if (profile.id == id) return &profile;
+    return nullptr;
+}
 
 void sanitizePackagedEnvironment(ProcessSpec& spec, const sdk::EnvLookup& hostEnv, bool windows) {
     if (!hostEnv) return;
@@ -129,13 +148,18 @@ std::map<std::string, std::string> emulatorEnvironment(const LaunchRequest& r, b
 
 fs::path gradleWrapperPath(const fs::path& projectDir, bool windows) { return projectDir / (windows ? "gradlew.bat" : "gradlew"); }
 
-std::string gradleTaskName(const LaunchRequest& r) { return isJava(r) ? "simulateJava" : "simulateNative"; }
+std::string gradleTaskName(const LaunchRequest& r) {
+    if (isJava(r)) return std::string(profileOf(r).javaTask);
+    return "simulateNative";
+}
 
 std::string externalTaskName(const LaunchRequest& r) {
+    if (isJava(r) && !profileOf(r).javaExternalTask.empty()) return std::string(profileOf(r).javaExternalTask);
     return std::string("simulateExternal") + (isJava(r) ? "Java" : "Native") + (r.release ? "Release" : "Debug");
 }
 
 fs::path externalDescriptorPath(const LaunchRequest& r) {
+    if (classpathLaunch(r)) return r.projectDir / "build" / "sim" / "java.json";
     return r.projectDir / "build" / "sim" / (std::string(r.release ? "release" : "debug") + "_" + (isJava(r) ? "java" : "native") + ".json");
 }
 
@@ -177,6 +201,14 @@ Result<ProcessSpec> planExternalDescribe(const LaunchRequest& r, bool windows) {
     if (Status s = setWrapperInvocation(spec, r, windows); !s) return s.error();
     const std::vector<std::string> common = gradleCommonArgs(r);
     spec.args.insert(spec.args.end(), common.begin(), common.end());
+    if (classpathLaunch(r)) {
+        if (r.scratchDir.empty()) return makeError(ErrorCode::InvalidArgument, "no scratch directory for the init script");
+        const fs::path script = r.scratchDir / "wpiemu-init.gradle";
+        if (Status s = config::atomicWriteFile(script, generateInitScript()); !s)
+            return makeError(s.error().code, "cannot write the init script: " + s.error().message);
+        spec.args.insert(spec.args.end(), {"-I", script.string()});
+        spec.env[env_var::kExtension] = r.extensionLibrary.string();
+    }
     spec.args.insert(spec.args.end(), r.extraGradleArgs.begin(), r.extraGradleArgs.end());
     spec.args.push_back(externalTaskName(r));
     spec.workingDir = r.projectDir;
@@ -241,17 +273,43 @@ Result<ProcessSpec> planExternalLaunch(const LaunchRequest& r, std::string_view 
     if (isJava(r)) {
         const std::string libraryDir = getString(d, "libraryDir");
         if (libraryDir.empty()) return makeError(ErrorCode::InvalidArgument, "descriptor has no libraryDir");
-        const auto jar = pickJar(r.projectDir / "build" / "libs");
-        if (!jar) return makeError(ErrorCode::NotFound, "no robot jar in " + (r.projectDir / "build" / "libs").string() + " (did the build run?)");
         fs::path javaHome = r.javaHome;
         if (javaHome.empty() && hostEnv)
             if (const auto home = hostEnv("JAVA_HOME")) javaHome = *home;
         spec.program = javaHome.empty() ? "java" : (javaHome / "bin" / (windows ? "java.exe" : "java")).string();
-        if (macos) spec.args.emplace_back("-XstartOnFirstThread");
+        if (profileOf(r).javaClasspathLaunch) {
+            if (const Value* args = d.find("jvmArgs"); args != nullptr) {
+                if (!args->isArray()) return makeError(ErrorCode::InvalidArgument, "descriptor jvmArgs is not an array");
+                for (const Value& arg : args->array()) {
+                    if (!arg.isString()) return makeError(ErrorCode::InvalidArgument, "descriptor jvmArgs contains a non-string");
+                    spec.args.push_back(arg.asString());
+                }
+            }
+        }
+        if (macos && std::find(spec.args.begin(), spec.args.end(), "-XstartOnFirstThread") == spec.args.end())
+            spec.args.emplace_back("-XstartOnFirstThread");
         spec.args.push_back("-Djava.library.path=" + libraryDir);
-        spec.args.insert(spec.args.end(), {"-jar", jar->string()});
+        if (profileOf(r).javaClasspathLaunch) {
+            const std::string mainClass = getString(d, "mainClassName");
+            if (mainClass.empty()) return makeError(ErrorCode::InvalidArgument, "descriptor has no mainClassName");
+            const Value* paths = d.find("classpath");
+            if (paths == nullptr || !paths->isArray() || paths->array().empty())
+                return makeError(ErrorCode::InvalidArgument, "descriptor has no runtime classpath (run the emulator's describe step)");
+            std::vector<std::string> classpath;
+            for (const Value& path : paths->array()) {
+                if (!path.isString() || path.asString().empty())
+                    return makeError(ErrorCode::InvalidArgument, "descriptor classpath contains an invalid path");
+                classpath.push_back(path.asString());
+            }
+            spec.args.insert(spec.args.end(), {"-classpath", join(classpath, windows ? ';' : ':'), mainClass});
+            spec.label = "java " + mainClass;
+        } else {
+            const auto jar = pickJar(r.projectDir / "build" / "libs");
+            if (!jar) return makeError(ErrorCode::NotFound, "no robot jar in " + (r.projectDir / "build" / "libs").string() + " (did the build run?)");
+            spec.args.insert(spec.args.end(), {"-jar", jar->string()});
+            spec.label = "java -jar " + jar->filename().string();
+        }
         libDirs.push_back(libraryDir);
-        spec.label = "java -jar " + jar->filename().string();
     } else {
         const std::string launchfile = getString(d, "launchfile");
         if (launchfile.empty()) return makeError(ErrorCode::InvalidArgument, "descriptor has no launchfile");

@@ -27,6 +27,13 @@ The real host delegates process and simulation orchestration to Qt-free `RobotSe
 Qt event-loop adaptation remains in the app. `--demo` selects a scripted host and does not
 exercise robot launch or IPC. Keep these host boundaries intact when adding UI behavior.
 
+Setup checks the extension selected for the live project season, listing available seasons
+when it is missing (`no_extension_for_season`). A refused year handshake reports
+`season_mismatch`. Native loader or initialization failures for `halsim_wpiemu` report
+`extension_load_failed`, retaining the loader error in the console. These stable status keys
+are translated into setup guidance by the run view; extension selection belongs to
+[Runtime](runtime.md#launcher-boundary).
+
 ## Editor and run-view contracts
 
 The editor works through `IEditorBackend` and an undoable document; it does not access core,

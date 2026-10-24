@@ -8,6 +8,7 @@
 #include "common/toolchain_checker.h"
 #include "test_support.h"
 #include "wpiemu/sdk/game/builtin_plugins.h"
+#include "wpiemu/sdk/season/builtin_seasons.h"
 
 using namespace wpiemu::app;
 using namespace wpiemu::app::testing;
@@ -16,9 +17,13 @@ namespace {
 
 struct Fixture {
     wpiemu::sdk::GamePluginRegistry plugins;
+    wpiemu::sdk::SeasonRegistry seasons;
     FakeProbe probe;
-    Fixture() { (void)wpiemu::sdk::registerBuiltinGamePlugins(plugins); }
-    ToolchainChecker checker() { return ToolchainChecker(probe, plugins); }
+    Fixture() {
+        (void)wpiemu::sdk::registerBuiltinGamePlugins(plugins);
+        (void)wpiemu::sdk::registerBuiltinSeasons(seasons);
+    }
+    ToolchainChecker checker() { return ToolchainChecker(probe, plugins, seasons); }
 };
 
 ToolchainInput inputFor(const QString& language, int year, const QString& project = QStringLiteral("/proj")) {
@@ -44,6 +49,23 @@ TEST_CASE("java version parsing") {
     CHECK(ToolchainChecker::parseJavaMajor(QStringLiteral("java version \"1.8.0_352\"")) == 8);
     CHECK(ToolchainChecker::parseJavaMajor(QStringLiteral("openjdk version \"21\" 2023-09-19")) == 21);
     CHECK(!ToolchainChecker::parseJavaMajor(QStringLiteral("command not found")).has_value());
+}
+
+TEST_CASE("toolchain report diagnoses a missing season extension before launch") {
+    Fixture f;
+    auto in = inputFor(QStringLiteral("java"), 2027);
+    in.extensionLibrary = QString();
+    in.installedExtensionSeasons = {QStringLiteral("2026")};
+    const auto missing = f.checker().run(in);
+    const auto* row = missing.find(QString::fromLatin1(check_id::kHalExtension));
+    REQUIRE(row);
+    CHECK(row->status == CheckStatus::Missing);
+    CHECK(row->requiredToRun);
+    CHECK(row->detail.contains(QStringLiteral("2026")));
+    CHECK_FALSE(row->fixHint.isEmpty());
+    in.extensionLibrary = QStringLiteral("/extensions/2027/halsim_wpiemu.dll");
+    const auto installed = f.checker().run(in);
+    CHECK(installed.find(QString::fromLatin1(check_id::kHalExtension))->status == CheckStatus::Ok);
 }
 
 TEST_CASE("jdk check finds JAVA_HOME, rejects old versions and explains the fix") {
@@ -134,9 +156,13 @@ TEST_CASE("gradle wrapper and wpilib install checks") {
 
     const ToolchainChecker c = f.checker();
     CHECK(c.defaultWpilibHome(2026) == QStringLiteral("C:/Users/Public/wpilib/2026"));
+    CHECK(c.defaultWpilibHome(2027) == QStringLiteral("C:/Users/Public/wpilib/2027_alpha7"));
     CHECK(c.checkWpilibInstall(inputFor(QStringLiteral("java"), 2026)).status == CheckStatus::Warning);
     f.probe.dirs.insert(QStringLiteral("C:/Users/Public/wpilib/2026"));
     CHECK(c.checkWpilibInstall(inputFor(QStringLiteral("java"), 2026)).status == CheckStatus::Ok);
+    f.probe.dirs.insert(QStringLiteral("C:/Users/Public/wpilib/2027_alpha7"));
+    CHECK(c.findWpilibHome(inputFor(QStringLiteral("java"), 2027)) == QStringLiteral("C:/Users/Public/wpilib/2027_alpha7"));
+    CHECK(c.checkWpilibInstall(inputFor(QStringLiteral("java"), 2027)).status == CheckStatus::Ok);
 }
 
 TEST_CASE("c++ toolchain is only required for c++ projects") {
@@ -337,8 +363,8 @@ TEST_CASE("jdk order: another installed season's JDK is a validated fallback; th
     Fixture f;
     f.probe.dirs.insert(QStringLiteral("/home/user/wpilib/2025"));
     f.probe.addJava(QStringLiteral("/home/user/wpilib/2025/jdk/bin/java"), kJava17);
-    f.probe.dirs.insert(QStringLiteral("/home/user/wpilib/2027"));
-    f.probe.addJava(QStringLiteral("/home/user/wpilib/2027/jdk/bin/java"), kJava25);   // too new: passed over
+    f.probe.dirs.insert(QStringLiteral("/home/user/wpilib/2027_alpha7"));
+    f.probe.addJava(QStringLiteral("/home/user/wpilib/2027_alpha7/jdk/bin/java"), kJava25);   // too new: passed over
     ToolchainInput in = inputFor(QStringLiteral("java"), 2026);
     in.managedJdkHome = QStringLiteral("/managed");
     f.probe.addJava(QStringLiteral("/managed/bin/java"), kJava17);
@@ -362,14 +388,17 @@ TEST_CASE("jdk validation: the minimum Java comes from the project's season") {
     f.probe.addJava(QStringLiteral("/jdk/bin/java"), kJava17);
     ToolchainInput in = inputFor(QStringLiteral("java"), 2027);
     in.minJavaMajor = 25;
-    in.gradleVersion = QStringLiteral("9.2.0");
     ToolchainCheck check = f.checker().checkJdk(in);
+    CHECK(check.status == CheckStatus::Missing);
+    f.probe.addJava(QStringLiteral("/jdk/bin/java"), kJava25);
+    CHECK(f.checker().checkJdk(in).status == CheckStatus::Ok);   // the 2027 template default supports Java 25
+
+    f.probe.addJava(QStringLiteral("/jdk/bin/java"), kJava17);
+    in.gradleVersion = QStringLiteral("9.2.0");
+    check = f.checker().checkJdk(in);
     CHECK(check.status == CheckStatus::Missing);
     CHECK(check.detail.contains(QStringLiteral("needs Java 25")));
     CHECK(check.title.contains(QStringLiteral("25")));
-
-    f.probe.addJava(QStringLiteral("/jdk/bin/java"), kJava25);
-    CHECK(f.checker().checkJdk(in).status == CheckStatus::Ok);
 }
 
 TEST_CASE("jdk setting: an explicit folder that cannot run the project is reported, never replaced") {
@@ -386,4 +415,49 @@ TEST_CASE("jdk setting: an explicit folder that cannot run the project is report
     const ToolchainCheck check = f.checker().checkJdk(in);
     CHECK(check.fixAction == FixAction::OpenSettings);
     CHECK(check.detail.contains(QStringLiteral("Java 8")));
+}
+
+TEST_CASE("wpilib version: an unverified version of a known season warns and the run continues") {
+    Fixture f;
+    ToolchainInput in = inputFor(QStringLiteral("java"), 2026);
+    in.wpilibVersion = QStringLiteral("2026.2.1");
+    CHECK(f.checker().checkWpilibVersion(in).status == CheckStatus::Ok);
+    CHECK(f.checker().run(in).find(QString::fromLatin1(check_id::kWpilibVersion)) == nullptr);   // verified: no row
+    in.wpilibVersion = QStringLiteral("2026.9.9");
+    const ToolchainCheck check = f.checker().checkWpilibVersion(in);
+    CHECK(check.status == CheckStatus::Warning);
+    CHECK_FALSE(check.requiredToRun);
+    CHECK(check.detail.contains(QStringLiteral("2026.9.9")));
+    const ToolchainReport report = f.checker().run(in);
+    REQUIRE(report.find(QString::fromLatin1(check_id::kWpilibVersion)) != nullptr);
+    CHECK(report.find(QString::fromLatin1(check_id::kWpilibVersion))->status == CheckStatus::Warning);
+    in.wpilibYear = 1999;   // a year without a season pack has nothing to verify against
+    CHECK(f.checker().checkWpilibVersion(in).status == CheckStatus::NotApplicable);
+}
+
+TEST_CASE("new season: a profile on an existing ABI is enough for install discovery, the Java minimum and the version warning") {
+    Fixture f;
+    wpiemu::sdk::SeasonProfile season;
+    season.year = 2999;
+    season.wpilibVersion = "2999.0.0-beta-1";
+    season.verifiedWpilibVersions = {"2999.0.0-beta-*"};   // another beta is verified, but still differs from the built one
+    season.installFolder = "2999_beta1";
+    season.halAbi = "systemcore";
+    season.launchProfile = "gradlerio-modern";
+    season.javaMajor = 25;
+    REQUIRE(f.seasons.add(season).ok());
+
+    f.probe.os = HostOs::Windows;
+    f.probe.home = QStringLiteral("C:/Users/me");
+    f.probe.dirs.insert(QStringLiteral("C:/Users/Public/wpilib/2999_beta1"));
+    ToolchainInput in = inputFor(QStringLiteral("java"), 2999);
+    CHECK(f.checker().findWpilibHome(in) == QStringLiteral("C:/Users/Public/wpilib/2999_beta1"));
+    CHECK(f.checker().defaultWpilibHome(2999) == QStringLiteral("C:/Users/Public/wpilib/2999_beta1"));
+    in.wpilibVersion = QStringLiteral("2999.0.0-beta-1");
+    CHECK(f.checker().run(in).find(QString::fromLatin1(check_id::kWpilibVersion)) == nullptr);
+    in.wpilibVersion = QStringLiteral("2999.0.0-beta-2");
+    CHECK(f.checker().run(in).find(QString::fromLatin1(check_id::kWpilibVersion))->status == CheckStatus::Warning);
+    CHECK(f.checker().checkWpilibVersion(in).detail.contains(QStringLiteral("was verified")));
+    in.wpilibVersion = QStringLiteral("2999.1.0");   // neither the built release nor a verified one
+    CHECK(f.checker().checkWpilibVersion(in).detail.contains(QStringLiteral("not been verified")));
 }

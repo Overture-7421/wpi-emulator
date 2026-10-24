@@ -2,7 +2,8 @@
 
 WPI Emulator runs unmodified WPILib Java and C++ robot projects. The desktop app owns the
 simulation. A HALSim extension in the robot process exchanges data with it through local IPC.
-Season-specific behavior belongs in game plugins.
+Season-specific game behavior belongs in game plugins; WPILib support for a year is data in its season pack
+(`seasons/<year>/season.json`).
 
 ## Read first
 
@@ -15,6 +16,9 @@ Season-specific behavior belongs in game plugins.
 
 ## Keep the boundaries
 
+- Season and WPILib facts live in the season packs and per-ABI sources. Never write a season year or an `#if`
+  on a year/ABI outside `seasons/`, tests, samples and docs; read the generated `SeasonRegistry`, put HAL
+  differences in `abi/<abi>/` sources, and run `python tools\check_seasons.py`.
 - The SDK is header-only and standard-library-only. Keep Qt out of the SDK, core, IPC, bridges,
   and plugins. Plugins depend only on the SDK. The app uses the plugin aggregator; the extension
   uses the bridge aggregator. Do not couple the app directly to a season plugin or the extension

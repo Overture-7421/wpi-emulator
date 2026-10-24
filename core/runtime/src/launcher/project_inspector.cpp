@@ -101,17 +101,17 @@ Result<ProjectReport> ProjectInspector::inspect(const fs::path& dir) const {
     }
     if (!r.hasBuildScript) note(Severity::Error, "build.gradle", "no build.gradle or build.gradle.kts in " + dir.string());
 
-    if (const auto v = firstMatch(buildText, R"(edu\.wpi\.first\.GradleRIO["'\)\s]*version\s*["']([^"']+)["'])")) {
+    if (const auto v = firstMatch(buildText, R"((?:edu\.wpi\.first|org\.wpilib)\.GradleRIO["'\)\s]*version\s*["']([^"']+)["'])")) {
         r.gradleRioFound = true;
         r.gradleRioVersion = *v;
-    } else if (const auto cp = firstMatch(buildText, R"(edu\.wpi\.first:GradleRIO:([0-9][^"']*)["'])")) {
+    } else if (const auto cp = firstMatch(buildText, R"((?:edu\.wpi\.first|org\.wpilib):GradleRIO:([0-9][^"']*)["'])")) {
         r.gradleRioFound = true;
         r.gradleRioVersion = *cp;
-    } else if (contains(buildText, R"(edu\.wpi\.first\.GradleRIO)")) {
+    } else if (contains(buildText, R"((?:edu\.wpi\.first|org\.wpilib)\.GradleRIO)")) {
         r.gradleRioFound = true;  // plugin applied, version declared elsewhere (a variable / settings plugin management)
         note(Severity::Warning, "build.gradle", "GradleRIO plugin found but its version is not a literal; the year comes from the preferences");
     } else if (r.hasBuildScript) {
-        note(Severity::Error, "build.gradle", "the GradleRIO plugin (edu.wpi.first.GradleRIO) is not applied: this is not a WPILib project");
+        note(Severity::Error, "build.gradle", "the GradleRIO plugin is not applied: this is not a WPILib project");
     }
     r.wpilibYear = yearOf(r.gradleRioVersion);
 
@@ -139,7 +139,8 @@ Result<ProjectReport> ProjectInspector::inspect(const fs::path& dir) const {
     }
     if (r.wpilibYear == 0)
         if (const auto settings = config::readTextFile(dir / "settings.gradle"))
-            if (const auto y = firstMatch(settings.value(), R"(frcYear\s*=\s*["'](\d{4})["'])")) r.wpilibYear = std::stoi(*y);
+            if (const auto y = firstMatch(settings.value(), R"((?:frcYear|wpilibYear)\s*=\s*["'](\d{4})[^"']*["'])"))
+                r.wpilibYear = std::stoi(*y);
     r.isWpilibProject = r.hasBuildScript && (r.gradleRioFound || (hasPrefs && r.wpilibYear > 0));
     if (r.isWpilibProject && r.wpilibYear == 0) note(Severity::Warning, "build.gradle", "could not determine the WPILib year");
 
@@ -241,10 +242,27 @@ std::optional<WpilibInstall> wpilibInstallAt(const fs::path& home, int year) {
     return install;
 }
 
-std::optional<WpilibInstall> findWpilibInstall(int year, const std::vector<fs::path>& roots) {
+std::string wpilibInstallFolderName(int year, std::string_view preferred) {
+    return preferred.empty() ? std::to_string(year) : std::string(preferred);
+}
+
+std::optional<WpilibInstall> findWpilibInstall(int year, const std::vector<fs::path>& roots, std::string_view preferredFolder) {
     const std::vector<fs::path> candidates = roots.empty() ? wpilibRootCandidates(config::currentPlatform(), &sdk::readEnvironment) : roots;
-    for (const fs::path& root : candidates)
-        if (auto install = wpilibInstallAt(root / std::to_string(year), year)) return install;
+    const std::string yearName = std::to_string(year);
+    for (const fs::path& root : candidates) {
+        if (!preferredFolder.empty())
+            if (auto install = wpilibInstallAt(root / std::string(preferredFolder), year)) return install;
+        if (auto install = wpilibInstallAt(root / yearName, year)) return install;
+        std::vector<std::string> suffixed;
+        std::error_code ec;
+        for (fs::directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+            const std::string name = it->path().filename().string();
+            if (name.size() > yearName.size() + 1 && name.compare(0, yearName.size() + 1, yearName + "_") == 0) suffixed.push_back(name);
+        }
+        std::sort(suffixed.rbegin(), suffixed.rend());
+        for (const std::string& name : suffixed)
+            if (auto install = wpilibInstallAt(root / name, year)) return install;
+    }
     return std::nullopt;
 }
 
@@ -255,8 +273,10 @@ std::vector<WpilibInstall> listWpilibInstalls(const std::vector<fs::path>& roots
         std::error_code ec;
         for (fs::directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
             const std::string name = it->path().filename().string();
-            if (name.size() != 4 || !std::all_of(name.begin(), name.end(), [](unsigned char c) { return std::isdigit(c) != 0; })) continue;
-            const int year = std::stoi(name);
+            if (name.size() < 4 || !std::all_of(name.begin(), name.begin() + 4, [](unsigned char c) { return std::isdigit(c) != 0; }) ||
+                (name.size() > 4 && name[4] != '_'))
+                continue;
+            const int year = std::stoi(name.substr(0, 4));
             if (std::any_of(found.begin(), found.end(), [&](const WpilibInstall& i) { return i.year == year; })) continue;
             if (auto install = wpilibInstallAt(it->path(), year)) found.push_back(std::move(*install));
         }

@@ -64,7 +64,8 @@ class UpdateService : public QObject {
     Q_OBJECT
 public:
     UpdateService(IKeyValueStore& store, const ISystemProbe& probe, std::unique_ptr<IUpdateTransport> transport,
-                  std::unique_ptr<IUpdateInstaller> installer, QString appVersion, QString appDir, QObject* parent = nullptr);
+                  std::unique_ptr<IUpdateInstaller> installer, QString appVersion, QString appDir,
+                  std::vector<int> seasonYears = {}, QObject* parent = nullptr);
     ~UpdateService() override;
 
     UpdateState state() const { return state_; }
@@ -115,6 +116,7 @@ private:
     std::unique_ptr<IUpdateInstaller> installer_;
     QString version_;
     QString appDir_;
+    std::vector<int> seasonYears_;   // the seasons a packaged layout carries extensions for
     InstallInfo install_;
     UpdateState state_ = UpdateState::Idle;
     UpdateOffer offer_;

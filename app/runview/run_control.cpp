@@ -25,7 +25,8 @@ void applyProblem(StatusPresentation& p, const HostStatus& st) {
         fixSetup();
     } else if (id == QLatin1String("java_unsupported_by_gradle")) {
         p.title = tr("This Java does not work with the project's Gradle");
-        p.detail = tr("Gradle could not run on the selected Java, usually because it is too new. Pick Java 17 (WPILib's) in setup.");
+        p.detail = tr("Gradle could not run on the selected Java. Select the Java that comes with the project's WPILib "
+                      "season in setup.");
         fixSetup();
     } else if (id == QLatin1String("java_home_invalid") || id == QLatin1String("no_usable_java")) {
         p.title = id == QLatin1String("no_usable_java") ? tr("Java is needed to run the robot") : tr("The Java folder is not valid");
@@ -45,6 +46,15 @@ void applyProblem(StatusPresentation& p, const HostStatus& st) {
     } else if (id == QLatin1String("no_native_toolchain")) {
         p.title = tr("C++ build tools are missing");
         p.detail = tr("This C++ project needs a C++ compiler. Setup can show you how to install one.");
+        fixSetup();
+    } else if (id == QLatin1String("extension_load_failed")) {
+        p.title = tr("The robot could not load the HALSim extension");
+        p.detail = tr("Install the extension built for this project's WPILib season and platform, including its runtime libraries. "
+                      "Remove WPIEMU_EXTENSION if it points to another season. The console contains the native loader error.");
+        fixSetup();
+    } else if (id == QLatin1String("no_extension_for_season") || id == QLatin1String("season_mismatch")) {
+        p.title = id == QLatin1String("season_mismatch") ? tr("The HALSim extension belongs to another season")
+                                                        : tr("This WPILib season's HALSim extension is missing");
         fixSetup();
     }
 }

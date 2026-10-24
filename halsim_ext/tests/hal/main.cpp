@@ -6,11 +6,11 @@
 
 #include <cstdio>
 
-#include "hal/HAL.h"
+#include "wpiemu/hal_abi/hal_includes.h"
 
 int main(int argc, char** argv) {
     // No HALSIM_EXTENSIONS here: the extension under test is driven in-process.
-    if (!HAL_Initialize(500, 0)) {
+    if (!wpiemu::hal_abi::initializeSimHal()) {
         std::fprintf(stderr, "HAL_Initialize failed\n");
         return 2;
     }

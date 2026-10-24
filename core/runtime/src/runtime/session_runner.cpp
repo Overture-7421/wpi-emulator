@@ -409,13 +409,20 @@ void SessionRunner::handleHello(const proto::Hello& hello) {
         return;
     }
     proto::HelloAck ack;
-    if (hello.protocolVersion < proto::kMinCompatibleProtocolVersion ||
-        (options_.discoveryOnly && !hello.supportsArmed)) {
+    const bool protocolMismatch = hello.protocolVersion < proto::kMinCompatibleProtocolVersion;
+    const bool armedUnsupported = options_.discoveryOnly && !hello.supportsArmed;
+    const bool seasonMismatch = options_.expectedWpilibYear > 0 && hello.wpilibYear > 0 &&
+                                hello.wpilibYear != options_.expectedWpilibYear;
+    if (protocolMismatch || armedUnsupported || (seasonMismatch && !options_.allowWpilibYearMismatch)) {
         ack.accepted = false;
-        ack.reason =
-            hello.protocolVersion < proto::kMinCompatibleProtocolVersion
-                ? "protocol version " + std::to_string(hello.protocolVersion) + " is too old"
-                : "Armed operation requires the extension's explicit supportsArmed capability";
+        if (protocolMismatch) {
+            ack.reason = "protocol version " + std::to_string(hello.protocolVersion) + " is too old";
+        } else if (armedUnsupported) {
+            ack.reason = "Armed operation requires the extension's explicit supportsArmed capability";
+        } else {
+            ack.reason = "WPILib year " + std::to_string(hello.wpilibYear) + " does not match project year " +
+                         std::to_string(options_.expectedWpilibYear);
+        }
         {
             std::lock_guard lock(helloMutex_);
             refusal_ = ack.reason;
@@ -425,6 +432,15 @@ void SessionRunner::handleHello(const proto::Hello& hello) {
         closeLink();
         return;
     }
+    if (seasonMismatch)
+        logger_.warn("runner", "explicit HALSim extension WPILib year " + std::to_string(hello.wpilibYear) +
+                                   " differs from project year " + std::to_string(options_.expectedWpilibYear));
+    // Same year, different release: the extension was built against another WPILib than the robot project uses, which can
+    // matter for the HAL it loads. Best effort, never a refusal.
+    if (!seasonMismatch && !options_.expectedWpilibVersion.empty() && !hello.wpilibVersion.empty() &&
+        hello.wpilibVersion != options_.expectedWpilibVersion)
+        logger_.warn("runner", "the robot project uses WPILib " + options_.expectedWpilibVersion + " but the HALSim extension was built for " +
+                                   hello.wpilibVersion + "; continuing on a best-effort basis (a HAL change between releases can break the run)");
     {
         std::lock_guard lock(helloMutex_);
         hello_ = hello;

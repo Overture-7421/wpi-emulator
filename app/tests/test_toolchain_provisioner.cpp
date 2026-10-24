@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
+
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -306,13 +308,29 @@ TEST_CASE("pinned Java downloads exist for the supported computers and only come
     CHECK(windows[0].url.host() == QStringLiteral("github.com"));
     CHECK(windows[0].sha256.size() == 64);
     CHECK(windows[0].sizeBytes > 0);
-    CHECK(ToolchainProvisioner::pinnedAssetsFor(HostOs::MacOs, QStringLiteral("arm64"))[0].platform == QStringLiteral("macos-arm64"));
-    CHECK(ToolchainProvisioner::pinnedAssetsFor(HostOs::Linux, QStringLiteral("x86_64"))[0].platform == QStringLiteral("linux-x64"));
+    CHECK(std::any_of(windows.begin(), windows.end(), [](const JavaAsset& asset) {
+        return asset.major == 25 && asset.version == QStringLiteral("25.0.2") && asset.sizeBytes > 0 && asset.sha256.size() == 64;
+    }));
+    const auto hasJava25 = [](const std::vector<JavaAsset>& assets) {
+        return std::any_of(assets.begin(), assets.end(), [](const JavaAsset& asset) { return asset.major == 25; });
+    };
+    const auto linux = ToolchainProvisioner::pinnedAssetsFor(HostOs::Linux, QStringLiteral("x86_64"));
+    const auto macX64 = ToolchainProvisioner::pinnedAssetsFor(HostOs::MacOs, QStringLiteral("x86_64"));
+    const auto macArm64 = ToolchainProvisioner::pinnedAssetsFor(HostOs::MacOs, QStringLiteral("arm64"));
+    REQUIRE(!linux.empty());
+    REQUIRE(!macX64.empty());
+    REQUIRE(!macArm64.empty());
+    CHECK(hasJava25(linux));
+    CHECK(hasJava25(macX64));
+    CHECK(hasJava25(macArm64));
+    CHECK(macArm64[0].platform == QStringLiteral("macos-arm64"));
+    CHECK(linux[0].platform == QStringLiteral("linux-x64"));
     CHECK(ToolchainProvisioner::pinnedAssetsFor(HostOs::Linux, QStringLiteral("arm64")).empty());
 }
 
-TEST_CASE("the Java of a season is pinned per season; a season the pins do not know gets no download") {
+TEST_CASE("the Java of a season is pinned per season; a provisioner offers only configured assets") {
     CHECK(ToolchainProvisioner::javaMajorForSeason(2026) == 17);
+    CHECK(ToolchainProvisioner::javaMajorForSeason(2027) == 25);
     CHECK(!ToolchainProvisioner::javaMajorForSeason(2099).has_value());   // never guess: a wrong Java cannot compile the robot
     Fixture f;
     CHECK(f.provisioner.get()->availableFor(17));

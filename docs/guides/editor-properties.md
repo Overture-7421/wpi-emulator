@@ -42,7 +42,7 @@ For a real parameter replace the generic label/help with wording that explains w
 
 ## Bind typed configuration once
 
-[`game_2026/config.cpp`](../../plugins/game_2026/src/config.cpp) binds each schema spec to a
+[`game_2026/config.cpp`](../../seasons/2026/game/src/config.cpp) binds each schema spec to a
 `GameConfig` member with `ConfigBindings`. That one table supplies schema, decode and encode;
 do not separately maintain a parser, serializer and UI property list.
 

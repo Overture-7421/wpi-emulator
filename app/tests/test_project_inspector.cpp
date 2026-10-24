@@ -14,7 +14,7 @@ TEST_CASE("inspector reads season, language, team and vendor libraries") {
     const ProjectInspection in = GradleProjectInspector().inspect(java.path());
     CHECK(in.usable());
     CHECK(in.wpilibYear == 2026);
-    CHECK(in.gradleRioVersion == QStringLiteral("2026.1.1"));
+    CHECK(in.gradleRioVersion == QStringLiteral("2026.2.1"));
     CHECK(in.language == QStringLiteral("java"));
     CHECK(in.teamNumber == 1234);
     CHECK(in.hasGradleWrapper);
@@ -67,7 +67,7 @@ TEST_CASE("inspector warns about a missing wrapper and an unreadable season") {
 TEST_CASE("kotlin build scripts and sub-folders resolve to the project root") {
     TestProject p;
     QFile::remove(p.path() + "/build.gradle");
-    writeFile(p.path() + "/build.gradle.kts", "plugins { id(\"edu.wpi.first.GradleRIO\") version \"2027.0.0-beta-1\" }\n");
+    writeFile(p.path() + "/build.gradle.kts", "plugins { id(\"org.wpilib.GradleRIO\") version \"2027.0.0-alpha-7\" }\n");
     const ProjectInspection in = GradleProjectInspector().inspect(p.path());
     CHECK(in.usable());
     CHECK(in.wpilibYear == 2027);

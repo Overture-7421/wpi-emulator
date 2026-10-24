@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -17,7 +18,8 @@
 #include <dlfcn.h>
 #endif
 
-#include <ntcore_c.h>
+#include "wpiemu/hal_abi/hal_time.h"
+#include "wpiemu/hal_abi/nt_includes.h"
 
 #include "wpiemu/bridges/vision/nt_binding.h"
 
@@ -115,7 +117,8 @@ struct NtApi {
     decltype(&NT_SetRaw) setRaw = nullptr;
 };
 
-using HalGetFpgaTimeFn = std::uint64_t (*)(std::int32_t* status);
+using hal_abi::HalTimeFn;
+using hal_abi::kNativeTimePerUs;
 
 WPI_String toWpiString(std::string_view s) { return WPI_String{s.data(), s.size()}; }
 
@@ -188,16 +191,17 @@ public:
         if (!available()) return 0;
         if (halFpgaTime_ == nullptr) attachHal();
         if (halFpgaTime_ != nullptr) {
-            std::int32_t status = 0;
-            const std::uint64_t t = halFpgaTime_(&status);
-            if (status == 0) return static_cast<std::int64_t>(t);
+            std::int64_t us = 0;
+            if (hal_abi::halTimeUs(halFpgaTime_, &us)) return us;
         }
-        return api_.now();
+        return api_.now() / kNativeTimePerUs;
     }
 
     sdk::Status publish(std::string_view path, const NtValue& value, std::int64_t timestampUs,
                         std::string_view typeString) override {
         if (!available()) return sdk::makeError(sdk::ErrorCode::InvalidState, "ntcore is not loaded");
+        if (timestampUs > std::numeric_limits<std::int64_t>::max() / kNativeTimePerUs)
+            return sdk::makeError(sdk::ErrorCode::InvalidArgument, "vision timestamp exceeds the ntcore time range");
         const NT_Type type = typeOf(value);
         const std::string key(path);
 
@@ -222,7 +226,7 @@ public:
         }
 
         // 0 means "now" to ntcore; the robot time base starts at 0.
-        const std::int64_t ts = timestampUs > 0 ? timestampUs : 1;
+        const std::int64_t ts = timestampUs > 0 ? timestampUs * kNativeTimePerUs : 1;
         const NT_Handle h = it->second.handle;
         bool ok = false;
         switch (value.index()) {
@@ -334,7 +338,7 @@ private:
     void attachHal() {
         // wpiHal is loaded before the extension runs (HAL_Initialize loads it); never load it from here.
         if (hal_.open(options_.halModule, false)) {
-            halFpgaTime_ = reinterpret_cast<HalGetFpgaTimeFn>(hal_.symbol("HAL_GetFPGATime"));
+            halFpgaTime_ = reinterpret_cast<HalTimeFn>(hal_.symbol(hal_abi::kHalTimeSymbol));
         }
     }
 
@@ -345,7 +349,7 @@ private:
     NT_Inst inst_ = 0;
     bool bound_ = false;
     bool failed_ = false;
-    HalGetFpgaTimeFn halFpgaTime_ = nullptr;
+    HalTimeFn halFpgaTime_ = nullptr;
     std::map<std::string, Pub> pubs_;
     std::map<std::string, NT_Entry> entries_;
 };

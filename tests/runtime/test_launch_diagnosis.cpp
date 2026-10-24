@@ -39,11 +39,28 @@ TEST_CASE("launch diagnosis: network failures and unknown output") {
     CHECK(!diagnoseLaunchOutput("").any());
 }
 
+TEST_CASE("launch diagnosis: emulator extension native loader failures, not other extensions or retry noise") {
+    const std::string attempt = "HAL Extensions: Attempting to load: halsim_wpiemu\n";
+    for (const char* error : {"error #127", "libhalsim_wpiemu.so: undefined symbol: HAL_GetPort",
+                              "dlopen(libhalsim_wpiemu.dylib): Symbol not found: _HAL_GetPort"}) {
+        const auto problem = diagnoseLaunchOutput(attempt + "HAL Extensions: Failed to load library: " + error + "\n");
+        CHECK(problem.code == LaunchProblemCode::ExtensionLoadFailed);
+        CHECK(problem.detail.find(error) != std::string::npos);
+    }
+    CHECK(diagnoseLaunchOutput(attempt + "HAL Extensions: Failed to load extension\n").code == LaunchProblemCode::ExtensionLoadFailed);
+    CHECK_FALSE(diagnoseLaunchOutput(attempt + "HAL Extensions: Load failed: not found\nTrying modified name: libhalsim_wpiemu.so\n"
+                                              "HAL Extensions: Successfully loaded extension\n").any());
+    CHECK_FALSE(diagnoseLaunchOutput(attempt + "HAL Extensions: Successfully loaded extension\n"
+                                              "HAL Extensions: Attempting to load: other_extension\n"
+                                              "HAL Extensions: Failed to load library: error #127\n").any());
+}
+
 TEST_CASE("launch diagnosis: the stale runtime wins over generic noise and ids round-trip") {
     const LaunchProblem p = diagnoseLaunchOutput("Could not GET 'x'\nInvalid MSVC Runtime Detected.\nExpected at least 14.40, but found 14.36\n");
     CHECK(p.code == LaunchProblemCode::StaleVcRuntime);
     for (const LaunchProblemCode c : {LaunchProblemCode::StaleVcRuntime, LaunchProblemCode::JavaUnsupportedByGradle, LaunchProblemCode::JavaHomeInvalid,
-                                      LaunchProblemCode::DownloadFailed, LaunchProblemCode::GradleWrapperBroken, LaunchProblemCode::NoNativeToolchain})
+                                      LaunchProblemCode::DownloadFailed, LaunchProblemCode::GradleWrapperBroken, LaunchProblemCode::NoNativeToolchain,
+                                      LaunchProblemCode::ExtensionLoadFailed})
         CHECK(launchProblemFromId(launchProblemId(c)) == c);
     CHECK(launchProblemFromId("nonsense") == LaunchProblemCode::None);
 }

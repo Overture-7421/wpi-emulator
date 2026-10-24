@@ -23,7 +23,6 @@ permissions:
   contents: read
 
 env:
-  WPILIB_VERSION: "2026.2.1"
   QT_QPA_PLATFORM: offscreen    # every Qt test / smoke run is headless
 
 jobs:
@@ -39,7 +38,7 @@ jobs:
         run: |
           # macos-14 (Xcode 15, arm64) matches release.yml. macos-latest is macOS 26 whose SDK no longer ships the AGL
           # framework that Qt 6.8.3 links against ("ld: framework 'AGL' not found").
-          all='[{"name":"windows","os":"windows-2022","preset":"windows-vs2022","qt_arch":"win64_msvc2022_64"},
+          all='[{"name":"windows","os":"windows-2025-vs2026","preset":"windows-vs2022","qt_arch":"win64_msvc2022_64"},
                 {"name":"linux","os":"ubuntu-latest","preset":"linux","qt_arch":""},
                 {"name":"macos","os":"macos-14","preset":"macos","qt_arch":""}]'
           matrix="$(echo "$all" | jq -c --arg p "$PLATFORMS" \
@@ -67,11 +66,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-0 \
+          sudo apt-get install -y g++-14 ninja-build libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-0 \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
             libxcb-xinerama0 libegl1 libvulkan-dev \
             libx11-dev libxext-dev libxrandr-dev libxi-dev libxcursor-dev libxfixes-dev libxss-dev \
             libudev-dev libasound2-dev
+          echo "CC=gcc-14" >> "$GITHUB_ENV"
+          echo "CXX=g++-14" >> "$GITHUB_ENV"
 
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
@@ -81,7 +82,7 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
-            python tools/check_wpilib_configure.py --generator "Visual Studio 17 2022" --architecture x64
+            python tools/check_wpilib_configure.py --generator "Visual Studio 18 2026" --architecture x64
           else
             python tools/check_wpilib_configure.py --generator Ninja
           fi
@@ -98,17 +99,23 @@ jobs:
       - name: Cache WPILib downloads
         uses: actions/cache@v4
         with:
-          path: build/${{ matrix.preset }}/_wpilib/downloads
-          key: wpilib-${{ env.WPILIB_VERSION }}-${{ matrix.name }}
+          path: |
+            build/${{ matrix.preset }}/_wpilib/downloads
+            build/${{ matrix.preset }}/seasons/*/_wpilib/downloads
+          key: wpilib-multi-${{ hashFiles('seasons/*/season.json') }}-${{ matrix.name }}
 
       - name: Configure
         shell: bash
         run: |
           extra=()
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            extra+=(-G "Visual Studio 18 2026" -A x64)
+          fi
           if [ "$RUNNER_OS" = "macOS" ] && [ "${{ inputs.macos_universal }}" = "true" ]; then
             extra+=(-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64")
           fi
-          cmake --preset ${{ matrix.preset }} -DWPIEMU_WPILIB_DOWNLOAD=ON -DWPIEMU_RUNVIEW_FETCH_SDL2=ON "${extra[@]}"
+          cmake --preset ${{ matrix.preset }} -DWPIEMU_WPILIB_DOWNLOAD=ON -DWPIEMU_RUNVIEW_FETCH_SDL2=ON \
+            -DWPIEMU_SEASONS=all -DWPIEMU_REQUIRE_REAL_HAL=ON -DWPIEMU_WARNINGS_AS_ERRORS=ON "${extra[@]}"
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}-release
@@ -123,12 +130,12 @@ jobs:
           cmake --install build/${{ matrix.preset }} --config Release --prefix "$PWD/stage"
           if [ "$RUNNER_OS" = "macOS" ]; then
             stage/wpiemu_app.app/Contents/MacOS/wpiemu_app --version
-            test -f stage/wpiemu_app.app/Contents/PlugIns/wpiemu/libhalsim_wpiemu.dylib
+            python tools/seasons.py extensions --layout macos | while read -r f; do test -f "stage/$f"; done
           elif [ "$RUNNER_OS" = "Windows" ]; then
             stage/bin/wpiemu_app.exe --version
-            test -f stage/extensions/halsim_wpiemu.dll
+            python tools/seasons.py extensions --layout windows | while read -r f; do test -f "stage/$f"; done
             test -f stage/plugins/platforms/qwindows.dll
           else
             stage/bin/wpiemu_app --version
-            test -f stage/lib/wpiemu/libhalsim_wpiemu.so
+            python tools/seasons.py extensions --layout linux | while read -r f; do test -f "stage/$f"; done
           fi

@@ -6,6 +6,17 @@
 #include "hal_test_rig.h"
 
 using namespace hal_test;
+
+TEST_CASE("PWM: collected signal indices remain those announced when the controller disappears") {
+    Rig rig;
+    rig.api->pwmHal.init[0] = true;
+    rig.api->pwmHal.spd[0] = 0.25;
+    rig.api->pwmHal.pulse[0] = 1750;
+    rig.poll();
+    const auto id = rig.find("pwm", 0).value();
+    rig.api->pwmHal.normalizedSpeed = false;
+    CHECK(rig.output(id, "pulseMicroseconds").value() == 1750);
+}
 using sdk::Capability;
 namespace sig = wpiemu::sdk::signal;
 

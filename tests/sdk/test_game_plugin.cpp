@@ -15,7 +15,7 @@ using namespace wpiemu::sdk;
 
 namespace wpiemu::tests::dummy_plugin {
 
-// A complete (if useless) year plugin registered with the same macro plugins/_template uses.
+// A complete (if useless) year plugin registered with the same macro seasons/_template/game uses.
 class DummyModule final : public IGameModule {
 public:
     GameMetadata metadata() const override {

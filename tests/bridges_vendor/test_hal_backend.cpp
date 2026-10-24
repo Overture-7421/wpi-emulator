@@ -16,10 +16,10 @@
 #include <thread>
 #include <vector>
 
-#include "hal/Types.h"
-#include "hal/Value.h"
-#include "hal/SimDevice.h"
-#include "hal/simulation/SimDeviceData.h"
+#include "wpiemu/hal_abi/sim_device_includes.h"
+constexpr auto kSimInput = wpiemu::hal_abi::kSimValueInput;
+constexpr auto kSimOutput = wpiemu::hal_abi::kSimValueOutput;
+constexpr auto kSimBidir = wpiemu::hal_abi::kSimValueBidir;
 #include "fakes.h"
 #include "wpiemu/bridges/vendor/ctre_rules.h"
 #include "wpiemu/bridges/vendor/hal_sim_device_backend.h"
@@ -194,11 +194,11 @@ TEST_CASE("vendor HAL binding: devices, directions, types and conversions") {
     CHECK(rig.hal.valueCreated.size() == 1);  // watching this device for values created later
 
     const auto genBeforeValue = backend->generation();
-    const HAL_SimValueHandle volts = rig.hal.createValue(motor, "motorVoltage", HAL_SimValueOutput, HAL_MakeDouble(0.0));
+    const HAL_SimValueHandle volts = rig.hal.createValue(motor, "motorVoltage", kSimOutput, HAL_MakeDouble(0.0));
     CHECK(backend->generation() != genBeforeValue);  // a late value wakes the consumer up
-    const HAL_SimValueHandle supply = rig.hal.createValue(motor, "supplyVoltage", HAL_SimValueInput, HAL_MakeDouble(12.0));
-    const HAL_SimValueHandle flag = rig.hal.createValue(motor, "flag", HAL_SimValueBidir, HAL_MakeBoolean(0));
-    const HAL_SimValueHandle count = rig.hal.createValue(motor, "count", HAL_SimValueInput, HAL_MakeInt(3));
+    const HAL_SimValueHandle supply = rig.hal.createValue(motor, "supplyVoltage", kSimInput, HAL_MakeDouble(12.0));
+    const HAL_SimValueHandle flag = rig.hal.createValue(motor, "flag", kSimBidir, HAL_MakeBoolean(0));
+    const HAL_SimValueHandle count = rig.hal.createValue(motor, "count", kSimInput, HAL_MakeInt(3));
 
     std::vector<wpiemu::sdk::SimValueInfo> values;
     backend->listValues(devices[0].handle, values);
@@ -246,7 +246,7 @@ TEST_CASE("vendor HAL binding: stale handles are harmless") {
     auto backend = makeHalSimDeviceBackend(std::make_shared<FakeHalResolver>());
     REQUIRE(backend != nullptr);
     const HAL_SimDeviceHandle d = rig.hal.createDevice("CANMotor:Talon FX (v6)[1]");
-    const HAL_SimValueHandle v = rig.hal.createValue(d, "motorVoltage", HAL_SimValueOutput, HAL_MakeDouble(3.0));
+    const HAL_SimValueHandle v = rig.hal.createValue(d, "motorVoltage", kSimOutput, HAL_MakeDouble(3.0));
     std::vector<wpiemu::sdk::SimDeviceInfo> devices;
     backend->listDevices(devices);
     rig.hal.freeDevice(d);
@@ -267,10 +267,10 @@ TEST_CASE("vendor HAL binding: end to end with the Phoenix 6 table") {
     REQUIRE(backend != nullptr);
 
     const HAL_SimDeviceHandle motor = rig.hal.createDevice("CANMotor:Talon FX (v6)[4]");
-    rig.hal.createValue(motor, "supplyVoltage", HAL_SimValueInput, HAL_MakeDouble(12.0));
-    rig.hal.createValue(motor, "motorVoltage", HAL_SimValueOutput, HAL_MakeDouble(6.0));
+    rig.hal.createValue(motor, "supplyVoltage", kSimInput, HAL_MakeDouble(12.0));
+    rig.hal.createValue(motor, "motorVoltage", kSimOutput, HAL_MakeDouble(6.0));
     const HAL_SimDeviceHandle rotor = rig.hal.createDevice("CANEncoder:Talon FX (v6)[4]/Rotor Sensor");
-    const HAL_SimValueHandle vel = rig.hal.createValue(rotor, "velocity", HAL_SimValueInput, HAL_MakeDouble(0.0));
+    const HAL_SimValueHandle vel = rig.hal.createValue(rotor, "velocity", kSimInput, HAL_MakeDouble(0.0));
 
     VendorSimBridgeOptions options;
     options.guard = ctre::phoenix6GuardOptions();
@@ -315,14 +315,14 @@ TEST_CASE("vendor HAL binding: polling while another thread constructs devices i
             const HAL_SimDeviceHandle motor = rig.hal.createDevice("CANMotor:" + base);
             std::this_thread::yield();
             for (const char* n : {"supplyVoltage", "dutyCycle", "motorVoltage", "torqueCurrent", "supplyCurrent"}) {
-                rig.hal.createValue(motor, n, std::string_view(n) == "supplyVoltage" ? HAL_SimValueInput : HAL_SimValueOutput,
+                rig.hal.createValue(motor, n, std::string_view(n) == "supplyVoltage" ? kSimInput : kSimOutput,
                                     HAL_MakeDouble(0.0));
                 std::this_thread::yield();
             }
             const HAL_SimDeviceHandle rotor = rig.hal.createDevice("CANEncoder:" + base + "/Rotor Sensor");
             std::this_thread::yield();
             for (const char* n : {"position", "rawPositionInput", "velocity", "acceleration"}) {
-                rig.hal.createValue(rotor, n, std::string_view(n) == "position" ? HAL_SimValueOutput : HAL_SimValueInput,
+                rig.hal.createValue(rotor, n, std::string_view(n) == "position" ? kSimOutput : kSimInput,
                                     HAL_MakeDouble(0.0));
                 std::this_thread::yield();
             }

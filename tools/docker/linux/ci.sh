@@ -28,7 +28,9 @@ install_smoke() {
     rm -rf /build/stage
     cmake --install "$BUILD" --config Release --prefix /build/stage
     /build/stage/bin/wpiemu_app --version
-    test -f /build/stage/lib/wpiemu/libhalsim_wpiemu.so
+    year="$(sed -n 's/^WPIEMU_WPILIB_SEASON:STRING=//p' "$BUILD/CMakeCache.txt")"
+    [[ "$year" =~ ^20[0-9]{2}$ ]]
+    test -f "/build/stage/lib/wpiemu/$year/libhalsim_wpiemu.so"
 }
 appimage() {
     BUILD_DIR="$BUILD" OUT_DIR="$BUILD/pkg" SKIP_BUILD=1 bash "$SRC/packaging/linux/build-appimage.sh"

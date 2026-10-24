@@ -46,6 +46,9 @@ class ReleaseToolsTests(unittest.TestCase):
         contents.mkdir(parents=True, exist_ok=True)
         with (contents / "Info.plist").open("wb") as stream:
             plistlib.dump({"LSMinimumSystemVersion": "13.0"}, stream)
+        extension = contents / "PlugIns" / "wpiemu" / "2026" / "libhalsim_wpiemu.dylib"
+        extension.parent.mkdir(parents=True, exist_ok=True)
+        extension.touch()
         with patch.object(sys, "argv", ["check_minimum_os.py", str(bundle)]):
             with patch.object(MINIMUM_OS.subprocess, "check_output", return_value=output) as command:
                 with contextlib.redirect_stdout(io.StringIO()):

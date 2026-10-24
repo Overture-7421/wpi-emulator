@@ -1,18 +1,13 @@
 #include <algorithm>
-#include <array>
 #include <atomic>
-#include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
-#include <limits>
 #include <string>
+#include <utility>
+#include <vector>
 
-#include "hal/HAL.h"
-#include "hal/simulation/DriverStationData.h"
-#include "hal/simulation/MockHooks.h"
-#include "hal/simulation/NotifierData.h"
-#include "hal/simulation/RoboRioData.h"
+#include "hal_platform_abi.h"
+#include "wpiemu/hal_abi/hal_includes.h"
 #include "wpiemu/halsim_ext/hal_sim_platform.h"
 #include "wpiemu/halsim_ext/os_process.h"
 
@@ -34,8 +29,8 @@ public:
     void resumeTiming() override { HALSIM_ResumeTiming(); }
     bool isTimingPaused() const override { return HALSIM_IsTimingPaused() != 0; }
     bool programStarted() const override { return HALSIM_GetProgramStarted() != 0; }
-    bool schedulerArmed() const override { return HALSIM_GetNextNotifierTimeout() != std::numeric_limits<std::uint64_t>::max(); }
-    void stepTiming(std::uint64_t deltaUs) override { HALSIM_StepTiming(deltaUs); }
+    bool schedulerArmed() const override { return abi::schedulerArmed(); }
+    void stepTiming(std::uint64_t deltaUs) override { abi::stepTiming(deltaUs); }
     std::uint64_t robotLoopCount() const override { return loops_.load(std::memory_order_relaxed); }
 
 private:
@@ -48,82 +43,43 @@ private:
 // ---- driver station ---------------------------------------------------------------------------------------
 class HalSimPlatform::DriverStation final : public IDriverStationSink {
 public:
+    DriverStation() : lastJoysticks_(abi::maxJoysticks()), lastValid_(abi::maxJoysticks(), false) {}
+
     void apply(const proto::DsState& s) override {
         HALSIM_SetDriverStationDsAttached(s.dsAttached);
         HALSIM_SetDriverStationFmsAttached(s.fmsAttached);
         HALSIM_SetDriverStationEStop(s.eStop);
-        HALSIM_SetDriverStationAutonomous(s.mode == proto::RobotMode::Autonomous);
-        HALSIM_SetDriverStationTest(s.mode == proto::RobotMode::Test);
-        HALSIM_SetDriverStationAllianceStationId(allianceStation(s.station));
+        abi::setRobotMode(s.mode);
+        abi::setAllianceStation(s.station);
         HALSIM_SetDriverStationMatchTime(s.matchTimeS);
         if (!gameMessageValid_ || s.gameSpecificMessage != gameMessage_) {
             gameMessage_ = s.gameSpecificMessage;
             gameMessageValid_ = true;
-            const WPI_String message = wpi::make_string(gameMessage_);
-            HALSIM_SetGameSpecificMessage(&message);
+            abi::setGameMessage(gameMessage_);
         }
-        for (std::size_t i = 0; i < s.joysticks.size() && i < HAL_kMaxJoysticks; ++i) applyJoystick(static_cast<int>(i), s.joysticks[i]);
+        for (std::size_t i = 0; i < s.joysticks.size() && i < lastJoysticks_.size(); ++i) applyJoystick(i, s.joysticks[i]);
         // The enable bit goes last so the robot never sees "enabled" with a half-updated mode.
         HALSIM_SetDriverStationEnabled(s.enabled && !s.eStop && s.dsAttached);
         HALSIM_NotifyDriverStationNewData();
     }
 
 private:
-    static HAL_AllianceStationID allianceStation(proto::AllianceStation station) {
-        switch (station) {
-            case proto::AllianceStation::Red1: return HAL_AllianceStationID_kRed1;
-            case proto::AllianceStation::Red2: return HAL_AllianceStationID_kRed2;
-            case proto::AllianceStation::Red3: return HAL_AllianceStationID_kRed3;
-            case proto::AllianceStation::Blue1: return HAL_AllianceStationID_kBlue1;
-            case proto::AllianceStation::Blue2: return HAL_AllianceStationID_kBlue2;
-            case proto::AllianceStation::Blue3: return HAL_AllianceStationID_kBlue3;
-        }
-        return HAL_AllianceStationID_kUnknown;
-    }
-
     static bool sameJoystick(const proto::JoystickState& a, const proto::JoystickState& b) {
         return a.present == b.present && a.axes == b.axes && a.povs == b.povs && a.buttons == b.buttons &&
                a.buttonCount == b.buttonCount;
     }
 
-    void applyJoystick(int index, const proto::JoystickState& j) {
-        proto::JoystickState& last = lastJoysticks_[static_cast<std::size_t>(index)];
-        if (lastValid_[static_cast<std::size_t>(index)] && sameJoystick(last, j)) return;
-        last = j;
-        lastValid_[static_cast<std::size_t>(index)] = true;
-
-        HAL_JoystickAxes axes{};
-        HAL_JoystickPOVs povs{};
-        HAL_JoystickButtons buttons{};
-        HAL_JoystickDescriptor descriptor{};
-        if (j.present) {
-            axes.count = static_cast<std::int16_t>(std::min<std::size_t>(j.axes.size(), HAL_kMaxJoystickAxes));
-            for (int a = 0; a < axes.count; ++a) {
-                const float v = std::clamp(j.axes[static_cast<std::size_t>(a)], -1.0f, 1.0f);
-                axes.axes[a] = v;
-                axes.raw[a] = static_cast<std::uint8_t>(std::lround((v + 1.0f) * 127.5f));
-            }
-            povs.count = static_cast<std::int16_t>(std::min<std::size_t>(j.povs.size(), HAL_kMaxJoystickPOVs));
-            for (int p = 0; p < povs.count; ++p) povs.povs[p] = j.povs[static_cast<std::size_t>(p)];
-            buttons.count = static_cast<std::uint8_t>(std::min<int>(j.buttonCount, 32));
-            buttons.buttons = j.buttons;
-            descriptor.isXbox = 1;
-            descriptor.type = 21;  // kHIDGamepad
-            std::snprintf(descriptor.name, sizeof(descriptor.name), "WPI Emulator gamepad %d", index);
-            descriptor.axisCount = static_cast<std::uint8_t>(axes.count);
-            descriptor.buttonCount = buttons.count;
-            descriptor.povCount = static_cast<std::uint8_t>(povs.count);
-        }
-        HALSIM_SetJoystickDescriptor(index, &descriptor);
-        HALSIM_SetJoystickAxes(index, &axes);
-        HALSIM_SetJoystickPOVs(index, &povs);
-        HALSIM_SetJoystickButtons(index, &buttons);
+    void applyJoystick(std::size_t index, const proto::JoystickState& j) {
+        if (lastValid_[index] && sameJoystick(lastJoysticks_[index], j)) return;
+        lastJoysticks_[index] = j;
+        lastValid_[index] = true;
+        abi::setJoystick(static_cast<int>(index), j);
     }
 
     std::string gameMessage_;
     bool gameMessageValid_ = false;
-    std::array<proto::JoystickState, HAL_kMaxJoysticks> lastJoysticks_{};
-    std::array<bool, HAL_kMaxJoysticks> lastValid_{};
+    std::vector<proto::JoystickState> lastJoysticks_;
+    std::vector<bool> lastValid_;
 };
 
 // ---- roboRIO power ------------------------------------------------------------------------------------------
@@ -131,7 +87,7 @@ class HalSimPlatform::Power final : public IRobotPowerSink {
 public:
     void setBattery(double volts, double amps) override {
         HALSIM_SetRoboRioVInVoltage(volts);
-        HALSIM_SetRoboRioVInCurrent(amps);
+        abi::setBatteryCurrent(amps);
     }
 };
 
@@ -156,8 +112,9 @@ RobotInfo HalSimPlatform::describeRobot(const ExtensionConfig& config) {
         {"pwm", HAL_GetNumPWMChannels()},
         {"dio", HAL_GetNumDigitalChannels()},
         {"analog_in", HAL_GetNumAnalogInputs()},
-        {"analog_out", HAL_GetNumAnalogOutputs()},
-        {"relay", HAL_GetNumRelayHeaders()},
+    };
+    for (auto& family : abi::extraPortCounts()) info.halPortCounts.push_back(std::move(family));
+    const std::vector<std::pair<std::string, std::int32_t>> shared{
         {"encoder", HAL_GetNumEncoders()},
         {"counter", HAL_GetNumCounters()},
         {"duty_cycle", HAL_GetNumDutyCycles()},
@@ -167,6 +124,7 @@ RobotInfo HalSimPlatform::describeRobot(const ExtensionConfig& config) {
         {"rev_pdh", HAL_GetNumREVPDHModules()},
         {"addressable_led", HAL_GetNumAddressableLEDs()},
     };
+    info.halPortCounts.insert(info.halPortCounts.end(), shared.begin(), shared.end());
     return info;
 }
 

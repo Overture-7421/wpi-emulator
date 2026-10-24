@@ -1,0 +1,21 @@
+{
+  "year": 2026,
+  "channel": "stable",
+  "default": true,
+  "wpilib": {
+    "version": "2026.2.1",
+    "verified": ["2026.2.1"],
+    "installFolder": "2026"
+  },
+  "platform": { "abi": "roborio", "launch": "gradlerio-classic" },
+  "toolchain": { "javaMajor": 17 },
+  "vendors": {
+    "photonvision": {
+      "schema": "photon-us",
+      "defaultVersion": "v2026.3.4",
+      "verified": ["2025.3.2", "2026.1.1", "2026.2.1", "2026.2.2", "2026.3.1", "2026.3.2", "2026.3.3", "2026.3.4", "2026.7"]
+    }
+  },
+  "game": { "plugin": "game_2026" },
+  "samples": ["samples/swerve_robot/java", "samples/vision_robot/java", "samples/vision_robot/cpp"]
+}

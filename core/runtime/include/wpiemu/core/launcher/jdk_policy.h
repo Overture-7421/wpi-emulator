@@ -18,8 +18,8 @@ inline constexpr std::string_view kMinVcRuntime = "14.40";   // WPIUtilJNI.check
 int compareVersions(std::string_view a, std::string_view b);
 
 // The newest Java the given Gradle version can run on (https://docs.gradle.org/current/userguide/compatibility.html).
-// Empty/unparseable -> the Gradle of the WPILib 2026 template (8.11); newer than the table -> its last row.
-int maxJavaForGradle(std::string_view gradleVersion);
+// Empty/unparseable -> the template Gradle for `seasonJavaMajor`; newer than the table -> its last row.
+int maxJavaForGradle(std::string_view gradleVersion, int seasonJavaMajor = kMinJdkMajor);
 
 // `java -version` text -> major version (8, 11, 17, 21...); nullopt when unparseable.
 std::optional<int> parseJavaMajor(std::string_view versionOutput);

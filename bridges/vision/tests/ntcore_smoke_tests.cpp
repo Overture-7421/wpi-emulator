@@ -4,12 +4,14 @@
 
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
-#include <ntcore_c.h>
-
 #include "wpiemu/bridges/vision/nt_binding.h"
+#include "wpiemu/hal_abi/hal_includes.h"
+#include "wpiemu/hal_abi/hal_time.h"
+#include "wpiemu/hal_abi/nt_includes.h"
 #include "wpiemu/bridges/vision/photon_encoding.h"
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/vision/vision_bridge.h"
@@ -18,6 +20,8 @@ namespace vis = wpiemu::bridges::vision;
 namespace sdk = wpiemu::sdk;
 
 namespace {
+
+using wpiemu::hal_abi::kNativeTimePerUs;
 
 WPI_String str(const std::string& s) { return WPI_String{s.data(), s.size()}; }
 
@@ -87,13 +91,31 @@ void robotWriteDouble(const std::string& path, double value) {
 }  // namespace
 
 TEST_CASE("vision ntcore binding: attaches to the loaded ntcore and reports the robot time base") {
-    auto backend = vis::makeNtcoreBackend();
+    vis::NtcoreBackendOptions options;
+    options.halModule = "wpiemu_no_such_hal";
+    auto backend = vis::makeNtcoreBackend(options);
     REQUIRE(backend->available());
     // No HAL in this process: the time base is NT_Now().
-    const std::int64_t before = NT_Now();
+    const std::int64_t before = NT_Now() / kNativeTimePerUs;
     const std::int64_t now = backend->nowUs();
     CHECK(now >= before);
     CHECK(now - before < 5'000'000);
+}
+
+TEST_CASE("vision ntcore binding: HAL time and NT publication convert the HAL's native unit to microseconds at the boundary") {
+    const bool paused = HALSIM_IsTimingPaused();
+    HALSIM_PauseTiming();
+    auto backend = vis::makeNtcoreBackend();
+    REQUIRE(backend->available());
+    const auto before = backend->nowUs();
+    HALSIM_StepTiming(40'000 * kNativeTimePerUs);
+    CHECK(backend->nowUs() - before == 40'000);
+    REQUIRE(backend->publish("/wpiemu_test/clock", vis::ntDouble(2.0), before + 40'000).ok());
+    CHECK(readDirect("/wpiemu_test/clock").time == (before + 40'000) * kNativeTimePerUs);
+    if (kNativeTimePerUs > 1)   // a nanosecond clock cannot represent the largest microsecond value
+        CHECK_FALSE(backend->publish("/wpiemu_test/overflow", vis::ntDouble(2.0),
+                                     std::numeric_limits<std::int64_t>::max()).ok());
+    if (!paused) HALSIM_ResumeTiming();
 }
 
 TEST_CASE("vision ntcore binding: a missing ntcore module is unavailable and never fatal") {
@@ -114,12 +136,12 @@ TEST_CASE("vision ntcore binding: doubles keep their explicit timestamps") {
     const Direct d = readDirect("/wpiemu_test/double");
     CHECK(d.type == NT_DOUBLE);
     CHECK(d.d == 1.5);
-    CHECK(d.time == 123'456);
+    CHECK(d.time == 123'456 * kNativeTimePerUs);
     CHECK(d.typeString == "double");
 
     // The same value again is still a new sample with the new timestamp.
     REQUIRE(backend->publish("/wpiemu_test/double", vis::ntDouble(1.5), 223'456).ok());
-    CHECK(readDirect("/wpiemu_test/double").time == 223'456);
+    CHECK(readDirect("/wpiemu_test/double").time == 223'456 * kNativeTimePerUs);
     CHECK(vis::ntAsDouble(backend->read("/wpiemu_test/double")).value_or(-1) == 1.5);
 }
 
@@ -127,12 +149,12 @@ TEST_CASE("vision ntcore binding: raw topics carry their type string and bytes")
     auto backend = vis::makeNtcoreBackend();
     REQUIRE(backend->available());
     const vis::NtBytes bytes = {1, 2, 3, 0, 255};
-    const std::string typeString(vis::photonPipelineResultTypeString());
+    const std::string typeString(vis::photonPipelineResultTypeString(vis::photonDefaultSchema()));
     REQUIRE(backend->publish("/wpiemu_test/raw", vis::ntRaw(bytes), 777'000, typeString).ok());
     const Direct d = readDirect("/wpiemu_test/raw");
     CHECK(d.type == NT_RAW);
     CHECK(d.raw == bytes);
-    CHECK(d.time == 777'000);
+    CHECK(d.time == 777'000 * kNativeTimePerUs);
     CHECK(d.typeString == typeString);
     REQUIRE(backend->setTopicProperty("/wpiemu_test/raw", "message_uuid", "\"abc\"").ok());
     CHECK(topicProperty("/wpiemu_test/raw", "message_uuid") == "\"abc\"");
@@ -227,8 +249,9 @@ TEST_CASE("vision ntcore binding: the limelight and photonvision bridges publish
     CHECK(readDirect("/limelight-smoke/tx").d == 4.0);
     const Direct raw = readDirect("/photonvision/smoke/rawBytes");
     CHECK(raw.type == NT_RAW);
-    CHECK(raw.typeString == vis::photonPipelineResultTypeString());
-    CHECK(topicProperty("/photonvision/smoke/rawBytes", "message_uuid") == "\"4b2ff16a964b5e2bf04be0c1454d91c4\"");
+    CHECK(raw.typeString == vis::photonPipelineResultTypeString(vis::photonDefaultSchema()));
+    CHECK(topicProperty("/photonvision/smoke/rawBytes", "message_uuid") ==
+          "\"" + std::string(vis::photonPipelineResultUuid(vis::photonDefaultSchema())) + "\"");
     CHECK(raw.raw.size() == 32 + 1 + 294 + 1);  // one target with two four-corner lists, no multitag
     CHECK(readDirect("/photonvision/smoke/heartbeat").type == NT_INTEGER);
 

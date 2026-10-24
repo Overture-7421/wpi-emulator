@@ -54,10 +54,10 @@ std::string detectLanguage(const fs::path& dir, const std::string& configured) {
 }
 
 // The JDK Gradle runs with: the first of launcher::kJdkSources that is present. Empty means `java` on PATH.
-fs::path pickJdkHome(const Options& options, int wpilibYear) {
+fs::path pickJdkHome(const Options& options, int wpilibYear, std::string_view installFolder) {
     std::optional<launcher::WpilibInstall> install;
     if (!options.wpilibHome.empty()) install = launcher::wpilibInstallAt(options.wpilibHome, wpilibYear);
-    else if (wpilibYear > 0) install = launcher::findWpilibInstall(wpilibYear, {});
+    else if (wpilibYear > 0) install = launcher::findWpilibInstall(wpilibYear, {}, installFolder);
     const std::optional<std::string> javaHomeEnv = sdk::readEnvironment("JAVA_HOME");
     for (const launcher::JdkSource source : launcher::kJdkSources) {
         switch (source) {
@@ -259,8 +259,19 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     if (options.extensionLibrary.empty() || !fs::exists(options.extensionLibrary, ec))
         return makeError(ErrorCode::NotFound, "The HALSim extension (" + options.extensionLibrary.string() +
                                                  ") was not found. Reinstall the emulator, build the halsim_wpiemu target, or set WPIEMU_EXTENSION_PATH.");
+    const auto projectReport = launcher::ProjectInspector(*reg.json).inspect(options.projectDir);
+    const int expectedWpilibYear = projectReport ? projectReport.value().wpilibYear : 0;
+    // The season pack of the project's year; an unknown year launches like the default season (its extension is the one tried).
+    const sdk::SeasonProfile* season = reg.seasons != nullptr ? reg.seasons->find(expectedWpilibYear) : nullptr;
+    if (season == nullptr && reg.seasons != nullptr) {
+        season = reg.seasons->defaultSeason();
+        if (expectedWpilibYear > 0 && season != nullptr)
+            log.warn("session", "WPILib " + std::to_string(expectedWpilibYear) + " has no season pack; launching like the default season " +
+                                    std::to_string(season->year));
+    }
 
     // ---- config: defaults, validation ----
+    if (expectedWpilibYear > 0) config.project.wpilibYear = expectedWpilibYear;
     auto loaded = reg.pipeline->process(std::move(config));
     if (!loaded) return makeError(loaded.error().code, "The robot configuration cannot be used: " + loaded.error().message);
     self->issues_ = loaded.value().issues;
@@ -318,8 +329,11 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     ro.discoveryOnly = options.mode == SessionMode::Armed;
     ro.awaitProgramStart = true;
     ro.preferredWatchdogMs = options.watchdogMs;
+    ro.expectedWpilibYear = expectedWpilibYear;
+    ro.allowWpilibYearMismatch = options.allowWpilibYearMismatch;
+    if (projectReport) ro.expectedWpilibVersion = projectReport.value().gradleRioVersion;
     // The inspection is read-only and optional: without it PhotonVision cameras use the extension's default version.
-    if (const auto report = launcher::ProjectInspector(*reg.json).inspect(options.projectDir)) ro.photonVersion = report.value().photonLibVersion();
+    if (projectReport) ro.photonVersion = projectReport.value().photonLibVersion();
     self->runner_ = std::make_unique<runtime::SessionRunner>(*self->session_, self->inbox_, self->slot_, log, ro);
     self->runner_->setDriverStation(options.driverStation);
     self->runner_->start();
@@ -328,12 +342,14 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     launcher::LaunchRequest req;
     req.projectDir = options.projectDir;
     req.language = detectLanguage(options.projectDir, cfg.project.language);
+    req.wpilibYear = projectReport ? projectReport.value().wpilibYear : cfg.project.wpilibYear;
+    if (season != nullptr) req.launchProfile = season->launchProfile;
     req.mode = options.launchMode;
     req.release = options.release;
     req.extensionLibrary = options.extensionLibrary;
     req.ipcEndpoint = self->endpoint_;
     req.scratchDir = options.scratchDir.empty() ? fs::temp_directory_path() / "wpiemu" : options.scratchDir;
-    req.javaHome = pickJdkHome(options, cfg.project.wpilibYear);
+    req.javaHome = pickJdkHome(options, req.wpilibYear, season != nullptr ? std::string_view(season->installFolder) : std::string_view());
     req.gradleOffline = options.gradleOffline;
     req.extraGradleArgs = options.extraGradleArgs;
     req.extraEnv[sdk::env_names::kLiveDiscovery] = options.preStartPolling ? "1" : "0";
@@ -344,7 +360,9 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     self->startedAt_ = std::chrono::steady_clock::now();
     if (Status s = self->launcher_->launch(req, *self->sink_); !s) return makeError(s.error().code, "The robot could not be launched: " + s.error().message);
     log.info("session", std::string(options.mode == SessionMode::Armed ? "launching the robot (armed)" : "starting the robot") + " (" + req.language + ", " +
-                            (req.mode == launcher::LaunchMode::GradleInitScript ? "gradle simulate task" : "simulateExternal direct launch") + ")");
+                            (req.mode == launcher::LaunchMode::GradleInitScript ? std::string("gradle ") + launcher::gradleTaskName(req)
+                                                                               : std::string("simulateExternal direct launch")) +
+                            ")");
     self->status_.process = ProcessState::Starting;
     self->status_.link = LinkState::Connecting;
     self->status_.detail = "Building and starting the robot project...";
@@ -395,8 +413,13 @@ SessionStatus RobotSession::status() {
     }
 
     if (const std::string refusal = runner_->refusal(); !refusal.empty()) {
+        const bool protocolMismatch = refusal.find("protocol version") != std::string::npos;
         fail(ProcessState::FailedToStart, LinkState::ProtocolMismatch,
-             "The HALSim extension speaks an incompatible protocol (" + refusal + "). Rebuild or reinstall the emulator so the app and halsim_wpiemu match.");
+             protocolMismatch
+                 ? "The HALSim extension speaks an incompatible protocol (" + refusal + "). Rebuild or reinstall the emulator so the app and halsim_wpiemu match."
+                 : "The HALSim extension was refused (" + refusal +
+                       "). Install the extension built for this project or explicitly override WPIEMU_EXTENSION.");
+        if (refusal.starts_with("WPILib year ")) s.problem = "season_mismatch";
         return s;
     }
 
@@ -448,7 +471,7 @@ SessionStatus RobotSession::status() {
         fail(ProcessState::FailedToStart, LinkState::HandshakeTimeout,
              "The robot project is running but the HALSim extension did not connect within " +
                  std::to_string(std::chrono::duration_cast<std::chrono::seconds>(options_.handshakeTimeout).count()) +
-                 " s. Check the console for errors (extension not loaded, antivirus, or a blocked named pipe).");
+                 " s. Check the console for errors (extension not loaded, antivirus, or a blocked named pipe)." + outputTail());
         return s;
     }
     s.process = ProcessState::Starting;

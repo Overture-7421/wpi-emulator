@@ -94,6 +94,21 @@ scripts. The selected JDK is passed to Gradle so the project's `gradle.propertie
 override it. The wizard's Java result and the launch must agree; if no candidate works, do
 not start Gradle.
 
+The live GradleRIO version selects the [season pack](seasons.md), and with it the HAL extension, launch
+profile, Java and default game module, rather than the saved setup's year. Extensions are installed in
+year-qualified directories. Known handshake year mismatches are refused; an explicit `WPIEMU_EXTENSION`
+permits them with a warning. A missing matching extension is `no_extension_for_season` in the Toolchain
+report. A project year with no pack warns and tries the default season; an unverified WPILib version of a
+known season warns and continues.
+
+Core names Gradle behavior by launch profile (`LaunchProfile`, chosen by the pack's `platform.launch`),
+never by year. `gradlerio-classic` runs `simulateJava` and a fat jar; `gradlerio-modern` runs the project's
+`run` task (JavaExec) and `simulateExternalJava`, launching from a classpath descriptor
+(`{classpath[], mainClassName, jvmArgs[]}`). The generated init script also covers the `org.wpilib`
+native simulation task package. The season pack also supplies the Java major and the WPILib install
+folder, searched under Windows public WPILib, Linux XDG data (`~/.local/share` by default), and macOS
+`~/.wpilib`; a newer `<year>_*` folder is found even when the pack does not name it yet.
+
 The host requests protocol Stop before cleanup. Cancellation stays active through startup
 and escalates to terminating the process tree after its grace period. Shutdown joins the
 worker and cleans up the process tree.

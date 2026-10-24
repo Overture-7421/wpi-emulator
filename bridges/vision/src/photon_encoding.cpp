@@ -3,14 +3,17 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <limits>
 
 #include "wpiemu/sdk/core/byte_order.h"
+#include "wpiemu/sdk/season/season_profile.h"
 
 namespace wpiemu::bridges::vision {
 
 namespace {
 
-constexpr std::string_view kTypeString = "photonstruct:PhotonPipelineResult:4b2ff16a964b5e2bf04be0c1454d91c4";
+constexpr std::string_view kTypeStringMicroseconds = "photonstruct:PhotonPipelineResult:4b2ff16a964b5e2bf04be0c1454d91c4";
+constexpr std::string_view kTypeStringNanoseconds = "photonstruct:PhotonPipelineResult:fd353b11f3a818e9c5b457c7dc5a8f5c";
 
 // Little-endian packet writer matching org.photonvision.common.dataflow.structures.Packet.
 using PacketWriter = sdk::LittleEndianWriter<std::uint8_t>;
@@ -53,24 +56,46 @@ void writeTarget(PacketWriter& w, const PhotonTarget& t) {
 
 }  // namespace
 
-bool isVerifiedPhotonVersion(std::string_view version) {
-    if (!version.empty() && version.front() == 'v') version.remove_prefix(1);
-    static constexpr std::array<std::string_view, 9> kVerified = {
-        "2025.3.2", "2026.1.1", "2026.2.1", "2026.2.2", "2026.3.1", "2026.3.2", "2026.3.3", "2026.3.4", "2026.7"};
-    return std::find(kVerified.begin(), kVerified.end(), version) != kVerified.end();
+std::string_view photonSchemaName(PhotonSchema schema) { return schema == PhotonSchema::Nanoseconds ? "photon-ns" : "photon-us"; }
+
+namespace {
+
+const PhotonVersionRule* ruleFor(std::string_view version) {
+    if (version.empty()) return nullptr;
+    for (const PhotonVersionRule& rule : photonVersionRules())
+        if (sdk::versionMatches(rule.version, version)) return &rule;
+    return nullptr;
 }
 
-std::string_view photonPipelineResultTypeString() { return kTypeString; }
+}  // namespace
 
-std::string_view photonPipelineResultUuid() { return kTypeString.substr(kTypeString.rfind(':') + 1); }
+bool isVerifiedPhotonVersion(std::string_view version) { return ruleFor(version) != nullptr; }
 
-std::vector<std::uint8_t> encodePhotonPipelineResult(const PhotonResult& r) {
+PhotonSchema photonSchemaForVersion(std::string_view version) {
+    const PhotonVersionRule* rule = ruleFor(version);
+    return rule != nullptr ? rule->schema : photonDefaultSchema();
+}
+
+std::string_view photonPipelineResultTypeString(PhotonSchema schema) {
+    return schema == PhotonSchema::Nanoseconds ? kTypeStringNanoseconds : kTypeStringMicroseconds;
+}
+std::string_view photonPipelineResultUuid(PhotonSchema schema) {
+    const auto type = photonPipelineResultTypeString(schema);
+    return type.substr(type.rfind(':') + 1);
+}
+
+sdk::Result<std::vector<std::uint8_t>> encodePhotonPipelineResult(const PhotonResult& r, PhotonSchema schema) {
+    const std::int64_t scale = schema == PhotonSchema::Nanoseconds ? 1000 : 1;
+    for (auto time : {r.captureTimestampMicros, r.publishTimestampMicros, r.timeSinceLastPongMicros})
+        if (time > std::numeric_limits<std::int64_t>::max() / scale ||
+            time < std::numeric_limits<std::int64_t>::min() / scale)
+            return sdk::makeError(sdk::ErrorCode::InvalidArgument, "PhotonVision timestamp exceeds the wire time range");
     std::vector<std::uint8_t> out;
     PacketWriter w(out);
     w.i64(r.sequenceId);
-    w.i64(r.captureTimestampMicros);
-    w.i64(r.publishTimestampMicros);
-    w.i64(r.timeSinceLastPongMicros);
+    w.i64(r.captureTimestampMicros * scale);
+    w.i64(r.publishTimestampMicros * scale);
+    w.i64(r.timeSinceLastPongMicros * scale);
 
     const std::size_t n = std::min(r.targets.size(), kMaxListLen);
     w.u8(static_cast<std::uint8_t>(n));

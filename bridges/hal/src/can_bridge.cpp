@@ -1,5 +1,6 @@
 #include "can_bridge.h"
 
+#include <algorithm>
 #include <array>
 #include <string_view>
 
@@ -21,7 +22,7 @@ constexpr std::array<std::string_view, 14> kDeviceTypes{
     "broadcast", "robot_controller", "motor_controller", "relay_controller", "gyro", "accelerometer", "distance_sensor",
     "encoder", "power_distribution", "pneumatics", "miscellaneous", "io_breakout", "servo_controller", "color_sensor"};
 
-constexpr std::size_t kSignalCount = 5;
+constexpr std::size_t kSignalCount = 20;
 }  // namespace
 
 std::string canManufacturerName(int manufacturer) {
@@ -55,7 +56,7 @@ void CanFrameBridge::onFrame(const CanFrame& frame) {
     const CanArbitrationId id = CanArbitrationId::decode(frame.arbitrationId);
     if (id.deviceType == 0 && id.manufacturer == 0) return;  // broadcast message, not a device
 
-    const Key key{id.manufacturer, id.deviceType, id.deviceId};
+    const Key key{frame.busId, id.manufacturer, id.deviceType, id.deviceId};
     std::uint32_t low = 0;
     std::uint32_t high = 0;
     for (std::size_t i = 0; i < 8 && i < frame.size; ++i) {
@@ -76,6 +77,10 @@ void CanFrameBridge::onFrame(const CanFrame& frame) {
     s.lastPeriodMs = frame.periodMs;
     s.lastLow = low;
     s.lastHigh = high;
+    s.lastSize = static_cast<std::uint8_t>(std::min<std::size_t>(frame.size, frame.data.size()));
+    s.lastRemaining.fill(0);
+    for (std::size_t i = 8; i < s.lastSize; ++i)
+        s.lastRemaining[i / 4 - 2] |= static_cast<std::uint32_t>(frame.data[i]) << (8 * (i % 4));
 }
 
 void CanFrameBridge::poll() {
@@ -86,18 +91,22 @@ void CanFrameBridge::poll() {
         pending.swap(pending_);
     }
     for (const Key& key : pending) {
-        const auto [mfr, devType, devId] = key;
+        const auto [bus, mfr, devType, devId] = key;
         const std::string type = "can_" + canManufacturerName(mfr) + "_" + canDeviceTypeName(devType);
-        const sdk::DeviceDescriptor d = makeDescriptor(
+        sdk::DeviceDescriptor d = makeDescriptor(
             type, devId, -1, sdk::CapabilitySet{},
             "HALSIM CAN " + std::to_string(mfr) + ":" + std::to_string(devType) + ":" + std::to_string(devId),
             "CAN " + canManufacturerName(mfr) + " " + canDeviceTypeName(devType) + " " + std::to_string(devId));
-        const sdk::DeviceId id = host_->announce(
-            d, {sig("frameCount", SignalDirection::Output, SignalType::Int),
+        d.bus = bus == 0 ? "rio" : "can" + std::to_string(bus);
+        std::vector<sdk::SignalSpec> specs{sig("frameCount", SignalDirection::Output, SignalType::Int),
                 sig("lastApiId", SignalDirection::Output, SignalType::Int),
                 sig("lastPeriodMs", SignalDirection::Output, SignalType::Int, "ms"),
                 sig("lastDataLow", SignalDirection::Output, SignalType::Int),
-                sig("lastDataHigh", SignalDirection::Output, SignalType::Int)});
+                sig("lastDataHigh", SignalDirection::Output, SignalType::Int),
+                sig("lastDataSize", SignalDirection::Output, SignalType::Int)};
+        for (int word = 2; word < 16; ++word)
+            specs.push_back(sig(("lastDataWord" + std::to_string(word)).c_str(), SignalDirection::Output, SignalType::Int));
+        const sdk::DeviceId id = host_->announce(d, specs);
         std::lock_guard lock(mutex_);
         State& s = devices_[key];
         s.id = id;
@@ -110,9 +119,11 @@ void CanFrameBridge::collectOutputs(std::vector<sdk::SignalSample>& out) {
     for (const auto& entry : devices_) {
         const State& s = entry.second;
         if (!s.announced) continue;
-        const std::array<double, kSignalCount> values{static_cast<double>(s.frameCount), static_cast<double>(s.lastApi),
+        std::array<double, kSignalCount> values{static_cast<double>(s.frameCount), static_cast<double>(s.lastApi),
                                                      static_cast<double>(s.lastPeriodMs), static_cast<double>(s.lastLow),
                                                      static_cast<double>(s.lastHigh)};
+        values[5] = s.lastSize;
+        for (std::size_t i = 0; i < s.lastRemaining.size(); ++i) values[i + 6] = s.lastRemaining[i];
         for (std::size_t i = 0; i < values.size(); ++i) out.push_back({s.id, static_cast<std::uint16_t>(i), values[i]});
     }
 }

@@ -18,6 +18,8 @@ enum LedSignal : std::size_t { kRunning, kLength, kOutputPort, kAvgR, kAvgG, kAv
 
 sdk::Status AddressableLedBridge::start(sdk::IBridgeHost& host) {
     summaries_.assign(static_cast<std::size_t>(channelCount()), Summary{});
+    hasOutputPort_ = hal_->hasOutputPort();
+    hasRunning_ = hal_->hasRunning();
     return ChannelFamilyBridge::start(host);
 }
 
@@ -51,7 +53,7 @@ sdk::DeviceDescriptor AddressableLedBridge::describe(int index) const {
 }
 
 std::vector<sdk::SignalSpec> AddressableLedBridge::signalsOf(int) const {
-    return {
+    std::vector<sdk::SignalSpec> result{
         sig("running", SignalDirection::Output, SignalType::Bool),
         sig("length", SignalDirection::Output, SignalType::Int, "leds"),
         sig("outputPort", SignalDirection::Output, SignalType::Int),
@@ -60,10 +62,15 @@ std::vector<sdk::SignalSpec> AddressableLedBridge::signalsOf(int) const {
         sig("avgBlue", SignalDirection::Output, SignalType::Double, "0-255"),
         sig("firstPixelRgb", SignalDirection::Output, SignalType::Int, "0xRRGGBB"),
     };
+    if (!hasOutputPort_) result.erase(result.begin() + kOutputPort);
+    if (!hasRunning_) result.erase(result.begin() + kRunning);
+    return result;
 }
 
 double AddressableLedBridge::readSignal(int index, std::size_t signalIndex) const {
     const Summary& s = summaries_[static_cast<std::size_t>(index)];
+    if (!hasRunning_) ++signalIndex;
+    if (!hasOutputPort_ && signalIndex >= kOutputPort) ++signalIndex;
     switch (signalIndex) {
         case kRunning: return fromBool(hal_->running(index));
         case kLength: return hal_->length(index);

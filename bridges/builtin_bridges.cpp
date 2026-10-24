@@ -1,4 +1,4 @@
-// The bridges/ aggregation seam (mirrors plugins/builtin_plugins.cpp): the ONLY translation unit that
+// The bridges/ aggregation seam (mirrors seasons/builtin_plugins.cpp): the ONLY translation unit that
 // knows every built-in device-bridge module. Declared in sdk/devices/builtin_bridges.h so the HALSim
 // extension can call it without including or linking any bridges/<x> module.
 //

@@ -15,9 +15,10 @@
 
 namespace wpiemu::bridges::vision {
 
-struct PhotonCam : sdk::CameraState {
+struct PhotonCam : sdk::CameraBridgeState {
     std::int64_t pipelineIndex = 0;
     bool driverMode = false;
+    bool enabled = true;
     std::int64_t fpsLimit = -1;
     std::int64_t sequence = 0;  // for synthetic (empty) results
 };
@@ -29,15 +30,16 @@ struct PhotonCam : sdk::CameraState {
 // driverMode, fpsLimit, heartbeat, cameraIntrinsics (3x3 row-major), cameraDistortion (8 zeros) and the legacy
 // scalar topics (hasTarget, latencyMillis, fps, targetYaw/Pitch/Area/Skew, targetPixelsX/Y).
 // Mirrored from the robot: pipelineIndexRequest -> pipelineIndexState, driverModeRequest -> driverMode,
-// fpsLimitRequest -> fpsLimit, ledModeRequest -> ledModeState. In driver mode empty results are published.
+// fpsLimitRequest -> fpsLimit, ledModeRequest -> ledModeState; the nanosecond schema also mirrors enabledRequest -> enabled.
+// Driver mode and disabled cameras of that schema publish empty results.
 //
 // Timestamps: results are stamped with backend.nowUs() (publish time); the metadata carries
 // publish = nowUs and capture = nowUs - (publishTimeUs - captureTimeUs), which is exactly what PhotonLib
-// uses to derive the capture time in the robot's time base.
+// uses to derive the capture time in the robot's time base. The nanosecond schema converts metadata to nanoseconds.
 //
 // Versions: the type string embeds the message-definition hash, which the robot's PhotonLib compares and
-// throws on mismatch. Only versions whose definitions were verified are served; for any other
-// VisionSetup::photonVersion an error is logged once and no PhotonVision camera is published.
+// throws on mismatch. A verified VisionSetup::photonVersion selects its schema (photon_encoding.h); any other version
+// logs a warning once and is served with this build's default schema.
 class PhotonBridge final : public detail::NtVisionBridgeBase<PhotonBridge, PhotonCam> {
 public:
     using Cam = PhotonCam;
@@ -50,7 +52,6 @@ public:
 private:
     friend class detail::NtVisionBridgeBase<PhotonBridge, PhotonCam>;
 
-    bool isEnabled() const { return enabled_; }
     void onInitializeCamera(Cam& cam, std::int64_t ntNow);
     void onPollCamera(Cam& cam, sdk::SimTimeUs simTimeUs, std::int64_t ntNow);
     void onPollBridge(std::int64_t ntNow);
@@ -58,7 +59,6 @@ private:
     void publishFrame(Cam& cam, const sdk::CameraFrame* frame, std::int64_t ntNow);
 
     std::string version_;
-    bool enabled_ = true;
     std::string warnedVersion_;
     bool rootInitialized_ = false;
     std::int64_t ledMode_ = -1;
