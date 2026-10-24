@@ -125,6 +125,7 @@ private:
         std::optional<std::uint32_t> torqueCommandSignal;
         int controlMode = -1;  // last ControlModeValue read, -1 = never
         bool controlModeUnavailable = false;
+        bool torqueFrameUnknownLogged = false;
         // TalonFX only: the motorFamily input this bridge announces, the firmware-sim motor type the plant asked
         // for through it, and the one last written (see applyMotorTypes).
         std::optional<std::uint32_t> motorFamilySignal;

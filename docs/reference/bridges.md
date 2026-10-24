@@ -116,6 +116,15 @@ against its own motor (`MotorOutput::hasTorqueCurrent`). The mode is read throug
 read-only native seam below; without it, or for a `Follower` whose leader is unknown,
 the voltage path is kept and said once at debug level.
 
+One frame detail decides the sign. The firmware mirrors `motorVoltage` and `dutyCycle`
+into the SimDevice in the rotor frame, so an inverted motor asked for +2 V reads −2 V,
+while it mirrors `torqueCurrent` in the mechanism frame, unflipped (measured against
+Phoenix 26.3.0 with both inversions). Every slot's `Reversed` flag was chosen against the
+rotor frame, so the bridge flips the current of a clockwise-positive motor, taking the
+inversion from the config read-back, before the hub applies that flag. Until a device's
+configuration has been read its frame is unknown and the voltage path is used; without
+config read-back at all the FOC modes stay on the voltage path and say so once.
+
 The firmware sim also has to know which motor is attached. Left alone it models a
 Kraken X60 for every TalonFX, and its current limits, its published motor constants
 (`MotorKV`, `MotorKT`, `MotorStallCurrent`) and the voltage it derives in the FOC modes

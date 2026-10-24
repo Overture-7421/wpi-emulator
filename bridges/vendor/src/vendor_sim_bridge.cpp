@@ -140,10 +140,11 @@ void VendorSimDeviceBridge::poll() {
 void VendorSimDeviceBridge::collectOutputs(std::vector<sdk::SignalSample>& out) {
     const std::size_t first = out.size();
     inner_.collectOutputs(out);
-    // Everything below enters CTRE's native sim; collectOutputs is only called while the robot is quiescent.
+    // Everything below enters CTRE's native sim; collectOutputs is only called while the robot is quiescent. The
+    // config comes first so a torque command can be framed on the same tick its device's inversion is read.
     applyMotorTypes();
-    appendTorqueCommands(out, first);
     readOneConfig();
+    appendTorqueCommands(out, first);
 }
 
 // The firmware sim models a Kraken X60 for every TalonFX unless told otherwise, so its current limits, its
@@ -225,11 +226,26 @@ void VendorSimDeviceBridge::appendTorqueCommands(std::vector<sdk::SignalSample>&
         }
         double command = 0.0;
         if (ctreControlModeRegulatesCurrent(a.controlMode)) {
-            for (std::size_t i = out.size(); i-- > first;) {
-                if (out[i].device == id && out[i].signal == *a.torqueReportedSignal) {
-                    command = out[i].value;
-                    break;
+            // The firmware mirrors motorVoltage and dutyCycle in the ROTOR frame (an inverted motor's +2 V reads
+            // -2 V) but torqueCurrent in the mechanism frame, unflipped (measured against Phoenix 26.3.0, see
+            // docs/reference/bridges.md). Every slot's Reversed flag was set against the rotor frame, so the
+            // current is flipped for a clockwise-positive motor before it joins that path. Until the device's
+            // configuration has been read the frame is unknown and the voltage path is kept.
+            const auto config = configs_.find(id);
+            const std::optional<bool> clockwise =
+                config == configs_.end() ? std::nullopt : config->second.clockwisePositive();
+            if (clockwise) {
+                for (std::size_t i = out.size(); i-- > first;) {
+                    if (out[i].device == id && out[i].signal == *a.torqueReportedSignal) {
+                        command = *clockwise ? -out[i].value : out[i].value;
+                        break;
+                    }
                 }
+            } else if (!a.torqueFrameUnknownLogged && (config != configs_.end() || a.configDone)) {
+                a.torqueFrameUnknownLogged = true;
+                host_->logger().debug(kCategory, a.descriptor.key().toString() +
+                                                     ": inversion unknown without config read-back; FOC requests are "
+                                                     "applied as voltage");
             }
         }
         out.push_back({id, static_cast<std::uint16_t>(*a.torqueCommandSignal), command});

@@ -501,6 +501,7 @@ TEST_CASE("vendor bridge: FOC control modes hand the plant the firmware's torque
     auto native = std::make_shared<FakeNative>();
     native->signalApi = true;
     native->controlMode = vendor::control_mode::kPositionVoltageFOC;
+    native->text = "1901,s_0\n1918,s_1065353216\n";  // not inverted: the current keeps its sign
     auto options = BridgeRig::defaultOptions();
     options.nativeProvider = [native] { return native; };
     BridgeRig rig(options);
@@ -554,6 +555,50 @@ TEST_CASE("vendor bridge: FOC control modes hand the plant the firmware's torque
     out.clear();
     rig.bridge->collectOutputs(out);
     CHECK(sampleOf(out, rig.host, id, sg::kTorqueCurrent) == doctest::Approx(40.0));
+}
+
+TEST_CASE("vendor bridge: an inverted motor's torque current is flipped into the rotor frame the voltage uses") {
+    // Phoenix mirrors motorVoltage in the rotor frame but torqueCurrent in the mechanism frame: for a
+    // clockwise-positive motor asked for +V the SimDevice reads -V and +I. The plant's Reversed flag was set
+    // against the voltage, so the command must be -I.
+    auto native = std::make_shared<FakeNative>();
+    native->signalApi = true;
+    native->controlMode = vendor::control_mode::kPositionVoltageFOC;
+    native->text = "1901,s_1\n1918,s_1065353216\n";  // Inverted = Clockwise_Positive
+    auto options = BridgeRig::defaultOptions();
+    options.nativeProvider = [native] { return native; };
+    BridgeRig rig(options);
+    const auto t = addTalonFx(*rig.backend, 4);
+    rig.start();
+    rig.bridge->poll();
+    const DeviceId id = rig.host.idOf("talonfx", 4);
+    rig.backend->poke(t.motor, "motorVoltage", -1.86);  // rotor frame
+    rig.backend->poke(t.motor, "torqueCurrent", 74.9);  // mechanism frame
+    std::vector<SignalSample> out;
+    rig.bridge->collectOutputs(out);  // reads the config, then frames the command on the same tick
+    CHECK(sampleOf(out, rig.host, id, sg::kMotorVoltage) == doctest::Approx(-1.86));
+    CHECK(sampleOf(out, rig.host, id, ctre::vsignal::kTorqueCurrentReported) == doctest::Approx(74.9));  // telemetry untouched
+    CHECK(sampleOf(out, rig.host, id, sg::kTorqueCurrent) == doctest::Approx(-74.9));
+
+    // No config read-back at all: the frame is unknown, the voltage path is kept and said once.
+    auto blind = std::make_shared<FakeNative>();
+    blind->signalApi = true;
+    blind->configApi = false;
+    blind->controlMode = vendor::control_mode::kVoltageFOC;
+    auto options2 = BridgeRig::defaultOptions();
+    options2.nativeProvider = [blind] { return blind; };
+    BridgeRig rig2(options2);
+    const auto t2 = addTalonFx(*rig2.backend, 5);
+    rig2.start();
+    rig2.bridge->poll();
+    const DeviceId id2 = rig2.host.idOf("talonfx", 5);
+    rig2.backend->poke(t2.motor, "torqueCurrent", 50.0);
+    for (int i = 0; i < 3; ++i) {
+        out.clear();
+        rig2.bridge->collectOutputs(out);
+        CHECK(sampleOf(out, rig2.host, id2, sg::kTorqueCurrent) == 0.0);
+    }
+    CHECK(rig2.host.log.count(LogLevel::Debug) >= 1);
 }
 
 TEST_CASE("vendor bridge: without the signal API every request stays on the voltage path, said once") {
