@@ -108,7 +108,7 @@ DevicePanel::DevicePanel(EditorController& controller, DetectedDevicesModel& mod
         model_.refresh();
         updateState();
     });
-    connect(&controller_, &EditorController::deviceToast, this, [this](const QString&, const QString&) {});
+    connect(&controller_, &EditorController::deviceToast, this, [](const QString&, const QString&) {});
     connect(table_->selectionModel(), &QItemSelectionModel::currentRowChanged, this, [this](const QModelIndex& current) {
         if (syncing_) return;
         if (const auto* d = model_.deviceAt(current)) controller_.selection().set(SelectionRef::device(d->descriptor.physicalId().toString()));
