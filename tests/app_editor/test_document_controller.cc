@@ -372,18 +372,6 @@ TEST_CASE("controller: clicking an issue selects its target and asks the inspect
 
 // ---- item models -----------------------------------------------------------------------------------
 
-namespace {
-QModelIndex findRow(const QAbstractItemModel& m, const QString& text, const QModelIndex& parent = {}) {
-    for (int r = 0; r < m.rowCount(parent); ++r) {
-        const QModelIndex i = m.index(r, 0, parent);
-        if (m.data(i).toString() == text) return i;
-        const QModelIndex deeper = findRow(m, text, i);
-        if (deeper.isValid()) return deeper;
-    }
-    return {};
-}
-}  // namespace
-
 TEST_CASE("project tree: structure, slot rows and selection lookup") {
     DocFixture f;
     DeviceDirectory devices;

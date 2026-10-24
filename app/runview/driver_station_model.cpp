@@ -8,10 +8,6 @@
 #include "wpiemu/sdk/game/sound_cue.h"
 
 namespace wpiemu::app::runview {
-namespace {
-constexpr ui::Tr tr{"DriverStation"};
-}  // namespace
-
 void MatchTimer::begin(std::vector<MatchSegment> segments) {
     segments_ = std::move(segments);
     crossed_.clear();

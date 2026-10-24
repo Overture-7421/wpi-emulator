@@ -289,7 +289,6 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
     // ---- latency: Limelight reports tl+cl, PhotonLib derives the result age from capture/publish timestamps -------
     for (const Fields& f : got.limelight)
         if (flag(f, "tv")) CHECK(num(f, "latencyMs") == doctest::Approx(kLatencyMs).epsilon(0.05));
-    int agesChecked = 0;
     // The age of the NEWEST result: the latency plus up to one frame spacing (30 fps) and one robot period. The C++ PhotonLib
     // was observed to report results about one more NT cycle later than the Java one, hence the wider C++ allowance.
     const double photonAgeSlackMs = language == "cpp" ? 85.0 : 1000.0 / 30.0 + 22.0;
@@ -299,7 +298,6 @@ TEST_CASE("e2e: vision sample - Limelight and PhotonVision cameras see tags, wit
         // The age of the NEWEST result: the latency plus up to one frame spacing (30 fps) and one 20 ms robot period.
         CHECK(age >= kLatencyMs - 1.0);
         CHECK(age <= kLatencyMs + photonAgeSlackMs);
-        ++agesChecked;
     }
 
     // ---- pose accuracy while the robot is at rest: the vision estimates equal the ground truth --------------------

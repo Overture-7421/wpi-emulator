@@ -181,9 +181,8 @@ Result<std::string> readTextFile(const fs::path& file) {
 
 // ---- FileConfigStore -----------------------------------------------------------------------------------
 
-FileConfigStore::FileConfigStore(fs::path file, std::string label, const IValueTextCodec& text, const RobotConfigCodec& codec,
-                                 ILogger* logger)
-    : file_(std::move(file)), label_(std::move(label)), text_(text), codec_(codec), logger_(logger) {}
+FileConfigStore::FileConfigStore(fs::path file, std::string label, const IValueTextCodec& text, const RobotConfigCodec& codec)
+    : file_(std::move(file)), label_(std::move(label)), text_(text), codec_(codec) {}
 
 bool FileConfigStore::exists() const {
     std::error_code ec;
@@ -220,11 +219,11 @@ Status FileConfigStore::save(const RobotConfig& config) {
 // ---- ProjectConfigRepository ---------------------------------------------------------------------------
 
 FileConfigStore ProjectConfigRepository::projectStore(const fs::path& projectDir) const {
-    return FileConfigStore(projectConfigPath(projectDir), "robot setup", text_, codec_, logger_);
+    return FileConfigStore(projectConfigPath(projectDir), "robot setup", text_, codec_);
 }
 
 FileConfigStore ProjectConfigRepository::legacyAppDataStore(const fs::path& projectDir) const {
-    return FileConfigStore(appDataConfigPath(root_, projectDir), "app data robot setup", text_, codec_, logger_);
+    return FileConfigStore(appDataConfigPath(root_, projectDir), "app data robot setup", text_, codec_);
 }
 
 Result<RobotConfig> ProjectConfigRepository::open(const fs::path& projectDir, ConfigSource* usedSource) const {

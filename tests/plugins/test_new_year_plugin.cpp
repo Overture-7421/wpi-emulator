@@ -90,7 +90,7 @@ public:
         info.type = "game_2998.counter";
         info.displayName = "Counter";
         info.origin = "game_2998";
-        info.slotSpecs.push_back({"motor", "Motor", SlotType::Motor, false, ""});
+        info.slotSpecs.push_back({"motor", "Motor", SlotType::Motor, false, "", "", 0});
         return f.registerTemplate(std::move(info), [](const MechanismBuildContext& c) { return std::make_unique<CounterMechanism>(c); });
     }
     Result<std::unique_ptr<IField>> createField(IPhysicsWorld& w) override {

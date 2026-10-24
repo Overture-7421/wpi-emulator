@@ -51,8 +51,7 @@ sdk::Result<std::string> readTextFile(const std::filesystem::path& file);  // No
 // One robot.json on disk. load(): NotFound when absent; a file with another schemaVersion is refused (no migration).
 class FileConfigStore final : public sdk::IRobotConfigStore {
 public:
-    FileConfigStore(std::filesystem::path file, std::string label, const sdk::IValueTextCodec& text, const RobotConfigCodec& codec,
-                    sdk::ILogger* logger = nullptr);
+    FileConfigStore(std::filesystem::path file, std::string label, const sdk::IValueTextCodec& text, const RobotConfigCodec& codec);
 
     std::string describe() const override { return label_ + " (" + file_.string() + ")"; }
     sdk::Result<sdk::RobotConfig> load() override;
@@ -69,7 +68,6 @@ private:
     std::string label_;
     const sdk::IValueTextCodec& text_;
     const RobotConfigCodec& codec_;
-    sdk::ILogger* logger_;
 };
 
 enum class ConfigSource { Project, MigratedFromAppData };
