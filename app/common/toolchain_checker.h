@@ -105,7 +105,7 @@ public:
     ToolchainCheck checkWpilibInstall(const ToolchainInput& input) const;
     ToolchainCheck checkCppToolchain(const ToolchainInput& input) const;
     ToolchainCheck checkGameModule(const ToolchainInput& input, ToolchainReport& report) const;
-    // Warns when the project's WPILib version is not one its season pack verified; the run continues.
+    // Warns when the project's WPILib version differs from the release the season's extension was built for; the run continues.
     ToolchainCheck checkWpilibVersion(const ToolchainInput& input) const;
 
     // Existing WPILib install folder for the season (override, then the installer's locations in core's order), else empty.

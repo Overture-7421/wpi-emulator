@@ -435,6 +435,12 @@ void SessionRunner::handleHello(const proto::Hello& hello) {
     if (seasonMismatch)
         logger_.warn("runner", "explicit HALSim extension WPILib year " + std::to_string(hello.wpilibYear) +
                                    " differs from project year " + std::to_string(options_.expectedWpilibYear));
+    // Same year, different release: the extension was built against another WPILib than the robot project uses, which can
+    // matter for the HAL it loads. Best effort, never a refusal.
+    if (!seasonMismatch && !options_.expectedWpilibVersion.empty() && !hello.wpilibVersion.empty() &&
+        hello.wpilibVersion != options_.expectedWpilibVersion)
+        logger_.warn("runner", "the robot project uses WPILib " + options_.expectedWpilibVersion + " but the HALSim extension was built for " +
+                                   hello.wpilibVersion + "; continuing on a best-effort basis (a HAL change between releases can break the run)");
     {
         std::lock_guard lock(helloMutex_);
         hello_ = hello;

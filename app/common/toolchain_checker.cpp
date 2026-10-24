@@ -394,15 +394,20 @@ ToolchainCheck ToolchainChecker::checkWpilibVersion(const ToolchainInput& input)
         check.detail = tr("The project does not declare a WPILib version the emulator knows.");
         return check;
     }
-    if (season->verifiesWpilib(input.wpilibVersion.toStdString())) {
+    const QString built = QString::fromStdString(season->wpilibVersion);
+    if (input.wpilibVersion == built) {
         check.status = CheckStatus::Ok;
         check.detail = input.wpilibVersion;
         return check;
     }
+    // Same year, different release: the HALSim extension was built against `built`, whatever the project uses.
     check.status = CheckStatus::Warning;
-    check.detail = tr("%1 has not been verified with the emulator (verified: %2). The run continues on a best-effort basis.")
-                       .arg(input.wpilibVersion, QString::fromStdString(season->wpilibVersion));
-    check.fixHint = tr("If the robot misbehaves, use the verified WPILib version or report the version you use.");
+    check.detail = season->verifiesWpilib(input.wpilibVersion.toStdString())
+        ? tr("The project uses WPILib %1, but the emulator's extension was built for %2 (this release was verified). The run continues.")
+              .arg(input.wpilibVersion, built)
+        : tr("The project uses WPILib %1, but the emulator's extension was built for %2, and this release has not been verified. "
+             "The run continues on a best-effort basis.").arg(input.wpilibVersion, built);
+    check.fixHint = tr("If the robot misbehaves, use WPILib %1 or report the version you use.").arg(built);
     return check;
 }
 

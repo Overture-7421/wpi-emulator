@@ -268,10 +268,6 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
         if (expectedWpilibYear > 0 && season != nullptr)
             log.warn("session", "WPILib " + std::to_string(expectedWpilibYear) + " has no season pack; launching like the default season " +
                                     std::to_string(season->year));
-    } else if (season != nullptr && projectReport && !projectReport.value().gradleRioVersion.empty() &&
-               !season->verifiesWpilib(projectReport.value().gradleRioVersion)) {
-        log.warn("session", "WPILib " + projectReport.value().gradleRioVersion + " has not been verified with the emulator (verified: " +
-                                season->wpilibVersion + "); continuing on a best-effort basis");
     }
 
     // ---- config: defaults, validation ----
@@ -335,6 +331,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     ro.preferredWatchdogMs = options.watchdogMs;
     ro.expectedWpilibYear = expectedWpilibYear;
     ro.allowWpilibYearMismatch = options.allowWpilibYearMismatch;
+    if (projectReport) ro.expectedWpilibVersion = projectReport.value().gradleRioVersion;
     // The inspection is read-only and optional: without it PhotonVision cameras use the extension's default version.
     if (projectReport) ro.photonVersion = projectReport.value().photonLibVersion();
     self->runner_ = std::make_unique<runtime::SessionRunner>(*self->session_, self->inbox_, self->slot_, log, ro);

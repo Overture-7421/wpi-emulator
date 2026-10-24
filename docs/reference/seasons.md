@@ -58,8 +58,8 @@ The season's manifest chooses the profile; see [Runtime](runtime.md#launcher-bou
 
 | Situation | Behavior |
 |---|---|
-| Project's WPILib version is verified for its season | Silent. |
-| Known year, unverified version | Warns (log and Toolchain row) and continues. |
+| Project's WPILib version equals the release the extension was built for (`wpilib.version`) | Silent. |
+| Same year, different release (verified or not) | Warns and continues: a Toolchain row before launch, and a run-console warning when the extension's handshake reports a different version. |
 | Unverified PhotonLib version | Warns and publishes with the season's default schema; PhotonLib's own check remains the final guard. |
 | Year has no pack | Warns and tries the default season. |
 | Extension year differs from the project year | Refused (`season_mismatch`); `WPIEMU_EXTENSION` overrides with a warning. |

@@ -456,3 +456,17 @@ TEST_CASE("runner: runs on its own thread against a robot thread, then stops cle
     rig.runner->stop();  // joins the already-finished thread
     CHECK(rig.slot.latest()->tick() > 0);
 }
+
+TEST_CASE("runner: a different release of the same WPILib year warns once and still connects") {
+    for (const bool differs : {true, false}) {
+        RunnerOptions options = Rig::fast();
+        options.expectedWpilibYear = 2026;
+        options.expectedWpilibVersion = differs ? "2026.3.0" : "2026.2.1";   // the fake extension reports <year>.2.1
+        Rig rig(options);
+        rig.connect();
+        rig.ext->hello(0, proto::kProtocolVersion, true, 2026);
+        REQUIRE(rig.run([&] { return rig.ext->helloAck.has_value() && rig.runner->ticksSent() > 0; }));
+        CHECK(rig.ext->helloAck->accepted);
+        CHECK(rig.logger.count(LogLevel::Warn) == (differs ? 1u : 0u));
+    }
+}

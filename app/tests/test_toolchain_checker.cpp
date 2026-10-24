@@ -440,7 +440,7 @@ TEST_CASE("new season: a profile on an existing ABI is enough for install discov
     wpiemu::sdk::SeasonProfile season;
     season.year = 2999;
     season.wpilibVersion = "2999.0.0-beta-1";
-    season.verifiedWpilibVersions = {season.wpilibVersion};
+    season.verifiedWpilibVersions = {"2999.0.0-beta-*"};   // another beta is verified, but still differs from the built one
     season.installFolder = "2999_beta1";
     season.halAbi = "systemcore";
     season.launchProfile = "gradlerio-modern";
@@ -457,4 +457,7 @@ TEST_CASE("new season: a profile on an existing ABI is enough for install discov
     CHECK(f.checker().run(in).find(QString::fromLatin1(check_id::kWpilibVersion)) == nullptr);
     in.wpilibVersion = QStringLiteral("2999.0.0-beta-2");
     CHECK(f.checker().run(in).find(QString::fromLatin1(check_id::kWpilibVersion))->status == CheckStatus::Warning);
+    CHECK(f.checker().checkWpilibVersion(in).detail.contains(QStringLiteral("was verified")));
+    in.wpilibVersion = QStringLiteral("2999.1.0");   // neither the built release nor a verified one
+    CHECK(f.checker().checkWpilibVersion(in).detail.contains(QStringLiteral("not been verified")));
 }

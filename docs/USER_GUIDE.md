@@ -228,9 +228,9 @@ extensions, selected from the live project's year. The Toolchain page reports a 
 season extension before launch. `WPIEMU_EXTENSION` explicitly overrides selection and
 permits a year mismatch with a warning; it does not make incompatible HAL ABIs compatible.
 2027 is preview support pinned to an alpha; it uses Java 25, Gradle 9.2 and the new native
-toolchain. A season without a game module runs core-only on an empty field. A project on an
-unverified WPILib version of a known season still runs: the Toolchain page and run console warn that it
-is best effort.
+toolchain. A season without a game module runs core-only on an empty field. A project on a different
+WPILib release of a known season than the emulator was built for still runs: the Toolchain page and run
+console warn that it is best effort.
 There is no suspension model, and field geometry and game rules are approximations.
 HAL and CTRE bridges are supplied, not universal vendor support: REV motor controllers have no
 vendor bridge, and Phoenix 5 behavior is not characterized against the real library. The
