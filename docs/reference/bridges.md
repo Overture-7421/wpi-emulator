@@ -108,7 +108,7 @@ the request to a current with **its** motor model and reports the voltage that m
 needs at the rotor speed the emulator fed it. That voltage fits only CTRE's motor;
 applied to the motor the emulator simulates, the two models disagree about back-EMF,
 and a swerve steer module ran away to free speed while its controller asked for the
-opposite sign ([ADR 0019](../decisions/0019-foc-requests-carry-torque-current.md)).
+opposite sign; the [architecture decisions](../decisions/README.md) record the reasoning.
 So the vendor bridge announces a canonical `torqueCurrent` next to the telemetry and
 fills it every tick: the firmware's torque current while the device's `ControlMode`
 status signal is an FOC mode, `0` otherwise. The plant then resolves the current
