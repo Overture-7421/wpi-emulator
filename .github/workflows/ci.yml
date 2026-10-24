@@ -39,7 +39,7 @@ jobs:
           # macos-14 (Xcode 15, arm64) matches release.yml. macos-latest is macOS 26 whose SDK no longer ships the AGL
           # framework that Qt 6.8.3 links against ("ld: framework 'AGL' not found").
           all='[{"name":"windows","os":"windows-2025-vs2026","preset":"windows-vs2022","qt_arch":"win64_msvc2022_64"},
-                {"name":"linux","os":"ubuntu-latest","preset":"linux","qt_arch":""},
+                {"name":"linux","os":"ubuntu-24.04","preset":"linux","qt_arch":""},
                 {"name":"macos","os":"macos-14","preset":"macos","qt_arch":""}]'
           matrix="$(echo "$all" | jq -c --arg p "$PLATFORMS" \
             '{include: [.[] | select(.name as $n | ($p | gsub(" "; "") | split(",") | index($n)) != null)]}')"
@@ -133,7 +133,9 @@ jobs:
             python tools/seasons.py extensions --layout macos | while read -r f; do test -f "stage/$f"; done
           elif [ "$RUNNER_OS" = "Windows" ]; then
             stage/bin/wpiemu_app.exe --version
-            python tools/seasons.py extensions --layout windows | while read -r f; do test -f "stage/$f"; done
+            python tools/seasons.py extensions --layout windows | tr -d '\r' | while IFS= read -r f; do
+              test -f "stage/$f" || { echo "::error::Missing installed extension: stage/$f"; exit 1; }
+            done
             test -f stage/plugins/platforms/qwindows.dll
           else
             stage/bin/wpiemu_app --version
