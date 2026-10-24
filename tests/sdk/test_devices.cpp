@@ -198,7 +198,7 @@ TEST_CASE("DeviceBridgeRegistry creates every registered bridge in order") {
 }
 
 TEST_CASE("slot compatibility follows device capabilities") {
-    SlotSpec motorSlot{"motor", "Motor", SlotType::Motor, true, ""};
+    SlotSpec motorSlot{"motor", "Motor", SlotType::Motor, true, "", "", 0};
     DeviceDescriptor talon;
     talon.capabilities = Capability::MotorOutput | Capability::RotorFeedback;
     DeviceDescriptor dio;

@@ -73,7 +73,7 @@ inline MechanismTemplateInfo rollerInfo() {
     info.displayName = "Roller";
     info.slotSpecs = {{"motor", "Motor", SlotType::Motor, true, "", "motorCount", 1},
                       {"motor2", "Motor 2", SlotType::Motor, false, "", "motorCount", 2},
-                      {"encoder", "Encoder", SlotType::PositionSensor, false, ""}};
+                      {"encoder", "Encoder", SlotType::PositionSensor, false, "", "", 0}};
     PropertySpec motors;
     motors.key = "motorCount";
     motors.type = PropertyType::Int;
