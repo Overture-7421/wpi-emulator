@@ -86,7 +86,7 @@ TEST_CASE("handshake: no HelloAck within the timeout fails cleanly") {
     silent.push(std::move(pair.b));
     sdk::testing::FakeEmulator mute(std::move(pair.a), rig.codec);
 
-    RuntimeDeps deps{cfg, rig.robot, HalPorts{rig.clock, rig.ds, rig.power, rig.process}, silent, rig.codec, {}, {}};
+    RuntimeDeps deps{cfg, rig.robot, HalPorts{rig.clock, rig.ds, rig.power, rig.process}, silent, rig.codec, {}, {}, {}};
     ExtensionRuntime runtime(std::move(deps));
     const sdk::Status s = runtime.start();
     REQUIRE_FALSE(s);
@@ -99,7 +99,7 @@ TEST_CASE("handshake: nobody listening fails after the connect timeout") {
     cfg.connectTimeout = 50ms;
     sdk::testing::QueuedTransportClient nobody;
     Rig rig(defaultAck(), cfg);
-    RuntimeDeps deps{cfg, rig.robot, HalPorts{rig.clock, rig.ds, rig.power, rig.process}, nobody, rig.codec, {}, {}};
+    RuntimeDeps deps{cfg, rig.robot, HalPorts{rig.clock, rig.ds, rig.power, rig.process}, nobody, rig.codec, {}, {}, {}};
     ExtensionRuntime runtime(std::move(deps));
     const sdk::Status s = runtime.start();
     REQUIRE_FALSE(s);
@@ -118,7 +118,7 @@ TEST_CASE("handshake: an emulator Goodbye instead of HelloAck aborts") {
         if (hello) emu.send(proto::Message(proto::Goodbye{"emulator is shutting down"}));
     });
     ExtensionConfig cfg = Rig::defaultConfig();
-    RuntimeDeps deps{cfg, rig.robot, HalPorts{rig.clock, rig.ds, rig.power, rig.process}, client, rig.codec, {}, {}};
+    RuntimeDeps deps{cfg, rig.robot, HalPorts{rig.clock, rig.ds, rig.power, rig.process}, client, rig.codec, {}, {}, {}};
     ExtensionRuntime runtime(std::move(deps));
     const sdk::Status s = runtime.start();
     answer.join();

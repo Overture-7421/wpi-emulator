@@ -130,7 +130,8 @@ struct RealRig {
                          client,
                          codec,
                          std::move(bridges),
-                         [](std::string_view) {}};
+                         [](std::string_view) {},
+                         {}};
         runtime = std::make_unique<ExtensionRuntime>(std::move(deps));
         return runtime->start();
     }
