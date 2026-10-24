@@ -1,7 +1,7 @@
 # 2027 season pack (preview)
 
 A platform-only season: it has an HALSim extension, launch profile, Java and vendor schemas but no game
-plugin, so projects run core-only on an empty field. The manifest ([season.json](season.json)) pins
+plugin, so projects run core-only on the generic [default field](../../docs/reference/physics.md#default-field). The manifest ([season.json](season.json)) pins
 the WPILib alpha the extension is built against and the versions verified with it; everything else the
 emulator knows about this year is read from it ([season packs](../../docs/reference/seasons.md)).
 

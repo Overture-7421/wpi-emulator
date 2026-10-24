@@ -27,7 +27,8 @@ HUD values to immutable snapshots. `onTick()` is an optional post-game hook. The
 `WPIEMU_REGISTER_GAME_PLUGIN` defines the namespaced `registerPlugin()` entry point. Built-ins are
 registered through [`seasons/builtin_plugins.cpp`](../../seasons/builtin_plugins.cpp), whose plugin must
 match the season manifest, and the app links the plugin aggregator, not individual seasons. A season
-without a plugin (`"game": null`) runs core-only. This is static registration, not a shared
+without a plugin (`"game": null`) runs core-only on the generic
+[default field](physics.md#default-field). This is static registration, not a shared
 library ABI. Selection honors `RobotConfig::gamePluginId` when present, otherwise
 `project.wpilibYear`; an unavailable plugin leaves core features available.
 
