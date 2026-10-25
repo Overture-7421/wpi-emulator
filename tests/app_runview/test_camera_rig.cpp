@@ -20,11 +20,13 @@ bool close(const sdk::Vec3& a, const sdk::Vec3& b, float epsilon = 1e-3f) {
 TEST_CASE("camera rig station views use explicit and generic field positions") {
     CameraRig rig;
     rig.setField(16.f, 8.f, {8.f, 4.f, 0.f});
+    sdk::FieldDescription generic{};
+    generic.lengthM = 16.f;
+    generic.widthM = 8.f;
     for (const sdk::Alliance alliance : {sdk::Alliance::Blue, sdk::Alliance::Red})
         for (int number = 1; number <= 3; ++number) {
             rig.showStation(alliance, number);
-            const auto expected = sdk::driverStationSpot(sdk::FieldDescription{.lengthM = 16.f, .widthM = 8.f},
-                                                         alliance, number);
+            const auto expected = sdk::driverStationSpot(generic, alliance, number);
             REQUIRE(expected);
             CHECK(close(rig.camera().position(), expected->eyeM));
         }

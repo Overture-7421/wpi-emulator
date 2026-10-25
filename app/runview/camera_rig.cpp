@@ -125,7 +125,9 @@ sdk::Vec3 CameraRig::eyePosition() const {
     if (view_.kind == CameraView::Kind::DriverPov) {
         const auto spot = field_ ? sdk::driverStationSpot(*field_, driverAlliance_, driverStation_) : std::nullopt;
         if (spot) return spot->eyeM;
-        const sdk::FieldDescription generic{.lengthM = fieldLength_, .widthM = fieldWidth_};
+        sdk::FieldDescription generic{};
+        generic.lengthM = fieldLength_;
+        generic.widthM = fieldWidth_;
         const auto fallback = sdk::driverStationSpot(generic, driverAlliance_, driverStation_);
         return fallback ? fallback->eyeM : sdk::Vec3{};
     }
@@ -133,7 +135,9 @@ sdk::Vec3 CameraRig::eyePosition() const {
         const auto spot = sdk::driverStationSpot(*field_, view_.alliance, view_.number);
         if (spot) return spot->eyeM;
     }
-    const sdk::FieldDescription generic{.lengthM = fieldLength_, .widthM = fieldWidth_};
+    sdk::FieldDescription generic{};
+    generic.lengthM = fieldLength_;
+    generic.widthM = fieldWidth_;
     const auto fallback = sdk::driverStationSpot(generic, view_.alliance, view_.number);
     return fallback ? fallback->eyeM : sdk::Vec3{};
 }
