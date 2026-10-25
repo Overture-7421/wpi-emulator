@@ -169,7 +169,7 @@ TEST_CASE("lockstep: sensor inputs reach the owning bridge, battery and driver s
 
 TEST_CASE("lockstep: a default (attached, disabled) driver station is applied when the program starts") {
     Started t;
-    REQUIRE(t.rig.ds.count() >= 1);
+    REQUIRE(waitUntil([&] { return t.rig.ds.count() >= 1; }));
     const proto::DsState first = t.rig.ds.applied.front();
     CHECK(first.dsAttached);
     CHECK_FALSE(first.enabled);
