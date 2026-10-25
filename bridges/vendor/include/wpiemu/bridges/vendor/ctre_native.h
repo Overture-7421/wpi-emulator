@@ -21,6 +21,7 @@
 #include "wpiemu/bridges/vendor/symbol_resolver.h"
 #include "wpiemu/sdk/core/interface.h"
 #include "wpiemu/sdk/core/result.h"
+#include "wpiemu/sdk/dynamics/motor_model.h"
 
 namespace wpiemu::bridges::vendor {
 
@@ -47,6 +48,19 @@ std::optional<CtreDeviceType> ctreDeviceTypeFromDescriptorType(std::string_view 
 constexpr int kCtreSimDeviceNotFound = 1200;
 constexpr int kCtreSimPhysicsTypeNotSupported = 1201;
 constexpr int kCtreNativeUnavailable = -1;  // our own code: symbol/module absent
+
+// TalonFXSimState::SetMotorType, as the firmware sim takes it: the physics input `MotorType` with these values
+// (sim/TalonFXSimState.hpp, 26.3.0). Without it the firmware sim models a Kraken X60 for every TalonFX, whatever
+// is on the robot, and publishes that motor's constants (MotorKV, MotorKT, MotorStallCurrent).
+inline constexpr const char* kPhysicsMotorType = "MotorType";
+namespace sim_motor_type {
+inline constexpr int kKrakenX60 = 0;
+inline constexpr int kKrakenX44 = 1;
+}  // namespace sim_motor_type
+
+// The firmware sim's motor type for the motor the plant simulates; nullopt when the sim cannot represent it
+// (a Falcon 500 or a Minion stays on the firmware's default) or the family is unknown.
+std::optional<int> ctreSimMotorTypeFor(sdk::MotorFamily family);
 
 // SPN ids used by the config read-back (ctre/phoenix6/spns/SpnValue.hpp, verified against 26.3.0).
 namespace spn {

@@ -200,6 +200,9 @@ void DeviceHub::writeMotorFeedback(const SlotAddress& slot, const MotorFeedback&
     setInput(*i, signal::kRotorAcceleration, s * f.rotorAccelerationRps2);
     if (f.forwardLimit) setInput(*i, signal::kForwardLimit, *f.forwardLimit ? 1.0 : 0.0);
     if (f.reverseLimit) setInput(*i, signal::kReverseLimit, *f.reverseLimit ? 1.0 : 0.0);
+    // Only devices that announce the input receive it; a value that did not change is not resent.
+    if (f.motorFamily != MotorFamily::Unknown)
+        setInput(*i, signal::kMotorFamily, static_cast<double>(static_cast<int>(f.motorFamily)));
 }
 
 void DeviceHub::writeEncoder(const SlotAddress& slot, const EncoderFeedback& f) {

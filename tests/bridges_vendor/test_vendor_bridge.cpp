@@ -19,7 +19,7 @@ namespace {
 class FakeNative final : public vendor::ICtreSimNative {
 public:
     bool hasConfigReadback() const override { return configApi; }
-    bool hasPhysicsApi() const override { return false; }
+    bool hasPhysicsApi() const override { return physicsApi; }
     Result<std::string> readConfigs(vendor::CtreDeviceType type, int id, std::string_view bus) const override {
         ++reads;
         lastBus = std::string(bus);
@@ -29,9 +29,20 @@ public:
         return text;
     }
     int getPhysicsValue(vendor::CtreDeviceType, int, const char*, double*) const override { return -1; }
-    int setPhysicsInput(vendor::CtreDeviceType, int, const char*, double) override { return -1; }
+    int setPhysicsInput(vendor::CtreDeviceType, int id, const char* key, double value) override {
+        physicsWrites.push_back({id, key, value});
+        return physicsStatus;
+    }
 
+    struct PhysicsWrite {
+        int id;
+        std::string key;
+        double value;
+    };
     bool configApi = true;
+    bool physicsApi = false;
+    int physicsStatus = 0;
+    std::vector<PhysicsWrite> physicsWrites;
     std::string text = "1901,s_1\n1918,s_1070945649\n1919,s_1065353216\n1920,s_1\n1921,s_7\n";
     std::optional<ErrorCode> failWith;
     mutable int reads = 0;
@@ -292,6 +303,65 @@ TEST_CASE("vendor bridge: missing CANcoder calibration warns and leaves raw feed
     rig.bridge->applyInputs(
         std::vector<SignalSample>{{id, rig.host.signalIndex(id, sg::kPosition), 0.2}});
     CHECK(rig.backend->get(cc, "rawPositionInput") == doctest::Approx(0.2));
+}
+
+TEST_CASE("vendor bridge: the firmware sim is told which motor the plant simulates") {
+    auto native = std::make_shared<FakeNative>();
+    native->physicsApi = true;
+    auto options = BridgeRig::defaultOptions();
+    options.nativeProvider = [native] { return native; };
+    BridgeRig rig(options);
+    addTalonFx(*rig.backend, 3);
+    addTalonFx(*rig.backend, 4);
+    addTalonFx(*rig.backend, 5);
+    rig.start();
+    rig.bridge->poll();
+    const auto send = [&](int id, wpiemu::sdk::MotorFamily family) {
+        const auto dev = rig.host.idOf("talonfx", id);
+        REQUIRE(dev.valid());
+        REQUIRE(rig.host.signalSpec(dev, sg::kMotorFamily) != nullptr);
+        rig.bridge->applyInputs(std::vector<SignalSample>{
+            {dev, rig.host.signalIndex(dev, sg::kMotorFamily), static_cast<double>(static_cast<int>(family))}});
+    };
+    std::vector<SignalSample> out;
+    send(3, wpiemu::sdk::MotorFamily::KrakenX44);
+    send(4, wpiemu::sdk::MotorFamily::KrakenX60);
+    send(5, wpiemu::sdk::MotorFamily::Falcon500);  // the firmware sim has no such motor: default stays
+    rig.bridge->collectOutputs(out);
+    rig.bridge->collectOutputs(out);  // written once per change, not every tick
+
+    int x44 = 0, x60 = 0;
+    for (const auto& w : native->physicsWrites) {
+        CHECK(w.key == vendor::kPhysicsMotorType);
+        if (w.id == 3 && w.value == vendor::sim_motor_type::kKrakenX44) ++x44;
+        if (w.id == 4 && w.value == vendor::sim_motor_type::kKrakenX60) ++x60;
+        CHECK(w.id != 5);
+    }
+    CHECK(x44 == 1);
+    CHECK(x60 == 1);
+    CHECK(native->physicsWrites.size() == 2);
+
+    send(3, wpiemu::sdk::MotorFamily::KrakenX60);  // the plant changed its mind
+    rig.bridge->collectOutputs(out);
+    CHECK(native->physicsWrites.size() == 3);
+    CHECK(native->physicsWrites.back().value == vendor::sim_motor_type::kKrakenX60);
+}
+
+TEST_CASE("vendor bridge: without the CTRE physics API the motor type is left alone") {
+    auto native = std::make_shared<FakeNative>();  // physicsApi = false
+    auto options = BridgeRig::defaultOptions();
+    options.nativeProvider = [native] { return native; };
+    BridgeRig rig(options);
+    addTalonFx(*rig.backend, 3);
+    rig.start();
+    rig.bridge->poll();
+    const auto dev = rig.host.idOf("talonfx", 3);
+    rig.bridge->applyInputs(std::vector<SignalSample>{
+        {dev, rig.host.signalIndex(dev, sg::kMotorFamily),
+         static_cast<double>(static_cast<int>(wpiemu::sdk::MotorFamily::KrakenX44))}});
+    std::vector<SignalSample> out;
+    rig.bridge->collectOutputs(out);
+    CHECK(native->physicsWrites.empty());
 }
 
 TEST_CASE("vendor bridge: time-sync advice appears while Phoenix devices are live") {

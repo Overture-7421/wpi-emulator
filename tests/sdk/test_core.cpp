@@ -214,6 +214,14 @@ TEST_CASE("motor table keys and names are unique, every row is physical and the 
     CHECK(motors::neo550().name == "NEO 550");
 }
 
+TEST_CASE("motorFamilyOf reads the hardware from a preset name, FOC variants included") {
+    CHECK(motorFamilyOf(motors::krakenX60()) == MotorFamily::KrakenX60);
+    CHECK(motorFamilyOf(motors::findPresetByName("Kraken X44 (FOC)")->spec) == MotorFamily::KrakenX44);
+    CHECK(motorFamilyOf(motors::findPresetByName("Kraken X60 (FOC)")->spec) == MotorFamily::KrakenX60);
+    CHECK(motorFamilyOf(motors::falcon500()) == MotorFamily::Falcon500);
+    CHECK(motorFamilyOf(motors::neo()) == MotorFamily::Unknown);
+}
+
 TEST_CASE("motorSpecFaults names each non-physical field") {
     CHECK(motorSpecFaults(motors::neo()).empty());
 
