@@ -69,7 +69,71 @@ TEST_CASE("run page: the 3D scene loads and the idle state invites the user to s
     CHECK_FALSE(f.page.speedCombo()->isEnabled());
     CHECK_FALSE(f.page.driverStationPanel()->enableButton()->isEnabled());   // no robot to enable
     CHECK(f.page.driverStationPanel()->modeButton(DsMode::Teleop)->isChecked());   // Teleop is selected from the start
-    CHECK(f.page.viewActions().size() == 6);   // overlays and console live in the shell's View menu
+    CHECK(f.page.viewActions().size() == 7);   // overlays, camera presets and console live in the shell's View menu
+}
+
+TEST_CASE("run page: camera presets follow the Driver Station, expose fixed stations and persist") {
+    Fixture f;
+    auto* cameraButton = f.page.viewport()->findChild<QToolButton*>(QStringLiteral("runview.cameraButton"));
+    auto* cameraMenu = f.page.findChild<QMenu*>(QStringLiteral("runview.cameraMenu"));
+    auto* driverAction = f.page.findChild<QAction*>(QStringLiteral("runview.camera.driver"));
+    auto* followAction = f.page.findChild<QAction*>(QStringLiteral("runview.camera.follow"));
+    REQUIRE(cameraButton != nullptr);
+    REQUIRE(cameraMenu != nullptr);
+    REQUIRE(driverAction != nullptr);
+    REQUIRE(followAction != nullptr);
+    CHECK(cameraButton->menu() == cameraMenu);
+    CHECK(f.page.viewActions().contains(cameraMenu->menuAction()));
+    CHECK(driverAction->shortcut() == QKeySequence(Qt::CTRL | Qt::Key_9));
+    CHECK(followAction->shortcut() == QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F));
+
+    const sdk::Alliance originalAlliance = f.page.driverStation().alliance();
+    const int originalStation = f.page.driverStation().station();
+    auto* redThree = f.page.findChild<QAction*>(QStringLiteral("runview.camera.red3"));
+    REQUIRE(redThree != nullptr);
+    redThree->trigger();
+    CHECK(f.page.scene().cameraView().kind == CameraView::Kind::Station);
+    CHECK(f.page.scene().cameraView().alliance == sdk::Alliance::Red);
+    CHECK(f.page.scene().cameraView().number == 3);
+    CHECK(f.page.scene().cameraPosition().x() > f.page.scene().fieldLength());
+    CHECK(f.page.driverStation().alliance() == originalAlliance);
+    CHECK(f.page.driverStation().station() == originalStation);
+
+    f.page.activateWindow();
+    QTest::keyClick(f.page.viewport(), Qt::Key_9, Qt::ControlModifier);
+    QApplication::processEvents();
+    CHECK(f.page.scene().cameraView().kind == CameraView::Kind::DriverPov);
+    QTest::keyClick(f.page.viewport(), Qt::Key_F, Qt::ControlModifier | Qt::ShiftModifier);
+    QApplication::processEvents();
+    CHECK_FALSE(f.page.scene().followRobot());
+    f.page.driverStation().setAlliance(sdk::Alliance::Blue);
+    f.page.driverStation().setStation(2);
+    CHECK(driverAction->text().contains(QStringLiteral("Blue 2")));
+    driverAction->trigger();
+    CHECK(f.page.scene().cameraView().kind == CameraView::Kind::DriverPov);
+    CHECK(f.page.scene().cameraPosition().x() < 0.f);
+    f.page.driverStation().setStation(3);
+    CHECK(f.page.scene().cameraView().kind == CameraView::Kind::DriverPov);
+    CHECK(f.page.scene().cameraPosition().y() < 4.f);
+
+    auto* blueOne = f.page.findChild<QAction*>(QStringLiteral("runview.camera.blue1"));
+    REQUIRE(blueOne != nullptr);
+    blueOne->trigger();
+    followAction->setChecked(false);
+    f.settings.sync();
+    CHECK(f.settings.value(QStringLiteral("runview/camera/view")).toString() == QStringLiteral("blue1"));
+    CHECK_FALSE(f.settings.value(QStringLiteral("runview/camera/follow")).toBool());
+
+    FakeRunBackend secondBackend;
+    RunPageOptions options;
+    options.settings = &f.settings;
+    options.useDefaultGamepadBackend = false;
+    options.useDefaultSfxBackend = false;
+    RunPage restored(secondBackend, options);
+    CHECK(restored.scene().cameraView().kind == CameraView::Kind::Station);
+    CHECK(restored.scene().cameraView().alliance == sdk::Alliance::Blue);
+    CHECK(restored.scene().cameraView().number == 1);
+    CHECK_FALSE(restored.scene().followRobot());
 }
 
 TEST_CASE("run page: start connects, drives the view models and enables the DS") {

@@ -235,15 +235,10 @@ SceneModel::SceneModel(QObject* parent)
 }
 
 void SceneModel::resetCamera() {
-    // Side-on home view framing the whole field, so both alliance walls are visible.
-    const float span = std::max(fieldLength_, fieldWidth_);
-    camera_ = OrbitCamera{};
-    camera_.target = {fieldCenter_.x(), fieldCenter_.y(), fieldCenter_.z()};
-    camera_.yawRad = -sdk::degToRadF(90.f);
-    camera_.pitchRad = 0.4f;
-    camera_.distance = span * 1.05f;
-    camera_.maxDistance = std::max(camera_.maxDistance, span * 6.f);
+    const std::string previousKey = cameraViewKey(cameraRig_.view());
+    cameraRig_.showHome();
     refreshCamera();
+    notifyCameraViewChanged(previousKey);
 }
 
 void SceneModel::setSceneInfo(const HostScene& info) {
@@ -256,7 +251,8 @@ void SceneModel::setSceneInfo(const HostScene& info) {
     fieldLength_ = fp.lengthM;
     fieldWidth_ = fp.widthM;
     fieldCenter_ = toQt(fp.center);
-    resetCamera();
+    cameraRig_.setField(fp.lengthM, fp.widthM, fp.center, info_.field);
+    refreshCamera();
     emit fieldChanged();
 
     zoneRig_.setScene(info_.config, info_.panels, info_.zoneKinds);
@@ -289,13 +285,55 @@ void SceneModel::setTagsVisible(bool v) {
 }
 
 void SceneModel::refreshCamera() {
-    const QVector3D pos = toQt(camera_.position());
-    const QQuaternion rot = toQt(camera_.rotation());
-    if (pos == cameraPosition_ && rot == cameraRotation_ && camera_.fovDeg == cameraFov_) return;
+    const OrbitCamera& camera = cameraRig_.camera();
+    const QVector3D pos = toQt(camera.position());
+    const QQuaternion rot = toQt(camera.rotation());
+    if (pos == cameraPosition_ && rot == cameraRotation_ && camera.fovDeg == cameraFov_) return;
     cameraPosition_ = pos;
     cameraRotation_ = rot;
-    cameraFov_ = camera_.fovDeg;
+    cameraFov_ = camera.fovDeg;
     emit cameraChanged();
+}
+
+void SceneModel::notifyCameraViewChanged(const std::string& previousKey) {
+    if (cameraViewKey(cameraRig_.view()) != previousKey) emit cameraViewChanged();
+}
+
+void SceneModel::showDriverView() {
+    const std::string previousKey = cameraViewKey(cameraRig_.view());
+    cameraRig_.showDriverPov();
+    refreshCamera();
+    notifyCameraViewChanged(previousKey);
+}
+
+void SceneModel::showStationView(sdk::Alliance alliance, int number) {
+    const std::string previousKey = cameraViewKey(cameraRig_.view());
+    cameraRig_.showStation(alliance, number);
+    refreshCamera();
+    notifyCameraViewChanged(previousKey);
+}
+
+void SceneModel::restoreView(const CameraView& view) {
+    const std::string previousKey = cameraViewKey(cameraRig_.view());
+    cameraRig_.restoreView(view);
+    refreshCamera();
+    notifyCameraViewChanged(previousKey);
+}
+
+void SceneModel::setDriverStation(sdk::Alliance alliance, int number) {
+    cameraRig_.setDriverStation(alliance, number);
+    refreshCamera();
+}
+
+void SceneModel::setFollowRobot(bool follow) {
+    if (follow == cameraRig_.follow()) return;
+    cameraRig_.setFollow(follow);
+    emit followRobotChanged();
+}
+
+void SceneModel::advanceCamera(double dtSeconds) {
+    cameraRig_.advance(dtSeconds);
+    refreshCamera();
 }
 
 void SceneModel::updateZones(const sdk::ISimSnapshot* snapshot) {
@@ -311,6 +349,7 @@ void SceneModel::updateVision(const sdk::ISimSnapshot* snapshot) {
 void SceneModel::update(const sdk::ISimSnapshot* snapshot) {
     if (snapshot != nullptr) {
         const sdk::Pose3& pose = snapshot->chassis().pose;
+        cameraRig_.setRobot(pose.position);
         const QVector3D pos = toQt(pose.position);
         const QQuaternion rot = toQt(pose.rotation);
         if (pos != chassisPosition_ || rot != chassisRotation_ || !robotVisible_) {
@@ -324,6 +363,7 @@ void SceneModel::update(const sdk::ISimSnapshot* snapshot) {
         updateZones(snapshot);
         updateVision(snapshot);
     } else if (robotVisible_) {
+        cameraRig_.setRobot(std::nullopt);
         robotVisible_ = false;
         emit poseChanged();
         entities_.update({});

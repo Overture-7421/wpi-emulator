@@ -67,7 +67,8 @@ floating in empty space.
 [`createDefaultField`](../../sdk/include/wpiemu/sdk/game/default_field.h) builds the carpet,
 two 2 m alliance walls (blue at x = 0, red at x = length) and two 0.5 m guardrails of a 16.46 m by
 8.23 m (54 ft by 27 ft) field from the shared materials above, and `defaultFieldDescription()`
-describes the same field for the renderer. It has no game structure and names no season. The
+describes the same field for the renderer. Its Driver POV uses the SDK's generic, evenly spaced
+station positions behind the alliance walls. It has no game structure and names no season. The
 application passes it as `SessionParts::fallbackField`; the session owns it and destroys it before
 the world, like a plugin's field. Without a configured start pose the robot starts 2 m from the
 blue wall, centered across the field, facing +X.

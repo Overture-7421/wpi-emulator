@@ -173,7 +173,14 @@ while Run is visible. Turn them off or adjust volume in **File > Settings… > G
 The viewport controls include **Restart** (`Ctrl+R`), which resets physics and game pieces
 while keeping robot code running, and its **Restart robot code** option (`Ctrl+Shift+R`), which
 reboots code too. **Speed** changes simulation pacing (default `1×`); **Home view** (`Ctrl+0`
-or double-click the view) restores the camera. **View > Robot state** opens live mechanisms,
+or double-click the view) restores the field overview. Use the **Camera view** button or
+**View > Camera view** to choose **Driver POV** (the Driver Station's alliance and station) or
+an explicit Blue / Red station. **Follow robot** turns the fixed Driver POV toward the robot;
+turn it off to look around by dragging. In a Driver POV, the wheel changes field of view instead
+of moving the viewpoint. `Ctrl+9` selects Driver POV, and `Ctrl+Shift+F` toggles Follow robot.
+The view and Follow setting are remembered. These presets control the 3D viewpoint only; they
+do not change Driver Station inputs and are not simulated Limelight or PhotonVision cameras.
+**View > Robot state** opens live mechanisms,
 sensors, zones, and camera detections; **View > Console** toggles output (`Ctrl+J`).
 
 For repeatable autonomous placement, set **Use custom start pose** or add a named start

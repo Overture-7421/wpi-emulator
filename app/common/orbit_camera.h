@@ -81,6 +81,16 @@ public:
         pitchRad = std::clamp(pitchRad + sdk::degToRadF(dyPx * 0.45f), sdk::degToRadF(-89.f), sdk::degToRadF(89.f));
     }
 
+    void lookFrom(const sdk::Vec3& eye, float lookYawRad, float lookPitchRad, float pivotDistance) {
+        const float pitch = std::clamp(lookPitchRad, sdk::degToRadF(-89.f), sdk::degToRadF(89.f));
+        const sdk::Vec3 forward{std::cos(pitch) * std::cos(lookYawRad),
+                                std::cos(pitch) * std::sin(lookYawRad), std::sin(pitch)};
+        distance = std::clamp(pivotDistance, minDistance, maxDistance);
+        target = eye + forward * distance;
+        yawRad = lookYawRad + sdk::kPiF;
+        pitchRad = -pitch;
+    }
+
     void pan(float dxPx, float dyPx, float viewHeightPx) {
         const CameraBasis b = basis();
         const float unitsPerPx = 2.f * distance * std::tan(sdk::degToRadF(fovDeg) * 0.5f) / std::max(viewHeightPx, 1.f);

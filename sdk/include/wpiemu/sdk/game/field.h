@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <optional>
@@ -60,13 +61,52 @@ struct FieldVisual {
     std::string meshAsset;       // Kind::Mesh: path relative to the plugin's asset root
 };
 
+// A drive-team eye position behind an alliance wall. `number` is 1..3, left to right as seen by the
+// drive team facing the field. The view looks from `eyeM` toward the field.
+struct DriverStationSpot {
+    Alliance alliance = Alliance::Blue;
+    int number = 1;
+    Vec3 eyeM;
+};
+
 struct FieldDescription {
     std::string name;
     float lengthM = 0.f;         // along +X
     float widthM = 0.f;          // along +Y
     std::string assetRoot;       // directory for meshAsset, resolved by the app
     std::vector<FieldVisual> visuals;
+    std::vector<DriverStationSpot> driverStations;  // optional driver viewpoints, field frame
 };
+
+inline constexpr float kDriverEyeHeightM = 1.6f;
+inline constexpr float kDriverEyeSetbackM = 0.8f;
+
+inline std::vector<DriverStationSpot> genericDriverStations(float lengthM, float widthM) {
+    std::vector<DriverStationSpot> spots;
+    if (!(lengthM > 0.f) || !(widthM > 0.f) || !std::isfinite(lengthM) || !std::isfinite(widthM)) return spots;
+    spots.reserve(6);
+    for (int number = 1; number <= 3; ++number) {
+        const float fromLeft = (2.f * static_cast<float>(number) - 1.f) / 6.f;
+        spots.push_back({Alliance::Blue, number, {-kDriverEyeSetbackM, widthM * (1.f - fromLeft), kDriverEyeHeightM}});
+        spots.push_back({Alliance::Red, number, {lengthM + kDriverEyeSetbackM, widthM * fromLeft, kDriverEyeHeightM}});
+    }
+    return spots;
+}
+
+inline std::optional<DriverStationSpot> driverStationSpot(const FieldDescription& field, Alliance alliance, int number) {
+    const int clamped = std::clamp(number, 1, 3);
+    for (const DriverStationSpot& spot : field.driverStations)
+        if (spot.alliance == alliance && spot.number == clamped) return spot;
+    if (!(field.lengthM > 0.f) || !(field.widthM > 0.f) || !std::isfinite(field.lengthM) ||
+        !std::isfinite(field.widthM))
+        return std::nullopt;
+    const float fromLeft = (2.f * static_cast<float>(clamped) - 1.f) / 6.f;
+    if (alliance == Alliance::Blue)
+        return DriverStationSpot{alliance, clamped,
+                                 {-kDriverEyeSetbackM, field.widthM * (1.f - fromLeft), kDriverEyeHeightM}};
+    return DriverStationSpot{alliance, clamped,
+                             {field.lengthM + kDriverEyeSetbackM, field.widthM * fromLeft, kDriverEyeHeightM}};
+}
 
 // Handle to the static world a plugin created (colliders, sensor volumes). RAII: destroying it
 // removes what createField() added to the IPhysicsWorld. It must be destroyed BEFORE the world.

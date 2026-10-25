@@ -106,6 +106,7 @@ inline constexpr float kPlasticOpacity = 0.2f;             // approx: how much o
 inline constexpr float kStationShelfWidthM = inch(69.0);   // [GM] 5.9.1
 inline constexpr float kStationShelfDepthM = inch(12.25);  // [GM] 5.9.1 (behind the wall)
 inline constexpr float kStationShelfThicknessM = 0.02f;    // approx; its top is the base top
+inline constexpr float kDriverEyeRoomBehindShelfM = 0.35f; // approx standing room behind the shelf
 inline constexpr float kTowerWallWidthM = inch(49.25);     // [GM] 5.8
 inline constexpr float kTowerWallHeightM = inch(78.25);    // [GM] 5.8
 inline constexpr float kOutpostWidthM = 2.f * kOutpostCenterYM;  // approx: tag 29 is centred on the outpost, which starts at the guardrail

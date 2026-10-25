@@ -82,6 +82,41 @@ void addDecor(FieldLayout& l, const Frame& f, std::string name, const Pose3& pos
     l.decor.push_back(std::move(v));
 }
 
+std::vector<float> stationCenters(float y0, float y1, int count) {
+    std::vector<float> centers;
+    centers.reserve(static_cast<std::size_t>(count));
+    const float pitch = (y1 - y0) / static_cast<float>(count);
+    for (int i = 0; i < count; ++i) centers.push_back(y0 + pitch * (static_cast<float>(i) + 0.5f));
+    return centers;
+}
+
+void addDriverStationSpots(sdk::FieldDescription& description, const Frame& f) {
+    namespace d = dim;
+    const float towerLo = d::kTowerCenterYM - d::kTowerWallWidthM * 0.5f;
+    const float towerHi = towerLo + d::kTowerWallWidthM;
+    const float eyeX = -d::kStationBaseThicknessM - d::kStationShelfDepthM - d::kDriverEyeRoomBehindShelfM;
+    const std::vector<float> farCenters = stationCenters(towerHi, d::kFieldWidthM, d::kStationsFarSide);
+    for (int i = 0; i < d::kStationsFarSide; ++i) {
+        const int number = d::kStationsFarSide - i;
+        const float y = farCenters[static_cast<std::size_t>(i)];
+        description.driverStations.push_back(
+            {Alliance::Blue, number, f.point({eyeX, y, sdk::kDriverEyeHeightM})});
+    }
+    const std::vector<float> nearCenters = stationCenters(d::kOutpostWidthM, towerLo, d::kStationsOutpostSide);
+    for (int i = 0; i < d::kStationsOutpostSide; ++i) {
+        const float y = nearCenters[static_cast<std::size_t>(i)];
+        const int number = d::kStationsFarSide + i + 1;
+        description.driverStations.push_back(
+            {Alliance::Blue, number, Frame(Alliance::Blue).point({eyeX, y, sdk::kDriverEyeHeightM})});
+    }
+    const std::size_t blueCount = description.driverStations.size();
+    for (std::size_t i = 0; i < blueCount; ++i) {
+        const sdk::DriverStationSpot& blue = description.driverStations[i];
+        description.driverStations.push_back(
+            {Alliance::Red, blue.number, Frame(Alliance::Red).point(blue.eyeM)});
+    }
+}
+
 // What the solid `_high_y` collider looks like: stations (base, sponsor band, clear sheet, top rail, shelf), the opaque
 // tower wall and the rest of the outpost. The colliders themselves do not change.
 void addAllianceWallVisuals(FieldLayout& l, const Frame& f, Alliance a) {
@@ -107,10 +142,11 @@ void addAllianceWallVisuals(FieldLayout& l, const Frame& f, Alliance a) {
                  kPlasticColor, d::kPlasticOpacity);
         addDecor(l, f, name + "_rail", at(-tb / 2, yc, h - rail / 2), {tb, len, rail}, kAluminumColor);
         const float pitch = len / static_cast<float>(count);
+        const std::vector<float> centers = stationCenters(y0, y1, count);
         const float shelfWidth = std::min(d::kStationShelfWidthM, pitch - 0.05f);
         for (int i = 0; i < count; ++i)
             addDecor(l, f, name + "_shelf_" + std::to_string(i + 1),
-                     at(-tb - d::kStationShelfDepthM / 2, y0 + pitch * (static_cast<float>(i) + 0.5f),
+                     at(-tb - d::kStationShelfDepthM / 2, centers[static_cast<std::size_t>(i)],
                         base - d::kStationShelfThicknessM / 2),
                      {d::kStationShelfDepthM, shelfWidth, d::kStationShelfThicknessM}, kAluminumColor);
     };
@@ -301,6 +337,7 @@ FieldLayout buildFieldLayout() {
     l.description.name = "REBUILT (2026)";
     l.description.lengthM = len;
     l.description.widthM = wid;
+    addDriverStationSpots(l.description, Frame(Alliance::Blue));
     for (const FieldBox& b : l.boxes) {
         if (!b.visible) continue;
         sdk::FieldVisual v;

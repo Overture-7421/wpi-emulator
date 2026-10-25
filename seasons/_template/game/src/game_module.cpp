@@ -26,7 +26,8 @@ namespace {
 // ---- 2. the static field ---------------------------------------------------------------------------------------
 // Owns whatever createField() added to the physics world and removes it in the destructor (RAII). It is destroyed
 // BEFORE the world. TODO(new season): create a static body with the season's colliders (boxes, cylinders, meshes) and
-// sensor volumes, fill FieldDescription::visuals for the renderer, and keep the ids you need.
+// sensor volumes, fill FieldDescription::visuals for the renderer, optionally provide
+// FieldDescription::driverStations for accurate Run-view Driver POV positions, and keep the ids you need.
 class TemplateField final : public sdk::IField {
 public:
     explicit TemplateField(sdk::IPhysicsWorld& /*world*/) {

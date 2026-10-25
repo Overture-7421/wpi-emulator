@@ -15,6 +15,7 @@ set(WPIEMU_RUNVIEW_SOURCES
     console_model.cpp
     hud_model.cpp
     scene_parts.cpp
+    camera_rig.cpp
     scene_model.cpp
     state_model.cpp
     state_window.cpp

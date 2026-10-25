@@ -87,6 +87,8 @@ not colliders.
 Alliance-wall visuals model the driver-station base, sponsor band, clear sheet, top rail and shelf;
 the tower wall and outpost are opaque. Guardrails are drawn as clear plastic between aluminum
 extrusions while their collision geometry remains solid.
+The field description also provides six Driver POV eye positions centered behind the station shelves;
+the tower separates stations 2 and 3, matching the field layout.
 
 Fuel is simulated as rigid spheres. Reset stages the configured field fuel and restores robot
 inventory and chute stocks. A body-count limit bounds creation, and fuel that leaves the configured

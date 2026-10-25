@@ -35,6 +35,10 @@ formatted HUD string. These distinctions keep season rules out of core, UI and d
 5. Add focused tests for registration, selection, defaults, field cleanup, repeated reset, rule
    boundaries and deterministic behavior. Use a real physics test where contact geometry matters.
 
+For season-accurate Run-view Driver POVs, optionally populate
+`FieldDescription::driverStations` with the alliance-wall eye positions. The SDK supplies a generic
+evenly spaced fallback when the field does not provide a spot.
+
 The small example in
 [`test_new_year_plugin.cpp`](../../tests/plugins/test_new_year_plugin.cpp) is a verified first
 integration: it registers a 2998 module beside the built-in plugin, loads it through the real config
