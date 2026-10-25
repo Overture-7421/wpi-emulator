@@ -60,7 +60,6 @@ private:
     bool follow_ = true;
     float gazeYawRad_ = 0.f;
     float gazePitchRad_ = 0.f;
-    float viewHeightPx_ = 720.f;
 };
 
 }  // namespace wpiemu::app::runview
