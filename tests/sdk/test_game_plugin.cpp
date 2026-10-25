@@ -199,3 +199,36 @@ TEST_CASE("field frame: flipping a start pose to the other alliance round-trips 
     frame.symmetry = FieldSymmetry::None;
     CHECK_FALSE(flipToOtherAlliance(blue, frame).has_value());
 }
+
+TEST_CASE("generic driver station spots follow left-to-right numbering for both alliances") {
+    const auto spots = genericDriverStations(16.f, 9.f);
+    REQUIRE(spots.size() == 6);
+    CHECK(spots[0].alliance == Alliance::Blue);
+    CHECK(spots[0].number == 1);
+    CHECK(spots[0].eyeM.x == doctest::Approx(-kDriverEyeSetbackM));
+    CHECK(spots[0].eyeM.y == doctest::Approx(7.5f));
+    CHECK(spots[0].eyeM.z == doctest::Approx(kDriverEyeHeightM));
+    CHECK(spots[1].alliance == Alliance::Red);
+    CHECK(spots[1].number == 1);
+    CHECK(spots[1].eyeM.x == doctest::Approx(16.f + kDriverEyeSetbackM));
+    CHECK(spots[1].eyeM.y == doctest::Approx(1.5f));
+    CHECK(spots[2].number == 2);
+    CHECK(spots[2].eyeM.y == doctest::Approx(4.5f));
+    CHECK(spots[4].number == 3);
+    CHECK(spots[4].eyeM.y == doctest::Approx(1.5f));
+    CHECK(genericDriverStations(0.f, 9.f).empty());
+
+    FieldDescription field;
+    field.lengthM = 16.f;
+    field.widthM = 9.f;
+    field.driverStations.push_back({Alliance::Blue, 2, {3.f, 4.f, 5.f}});
+    const auto pluginSpot = driverStationSpot(field, Alliance::Blue, 2);
+    REQUIRE(pluginSpot);
+    CHECK(pluginSpot->eyeM.x == doctest::Approx(3.f));
+    CHECK(driverStationSpot(field, Alliance::Blue, 0)->number == 1);
+    const auto fallback = driverStationSpot(field, Alliance::Red, 2);
+    REQUIRE(fallback);
+    CHECK(fallback->eyeM.x == doctest::Approx(16.f + kDriverEyeSetbackM));
+    field.lengthM = 0.f;
+    CHECK_FALSE(driverStationSpot(field, Alliance::Red, 2));
+}

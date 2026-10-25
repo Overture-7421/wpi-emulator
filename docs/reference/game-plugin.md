@@ -57,6 +57,11 @@ default to the FRC-wide `kFrcAprilTagSizeM` (6.5 in); set `AprilTag::sizeM` only
 tag size. Vision computation and robot-side publishing are not season code; see the
 [bridge reference](bridges.md). Descriptor presentation belongs to the [app contract](app.md).
 
+`FieldDescription::driverStations` may optionally provide the six Driver POV eye positions in the
+field's NWU frame. Each `DriverStationSpot` identifies an alliance and station number (1–3,
+left-to-right as seen by that alliance facing the field) and gives the eye position in metres.
+Missing spots use an evenly spaced generic layout behind the two alliance walls.
+
 ## Zones and game-fed sensors
 
 A zone is game-owned spatial configuration attached to the chassis or a mechanism link; it is not

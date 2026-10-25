@@ -1,6 +1,7 @@
 // Standalone demo of the run view against FakeRunBackend. Also used for headless screenshots:
-//   wpiemu_runview_demo --scenario running|practice|... --screenshot out.png [--size 1500x900] [--state]
+//   wpiemu_runview_demo --scenario running|practice|... --camera driver --screenshot out.png [--size 1500x900] [--state]
 // --state opens the Robot state window (and saves it next to the screenshot as out.png.state.png).
+// --camera accepts home, driver, blue1..blue3 or red1..red3; --no-follow disables Driver POV tracking.
 // Scenarios: idle, starting, running, crash, timeout, mismatch, failed.
 
 #include <QApplication>
@@ -49,9 +50,19 @@ int main(int argc, char* argv[]) {
     const QString shot = argValue(args, QStringLiteral("--screenshot"));
     const QString size = argValue(args, QStringLiteral("--size"), QStringLiteral("1500x900"));
     const int settle = argValue(args, QStringLiteral("--settle"), QStringLiteral("2500")).toInt();
+    const QString camera = argValue(args, QStringLiteral("--camera"));
 
     QTemporaryDir settingsDir;
     QSettings settings(settingsDir.filePath(QStringLiteral("demo.ini")), QSettings::IniFormat);
+    if (!camera.isEmpty()) {
+        if (!parseCameraViewKey(camera.toStdString())) {
+            std::cerr << "unknown --camera view: " << camera.toStdString() << std::endl;
+            return 2;
+        }
+        settings.setValue(QStringLiteral("runview/camera/view"), camera);
+    }
+    if (args.contains(QStringLiteral("--no-follow")))
+        settings.setValue(QStringLiteral("runview/camera/follow"), false);
 
     FakeRunBackend::Options options;
     if (scenario == QLatin1String("starting")) options.startupDelayMs = kHeldStartupDelayMs;

@@ -109,6 +109,16 @@ QIcon flagIcon() {
     });
 }
 
+QIcon cameraIcon() {
+    return paintedIcon([](QPainter& p) {
+        p.drawRoundedRect(QRectF(2.5, 6, 15, 10.5), 1.5, 1.5);
+        p.drawLine(QPointF(6, 6), QPointF(7.8, 3.8));
+        p.drawLine(QPointF(7.8, 3.8), QPointF(12.2, 3.8));
+        p.drawLine(QPointF(12.2, 3.8), QPointF(14, 6));
+        p.drawEllipse(QRectF(7, 8, 6, 6));
+    });
+}
+
 QIcon listIcon() {
     return paintedIcon([](QPainter& p) {
         for (const qreal y : {5.0, 10.0, 15.0}) {
@@ -278,6 +288,21 @@ QToolButton* RunViewport::addStartPositionControl(QMenu* menu) {
     button->setFixedSize(34, 34);
     button->setMenu(menu);
     button->setPopupMode(QToolButton::InstantPopup);
+    button->setCursor(Qt::PointingHandCursor);
+    addControl(button);
+    return button;
+}
+
+QToolButton* RunViewport::addCameraControl(QMenu* menu) {
+    auto* button = new QToolButton;
+    button->setObjectName(QStringLiteral("runview.cameraButton"));
+    button->setIcon(cameraIcon());
+    button->setIconSize(QSize(20, 20));
+    button->setFixedSize(34, 34);
+    button->setMenu(menu);
+    button->setPopupMode(QToolButton::InstantPopup);
+    button->setToolTip(tr("Camera view presets"));
+    button->setAccessibleName(tr("Camera view"));
     button->setCursor(Qt::PointingHandCursor);
     addControl(button);
     return button;

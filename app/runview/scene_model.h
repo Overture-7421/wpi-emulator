@@ -19,6 +19,7 @@
 
 #include "common/orbit_camera.h"
 #include "contract/runtime_host.h"
+#include "camera_rig.h"
 #include "scene_parts.h"
 
 namespace wpiemu::app::runview {
@@ -193,6 +194,7 @@ class SceneModel : public QObject {
     Q_PROPERTY(QVector3D cameraPosition READ cameraPosition NOTIFY cameraChanged)
     Q_PROPERTY(QQuaternion cameraRotation READ cameraRotation NOTIFY cameraChanged)
     Q_PROPERTY(float cameraFov READ cameraFov NOTIFY cameraChanged)
+    Q_PROPERTY(bool followRobot READ followRobot NOTIFY followRobotChanged)
     Q_PROPERTY(float fieldLength READ fieldLength NOTIFY fieldChanged)
     Q_PROPERTY(float fieldWidth READ fieldWidth NOTIFY fieldChanged)
     Q_PROPERTY(QVector3D fieldCenter READ fieldCenter NOTIFY fieldChanged)
@@ -215,7 +217,9 @@ public:
     RobotRig& rig() { return rig_; }
     ZoneRig& zoneRig() { return zoneRig_; }
     TagRig& tagRig() { return tagRig_; }
-    OrbitCamera& camera() { return camera_; }
+    OrbitCamera& camera() { return cameraRig_.camera(); }
+    const CameraView& cameraView() const { return cameraRig_.view(); }
+    bool followRobot() const { return cameraRig_.follow(); }
 
     QVector3D chassisPosition() const { return chassisPosition_; }
     QQuaternion chassisRotation() const { return chassisRotation_; }
@@ -237,15 +241,23 @@ public:
     bool zoneLabelShown(const QString& label) const { return zones_.labelShown(label); }
 
     // Same orbit camera and input scale as the editor viewport. The home view frames the whole field.
-    Q_INVOKABLE void orbit(float dx, float dy) { camera_.orbit(dx, dy); refreshCamera(); }
-    Q_INVOKABLE void pan(float dx, float dy) { camera_.pan(dx, dy, viewHeightPx_); refreshCamera(); }
-    Q_INVOKABLE void zoom(float steps) { camera_.zoom(steps); refreshCamera(); }
+    Q_INVOKABLE void orbit(float dx, float dy) { cameraRig_.orbit(dx, dy); refreshCamera(); }
+    Q_INVOKABLE void pan(float dx, float dy) { cameraRig_.pan(dx, dy, viewHeightPx_); refreshCamera(); }
+    Q_INVOKABLE void zoom(float steps) { cameraRig_.zoom(steps); refreshCamera(); }
     Q_INVOKABLE void resetCamera();
     Q_INVOKABLE void setViewHeight(float heightPx) { viewHeightPx_ = heightPx > 1.f ? heightPx : 1.f; }
+    void showDriverView();
+    void showStationView(sdk::Alliance alliance, int number);
+    void restoreView(const CameraView& view);
+    void setDriverStation(sdk::Alliance alliance, int number);
+    void setFollowRobot(bool follow);
+    void advanceCamera(double dtSeconds);
 
 signals:
     void poseChanged();
     void cameraChanged();
+    void cameraViewChanged();
+    void followRobotChanged();
     void fieldChanged();
     void zonesVisibleChanged();
     void tagsVisibleChanged();
@@ -253,6 +265,7 @@ signals:
 
 private:
     void refreshCamera();
+    void notifyCameraViewChanged(const std::string& previousKey);
     void updateZones(const sdk::ISimSnapshot* snapshot);
     void updateVision(const sdk::ISimSnapshot* snapshot);
 
@@ -263,7 +276,7 @@ private:
     TagMarkerModel tagMarkers_;
     EntityGroupModel entities_;
     RobotRig rig_;
-    OrbitCamera camera_;
+    CameraRig cameraRig_;
     float viewHeightPx_ = 720.f;
     HostScene info_;
     ZoneRig zoneRig_;

@@ -14,6 +14,7 @@
 #include <QMenu>
 #include <QSplitter>
 #include <QStyle>
+#include <QSignalBlocker>
 #include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
@@ -89,9 +90,22 @@ void RunPage::build() {
         ds_.setAlliance(ds_.alliance() == sdk::Alliance::Red ? sdk::Alliance::Blue : sdk::Alliance::Red);
     });
     connect(&ds_, &DriverStationModel::changed, this, &RunPage::updateAllianceButton);
+    connect(&ds_, &DriverStationModel::changed, this, [this] {
+        scene_.setDriverStation(ds_.alliance(), ds_.station());
+        updateDriverPovLabel();
+    });
+    connect(&scene_, &SceneModel::cameraViewChanged, this, [this] {
+        syncCameraActions();
+        settings_->setValue(QStringLiteral("runview/camera/view"),
+                            QString::fromStdString(cameraViewKey(scene_.cameraView())));
+    });
+    connect(&scene_, &SceneModel::followRobotChanged, this, [this] {
+        settings_->setValue(QStringLiteral("runview/camera/follow"), scene_.followRobot());
+    });
     updateAllianceButton();
     viewport_->addRestartControl(restartAction_, restartMenu_);
     viewport_->addSpeedControl(speedCombo_);
+    viewport_->addCameraControl(cameraMenu_);
     console_ = new ConsolePanel(this);
     dsPanel_ = new DriverStationPanel(ds_, joysticks_, this);
 
@@ -146,6 +160,7 @@ void RunPage::build() {
     });
 
     pollTimer_ = new QTimer(this);
+    cameraClock_.start();
     pollTimer_->setInterval(kPollMs);
     connect(pollTimer_, &QTimer::timeout, this, [this] { pollNow(); });
     pollTimer_->start();
@@ -181,11 +196,73 @@ void RunPage::buildActions() {    restartAction_ = new QAction(reloadIcon(), tr(
     speedCombo_->setCurrentIndex(3);
     speedCombo_->setFixedSize(58, 34);
 
-    // The Home view button is an icon inside the 3D view; the action only carries the shortcut.
-    QAction* resetView = new QAction(tr("Home view"), this);
-    resetView->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
-    resetView->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-    addAction(resetView);
+    cameraMenu_ = new QMenu(tr("Camera view"), this);
+    cameraMenu_->setObjectName(QStringLiteral("runview.cameraMenu"));
+    cameraActionGroup_ = new QActionGroup(cameraMenu_);
+    cameraActionGroup_->setExclusive(true);
+    homeCameraAction_ = cameraMenu_->addAction(tr("Field overview"));
+    homeCameraAction_->setObjectName(QStringLiteral("runview.camera.home"));
+    homeCameraAction_->setCheckable(true);
+    homeCameraAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
+    homeCameraAction_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    homeCameraAction_->setToolTip(tr("Show the whole field (Ctrl+0)"));
+    cameraActionGroup_->addAction(homeCameraAction_);
+    driverCameraAction_ = cameraMenu_->addAction(QString());
+    driverCameraAction_->setObjectName(QStringLiteral("runview.camera.driver"));
+    driverCameraAction_->setCheckable(true);
+    driverCameraAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_9));
+    driverCameraAction_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    driverCameraAction_->setToolTip(tr("Set the 3D camera viewpoint at your Driver Station; this is not a simulated robot camera (Ctrl+9)."));
+    cameraActionGroup_->addAction(driverCameraAction_);
+    cameraMenu_->addSection(tr("Blue alliance"));
+    for (int number = 1; number <= 3; ++number) {
+        QAction* action = cameraMenu_->addAction(tr("Station %1").arg(number));
+        action->setObjectName(QStringLiteral("runview.camera.blue%1").arg(number));
+        action->setData(QStringLiteral("blue%1").arg(number));
+        action->setCheckable(true);
+        cameraActionGroup_->addAction(action);
+        stationCameraActions_.push_back(action);
+    }
+    cameraMenu_->addSection(tr("Red alliance"));
+    for (int number = 1; number <= 3; ++number) {
+        QAction* action = cameraMenu_->addAction(tr("Station %1").arg(number));
+        action->setObjectName(QStringLiteral("runview.camera.red%1").arg(number));
+        action->setData(QStringLiteral("red%1").arg(number));
+        action->setCheckable(true);
+        cameraActionGroup_->addAction(action);
+        stationCameraActions_.push_back(action);
+    }
+    cameraMenu_->addSeparator();
+    followCameraAction_ = cameraMenu_->addAction(tr("Follow robot"));
+    followCameraAction_->setObjectName(QStringLiteral("runview.camera.follow"));
+    followCameraAction_->setCheckable(true);
+    followCameraAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F));
+    followCameraAction_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    initialCameraView_ = parseCameraViewKey(
+                             settings_->value(QStringLiteral("runview/camera/view"), QStringLiteral("home"))
+                                 .toString().toStdString())
+                             .value_or(CameraView{});
+    const bool follow = settings_->value(QStringLiteral("runview/camera/follow"), true).toBool();
+    followCameraAction_->setChecked(follow);
+    scene_.setFollowRobot(follow);
+    addAction(homeCameraAction_);
+    addAction(driverCameraAction_);
+    addAction(followCameraAction_);
+    updateDriverPovLabel();
+    connect(homeCameraAction_, &QAction::triggered, this, [this] { scene_.resetCamera(); });
+    connect(driverCameraAction_, &QAction::triggered, this, [this] { scene_.showDriverView(); });
+    for (QAction* action : stationCameraActions_) {
+        connect(action, &QAction::triggered, this, [this, action] {
+            const auto view = parseCameraViewKey(action->data().toString().toStdString());
+            if (view) scene_.showStationView(view->alliance, view->number);
+        });
+    }
+    connect(followCameraAction_, &QAction::toggled, &scene_, &SceneModel::setFollowRobot);
+    connect(&scene_, &SceneModel::followRobotChanged, this, [this] {
+        const QSignalBlocker blocker(followCameraAction_);
+        followCameraAction_->setChecked(scene_.followRobot());
+    });
+    syncCameraActions();
 
     // Overlay and console toggles are exposed through viewActions() so the shell can list them in its View menu.
     hudAction_ = new QAction(tr("Game HUD"), this);
@@ -220,7 +297,6 @@ void RunPage::buildActions() {    restartAction_ = new QAction(reloadIcon(), tr(
         host_.startSimulation();
     });
     connect(speedCombo_, &QComboBox::activated, this, [this](int i) { host_.setTimeScale(speedCombo_->itemData(i).toDouble()); });
-    connect(resetView, &QAction::triggered, this, [this] { scene_.resetCamera(); });
     connect(hudAction_, &QAction::toggled, &viewOptions_, &ViewportOptions::setShowHud);
     connect(stateAction_, &QAction::toggled, this, [this](bool on) { setStateWindowVisible(on); });
     connect(zonesAction_, &QAction::toggled, &scene_, &SceneModel::setZonesVisible);
@@ -229,7 +305,8 @@ void RunPage::buildActions() {    restartAction_ = new QAction(reloadIcon(), tr(
 }
 
 QList<QAction*> RunPage::viewActions() const {
-    return {hudAction_, stateAction_, zonesAction_, zoneMenu_->menuAction(), tagsAction_, consoleAction_};
+    return {hudAction_, stateAction_, zonesAction_, zoneMenu_->menuAction(), cameraMenu_->menuAction(), tagsAction_,
+            consoleAction_};
 }
 
 void RunPage::setConsoleVisible(bool visible) {
@@ -338,6 +415,10 @@ void RunPage::onSceneChanged() {
     applyProjectDefaults(info);
     startPositions_ = info.config ? info.config->startPositions : std::vector<sdk::StartPosition>{};
     scene_.setSceneInfo(info);
+    if (!cameraViewRestored_) {
+        scene_.restoreView(initialCameraView_);
+        cameraViewRestored_ = true;
+    }
     sfx_.setCatalog(info.gameId, info.soundCues);
     hud_.setDescriptors(info.hud);
     stateWindow_->model()->setScene(info);
@@ -375,12 +456,19 @@ void RunPage::refreshControls(const sdk::ISimSnapshot* snapshot) {
 
 void RunPage::pollNow() {
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (!cameraClock_.isValid()) cameraClock_.start();
+    const qint64 cameraNowNs = cameraClock_.nsecsElapsed();
+    const double cameraDt = lastCameraNs_ == 0
+                                ? 0.0
+                                : static_cast<double>(cameraNowNs - lastCameraNs_) / 1'000'000'000.0;
+    lastCameraNs_ = cameraNowNs;
 
     const auto snapshot = host_.latestSnapshot();
     const sdk::ISimSnapshot* s = snapshot.get();
     if (s != nullptr) ds_.onSimTime(s->simTimeUs());
 
     scene_.update(s);
+    scene_.advanceCamera(cameraDt);
     hud_.update(s);
     if (stateWindow_->isVisible()) stateWindow_->showSnapshot(s);
     refreshControls(s);
@@ -388,6 +476,26 @@ void RunPage::pollNow() {
     if (stats_.update(s, now) || now - lastLabelMs_ > 250) {
         lastLabelMs_ = now;
         refreshStatsLabels();
+    }
+}
+
+void RunPage::updateDriverPovLabel() {
+    const QString alliance = ds_.alliance() == sdk::Alliance::Blue ? tr("Blue") : tr("Red");
+    driverCameraAction_->setText(tr("Driver POV (%1 %2)").arg(alliance).arg(ds_.station()));
+}
+
+void RunPage::syncCameraActions() {
+    const CameraView& view = scene_.cameraView();
+    const auto setChecked = [](QAction* action, bool checked) {
+        const QSignalBlocker blocker(action);
+        action->setChecked(checked);
+    };
+    setChecked(homeCameraAction_, view.kind == CameraView::Kind::Home);
+    setChecked(driverCameraAction_, view.kind == CameraView::Kind::DriverPov);
+    for (QAction* action : stationCameraActions_) {
+        const auto station = parseCameraViewKey(action->data().toString().toStdString());
+        setChecked(action, station && view.kind == CameraView::Kind::Station &&
+                               station->alliance == view.alliance && station->number == view.number);
     }
 }
 

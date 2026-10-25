@@ -11,6 +11,8 @@ explanation or contract.
   [bridges](reference/bridges.md).
 - **Camera frame** — One simulated camera result; see
   [NetworkTables and cameras](concepts/networktables-and-cameras.md).
+- **Camera view** — The Run viewport's 3D viewpoint, distinct from simulated robot cameras and their
+  [vision results](concepts/networktables-and-cameras.md).
 - **Coprocessor** — An external vision computer, such as Limelight or PhotonVision; see
   [camera concepts](concepts/networktables-and-cameras.md).
 - **Driver Station (DS)** — Supplies robot mode and joystick/match inputs; see

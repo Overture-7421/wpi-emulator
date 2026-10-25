@@ -173,6 +173,51 @@ bool insideCollider(const FieldLayout& l, const sdk::Vec3& p) {
 
 }  // namespace
 
+TEST_CASE("driver station spots follow the three REBUILT shelf centers on both alliances") {
+    const FieldLayout layout = buildFieldLayout();
+    REQUIRE(layout.description.driverStations.size() == 6);
+    const float towerLo = dim::kTowerCenterYM - dim::kTowerWallWidthM / 2;
+    const float towerHi = towerLo + dim::kTowerWallWidthM;
+    for (const Alliance alliance : kAlliances) {
+        std::vector<sdk::DriverStationSpot> spots;
+        for (const sdk::DriverStationSpot& spot : layout.description.driverStations)
+            if (spot.alliance == alliance) spots.push_back(spot);
+        REQUIRE(spots.size() == 3);
+        std::sort(spots.begin(), spots.end(), [](const auto& a, const auto& b) { return a.number < b.number; });
+        CHECK(spots[0].number == 1);
+        CHECK(spots[1].number == 2);
+        CHECK(spots[2].number == 3);
+        const float firstY = alliance == Alliance::Blue ? spots[0].eyeM.y : dim::kFieldWidthM - spots[0].eyeM.y;
+        const float secondY = alliance == Alliance::Blue ? spots[1].eyeM.y : dim::kFieldWidthM - spots[1].eyeM.y;
+        const float thirdY = alliance == Alliance::Blue ? spots[2].eyeM.y : dim::kFieldWidthM - spots[2].eyeM.y;
+        CHECK(firstY > secondY);
+        CHECK(firstY > towerHi);
+        CHECK(secondY > towerHi);
+        CHECK(thirdY > dim::kOutpostWidthM);
+        CHECK(thirdY < towerLo);
+        for (const auto& spot : spots) {
+            CHECK(spot.eyeM.z == doctest::Approx(sdk::kDriverEyeHeightM));
+            const float expectedX = alliance == Alliance::Blue
+                                        ? -dim::kStationBaseThicknessM - dim::kStationShelfDepthM -
+                                              dim::kDriverEyeRoomBehindShelfM
+                                        : dim::kFieldLengthM + dim::kStationBaseThicknessM +
+                                              dim::kStationShelfDepthM + dim::kDriverEyeRoomBehindShelfM;
+            CHECK(spot.eyeM.x == doctest::Approx(expectedX));
+            const float fieldSideX = alliance == Alliance::Blue ? 0.5f : dim::kFieldLengthM - 0.5f;
+            CHECK_FALSE(blockedByOpaque(layout, std::min(spot.eyeM.x, fieldSideX), std::max(spot.eyeM.x, fieldSideX),
+                                        spot.eyeM.y, spot.eyeM.z));
+        }
+    }
+    for (int number = 1; number <= 3; ++number) {
+        const auto blue = sdk::driverStationSpot(layout.description, Alliance::Blue, number);
+        const auto red = sdk::driverStationSpot(layout.description, Alliance::Red, number);
+        REQUIRE(blue);
+        REQUIRE(red);
+        CHECK(red->eyeM.x == doctest::Approx(dim::kFieldLengthM - blue->eyeM.x));
+        CHECK(red->eyeM.y == doctest::Approx(dim::kFieldWidthM - blue->eyeM.y));
+    }
+}
+
 TEST_CASE("alliance wall: a camera at driver height sees the field through the stations but not through the tower wall") {
     const FieldLayout l = buildFieldLayout();
     const float eye = 1.6f, len = dim::kFieldLengthM, wid = dim::kFieldWidthM;

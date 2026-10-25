@@ -357,6 +357,50 @@ TEST_CASE("run view camera uses the editor's orbit camera around a field-framed 
     CHECK(scene.camera().distance == doctest::Approx(home));
     CHECK(near(scene.camera().target, target));
 }
+
+TEST_CASE("scene camera rig preserves driver views across scene changes and follows snapshot chassis poses") {
+    SceneModel scene;
+    auto field = std::make_shared<sdk::FieldDescription>();
+    field->lengthM = 16.f;
+    field->widthM = 8.f;
+    field->driverStations.push_back({sdk::Alliance::Blue, 2, {-1.f, 4.f, 1.6f}});
+    HostScene info;
+    info.field = field;
+    info.config = demoConfig();
+    scene.setSceneInfo(info);
+    scene.showStationView(sdk::Alliance::Blue, 2);
+    CHECK(scene.cameraPosition().x() == doctest::Approx(-1.f));
+    CHECK(scene.cameraPosition().y() == doctest::Approx(4.f));
+    CHECK(scene.cameraPosition().z() == doctest::Approx(1.6f));
+    QSignalSpy viewSpy(&scene, &SceneModel::cameraViewChanged);
+    QSignalSpy cameraSpy(&scene, &SceneModel::cameraChanged);
+    scene.setSceneInfo(info);
+    CHECK(scene.cameraView().kind == CameraView::Kind::Station);
+    CHECK(scene.cameraPosition().x() == doctest::Approx(-1.f));
+    CHECK(viewSpy.count() == 0);
+
+    sdk::SimSnapshotData data = baseSnapshot();
+    data.chassis.pose.position = {10.f, 4.f, 0.f};
+    const sdk::SimSnapshot snapshot(data);
+    scene.update(&snapshot);
+    scene.showDriverView();
+    const QVector3D eye = scene.cameraPosition();
+    CHECK(eye.x() < 0.f);
+    const auto centered = scene.camera().project(data.chassis.pose.position, 800.f, 600.f);
+    REQUIRE(centered);
+    CHECK(centered->first == doctest::Approx(400.f).epsilon(1e-3));
+    data.chassis.pose.position = {12.f, 6.f, 0.f};
+    const sdk::SimSnapshot moved(data);
+    scene.update(&moved);
+    scene.advanceCamera(0.1);
+    CHECK(cameraSpy.count() > 0);
+    CHECK(viewSpy.count() == 1);
+
+    scene.resetCamera();
+    CHECK(scene.cameraView().kind == CameraView::Kind::Home);
+    CHECK(viewSpy.count() == 2);
+}
+
 TEST_CASE("part list model converts SDK primitives to Qt Quick 3D transforms") {
     PartListModel model;
     ScenePart box;

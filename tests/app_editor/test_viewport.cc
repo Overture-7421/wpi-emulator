@@ -56,6 +56,19 @@ TEST_CASE("orbit camera: rays and projection agree") {
     CHECK_FALSE(cam.project(cam.position() * 2.f - cam.target, w, h));   // behind the camera
 }
 
+TEST_CASE("orbit camera: lookFrom places the eye and points along the requested gaze") {
+    OrbitCamera cam;
+    const sdk::Vec3 eye{-0.8f, 2.f, 1.6f};
+    const float yaw = 0.7f, pitch = 0.3f;
+    cam.lookFrom(eye, yaw, pitch, 4.f);
+    CHECK(approx(cam.position(), eye, 1e-3f));
+    CHECK(approx(cam.basis().forward,
+                 {std::cos(pitch) * std::cos(yaw), std::cos(pitch) * std::sin(yaw), std::sin(pitch)}, 1e-3f));
+    cam.lookFrom(eye, yaw, sdk::degToRadF(100.f), 4.f);
+    CHECK(cam.pitchRad >= sdk::degToRadF(-89.f));
+    CHECK(cam.pitchRad <= sdk::degToRadF(89.f));
+}
+
 TEST_CASE("orbit camera: orbit, pan, zoom and presets") {
     OrbitCamera cam;
     cam.orbit(0.f, 100000.f);

@@ -49,6 +49,11 @@ be absent before the first tick, and the UI may skip intermediate snapshots. Rep
 not simulation time. Host calls and delivered signals are UI-thread operations; hosts marshal
 worker-thread results before delivering them to the views.
 
+The Run-view camera is presentation state: Driver POV reads the latest snapshot's chassis pose
+and smooths its gaze using elapsed UI-frame time, including while simulation is paused. Camera
+presets never write simulation inputs or change the Driver Station alliance or station. The
+viewport's Driver POV is distinct from simulated robot cameras, which publish vision results.
+
 Launching robot code and starting simulation are separate operations. A live robot can stay
 connected for device discovery; beginning and ending simulation enter and leave lock-step
 without restarting the robot. Resetting simulation does not rerun robot initialization.

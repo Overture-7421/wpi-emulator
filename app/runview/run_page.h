@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QList>
+#include <QElapsedTimer>
 #include <QSettings>
 #include <QWidget>
 
@@ -23,6 +24,7 @@
 #include "status_chip.h"
 
 class QAction;
+class QActionGroup;
 class QComboBox;
 class QLabel;
 class QMenu;
@@ -106,6 +108,8 @@ private:
     void applyProjectDefaults(const HostScene& scene);
     void setStateWindowVisible(bool visible);
     void saveStateWindowGeometry();
+    void updateDriverPovLabel();
+    void syncCameraActions();
 
     IRuntimeHost& host_;
     RunPageOptions options_;
@@ -130,6 +134,12 @@ private:
     QComboBox* speedCombo_ = nullptr;
     QMenu* zoneMenu_ = nullptr;
     QMenu* startMenu_ = nullptr;
+    QMenu* cameraMenu_ = nullptr;
+    QActionGroup* cameraActionGroup_ = nullptr;
+    QAction* homeCameraAction_ = nullptr;
+    QAction* driverCameraAction_ = nullptr;
+    QAction* followCameraAction_ = nullptr;
+    std::vector<QAction*> stationCameraActions_;
     QToolButton* startButton_ = nullptr;
     QToolButton* allianceButton_ = nullptr;
     void updateAllianceButton();
@@ -147,6 +157,10 @@ private:
     QTimer* dsTimer_ = nullptr;
 
     qint64 lastLabelMs_ = 0;
+    QElapsedTimer cameraClock_;
+    qint64 lastCameraNs_ = 0;
+    CameraView initialCameraView_;
+    bool cameraViewRestored_ = false;
     bool consoleAutoShown_ = false;
     // The project (and its default station) last applied to the Driver Station panel.
     QString defaultsProject_;
