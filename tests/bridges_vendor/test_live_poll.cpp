@@ -204,7 +204,7 @@ TEST_CASE("vendor live poll: concurrent construction, nothing lost and no native
         const DeviceId dev = rig.host.idOf("talonfx", id);
         REQUIRE(dev.valid());
         CAPTURE(id);
-        CHECK(rig.host.announced.at(dev).signalSpecs.size() == 10);  // 5 motor + 4 rotor + fwd limit
+        CHECK(rig.host.announced.at(dev).signalSpecs.size() == 11);  // 5 motor + 4 rotor + fwd limit + motorFamily
         CHECK(rig.host.signalSpec(dev, sg::kForwardLimit) != nullptr);
     }
     for (int i = 0; i < kDevices; ++i) rig.bridge->collectOutputs(out);

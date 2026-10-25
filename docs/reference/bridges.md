@@ -106,6 +106,18 @@ the output. Physical mounting reversal is separate and belongs to the
 [mechanism mapping](mechanisms.md#motor-commands-and-multiple-controllers); do not
 invert it again in a vendor rule.
 
+CTRE's TalonFX firmware sim models a Kraken X60 unless told otherwise, and in the FOC
+modes the `motorVoltage` it reports includes back-EMF from that model. If the plant
+simulates a different motor (a Kraken X44 steer module), the two back-EMF terms disagree and
+a swerve steer loop can run away to free speed. The plant therefore writes the motor it
+simulates to a TalonFX's `motorFamily` input on every motor feedback frame, and the
+bridge sets the firmware sim's `MotorType` physics input from it through the native
+seam, once per device and again when the plant changes it. Only the Kraken X60 and X44
+exist in the firmware sim; any other motor leaves its default. TalonFXS takes its motor
+from its configuration and is left alone. Without the native physics API nothing is
+written. This changes only the firmware's model; the plant still applies the reported
+voltage.
+
 CANcoder feedback is in the calibrated model frame. When a finite magnet offset `o`
 and direction sign `s` (`-1` for clockwise-positive, `+1` otherwise) are available,
 the bridge writes:

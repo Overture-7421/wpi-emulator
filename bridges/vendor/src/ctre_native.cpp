@@ -51,6 +51,14 @@ const std::set<int>& floatSpns() {
 
 }  // namespace
 
+std::optional<int> ctreSimMotorTypeFor(sdk::MotorFamily family) {
+    switch (family) {
+        case sdk::MotorFamily::KrakenX60: return sim_motor_type::kKrakenX60;
+        case sdk::MotorFamily::KrakenX44: return sim_motor_type::kKrakenX44;
+        default: return std::nullopt;
+    }
+}
+
 CtreConfigSnapshot CtreConfigSnapshot::parse(std::string_view text) {
     CtreConfigSnapshot snap;
     while (!text.empty()) {

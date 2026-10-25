@@ -58,6 +58,24 @@ inline std::vector<MotorSpecFault> motorSpecFaults(const MotorSpec& m) {
 
 inline bool isValidMotorSpec(const MotorSpec& m) { return motorSpecFaults(m).empty(); }
 
+// The hardware a MotorSpec describes, read from its preset name ("Kraken X44 (FOC)", "Falcon 500", ...).
+// Vendor bridges use it to tell a vendor's firmware simulation which motor is attached, so that the firmware
+// models the same motor the plant does; Unknown leaves the firmware's own default in place. Deliberately
+// coarse: the FOC variant of a motor is the same hardware.
+enum class MotorFamily : int { Unknown = 0, KrakenX60 = 1, KrakenX44 = 2, Falcon500 = 3, Minion = 4 };
+
+inline MotorFamily motorFamilyOf(const MotorSpec& m) {
+    std::string name;
+    name.reserve(m.name.size());
+    for (const char c : m.name) name.push_back(c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c);
+    const auto has = [&name](const char* needle) { return name.find(needle) != std::string::npos; };
+    if (has("kraken x60")) return MotorFamily::KrakenX60;
+    if (has("kraken x44")) return MotorFamily::KrakenX44;
+    if (has("falcon 500")) return MotorFamily::Falcon500;
+    if (has("minion")) return MotorFamily::Minion;
+    return MotorFamily::Unknown;
+}
+
 // One motor of the built-in table.
 struct MotorPreset {
     std::string key;    // stable snake_case id, e.g. "kraken_x60"; mechanisms persist it as `motorModel`

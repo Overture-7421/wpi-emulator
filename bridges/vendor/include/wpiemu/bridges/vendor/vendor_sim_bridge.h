@@ -119,11 +119,20 @@ private:
         sdk::DeviceDescriptor descriptor;
         std::optional<std::uint32_t> positionSignal;
         std::optional<std::uint32_t> velocitySignal;
+        // TalonFX only: the motorFamily input this bridge announces, the firmware-sim motor type the plant asked
+        // for through it, and the one last written (see applyMotorTypes).
+        std::optional<std::uint32_t> motorFamilySignal;
+        std::optional<int> wantedMotorType;
+        std::optional<int> appliedMotorType;
+        std::optional<sdk::MotorFamily> unsupportedFamilyLogged;
+        bool motorTypeUnavailable = false;
         int configAttempts = 0;
         bool configDone = false;
     };
 
     void drainObservations();
+    bool ensureNative();
+    void applyMotorTypes();
     bool readOneConfig();
 
     std::shared_ptr<sdk::ISimDeviceBackend> backend_;
