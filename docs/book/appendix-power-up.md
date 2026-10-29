@@ -51,8 +51,9 @@ construction coordinates.
 - Face the Boss: one ranking point for the qualification endgame condition in the manual.
 - Qualification win/tie: two/one ranking points.
 - The final 30 seconds of teleop are Endgame.
-- Force and Boost last 10 seconds. Each costs one cube for switch, two for scale, or three for both;
-  Levitate costs three vault cubes and credits one climb.
+- Force and Boost last 10 seconds. Their one/two/three-cube activation levels select switch,
+  scale or both; Levitate's three-cube condition credits one climb. Consult the manual for
+  allocation and once-only activation constraints.
 
 The game-specific message has three characters in alliance-view order: near switch, scale, far
 switch. Legal assignments are `LLL`, `LRL`, `RLR`, and `RRR`. Both alliances receive the same
@@ -67,7 +68,9 @@ does not model the opponent alliance, human players, fouls, or all qualification
 1. Plates move vertically and remain level. The SDK has no physics joints, and the current entity
    renderer has no orientation for instanced entities.
 2. Cubes can tumble in physics but render axis-aligned.
-3. Opponent actions are scenario inputs, not a second autonomous robot.
-4. Climbing is a rule trigger or an explicitly tested simple mechanism, not a general rope solver.
+3. There are no opponent actions or human feeds in the provided implementation.
+4. Vaults, power-ups, parking, climbing, penalties and ranking points are not implemented.
 5. The game has no AprilTags; use its 2018 vision targets only where the official drawings specify
    them. Do not invent a tag layout for robot localization.
+6. Ownership scoring integrates a continuous rate, rather than the manual's discrete awards.
+   The auto-line check uses chassis X extents for straight driving, not full bumper geometry.

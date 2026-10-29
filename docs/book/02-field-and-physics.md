@@ -31,7 +31,8 @@ separate on purpose.
 ## 2. Give the carpet things to hit
 
 Use static bodies for field structures that never move: walls, rails, fences, platforms, and the
-ramps. For a box, create a static `BodyDesc`, add a `ShapeDesc` whose geometry is `BoxShape` with
+ramps when your game needs them. This slice omits detailed ramps. For a box, create a static
+`BodyDesc`, add a `ShapeDesc` whose geometry is `BoxShape` with
 half-extents in metres, then retain the body ID for cleanup. Use the `layer::Field` category and a
 mask that includes the robot and game pieces. Use boxes for most geometry; a small number of boxes
 are easier to inspect and tune than one giant box that blocks the robot from somewhere mysterious.
@@ -57,7 +58,7 @@ There are 60 pre-match Power Cubes in total, but only **32 loose cubes start on 
 The other 28 belong to the human-player portal supply, before any robot preloads are taken.
 The real cube is roughly
 33 × 33 × 27 cm and about 1.5 kg. Give each body a stable entity tag, add a box with the cube
-half-extents, and set mass properties after its shape is added. Keep a stable ID for each entity so
+half-extents and a density that produces the chosen mass. Keep a stable ID for each entity so
 the game state can update snapshots and scoring without guessing which yellow square it found.
 
 Stage six cubes approximately equidistant along each switch's **scale-facing fence**. On the
@@ -83,7 +84,8 @@ physical shape with a static billboard that cannot be collected.
 
 ## 4. Sensors are volumes, not opinions
 
-Represent exchange, portal, platform, and pickup regions as sensor shapes. Set `sensor` and
+Our plates use sensor shapes; pickup uses a zone-local center-in-box test. Future exchange,
+portal or platform detection can use sensor shapes too. Set `sensor` and
 `sensorEvents` on the sensor, and enable `sensorEvents` on the visitor shape too. Give the sensor a
 plugin-owned category and choose masks deliberately. The field should report “a robot entered the
 exchange” or “a cube is in the vault”; the game state decides what those facts mean.
@@ -97,4 +99,4 @@ Check entry **and** exit boundaries, including a body that starts inside a volum
 A field frame with a known origin, static geometry that collides, and a plan for dynamic cubes and
 sensor zones. Next, we give the pieces jobs and give the match a clock.
 
-Next: [Week 2 and 3—cubes, plates, phases, and game data](03-rules-and-robot.md).
+Next: [Workshop—write the body owner, field geometry and starting layout](02a-field-implementation.md).

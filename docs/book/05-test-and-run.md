@@ -6,10 +6,11 @@ field in the app.
 
 ## 1. Wire the plugin once
 
-In the scratch copy, set the 2027 manifest's optional game entry to `game_2027`, add the plugin
-target to the season CMake aggregation, and call its `registerPlugin` function from the built-in
+In the scratch copy, set the 2027 manifest's optional game entry to `game_2027` and call its
+`registerPlugin` function from the built-in
 plugin aggregator. Do not add a direct dependency from the app to `game_2027`; the aggregator is
-the composition seam.
+the composition seam. The season CMake manifest loop already adds and links the target.
+The [registration workshop](04c-module-and-registration.md) contains the complete wiring.
 
 Build with warnings-as-errors and run the existing season, plugin, and session tests. Then run:
 
@@ -25,7 +26,8 @@ the field drawing.
 
 ## 2. Test rules at the edges
 
-Write focused tests around the plugin's public SDK interfaces. At minimum, cover:
+The [physics workshop](05b-physics-tests.md) and [full-match workshop](05c-full-match.md) supply
+actual test code for the working slice. For a future full-game implementation, extend that coverage:
 
 - registering exactly once and selecting the game from a 2027 project config;
 - field construction and teardown, repeated reset, and two independent game-state instances;
@@ -86,10 +88,13 @@ statements in the [2027 season README](../../seasons/2027/README.md),
 stand-in into tracked code. Keep the platform-only 2027 behavior covered as a separate
 configuration if that remains a supported setup.
 
+The [replay appendix](appendix-replay.md) supplies the exact registry-count update and assembles
+the host test replacement. Do not just delete an assertion because the count changed.
+
 ## You now have…
 
 A plugin the app can select, a test plan that covers reset and scoring edges, and a manual run
 checklist. A successful build proves the code links. A successful match proves the pieces, clock,
 robot, and referee can have a conversation.
 
-Next: [Next kickoff—reuse the seam for the actual game](06-next-kickoff.md).
+Next: [Workshop—wire the robot model and compile both robot programs](05a-driven-robot.md).

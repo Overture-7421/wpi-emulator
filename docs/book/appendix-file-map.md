@@ -1,27 +1,29 @@
 # Appendix B: where the work goes
 
-The paths below are the scratch implementation's destination map. Some Power UP-specific source
-files do not exist in the repository today; create them only in the season plugin you add.
+These are actual destinations assembled by [Replay the book](appendix-replay.md), not a proposed
+file layout. All paths are relative to a scratch source export. The tracked checkout stays
+documentation-only.
 
-| Work | Destination | Owner |
-|---|---|---|
-| Year, ABI, WPILib pin, plugin ID | <code>seasons/2027/season.json</code> | Season facts; no core year branch |
-| Target and SDK-only dependency | <code>seasons/2027/game/CMakeLists.txt</code> | Plugin compilation |
-| Registration declaration and identity | <code>game/include/.../plugin.h</code>, <code>plugin_info.h</code> | Public plugin entry point |
-| Module, factories, and descriptors | <code>game/src/game_module.cpp</code> | Stateless description and session setup |
-| Field geometry and visuals | <code>game/src/field_layout.cpp</code> | Measured colliders and render poses |
-| Cube pool and entity IDs | <code>game/src/power_cubes.cpp</code> | Dynamic pieces and reset |
+| Destination | What you write there |
+|---|---|
+| <code>seasons\2027\game\CMakeLists.txt</code> | SDK-only static-library target |
+| <code>seasons\2027\game\include\wpiemu\plugins\game_2027\plugin.h</code> | Public registration declaration |
+| <code>seasons\2027\game\src\game_module.cpp</code> | All implementation fragments from field through registration workshops |
+| <code>seasons\2027\season.json</code> | Existing season pin, with optional game enabled |
+| <code>seasons\builtin_plugins.cpp</code> | Composition through the public registration function |
+| <code>tests\plugins\test_power_up.cpp</code> | Five real-physics test cases |
+| <code>tests\plugins\test_new_year_plugin.cpp</code> | Existing registry assertions updated for the extra built-in |
+| <code>app\host\tests\e2e_season_test.cpp</code> | Opt-in real-HAL match, both languages and reset |
+| <code>samples\season_2027\cpp\src\main\cpp\Robot.cpp</code> | Three-PWM C++ robot |
+| <code>samples\season_2027\java\src\main\java\frc\robot\Main.java</code> | Equivalent Java robot |
+| <code>samples\season_2027\cpp\.wpiemu\robot.json</code> | C++ fixture, low-Y start and RLR assignment |
+| <code>samples\season_2027\java\.wpiemu\robot.json</code> | Java fixture, high-Y start and LRL assignment |
 
-| Work | Destination | Owner |
-|---|---|---|
-| Switch/scale plate rules | <code>game/src/plate_rules.cpp</code> | Ownership bands and plate targets |
-| Score, clock, and power-ups | <code>game/src/game_state.cpp</code>, <code>scoring.cpp</code> | Match-local rule state |
-| Robot zones and inventory | <code>game/src/zones.cpp</code> | Existing SDK interaction seams |
-| Config and property bindings | <code>game/src/config.cpp</code> | Plugin-owned settings |
-| HUD, values, and sounds | <code>game/src/game_ui.cpp</code>, <code>game/src/game_sounds.cpp</code> | Qt-free descriptors |
-| Linking and rule tests | <code>seasons/CMakeLists.txt</code>, <code>seasons/builtin_plugins.cpp</code>, <code>tests/plugins/</code> | Aggregation and contract checks |
+Within the single implementation file, `Bodies` owns collider lifetimes, `Field` owns static
+geometry, `State` owns match-local pieces/rules, and `Module` supplies factories and descriptors.
+They remain private to the translation unit. Once this prototype grows, those are natural seams
+for private source files; inventing empty files for future vaults does not help the first build.
 
-Use the real [template file list](../../seasons/_template/game/README.md) for the minimum plugin
-skeleton. The existing [2026 plugin](../../seasons/2026/game/README.md) demonstrates mature config,
-zones, sensors, sounds, and field layouts, but its game rules and ABI are not Power UP examples.
-Treat it as a seam reference, not a source tree to rename.
+The template's [file list](../../seasons/_template/game/README.md) shows a more split-up skeleton.
+The [2026 plugin](../../seasons/2026/game/README.md) is a mature reference for config, zones,
+sensors, sounds and field layouts, not a Power Up source tree to rename.

@@ -1,23 +1,32 @@
 # Appendix B: pit inspection checklist
 
-## Before the first match
+## Before the prototype's first match
 
 - [ ] Season manifest pins the intended WPILib release, ABI, Java major, and launch profile.
 - [ ] The plugin ID, folder, namespace, target, manifest entry, and registration agree.
 - [ ] The game plugin links only the SDK.
 - [ ] Field visuals and colliders use the same poses, units, and coordinate frame.
 - [ ] Field and game-state destructors release every body they own before the physics world ends.
-- [ ] Reset restores game pieces, plate states, inventory, timers, power-ups, scores, game data, and
-      random state.
+- [ ] Reset restores game pieces, plate states, inventory, timers, scores and game data.
 - [ ] The match clock follows Driver Station mode/time, including Practice durations.
 - [ ] HAL game data reaches autonomous initialization before the first autonomous tick.
 - [ ] Zone event logic handles entry, exit, repeated overlap, and start-inside cases.
-- [ ] Rule tests cover point rates, phase boundaries, power-up costs, expiration, and endgame.
-- [ ] Real-physics tests cover collisions and any claim about climbing or ramps.
+- [ ] Rule tests cover point rates, disabled/expired-time/eStop guards and endgame boundaries.
+- [ ] Real-physics tests cover contacts, pyramid stability and preload/reserve conservation.
 - [ ] C++ and Java robot projects compile with the selected season's installed toolchains.
 - [ ] `check_seasons.py`, `check_boundaries.py`, and `check_docs.py` pass.
 - [ ] The Qt app was launched to inspect Quick 3D rendering; an offscreen test is not a substitute.
 - [ ] Any unsupported feature or simplification is visible in the guide and the plugin description.
+
+## Before claiming complete Power Up
+
+The provided implementation does **not** pass this second inspection:
+
+- [ ] Official discrete scoring, eligibility, penalties and qualification context are implemented.
+- [ ] Human feeds and exchange/vault transfers preserve cube conservation.
+- [ ] Force/Boost/Levitate allocation, activation, expiry and reset have tests.
+- [ ] Parking and supported climb awards have real-physics and rule-boundary tests.
+- [ ] Ranking points are tested against the actual alliance qualification conditions.
 
 ## If something breaks
 

@@ -1,88 +1,66 @@
-# Weeks 4–5: keep score, then add the extras
+# Weeks 4–5: the referee and the extension roadmap
 
-**In 30 seconds:** keep rule state in `IGameState`, put tunable scenario values in the plugin config,
-and publish numbers through the SDK. The editor and HUD should describe your game, not contain it.
+**In 30 seconds:** first finish a small, observable referee. Keep unimplemented rules visibly
+separate from that working result; a plausible paragraph is not a feature.
 
-## 1. Make scoring a ledger, not a pile of booleans
+## 1. What we implement now
 
-Give each alliance a score ledger with separate entries for autonomous ownership, teleop ownership,
-vault cubes, parking, climbing, power-ups, and ranking points. Derive the displayed total from those
-entries. That makes a replay explainable and stops reset from subtracting one bonus twice.
+The next workshops implement continuous switch/scale ownership scoring, a simplified once-only
+auto-line bonus, disabled/expired-time guards, inventory and release counters, FMS data and HUD.
+The robot physically releases a cube; the plate must detect a settled cube before any ownership
+points accrue. The robot's roller can request release, but cannot request points.
 
-Match scoring in the worked example includes auto-run, switch and scale ownership, vault cubes,
-platform parking, and climbs. Qualification ranking points include Auto Quest, Face the Boss, and
-win/tie. The full rule summary and the deliberate one-robot omissions are in the [fact sheet](appendix-power-up.md).
-Do not award ranking points in a practice run just because a HUD can display the number.
+For our two balances at the switches, only the home alliance can score that switch. The scale
+can score for either alliance. Equal cube counts mean no ownership. Keep that distinction explicit;
+awarding points for owning the opponent's switch is an easy mistake in a generic pair loop.
 
-Vault cubes score when deposited; activating Force, Boost, or Levitate consumes the appropriate
-column's cubes. The Force and Boost columns each hold up to three cubes; one, two, or three cubes
-select switch, scale, or both. Force grants temporary ownership, Boost doubles ownership scoring
-for its target, and Levitate costs three cubes and credits one climb. Model each activation with a
-start and end simulation time, a target, and a once-only cost. Use simulation time; never use
-`std::chrono` in a game rule.
+Snapshots copy scores and entity positions for the UI. No Qt code belongs in the rules. Declare
+zone kinds, config properties, game values and HUD widgets through the SDK; the app already knows
+how to edit and display them. QML owns the NWU-to-scene conversion.
 
-**Quick win:** add a HUD counter for total vault cubes and verify that one deposit changes it exactly
-once. Then test that reset returns it to zero. A pretty counter is useful; a counter that survives
-the next match is a witness.
+## 2. Let a generic motor activate an interaction
 
-## 2. Add robot interactions through zones
+The example's `roller` is a generic rotary mechanism mapped to PWM 2. Its measured simulated
+velocity activates a chassis-mounted release zone. That zone resolves its attachment, evaluates
+the SDK conditions, and lets the held cube re-enter physics at the muzzle pose.
 
-Describe pickup, exchange, vault, platform, and climb interactions as plugin-owned zone kinds. The
-metadata supplies labels, property schemas, default local poses, and shapes. `IGameState` resolves
-the configured attachment pose, checks activation, and applies the Power UP rule.
+Pickup uses a volume instead: it transforms active cube centers into the zone frame and takes one.
+Held inventory is published as both HUD and a numeric game value, so a later generic BeamBreak
+could consume it without a custom HAL device. The provided match fixture has only a release zone;
+focused physics tests exercise pickup separately.
 
-Do not add a special HAL device for a game zone. For a robot-visible reading, declare a game value
-and let the existing generic Distance or BeamBreak sensor consume it. For inventory, track the
-piece in game state and publish a sensor value; keep the robot-facing device bridge generic.
+**Student asks:** “Could I just call release from robot code?” Not without inventing a non-WPILib
+side channel. A normal motor plus an activation condition tests the same boundary a real intake uses.
 
-For an attached zone, follow the repository's [zone interaction procedure](../guides/game-plugins.md#add-a-zone-interaction):
-describe the kind in the module, resolve its configured mechanism link in game state, then evaluate
-the SDK activation conditions before applying pickup or launch rules. A zone descriptor tells the
-editor what the interaction is; it does not perform the interaction by itself.
+## 3. Extension work: vaults, power-ups and official scorekeeping
 
-The single-robot scope matters here. A simulated opponent is not present to push a cube into the
-portal or claim a scale plate. Make that an explicit scenario setting, with a default that does not
-invent opponent actions.
+**Not implemented in the listings.** A complete rules implementation needs a score ledger that
+separates autonomous awards, teleop awards, vault cubes, parking, climbing and penalties.
+Replace continuous integration with the manual's actual award timing before claiming official
+scores. Test acquisition, loss, re-acquisition and phase boundaries, not just a steady scoring rate.
 
-## 3. Let the generic editor do its job
+Then model the exchange-to-vault transfer, capacity, allocation and once-per-match activation rules.
+Force and Boost need explicit target and simulation-time expiry; Levitate needs endgame accounting.
+Read the [manual linked in the rule card](appendix-power-up.md) for precise eligibility and cube
+handling. This guide does not provide working code or tests for these rules yet.
 
-Add plugin config through `contributeConfigSchema` and typed `ConfigBindings`. Use it for scenario
-choices such as initial cube layout, opponent behavior, and whether scoring is enabled. Keep the
-schema version explicit; the SDK currently rejects an unsupported plugin schema version rather than
-running an undocumented migration.
+Ranking points also require qualification context and alliance-level conditions that a single
+robot does not establish. Do not display a practice ranking point merely because you can add a
+HUD key. Human feeding and opponent actions need their own declared scenario inputs and tests.
 
-Use `contributeHud` for score, ownership timers, and cube counts. Use `contributeEditorPanels` only
-when the generic property inspector is insufficient. Use `contributeSoundCues` for short, declared
-assets, then request a cue on a rule transition—not every simulation tick. The app owns playback and
-Qt remains outside the plugin.
+## 4. Extension work: a climber and richer presentation
 
-Qt is the desktop UI framework; Qt Quick 3D is the run-view renderer. The plugin gives the app plain
-SDK descriptors and immutable snapshot data. QML turns the field frame into the renderer's scene
-frame, so keep saved poses in the SDK's Z-up NWU coordinates. For the config, zone, sensor, and
-sound seams in more detail, use the [game-plugin guide](../guides/game-plugins.md).
+**Not implemented in the listings.** The SDK has no general joint solver. A credible hanging
+robot needs a hook/contact or explicitly simplified rule trigger, load/support handling, and
+reset behavior. Keep the physical support condition separate from the score award so the physical
+model can improve without rewriting the ledger. Touching a tower is not automatically a climb.
 
-**Student asks:** “Can we add a Qt label directly?” You can, but then the plugin owns UI lifecycle,
-translation, layout, and test burden. A declared HUD value gets you the label without the side quest.
+Custom editor panels and sound cues are also optional later additions. Prefer the generic property
+inspector first; declare sounds through the SDK and request them once per transition. The app owns
+playback, translation and Qt lifecycle. The [game-plugin guide](../guides/game-plugins.md) documents
+these seams; this prototype does not implement a sound asset or custom Qt panel.
 
-## 4. The climber is an optional bonus level
+**You now have:** a clear boundary between the runnable lesson and the unfinished full-game work.
+Continue with the actual referee source, then interactions and registration.
 
-Power UP's endgame is a fun place to oversell a simulation. The SDK has no general physics-joint
-system. A real hanging robot needs a credible hook, rope, load transfer, and support condition; a
-single robot also cannot reproduce alliance-assisted climbing.
-
-For a useful first pass, implement a rule-level climb zone: the robot must enter the endgame window
-and meet a configured height/contact condition before the plugin awards a climb. Keep the contact
-and score logic separate so a later rope-and-hook model can replace the simplified trigger without
-rewriting the score ledger. If you do build a mechanism, exercise it with chassis coupling and test
-the support and reset cases.
-
-> **Inspection:** a robot touching a rung is not automatically a climb. A score should be tied to a
-> defined condition and a match-time boundary, not a visual guess.
-
-## You now have…
-
-A rule ledger, game values for sensors and HUD, editor-facing config, sound cues, and a bounded
-climber design. Next, we install the plugin in a local build and decide whether the result behaves
-like a usable emulator game.
-
-Next: [Week 6—registration, integration, and inspection](05-test-and-run.md).
+Next: [Workshop—write the tick, scoreboard and immutable snapshots](04a-match-and-snapshots.md).

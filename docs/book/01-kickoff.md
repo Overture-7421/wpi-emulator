@@ -61,22 +61,23 @@ Do not point two Ninja build trees at the same FetchContent build directory. Sha
 dependency **sources**, or give each build its own `_deps` folder. Sharing configured build output is
 how one clean build turns into an archaeology exercise.
 
-## 4. Copy the season template, not the 2026 game
+## 4. Learn the template's contract, not the 2026 game
 
 Read the [game-plugin guide](../guides/game-plugins.md) and the [season template checklist](../../seasons/_template/game/README.md).
-Copy the template game into <code>seasons/2027/game</code> in the scratch export. Rename its target, alias,
-include directory, namespace, and plugin id consistently to `game_2027`. Set the metadata year to
-2027. Keep the target's only dependency `wpiemu_sdk`.
+The [field workshop](02a-field-implementation.md) creates our smaller implementation directly;
+do not copy a second template implementation into that target. For a different game, the template
+is a good starting point. Keep target, alias, include directory, namespace and plugin ID consistent
+with `game_2027`, and keep the target's only dependency `wpiemu_sdk`.
 
 Make these changes in this order:
 
-1. In `plugin_info.cpp`, return `game_2027` and year `2027`; keep the ID in one place.
-2. In `game_module.cpp`, set `GameMetadata`, create the field and game state, and publish plugin-
-   prefixed HUD, config, zone, game-value, and sound descriptors.
+1. Create the target and public registration declaration.
+2. Implement the field and state, then `GameMetadata`, factories and plugin-prefixed descriptors.
 3. In `seasons/2027/season.json`, set the game entry to plugin `game_2027`; preserve its WPILib,
    ABI, and launch-profile data.
-4. In `seasons/CMakeLists.txt`, add the plugin target to the season aggregation. In
-   `seasons/builtin_plugins.cpp`, include its public entry point and call `registerPlugin`.
+4. In `seasons/builtin_plugins.cpp`, include its public entry point and call `registerPlugin`.
+   The manifest loop in `seasons/CMakeLists.txt` already discovers and links the game target;
+   do not add another per-season CMake branch.
 5. Add a focused registration/session test; do not make the app link directly to the new target.
 
 The minimal plugin has three owners: a stateless `IGameModule` describes the game and constructs
@@ -99,8 +100,7 @@ future cleanup ticket pretending to be architecture.
 
 ## You now have…
 
-A baseline, a private scratch pit, and a clear ownership map. The plugin can be selected without a
-year-specific change in core. Next, we pour a carpet that the physics engine and the run view agree
-on.
+A baseline, a private scratch pit, and a clear ownership map. We have not implemented or registered
+the game yet. Next, we design the field and then create its source without changing core.
 
 Next: [Week 1—field coordinates and the first static geometry](02-field-and-physics.md).
