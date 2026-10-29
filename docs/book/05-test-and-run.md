@@ -44,12 +44,25 @@ The existing tests include a newly registered year plugin, a template plugin, zo
 game-fed sensors, and game-data delivery through the robot-facing state. Read those before adding
 another fake; they show which behavior already belongs to core.
 
+Treat starting placement as behavior worth testing, not just decoration. Check six scale-facing
+fence cubes and a ten-cube 6/3/1 alliance-facing pyramid at each switch, mirrored at the other end.
+Check that the 28 portal-supply cubes stay outside active field physics before preloads, and that
+each preload reduces its alliance's reserve without increasing the 60-cube total. Reserve cubes
+must not be collectible through a robot pickup zone before an explicit feed.
+
+Let the pyramids settle for several simulated seconds on the real physics backend: their upper
+tiers should stay supported, without interpenetration or large drift. After a pickup or delivery,
+reset and verify all starting poses, tier heights, reserve counts, held inventory, and zero scores.
+
 ## 3. Run a robot like a driver would
 
 Select the 2027 project in the app. Confirm that the plugin is selectable, the field and pieces
 appear, Driver Station state changes scoring phase, and the robot sees the expected game data in
 `autonomousInit`. Drive slowly first. Check that the plate visual and collision remain level and
 coincident when ownership changes; verify reset returns every cube and counter.
+Compare the starting scene with manual section 4.1.2, Figure 4-2: pyramids belong on the
+alliance-facing sides of the switches, rows of six on the scale-facing sides, and portal supply
+outside the field. A correct total count alone does not establish a correct layout.
 
 The run view is a Qt Quick 3D scene, so an offscreen widget test does not prove the field renders.
 If the book's Qt-free build was all you configured, you have not tested the picture. Use a matching

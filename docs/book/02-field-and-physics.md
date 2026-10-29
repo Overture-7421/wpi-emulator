@@ -53,10 +53,24 @@ contact.
 
 ## 3. Sixty yellow crates, one reset path
 
-Use dynamic box bodies for the approximately 60 pre-match Power Cubes. The real cube is roughly
+There are 60 pre-match Power Cubes in total, but only **32 loose cubes start on the playing field**.
+The other 28 belong to the human-player portal supply, before any robot preloads are taken.
+The real cube is roughly
 33 × 33 × 27 cm and about 1.5 kg. Give each body a stable entity tag, add a box with the cube
 half-extents, and set mass properties after its shape is added. Keep a stable ID for each entity so
 the game state can update snapshots and scoring without guessing which yellow square it found.
+
+Stage six cubes approximately equidistant along each switch's **scale-facing fence**. On the
+**alliance-wall side**, stage ten cubes in a pyramid: six on the bottom, three in the middle, and
+one on top, justified toward the switch. Mirror the arrangement for the other end of the field.
+A tidy grid near midfield is useful for a physics experiment, but it is not the match setup.
+
+Each alliance also has seven cubes at each of its two portals, **outside the playing field at the
+opposite end from its alliance station**. A robot's optional preload comes from that alliance's
+portal supply; it is not a sixty-first cube. At least five cubes must remain in each portal after
+preloading. Keep reserve cubes out of field collision and pickup queries until an explicit
+human-player feed introduces one. A reserve counter or off-field visual is not an implemented feed.
+See [the rule card](appendix-power-up.md#the-field-at-a-glance) for the source diagram.
 
 Create the initial layout in `reset`, not in a constructor that may run once while a match is reset
 many times. Reset must restore poses and velocities, clear inventory and scoring timers, reset

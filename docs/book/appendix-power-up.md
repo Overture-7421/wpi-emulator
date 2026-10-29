@@ -13,7 +13,7 @@ facts from the book's approximations.
 | Power Cube | 13 × 13 × 11 in (33 × 33 × 27 cm), about 1.5 kg | dynamic box; drawn axis-aligned |
 | Switch plate | 3 × 4 ft (0.91 × 1.22 m) | level kinematic plate with ownership height states |
 | Scale plate | 3 × 4 ft (0.91 × 1.22 m) | level kinematic plate with ownership height states |
-| Starting cubes | 30 per alliance, 60 total | staged from the official layout drawing; resettable pool |
+| Starting cubes | 30 per alliance, 60 total before preloads | 32 loose on the field; 28 in off-field portal supply |
 
 Use the official [2018 FRC Game and Season Manual](https://firstfrc.blob.core.windows.net/frc2018/Manual/2018FRCGameSeasonManual.pdf)
 and [Power UP-specific field drawings](https://firstfrc.blob.core.windows.net/frc2018/Drawings/FieldDrawings-FIRSTPOWERUPspecific.pdf)
@@ -26,7 +26,20 @@ drawing is authoritative for placements.
 | Scale | Center of the field; level plate height 5 ft (1.52 m); outer plate edges 15 ft (4.57 m) apart |
 | Platform zone | 11 ft 1.5 in × 9 ft 11.75 in (3.39 × 3.04 m), between switch and scale |
 | Vault | Three columns, each with a capacity of three cubes: Force, Levitate, Boost |
-| Pre-match pieces | 14 at the two portals, 6 beside the switch, and 10 in the switch-side pyramid per alliance |
+| Pre-match pieces | Per alliance: 6 along the scale-facing switch fence, 10 in the alliance-facing pyramid, 14 at off-field portals before preloads |
+
+Manual **section 4.1.2, Figure 4-2 (page 38)** specifies the starting arrangement. The six fence
+cubes are approximately equidistant along the face closest to the scale. The ten-cube pyramid has
+six cubes on the bottom, three in the middle, and one on top, justified toward the switch.
+The two alliance layouts mirror one another.
+
+Each portal starts with seven cubes outside the playing field; an alliance's portals are at the
+opposite end from its alliance station. Optional robot preloads are deducted from that alliance's
+portal supply, with at least five cubes remaining in each portal. Thus a one-robot scenario with a
+preload has 32 loose field cubes, 27 portal-reserve cubes, and one held cube—not 61 cubes.
+Keep reserve cubes separate from active field pieces until a human-player feed is explicitly
+implemented. Nominal placement spacing is an approximation; use the field drawings for exact
+construction coordinates.
 
 ## Scoring and game data
 
