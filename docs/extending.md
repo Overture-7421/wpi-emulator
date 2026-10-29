@@ -5,6 +5,7 @@ Read this when choosing the smallest existing seam for a simulator feature.
 Start with the seam below, then follow its guide for a procedure and its reference for behavior.
 Keep game-year rules in plugins and robot-device translation in bridges, not in core or the UI.
 The [architecture](ARCHITECTURE.md) explains module ownership and runtime constraints.
+For a complete worked season example, see [Implementing a Game Season](book/README.md).
 
 ## Seam map
 

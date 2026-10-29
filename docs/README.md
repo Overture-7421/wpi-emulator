@@ -15,6 +15,7 @@ simulates the robot; it does not require changes to the robot project.
 | Running a team's robot | [User guide](USER_GUIDE.md) → [robot samples](../samples/swerve_robot/README.md) |
 | Diagnosing or maintaining a build | [Maintenance guide](guides/maintenance.md) → the relevant reference |
 | Preparing a new WPILib season | [WPILib upgrade guide](guides/wpilib-upgrade.md) → [releasing](releasing.md) |
+| Learning to build a season game plugin | [Implementing a Game Season: FIRST POWER UP on the 2027 ABI](book/README.md) |
 
 ## Concepts
 
