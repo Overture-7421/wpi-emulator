@@ -3,7 +3,8 @@
 Use this guide to add a season, connect robot mechanisms to game behavior, or expose game state to
 robot sensors. Start with the [plugin contract](../reference/game-plugin.md); the
 [2026 plugin notes](../../seasons/2026/game/README.md) are season-specific and are not a template
-for other games.
+for other games. For an end-to-end worked example aimed at a mentor new to this codebase, read the
+[Season Builder's Book](../book/README.md).
 
 ## Mental model
 
