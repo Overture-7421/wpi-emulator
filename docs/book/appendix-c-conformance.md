@@ -65,14 +65,14 @@ is Windows x64, MSVC 14.51, Ninja, Release, warnings as errors, and the season's
 | RQ1: invariants and integration | 28 selected plugin, physical and session tests passed, including three worked exercises; 38 pure-rule cases passed 428 assertions |
 | RQ2: repeatability | All 1,000 per-step physics hashes matched in four runs with worker counts 1, 1, 2 and 4 |
 | RQ3: ordinary robot delivery | Both languages delivered physically, completed disabled windows and repeated autonomous after an epoch reset; scores appear in Table C.1 |
-| RQ4: mean fixture tick cost | RESULTS_TIMING |
+| RQ4: mean fixture tick cost | 2.573 microseconds per tick over 10,000 measured steps after 1,000 warm-up steps, compared with the 5,000 microsecond simulation step |
 
 | Additional check | Recorded result |
 |---|---|
 | Cumulative checkpoints | Chapters 5-22 built and passed their selected tests; Chapter 14's core matches were also reproduced independently |
 | Real-HAL vault and climb | Java and C++ each deposited one cube for 5 vault points, froze Force at 7.000 s while disabled, and achieved a supported climb at chassis Z = 0.500 m for 30 endgame points |
-| Optional partners/opponent match | RESULTS_SCENARIO |
-| Desktop rendering and audio | RESULTS_DESKTOP |
+| Optional partners/opponent match | The C++ real-HAL match finished Blue 221, Red 142, with 3 Blue ranking points; the complete Power UP process suite passed 4 cases and 1,439 assertions |
+| Desktop rendering and audio | Hardware D3D11 rendering showed the field, fence rows, pyramids, reserve cubes and HUD; Blue station selection and restart were inspected. Audible playback and a visual full-match run were not verified; component tests checked cue requests and the generated asset |
 | GCC 14 portability | Not run: the installed Docker CLI could not connect to its local Linux engine |
 
 Table C.1. Complete real-HAL match observations from the core and completed model.
