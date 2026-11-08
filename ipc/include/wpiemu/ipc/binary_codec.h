@@ -27,7 +27,6 @@ namespace wpiemu::ipc {
 
 inline constexpr std::uint8_t kWireFormatVersion = 1;
 inline constexpr std::size_t kDefaultMaxFrameBytes = std::size_t{8} << 20;
-inline constexpr std::size_t kMaxStringBytes = std::size_t{1} << 20;
 
 class BinaryMessageCodec final : public sdk::proto::IMessageCodec {
 public:

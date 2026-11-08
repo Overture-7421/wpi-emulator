@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "wpiemu/ipc/binary_codec.h"
+#include "wpiemu/sdk/core/wire_codec.h"
 
 using namespace wpiemu;
 using namespace wpiemu::ipc;
@@ -838,7 +839,7 @@ TEST_CASE("codec: encode appends and never disturbs earlier bytes, failures leav
     CHECK(out.size() == 2 + 3 + 2);
 
     Goodbye huge;
-    huge.reason.assign(kMaxStringBytes + 1, 'x');
+    huge.reason.assign(wire::kMaxStringBytes + 1, 'x');
     const std::size_t before = out.size();
     const Status s = BinaryMessageCodec().encode(huge, out);
     CHECK_FALSE(s.ok());
