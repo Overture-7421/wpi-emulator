@@ -42,7 +42,7 @@ struct Rig {
     ManualClock clock;
     std::unique_ptr<SessionRunner> runner;
     std::shared_ptr<testing::MemoryMessageCodec> codec = std::make_shared<testing::MemoryMessageCodec>();
-    std::shared_ptr<ChannelRobotLink> link;
+    std::shared_ptr<ChannelMessageLink> link;
     std::unique_ptr<RigExtension> ext;
     std::uint64_t nextLinkId = 1;
 
@@ -76,7 +76,7 @@ struct Rig {
 
     void connect() {
         auto pair = testing::makeInMemoryTransportPair();
-        link = std::make_shared<ChannelRobotLink>(nextLinkId++, std::move(pair.a), codec, inbox);
+        link = std::make_shared<ChannelMessageLink>(nextLinkId++, std::move(pair.a), codec, inbox);
         InboundEvent ev;
         ev.kind = InboundEvent::Kind::Connected;
         ev.linkId = link->id();

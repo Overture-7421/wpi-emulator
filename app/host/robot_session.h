@@ -132,7 +132,7 @@ private:
     std::string endpoint_;
 
     core::runtime::MessageInbox inbox_;
-    std::unique_ptr<core::runtime::RobotLinkAcceptor> acceptor_;
+    std::unique_ptr<core::runtime::MessageLinkAcceptor> acceptor_;
     std::unique_ptr<core::runtime::SessionRunner> runner_;
     std::unique_ptr<core::launcher::RobotLauncher> launcher_;
 

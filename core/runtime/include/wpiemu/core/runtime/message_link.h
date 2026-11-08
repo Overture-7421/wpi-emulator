@@ -16,9 +16,10 @@
 
 namespace wpiemu::core::runtime {
 
-// The sim thread's view of one connection to the extension in the robot process (sdk-only: no ipc module).
-class IRobotLink {
-    WPIEMU_INTERFACE(IRobotLink)
+// The sim thread's view of one connection to a peer: the HALSim extension in the robot process, or (match host) a game client
+// (sdk-only: no ipc module). The names say "message", not "robot", because the same machinery serves both.
+class IMessageLink {
+    WPIEMU_INTERFACE(IMessageLink)
 public:
     virtual sdk::Status send(const sdk::proto::Message& message) = 0;  // thread-safe
     virtual void close() = 0;                                          // any thread; idempotent
@@ -32,7 +33,7 @@ struct InboundEvent {
     Kind kind = Kind::Message;
     std::uint64_t linkId = 0;           // events of a replaced link are ignored by the runner
     sdk::proto::Message message;        // Kind::Message
-    std::shared_ptr<IRobotLink> link;   // Kind::Connected
+    std::shared_ptr<IMessageLink> link;   // Kind::Connected
     std::string detail;                 // Kind::Disconnected: why
 };
 
@@ -54,21 +55,21 @@ public:
     std::size_t size() const;
 
 private:
-    friend class ChannelRobotLink;
+    friend class ChannelMessageLink;
     using Queue = sdk::BlockingQueue<InboundEvent>;
     static void push(const std::shared_ptr<Queue>& queue, InboundEvent event);
     std::shared_ptr<Queue> queue_;  // shared so a reader that outlives the inbox still publishes into a live, closed queue
 };
 
-// IRobotLink over a sdk MessageChannel (any ITransport + IMessageCodec, e.g. the ipc module's, or the in-memory
+// IMessageLink over a sdk MessageChannel (any ITransport + IMessageCodec, e.g. the ipc module's, or the in-memory
 // pair of sdk/testing). A reader thread decodes frames into the inbox; any receive/decode error ends the link
 // with an InboundEvent::Disconnected. The constructor does not start reading: call start() after announcing the
 // link (so `Connected` is queued before the first message).
-class ChannelRobotLink final : public IRobotLink {
+class ChannelMessageLink final : public IMessageLink {
 public:
-    ChannelRobotLink(std::uint64_t linkId, std::unique_ptr<sdk::proto::ITransport> transport,
+    ChannelMessageLink(std::uint64_t linkId, std::unique_ptr<sdk::proto::ITransport> transport,
                      std::shared_ptr<const sdk::proto::IMessageCodec> codec, MessageInbox& inbox);
-    ~ChannelRobotLink() override;
+    ~ChannelMessageLink() override;
 
     void start();
     sdk::Status send(const sdk::proto::Message& message) override;
@@ -92,11 +93,11 @@ private:
 
 // Accepts the extension's connection(s) on an ITransportServer and feeds the inbox. One robot at a time is
 // served by the runner; a newer connection replaces the older one (robot restart).
-class RobotLinkAcceptor {
+class MessageLinkAcceptor {
 public:
-    RobotLinkAcceptor(std::unique_ptr<sdk::proto::ITransportServer> server, std::shared_ptr<const sdk::proto::IMessageCodec> codec,
+    MessageLinkAcceptor(std::unique_ptr<sdk::proto::ITransportServer> server, std::shared_ptr<const sdk::proto::IMessageCodec> codec,
                       MessageInbox& inbox, sdk::ILogger* logger = nullptr);
-    ~RobotLinkAcceptor();
+    ~MessageLinkAcceptor();
 
     sdk::Status start();  // listen() + accept thread
     void stop();
@@ -110,7 +111,7 @@ private:
     MessageInbox& inbox_;
     sdk::ILogger* logger_;
     std::uint64_t nextLinkId_ = 1;
-    std::vector<std::weak_ptr<ChannelRobotLink>> links_;  // accept thread, then stop() after join
+    std::vector<std::weak_ptr<ChannelMessageLink>> links_;  // accept thread, then stop() after join
     sdk::StoppableThread thread_;
 };
 

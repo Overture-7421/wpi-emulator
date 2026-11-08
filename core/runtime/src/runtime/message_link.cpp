@@ -1,4 +1,4 @@
-#include "wpiemu/core/runtime/robot_link.h"
+#include "wpiemu/core/runtime/message_link.h"
 
 #include <algorithm>
 #include <thread>
@@ -37,37 +37,37 @@ void MessageInbox::close() {
 
 std::size_t MessageInbox::size() const { return queue_->size(); }
 
-// ---- ChannelRobotLink ---------------------------------------------------------------------------------------
+// ---- ChannelMessageLink ---------------------------------------------------------------------------------------
 
-ChannelRobotLink::ChannelRobotLink(std::uint64_t linkId, std::unique_ptr<proto::ITransport> transport,
+ChannelMessageLink::ChannelMessageLink(std::uint64_t linkId, std::unique_ptr<proto::ITransport> transport,
                                    std::shared_ptr<const proto::IMessageCodec> codec, MessageInbox& inbox)
     : linkId_(linkId), description_(transport->describe()), inbox_(inbox.queue_), channel_(std::move(transport), std::move(codec)) {}
 
-ChannelRobotLink::~ChannelRobotLink() { shutdown(); }
+ChannelMessageLink::~ChannelMessageLink() { shutdown(); }
 
-void ChannelRobotLink::shutdown() {
+void ChannelMessageLink::shutdown() {
     close();
     reader_.join();
 }
 
-void ChannelRobotLink::start() {
+void ChannelMessageLink::start() {
     if (started_.exchange(true)) return;
     reader_.start([this](const StopToken& stop) { readLoop(stop); });
 }
 
-Status ChannelRobotLink::send(const proto::Message& message) {
+Status ChannelMessageLink::send(const proto::Message& message) {
     std::lock_guard lock(sendMutex_);
     return channel_.send(message);
 }
 
-void ChannelRobotLink::close() {
+void ChannelMessageLink::close() {
     reader_.requestStop();
     channel_.close();
 }
 
-bool ChannelRobotLink::connected() const { return !reader_.stopRequested() && channel_.connected(); }
+bool ChannelMessageLink::connected() const { return !reader_.stopRequested() && channel_.connected(); }
 
-void ChannelRobotLink::readLoop(const StopToken& stop) {
+void ChannelMessageLink::readLoop(const StopToken& stop) {
     std::string reason = "closed";
     while (!stop.stopRequested()) {
         proto::Message message;
@@ -91,15 +91,15 @@ void ChannelRobotLink::readLoop(const StopToken& stop) {
     MessageInbox::push(inbox_, std::move(ev));
 }
 
-// ---- RobotLinkAcceptor --------------------------------------------------------------------------------------
+// ---- MessageLinkAcceptor --------------------------------------------------------------------------------------
 
-RobotLinkAcceptor::RobotLinkAcceptor(std::unique_ptr<proto::ITransportServer> server, std::shared_ptr<const proto::IMessageCodec> codec,
+MessageLinkAcceptor::MessageLinkAcceptor(std::unique_ptr<proto::ITransportServer> server, std::shared_ptr<const proto::IMessageCodec> codec,
                                      MessageInbox& inbox, ILogger* logger)
     : server_(std::move(server)), codec_(std::move(codec)), inbox_(inbox), logger_(logger) {}
 
-RobotLinkAcceptor::~RobotLinkAcceptor() { stop(); }
+MessageLinkAcceptor::~MessageLinkAcceptor() { stop(); }
 
-Status RobotLinkAcceptor::start() {
+Status MessageLinkAcceptor::start() {
     if (thread_.joinable()) return makeError(ErrorCode::InvalidState, "acceptor already started");
     if (Status s = server_->listen(); !s) return s;
     thread_.resetStop();
@@ -107,7 +107,7 @@ Status RobotLinkAcceptor::start() {
     return okStatus();
 }
 
-void RobotLinkAcceptor::stop() {
+void MessageLinkAcceptor::stop() {
     thread_.requestStop();
     if (server_) server_->close();
     thread_.join();
@@ -116,9 +116,9 @@ void RobotLinkAcceptor::stop() {
     links_.clear();
 }
 
-std::string RobotLinkAcceptor::endpoint() const { return server_->endpoint(); }
+std::string MessageLinkAcceptor::endpoint() const { return server_->endpoint(); }
 
-void RobotLinkAcceptor::acceptLoop(const StopToken& stop) {
+void MessageLinkAcceptor::acceptLoop(const StopToken& stop) {
     while (!stop.stopRequested()) {
         Result<std::unique_ptr<proto::ITransport>> accepted = server_->accept(std::chrono::milliseconds(200));
         if (!accepted) {
@@ -132,7 +132,7 @@ void RobotLinkAcceptor::acceptLoop(const StopToken& stop) {
             accepted.value()->close();
             break;
         }
-        auto link = std::make_shared<ChannelRobotLink>(nextLinkId_++, std::move(accepted).value(), codec_, inbox_);
+        auto link = std::make_shared<ChannelMessageLink>(nextLinkId_++, std::move(accepted).value(), codec_, inbox_);
         std::erase_if(links_, [](const auto& weak) { return weak.expired(); });
         links_.push_back(link);
         if (logger_ != nullptr) logger_->info("link", "robot connected: " + link->describe());

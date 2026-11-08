@@ -9,7 +9,7 @@
 #include <variant>
 #include <vector>
 
-#include "wpiemu/core/runtime/robot_link.h"
+#include "wpiemu/core/runtime/message_link.h"
 #include "wpiemu/core/runtime/simulation_session.h"
 #include "wpiemu/sdk/core/clock.h"
 #include "wpiemu/sdk/core/stoppable_thread.h"
@@ -139,7 +139,7 @@ private:
     std::vector<Command> commands_;
 
     // sim-thread state
-    std::shared_ptr<IRobotLink> link_;
+    std::shared_ptr<IMessageLink> link_;
     std::uint64_t linkId_ = 0;
     bool helloDone_ = false;
     bool peerSupportsArmed_ = false;

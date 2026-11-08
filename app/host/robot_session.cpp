@@ -309,7 +309,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     const ipc::ConnectionEndpoint endpoint = ipc::ConnectionEndpoint::generate();
     auto server = ipc::makeLocalServer(endpoint);
     if (!server) return makeError(server.error().code, "cannot open the IPC endpoint: " + server.error().message);
-    self->acceptor_ = std::make_unique<runtime::RobotLinkAcceptor>(std::move(server).value(), std::make_shared<ipc::BinaryMessageCodec>(), self->inbox_, &log);
+    self->acceptor_ = std::make_unique<runtime::MessageLinkAcceptor>(std::move(server).value(), std::make_shared<ipc::BinaryMessageCodec>(), self->inbox_, &log);
     if (Status s = self->acceptor_->start(); !s) return makeError(s.error().code, "cannot listen for the robot: " + s.error().message);
     self->endpoint_ = self->acceptor_->endpoint();
 

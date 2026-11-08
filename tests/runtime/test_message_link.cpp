@@ -11,7 +11,7 @@
 #include <thread>
 #include <vector>
 
-#include "wpiemu/core/runtime/robot_link.h"
+#include "wpiemu/core/runtime/message_link.h"
 #include "wpiemu/sdk/testing/deadlock_deadline.h"
 #include "wpiemu/sdk/testing/fake_clock_logger.h"
 #include "wpiemu/sdk/testing/in_memory_transport.h"
@@ -121,7 +121,7 @@ TEST_CASE("inbox: destroying an unconsumed connection joins its notifying reader
     state->holdReader = true;
     auto inbox = std::make_unique<MessageInbox>();
     auto link =
-        std::make_shared<ChannelRobotLink>(1, std::make_unique<LifecycleTransport>(state),
+        std::make_shared<ChannelMessageLink>(1, std::make_unique<LifecycleTransport>(state),
                                            std::make_shared<testing::MemoryMessageCodec>(), *inbox);
     InboundEvent connected;
     connected.kind = InboundEvent::Kind::Connected;
@@ -171,7 +171,7 @@ TEST_CASE("link: a reader can finish after its mailbox owner is destroyed") {
     auto state = std::make_shared<TransportState>();
     auto inbox = std::make_unique<MessageInbox>();
     auto link =
-        std::make_unique<ChannelRobotLink>(1, std::make_unique<LifecycleTransport>(state),
+        std::make_unique<ChannelMessageLink>(1, std::make_unique<LifecycleTransport>(state),
                                            std::make_shared<testing::MemoryMessageCodec>(), *inbox);
     link->start();
     REQUIRE(state->waitFor([&] { return state->receiving; }));
@@ -187,7 +187,7 @@ TEST_CASE("link: closing before start still reports Disconnected without reading
     DeadlockDeadline deadline;
     MessageInbox inbox;
     auto state = std::make_shared<TransportState>();
-    ChannelRobotLink link(1, std::make_unique<LifecycleTransport>(state), std::make_shared<testing::MemoryMessageCodec>(), inbox);
+    ChannelMessageLink link(1, std::make_unique<LifecycleTransport>(state), std::make_shared<testing::MemoryMessageCodec>(), inbox);
     link.close();
     CHECK_FALSE(link.connected());
     link.start();
@@ -207,7 +207,7 @@ TEST_CASE("inbox: close rejects pending and future connection owners outside its
     inbox.close();
     auto state = std::make_shared<TransportState>();
     auto link =
-        std::make_shared<ChannelRobotLink>(1, std::make_unique<LifecycleTransport>(state),
+        std::make_shared<ChannelMessageLink>(1, std::make_unique<LifecycleTransport>(state),
                                            std::make_shared<testing::MemoryMessageCodec>(), inbox);
     link->start();
     InboundEvent connected;
@@ -227,7 +227,7 @@ TEST_CASE("acceptor: stop joins readers of unconsumed accepted connections") {
     MessageInbox inbox;
     auto transport = std::make_shared<TransportState>();
     auto server = std::make_shared<ServerState>();
-    RobotLinkAcceptor acceptor(std::make_unique<LifecycleServer>(server, transport),
+    MessageLinkAcceptor acceptor(std::make_unique<LifecycleServer>(server, transport),
                                std::make_shared<testing::MemoryMessageCodec>(), inbox);
     REQUIRE(acceptor.start().ok());
     REQUIRE(transport->waitFor([&] { return transport->receiving; }));
@@ -255,7 +255,7 @@ TEST_CASE("acceptor: a connection returned concurrently with stop is closed with
     auto transport = std::make_shared<TransportState>();
     auto server = std::make_shared<ServerState>();
     server->returnAfterClose = true;
-    RobotLinkAcceptor acceptor(std::make_unique<LifecycleServer>(server, transport),
+    MessageLinkAcceptor acceptor(std::make_unique<LifecycleServer>(server, transport),
                                std::make_shared<testing::MemoryMessageCodec>(), inbox);
     REQUIRE(acceptor.start().ok());
     {
@@ -358,7 +358,7 @@ TEST_CASE("acceptor: accepted transports become Connected events followed by the
     auto codec = std::make_shared<testing::MemoryMessageCodec>();
     auto server = std::make_unique<LoopbackServer>();
     LoopbackServer* raw = server.get();
-    RobotLinkAcceptor acceptor(std::move(server), codec, inbox, &logger);
+    MessageLinkAcceptor acceptor(std::move(server), codec, inbox, &logger);
     REQUIRE(acceptor.start().ok());
     CHECK(raw->listening);
     CHECK(acceptor.endpoint() == "loopback:test");
@@ -369,7 +369,7 @@ TEST_CASE("acceptor: accepted transports become Connected events followed by the
     REQUIRE(inbox.waitPop(ev, 2s));
     CHECK(ev.kind == InboundEvent::Kind::Connected);
     REQUIRE(ev.link != nullptr);
-    const std::shared_ptr<IRobotLink> link = ev.link;  // the runner's reference
+    const std::shared_ptr<IMessageLink> link = ev.link;  // the runner's reference
     CHECK(link->connected());
 
     proto::Hello hello;
