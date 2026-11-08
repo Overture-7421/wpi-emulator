@@ -10,7 +10,9 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -34,6 +36,15 @@ public:
     virtual Result<Message> decode(std::span<const std::byte> frame) const = 0;
 };
 
+// Health of one link, for a transport that can measure it (the ENet adapter). Byte counts are application frame bytes.
+struct LinkStats {
+    std::uint32_t rttMs = 0;          // smoothed round-trip time
+    std::uint32_t lossPermille = 0;   // recent packet loss, parts per thousand
+    std::uint64_t bytesIn = 0;
+    std::uint64_t bytesOut = 0;
+    std::uint64_t droppedFrames = 0;  // frames discarded by the transport (rate cap, size cap, backlog)
+};
+
 // Bidirectional, ordered, reliable, message-framed connection to ONE peer. A transport with a lossy channel
 // (the ENet adapter) also offers sendUnreliable(); the others keep the default, which is the reliable send.
 // Threading: one thread may call send() while another calls receive(); each direction is
@@ -51,6 +62,8 @@ public:
     virtual void close() = 0;
     virtual bool connected() const = 0;
     virtual std::string describe() const = 0;  // for logs: "pipe:\\.\pipe\wpiemu-1234"
+    // nullopt for transports that cannot measure their link (pipes, in-memory).
+    virtual std::optional<LinkStats> linkStats() const { return std::nullopt; }
 };
 
 // Emulator-side acceptor (the app listens, the extension connects; endpoint is passed to the
