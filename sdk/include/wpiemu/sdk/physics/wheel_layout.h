@@ -51,8 +51,8 @@ inline std::vector<WheelSpec> swerveWheels(const WheelSpec& base, float halfLeng
     return out;
 }
 
-// Four mecanum wheels named and placed like swerveWheels() in the X layout: the roller traction axes of "fl" and "br"
-// point +45 deg, those of "fr" and "bl" -45 deg.
+// Four mecanum wheels named and placed like swerveWheels() in the X layout (docs/reference/physics.md): the roller traction axes of
+// "fl" and "br" point -45 deg, those of "fr" and "bl" +45 deg, as the drivetrain derives them when no angle is set.
 inline std::vector<WheelSpec> mecanumWheels(const WheelSpec& base, float halfLengthM, float halfWidthM) {
     using namespace wheel_layout_detail;
     constexpr float kQuarterPi = 0.78539816339f;
@@ -60,7 +60,7 @@ inline std::vector<WheelSpec> mecanumWheels(const WheelSpec& base, float halfLen
     for (const Corner& c : kCorners) {
         WheelSpec wheel = placedWheel(drivetrain_kind::kMecanum, base, c.name, c.sx * halfLengthM, c.sy * halfWidthM);
         wheel.widthM = 0.05f;
-        wheel.tire.tractionAngleRad = kQuarterPi * c.sx * c.sy;
+        wheel.tire.tractionAngleRad = -kQuarterPi * c.sx * c.sy;
         wheel.tire.lateralScale = 0.15f;
         out.push_back(std::move(wheel));
     }

@@ -459,7 +459,8 @@ TEST_CASE("default wheels and layouts follow the drivetrain kind") {
     CHECK(mecanum[0].positionM == swerve[0].positionM);
     CHECK(mecanum[0].tire.tractionAngleRad == -mecanum[1].tire.tractionAngleRad);
     CHECK(mecanum[0].tire.tractionAngleRad == mecanum[3].tire.tractionAngleRad);
-    CHECK(mecanum[0].tire.tractionAngleRad > 0.f);
+    CHECK(mecanum[0].tire.tractionAngleRad < 0.f);   // X layout: "fl" and "br" -45 deg, "fr" and "bl" +45 deg
+    CHECK(mecanum[1].tire.tractionAngleRad > 0.f);
     CHECK(mecanum[0].kind == WheelKind::Mecanum);
 
     const std::vector<WheelSpec> tank = tankWheels(base, 3, 0.3f, 0.2f);

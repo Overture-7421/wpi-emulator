@@ -182,13 +182,27 @@ TEST_CASE("mecanum kinematics: an explicit tire traction angle overrides the pos
     checkRoundTrip(d, {0.7f, -0.4f, 0.9f}, "explicit mecanum angles");
 }
 
-TEST_CASE("mecanum kinematics: the wizard layout whose roller axes all point at the centre is refused") {
+TEST_CASE("mecanum kinematics: a layout whose roller axes all point at the centre is refused") {
     DrivetrainSpec d;
     d.kind = drivetrain_kind::kMecanum;
-    d.wheels = mecanumWheels(WheelSpec{}, 0.25f, 0.25f);   // explicit +45 deg on "fl": no wheel has a torque arm
+    d.wheels = mecanumWheels(WheelSpec{}, 0.25f, 0.25f);
+    // "+45 deg on fl" (the opposite of the X layout): on square geometry no wheel has a torque arm, so the robot cannot spin.
+    for (WheelSpec& w : d.wheels) w.tire.tractionAngleRad = 0.78539816339f * (w.positionM.x * w.positionM.y > 0.f ? 1.f : -1.f);
     auto r = wheelSetpointsRaw(d, {0.f, 0.f, 1.f});
     CHECK_FALSE(r.ok());
     CHECK_FALSE(DriveKinematics::create(d).ok());
+}
+
+TEST_CASE("mecanum kinematics: the wizard layout is the X layout and can spin on square geometry") {
+    DrivetrainSpec d;
+    d.kind = drivetrain_kind::kMecanum;
+    d.wheels = mecanumWheels(WheelSpec{}, 0.25f, 0.25f);
+    CHECK(d.wheels[0].tire.tractionAngleRad < 0.f);   // "fl"
+    CHECK(d.wheels[1].tire.tractionAngleRad > 0.f);   // "fr"
+    const auto spin = wheelSetpointsRaw(d, {0.f, 0.f, 1.f});
+    REQUIRE(spin.ok());
+    CHECK(DriveKinematics::create(d).ok());
+    checkRoundTrip(d, {0.5f, -0.3f, 0.8f}, "wizard mecanum layout");
 }
 
 TEST_CASE("forward and inverse kinematics round trip for every kind with varied inputs") {
