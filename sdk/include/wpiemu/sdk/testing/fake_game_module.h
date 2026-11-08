@@ -7,7 +7,9 @@
 #include <vector>
 
 #include "wpiemu/sdk/config/plugin_config.h"
+#include "wpiemu/sdk/core/sim_context.h"
 #include "wpiemu/sdk/game/game_module.h"
+#include "wpiemu/sdk/game/robot_view.h"
 #include "wpiemu/sdk/telemetry/snapshot.h"
 
 namespace wpiemu::sdk::testing {
@@ -33,6 +35,40 @@ private:
     std::string id_;
     std::string type_;
     int ticks_ = 0;
+};
+
+// Records the multi-robot hooks of IGameState in call order, for tests of the runtime and of plugins' callers.
+// publishRobot also writes the robot's id as the per-robot HUD value "recording.seen" so the snapshot path is exercised.
+class RecordingGameState final : public IGameState {
+public:
+    struct Event {
+        enum class Kind { Added, Removed, Published, Stepped };
+        Kind kind = Kind::Added;
+        ParticipantId participant = match::kNoParticipant;
+        std::size_t rosterSize = 0;   // ctx.robots().robots().size() when the call happened (Added/Removed/Stepped)
+        bool operator==(const Event&) const = default;
+    };
+
+    std::string_view pluginId() const override { return "recording"; }
+    void reset(SimContext&) override { ++resets; }
+    void step(SimContext& ctx, double) override {
+        events.push_back({Event::Kind::Stepped, match::kNoParticipant, ctx.robots().robots().size()});
+    }
+    void publish(SnapshotBuilder&) const override {}
+    void onRobotAdded(SimContext& ctx, const RobotView& robot) override {
+        events.push_back({Event::Kind::Added, robot.participantId, ctx.robots().robots().size()});
+    }
+    void onRobotRemoved(SimContext& ctx, ParticipantId participant) override {
+        events.push_back({Event::Kind::Removed, participant, ctx.robots().robots().size()});
+    }
+    void publishRobot(SnapshotBuilder& out, const RobotView& robot) const override {
+        published.push_back(robot.participantId);
+        out.setRobotHud(robot.participantId, "recording.seen", static_cast<int>(robot.participantId));
+    }
+
+    std::vector<Event> events;
+    mutable std::vector<ParticipantId> published;   // publishRobot is const
+    int resets = 0;
 };
 
 class FakeGameModule : public IGameModule {
