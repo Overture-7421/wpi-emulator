@@ -28,7 +28,6 @@ endif()
 # available in Qt-free and relay-only builds (never in extension-only builds, which have no networking) and are fetched
 # only when WPIEMU_FETCH_NET_LIBS is ON.
 option(WPIEMU_FETCH_NET_LIBS "Fetch and build ENet6 and Monocypher for the networking modules" ON)
-option(WPIEMU_BUILD_NET_SPIKE "Build the temporary ENet6/Monocypher smoke spike (spikes/net_spike)" OFF)
 if(WPIEMU_FETCH_NET_LIBS AND NOT WPIEMU_EXTENSION_ONLY)
     # ENet6 (SirLynix/enet6, MIT): dual-stack IPv6 fork of lsalzman/enet. Its CMake builds a static library by default.
     FetchContent_Declare(enet6
@@ -86,8 +85,3 @@ if(WPIEMU_BUILD_APP)
     include(WpiEmuQt)
 endif()
 
-# ---- Temporary ENet6/Monocypher smoke spike (after CTest is enabled above) --------------
-if(TARGET wpiemu_third_party_enet AND WPIEMU_BUILD_NET_SPIKE)
-    enable_testing()
-    add_subdirectory("${CMAKE_SOURCE_DIR}/spikes/net_spike" "${CMAKE_BINARY_DIR}/spikes/net_spike")
-endif()
