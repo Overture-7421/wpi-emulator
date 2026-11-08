@@ -45,6 +45,8 @@ public:
 
     // True once a value did not fit the wire limits; the caller discards the output.
     bool bad() const { return bad_; }
+    // Marks the output unencodable (the writer's counterpart of Reader::fail); `what` documents the reason at the call site.
+    void fail(const char* /*what*/) { bad_ = true; }
     // A writer always has more: fields after an `if (!c.more()) return;` are the optional appended tail.
     constexpr bool more() const { return true; }
 
@@ -54,8 +56,10 @@ public:
         u8(static_cast<std::uint8_t>(v));
     }
 
-    void str(const std::string& s) {
-        if (s.size() > kMaxStringBytes) {
+    // `cap` is the field's own limit (never above kMaxStringBytes); a longer string cannot be encoded. `what` only names the
+    // field on the reading side.
+    void str(const std::string& s, std::size_t cap = kMaxStringBytes, const char* /*what*/ = "") {
+        if (s.size() > cap || s.size() > kMaxStringBytes) {
             bad_ = true;
             return;
         }
@@ -148,11 +152,17 @@ public:
         v = static_cast<E>(raw);
     }
 
-    void str(std::string& s) {
+    // `cap` is the field's own limit (never above kMaxStringBytes); a longer declared length is rejected before any copy, and
+    // `what` names the field in the error.
+    void str(std::string& s, std::size_t cap = kMaxStringBytes, const char* what = "string length out of range") {
         const std::uint64_t n = varint();
         if (!s_->ok) return;
         if (n > kMaxStringBytes || n > remaining()) {
             fail("string length out of range");
+            return;
+        }
+        if (n > cap) {
+            fail(what);
             return;
         }
         s.assign(reinterpret_cast<const char*>(d_.data() + pos_), static_cast<std::size_t>(n));

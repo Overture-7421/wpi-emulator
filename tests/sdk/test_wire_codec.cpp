@@ -254,6 +254,43 @@ TEST_CASE("wire codec: a string beyond the protocol cap is refused on both sides
     CHECK_FALSE(state.ok);
 }
 
+TEST_CASE("wire codec: a per-field string cap is enforced when writing and before copying when reading") {
+    std::vector<std::byte> out;
+    W w(out);
+    w.str(std::string(8, 'x'), 8);   // exactly at the field's own limit
+    CHECK_FALSE(w.bad());
+
+    std::vector<std::byte> over;
+    W wOver(over);
+    wOver.str(std::string(9, 'x'), 8);
+    CHECK(wOver.bad());
+    CHECK(over.empty());
+
+    std::vector<std::byte> wide;   // legal for the protocol, over the field's cap
+    W(wide).str(std::string(9, 'x'));
+    wire::ReadState state;
+    R r(wide, &state);
+    std::string back = "keep";
+    r.str(back, 8, "field too long");
+    CHECK_FALSE(state.ok);
+    CHECK(std::string(state.what) == "field too long");
+    CHECK(back == "keep");   // nothing was copied
+
+    wire::ReadState okState;
+    R rOk(out, &okState);
+    rOk.str(back, 8);
+    CHECK(okState.ok);
+    CHECK(back == "xxxxxxxx");
+}
+
+TEST_CASE("wire codec: Writer fail marks the output unencodable like a bound violation") {
+    std::vector<std::byte> out;
+    W w(out);
+    CHECK_FALSE(w.bad());
+    w.fail("reason");
+    CHECK(w.bad());
+}
+
 TEST_CASE("wire codec: a string longer than the bytes left is rejected") {
     std::vector<std::byte> frame = varintBytes(10);
     frame.push_back(std::byte{'a'});

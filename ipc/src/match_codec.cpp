@@ -40,35 +40,6 @@ constexpr std::size_t kEntityStateBytes = 4 + 2 + 2 + 2;
 constexpr std::size_t kRemovedEntityBytes = 4;
 constexpr std::size_t kEntityDeltaMinBytes = 2 + 2 + 4 + 1 + 1;
 
-// A list whose size() is over any cap, so Writer::list marks the output bad. The Writer has no `fail` of its own; this
-// keeps the limits of one field in one place instead of a second validation pass over the message.
-struct OverCap {
-    const std::uint8_t* begin() const { return nullptr; }
-    const std::uint8_t* end() const { return nullptr; }
-    std::size_t size() const { return ~std::size_t{0}; }
-};
-
-// Rejects the value being coded: a malformed frame when reading, an unencodable message when writing.
-template <class C>
-void reject(C& c, const char* what) {
-    if constexpr (requires { c.fail(what); }) c.fail(what);
-    else c.list(OverCap{}, 0, 0);
-}
-
-template <class C, class S>
-void boundedStr(C& c, S& s, std::size_t cap, const char* what) {
-    if constexpr (requires { c.fail(what); }) {
-        c.str(s);
-        if (c.ok() && s.size() > cap) {
-            s.clear();
-            c.fail(what);
-        }
-    } else {
-        if (s.size() > cap) reject(c, what);
-        else c.str(s);
-    }
-}
-
 template <class C, class A>
 void fixedBytes(C& c, A& bytes) {
     static_assert(std::is_same_v<std::remove_const_t<typename A::value_type>, std::uint8_t>);
@@ -77,8 +48,8 @@ void fixedBytes(C& c, A& bytes) {
 
 template <class C, class S>
 void roomId(C& c, S& id) {
-    boundedStr(c, id, relay::kRelayRoomIdChars, "room id too long");
-    if (!relay::isValidRoomId(id)) reject(c, "invalid room id");
+    c.str(id, relay::kRelayRoomIdChars, "room id too long");
+    if (!relay::isValidRoomId(id)) c.fail("invalid room id");
 }
 
 // ---- shared records ---------------------------------------------------------------------------------------
@@ -87,7 +58,7 @@ template <class C, Is<match::RosterEntry> M>
 void fields(C& c, M& e) {
     c.record([&] {
         c.u16(e.participantId);
-        boundedStr(c, e.name, match::kMaxNameBytes, "roster name too long");
+        c.str(e.name, match::kMaxNameBytes, "roster name too long");
         c.enumeration(e.station, 5, "invalid AllianceStation");
         c.u16(e.pingMs);
         c.u16(e.lossPermille);
@@ -125,7 +96,7 @@ void fields(C& c, M& info) {
         c.enumeration(info.mode, 2, "invalid RobotMode");
         c.boolean(info.eStop);
         c.f32(info.matchTimeS);
-        boundedStr(c, info.phaseKey, match::kMaxNameBytes, "phase key too long");
+        c.str(info.phaseKey, match::kMaxNameBytes, "phase key too long");
     });
 }
 
@@ -174,11 +145,11 @@ void fields(C& c, M& d) {
 template <class C, Is<match::Join> M>
 void fields(C& c, M& m) {
     c.u32(m.protocolVersion);
-    boundedStr(c, m.displayName, match::kMaxNameBytes, "display name too long");
-    boundedStr(c, m.gamePluginId, match::kMaxNameBytes, "plugin id too long");
+    c.str(m.displayName, match::kMaxNameBytes, "display name too long");
+    c.str(m.gamePluginId, match::kMaxNameBytes, "plugin id too long");
     c.i32(m.wpilibYear);
     fixedBytes(c, m.resumeToken);
-    boundedStr(c, m.robotSpecJson, match::kMaxRobotSpecBytes, "robot spec too long");
+    c.str(m.robotSpecJson, match::kMaxRobotSpecBytes, "robot spec too long");
 }
 
 template <class C, Is<match::JoinAccept> M>
@@ -201,7 +172,7 @@ void fields(C& c, M& m) {
 template <class C, Is<match::JoinReject> M>
 void fields(C& c, M& m) {
     c.enumeration(m.reason, 9, "invalid JoinRejectReason");
-    boundedStr(c, m.detail, match::kMaxDetailBytes, "detail too long");
+    c.str(m.detail, match::kMaxDetailBytes, "detail too long");
 }
 
 template <class C, Is<match::Roster> M>
@@ -213,7 +184,7 @@ void fields(C& c, M& m) {
 
 template <class C, Is<match::Leave> M>
 void fields(C& c, M& m) {
-    boundedStr(c, m.detail, match::kMaxDetailBytes, "detail too long");
+    c.str(m.detail, match::kMaxDetailBytes, "detail too long");
 }
 
 // ---- gameplay messages -------------------------------------------------------------------------------------
@@ -258,7 +229,7 @@ void fields(C& c, M& m) {
     c.i64(m.clientTimeUs);
     c.u64(m.serverTick);
     c.i64(m.serverSimTimeUs);
-    boundedStr(c, m.detail, match::kMaxDetailBytes, "detail too long");
+    c.str(m.detail, match::kMaxDetailBytes, "detail too long");
 }
 
 // ---- relay control messages --------------------------------------------------------------------------------
