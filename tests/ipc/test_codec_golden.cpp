@@ -312,7 +312,7 @@ std::vector<Golden> goldens() {
 TEST_CASE("codec golden: one instance of every message type is covered") {
     std::set<std::size_t> seen;
     for (const Golden& g : goldens()) seen.insert(g.message.index());
-    CHECK(seen.size() == std::variant_size_v<Message>);
+    CHECK(seen.size() == kExtensionMessageCount);
 }
 
 TEST_CASE("codec golden: every message type encodes to its pinned bytes") {

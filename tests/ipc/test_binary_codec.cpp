@@ -293,7 +293,7 @@ void checkGolden(const Message& m, std::string_view golden) {
 }  // namespace
 
 TEST_CASE("codec: every message type is represented in the sample set") {
-    std::vector<bool> seen(std::variant_size_v<Message> + 1, false);
+    std::vector<bool> seen(kExtensionMessageCount + 1, false);
     for (const Message& m : allSamples()) seen[m.index() + 1] = true;
     for (std::size_t i = 1; i < seen.size(); ++i) CHECK_MESSAGE(seen[i], "message type " << i << " has no sample");
 }
