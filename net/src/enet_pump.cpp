@@ -100,6 +100,7 @@ LinkLimits limitsOf(const EnetLinkOptions& options) {
     limits.maxUnreliableFrameBytes = options.maxUnreliableFrameBytes;
     limits.maxQueuedOutboundBytes = options.maxQueuedOutboundBytes;
     limits.maxQueuedInboundFrames = std::max<std::size_t>(options.maxQueuedInboundFrames, 1);
+    limits.maxQueuedControlFrames = std::max<std::size_t>(options.maxQueuedControlFrames, 1);
     return limits;
 }
 
@@ -108,7 +109,8 @@ ENetHost* createHost(ENetAddressType type, const ENetAddress* bindAddress, std::
     ENetHost* host = enet_host_create(type, bindAddress, peers, kEnetChannelCount, options.incomingBandwidth,
                                       options.outgoingBandwidth);
     if (host == nullptr) return nullptr;
-    host->maximumPacketSize = std::max(options.maxReliableFrameBytes, options.maxUnreliableFrameBytes);
+    host->maximumPacketSize =
+        std::max({options.maxReliableFrameBytes, options.maxUnreliableFrameBytes, kMaxControlFrameBytes});
     host->maximumWaitingData = kMaxWaitingDataBytes;
     if (options.compression && enet_host_compress_with_range_coder(host) != 0) {
         enet_host_destroy(host);
@@ -122,6 +124,8 @@ struct PumpPeer {
     std::shared_ptr<PeerLink> link;
     TokenBucket frames;
     TokenBucket bytes;
+    TokenBucket controlFrames;
+    TokenBucket controlBytes;
     Clock::time_point connectedAt{};
     bool seenFrame = false;
     bool disconnecting = false;
@@ -168,6 +172,8 @@ struct EnetHostPump::Impl {
         pp.connectedAt = clock->now();
         pp.frames.init(options.maxFramesPerSecond, options.maxFramesPerSecond, pp.connectedAt);
         pp.bytes.init(options.maxBytesPerSecond, static_cast<double>(options.maxReliableFrameBytes), pp.connectedAt);
+        pp.controlFrames.init(options.maxControlFramesPerSecond, options.maxControlFramesPerSecond, pp.connectedAt);
+        pp.controlBytes.init(options.maxControlBytesPerSecond, static_cast<double>(kMaxControlFrameBytes), pp.connectedAt);
         return pp;
     }
 
@@ -216,48 +222,59 @@ struct EnetHostPump::Impl {
         PeerLink& link = *pp.link;
         pp.seenFrame = true;
         const std::size_t size = packet->dataLength;
+        const bool control = ev.channelID == kEnetChannelControl;
         const bool reliable = ev.channelID == kEnetChannelReliable;
-        if (!reliable && ev.channelID != kEnetChannelUnreliable) {
+        if (!control && !reliable && ev.channelID != kEnetChannelUnreliable) {
             link.countDropped();
             return;
         }
-        if (size == 0 || size > (reliable ? options.maxReliableFrameBytes : options.maxUnreliableFrameBytes)) {
+        const std::size_t limit = control ? kMaxControlFrameBytes
+                                          : (reliable ? options.maxReliableFrameBytes : options.maxUnreliableFrameBytes);
+        if (size == 0 || size > limit || !admit(control ? pp.controlFrames : pp.frames, control ? pp.controlBytes : pp.bytes, size)) {
             link.countDropped();
             return;
-        }
-        if (pp.frames.enabled || pp.bytes.enabled) {
-            const auto now = clock->now();
-            pp.frames.refill(now);
-            pp.bytes.refill(now);
-            const bool framesOk = !pp.frames.enabled || pp.frames.tokens >= 1.0;
-            const bool bytesOk = !pp.bytes.enabled || pp.bytes.tokens >= static_cast<double>(size);
-            if (!framesOk || !bytesOk) {
-                link.countDropped();
-                return;
-            }
-            if (pp.frames.enabled) pp.frames.tokens -= 1.0;
-            if (pp.bytes.enabled) pp.bytes.tokens -= static_cast<double>(size);
         }
         link.countBytesIn(size);
-        using Push = sdk::BlockingQueue<std::vector<std::byte>>::PushResult;
         const auto* data = reinterpret_cast<const std::byte*>(packet->data);
-        const Push pushed = link.deliver(std::vector<std::byte>(data, data + size));
-        if (pushed == Push::Full) {
+        std::vector<std::byte> bytes(data, data + size);
+        if (control) {
+            if (link.deliverControl(std::move(bytes)) == sdk::BlockingQueue<std::vector<std::byte>>::PushResult::Full)
+                dropNow(it, DisconnectReason::Backlog);
+            return;
+        }
+        InboundFrame frame{std::move(bytes), reliable ? sdk::proto::Delivery::Reliable : sdk::proto::Delivery::Unreliable};
+        if (link.deliver(std::move(frame)) == PeerLink::GamePush::Full) {
             if (reliable) dropNow(it, DisconnectReason::Backlog);
             else link.countDropped();
         }
     }
 
+    // Takes one frame's worth from both buckets, or nothing when either is short.
+    bool admit(TokenBucket& frames, TokenBucket& bytes, std::size_t size) const {
+        if (!frames.enabled && !bytes.enabled) return true;
+        const auto now = clock->now();
+        frames.refill(now);
+        bytes.refill(now);
+        if ((frames.enabled && frames.tokens < 1.0) || (bytes.enabled && bytes.tokens < static_cast<double>(size))) return false;
+        if (frames.enabled) frames.tokens -= 1.0;
+        if (bytes.enabled) bytes.tokens -= static_cast<double>(size);
+        return true;
+    }
+
     void sendQueued(PumpPeer& pp) {
         std::deque<OutboundFrame> frames = pp.link->takeOutbound();
         for (OutboundFrame& frame : frames) {
-            const enet_uint32 flags = frame.reliable ? ENET_PACKET_FLAG_RELIABLE : ENET_PACKET_FLAG_UNRELIABLE_FRAGMENT;
+            const bool unreliable = frame.channel == FrameChannel::GameUnreliable;
+            const enet_uint32 flags = unreliable ? ENET_PACKET_FLAG_UNRELIABLE_FRAGMENT : ENET_PACKET_FLAG_RELIABLE;
             ENetPacket* packet = enet_packet_create(frame.bytes.data(), frame.bytes.size(), flags);
             if (packet == nullptr) {
                 pp.link->countDropped();
                 continue;
             }
-            if (enet_peer_send(pp.peer, frame.reliable ? kEnetChannelReliable : kEnetChannelUnreliable, packet) != 0) {
+            const std::uint8_t channel = frame.channel == FrameChannel::Control    ? kEnetChannelControl
+                                         : frame.channel == FrameChannel::GameReliable ? kEnetChannelReliable
+                                                                                       : kEnetChannelUnreliable;
+            if (enet_peer_send(pp.peer, channel, packet) != 0) {
                 enet_packet_destroy(packet);
                 pp.link->countDropped();
                 continue;
@@ -407,6 +424,8 @@ sdk::Result<EnetHostPump::Client> EnetHostPump::createClient(const EnetLinkOptio
     impl->options.maxPeers = 1;
     impl->options.maxFramesPerSecond = 0;
     impl->options.maxBytesPerSecond = 0;
+    impl->options.maxControlFramesPerSecond = 0;
+    impl->options.maxControlBytesPerSecond = 0;
     impl->options.unauthenticatedTimeout = std::chrono::milliseconds{0};
     impl->serverMode = false;
     impl->clock = options.clock ? options.clock : std::make_shared<sdk::SteadyWallClock>();

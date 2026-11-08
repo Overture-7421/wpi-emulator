@@ -9,6 +9,7 @@
 #include <string>
 
 #include "enet_link.h"
+#include "wpiemu/net/control_link.h"
 #include "wpiemu/net/enet_transport.h"
 #include "wpiemu/sdk/core/result.h"
 
@@ -16,15 +17,25 @@ namespace wpiemu::net::detail {
 
 // A transport for one link. Destroying it closes the link and releases `owner`, which for a client is the pump (so the
 // pump thread is joined).
-class LinkTransport final : public sdk::proto::ITransport {
+class LinkTransport final : public sdk::proto::ITransport, public IControlLink {
 public:
     explicit LinkTransport(std::shared_ptr<PeerLink> link, std::shared_ptr<void> owner = {});
     ~LinkTransport() override;
 
-    sdk::Status send(std::span<const std::byte> frame) override { return link_->send(frame, true); }
-    sdk::Status sendUnreliable(std::span<const std::byte> frame) override { return link_->send(frame, false); }
+    sdk::Status send(std::span<const std::byte> frame) override { return link_->send(frame, FrameChannel::GameReliable); }
+    sdk::Status sendUnreliable(std::span<const std::byte> frame) override {
+        return link_->send(frame, FrameChannel::GameUnreliable);
+    }
     sdk::Result<bool> receive(std::vector<std::byte>& frame, std::chrono::milliseconds timeout) override {
         return link_->receive(frame, timeout);
+    }
+    sdk::Status sendControl(std::span<const std::byte> frame) override { return link_->send(frame, FrameChannel::Control); }
+    sdk::Result<bool> receiveControl(std::vector<std::byte>& frame, std::chrono::milliseconds timeout) override {
+        return link_->receiveControl(frame, timeout);
+    }
+    sdk::Result<bool> receiveGame(std::vector<std::byte>& frame, sdk::proto::Delivery& delivery,
+                                  std::chrono::milliseconds timeout) override {
+        return link_->receiveGame(frame, delivery, timeout);
     }
     void close() override { link_->requestClose(); }
     bool connected() const override { return link_->connected(); }

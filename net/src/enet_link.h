@@ -32,11 +32,19 @@ struct LinkLimits {
     std::size_t maxUnreliableFrameBytes = 0;
     std::size_t maxQueuedOutboundBytes = 0;
     std::size_t maxQueuedInboundFrames = 0;
+    std::size_t maxQueuedControlFrames = 0;
 };
+
+enum class FrameChannel : std::uint8_t { Control, GameReliable, GameUnreliable };
 
 struct OutboundFrame {
     std::vector<std::byte> bytes;
-    bool reliable = true;
+    FrameChannel channel = FrameChannel::GameReliable;
+};
+
+struct InboundFrame {
+    std::vector<std::byte> bytes;
+    sdk::proto::Delivery delivery = sdk::proto::Delivery::Reliable;
 };
 
 class PeerLink {
@@ -44,8 +52,11 @@ public:
     PeerLink(LinkLimits limits, std::string description);
 
     // ---- consumer side
-    sdk::Status send(std::span<const std::byte> frame, bool reliable);
+    sdk::Status send(std::span<const std::byte> frame, FrameChannel channel);
     sdk::Result<bool> receive(std::vector<std::byte>& frame, std::chrono::milliseconds timeout);
+    sdk::Result<bool> receiveGame(std::vector<std::byte>& frame, sdk::proto::Delivery& delivery,
+                                  std::chrono::milliseconds timeout);
+    sdk::Result<bool> receiveControl(std::vector<std::byte>& frame, std::chrono::milliseconds timeout);
     // Idempotent. Discards frames not yet received, wakes a blocked receive; the pump still flushes frames already queued
     // for sending and then disconnects the peer politely.
     void requestClose();
@@ -59,7 +70,9 @@ public:
 
     // ---- pump side
     std::deque<OutboundFrame> takeOutbound();
-    sdk::BlockingQueue<std::vector<std::byte>>::PushResult deliver(std::vector<std::byte>&& frame);
+    using GamePush = sdk::BlockingQueue<InboundFrame>::PushResult;
+    GamePush deliver(InboundFrame&& frame);
+    sdk::BlockingQueue<std::vector<std::byte>>::PushResult deliverControl(std::vector<std::byte>&& frame);
     void markConnected();
     // The peer is gone: buffered inbound frames stay readable, then receive() reports Disconnected.
     void markClosed(DisconnectReason reason);
@@ -71,7 +84,8 @@ public:
 private:
     const LinkLimits limits_;
     const std::string description_;
-    sdk::BlockingQueue<std::vector<std::byte>> inbound_;
+    sdk::BlockingQueue<InboundFrame> inbound_;
+    sdk::BlockingQueue<std::vector<std::byte>> control_;
 
     std::mutex outMutex_;
     std::deque<OutboundFrame> outbound_;

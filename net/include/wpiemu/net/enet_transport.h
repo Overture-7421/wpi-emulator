@@ -9,24 +9,30 @@
 // per-peer transport may outlive the server that produced it (it then reports Disconnected). The pump polls about once a
 // millisecond, which bounds the latency it adds.
 //
-// Channels (the numbering of the relay, sdk/match/relay_messages.h; channel 0 is the relay's control channel and carries
-// nothing here):
+// Channels (the numbering of the relay, sdk/match/relay_messages.h):
+//   0  reliable, ordered      IControlLink::sendControl(); frames of 1..kMaxControlFrameBytes (control_link.h), read with
+//                                                receiveControl(). ITransport::receive never returns them. Every accepted
+//                                                peer and every connection can be cast to IControlLink (controlLinkOf).
 //   1  reliable, ordered      send();            frames up to maxReliableFrameBytes (ENet fragments large ones)
 //   2  unreliable, sequenced  sendUnreliable();  frames up to maxUnreliableFrameBytes; ENet's unreliable fragmentation
 //                                                carries frames larger than one packet, and losing any fragment drops the
 //                                                frame. An unreliable frame above the limit is REJECTED with
 //                                                InvalidArgument, never silently upgraded to reliable (the relay drops a peer
 //                                                that sends an oversized datagram, so direct connect behaves the same).
+//                                                receive() and IControlLink::receiveGame() read channels 1 and 2 from one
+//                                                queue; receiveGame() also reports which channel a frame came on.
 //
-// Disconnects. A peer that disconnects or times out makes receive() return the frames it already delivered and then
-// ErrorCode::Disconnected. close() and destruction disconnect politely: frames already handed to send() are flushed first.
+// Disconnects. A peer that disconnects or times out makes receive() and receiveControl() return the frames they already
+// held and then ErrorCode::Disconnected. close() and destruction disconnect politely: frames already handed to send() or
+// sendControl() are flushed first.
 //
 // Frames are 1 byte or more: an empty frame is rejected with InvalidArgument (ENet's range coder reads past an empty
 // packet buffer) and an empty frame received is dropped and counted.
 //
-// Hostile peers. Anything arriving on a channel other than 1 or 2, any frame over its size limit and any frame over the
-// per-peer rate cap is dropped and counted (LinkStats::droppedFrames); a peer that sends no frame at all within
-// unauthenticatedTimeout is disconnected; a peer whose unread backlog exceeds maxQueuedInboundFrames is disconnected.
+// Hostile peers. Anything arriving on a channel above 2, any frame over its size limit and any frame over the per-peer
+// rate cap (game and control have separate caps) is dropped and counted (LinkStats::droppedFrames); a peer that sends no
+// frame at all, game or control, within unauthenticatedTimeout is disconnected; a peer whose unread backlog exceeds
+// maxQueuedInboundFrames (game) or maxQueuedControlFrames (control) is disconnected.
 // Datagrams that are not valid ENet are ignored by ENet. Encryption is not done here: wrap each peer in SecureTransport.
 //
 // ENet headers never appear in this header.
@@ -43,6 +49,7 @@
 
 namespace wpiemu::net {
 
+inline constexpr std::uint8_t kEnetChannelControl = sdk::match::relay::kRelayChannelControl;
 inline constexpr std::uint8_t kEnetChannelReliable = sdk::match::relay::kRelayChannelGameReliable;
 inline constexpr std::uint8_t kEnetChannelUnreliable = sdk::match::relay::kRelayChannelGameUnreliable;
 inline constexpr std::uint8_t kEnetChannelCount = sdk::match::relay::kRelayChannelCount;
@@ -59,6 +66,9 @@ struct EnetLinkOptions {
     // Received frames not yet read by receive(). Past it an unreliable frame is dropped and counted, and a reliable frame
     // (which cannot be dropped without corrupting the stream) disconnects the peer.
     std::size_t maxQueuedInboundFrames = 4096;
+    // Received control frames (channel 0) not yet read by receiveControl(). Past it the peer is disconnected, like a
+    // reliable game backlog.
+    std::size_t maxQueuedControlFrames = 64;
     // ENet bandwidth hints in bytes per second; 0 means unlimited.
     std::uint32_t incomingBandwidth = 0;
     std::uint32_t outgoingBandwidth = 0;
@@ -88,6 +98,10 @@ struct EnetServerOptions : EnetLinkOptions {
     // counted. 0 disables the cap. The byte bucket never holds less than maxReliableFrameBytes, so a maximum frame fits.
     std::uint32_t maxFramesPerSecond = 2000;
     std::uint32_t maxBytesPerSecond = 1024 * 1024;
+    // The same kind of cap for control frames (channel 0), which are small and rare. The byte bucket never holds less
+    // than kMaxControlFrameBytes. Control frames count against these caps only, not the game caps above.
+    std::uint32_t maxControlFramesPerSecond = 50;
+    std::uint32_t maxControlBytesPerSecond = 64 * 1024;
 };
 
 struct EnetClientOptions : EnetLinkOptions {};
