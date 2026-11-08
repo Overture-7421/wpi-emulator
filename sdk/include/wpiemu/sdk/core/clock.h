@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 
 #include "wpiemu/sdk/core/interface.h"
@@ -19,6 +20,19 @@ public:
 
     double simTimeSeconds() const { return usToSeconds(simTimeUs()); }
     double fixedStepSeconds() const { return usToSeconds(fixedStepUs()); }
+};
+
+// Monotonic wall clock for pacing, watchdogs and network timing; injectable so those are testable without sleeping.
+// Simulation logic never reads it (ISimClock above is the simulation's time).
+class IWallClock {
+    WPIEMU_INTERFACE(IWallClock)
+public:
+    virtual std::chrono::steady_clock::time_point now() const = 0;
+};
+
+class SteadyWallClock final : public IWallClock {
+public:
+    std::chrono::steady_clock::time_point now() const override { return std::chrono::steady_clock::now(); }
 };
 
 }  // namespace wpiemu::sdk

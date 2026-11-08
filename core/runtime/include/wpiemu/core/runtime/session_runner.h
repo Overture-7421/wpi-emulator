@@ -11,23 +11,12 @@
 
 #include "wpiemu/core/runtime/robot_link.h"
 #include "wpiemu/core/runtime/simulation_session.h"
+#include "wpiemu/sdk/core/clock.h"
 #include "wpiemu/sdk/core/stoppable_thread.h"
 #include "wpiemu/sdk/ipc/lockstep.h"
 #include "wpiemu/sdk/telemetry/sim_controller.h"
 
 namespace wpiemu::core::runtime {
-
-// Monotonic wall clock; injectable so the watchdog and pacing are testable without sleeping.
-class IWallClock {
-    WPIEMU_INTERFACE(IWallClock)
-public:
-    virtual std::chrono::steady_clock::time_point now() const = 0;
-};
-
-class SteadyWallClock final : public IWallClock {
-public:
-    std::chrono::steady_clock::time_point now() const override { return std::chrono::steady_clock::now(); }
-};
 
 struct RunnerOptions {
     double timeScale = 1.0;                     // 1 = real time, 0 = as fast as the robot allows, 0.5 = half speed
@@ -73,7 +62,7 @@ enum class RunnerState {
 class SessionRunner final : public sdk::ISimController {
 public:
     SessionRunner(SimulationSession& session, MessageInbox& inbox, sdk::ISnapshotSink& sink, sdk::ILogger& logger, RunnerOptions options = {},
-                  const IWallClock* clock = nullptr);
+                  const sdk::IWallClock* clock = nullptr);
     ~SessionRunner() override;
 
     // ---- sdk::ISimController (thread-safe, non-blocking) ----
@@ -142,8 +131,8 @@ private:
     sdk::ISnapshotSink& sink_;
     sdk::ILogger& logger_;
     RunnerOptions options_;
-    SteadyWallClock defaultClock_;
-    const IWallClock& clock_;
+    sdk::SteadyWallClock defaultClock_;
+    const sdk::IWallClock& clock_;
 
     // command queue (UI thread -> sim thread)
     std::mutex commandMutex_;
