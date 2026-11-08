@@ -1,6 +1,6 @@
 include_guard(GLOBAL)
 
-if(WPIEMU_EXTENSION_ONLY)
+if(WPIEMU_EXTENSION_ONLY OR WPIEMU_RELAY_ONLY)
     return()
 endif()
 include(ExternalProject)

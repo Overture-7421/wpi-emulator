@@ -3,7 +3,7 @@ include(FetchContent)
 
 # ---- Box3D (physics, C17) -------------------------------------------------
 # Pinned tag; consumed only through core/ (behind an IPhysicsWorld adapter).
-if(NOT WPIEMU_EXTENSION_ONLY)
+if(NOT WPIEMU_EXTENSION_ONLY AND NOT WPIEMU_RELAY_ONLY)
     set(BOX3D_SAMPLES OFF CACHE BOOL "" FORCE)
     set(BOX3D_UNIT_TESTS OFF CACHE BOOL "" FORCE)
     set(BOX3D_BENCHMARKS OFF CACHE BOOL "" FORCE)
@@ -25,10 +25,11 @@ endif()
 
 # ---- Networking libraries (ENet6 + Monocypher, C) ---------------------------
 # Pinned tags. Only net/ and relay/ may link wpiemu_third_party_enet / wpiemu_third_party_monocypher; they are
-# available in extension-only and Qt-free builds and are fetched only when WPIEMU_FETCH_NET_LIBS is ON.
+# available in Qt-free and relay-only builds (never in extension-only builds, which have no networking) and are fetched
+# only when WPIEMU_FETCH_NET_LIBS is ON.
 option(WPIEMU_FETCH_NET_LIBS "Fetch and build ENet6 and Monocypher for the networking modules" ON)
 option(WPIEMU_BUILD_NET_SPIKE "Build the temporary ENet6/Monocypher smoke spike (spikes/net_spike)" OFF)
-if(WPIEMU_FETCH_NET_LIBS)
+if(WPIEMU_FETCH_NET_LIBS AND NOT WPIEMU_EXTENSION_ONLY)
     # ENet6 (SirLynix/enet6, MIT): dual-stack IPv6 fork of lsalzman/enet. Its CMake builds a static library by default.
     FetchContent_Declare(enet6
         GIT_REPOSITORY https://github.com/SirLynix/enet6.git
@@ -86,7 +87,7 @@ if(WPIEMU_BUILD_APP)
 endif()
 
 # ---- Temporary ENet6/Monocypher smoke spike (after CTest is enabled above) --------------
-if(WPIEMU_FETCH_NET_LIBS AND WPIEMU_BUILD_NET_SPIKE)
+if(TARGET wpiemu_third_party_enet AND WPIEMU_BUILD_NET_SPIKE)
     enable_testing()
     add_subdirectory("${CMAKE_SOURCE_DIR}/spikes/net_spike" "${CMAKE_BINARY_DIR}/spikes/net_spike")
 endif()
