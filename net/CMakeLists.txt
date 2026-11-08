@@ -18,6 +18,9 @@ target_link_libraries(wpiemu_net
     PUBLIC wpiemu_sdk wpiemu_ipc Threads::Threads
     PRIVATE wpiemu_third_party_enet wpiemu_third_party_monocypher)
 wpiemu_target_defaults(wpiemu_net)
+if(WIN32)
+    target_link_libraries(wpiemu_net PRIVATE bcrypt)
+endif()
 
 if(WPIEMU_BUILD_TESTS)
     file(GLOB_RECURSE WPIEMU_NET_TEST_SOURCES CONFIGURE_DEPENDS
