@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -32,6 +34,20 @@ private:
     SimTimeUs fixedStepUs_;
     SimTimeUs simTimeUs_ = 0;
     std::uint64_t tickIndex_ = 0;
+};
+
+// A wall clock that only moves when a test advances it, so watchdogs, pacing and network impairment are tested without
+// sleeping. Starts away from the epoch so "a moment ago" is representable. Safe to advance from any thread.
+class ManualWallClock final : public IWallClock {
+public:
+    std::chrono::steady_clock::time_point now() const override {
+        return std::chrono::steady_clock::time_point{} + std::chrono::steady_clock::duration(ticks_.load());
+    }
+    void advance(std::chrono::steady_clock::duration d) { ticks_ += d.count(); }
+
+private:
+    std::atomic<std::chrono::steady_clock::rep> ticks_{
+        std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::seconds(10)).count()};
 };
 
 struct LogEntry {

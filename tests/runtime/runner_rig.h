@@ -21,14 +21,7 @@ using namespace wpiemu::sdk;
 using namespace wpiemu::core::runtime;
 using namespace std::chrono_literals;
 
-class ManualClock final : public IWallClock {
-public:
-    std::chrono::steady_clock::time_point now() const override { return t_; }
-    void advance(std::chrono::milliseconds d) { t_ += d; }
-
-private:
-    std::chrono::steady_clock::time_point t_ = std::chrono::steady_clock::time_point{} + 10s;
-};
+using ManualClock = testing::ManualWallClock;
 
 // The robot-process side, pumped by Rig::run, that announces the devices of sampleConfig().
 struct RigExtension : testing::FakeExtension {

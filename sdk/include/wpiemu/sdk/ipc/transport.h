@@ -19,6 +19,7 @@
 
 #include "wpiemu/sdk/core/interface.h"
 #include "wpiemu/sdk/core/result.h"
+#include "wpiemu/sdk/ipc/delivery.h"
 #include "wpiemu/sdk/ipc/messages.h"
 
 namespace wpiemu::sdk::proto {
@@ -33,13 +34,17 @@ public:
     virtual Result<Message> decode(std::span<const std::byte> frame) const = 0;
 };
 
-// Bidirectional, ordered, reliable, message-framed connection to ONE peer.
+// Bidirectional, ordered, reliable, message-framed connection to ONE peer. A transport with a lossy channel
+// (the ENet adapter) also offers sendUnreliable(); the others keep the default, which is the reliable send.
 // Threading: one thread may call send() while another calls receive(); each direction is
 // otherwise single-threaded. close() may be called from any thread and unblocks receive().
 class ITransport {
     WPIEMU_INTERFACE(ITransport)
 public:
     virtual Status send(std::span<const std::byte> frame) = 0;
+    // Best-effort delivery (Delivery::Unreliable): the frame may be dropped or arrive out of order. The default sends
+    // it reliably, so a transport without a lossy channel needs no change.
+    virtual Status sendUnreliable(std::span<const std::byte> frame) { return send(frame); }
     // Blocks up to `timeout`. Returns true and fills `frame` when a frame arrived, false on
     // timeout, Disconnected error when the peer is gone.
     virtual Result<bool> receive(std::vector<std::byte>& frame, std::chrono::milliseconds timeout) = 0;
@@ -81,10 +86,12 @@ public:
     MessageChannel(std::unique_ptr<ITransport> transport, std::shared_ptr<const IMessageCodec> codec)
         : transport_(std::move(transport)), codec_(std::move(codec)) {}
 
-    Status send(const Message& message) {
+    // `delivery` picks the transport's reliable or best-effort channel; callers that follow the protocol pass
+    // deliveryOf(message).
+    Status send(const Message& message, Delivery delivery = Delivery::Reliable) {
         scratch_.clear();
         if (Status s = codec_->encode(message, scratch_); !s) return s;
-        return transport_->send(scratch_);
+        return delivery == Delivery::Unreliable ? transport_->sendUnreliable(scratch_) : transport_->send(scratch_);
     }
 
     // Returns true and fills `out` when a message arrived, false on timeout, an error otherwise.
