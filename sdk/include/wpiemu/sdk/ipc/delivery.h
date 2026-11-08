@@ -17,10 +17,13 @@ namespace wpiemu::sdk::proto {
 enum class Delivery : std::uint8_t { Reliable, Unreliable };
 
 // The delivery class a message type is sent with. Every HALSim extension message is reliable: it rides a lock-step
-// stream where a lost frame would stall the tick. Message types that are sent best-effort (match inputs and
-// snapshots) get their `case` returning Unreliable here, next to the type they are added to in messages.h.
+// stream where a lost frame would stall the tick. Of the match messages only the latest-wins streams (inputs, snapshots
+// and their acknowledgements) are unreliable; lifecycle, roster, setup and relay control are reliable.
 inline Delivery deliveryOf(const Message& message) {
     switch (typeOf(message)) {
+        case MessageType::MatchInputPacket:
+        case MessageType::MatchSnapshot:
+        case MessageType::MatchSnapshotAck: return Delivery::Unreliable;
         case MessageType::Hello:
         case MessageType::HelloAck:
         case MessageType::DeviceAnnounce:
@@ -32,7 +35,20 @@ inline Delivery deliveryOf(const Message& message) {
         case MessageType::Log:
         case MessageType::Goodbye:
         case MessageType::SimControlAck:
-        case MessageType::VisionSetup: return Delivery::Reliable;
+        case MessageType::VisionSetup:
+        case MessageType::Join:
+        case MessageType::JoinAccept:
+        case MessageType::JoinReject:
+        case MessageType::Roster:
+        case MessageType::Leave:
+        case MessageType::MatchControl:
+        case MessageType::RegisterRoom:
+        case MessageType::RoomRegistered:
+        case MessageType::RoomRejected:
+        case MessageType::JoinRoom:
+        case MessageType::JoinResult:
+        case MessageType::PeerJoined:
+        case MessageType::PeerLeft: return Delivery::Reliable;
     }
     return Delivery::Reliable;
 }

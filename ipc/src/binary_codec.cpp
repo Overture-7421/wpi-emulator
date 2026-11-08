@@ -313,11 +313,18 @@ Result<Message> decodeBody(std::span<const std::byte> body) {
 
 Status BinaryMessageCodec::encode(const Message& message, std::vector<std::byte>& out) const {
     const std::size_t start = out.size();
+    // ipc-match-codec: the match and relay messages (values 13..28) get their `fields` and decode cases there; until then
+    // they are refused here so the build stays exhaustive and the HALSim wire stays untouched.
+    if (isMatchMessage(message)) return makeError(ErrorCode::Unsupported, "match messages are encoded by the match codec");
     try {
         Writer w(out);
         w.u8(kWireFormatVersion);
         w.u16(static_cast<std::uint16_t>(typeOf(message)));
-        std::visit([&w](const auto& m) { fields(w, m); }, message);
+        std::visit(
+            [&w](const auto& m) {
+                if constexpr (requires { fields(w, m); }) fields(w, m);
+            },
+            message);
         if (w.bad()) {
             out.resize(start);
             return makeError(ErrorCode::InvalidArgument, "message field exceeds the wire limits");
@@ -356,6 +363,24 @@ Result<Message> BinaryMessageCodec::decode(std::span<const std::byte> frame) con
             case MessageType::Goodbye: return decodeBody<Goodbye>(body);
             case MessageType::SimControlAck: return decodeBody<SimControlAck>(body);
             case MessageType::VisionSetup: return decodeBody<VisionSetup>(body);
+            // ipc-match-codec: decode of the match and relay types (13..28) replaces this; until then they stay unknown
+            // types the receiver skips (receiveSkippingUnknown), exactly as an older peer treats them.
+            case MessageType::Join:
+            case MessageType::JoinAccept:
+            case MessageType::JoinReject:
+            case MessageType::Roster:
+            case MessageType::Leave:
+            case MessageType::MatchInputPacket:
+            case MessageType::MatchSnapshot:
+            case MessageType::MatchSnapshotAck:
+            case MessageType::MatchControl:
+            case MessageType::RegisterRoom:
+            case MessageType::RoomRegistered:
+            case MessageType::RoomRejected:
+            case MessageType::JoinRoom:
+            case MessageType::JoinResult:
+            case MessageType::PeerJoined:
+            case MessageType::PeerLeft: break;
         }
     } catch (const std::bad_alloc&) {
         return makeError(ErrorCode::Internal, "out of memory while decoding");
