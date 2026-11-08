@@ -8,6 +8,7 @@
 
 #include "wpiemu/ipc/binary_codec.h"
 #include "wpiemu/sdk/core/wire_codec.h"
+#include "match_samples.h"
 
 using namespace wpiemu;
 using namespace wpiemu::ipc;
@@ -247,9 +248,11 @@ std::vector<Message> allSamples() {
     lb.loopback = {DeviceId{1}, DeviceId{9}, DeviceId{4000000000u}};
     Goodbye bye;
     bye.reason = "done";
-    return {sampleHello(),   sampleHelloAck(), sampleAnnounce(), lb,  sampleSensor(), sampleActuator(),
-            sampleDs(),      sampleControl(),  sampleControlAck(), log, bye, sampleVisionSetup(),
-            sensorWithVision()};
+    std::vector<Message> all = {sampleHello(),   sampleHelloAck(), sampleAnnounce(), lb,  sampleSensor(), sampleActuator(),
+                                sampleDs(),      sampleControl(),  sampleControlAck(), log, bye, sampleVisionSetup(),
+                                sensorWithVision()};
+    for (const test_ipc::NamedMessage& m : test_ipc::matchSamples()) all.push_back(m.message);
+    return all;
 }
 
 bool sameSamples(const std::vector<SignalSample>& a, const std::vector<SignalSample>& b) { return a == b; }
@@ -293,7 +296,7 @@ void checkGolden(const Message& m, std::string_view golden) {
 }  // namespace
 
 TEST_CASE("codec: every message type is represented in the sample set") {
-    std::vector<bool> seen(kExtensionMessageCount + 1, false);
+    std::vector<bool> seen(std::variant_size_v<Message> + 1, false);
     for (const Message& m : allSamples()) seen[m.index() + 1] = true;
     for (std::size_t i = 1; i < seen.size(); ++i) CHECK_MESSAGE(seen[i], "message type " << i << " has no sample");
 }
@@ -929,7 +932,7 @@ TEST_CASE("codec: a newer peer's extra fields inside length-prefixed records are
 
 TEST_CASE("codec: unknown message types are skippable, not fatal") {
     BinaryMessageCodec codec;
-    for (int type : {0, 13, 200, 65535}) {
+    for (int type : {0, 29, 200, 65535}) {
         const auto r = codec.decode(bytesOf({kWireFormatVersion, type & 0xFF, (type >> 8) & 0xFF, 1, 2, 3}));
         REQUIRE_FALSE(r.ok());
         CHECK(r.error().code == ErrorCode::Unsupported);

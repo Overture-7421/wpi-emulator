@@ -134,11 +134,15 @@ TEST_CASE("delivery: a failed encode sends nothing on either channel") {
     CHECK(raw->unreliable == 0);
 }
 
-TEST_CASE("delivery: every extension protocol message is reliable") {
-    const std::vector<Message> all = oneOfEach(std::make_index_sequence<kExtensionMessageCount>{});
-    REQUIRE(all.size() == kExtensionMessageCount);
+TEST_CASE("delivery: every message is reliable except the latest-wins match streams") {
+    const std::vector<Message> all = oneOfEach(std::make_index_sequence<std::variant_size_v<Message>>{});
+    REQUIRE(all.size() == std::variant_size_v<Message>);
     for (const Message& m : all) {
         CAPTURE(m.index());
-        CHECK(deliveryOf(m) == Delivery::Reliable);
+        const MessageType type = typeOf(m);
+        const bool latestWins = type == MessageType::MatchInputPacket || type == MessageType::MatchSnapshot ||
+                                type == MessageType::MatchSnapshotAck;
+        CHECK(deliveryOf(m) == (latestWins ? Delivery::Unreliable : Delivery::Reliable));
+        if (!isMatchMessage(m)) CHECK(deliveryOf(m) == Delivery::Reliable);
     }
 }

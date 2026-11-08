@@ -3,6 +3,7 @@
 set(WPIEMU_IPC_SOURCES
     src/protocol.cpp
     src/binary_codec.cpp
+    src/match_codec.cpp
     src/framing.cpp
     src/framed_transport.cpp
     src/memory_stream.cpp

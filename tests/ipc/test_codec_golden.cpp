@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "wpiemu/ipc/binary_codec.h"
+#include "match_samples.h"
 
 using namespace wpiemu;
 using namespace wpiemu::ipc;
@@ -309,10 +310,13 @@ std::vector<Golden> goldens() {
 
 }  // namespace
 
-TEST_CASE("codec golden: one instance of every message type is covered") {
+TEST_CASE("codec golden: every message type of the variant has a golden (match messages: test_codec_match_golden)") {
     std::set<std::size_t> seen;
     for (const Golden& g : goldens()) seen.insert(g.message.index());
     CHECK(seen.size() == kExtensionMessageCount);
+    for (const std::size_t index : seen) CHECK(index < kExtensionMessageCount);
+    for (const test_ipc::NamedMessage& m : test_ipc::matchSamples()) seen.insert(m.message.index());
+    CHECK(seen.size() == std::variant_size_v<Message>);
 }
 
 TEST_CASE("codec golden: every message type encodes to its pinned bytes") {
