@@ -53,29 +53,10 @@ void installSignalHandlers() {
 }
 #endif
 
-std::optional<std::string> environment(const std::string& name) {
-#ifdef _WIN32
-    char* value = nullptr;
-    std::size_t size = 0;
-    if (_dupenv_s(&value, &size, name.c_str()) != 0 || value == nullptr) return std::nullopt;
-    std::string result(value);
-    std::free(value);
-    return result;
-#else
-    const char* value = std::getenv(name.c_str());
-    if (value == nullptr) return std::nullopt;
-    return std::string(value);
-#endif
-}
-
 int runRelay(const relay::RelayOptions& options) {
     auto log = std::make_shared<relay::RelayLog>(options.logFormat);
 
-    net::EnetServerOptions transport;
-    transport.bindHost = options.bindHost;
-    transport.port = options.port;
-    transport.maxPeers = options.maxConnections;
-    auto server = std::make_unique<net::EnetServerTransport>(transport);
+    auto server = std::make_unique<net::EnetServerTransport>(relay::transportOptionsFor(options));
 
     const relay::RoomTableConfig& t = options.server.table;
     log->log(relay::LogLevel::Info, "starting",
@@ -109,7 +90,7 @@ int runRelay(const relay::RelayOptions& options) {
 
 int main(int argc, char** argv) {
     const std::vector<std::string> args(argv + 1, argv + argc);
-    const sdk::Result<relay::RelayOptions> parsed = relay::parseRelayOptions(args, environment);
+    const sdk::Result<relay::RelayOptions> parsed = relay::parseRelayOptions(args, relay::processEnvironment);
     if (!parsed) {
         std::cerr << "wpiemu_relay: " << parsed.error().message << "\n";
         return 2;

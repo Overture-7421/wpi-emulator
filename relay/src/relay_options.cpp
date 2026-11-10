@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cstdlib>
 #include <sstream>
 
 namespace wpiemu::relay {
@@ -157,6 +158,31 @@ sdk::Result<RelayOptions> parseRelayOptions(const std::vector<std::string>& args
     options.maxConnections = std::min<std::size_t>(
         options.server.table.maxRooms * (options.server.table.maxPeersPerRoom + 1) + 64, 4095);
     return options;
+}
+
+std::optional<std::string> processEnvironment(const std::string& name) {
+#ifdef _WIN32
+    char* value = nullptr;
+    std::size_t size = 0;
+    if (_dupenv_s(&value, &size, name.c_str()) != 0 || value == nullptr) return std::nullopt;
+    std::string result(value);
+    std::free(value);
+    return result;
+#else
+    const char* value = std::getenv(name.c_str());
+    if (value == nullptr) return std::nullopt;
+    return std::string(value);
+#endif
+}
+
+net::EnetServerOptions transportOptionsFor(const RelayOptions& options) {
+    net::EnetServerOptions transport;
+    transport.bindHost = options.bindHost;
+    transport.port = options.port;
+    transport.maxPeers = options.maxConnections;
+    transport.maxReliableFrameBytes = options.server.table.maxReliableBytes + rl::kRelayEnvelopeBytes;
+    transport.maxUnreliableFrameBytes = options.server.table.maxDatagramBytes + rl::kRelayEnvelopeBytes;
+    return transport;
 }
 
 }  // namespace wpiemu::relay

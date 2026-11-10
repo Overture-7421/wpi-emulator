@@ -3,6 +3,16 @@
 // Shared helpers for the ENet loopback tests: byte/text conversion, deadline-bounded receives, a manual wall clock and a
 // connected server/client/peer triple.
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#include <tlhelp32.h>
+#endif
+
 #include <doctest/doctest.h>
 
 #include <algorithm>
@@ -10,6 +20,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <random>
@@ -27,6 +38,34 @@ using sdk::ErrorCode;
 using sdk::proto::ITransport;
 
 inline constexpr auto kLong = 5000ms;
+
+// Threads of this process (-1 where it cannot be counted), to prove that closed transports join their threads.
+inline int processThreadCount() {
+#ifdef _WIN32
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return -1;
+    THREADENTRY32 entry{};
+    entry.dwSize = sizeof entry;
+    int count = 0;
+    if (Thread32First(snapshot, &entry)) {
+        do {
+            if (entry.th32OwnerProcessID == GetCurrentProcessId()) ++count;
+        } while (Thread32Next(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+    return count;
+#elif defined(__linux__)
+    std::error_code ec;
+    int count = 0;
+    for (const auto& entry : std::filesystem::directory_iterator("/proc/self/task", ec)) {
+        (void)entry;
+        ++count;
+    }
+    return ec ? -1 : count;
+#else
+    return -1;
+#endif
+}
 
 inline Bytes bytesOf(const std::string& text) {
     Bytes out(text.size());

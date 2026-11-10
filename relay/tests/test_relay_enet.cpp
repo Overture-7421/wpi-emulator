@@ -11,6 +11,7 @@
 #include "relay_test_support.h"
 #include "wpiemu/net/endpoint.h"
 #include "wpiemu/net/enet_transport.h"
+#include "wpiemu/relay/relay_options.h"
 #include "wpiemu/relay/relay_selfcheck.h"
 
 using namespace std::chrono_literals;
@@ -35,10 +36,12 @@ struct LiveRelay {
     std::uint16_t port = 0;
 
     explicit LiveRelay(RelayServerConfig config = {}, const std::string& bindHost = "127.0.0.1") {
-        net::EnetServerOptions options;
-        options.bindHost = bindHost;
-        options.port = 0;
-        options.maxPeers = 64;
+        wr::RelayOptions production;
+        production.server = config;
+        production.bindHost = bindHost;
+        production.port = 0;
+        production.maxConnections = 64;
+        const net::EnetServerOptions options = wr::transportOptionsFor(production);
         auto sink = [m = mutex, l = lines](const std::string& line) {
             std::lock_guard lock(*m);
             l->push_back(line);
@@ -88,8 +91,14 @@ struct Peer {
     std::unique_ptr<wpiemu::sdk::proto::ITransport> transport;
     wpiemu::net::IControlLink* control = nullptr;
 
-    explicit Peer(const std::string& endpoint) {
-        net::EnetClientTransport client;
+    // A host link carries the 2-byte envelope on top of the game limits, like net::RelayHostTransport sets it up.
+    explicit Peer(const std::string& endpoint, bool asHost = false) {
+        net::EnetClientOptions link;
+        if (asHost) {
+            link.maxReliableFrameBytes = rl::kRelayMaxReliablePacket + rl::kRelayEnvelopeBytes;
+            link.maxUnreliableFrameBytes = rl::kRelayMaxDatagram + rl::kRelayEnvelopeBytes;
+        }
+        net::EnetClientTransport client(link);
         auto connected = client.connect(endpoint, kWait);
         REQUIRE(connected);
         transport = std::move(connected).value();
@@ -168,7 +177,7 @@ std::optional<GameFrame> sendUnreliableUntilReceived(Peer& from, const Bytes& fr
 
 TEST_CASE("relay enet: a host and two clients exchange control and game frames through the relay") {
     LiveRelay relay;
-    Peer host(relay.address());
+    Peer host(relay.address(), true);
     const auto registered = host.registerHost(roomIdFor(1));
     REQUIRE(registered.has_value());
     CHECK_FALSE(registered->resumed);
@@ -263,7 +272,7 @@ TEST_CASE("relay enet: a host and two clients exchange control and game frames t
 
 TEST_CASE("relay enet: refusals, abuse and size caps over real sockets") {
     LiveRelay relay;
-    Peer host(relay.address());
+    Peer host(relay.address(), true);
     REQUIRE(host.registerHost(roomIdFor(1), 1).has_value());
 
     SUBCASE("an unknown room and a taken room are refused") {
@@ -304,12 +313,25 @@ TEST_CASE("relay enet: refusals, abuse and size caps over real sockets") {
         CHECK(client.disconnectsWithin());
     }
 
-    SUBCASE("a datagram over the cap is dropped and counted, a normal one still passes") {
+    SUBCASE("a datagram one byte over the cap is dropped and counted") {
+        Peer client(relay.address(), true);  // a link that, unlike a real client's, can send above the cap
+        REQUIRE(client.join(roomIdFor(1))->ok);
+        REQUIRE(host.expect<rl::PeerJoined>().has_value());
+        REQUIRE(client.transport->sendUnreliable(Bytes(rl::kRelayMaxDatagram + 1, std::byte{1})));
+        REQUIRE(relay.waitFor([&] { return relay.server->stats().dropped(DropReason::Oversized) == 1; }));
+        const auto got = sendUnreliableUntilReceived(client, bytesOf("small"), host);
+        REQUIRE(got.has_value());
+        CHECK(got->bytes == withEnvelope(1, bytesOf("small")));
+    }
+
+    SUBCASE("a full-size datagram from a client reaches the host, a normal one still passes") {
         Peer client(relay.address());
         REQUIRE(client.join(roomIdFor(1))->ok);
         REQUIRE(host.expect<rl::PeerJoined>().has_value());
-        REQUIRE(client.transport->sendUnreliable(Bytes(rl::kRelayMaxDatagram, std::byte{1})));  // 1400 + envelope > cap
-        REQUIRE(relay.waitFor([&] { return relay.server->stats().dropped(DropReason::Oversized) == 1; }));
+        const auto big = sendUnreliableUntilReceived(client, Bytes(rl::kRelayMaxDatagram, std::byte{1}), host);
+        REQUIRE(big.has_value());
+        CHECK(big->bytes.size() == rl::kRelayMaxDatagram + rl::kRelayEnvelopeBytes);
+        CHECK(relay.server->stats().dropped(DropReason::Oversized) == 0);
         const auto got = sendUnreliableUntilReceived(client, bytesOf("small"), host);
         REQUIRE(got.has_value());
         CHECK(got->bytes == withEnvelope(1, bytesOf("small")));
@@ -419,7 +441,7 @@ TEST_CASE("relay enet: selfcheck fails when nothing answers") {
 
 TEST_CASE("relay enet: stop shuts down gracefully and disconnects every peer") {
     LiveRelay relay;
-    Peer host(relay.address());
+    Peer host(relay.address(), true);
     REQUIRE(host.registerHost(roomIdFor(1)).has_value());
     Peer client(relay.address());
     REQUIRE(client.join(roomIdFor(1))->ok);
