@@ -13,6 +13,9 @@
 FROM ubuntu:24.04 AS build
 
 ENV DEBIAN_FRONTEND=noninteractive
+# Package versions are not pinned: the Ubuntu archive drops superseded versions, so a pin would break rebuilds. Reproducibility
+# comes from the pipeline pinning the base image by digest.
+# hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates cmake g++-14 gcc-14 git ninja-build \
     && rm -rf /var/lib/apt/lists/*
@@ -62,7 +65,9 @@ EXPOSE 7777/udp
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["/usr/local/bin/wpiemu_relay", "--selfcheck"]
 
-# Binding a port below 1024 (for example 443) as uid 10001 needs net.ipv4.ip_unprivileged_port_start=0 in the container's
-# network namespace; Docker sets that by default, `docker run --sysctl net.ipv4.ip_unprivileged_port_start=0` does it
-# explicitly. The default port 7777 needs nothing.
+# Binding a port below 1024 (for example 443) as uid 10001 fails ("cannot bind") unless the container's network namespace has
+# net.ipv4.ip_unprivileged_port_start=0: Docker sets that by default, `docker run --sysctl net.ipv4.ip_unprivileged_port_start=0`
+# does it explicitly. A runtime that cannot set sysctls (Azure Container Instances) needs the file capability instead, in the
+# runtime stage: `setcap cap_net_bind_service=+ep /usr/local/bin/wpiemu_relay` (package libcap2-bin; it works as non-root unless
+# no-new-privs is set). Both were verified on Linux; the default port 7777 needs neither.
 ENTRYPOINT ["/usr/local/bin/wpiemu_relay"]
