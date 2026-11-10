@@ -88,6 +88,7 @@ void SessionRunner::poll(std::chrono::milliseconds maxWait) {
             while (inbox_.tryPop(ev)) handle(ev);
         }
         checkWatchdog();
+        if (observer_ != nullptr) observer_->onPoll(observation());
         const auto now = clock_.now();
         if (shouldTick(now)) doTick(now);
     }
@@ -158,6 +159,17 @@ void SessionRunner::doTick(Clock::time_point now) {
         ticksSinceSnapshot_ = 0;
         snapshotDirty_ = true;
     }
+    if (observer_ != nullptr) observer_->onTickEnd(observation());
+}
+
+RunnerObservation SessionRunner::observation() const {
+    RunnerObservation o;
+    o.runEpoch = epoch_.load();
+    if (finished_ || !link_ || !helloDone_ || armed_ || !programStarted_) o.matchState = sdk::match::MatchState::Lobby;
+    else if (window_.stalled()) o.matchState = sdk::match::MatchState::HostStalled;
+    else if (paused_) o.matchState = sdk::match::MatchState::Paused;
+    else o.matchState = sdk::match::MatchState::Running;
+    return o;
 }
 
 void SessionRunner::checkWatchdog() {
