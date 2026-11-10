@@ -18,6 +18,13 @@ remain in Building. Run examples from the repository root unless stated otherwis
 Each distributable has a SHA256 sidecar. Linux CPack also offers a TGZ of the install tree;
 that archive is not a self-contained Qt deployment.
 
+The practice-match client (`wpiemu_client`) has its own packages with the same version, built from the
+same tree and released next to the app; see [Practice-match client packages](#practice-match-client-packages):
+
+- Windows x64: `wpi-emulator-client-<version>-windows-x64.zip` (portable).
+- macOS universal: `wpi-emulator-client-<version>-macos-arm64-x64.dmg`.
+- Linux x86_64: `wpi-emulator-client-<version>-linux-x86_64.AppImage`.
+
 ## Packaging inputs
 
 - `packaging/icons` contains original artwork, generated PNG/ICO/ICNS assets and their generator.
@@ -25,6 +32,7 @@ that archive is not a self-contained Qt deployment.
 - `packaging/macos` contains bundle metadata, entitlements, signing, notarization and minimum-OS
   checks.
 - `packaging/linux` contains the AppImage builder, desktop/AppStream metadata and AppRun hook.
+- `packaging/CPackClientConfig.cmake.in` is the template of the practice-match client's CPack configuration.
 - `packaging/THIRD-PARTY-NOTICES.txt` supplies installed attribution notices.
 - [`WpiEmuInstall.cmake`](../cmake/WpiEmuInstall.cmake) owns install layout and CPack rules.
 
@@ -150,6 +158,40 @@ and the extension directory. The robot launcher strips AppDir-specific Qt/librar
 entries before running Gradle or robot code, so bundled Qt does not contaminate their environment.
 Do not remove that hook or require the robot to use the AppImage's libraries.
 For the Docker-based packaging workflow from Windows/macOS, follow Building.
+
+## Practice-match client packages
+
+The client is a separate, lightweight Qt executable: no JDK, WPILib, Gradle or HALSim extension, and it never reads a
+robot project. Its install rules are the CMake component `Client`, all `EXCLUDE_FROM_ALL`, so a plain
+`cmake --install` and the app's installer, dmg and AppImage never contain it. The build generates
+`CPackClientConfig.cmake` in the build directory; it layers the client's names over the app's CPack settings and
+installs only that component. Layout: Windows `bin\wpiemu_client.exe` plus Qt, plugins, QML and the VC++ runtime;
+macOS `wpiemu_client.app` (bundle id `WPIEMU_MACOS_CLIENT_BUNDLE_ID`, default `org.wpiemulator.client`); Linux
+`usr/bin/wpiemu_client` with its own desktop entry and icon. `THIRD-PARTY-NOTICES.txt` ships with it.
+
+```powershell
+cmake --build build\windows-vs2022 --config Release --target wpiemu_client
+cpack --config build\windows-vs2022\CPackClientConfig.cmake -C Release -B build\windows-vs2022\pkg-client
+python tools\package_checksums.py build\windows-vs2022\pkg-client
+```
+
+For a staging-only check use `cmake --install build\windows-vs2022 --config Release --component Client --prefix "$PWD\build\stage-client"`
+(an absolute prefix: Qt's deploy step rejects a relative one) and run `bin\wpiemu_client.exe --version` with a system-only PATH.
+macOS uses `cpack --config .../CPackClientConfig.cmake -C Release -G DragNDrop -B <dir>`, then the same notarization
+script as the app. Linux uses `PACKAGE=client` with the [AppImage script](../packaging/linux/build-appimage.sh); give it
+its own `OUT_DIR` (it defaults to `$BUILD_DIR/dist-client`) because the script deletes `*.AppImage` in the output directory.
+The Windows client is a ZIP only: it has no installer, shortcuts or uninstall entry. The client stays a console-subsystem
+executable (`WIN32_EXECUTABLE OFF`, like the app) so `--version` prints for CTest and the packaging checks; a GUI
+launch from Explorer therefore also opens a console window.
+
+The release workflow uploads these as the `wpi-emulator-client-<platform>` artifacts and attaches them to the draft release
+with the app. The in-app updater looks only for the app's exact file names, so the client files do not affect it,
+and the client itself has no updater.
+
+The relay presets of a packaged client (and app) come from the CMake cache string `WPIEMU_RELAY_DNS_SUFFIX`, baked in at
+build time. The release workflow reads it from the repository variable `RELAY_DNS_SUFFIX` (a plain variable, not a secret; the relay
+bootstrap script stores it, see [Azure relay](guides/relay-azure.md)), validates it as a hyphen followed by lower-case letters,
+digits and hyphens, and warns when it is unset: such a release has empty relay presets and players type a relay address.
 
 ## Packaging settings
 

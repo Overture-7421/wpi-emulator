@@ -123,21 +123,36 @@ jobs:
       - name: Test (includes boundaries.check and the headless app smoke test)
         run: ctest --preset ${{ matrix.preset }}-release
 
+      # The full run above already executes these, but would stay green if the client or net targets silently dropped out
+      # of the build (app/CMakeLists.txt only adds the client when its libraries exist): --no-tests=error makes that fatal.
+      # The relay has its own workflows (relay-ci.yml).
+      - name: Practice-match client and net tests (must exist)
+        run: ctest --preset ${{ matrix.preset }}-release -R "^(app_client\.|app\.client\.|net )" --no-tests=error
+
       # Catches install() / Qt deployment regressions long before a release tag is pushed.
       - name: Install smoke test
         shell: bash
         run: |
           cmake --install build/${{ matrix.preset }} --config Release --prefix "$PWD/stage"
+          cmake --install build/${{ matrix.preset }} --config Release --component Client --prefix "$PWD/stage-client"
           if [ "$RUNNER_OS" = "macOS" ]; then
             stage/wpiemu_app.app/Contents/MacOS/wpiemu_app --version
+            stage-client/wpiemu_client.app/Contents/MacOS/wpiemu_client --version
+            test ! -e stage/wpiemu_client.app   # the app package never carries the client
             python tools/seasons.py extensions --layout macos | while read -r f; do test -f "stage/$f"; done
           elif [ "$RUNNER_OS" = "Windows" ]; then
             stage/bin/wpiemu_app.exe --version
+            stage-client/bin/wpiemu_client.exe --version
+            test ! -e stage/bin/wpiemu_client.exe   # the app package never carries the client
             python tools/seasons.py extensions --layout windows | tr -d '\r' | while IFS= read -r f; do
               test -f "stage/$f" || { echo "::error::Missing installed extension: stage/$f"; exit 1; }
             done
             test -f stage/plugins/platforms/qwindows.dll
+            test -f stage-client/plugins/platforms/qwindows.dll
           else
             stage/bin/wpiemu_app --version
+            stage-client/bin/wpiemu_client --version
+            test ! -e stage/bin/wpiemu_client   # the app package never carries the client
+            test -f stage-client/share/applications/wpiemu-client.desktop
             python tools/seasons.py extensions --layout linux | while read -r f; do test -f "stage/$f"; done
           fi
