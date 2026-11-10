@@ -64,6 +64,9 @@ public:
     virtual void reset(const sdk::RobotStartPose& placement) = 0;
     virtual sdk::BodyId body() const = 0;
     virtual std::span<const sdk::WheelState> wheelStates() const = 0;
+    // Puts the wheel spin and steer state back (IDrivetrain::restoreWheelKinematics) after the body's pose and velocities
+    // were set: the game client's prediction rewinds its own robot with it. Default: unsupported.
+    virtual bool restoreWheelKinematics(std::span<const sdk::WheelKinematics> /*wheels*/) { return false; }
 };
 
 // Builds a remote robot's chassis in `world` from the spec's chassis and drivetrain, stamping `userTag` on every shape

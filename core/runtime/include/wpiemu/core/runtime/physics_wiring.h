@@ -69,6 +69,9 @@ public:
     }
     sdk::BodyId body() const override { return sim_->body(); }
     std::span<const sdk::WheelState> wheelStates() const override { return sim_->drivetrain().wheelStates(); }
+    bool restoreWheelKinematics(std::span<const sdk::WheelKinematics> wheels) override {
+        return sim_->drivetrain().restoreWheelKinematics(wheels);
+    }
 
 private:
     PhysicsRemoteChassis(std::unique_ptr<physics::ChassisSimulator> sim, const sdk::DrivetrainSpec& drivetrain)

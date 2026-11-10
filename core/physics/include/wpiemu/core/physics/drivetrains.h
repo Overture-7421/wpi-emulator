@@ -53,6 +53,7 @@ public:
     void step(std::span<const sdk::WheelCommand> commands, float dtSeconds) override;
     std::span<const sdk::WheelState> wheelStates() const override { return states_; }
     void reset() override;
+    bool restoreWheelKinematics(std::span<const sdk::WheelKinematics> wheels) override;
     std::vector<sdk::MotionAxisBinding> motionAxes() override;
     void prepareMotionStep(float dtSeconds) override;
 

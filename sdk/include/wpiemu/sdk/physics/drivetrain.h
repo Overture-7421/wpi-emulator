@@ -66,6 +66,15 @@ struct WheelState {
     Vec3 force;                           // world-frame traction force applied this step
 };
 
+// The part of a wheel's state a caller can put back: what a game client's prediction restores from an authoritative
+// snapshot before it replays its unacknowledged inputs (IDrivetrain::restoreWheelKinematics).
+struct WheelKinematics {
+    double driveWheelAngleRad = 0.0;
+    double driveWheelOmegaRadPerSec = 0.0;
+    double steerAngleRad = 0.0;           // ignored by fixed wheels
+    double steerOmegaRadPerSec = 0.0;     // ignored by fixed wheels
+};
+
 // Everything a drivetrain needs at construction (constructor injection; non-owning refs must
 // outlive the drivetrain, which the core runtime guarantees by owning them in that order).
 struct DrivetrainBuildArgs {
@@ -99,6 +108,10 @@ public:
     virtual std::span<const WheelState> wheelStates() const = 0;
     // Back to rest state (zero wheel spin); the chassis body pose is reset by the caller.
     virtual void reset() = 0;
+    // Puts the wheels' spin and steer state back (one entry per wheel, spec order) and re-bases whatever the drivetrain
+    // derives from the body's motion on the body's CURRENT velocity, so call it after the body's pose and velocities were
+    // set. False (nothing changed) when the drivetrain cannot or the count is wrong. Default: unsupported.
+    virtual bool restoreWheelKinematics(std::span<const WheelKinematics> /*wheels*/) { return false; }
     virtual std::vector<MotionAxisBinding> motionAxes() { return {}; }
     // Contact preparation only. Axis callbacks then advance each wheel once before world.step().
     virtual void prepareMotionStep(float /*dtSeconds*/) {}
