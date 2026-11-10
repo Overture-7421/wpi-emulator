@@ -26,7 +26,7 @@ Steps (-Step, default All, run in this order; a failed step makes its dependents
                           deploy-prod: repo:<owner>/<repo>:environment:relay-prod
                           what-if:     repo:<owner>/<repo>:pull_request
                         GitHub emits the IMMUTABLE form repo:<owner>@<ownerId>/<repo>@<repoId>:... for repositories created
-                        on or after 2026-07-15 (and older ones that opted in), so the subjects above are built with the
+                        after its immutable-subject rollout date (and older ones that opted in), so the subjects above are built with the
                         ids in that case (see -SubjectFormat). A credential whose subject differs from the token's fails
                         the login with AADSTS700213.
   RoleAssignments       Least-privilege Azure roles, only at resource-group scope (never subscription scope):
@@ -110,7 +110,8 @@ GitHub repository as owner/name. Default Overture-7421/wpi-emulator.
 
 .PARAMETER SubjectFormat
 Form of the GitHub OIDC subject the federated credentials trust. Auto (default) reads the owner id, repository id and
-creation date with `gh api repos/<repository>` and uses Immutable for repositories created on or after 2026-07-15, else
+creation date with `gh api repos/<repository>` and uses Immutable for repositories created on or after GitHub's rollout date of
+immutable subjects (see the relay guide), else
 Named; when gh cannot read them it falls back to Named with a warning. Immutable is repo:<owner>@<ownerId>/<repo>@<repoId>,
 Named is repo:<owner>/<repo>. Immutable needs the ids from gh or from -OwnerId and -RepositoryId.
 
@@ -1223,7 +1224,8 @@ function Test-BootstrapPermissions {
 
 # GitHub puts the owner and repository ids into the OIDC subject (repo:<owner>@<ownerId>/<repo>@<repoId>:...) for repositories
 # created on or after this date, and for older ones that opted in. A federated credential must match the subject GitHub emits.
-$script:ImmutableSubjectsSince = [datetime]::new(2026, 7, 15, 0, 0, 0, [System.DateTimeKind]::Utc)
+$script:ImmutableSubjectsSince = [datetime]::new(2026, 7, 15, 0, 0, 0, [System.DateTimeKind]::Utc)   # season-literal-ok: GitHub's rollout date, not a season
+$script:ImmutableSubjectsSinceText = $script:ImmutableSubjectsSince.ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
 
 # Sets $script:Run.SubjectPrefix (the part of every credential subject before ":environment:..." or ":pull_request"). False
 # (with a FAIL precondition) only when Immutable was demanded and the ids are unavailable.
@@ -1269,10 +1271,10 @@ function Resolve-OidcSubjectPrefix {
     if ($immutable) {
         $parts = $o.Repository -split '/', 2
         $script:Run.SubjectPrefix = "repo:$($parts[0])@$ownerId/$($parts[1])@$repoId"
-        Add-Precondition 'oidc-subject' 'PASS' "Immutable OIDC subjects ($($script:Run.SubjectPrefix)), the form GitHub emits for repositories created on or after 2026-07-15."
+        Add-Precondition 'oidc-subject' 'PASS' "Immutable OIDC subjects ($($script:Run.SubjectPrefix)), the form GitHub emits for repositories created on or after $($script:ImmutableSubjectsSinceText)."
     }
     elseif ($haveIds) {
-        Add-Precondition 'oidc-subject' 'PASS' "Name-based OIDC subjects ($named): the repository was created before 2026-07-15. If it opted in to immutable subjects, use -SubjectFormat Immutable."
+        Add-Precondition 'oidc-subject' 'PASS' "Name-based OIDC subjects ($named): the repository was created before $($script:ImmutableSubjectsSinceText). If it opted in to immutable subjects, use -SubjectFormat Immutable."
     }
     else {
         Add-Precondition 'oidc-subject' 'WARN' "Could not read the repository ids ($why), so the OIDC subjects are name-based ($named). If a workflow login fails with AADSTS700213 and a subject like repo:<owner>@<id>/<repo>@<id>:..., re-run with -SubjectFormat Immutable (and -OwnerId/-RepositoryId when gh is unavailable)."
