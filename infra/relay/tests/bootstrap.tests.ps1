@@ -49,10 +49,12 @@ $ReaderId = 'acdd72a7-3385-48ef-bd42-f606fba81ae7'
 $RbacAdminId = 'f58310d9-a9f6-439a-9e8d-f62e7b41a168'
 $AcrPullId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 $ExpectedCondition = "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$AcrPullId})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$AcrPullId}))"
-$DeployClient = 'bbbbbbbb-0000-0000-0000-000000000001'
-$DeploySp = 'cccccccc-0000-0000-0000-000000000001'
-$PrClient = 'bbbbbbbb-0000-0000-0000-000000000002'
-$PrSp = 'cccccccc-0000-0000-0000-000000000002'
+$DevClient = 'bbbbbbbb-0000-0000-0000-000000000001'
+$DevSp = 'cccccccc-0000-0000-0000-000000000001'
+$ProdClient = 'bbbbbbbb-0000-0000-0000-000000000002'
+$ProdSp = 'cccccccc-0000-0000-0000-000000000002'
+$PrClient = 'bbbbbbbb-0000-0000-0000-000000000003'
+$PrSp = 'cccccccc-0000-0000-0000-000000000003'
 $allTypeRegions = @('South Central US', 'Central US', 'East US 2', 'East US', 'West US 2', 'West US 3', 'North Central US')
 
 # ---- fake world -------------------------------------------------------------------------------------------------------
@@ -295,17 +297,19 @@ function Get-ExpectedSetupSequence {
     @(
         "group create --name $DevRg --location southcentralus --tags app=wpiemu-relay environment=dev managedBy=bootstrap -o none",
         "group create --name $ProdRg --location southcentralus --tags app=wpiemu-relay environment=prod managedBy=bootstrap -o none",
-        'ad app create --display-name wpiemu-relay-deploy --sign-in-audience AzureADMyOrg -o json',
-        "ad sp create --id $DeployClient -o json",
+        'ad app create --display-name wpiemu-relay-deploy-dev --sign-in-audience AzureADMyOrg -o json',
+        "ad sp create --id $DevClient -o json",
+        'ad app create --display-name wpiemu-relay-deploy-prod --sign-in-audience AzureADMyOrg -o json',
+        "ad sp create --id $ProdClient -o json",
         'ad app create --display-name wpiemu-relay-whatif --sign-in-audience AzureADMyOrg -o json',
         "ad sp create --id $PrClient -o json",
-        "ad app federated-credential create --id $DeployClient --parameters @{{JSONFILE}}",
-        "ad app federated-credential create --id $DeployClient --parameters @{{JSONFILE}}",
+        "ad app federated-credential create --id $DevClient --parameters @{{JSONFILE}}",
+        "ad app federated-credential create --id $ProdClient --parameters @{{JSONFILE}}",
         "ad app federated-credential create --id $PrClient --parameters @{{JSONFILE}}",
-        "role assignment create --assignee-object-id $DeploySp --assignee-principal-type ServicePrincipal --role $ContributorId --scope $DevScope -o none",
-        "role assignment create --assignee-object-id $DeploySp --assignee-principal-type ServicePrincipal --role $RbacAdminId --scope $DevScope --condition $ExpectedCondition --condition-version 2.0 -o none",
-        "role assignment create --assignee-object-id $DeploySp --assignee-principal-type ServicePrincipal --role $ContributorId --scope $ProdScope -o none",
-        "role assignment create --assignee-object-id $DeploySp --assignee-principal-type ServicePrincipal --role $RbacAdminId --scope $ProdScope --condition $ExpectedCondition --condition-version 2.0 -o none",
+        "role assignment create --assignee-object-id $DevSp --assignee-principal-type ServicePrincipal --role $ContributorId --scope $DevScope -o none",
+        "role assignment create --assignee-object-id $DevSp --assignee-principal-type ServicePrincipal --role $RbacAdminId --scope $DevScope --condition $ExpectedCondition --condition-version 2.0 -o none",
+        "role assignment create --assignee-object-id $ProdSp --assignee-principal-type ServicePrincipal --role $ContributorId --scope $ProdScope -o none",
+        "role assignment create --assignee-object-id $ProdSp --assignee-principal-type ServicePrincipal --role $RbacAdminId --scope $ProdScope --condition $ExpectedCondition --condition-version 2.0 -o none",
         'role definition create --role-definition @{{JSONFILE}} -o none',
         "role assignment create --assignee-object-id $PrSp --assignee-principal-type ServicePrincipal --role $ReaderId --scope $DevScope -o none",
         "role assignment create --assignee-object-id $PrSp --assignee-principal-type ServicePrincipal --role wpiemu-relay-whatif --scope $DevScope -o none"
@@ -343,7 +347,8 @@ Invoke-Test 'dry run makes zero mutating calls and prints every command it would
     Assert-Equal $script:World.Gh.Raw.Count 0 'zero mutating gh calls'
     Assert-Equal $r.Run.Executed.Count 0 'wrapper executed no mutating call'
     Assert-Equal $r.Run.Planned.Count (Get-ExpectedSetupSequence).Count 'all setup commands planned'
-    Assert-True (@($r.Report.PlannedCommands | Where-Object { $_ -match 'role assignment create .*<deploy-sp-object-id>' }).Count -eq 4) 'placeholders stand in for ids that do not exist yet'
+    Assert-True (@($r.Report.PlannedCommands | Where-Object { $_ -match 'role assignment create .*<dev-sp-object-id>' }).Count -eq 2) 'placeholders stand in for ids that do not exist yet (dev app)'
+    Assert-True (@($r.Report.PlannedCommands | Where-Object { $_ -match 'role assignment create .*<prod-sp-object-id>' }).Count -eq 2) 'placeholders stand in for ids that do not exist yet (prod app)'
     Assert-Equal $script:World.Groups.Count 0 'no resource group exists afterwards'
     Assert-Equal $script:World.Apps.Count 0 'no app exists afterwards'
     Assert-True ($r.Log -match 'dry run') 'announces dry run'
@@ -367,7 +372,10 @@ Invoke-Test '-Apply on an empty subscription issues the exact sequence' {
     Assert-Equal $cred[2].subject 'repo:Overture-7421/wpi-emulator:pull_request' 'pull_request subject'
     Assert-True (@($cred | Where-Object { $_.issuer -ne 'https://token.actions.githubusercontent.com' }).Count -eq 0) 'issuer on every credential'
     Assert-True (@($cred | Where-Object { @($_.audiences) -notcontains 'api://AzureADTokenExchange' }).Count -eq 0) 'audience on every credential'
-    Assert-Equal @($script:World.Creds[$DeployClient]).Count 2 'deploy app holds only the two environment credentials'
+    Assert-Equal @($script:World.Creds[$DevClient]).Count 1 'dev app holds exactly one credential'
+    Assert-Equal $script:World.Creds[$DevClient][0].subject 'repo:Overture-7421/wpi-emulator:environment:relay-dev' 'dev app holds the relay-dev subject only'
+    Assert-Equal @($script:World.Creds[$ProdClient]).Count 1 'prod app holds exactly one credential'
+    Assert-Equal $script:World.Creds[$ProdClient][0].subject 'repo:Overture-7421/wpi-emulator:environment:relay-prod' 'prod app holds the relay-prod subject only'
     Assert-Equal @($script:World.Creds[$PrClient]).Count 1 'what-if app holds only the pull_request credential'
 
     $roleCalls = @($r.Run.Executed | Where-Object { $_.Args[0] -eq 'role' -and $_.Args[2] -eq 'create' -and $_.Args[1] -eq 'assignment' })
@@ -403,11 +411,11 @@ Invoke-Test 'second run with everything present: zero mutating calls, everything
 Invoke-Test 'partial state: only the missing credential is created' {
     New-World
     $null = Invoke-Run @{ Apply = $true }
-    $null = $script:World.Creds[$DeployClient].RemoveAll([Predicate[object]] { param($c) $c.name -eq 'github-relay-prod' })
+    $null = $script:World.Creds[$ProdClient].RemoveAll([Predicate[object]] { param($c) $c.name -eq 'github-relay-prod' })
     $script:World.Raw.Clear()
     $r = Invoke-Run @{ Apply = $true }
     Assert-Equal $r.Executed.Count 1 'exactly one mutation'
-    Assert-Equal $r.Executed[0] "ad app federated-credential create --id $DeployClient --parameters @{{JSONFILE}}" 'it is the credential create'
+    Assert-Equal $r.Executed[0] "ad app federated-credential create --id $ProdClient --parameters @{{JSONFILE}}" 'it is the credential create on the prod app'
     Assert-Equal (($r.Run.Executed[0].Json | ConvertFrom-Json).subject) 'repo:Overture-7421/wpi-emulator:environment:relay-prod' 'for the prod subject'
     Assert-Equal (@(Get-Status $r 'FederatedCredentials' '*relay-prod') -join ',') 'Created' 'reported Created'
     Assert-Equal (@(Get-Status $r 'FederatedCredentials' '*relay-dev') -join ',') 'Exists' 'the other stays Exists'
@@ -416,33 +424,33 @@ Invoke-Test 'partial state: only the missing credential is created' {
 Invoke-Test 'app exists without a service principal or credentials: reused, not duplicated' {
     New-World
     $script:World.AppN = 1
-    $app = @{ id = 'aaaaaaaa-0000-0000-0000-000000000001'; appId = $DeployClient; displayName = 'wpiemu-relay-deploy'; passwordCredentials = @() }
-    $script:World.Apps.Add($app); $script:World.Creds[$DeployClient] = [System.Collections.Generic.List[object]]::new()
+    $app = @{ id = 'aaaaaaaa-0000-0000-0000-000000000001'; appId = $DevClient; displayName = 'wpiemu-relay-deploy-dev'; passwordCredentials = @() }
+    $script:World.Apps.Add($app); $script:World.Creds[$DevClient] = [System.Collections.Generic.List[object]]::new()
     $r = Invoke-Run @{ Apply = $true }
     Assert-Equal $r.ExitCode 0 'exit code 0'
-    Assert-Equal @($script:World.Apps | Where-Object { $_.displayName -eq 'wpiemu-relay-deploy' }).Count 1 'still one deploy app'
-    Assert-True (@($r.Executed | Where-Object { $_ -match 'ad app create --display-name wpiemu-relay-deploy' }).Count -eq 0) 'no second app create for the deploy app'
-    Assert-True (@($r.Executed | Where-Object { $_ -eq "ad sp create --id $DeployClient -o json" }).Count -eq 1) 'service principal created'
-    Assert-Equal (@(Get-Status $r 'Identity' 'app wpiemu-relay-deploy') -join ',') 'Exists' 'app reported Exists'
+    Assert-Equal @($script:World.Apps | Where-Object { $_.displayName -eq 'wpiemu-relay-deploy-dev' }).Count 1 'still one dev app'
+    Assert-True (@($r.Executed | Where-Object { $_ -match 'ad app create --display-name wpiemu-relay-deploy-dev' }).Count -eq 0) 'no second app create for the dev app'
+    Assert-True (@($r.Executed | Where-Object { $_ -eq "ad sp create --id $DevClient -o json" }).Count -eq 1) 'service principal created'
+    Assert-Equal (@(Get-Status $r 'Identity' 'app wpiemu-relay-deploy-dev') -join ',') 'Exists' 'app reported Exists'
 }
 
 Invoke-Test 'wrong credential subject is updated (by name), the right ones are untouched' {
     New-World
     $null = Invoke-Run @{ Apply = $true }
-    $script:World.Creds[$DeployClient][1].subject = 'repo:Overture-7421/wpi-emulator:environment:wrong'
+    $script:World.Creds[$ProdClient][0].subject = 'repo:Overture-7421/wpi-emulator:environment:wrong'
     $script:World.Raw.Clear()
     $r = Invoke-Run @{ Apply = $true }
     Assert-Equal $r.Executed.Count 1 'exactly one mutation'
-    Assert-Equal $r.Executed[0] "ad app federated-credential update --id $DeployClient --federated-credential-id github-relay-prod --parameters @{{JSONFILE}}" 'update by credential name'
+    Assert-Equal $r.Executed[0] "ad app federated-credential update --id $ProdClient --federated-credential-id github-relay-prod --parameters @{{JSONFILE}}" 'update by credential name'
     Assert-Equal (($r.Run.Executed[0].Json | ConvertFrom-Json).subject) 'repo:Overture-7421/wpi-emulator:environment:relay-prod' 'new subject'
     Assert-Equal (@(Get-Status $r 'FederatedCredentials' '*relay-prod') -join ',') 'Updated' 'reported Updated'
-    Assert-Equal $script:World.Creds[$DeployClient][1].subject 'repo:Overture-7421/wpi-emulator:environment:relay-prod' 'world holds the corrected subject'
+    Assert-Equal $script:World.Creds[$ProdClient][0].subject 'repo:Overture-7421/wpi-emulator:environment:relay-prod' 'world holds the corrected subject'
 }
 
 Invoke-Test 'a credential with the right subject under another name is accepted as is' {
     New-World
     $null = Invoke-Run @{ Apply = $true }
-    $script:World.Creds[$DeployClient][0].name = 'hand-made'
+    $script:World.Creds[$DevClient][0].name = 'hand-made'
     $r = Invoke-Run @{ Apply = $true }
     Assert-Equal $r.Executed.Count 0 'no mutation'
 }
@@ -469,12 +477,67 @@ Invoke-Test 'a reformatted but equivalent condition from Azure is not rewritten'
 Invoke-Test 'unexpected privileged assignments are reported, never silently kept quiet' {
     New-World
     $null = Invoke-Run @{ Apply = $true }
-    $script:World.Assignments.Add(@{ id = "$ProdScope/providers/Microsoft.Authorization/roleAssignments/x"; principalId = $DeploySp; scope = $ProdScope; roleDefinitionId = "/x/8e3af657-a8ff-443c-a75c-2fe8c4bcb635"; roleDefinitionName = 'Owner'; condition = $null })
-    $script:World.Assignments.Add(@{ id = "/subscriptions/$Sub/providers/Microsoft.Authorization/roleAssignments/y"; principalId = $DeploySp; scope = "/subscriptions/$Sub"; roleDefinitionId = "/x/$ReaderId"; roleDefinitionName = 'Reader'; condition = $null })
+    $script:World.Assignments.Add(@{ id = "$DevScope/providers/Microsoft.Authorization/roleAssignments/x"; principalId = $DevSp; scope = $DevScope; roleDefinitionId = "/x/8e3af657-a8ff-443c-a75c-2fe8c4bcb635"; roleDefinitionName = 'Owner'; condition = $null })
+    $script:World.Assignments.Add(@{ id = "/subscriptions/$Sub/providers/Microsoft.Authorization/roleAssignments/y"; principalId = $DevSp; scope = "/subscriptions/$Sub"; roleDefinitionId = "/x/$ReaderId"; roleDefinitionName = 'Reader'; condition = $null })
     $r = Invoke-Run @{ Apply = $true }
+    Assert-Equal $r.ExitCode 0 'reported as warnings, not failures'
     Assert-Equal $r.Executed.Count 0 'it does not remove what it did not create'
-    Assert-True (@($r.Run.Warnings | Where-Object { $_ -match "unexpected role 'Owner'" }).Count -eq 1) 'warns about Owner in a managed resource group'
+    Assert-True (@($r.Run.Warnings | Where-Object { $_ -match "unexpected role 'Owner'" }).Count -eq 1) 'warns about Owner in the app''s own resource group'
     Assert-True (@($r.Run.Warnings | Where-Object { $_ -match 'subscription-scope' }).Count -eq 1) 'warns about subscription scope'
+}
+
+Invoke-Test 'a deploy app holding a role on the other environment is a failure (exit 1), never auto-removed' {
+    New-World
+    $null = Invoke-Run @{ Apply = $true }
+    $script:World.Assignments.Add(@{ id = "$ProdScope/providers/Microsoft.Authorization/roleAssignments/x"; principalId = $DevSp; scope = $ProdScope; roleDefinitionId = "/x/$ContributorId"; roleDefinitionName = 'Contributor'; condition = $null })
+    $script:World.Assignments.Add(@{ id = "$DevScope/providers/Microsoft.Authorization/roleAssignments/z"; principalId = $ProdSp; scope = $DevScope; roleDefinitionId = "/x/$ContributorId"; roleDefinitionName = 'Contributor'; condition = $null })
+    $script:World.Raw.Clear()
+    $r = Invoke-Run @{ Apply = $true }
+    Assert-Equal $r.ExitCode 1 'exit code 1'
+    Assert-Equal @($r.Run.Items | Where-Object { $_.Status -eq 'Failed' -and $_.Item -match 'cross-environment' }).Count 2 'both cross-environment grants reported'
+    Assert-Equal $r.Executed.Count 0 'nothing is changed automatically'
+}
+
+Invoke-Test 'prod app: the AcrPull grant on the dev registry is allowed, any other dev-side role is not' {
+    New-World
+    $null = Invoke-Run @{ Apply = $true }
+    $reg = "$DevScope/providers/Microsoft.ContainerRegistry/registries/r1"
+    $script:World.Assignments.Add(@{ id = "$reg/providers/Microsoft.Authorization/roleAssignments/p"; principalId = $ProdSp; scope = $reg; roleDefinitionId = "/x/$AcrPullId"; roleDefinitionName = 'AcrPull'; condition = $null })
+    Assert-Equal (Invoke-Run @{ Apply = $true }).ExitCode 0 'AcrPull on the dev registry is tolerated for the prod app'
+    $script:World.Assignments.Add(@{ id = "$reg/providers/Microsoft.Authorization/roleAssignments/q"; principalId = $ProdSp; scope = $reg; roleDefinitionId = "/x/$ContributorId"; roleDefinitionName = 'Contributor'; condition = $null })
+    Assert-Equal (Invoke-Run @{ Apply = $true }).ExitCode 1 'Contributor on the dev registry is not'
+    New-World
+    $null = Invoke-Run @{ Apply = $true }
+    $script:World.Assignments.Add(@{ id = "$reg/providers/Microsoft.Authorization/roleAssignments/p"; principalId = $DevSp; scope = $reg; roleDefinitionId = "/x/$AcrPullId"; roleDefinitionName = 'AcrPull'; condition = $null })
+    Assert-Equal (Invoke-Run @{ Apply = $true }).ExitCode 0 'the dev app having AcrPull on its own registry is just its own scope'
+}
+
+Invoke-Test 'the assignment guard refuses cross-environment scopes outright' {
+    New-World
+    $registryOfProd = "$ProdScope/providers/Microsoft.ContainerRegistry/registries/prodreg"
+    $registryOfDev = "$DevScope/providers/Microsoft.ContainerRegistry/registries/devreg"
+    foreach ($case in @(
+            @{ Key = 'dev'; Scope = $ProdScope; Role = $ContributorId; Name = 'dev app, prod RG' },
+            @{ Key = 'dev'; Scope = $registryOfProd; Role = $AcrPullId; Name = 'dev app, prod registry' },
+            @{ Key = 'dev'; Scope = "/subscriptions/$Sub"; Role = $ContributorId; Name = 'dev app, subscription' },
+            @{ Key = 'prod'; Scope = $DevScope; Role = $ContributorId; Name = 'prod app, dev RG' },
+            @{ Key = 'prod'; Scope = $registryOfDev; Role = $ContributorId; Name = 'prod app, dev registry with another role' },
+            @{ Key = 'prod'; Scope = $registryOfDev; Role = $RbacAdminId; Name = 'prod app, dev registry RBAC admin' },
+            @{ Key = 'pr'; Scope = $ProdScope; Role = $ReaderId; Name = 'what-if app, prod RG' })) {
+        $threw = $false
+        try { Assert-AssignmentAllowed -AppKey $case.Key -Scope $case.Scope -RoleId $case.Role } catch { $threw = $true }
+        Assert-True $threw "refused: $($case.Name)"
+    }
+    foreach ($case in @(
+            @{ Key = 'dev'; Scope = $DevScope; Role = $ContributorId; Name = 'dev app, dev RG' },
+            @{ Key = 'dev'; Scope = $registryOfDev; Role = $AcrPullId; Name = 'dev app, own registry' },
+            @{ Key = 'prod'; Scope = $ProdScope; Role = $RbacAdminId; Name = 'prod app, prod RG' },
+            @{ Key = 'prod'; Scope = $registryOfDev; Role = $AcrPullId; Name = 'prod app, AcrPull on dev registry (promotion)' },
+            @{ Key = 'pr'; Scope = $DevScope; Role = $ReaderId; Name = 'what-if app, dev RG' })) {
+        $threw = $false
+        try { Assert-AssignmentAllowed -AppKey $case.Key -Scope $case.Scope -RoleId $case.Role } catch { $threw = $true }
+        Assert-True (-not $threw) "allowed: $($case.Name)"
+    }
 }
 
 Invoke-Test 'GrantPromotion: skipped while the dev registry is missing, granted once it exists, then idempotent' {
@@ -488,12 +551,23 @@ Invoke-Test 'GrantPromotion: skipped while the dev registry is missing, granted 
     Assert-Equal $item.Status 'Skipped' 'Skipped'
     Assert-True ($item.Detail -match 'dev registry does not exist yet' -and $item.Detail -match '-Step GrantPromotion -Apply') 'clear message with the re-run command'
 
+    Assert-Equal @($script:World.Assignments | Where-Object { $_.principalId -eq $ProdSp -and $_.scope -like "$DevScope*" }).Count 0 'before GrantPromotion the prod app has nothing on the dev side'
     $registryId = "$DevScope/providers/Microsoft.ContainerRegistry/registries/wpiemureldev1234"
     $script:World.Acrs[$DevRg] = @(@{ id = $registryId; name = 'wpiemureldev1234' })
+    $r = Invoke-Run @{ Apply = $true }
+    Assert-Equal $r.ExitCode 0 'a full run with the registry present'
+    Assert-Equal $r.Executed.Count 1 'a full run grants promotion too (GrantPromotion is part of All)'
+    $script:World.Assignments.RemoveAll([Predicate[object]] { param($a) $a.scope -eq $registryId }) | Out-Null
     $r = Invoke-Run @{ Apply = $true; Step = @('GrantPromotion') }
     Assert-Equal $r.Executed.Count 1 'one grant'
-    Assert-Equal $r.Executed[0] "role assignment create --assignee-object-id $DeploySp --assignee-principal-type ServicePrincipal --role $AcrPullId --scope $registryId -o none" 'AcrPull on the dev registry, no condition'
+    Assert-Equal $r.Executed[0] "role assignment create --assignee-object-id $ProdSp --assignee-principal-type ServicePrincipal --role $AcrPullId --scope $registryId -o none" 'AcrPull for the PROD app on the dev registry, no condition'
     Assert-Equal (@(Get-Status $r 'GrantPromotion') -join ',') 'Created' 'Created'
+    $prodAssignments = @($script:World.Assignments | Where-Object { $_.principalId -eq $ProdSp })
+    $onDevSide = @($prodAssignments | Where-Object { $_.scope -like "$DevScope*" })
+    Assert-Equal $onDevSide.Count 1 'the prod app holds exactly one role on the dev side after GrantPromotion'
+    Assert-Equal $onDevSide[0].scope $registryId 'and it is on the dev registry itself'
+    Assert-Equal $onDevSide[0].roleDefinitionName 'AcrPull' 'and it is AcrPull'
+    Assert-Equal @($script:World.Assignments | Where-Object { $_.principalId -eq $DevSp -and $_.scope -notlike "$DevScope*" }).Count 0 'the dev app received nothing outside the dev RG'
     $r = Invoke-Run @{ Apply = $true; Step = @('GrantPromotion') }
     Assert-Equal $r.Executed.Count 0 'rerun is a no-op'
     Assert-Equal (@(Get-Status $r 'GrantPromotion') -join ',') 'Exists' 'Exists'
@@ -527,18 +601,67 @@ Invoke-Test '-Step limits the work and reads the existing app without creating i
     Assert-Equal $r.Executed.Count 0 'nothing mutated'
 }
 
-Invoke-Test 'shared and skipped pull-request identity modes' {
-    New-World
-    $r = Invoke-Run @{ Apply = $true; SharedPrIdentity = $true }
-    Assert-Equal $r.ExitCode 0 'exit code 0'
-    Assert-Equal $script:World.Apps.Count 1 'only the deploy app exists'
-    Assert-Equal @($script:World.Creds[$DeployClient]).Count 3 'deploy app has three credentials'
-    Assert-True (@($r.Run.Warnings | Where-Object { $_ -match 'shares the deploy app' }).Count -eq 1) 'warns that PR jobs get deploy rights'
+Invoke-Test 'skipped pull-request identity, and the old shared mode no longer exists' {
     New-World
     $r = Invoke-Run @{ Apply = $true; SkipPrIdentity = $true }
-    Assert-Equal $script:World.Apps.Count 1 'skip: only the deploy app'
-    Assert-Equal @($script:World.Creds[$DeployClient]).Count 2 'skip: two credentials'
+    Assert-Equal $r.ExitCode 0 'exit code 0'
+    Assert-Equal $script:World.Apps.Count 2 'skip: only the two deploy apps'
+    Assert-Equal @($script:World.Creds[$DevClient]).Count 1 'skip: dev app has one credential'
+    Assert-Equal @($script:World.Creds[$ProdClient]).Count 1 'skip: prod app has one credential'
     Assert-Equal $script:World.RoleDefs.Count 0 'skip: no custom role'
+    Assert-True (-not $r.Report.GitHub.Variables.Repository.Contains('AZURE_PR_CLIENT_ID')) 'skip: no PR variables'
+    New-World
+    Assert-Equal (Invoke-Run @{ SharedPrIdentity = $true }).ExitCode 2 '-SharedPrIdentity is rejected (a pull request must never get deploy rights)'
+    Assert-Equal (Invoke-Run @{ AppName = 'x' }).ExitCode 2 'the old single-app -AppName is rejected'
+}
+
+Invoke-Test 'custom app name prefix and per-app names' {
+    New-World
+    $r = Invoke-Run @{ Apply = $true; AppNamePrefix = 'acme-deploy'; PrAppName = 'acme-whatif' }
+    Assert-Equal $r.ExitCode 0 'exit code 0'
+    Assert-Equal (($script:World.Apps | ForEach-Object { $_.displayName }) -join ',') 'acme-deploy-dev,acme-deploy-prod,acme-whatif' 'display names'
+    Assert-Equal (Invoke-Run @{ AppNamePrefix = 'x'; PrAppName = 'x-dev' }).ExitCode 2 'the what-if name may not collide with a deploy name'
+}
+
+Invoke-Test 'no role assignment ever crosses environments (dev app: dev RG only, prod app: prod RG only)' {
+    New-World
+    $null = Invoke-Run @{ Apply = $true }
+    $script:World.Acrs[$DevRg] = @(@{ id = "$DevScope/providers/Microsoft.ContainerRegistry/registries/r1"; name = 'r1' })
+    $null = Invoke-Run @{ Apply = $true }
+    $dev = @($script:World.Assignments | Where-Object { $_.principalId -eq $DevSp })
+    $prod = @($script:World.Assignments | Where-Object { $_.principalId -eq $ProdSp })
+    $pr = @($script:World.Assignments | Where-Object { $_.principalId -eq $PrSp })
+    Assert-Equal $dev.Count 2 'dev app: Contributor + conditioned RBAC admin, nothing else'
+    Assert-True (@($dev | Where-Object { $_.scope -ne $DevScope }).Count -eq 0) '(a) every dev app assignment is on the dev RG'
+    Assert-True (@($dev | Where-Object { $_.scope -like "$ProdScope*" }).Count -eq 0) '(d) the dev app has nothing under the prod RG, registry of prod included'
+    Assert-Equal $prod.Count 3 'prod app: Contributor + conditioned RBAC admin + the promotion grant'
+    Assert-True (@($prod | Where-Object { $_.scope -like "$ProdScope*" }).Count -eq 2) '(a) the prod app has its two roles on the prod RG'
+    Assert-True (@($prod | Where-Object { $_.scope -notlike "$ProdScope*" -and -not ($_.roleDefinitionName -eq 'AcrPull' -and $_.scope -like "$DevScope/providers/Microsoft.ContainerRegistry/registries/*") }).Count -eq 0) '(a) the prod app holds nothing on the dev side except AcrPull on the dev registry'
+    Assert-True (@($pr | Where-Object { $_.scope -ne $DevScope }).Count -eq 0) 'what-if app: dev RG only'
+    Assert-Equal @($script:World.Creds[$DevClient]).Count 1 '(b) dev app has exactly one credential'
+    Assert-Equal @($script:World.Creds[$ProdClient]).Count 1 '(b) prod app has exactly one credential'
+    Assert-True (@($script:World.Creds[$DevClient] | Where-Object { $_.subject -notmatch ':environment:relay-dev$' }).Count -eq 0) '(b) the dev credential is the relay-dev environment'
+    Assert-True (@($script:World.Creds[$ProdClient] | Where-Object { $_.subject -notmatch ':environment:relay-prod$' }).Count -eq 0) '(b) the prod credential is the relay-prod environment'
+    Assert-True (@(@($script:World.Creds[$DevClient]) + @($script:World.Creds[$PrClient]) | Where-Object { $_.subject -match 'relay-prod' }).Count -eq 0) 'no relay-prod subject on the dev or what-if app'
+    Assert-True (@($script:World.Creds[$ProdClient] | Where-Object { $_.subject -match 'relay-dev|pull_request' }).Count -eq 0) 'no relay-dev or pull_request subject on the prod app'
+}
+
+Invoke-Test 'every planned and executed role command of the dev app targets the dev RG, of the prod app the prod RG (or the dev registry as AcrPull)' {
+    New-World
+    $script:World.Acrs[$DevRg] = @()
+    $dry = Invoke-Run @{}
+    $app = Invoke-Run @{ Apply = $true }
+    $script:World.Acrs[$DevRg] = @(@{ id = "$DevScope/providers/Microsoft.ContainerRegistry/registries/r1"; name = 'r1' })
+    $promo = Invoke-Run @{ Apply = $true; Step = @('GrantPromotion') }
+    $calls = @($app.Run.Executed) + @($promo.Run.Executed) + @($dry.Run.Planned)
+    $devCalls = @($calls | Where-Object { $_.Args[0] -eq 'role' -and $_.Args -contains '--assignee-object-id' -and (((Get-Opt $_.Args '--assignee-object-id') -eq $DevSp) -or (Get-Opt $_.Args '--assignee-object-id') -eq '<dev-sp-object-id>') })
+    $prodCalls = @($calls | Where-Object { $_.Args[0] -eq 'role' -and $_.Args -contains '--assignee-object-id' -and (((Get-Opt $_.Args '--assignee-object-id') -eq $ProdSp) -or (Get-Opt $_.Args '--assignee-object-id') -eq '<prod-sp-object-id>') })
+    Assert-True ($devCalls.Count -ge 4) 'dev role commands were seen'
+    Assert-True ($prodCalls.Count -ge 5) 'prod role commands were seen'
+    Assert-True (@($devCalls | Where-Object { (Get-Opt $_.Args '--scope') -ne $DevScope }).Count -eq 0) 'dev app commands: dev RG scope only'
+    Assert-True (@($prodCalls | Where-Object { (Get-Opt $_.Args '--scope') -ne $ProdScope -and -not ((Get-Opt $_.Args '--role') -eq $AcrPullId -and (Get-Opt $_.Args '--scope') -like "$DevScope/providers/Microsoft.ContainerRegistry/registries/*") }).Count -eq 0) 'prod app commands: prod RG scope, plus AcrPull on the dev registry'
+    Assert-Equal @($app.Run.Executed | Where-Object { $_.Args -contains $AcrPullId }).Count 0 'before GrantPromotion nothing grants AcrPull to anyone'
+    Assert-Equal @($promo.Run.Executed | Where-Object { $_.Args -contains $AcrPullId }).Count 1 'GrantPromotion grants AcrPull exactly once'
 }
 
 Invoke-Test '-Remove dry run changes nothing; -Remove -Apply tears down but keeps resource groups' {
@@ -547,9 +670,9 @@ Invoke-Test '-Remove dry run changes nothing; -Remove -Apply tears down but keep
     $script:World.Raw.Clear()
     $r = Invoke-Run @{ Remove = $true }
     Assert-Equal $script:World.Raw.Count 0 'dry-run remove: zero mutations'
-    Assert-Equal $script:World.Apps.Count 2 'apps still present'
+    Assert-Equal $script:World.Apps.Count 3 'apps still present'
     Assert-True (@(Get-Status $r 'RoleAssignments') -contains 'WouldRemove') 'WouldRemove reported'
-    Assert-Equal $r.Run.Planned.Count 12 'plans: 6 assignment deletes, the custom role, 3 credentials, 2 apps'
+    Assert-Equal $r.Run.Planned.Count 13 'plans: 6 assignment deletes, the custom role, 3 credentials, 3 apps'
 
     $r = Invoke-Run @{ Remove = $true; Apply = $true }
     Assert-Equal $r.ExitCode 0 'exit code 0'
@@ -586,7 +709,8 @@ Invoke-Test 'GitHub variables and commands are printed exactly' {
     $suffix = Get-DefaultDnsSuffix $Sub
     $dev = $gh.Variables.Environments['relay-dev']
     Assert-Equal (($dev.Keys) -join ',') 'AZURE_CLIENT_ID,AZURE_TENANT_ID,AZURE_SUBSCRIPTION_ID,RELAY_RESOURCE_GROUP,RELAY_DNS_SUFFIX,RELAY_ALERT_EMAIL' 'six per-environment variables'
-    Assert-Equal $dev['AZURE_CLIENT_ID'] $DeployClient 'deploy client id'
+    Assert-Equal $dev['AZURE_CLIENT_ID'] $DevClient 'relay-dev AZURE_CLIENT_ID is the dev app'
+    Assert-Equal $gh.Variables.Environments['relay-prod']['AZURE_CLIENT_ID'] $ProdClient 'relay-prod AZURE_CLIENT_ID is the prod app'
     Assert-Equal $dev['RELAY_RESOURCE_GROUP'] $DevRg 'dev resource group'
     Assert-Equal $gh.Variables.Environments['relay-prod']['RELAY_RESOURCE_GROUP'] $ProdRg 'prod resource group'
     Assert-Equal $dev['RELAY_DNS_SUFFIX'] $suffix 'dns suffix from the subscription'
@@ -598,7 +722,13 @@ Invoke-Test 'GitHub variables and commands are printed exactly' {
     Assert-True (@($cmds | Where-Object { $_ -match 'custom_branch_policies":true' }).Count -eq 1) 'prod body restricts to custom branch policies'
     Assert-True (@($cmds | Where-Object { $_ -match '"reviewers":\[\{"type":"User","id":"<id of octocat>"\}\]' }).Count -eq 1) 'reviewer placeholder until resolved'
     Assert-True ($cmds -contains 'gh api -X POST repos/Overture-7421/wpi-emulator/environments/relay-prod/deployment-branch-policies -f name=main -f type=branch') 'main-only branch policy command'
-    Assert-True ($cmds -contains "gh variable set AZURE_CLIENT_ID --env relay-dev --repo Overture-7421/wpi-emulator --body $DeployClient") 'variable set with --env'
+    Assert-True ($cmds -contains "gh variable set AZURE_CLIENT_ID --env relay-dev --repo Overture-7421/wpi-emulator --body $DevClient") 'variable set with --env (dev app)'
+    Assert-True ($cmds -contains "gh variable set AZURE_CLIENT_ID --env relay-prod --repo Overture-7421/wpi-emulator --body $ProdClient") 'variable set with --env (prod app)'
+    Assert-True (@($cmds | Where-Object { $_ -match "AZURE_CLIENT_ID --env relay-dev .*$ProdClient|AZURE_CLIENT_ID --env relay-prod .*$DevClient" }).Count -eq 0) 'client ids are never swapped between environments'
+    Assert-Equal @($r.Report.Apps | ForEach-Object { $_.DisplayName }) @('wpiemu-relay-deploy-dev', 'wpiemu-relay-deploy-prod', 'wpiemu-relay-whatif') 'report lists the three apps'
+    Assert-Equal @($r.Report.Apps | ForEach-Object { $_.ClientId }) @($DevClient, $ProdClient, $PrClient) 'with their client ids'
+    Assert-Equal $r.Report.Apps[0].RoleScope $DevScope 'dev app role scope'
+    Assert-Equal $r.Report.Apps[1].RoleScope $ProdScope 'prod app role scope'
     Assert-True ($cmds -contains 'gh variable set AZURE_LOCATION --repo Overture-7421/wpi-emulator --body southcentralus') 'repository variable set'
     Assert-True (@($cmds | Where-Object { $_ -match '^gh variable set .* --env' }).Count -eq 12) 'twelve environment variables'
     Assert-True (@($cmds | Where-Object { $_ -match 'secret' }).Count -eq 0) 'no secret commands'
@@ -612,7 +742,8 @@ Invoke-Test 'explicit -DnsSuffix and -Repository/-Environment parameters flow in
     $gh = $r.Report.GitHub
     Assert-Equal $gh.Variables.Environments['d']['RELAY_DNS_SUFFIX'] 'abc12' 'suffix'
     Assert-True ($gh.CommandsFull -contains 'gh api -X PUT repos/acme/robot/environments/d') 'repo and env names'
-    $subjects = @($script:World.Creds[$DeployClient] | ForEach-Object { $_.subject })
+    $subjects = @($script:World.Creds[$DevClient] | ForEach-Object { $_.subject }) + @($script:World.Creds[$ProdClient] | ForEach-Object { $_.subject })
+    Assert-Equal ($subjects -join ',') 'repo:acme/robot:environment:d,repo:acme/robot:environment:p' 'subjects follow the parameters'
     Assert-Equal ($subjects -join ',') 'repo:acme/robot:environment:d,repo:acme/robot:environment:p' 'subjects follow the parameters'
 }
 
@@ -648,7 +779,8 @@ Invoke-Test '-ConfigureGitHub -Apply creates environments, branch policy and var
     Assert-Equal @($prodRule.reviewers)[0].reviewer.id 4242 'prod reviewer id was resolved through gh api users/octocat'
     Assert-True ($g.Envs['relay-prod'].deployment_branch_policy.custom_branch_policies -eq $true) 'prod restricted to custom branch policies'
     Assert-Equal @($g.Policies['relay-prod'])[0].name 'main' 'only main may deploy to prod'
-    Assert-Equal $g.Vars['relay-dev']['AZURE_CLIENT_ID'] $DeployClient 'dev AZURE_CLIENT_ID'
+    Assert-Equal $g.Vars['relay-dev']['AZURE_CLIENT_ID'] $DevClient 'dev AZURE_CLIENT_ID is the dev app'
+    Assert-Equal $g.Vars['relay-prod']['AZURE_CLIENT_ID'] $ProdClient 'prod AZURE_CLIENT_ID is the prod app'
     Assert-Equal $g.Vars['relay-prod']['RELAY_RESOURCE_GROUP'] $ProdRg 'prod RELAY_RESOURCE_GROUP'
     Assert-Equal $g.Vars['']['AZURE_LOCATION'] 'southcentralus' 'repo AZURE_LOCATION'
     Assert-Equal $g.Vars['relay-dev'].Count 6 'six dev variables'
@@ -673,11 +805,11 @@ Invoke-Test '-ConfigureGitHub dry run runs no gh mutation' {
 
 Invoke-Test 'a failing step exits 1, stops its dependents and keeps independent steps' {
     New-World
-    $script:World.FailPatterns = @('^ad app create --display-name wpiemu-relay-deploy')
+    $script:World.FailPatterns = @('^ad app create --display-name wpiemu-relay-deploy-dev')
     $r = Invoke-Run @{ Apply = $true }
     Assert-Equal $r.ExitCode 1 'exit code 1'
     Assert-Equal (@(Get-Status $r 'ResourceGroups') -join ',') 'Created,Created' 'independent step still ran'
-    Assert-Equal (@(Get-Status $r 'Identity') -join ',') 'Failed' 'Identity failed'
+    Assert-Equal (@(Get-Status $r 'Identity') -join ',') 'Failed' 'Identity failed (stops at the first failing app)'
     foreach ($s in 'FederatedCredentials', 'RoleAssignments', 'GrantPromotion', 'GitHub') {
         $item = @($r.Run.Items | Where-Object { $_.Step -eq $s })[0]
         Assert-True ($item.Status -eq 'Skipped' -and $item.Detail -match 'depends on failed step') "$s skipped because of the failure"
@@ -781,7 +913,7 @@ Invoke-Test 'preconditions: not logged in, preflight failure, insufficient permi
 
 Invoke-Test 'usage errors exit 2' {
     New-World
-    Assert-Equal (Invoke-Run @{ SharedPrIdentity = $true; SkipPrIdentity = $true }).ExitCode 2 'shared + skip'
+    Assert-Equal (Invoke-Run @{ SharedPrIdentity = $true; SkipPrIdentity = $true }).ExitCode 2 'removed -SharedPrIdentity'
     Assert-Equal (Invoke-Run @{ DelegatedRoleIds = @('not-a-guid') }).ExitCode 2 'bad role id'
     Assert-Equal (Invoke-Run @{ DevResourceGroup = 'same'; ProdResourceGroup = 'same' }).ExitCode 2 'same resource group'
     Assert-Equal (Invoke-Run @{ Remove = $true; ConfigureGitHub = $true }).ExitCode 2 'remove + configure'
@@ -790,15 +922,15 @@ Invoke-Test 'usage errors exit 2' {
 
 Invoke-Test 'ambiguous app registrations are refused, existing client secrets are flagged' {
     New-World
-    foreach ($n in 1, 2) { $script:World.Apps.Add(@{ id = "aaaaaaaa-0000-0000-0000-00000000010$n"; appId = "bbbbbbbb-0000-0000-0000-00000000010$n"; displayName = 'wpiemu-relay-deploy'; passwordCredentials = @() }) }
+    foreach ($n in 1, 2) { $script:World.Apps.Add(@{ id = "aaaaaaaa-0000-0000-0000-00000000010$n"; appId = "bbbbbbbb-0000-0000-0000-00000000010$n"; displayName = 'wpiemu-relay-deploy-prod'; passwordCredentials = @() }) }
     $r = Invoke-Run @{ Apply = $true }
     Assert-Equal $r.ExitCode 2 'two apps with the name: exit 2'
     Assert-True (@($r.Run.Preconditions | Where-Object { $_.Message -match 'refusing to guess' }).Count -eq 1) 'explains'
     Assert-Equal $script:World.Raw.Count 0 'nothing mutated'
 
     New-World
-    $script:World.Apps.Add(@{ id = 'aaaaaaaa-0000-0000-0000-000000000001'; appId = $DeployClient; displayName = 'wpiemu-relay-deploy'; passwordCredentials = @(@{ keyId = 'k' }) })
-    $script:World.AppN = 1; $script:World.Creds[$DeployClient] = [System.Collections.Generic.List[object]]::new()
+    $script:World.Apps.Add(@{ id = 'aaaaaaaa-0000-0000-0000-000000000001'; appId = $DevClient; displayName = 'wpiemu-relay-deploy-dev'; passwordCredentials = @(@{ keyId = 'k' }) })
+    $script:World.AppN = 1; $script:World.Creds[$DevClient] = [System.Collections.Generic.List[object]]::new()
     $r = Invoke-Run @{ Apply = $true }
     Assert-True (@($r.Run.Warnings | Where-Object { $_ -match 'client secret' }).Count -eq 1) 'client secret warning'
     Assert-True (@($r.Executed | Where-Object { $_ -match 'credential (reset|delete)' }).Count -eq 0) 'the script never touches secrets itself'
@@ -823,7 +955,7 @@ Invoke-Test 'the JSON report round-trips' {
     $j = $r.Report | ConvertTo-Json -Depth 8 | ConvertFrom-Json
     Assert-Equal $j.Mode 'DryRun' 'mode'
     Assert-Equal $j.GitHub.Variables.Environments.'relay-prod'.AZURE_SUBSCRIPTION_ID $Sub 'full subscription id in JSON'
-    Assert-True ($j.PlannedCommands.Count -eq 16) 'planned commands listed'
+    Assert-True ($j.PlannedCommands.Count -eq 18) 'planned commands listed'
 }
 
 Invoke-Test 'script entry point: exit codes and -Json (child process, no az on PATH)' {
