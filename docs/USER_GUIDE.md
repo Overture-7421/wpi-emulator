@@ -193,6 +193,58 @@ transparent above their opaque base, while the tower wall and outpost stay opaqu
 The REBUILT HUD shows fuel and shots; Practice adds match phase, hub activity, and fuel scores.
 Tower points, penalties, and ranking points are not scored.
 
+## Host a practice match
+
+Other people can drive their own robots on your field. You keep running your real robot code; each
+player runs the game client (no WPILib, Java or Gradle) with their own robot description, and the app
+simulates their robots on your field with the same wheel, tire and motor model as yours. Up to six
+robots play, including yours. Everyone needs the same game and WPILib season as you; a mismatch is
+refused when joining.
+
+1. Open **View > Practice match** (not available in `--demo`) and choose a **Mode**:
+   **Relay** (everyone connects out to a relay server, so there is nothing to open on your router) or
+   **Direct** (players connect straight to your computer, for a LAN or a forwarded port). Hosting is
+   **Off** until you choose one.
+   Set the player count, then start or restart your robot program: hosting settings are read when
+   the robot launches. The panel says when a running robot needs a restart.
+2. When the panel shows **Lobby**, copy the **invite** (`XXXXX-XXXXX-XXXXX-XXXXX`) with the Copy
+   button and send it to your players. It is a new random secret for every hosting session, it is
+   shown only here and never saved, and anyone who has it can join and see the match. For **Direct**,
+   also send your address and port (default UDP 47300).
+3. Players appear in the roster with their alliance, station, ping and packet loss. **Kick** removes
+   one (the kicked player cannot resume the same seat, but can join again with the invite: start a new
+   hosting session to change the invite).
+4. Run as usual with the Driver Station. Your enable, mode, e-stop and match clock apply to every
+   robot. While anyone is connected the speed is held at 1x and **Step** is unavailable. If your robot
+   stalls or you pause, players see **Paused** or **Host stalled** instead of a frozen picture.
+   Quitting the app tells players the room closed.
+
+<!-- client-app: describe the client's join screen, settings and controls here when it is merged. -->
+### Join a practice match
+
+Players start the game client, load their robot description, enter the invite (any case, dashes
+optional) and, for Direct, the host's address. Their robot appears at its alliance station and responds
+to their gamepad immediately; other robots and fuel are drawn a few tens of milliseconds in the past so
+motion stays smooth. The relay choice (Production by default, Development, or a custom address) is a
+setting.
+
+### Firewall, routers and blocked networks
+
+- **Relay:** the host and every player only make **outbound UDP** connections to the relay (port 7777
+  by default). No inbound rule, router change or VPN is needed.
+- **Direct:** the host listens on UDP port 47300 (change it in the panel). Allow the app through the
+  operating system's firewall when asked. On a LAN players use the host's LAN address; across the
+  internet forward that UDP port on the router.
+- **Blocked UDP:** school and corporate networks often block outbound UDP. Neither mode works from
+  such a network, and there is no TCP fallback. Try another network, a hotspot, or ask for the relay's
+  UDP port to be opened; a relay on UDP 443 passes some networks that block other ports.
+- **Privacy and trust:** game traffic is encrypted end to end between you and each player, so the relay
+  and the network cannot read it. You are trusted by your players (you run the simulation and can see
+  their robot description and inputs), and the invite is the only access control. Details are in
+  [Match network](reference/match-network.md#trust-and-threat-model).
+- **Remote robots are simplified:** no battery sag, no mechanisms; they behave like the robot they
+  describe within plausible FRC limits.
+
 ## Settings and project files
 
 **File > Settings…** includes theme, dialog units, WPILib and JDK folders, physics rate and
@@ -233,7 +285,8 @@ installation, and platform details, see [Updates](reference/app.md#updates).
 
 ### Limits and platforms
 
-One robot runs at a time. Multi-season packages contain separate WPILib 2026 and 2027
+One WPILib robot runs at a time; in a [practice match](#host-a-practice-match) the others are simulated
+remote robots. Multi-season packages contain separate WPILib 2026 and 2027
 extensions, selected from the live project's year. The Toolchain page reports a missing
 season extension before launch. `WPIEMU_EXTENSION` explicitly overrides selection and
 permits a year mismatch with a warning; it does not make incompatible HAL ABIs compatible.
