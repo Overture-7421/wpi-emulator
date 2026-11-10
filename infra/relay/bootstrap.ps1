@@ -14,34 +14,41 @@ gh ... list) and prints every mutating command it WOULD run. Every mutating call
 Steps (-Step, default All, run in this order; a failed step makes its dependents Skipped and the exit code 1):
   ResourceGroups        rg-wpiemu-relay-dev and rg-wpiemu-relay-prod (tags app=wpiemu-relay, environment=dev|prod,
                         managedBy=bootstrap).
-  Identity              Entra app registration + service principal "wpiemu-relay-deploy" (looked up by exact display
-                        name, reused when found, refused when the name is ambiguous). When a separate pull-request
-                        identity is used (default) also "wpiemu-relay-whatif".
+  Identity              THREE Entra app registrations + service principals, each looked up by exact display name, reused
+                        when found, refused when the name is ambiguous:
+                          wpiemu-relay-deploy-dev   deploys the dev environment only
+                          wpiemu-relay-deploy-prod  deploys the prod environment only
+                          wpiemu-relay-whatif       pull-request what-if (omitted with -SkipPrIdentity)
   FederatedCredentials  GitHub OIDC credentials (issuer https://token.actions.githubusercontent.com, audience
-                        api://AzureADTokenExchange), created when missing, updated when issuer/subject differ:
-                          deploy app: repo:<owner>/<repo>:environment:relay-dev and ...:environment:relay-prod
-                          what-if app: repo:<owner>/<repo>:pull_request
+                        api://AzureADTokenExchange), created when missing, updated when issuer/subject differ.
+                        Each app holds exactly one:
+                          deploy-dev:  repo:<owner>/<repo>:environment:relay-dev
+                          deploy-prod: repo:<owner>/<repo>:environment:relay-prod
+                          what-if:     repo:<owner>/<repo>:pull_request
   RoleAssignments       Least-privilege Azure roles, only at resource-group scope (never subscription scope):
-                          deploy SP, dev RG and prod RG: Contributor (deploys ACR, identity, Log Analytics, ACI,
-                            budget), plus Role Based Access Control Administrator WITH AN ABAC CONDITION that lets it
-                            write/delete role assignments ONLY for the AcrPull role (the relay Bicep assigns AcrPull to
-                            the relay's managed identity on the registry). It cannot grant Owner, Contributor, etc.
+                          deploy-dev SP, DEV RG only, and deploy-prod SP, PROD RG only: Contributor (deploys ACR,
+                            identity, Log Analytics, ACI, budget), plus Role Based Access Control Administrator WITH AN
+                            ABAC CONDITION that lets it write/delete role assignments ONLY for the AcrPull role (the
+                            relay Bicep assigns AcrPull to the relay's managed identity on the registry). It cannot
+                            grant Owner, Contributor, etc. The dev app never receives anything on the prod RG.
                           what-if SP, dev RG only: built-in Reader plus the custom role "wpiemu-relay-whatif"
                             (Microsoft.Resources/deployments whatIf/validate/read), because Reader alone does not
                             contain Microsoft.Resources/deployments/whatIf/action.
-                        Owner and User Access Administrator are never assigned.
-  GrantPromotion        AcrPull for the deploy SP on the DEV registry so `az acr import` can promote an image into the
-                        prod registry. The registry is created by the first infra deployment, so this step is Skipped
-                        with a message until it exists: re-run `-Step GrantPromotion -Apply` afterwards.
+                        Owner and User Access Administrator are never assigned. A pre-existing role of a deploy app
+                        on the other environment's resource group is reported as a failure (exit 1), not removed.
+  GrantPromotion        AcrPull for the deploy-PROD SP (only) on the DEV registry so `az acr import` can promote an
+                        image into the prod registry. The registry is created by the first infra deployment, so this
+                        step is Skipped with a message until it exists: re-run `-Step GrantPromotion -Apply` afterwards.
   GitHub                Prints (and with -ConfigureGitHub applies with the gh CLI) the environments relay-dev (no
                         approval) and relay-prod (required reviewers, deployment branch restricted to main) and the
-                        variables the workflows read.
+                        variables the workflows read. AZURE_CLIENT_ID of relay-dev is the dev app's, that of relay-prod
+                        the prod app's.
 
-Why a separate pull-request identity: Azure roles attach to the service principal, not to a federated credential. If
-the pull_request subject shared the deploy app, any same-repo pull request could use the deploy app's Contributor
-rights. By default the pull_request credential therefore lives on a second app that only has Reader plus what-if.
--SharedPrIdentity folds it into the single deploy app (the PR job then has the deploy rights; a warning is printed).
--SkipPrIdentity creates no pull_request credential at all.
+Why one app per environment: the prod approval gate is a GitHub environment rule, but a token only needs its subject to
+match a federated credential. If one app could deploy to both resource groups, a job in the unapproved relay-dev
+environment could obtain that app's token and deploy into prod. Azure permissions must separate dev from prod, so each
+deploy app can only touch its own resource group. Likewise the pull_request credential lives on its own what-if app
+that only has Reader plus what-if on dev. -SkipPrIdentity creates no pull_request credential at all.
 
 ABAC condition on Role Based Access Control Administrator (verbatim form, GUIDs from -DelegatedRoleIds, default AcrPull):
   ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR
@@ -51,10 +58,10 @@ ABAC condition on Role Based Access Control Administrator (verbatim form, GUIDs 
    (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {<guid>[, <guid>]}))
 It is passed as one line with `--condition-version 2.0` (add/remove use different attribute sources, hence two clauses).
 
--Remove tears down what this script created: role assignments of both apps inside the managed resource groups, the custom
-role, the federated credentials and the app registrations. Resource groups are deleted only with -RemoveResourceGroups
-and only when tagged managedBy=bootstrap. GitHub environments and variables are not removed (delete them in the UI).
-Remove is a dry run too until -Apply.
+-Remove tears down what this script created: role assignments of all three apps inside the managed resource groups, the
+custom role, the federated credentials and the app registrations. Resource groups are deleted only with
+-RemoveResourceGroups and only when tagged managedBy=bootstrap. GitHub environments and variables are not removed (delete
+them in the UI). Remove is a dry run too until -Apply.
 
 .NOTES
 Prerequisites for the human running it (the script never logs in):
@@ -109,14 +116,11 @@ Default rg-wpiemu-relay-dev.
 .PARAMETER ProdResourceGroup
 Default rg-wpiemu-relay-prod.
 
-.PARAMETER AppName
-Display name of the deploy app registration. Default wpiemu-relay-deploy.
+.PARAMETER AppNamePrefix
+Prefix of the two deploy app registrations; the display names are <prefix>-dev and <prefix>-prod. Default wpiemu-relay-deploy.
 
 .PARAMETER PrAppName
 Display name of the pull-request (what-if) app registration. Default wpiemu-relay-whatif.
-
-.PARAMETER SharedPrIdentity
-Put the pull_request credential on the deploy app instead of a separate what-if app (less secure, see above).
 
 .PARAMETER SkipPrIdentity
 Create no pull_request credential and no what-if app.
@@ -129,7 +133,7 @@ the SHA-256 of the lower-case subscription id, so labels are unique and reproduc
 Budget alert email, published as RELAY_ALERT_EMAIL. Required with -ConfigureGitHub.
 
 .PARAMETER DelegatedRoleIds
-Role definition ids the deploy SP may assign/remove (the ABAC condition). Default: AcrPull 7f951dda-4ed3-4680-a7ca-43fe172d538d.
+Role definition ids each deploy SP may assign/remove in its own resource group (the ABAC condition). Default: AcrPull 7f951dda-4ed3-4680-a7ca-43fe172d538d.
 
 .PARAMETER ConfigureGitHub
 Create the GitHub environments and variables with gh. Refused (exit 2) unless `gh auth status` succeeds.
@@ -196,9 +200,8 @@ param(
     [string]$DevResourceGroup,
     [ValidatePattern('^[-\w._()]+$')]
     [string]$ProdResourceGroup,
-    [string]$AppName,
+    [string]$AppNamePrefix,
     [string]$PrAppName,
-    [switch]$SharedPrIdentity,
     [switch]$SkipPrIdentity,
     [ValidatePattern('^[a-z0-9-]{1,20}$')]
     [string]$DnsSuffix,
@@ -333,8 +336,8 @@ function Resolve-BootstrapOptions {
         Repository = 'Overture-7421/wpi-emulator'
         DevEnvironment = 'relay-dev'; ProdEnvironment = 'relay-prod'
         DevResourceGroup = 'rg-wpiemu-relay-dev'; ProdResourceGroup = 'rg-wpiemu-relay-prod'
-        AppName = 'wpiemu-relay-deploy'; PrAppName = 'wpiemu-relay-whatif'
-        SharedPrIdentity = $false; SkipPrIdentity = $false
+        AppNamePrefix = 'wpiemu-relay-deploy'; PrAppName = 'wpiemu-relay-whatif'
+        SkipPrIdentity = $false
         DnsSuffix = ''; AlertEmail = ''
         DelegatedRoleIds = @($script:BuiltInRoles.AcrPull)
         ConfigureGitHub = $false; ProdReviewers = @(); DeploymentBranch = 'main'
@@ -350,7 +353,7 @@ function Resolve-BootstrapOptions {
     }
 
     if ($o.RemoveResourceGroups -and -not $o.Remove) { throw [System.ArgumentException]::new('-RemoveResourceGroups requires -Remove.') }
-    if ($o.SharedPrIdentity -and $o.SkipPrIdentity) { throw [System.ArgumentException]::new('-SharedPrIdentity and -SkipPrIdentity are mutually exclusive.') }
+    if ($o.AppNamePrefix -eq $o.PrAppName -or "$($o.AppNamePrefix)-dev" -eq $o.PrAppName -or "$($o.AppNamePrefix)-prod" -eq $o.PrAppName) { throw [System.ArgumentException]::new('-PrAppName must differ from the deploy app names.') }
     if ($o.Remove -and $o.ConfigureGitHub) { throw [System.ArgumentException]::new('-ConfigureGitHub cannot be combined with -Remove (delete GitHub environments and variables in the UI).') }
     if ($o.DevResourceGroup -eq $o.ProdResourceGroup) { throw [System.ArgumentException]::new('Dev and prod must use different resource groups.') }
     if ($o.DevEnvironment -eq $o.ProdEnvironment) { throw [System.ArgumentException]::new('Dev and prod must use different GitHub environments.') }
@@ -528,17 +531,52 @@ function Get-ResourceGroupSpecs {
 
 function Get-AppConfigs {
     $o = $script:Run.Options
-    $deploy = [pscustomobject]@{
-        Key = 'deploy'; DisplayName = $o.AppName
-        Credentials = @(
-            [pscustomobject]@{ Name = "github-$($o.DevEnvironment)"; Subject = "repo:$($o.Repository):environment:$($o.DevEnvironment)" },
-            [pscustomobject]@{ Name = "github-$($o.ProdEnvironment)"; Subject = "repo:$($o.Repository):environment:$($o.ProdEnvironment)" }
-        )
+    $apps = @(
+        [pscustomobject]@{
+            Key = 'dev'; DisplayName = "$($o.AppNamePrefix)-dev"
+            Credentials = @([pscustomobject]@{ Name = "github-$($o.DevEnvironment)"; Subject = "repo:$($o.Repository):environment:$($o.DevEnvironment)" })
+        },
+        [pscustomobject]@{
+            Key = 'prod'; DisplayName = "$($o.AppNamePrefix)-prod"
+            Credentials = @([pscustomobject]@{ Name = "github-$($o.ProdEnvironment)"; Subject = "repo:$($o.Repository):environment:$($o.ProdEnvironment)" })
+        }
+    )
+    if (-not $o.SkipPrIdentity) {
+        $apps += [pscustomobject]@{
+            Key = 'pr'; DisplayName = $o.PrAppName
+            Credentials = @([pscustomobject]@{ Name = 'github-pull-request'; Subject = "repo:$($o.Repository):pull_request" })
+        }
     }
-    $prCredential = [pscustomobject]@{ Name = 'github-pull-request'; Subject = "repo:$($o.Repository):pull_request" }
-    if ($o.SharedPrIdentity) { $deploy.Credentials += $prCredential; return @($deploy) }
-    if ($o.SkipPrIdentity) { return @($deploy) }
-    @($deploy, [pscustomobject]@{ Key = 'pr'; DisplayName = $o.PrAppName; Credentials = @($prCredential) })
+    $apps
+}
+
+# The only resource group an app may hold roles in: dev and pr in the dev RG, prod in the prod RG.
+function Get-AppHomeScope {
+    param([Parameter(Mandatory)][string]$AppKey)
+    $rgs = @(Get-ResourceGroupSpecs)
+    if ($AppKey -eq 'prod') { $rgs[1].Scope } else { $rgs[0].Scope }
+}
+
+function Test-UnderScope {
+    param([string]$Scope, [string]$Parent)
+    $Scope -ieq $Parent -or $Scope.StartsWith($Parent.TrimEnd('/') + '/', [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+# The one cross-environment grant that is allowed: AcrPull on the dev registry for the prod app (az acr import).
+function Test-PromotionGrant {
+    param([string]$AppKey, [string]$Scope, [string]$RoleId)
+    $dev = (Get-ResourceGroupSpecs)[0]
+    $AppKey -eq 'prod' -and $RoleId -ieq $script:BuiltInRoles.AcrPull -and
+    $Scope -match '(?i)/providers/Microsoft\.ContainerRegistry/registries/[^/]+$' -and (Test-UnderScope $Scope $dev.Scope)
+}
+
+# Hard guard on every assignment this script creates: the dev app can never receive a prod-scoped role, and the
+# prod app only its own RG plus the promotion grant.
+function Assert-AssignmentAllowed {
+    param([string]$AppKey, [string]$Scope, [string]$RoleId)
+    if (Test-UnderScope $Scope (Get-AppHomeScope $AppKey)) { return }
+    if (Test-PromotionGrant $AppKey $Scope $RoleId) { return }
+    throw [System.InvalidOperationException]::new("Refusing to assign '$RoleId' to the $AppKey app at ${Scope}: outside its own environment.")
 }
 
 function Get-AppState {
@@ -550,7 +588,7 @@ function Get-AppState {
     $apps = @(Read-AzOrThrow @('ad', 'app', 'list', '--display-name', $App.DisplayName, '-o', 'json') | Where-Object { $null -ne $_ })
     $exact = @($apps | Where-Object { (Get-Prop $_ 'displayName' '') -ceq $App.DisplayName })
     if ($exact.Count -gt 1) {
-        throw [System.InvalidOperationException]::new("$($exact.Count) app registrations are named '$($App.DisplayName)'; refusing to guess. Delete the duplicates or pass a different -AppName/-PrAppName.")
+        throw [System.InvalidOperationException]::new("$($exact.Count) app registrations are named '$($App.DisplayName)'; refusing to guess. Delete the duplicates or pass a different -AppNamePrefix/-PrAppName.")
     }
     if ($exact.Count -eq 1) {
         $state.Exists = $true
@@ -716,10 +754,9 @@ function Get-RoleSpecs {
     $specs = [System.Collections.Generic.List[object]]::new()
     $isPr = $AppKey -eq 'pr'
     if (-not $isPr) {
-        foreach ($rg in $rgs) {
-            $specs.Add([pscustomobject]@{ Label = "Contributor on $($rg.Name)"; Role = $script:BuiltInRoles.Contributor; IsCustom = $false; Scope = $rg.Scope; Condition = '' })
-            $specs.Add([pscustomobject]@{ Label = "Role Based Access Control Administrator (AcrPull only) on $($rg.Name)"; Role = $script:BuiltInRoles.RbacAdmin; IsCustom = $false; Scope = $rg.Scope; Condition = $condition })
-        }
+        $rg = if ($AppKey -eq 'prod') { $rgs[1] } else { $rgs[0] }
+        $specs.Add([pscustomobject]@{ Label = "Contributor on $($rg.Name)"; Role = $script:BuiltInRoles.Contributor; IsCustom = $false; Scope = $rg.Scope; Condition = '' })
+        $specs.Add([pscustomobject]@{ Label = "Role Based Access Control Administrator (AcrPull only) on $($rg.Name)"; Role = $script:BuiltInRoles.RbacAdmin; IsCustom = $false; Scope = $rg.Scope; Condition = $condition })
     }
     else {
         $dev = $rgs[0]
@@ -768,9 +805,10 @@ function New-AssignmentArgs {
 }
 
 function Set-RoleAssignment {
-    param($State, $Spec, [object[]]$Assignments, [string]$StepName = 'RoleAssignments')
+    param([Parameter(Mandatory)][string]$AppKey, $State, $Spec, [object[]]$Assignments, [string]$StepName = 'RoleAssignments')
 
     $o = $script:Run.Options
+    Assert-AssignmentAllowed -AppKey $AppKey -Scope $Spec.Scope -RoleId $Spec.Role
     $propagation = 'PrincipalNotFound|does not exist in the directory|Cannot find'
     $found = @(Find-RoleAssignment $Assignments $Spec)
     $match = @($found | Where-Object { Test-ConditionEquivalent (Get-Prop $_ 'condition' '') $Spec.Condition })
@@ -802,24 +840,27 @@ function Step-RoleAssignments {
         $customSpec = @($specs | Where-Object { $_.IsCustom })
         if ($customSpec.Count -gt 0) { Set-WhatIfRoleDefinition -Scope $customSpec[0].Scope }
 
-        foreach ($spec in $specs) { Set-RoleAssignment -State $state -Spec $spec -Assignments $assignments }
+        foreach ($spec in $specs) { Set-RoleAssignment -AppKey $app.Key -State $state -Spec $spec -Assignments $assignments }
 
-        $isDeploy = $app.Key -eq 'deploy'
+        $homeScope = Get-AppHomeScope $app.Key
         foreach ($a in $assignments) {
             $scope = [string](Get-Prop $a 'scope' '')
-            $inManaged = @($rgs | Where-Object { $scope -ieq $_.Scope -or $scope.StartsWith($_.Scope + '/', [System.StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
+            $roleId = ([string](Get-Prop $a 'roleDefinitionId' '')) -replace '^.*/', ''
+            $roleName = Get-Prop $a 'roleDefinitionName' '?'
+            $inHome = Test-UnderScope $scope $homeScope
+            $inManaged = @($rgs | Where-Object { Test-UnderScope $scope $_.Scope }).Count -gt 0
             $isExpected = @($specs | Where-Object { @(Find-RoleAssignment @($a) $_).Count -gt 0 }).Count -gt 0
-            $isPromotion = $isDeploy -and $scope -match '/providers/Microsoft\.ContainerRegistry/registries/[^/]+$' -and ([string](Get-Prop $a 'roleDefinitionId' '')) -match "(?i)/$($script:BuiltInRoles.AcrPull)$"
-            if ($inManaged -and -not $isExpected -and -not $isPromotion) {
-                Add-Warning "$($app.DisplayName) has an unexpected role '$(Get-Prop $a 'roleDefinitionName' '?')' at $scope (not created by this script; review it)."
+            if ($inManaged -and -not $inHome -and -not (Test-PromotionGrant $app.Key $scope $roleId)) {
+                Add-Item 'RoleAssignments' "$($app.DisplayName): cross-environment role '$roleName' at $scope" 'Failed' 'this app must only hold roles in its own environment: remove the assignment (az role assignment delete --ids <id>)'
+                $null = $script:Run.Failed.Add('RoleAssignments')
+            }
+            elseif ($inHome -and -not $isExpected) {
+                Add-Warning "$($app.DisplayName) has an unexpected role '$roleName' at $scope (not created by this script; review it)."
             }
             elseif (-not $inManaged -and $scope -match '^/subscriptions/[^/]+/?$') {
-                Add-Warning "$($app.DisplayName) has a subscription-scope role '$(Get-Prop $a 'roleDefinitionName' '?')'; least privilege expects resource-group scope only."
+                Add-Warning "$($app.DisplayName) has a subscription-scope role '$roleName'; least privilege expects resource-group scope only."
             }
         }
-    }
-    if ($o.SharedPrIdentity) {
-        Add-Warning 'The pull_request credential shares the deploy app: pull-request jobs run with its Contributor rights. Prefer the default separate what-if identity.'
     }
 }
 
@@ -850,7 +891,7 @@ function Set-WhatIfRoleDefinition {
 
 function Step-GrantPromotion {
     $o = $script:Run.Options
-    $deploy = (Get-AppConfigs)[0]
+    $deploy = @(Get-AppConfigs | Where-Object { $_.Key -eq 'prod' })[0]
     $state = Get-AppState $deploy
     Assert-AppUsable $state
     $dev = (Get-ResourceGroupSpecs)[0]
@@ -863,8 +904,8 @@ function Step-GrantPromotion {
     }
     if ($registries.Count -gt 1) { throw [System.InvalidOperationException]::new("$($registries.Count) registries in $($dev.Name); expected exactly one.") }
     $registryId = [string](Get-Prop $registries[0] 'id' '')
-    $spec = [pscustomobject]@{ Label = "AcrPull on dev registry $(Get-Prop $registries[0] 'name' '')"; Role = $script:BuiltInRoles.AcrPull; IsCustom = $false; Scope = $registryId; Condition = '' }
-    Set-RoleAssignment -State $state -Spec $spec -Assignments @(Get-RoleAssignmentsOf $state) -StepName 'GrantPromotion'
+    $spec = [pscustomobject]@{ Label = "AcrPull for $($deploy.DisplayName) on dev registry $(Get-Prop $registries[0] 'name' '')"; Role = $script:BuiltInRoles.AcrPull; IsCustom = $false; Scope = $registryId; Condition = '' }
+    Set-RoleAssignment -AppKey 'prod' -State $state -Spec $spec -Assignments @(Get-RoleAssignmentsOf $state) -StepName 'GrantPromotion'
     $script:Run.Promotion = $registryId
 }
 
@@ -872,20 +913,19 @@ function Step-GrantPromotion {
 
 function Get-GitHubVariables {
     $o = $script:Run.Options
-    $deploy = $script:Run.Apps['deploy']
-    $deployClient = if ($deploy) { $deploy.ClientId } else { '' }
-    if (-not $deployClient) { $deployClient = '<deploy-client-id>' }
+    $clientOf = {
+        param($key, $placeholder)
+        $s = $script:Run.Apps[$key]
+        if ($s -and $s.ClientId) { $s.ClientId } else { $placeholder }
+    }
     $alert = if ($o.AlertEmail) { $o.AlertEmail } else { '<alert-email>' }
     $dns = $script:Run.DnsSuffix
-    $common = [ordered]@{
-        AZURE_CLIENT_ID       = $deployClient
-        AZURE_TENANT_ID       = $script:Run.TenantId
-        AZURE_SUBSCRIPTION_ID = $script:Run.SubscriptionId
-    }
     $envVars = {
-        param($rg)
+        param($rg, $clientId)
         $v = [ordered]@{}
-        foreach ($k in $common.Keys) { $v[$k] = $common[$k] }
+        $v['AZURE_CLIENT_ID'] = $clientId
+        $v['AZURE_TENANT_ID'] = $script:Run.TenantId
+        $v['AZURE_SUBSCRIPTION_ID'] = $script:Run.SubscriptionId
         $v['RELAY_RESOURCE_GROUP'] = $rg
         $v['RELAY_DNS_SUFFIX'] = $dns
         $v['RELAY_ALERT_EMAIL'] = $alert
@@ -893,9 +933,7 @@ function Get-GitHubVariables {
     }
     $repo = [ordered]@{ AZURE_LOCATION = $o.Location }
     if (-not $o.SkipPrIdentity) {
-        $pr = $script:Run.Apps['pr']
-        $prClient = if ($o.SharedPrIdentity) { $deployClient } elseif ($pr -and $pr.ClientId) { $pr.ClientId } else { '<pr-client-id>' }
-        $repo['AZURE_PR_CLIENT_ID'] = $prClient
+        $repo['AZURE_PR_CLIENT_ID'] = & $clientOf 'pr' '<pr-client-id>'
         $repo['AZURE_TENANT_ID'] = $script:Run.TenantId
         $repo['AZURE_SUBSCRIPTION_ID'] = $script:Run.SubscriptionId
         $repo['RELAY_PR_RESOURCE_GROUP'] = $o.DevResourceGroup
@@ -905,8 +943,8 @@ function Get-GitHubVariables {
     [ordered]@{
         Repository   = $repo
         Environments = [ordered]@{
-            $o.DevEnvironment  = (& $envVars $o.DevResourceGroup)
-            $o.ProdEnvironment = (& $envVars $o.ProdResourceGroup)
+            $o.DevEnvironment  = (& $envVars $o.DevResourceGroup (& $clientOf 'dev' '<dev-client-id>'))
+            $o.ProdEnvironment = (& $envVars $o.ProdResourceGroup (& $clientOf 'prod' '<prod-client-id>'))
         }
     }
 }
@@ -1362,6 +1400,16 @@ function Get-FinalReport {
         DnsSuffix      = $r.DnsSuffix
         Preconditions  = @($r.Preconditions)
         Steps          = @($r.Items)
+        Apps           = @(Get-AppConfigs | ForEach-Object {
+                $s = $r.Apps[$_.Key]
+                [ordered]@{
+                    Key = $_.Key; DisplayName = $_.DisplayName
+                    ClientId = $(if ($s -and $s.ClientId) { $s.ClientId } else { '' })
+                    ServicePrincipalObjectId = $(if ($s -and $s.SpObjectId) { $s.SpObjectId } else { '' })
+                    FederatedCredentialSubjects = @($_.Credentials | ForEach-Object { $_.Subject })
+                    RoleScope = (Get-AppHomeScope $_.Key)
+                }
+            })
         Warnings       = @($r.Warnings)
         PlannedCommands = @($r.Planned | ForEach-Object { $_.Command })
         GitHub         = $github
@@ -1375,6 +1423,10 @@ function Write-BootstrapReport {
     Write-Host ''
     Write-Host "Summary ($($Report.Mode), $($Report.Operation))" -ForegroundColor Cyan
     foreach ($i in $Report.Steps) { Write-Host (Protect-Text ('  {0,-12} {1,-22} {2}' -f $i.Status, $i.Step, $i.Item)) }
+    if ($Report.Apps.Count -gt 0) {
+        Write-Host 'App registrations (client ids are identifiers, not secrets)' -ForegroundColor Cyan
+        foreach ($a in $Report.Apps) { Write-Host (Protect-Text ('  {0,-26} client id {1}  roles only under {2}' -f $a.DisplayName, $a.ClientId, $a.RoleScope)) }
+    }
     if ($Report.Warnings.Count -gt 0) { Write-Host 'Warnings:' -ForegroundColor Yellow; foreach ($w in $Report.Warnings) { Write-Host (Protect-Text "  $w") } }
     if ($Report.GitHub) {
         Write-Host ''
