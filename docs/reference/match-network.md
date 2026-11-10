@@ -329,7 +329,7 @@ The user-facing join steps are in the [user guide](../USER_GUIDE.md#join-a-pract
 | Input timeout (brake) | 250 ms of simulated time | `kInputTimeoutUs` |
 | Max extrapolation; max interpolation delay | 250 ms; 250 ms | `kMaxExtrapolationUs`, `kMaxInterpolationDelayUs` |
 | Resume token | 16 bytes, valid 30 s after a drop | `kResumeTokenBytes`, `MatchHostConfig::resumeWindow` |
-| Connections the host table holds | players plus 3 (joined or not) | `MatchHostConfig::maxConnections` |
+| Connections the host table holds (joined or not) | 9 by default (robots per match plus 3) | `MatchHostConfig::maxConnections` |
 
 ## Relay protocol
 
