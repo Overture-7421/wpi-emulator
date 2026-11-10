@@ -10,7 +10,6 @@
 
 #include <array>
 #include <cstdint>
-#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -26,6 +25,7 @@
 #include "wpiemu/plugins/game_2026/match_clock.h"
 #include "wpiemu/sdk/core/sim_context.h"
 #include "wpiemu/sdk/game/game_state.h"
+#include "wpiemu/sdk/game/per_robot_state.h"
 #include "wpiemu/sdk/game/robot_view.h"
 #include "wpiemu/sdk/telemetry/snapshot.h"
 
@@ -89,9 +89,9 @@ public:
     // ---- read-only view for HUD, tests and tools ----------------------------------------------
     const GameConfig& config() const { return config_; }
     // The no-argument accessors are the HOST robot's.
-    int fuelInRobot() const { return host_.meter; }
+    int fuelInRobot() const { return robots_.host().meter; }
     int fuelOnField() const { return static_cast<int>(pool_.count()); }
-    int shotsFired() const { return host_.shots; }
+    int shotsFired() const { return robots_.host().shots; }
     // Fuel that left the play bounds (not attributable to a robot).
     int fuelLost() const { return lost_; }
     // nullptr when no such robot is known (the host, id 0, always is).
@@ -104,7 +104,7 @@ public:
     const MatchStatus& match() const { return status_; }
     const HubRules& hubRules() const { return hub_; }
     // The host robot's owned zones in config order (pickups and shooters), for tests and tools.
-    const std::vector<std::unique_ptr<FuelZoneRuntime>>& zones() const { return host_.zones; }
+    const std::vector<std::unique_ptr<FuelZoneRuntime>>& zones() const { return robots_.host().zones; }
     FuelPool& pool() { return pool_; }
     const FuelPool& pool() const { return pool_; }
 
@@ -137,7 +137,6 @@ private:
     void buildHostZones(sdk::SimContext& ctx);
     static void buildRuntimes(RobotState& robot, const std::vector<sdk::ZoneConfig>& configs);
     void resetRobot(RobotState& robot);
-    void refreshOrder();
     void collectFrames(sdk::SimContext& ctx);
     void stepZones(sdk::SimContext& ctx, double dt);
     void stepShooters(sdk::SimContext& ctx, const RobotFrame& frame);
@@ -163,10 +162,8 @@ private:
     std::array<OutpostState, 2> outposts_{};
 
     // The host robot (zones from RobotConfig::zones, evaluated against the mechanisms) and the remote robots (zones from
-    // their Join spec, activated by the client's zone flags). `order_` = host, then the remote robots by id.
-    RobotState host_;
-    std::map<sdk::ParticipantId, RobotState> remotes_;
-    std::vector<RobotState*> order_;
+    // their Join spec, activated by the client's zone flags); iterated host first, then by ascending id.
+    sdk::PerRobotState<RobotState> robots_;
     std::vector<RobotFrame> frames_;
     std::vector<SensorHit> hits_;
     std::vector<std::uint32_t> scratchIds_;

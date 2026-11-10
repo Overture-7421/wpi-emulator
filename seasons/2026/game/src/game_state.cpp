@@ -63,7 +63,6 @@ Game2026State::Game2026State(sdk::SimContext& ctx, GameConfig config, FieldLayou
       pool_(ctx.physics(), config_.fuel, config_.maxFuelOnField),
       hub_(config_.enforceHubShifts, config_.firstInactive) {
     buildHostZones(ctx);
-    order_.push_back(&host_);
 }
 
 std::string_view Game2026State::pluginId() const { return game_2026::pluginId(); }
@@ -90,7 +89,7 @@ void Game2026State::buildRuntimes(RobotState& robot, const std::vector<sdk::Zone
     }
 }
 
-void Game2026State::buildHostZones(sdk::SimContext& ctx) { buildRuntimes(host_, ctx.config().zones); }
+void Game2026State::buildHostZones(sdk::SimContext& ctx) { buildRuntimes(robots_.host(), ctx.config().zones); }
 
 void Game2026State::resetRobot(RobotState& robot) {
     if (robot.remote) buildRuntimes(robot, robot.zoneConfigs);
@@ -98,24 +97,9 @@ void Game2026State::resetRobot(RobotState& robot) {
     robot.shots = 0;
 }
 
-void Game2026State::refreshOrder() {
-    order_.clear();
-    order_.push_back(&host_);
-    for (auto& entry : remotes_) order_.push_back(&entry.second);
-}
+const Game2026State::RobotState* Game2026State::robot(sdk::ParticipantId id) const { return robots_.find(id); }
 
-const Game2026State::RobotState* Game2026State::robot(sdk::ParticipantId id) const {
-    if (id == sdk::match::kHostParticipantId) return &host_;
-    const auto it = remotes_.find(id);
-    return it != remotes_.end() ? &it->second : nullptr;
-}
-
-std::vector<sdk::ParticipantId> Game2026State::robotIds() const {
-    std::vector<sdk::ParticipantId> ids;
-    ids.reserve(order_.size());
-    for (const RobotState* r : order_) ids.push_back(r->id);
-    return ids;
-}
+std::vector<sdk::ParticipantId> Game2026State::robotIds() const { return robots_.ids(); }
 
 void Game2026State::onRobotAdded(sdk::SimContext&, const sdk::RobotView& robot) {
     if (robot.isHost || robot.participantId == sdk::match::kHostParticipantId) return;  // the host is always present
@@ -125,32 +109,28 @@ void Game2026State::onRobotAdded(sdk::SimContext&, const sdk::RobotView& robot) 
     if (robot.zones != nullptr) state.zoneConfigs = *robot.zones;
     buildRuntimes(state, state.zoneConfigs);
     state.meter = std::min(config_.preloadFuel, config_.capacity);
-    remotes_.insert_or_assign(robot.participantId, std::move(state));
-    refreshOrder();
+    robots_.add(robot.participantId, std::move(state));
 }
 
-void Game2026State::onRobotRemoved(sdk::SimContext&, sdk::ParticipantId participant) {
-    if (participant == sdk::match::kHostParticipantId) return;
-    if (remotes_.erase(participant) != 0) refreshOrder();
-}
+void Game2026State::onRobotRemoved(sdk::SimContext&, sdk::ParticipantId participant) { robots_.remove(participant); }
 
 // Resolves where every robot is this tick, in the order they act.
 void Game2026State::collectFrames(sdk::SimContext& ctx) {
     frames_.clear();
-    for (RobotState* state : order_) {
+    robots_.forEach([&](sdk::ParticipantId, RobotState& state) {
         RobotFrame frame;
-        frame.state = state;
-        if (!state->remote) {
+        frame.state = &state;
+        if (!state.remote) {
             frame.body = ctx.chassisBody();
             frame.present = true;
-        } else if (const sdk::RobotView* view = ctx.robots().find(state->id)) {
+        } else if (const sdk::RobotView* view = ctx.robots().find(state.id)) {
             frame.view = view;
             frame.body = view->body;
             frame.present = true;
         }
         frame.pose = frame.body.valid() ? ctx.physics().pose(frame.body) : sdk::Pose3{};
         frames_.push_back(frame);
-    }
+    });
 }
 
 void Game2026State::stepZones(sdk::SimContext& ctx, double dt) {
@@ -192,7 +172,7 @@ void Game2026State::reset(sdk::SimContext& ctx) {
     matchTimed_ = false;
     matchResult_ = false;
     resultCuePending_ = false;
-    for (RobotState* robot : order_) resetRobot(*robot);
+    robots_.forEach([this](sdk::ParticipantId, RobotState& robot) { resetRobot(robot); });
     lost_ = 0;
     for (OutpostState& o : outposts_) o = OutpostState{config_.outpostChuteFuel, 0.0};
 
@@ -438,10 +418,10 @@ std::optional<std::string> Game2026State::gameSpecificMessage() const {
 }
 
 std::optional<double> Game2026State::gameValue(std::string_view id) const {
-    if (id == game_value::kFuelCount) return static_cast<double>(host_.meter);
+    if (id == game_value::kFuelCount) return static_cast<double>(robots_.host().meter);
     if (id == game_value::kFuelCapacity) return static_cast<double>(config_.capacity);
     if (id == game_value::kFuelFraction)
-        return config_.capacity > 0 ? static_cast<double>(host_.meter) / config_.capacity : 0.0;
+        return config_.capacity > 0 ? static_cast<double>(robots_.host().meter) / config_.capacity : 0.0;
     return std::nullopt;
 }
 
@@ -454,13 +434,13 @@ void Game2026State::publish(sdk::SnapshotBuilder& out) const {
     fuel.positions = fuelPositions_;
     fuel.ids = fuelIds_;
     out.addEntityGroup(std::move(fuel));
-    for (const std::unique_ptr<FuelZoneRuntime>& zone : host_.zones)
+    for (const std::unique_ptr<FuelZoneRuntime>& zone : robots_.host().zones)
         out.addZone({zone->id(), zone->active(), zone->poseInChassis()});
 
-    out.setHud(hud::kFuelCount, host_.meter);
+    out.setHud(hud::kFuelCount, robots_.host().meter);
     out.setHud(hud::kFuelCapacity, config_.capacity);
     out.setHud(hud::kFuelOnField, static_cast<int>(fuelPositions_.size()));
-    out.setHud(hud::kShots, host_.shots);
+    out.setHud(hud::kShots, robots_.host().shots);
     if (matchTimed_ || matchResult_) {
         out.setHud(hud::kScoreRed, hub_.score(Alliance::Red).points());
         out.setHud(hud::kScoreBlue, hub_.score(Alliance::Blue).points());

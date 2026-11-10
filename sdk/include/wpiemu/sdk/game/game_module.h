@@ -28,6 +28,9 @@ struct GameMetadata {
     int pluginVersion = 1;      // plugin's own version (informational)
     int minSdkMajor = 1;        // plugin was written against this SDK major (refused otherwise)
     int minSdkMinor = 0;        // minimum SDK minor the plugin needs (refused otherwise)
+    // The game rules react to remote robots of a practice match (their zones, pickups, shots...). false = remote robots are
+    // only bodies on the field for this season; a host can say so before a practice match starts. Additive: defaults to false.
+    bool supportsMultiRobot = false;
 };
 
 // The YEAR PLUGIN contract. One implementation per season, living entirely in seasons/<year>/game/.
