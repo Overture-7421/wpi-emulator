@@ -68,6 +68,19 @@ A failed or timed-out stream write closes the connection: a partial frame cannot
 retried. Send timeout is separate from the negotiated robot watchdog. A server accept timeout
 is not a disconnect; keep the listener and accept again.
 
+### Practice-match messages share the codec
+
+The practice-match and relay messages are further alternatives of the same `proto::Message` and are
+encoded by the same codec (message types 13 to 29, listed in [Match network](match-network.md#messages)).
+The HALSim extension protocol is the first twelve alternatives (`kExtensionMessageCount`); the robot
+process acts only on those, and the local runner ignores an unexpected type with a warning. The match
+messages never travel on the robot IPC link: they use ENet transports in `net/`.
+
+Two additions make that possible without changing the local protocol. `ITransport::sendUnreliable`
+defaults to the reliable send, so pipes and in-memory transports are unchanged; only the ENet adapter has
+a lossy channel. `sdk::proto::deliveryOf` gives each message its delivery class (every extension message is
+reliable because it rides a lock-step stream; only match inputs, snapshots and acknowledgements are not).
+
 ## Handshake and identity
 
 `Hello` reports the robot identity, language, HAL port counts, watchdog preference and Armed

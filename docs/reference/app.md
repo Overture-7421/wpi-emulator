@@ -53,6 +53,7 @@ Off, Starting, Lobby, Live, Paused, HostStalled or Error, invite, endpoint, rost
 constraint flags), and relays kicks. `RealRuntimeHost` publishes the running session's status to it.
 Shutdown closes the room (the relay frees it with `CloseRoom`), tells clients `ServerClosing` and
 removes their robots from the session. The relay and the match protocol are described in
+[Match network](match-network.md); the simulation side is in
 [Runtime](runtime.md#remote-robots-practice-matches).
 
 ### The Practice match panel

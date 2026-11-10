@@ -110,7 +110,8 @@ rules. A plugin that declares zone kinds must react and set it; the SDK's
 registered plugin. The [guide](../guides/game-plugins.md#support-several-robots) gives the procedure and the
 lessons of the 2026 season: the host stays bit-identical outside the roster, remote zones are flag-driven with a
 shared pose helper, a remote shooter uses a fixed exit speed constant, and a client's zone properties are
-clamped by the plugin with named constants.
+clamped by the plugin with named constants. What a client sends (flags and zone poses) and what every
+client sees (moved zones, HUD values) is defined in [Match network](match-network.md#zone-poses).
 
 ## Sound cues
 

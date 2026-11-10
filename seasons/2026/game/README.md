@@ -188,7 +188,9 @@ runtime already reports the robot's zone states from its flags, with each zone's
 (`ZoneState::poseInChassis`; `publish()` adds the host's, resolved through its mechanisms). The host's values still come from
 `publish()`. The alliance of a robot (its station) only matters for that HUD value: scoring follows the
 hub a fuel enters, not who shot it. For the host the station is the Driver Station's. The multi-robot
-tests are in [`tests/game_2026`](../../../tests/game_2026) (`test_multi_robot*.cpp`).
+tests are in [`tests/game_2026`](../../../tests/game_2026) (`test_multi_robot*.cpp`). Fuel reaches clients as an
+entity group with stable ids and its HUD values as plugin keys; see the
+[match network reference](../../../docs/reference/match-network.md#entity-contract).
 
 ## Sound cues
 

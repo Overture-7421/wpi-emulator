@@ -170,6 +170,12 @@ tire model) plus a `physics::WheelSetpointController` behind the `IRemoteChassis
   contact events name the robots involved. `SimulationSession::robots()` is the `IRobotDirectory` the game reads through
   `SimContext::robots()` (host first, then remote robots by id), and the `IGameState` robot hooks follow the order in
   [game_state.h](../../sdk/include/wpiemu/sdk/game/game_state.h). A snapshot carries one `RobotSample` per remote robot.
+- **Who calls it.** In a hosted match the practice-match server (`MatchHost`, `core/match`) is the caller: it
+  runs as the runner's tick observer on the simulation thread, decodes a client's `Join` with the normal
+  configuration pipeline, **clamps** the spec to the plausible-FRC table (`kRemoteSpecLimits`) before this
+  strict admission, and queues each input through `submitRemoteInput`. The wire protocol, encryption and trust
+  model are in [Match network](match-network.md); how it is hosted from the app is in
+  [Application](app.md#hosting-a-practice-match).
 
 ## Physical start placement
 
