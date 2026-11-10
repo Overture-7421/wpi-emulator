@@ -131,7 +131,7 @@ struct RoomTable::Impl {
 
     void event(RoomEvent::Kind kind, ConnId conn, const std::string& room, rl::RelayPeerId peer, std::string detail) {
         if (events.size() >= config.maxPendingEvents) return;
-        events.push_back(RoomEvent{kind, conn, room, peer, std::move(detail)});
+        events.push_back(RoomEvent{kind, conn, rl::isValidRoomId(room) ? room : std::string(), peer, std::move(detail)});
     }
 
     // ---- lockout ----

@@ -581,6 +581,16 @@ TEST_CASE("relay table: an empty source is never tracked") {
     CHECK(f.table.stats().trackedSources == 0);
 }
 
+TEST_CASE("relay table: events never carry a room id that is not a valid one") {
+    Fixture f;
+    const std::string hostile = "\"}{\"evil\":\"" + std::string(500, 'x');
+    CHECK_FALSE(f.joinResult(1, hostile).ok);
+    f.table.registerRoom(2, "", std::get<rl::RegisterRoom>(registerMessage(hostile, 1, 99)));
+    const auto events = f.table.drainEvents();
+    REQUIRE(events.size() == 2);
+    for (const auto& e : events) CHECK(e.roomId.empty());
+}
+
 TEST_CASE("relay table: a registered connection registering or joining again is a protocol violation") {
     Fixture f;
     f.registerHost(1, roomIdFor(1));
