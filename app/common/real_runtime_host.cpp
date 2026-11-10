@@ -35,6 +35,11 @@ RealRuntimeHost::RealRuntimeHost(host::Registries registries, RealRuntimeOptions
     : IProjectRuntimeHost(parent), registries_(registries), options_(std::move(options)) {
     timer_.setInterval(std::max(5, options_.pollIntervalMs));
     connect(&timer_, &QTimer::timeout, this, &RealRuntimeHost::pump);
+    if (options_.hosting) {
+        connect(options_.hosting, &HostingService::kickRequested, this, [this](quint16 participant, const QString& reason) {
+            if (session_) session_->kickParticipant(participant, reason.toStdString());
+        });
+    }
 }
 
 RealRuntimeHost::~RealRuntimeHost() {
@@ -95,6 +100,7 @@ void RealRuntimeHost::releaseSession() {
     for (const sdk::SessionLogEntry& e : session_->takeLogs(5000)) emit logLine(toHostLogLine(e));
     lastSnapshot_ = session_->latestSnapshot();
     session_.reset();
+    if (options_.hosting) options_.hosting->sessionEnded();
 }
 
 void RealRuntimeHost::setProject(const HostProject& project) {
@@ -178,9 +184,11 @@ void RealRuntimeHost::launch() {
         o.javaHome = toolchain.javaHome;
         o.wpilibHome = toolchain.wpilibHome;
     }
+    if (options_.hosting) o.hosting = options_.hosting->options();
     if (options_.tweak) options_.tweak(o);
 
     emitLog(sdk::LogLevel::Info, QStringLiteral("runtime"), tr("Launching the robot with the HALSim extension"));
+    const host::HostingOptions hosting = o.hosting;
     auto started = host::RobotSession::start(registries_, *config_, std::move(o));
     if (!started) {
         failToStart(qs(started.error().message));
@@ -189,6 +197,10 @@ void RealRuntimeHost::launch() {
     session_ = std::move(started).value();
     launchedConfig_ = config_;
     lastSnapshot_.reset();
+    if (options_.hosting) {
+        options_.hosting->sessionStarted(hosting);
+        options_.hosting->publish(session_->hostingStatus());
+    }
     setStatus(toHostStatus(session_->status()));
     emit snapshotPublished();
     timer_.start();
@@ -290,6 +302,7 @@ void RealRuntimeHost::pump() {
     for (const sdk::SoundCue& cue : session_->takeSoundCues()) emit soundCue(QString::fromStdString(cue.id));
     const sdk::SessionStatus s = session_->status();
     setStatus(toHostStatus(s));
+    if (options_.hosting) options_.hosting->publish(session_->hostingStatus());
     sendBeginIfReady();
     if (auto snapshot = session_->latestSnapshot(); snapshot && snapshot != lastSnapshot_) {
         lastSnapshot_ = std::move(snapshot);

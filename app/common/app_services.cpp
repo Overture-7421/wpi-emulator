@@ -52,6 +52,7 @@ AppServices::AppServices(AppServicesOptions options)
     settings_ = std::make_unique<AppSettings>(*store_);
     recent_ = std::make_unique<RecentProjects>(*store_);
     prefs_ = std::make_unique<ProjectPrefsStore>(*store_);
+    hosting_ = std::make_unique<HostingService>(*store_);
     probe_ = options.probe ? std::move(options.probe) : std::make_unique<QtSystemProbe>();
     inspector_ = options.inspector ? std::move(options.inspector) : std::make_unique<GradleProjectInspector>();
     toolchain_ = std::make_unique<ToolchainChecker>(*probe_, plugins_, seasons_);
@@ -90,6 +91,7 @@ AppServices::AppServices(AppServicesOptions options)
         registries.pipeline = &pipeline_;
         registries.json = &textCodec_;
         RealRuntimeOptions real;
+        real.hosting = hosting_.get();
         real.scratchDir = root / "scratch";
         real.toolchainOverrides = [this] {
             const auto folder = [](const QString& text) { return text.isEmpty() ? std::filesystem::path() : std::filesystem::path(text.toStdU16String()); };

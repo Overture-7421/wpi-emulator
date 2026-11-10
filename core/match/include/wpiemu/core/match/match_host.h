@@ -63,6 +63,8 @@ struct MatchHostConfig {
 
     // Limits.
     std::size_t maxConnections = sdk::match::kMaxRobotsPerMatch + 3;  // joined plus unjoined
+    // Participants including the host's own robot (the host app's "max players"); clamped to kMaxRobotsPerMatch.
+    std::size_t maxPlayers = sdk::match::kMaxRobotsPerMatch;
     std::size_t maxStrikes = 3;                       // malformed frames or protocol violations before a disconnect
     std::uint32_t maxInputsPerSecond = sdk::match::kMaxInputRateHz;   // per client, token bucket
     std::uint32_t inputBurst = 12;
@@ -138,6 +140,8 @@ struct ParticipantInfo {
     sdk::proto::AllianceStation station = sdk::proto::AllianceStation::Red1;
     bool connected = false;               // false: dropped, resumable until the window closes
     std::uint16_t snapshotRateHz = 0;
+    std::uint32_t rttMs = 0;              // the transport's smoothed round trip (LinkStats); 0 when unknown
+    std::uint32_t lossPermille = 0;       // recent packet loss from LinkStats; 1000 while dropped
     std::uint64_t inputsSubmitted = 0;
     std::uint64_t inputsRateLimited = 0;
     std::uint64_t snapshotsSent = 0;

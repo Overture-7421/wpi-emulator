@@ -6,6 +6,7 @@
 #include "common/app_settings.h"
 #include "common/build_tools_installer.h"
 #include "common/config_repository.h"
+#include "common/hosting_service.h"
 #include "common/key_value_store.h"
 #include "common/project_inspector.h"
 #include "common/project_prefs.h"
@@ -65,6 +66,8 @@ public:
     const ISystemProbe& probe() const { return *probe_; }
     const ToolchainChecker& toolchain() const { return *toolchain_; }
     IRuntimeHost& runtime() { return *runtime_; }
+    // The practice-match hosting preferences and live status (docs/reference/app.md).
+    HostingService& hosting() { return *hosting_; }
     UpdateService& updates() { return *updates_; }
     ToolchainProvisioner& provisioner() { return *provisioner_; }
     BuildToolsInstaller& buildTools() { return *buildTools_; }
@@ -107,6 +110,7 @@ private:
     std::unique_ptr<IProjectInspector> inspector_;
     std::unique_ptr<ToolchainChecker> toolchain_;
     std::unique_ptr<ConfigRepository> configs_;
+    std::unique_ptr<HostingService> hosting_;
     std::unique_ptr<ProjectSession> session_;
     std::unique_ptr<IProjectRuntimeHost> runtime_;
     std::unique_ptr<UpdateService> updates_;

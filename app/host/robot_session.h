@@ -19,7 +19,11 @@
 
 #include "wpiemu/core/config/config_pipeline.h"
 #include "wpiemu/core/launcher/robot_launcher.h"
+#include "wpiemu/core/match/host_session.h"
 #include "wpiemu/core/runtime/session_runner.h"
+#include "host/constrained_controller.h"
+#include "host/hosting.h"
+#include "host/match_hosting.h"
 #include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/game/plugin_registry.h"
@@ -58,6 +62,9 @@ struct Options {
     double timeScale = 1.0;
     int physicsWorkers = 1;                               // threads for the physics step; chosen per machine at launch, never part of the model
     bool startPaused = false;
+    // Practice matches: Off (the default) composes nothing and leaves the session exactly as it was. Otherwise the match host
+    // is started with the session (see MatchHosting) and its status is published through RobotSession::hostingStatus().
+    HostingOptions hosting;
     sdk::proto::DsState driverStation;
     // Placement every Reset (including the one that starts the simulation) restores instead of RobotConfig::startPose.
     std::optional<sdk::RobotStartPose> startPose;
@@ -96,12 +103,18 @@ public:
     std::vector<sdk::SoundCue> takeSoundCues(std::size_t maxCues = 64);
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const { return slot_.latest(); }
 
-    sdk::ISimController& controller() { return *runner_; }
+    sdk::ISimController& controller() { return constrained_ != nullptr ? static_cast<sdk::ISimController&>(*constrained_) : *runner_; }
     core::runtime::SessionRunner& runner() { return *runner_; }
     const sdk::IGameModule* gameModule() const { return module_; }
     const std::string& endpoint() const { return endpoint_; }
     bool coreOnly() const { return module_ == nullptr; }
     const std::vector<sdk::Issue>& configIssues() const { return issues_; }
+
+    // ---- practice matches (Options::hosting) ----
+    // The published hosting status; never null. Off (phase Off, mode Off) when hosting was not requested or has ended.
+    std::shared_ptr<const HostingStatus> hostingStatus() const;
+    // Removes a participant from the match (applied by the sim thread). No effect when not hosting.
+    void kickParticipant(sdk::match::ParticipantId participant, std::string detail = {});
 
     // Non-blocking: sends the protocol Stop and tears everything down on a worker. finished() turns true at the end.
     void requestStop();
@@ -127,6 +140,11 @@ private:
     sdk::LatestSnapshotSlot slot_;
     sdk::SoundCueQueue cues_;   // outlives session_: the game state posts into it from the sim thread
     std::unique_ptr<core::runtime::SimulationSession> session_;
+    // Practice matches: only created when Options::hosting is not Off. Declared after session_ (it holds a view of it) and
+    // before the runner so the runner, which calls it from the sim thread, is destroyed first.
+    std::unique_ptr<core::match::SimulationMatchSession> hostSession_;
+    std::unique_ptr<MatchHosting> hosting_;
+    std::unique_ptr<ConstrainedController> constrained_;
     const sdk::IGameModule* module_ = nullptr;
     std::vector<sdk::Issue> issues_;
     std::string endpoint_;

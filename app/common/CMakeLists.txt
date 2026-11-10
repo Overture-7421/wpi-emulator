@@ -3,6 +3,7 @@ add_library(wpiemu_app_common STATIC
     app_settings.cpp
     config_repository.cpp
     demo_runtime_host.cpp
+    hosting_service.cpp
     icon_provider.cpp
     key_value_store.cpp
     project_inspector.cpp
