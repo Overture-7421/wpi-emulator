@@ -120,6 +120,7 @@ struct RigOptions {
     bool hostTag = true;                  // stamp makeRobotTag(host) on the host robot
     float hostX = kHostStartX;
     float hostY = kHostStartY;
+    double brownoutVoltageV = 0.0;        // > 0 overrides the host battery's threshold (above the 12.6 V rest voltage: browned out at once)
 };
 
 struct Rig {
@@ -136,6 +137,7 @@ struct Rig {
         RobotConfig host;
         host.name = "Host";
         host.sim.physics.workerCount = options.workerCount;
+        if (options.brownoutVoltageV > 0.0) host.battery.brownoutVoltageV = options.brownoutVoltageV;
         SessionParts parts;
         parts.world = physics::createBox3dWorld(host.sim.physics);
         REQUIRE(parts.world != nullptr);

@@ -139,6 +139,20 @@ TEST_CASE("remote robot: disabled and e-stopped robots do not move and a moving 
         client.drive({1.5f, 0.f, 0.f}, 200);
         CHECK(rig.groundSpeed(1) < 0.1f);
     }
+    SUBCASE("a browned-out host battery gives the remote robots 0 V as well") {
+        RigOptions options;
+        options.brownoutVoltageV = 20.0;
+        Rig rig(options);
+        rig.add(1, AllianceStation::Blue1, spec);
+        ScriptedClient client(rig, 1, spec);
+        const float startX = rig.poseOf(1).position.x;
+        rig.tick(2);   // the battery latches the brownout after the first tick
+        REQUIRE(rig.session->battery().brownedOut());
+        client.drive({1.5f, 0.f, 0.f}, 200);
+        CHECK(rig.poseOf(1).position.x == doctest::Approx(startX).epsilon(0.001));
+        CHECK_FALSE(rig.session->remoteRobotInfo(1)->enabled);
+        CHECK_FALSE(rig.session->robots().find(1)->enabled);
+    }
 }
 
 TEST_CASE("remote robot: no input for 250 ms brakes the robot") {
@@ -342,11 +356,11 @@ TEST_CASE("remote robots: wall time per tick with five remote robots and 200 fue
             clients.push_back(std::make_unique<ScriptedClient>(rig, static_cast<ParticipantId>(i + 1), spec));
         }
         rig.tick(60);   // let the fuel settle
-        constexpr int kTicks = 400;
+        constexpr int kTicks = 800;   // 4 s: the robots cross the field and plough through the fuel
         const auto start = std::chrono::steady_clock::now();
         for (int t = 0; t < kTicks; ++t) {
             if (t % 4 == 0)
-                for (auto& c : clients) REQUIRE(c->send({1.f, 0.f, 0.3f}, rig.nextTick()).ok());
+                for (auto& c : clients) REQUIRE(c->send({2.5f, 0.f, 0.3f}, rig.nextTick()).ok());
             rig.tick();
         }
         const auto elapsed = std::chrono::steady_clock::now() - start;
