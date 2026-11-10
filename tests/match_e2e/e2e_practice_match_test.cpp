@@ -658,7 +658,9 @@ TEST_CASE("e2e: practice match with the swerve sample robot through the relay, e
     CHECK(collided);
     CHECK(aliceTravel > 3.0);   // the remote robot drove on its client's setpoints
     CHECK(closest > 0.3);       // Alice was commanded to the host's centre: without a collision she would end up on top of it
-    CHECK(closest < 1.0);       // and she did reach it (chassis 0.78 m wide; she may ride up onto the bumper, so no tighter bound)
+    CHECK(closest < 1.0);       // and she did reach it (chassis 0.78 m wide). The bound stays loose on purpose: when the host stands at the
+                                // foot of the blue hub's bump, Alice climbs the ramp and her 0.15 m frame passes over the host's (a
+                                // 0.44 m closest distance at z 0.35 vs 0.20 was seen); on open carpet she never rides up (tests/runtime/test_robot_contact.cpp)
     // Alice and the host agree where Alice is.
     if (const sdk::RobotSample* mine = remoteIn(*snap, aliceId)) CHECK(planar(alice.position(), mine->body.pose.position) < 1.0);
     // Stop Alice.

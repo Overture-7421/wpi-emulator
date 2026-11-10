@@ -120,6 +120,8 @@ struct RigOptions {
     bool hostTag = true;                  // stamp makeRobotTag(host) on the host robot
     float hostX = kHostStartX;
     float hostY = kHostStartY;
+    float hostYaw = 0.f;
+    const RobotConfig* hostSpec = nullptr;   // the host robot's chassis and drivetrain (default: the empty RobotConfig)
     double brownoutVoltageV = 0.0;        // > 0 overrides the host battery's threshold (above the 12.6 V rest voltage: browned out at once)
 };
 
@@ -135,6 +137,7 @@ struct Rig {
     explicit Rig(const RigOptions& options = {}) {
         REQUIRE(physics::registerPhysicsComponents(drivetrains, tires).ok());
         RobotConfig host;
+        if (options.hostSpec != nullptr) host = *options.hostSpec;
         host.name = "Host";
         host.sim.physics.workerCount = options.workerCount;
         if (options.brownoutVoltageV > 0.0) host.battery.brownoutVoltageV = options.brownoutVoltageV;
@@ -154,7 +157,7 @@ struct Rig {
         parts.tireModels = &tires;
         parts.fallbackField = createDefaultField;
         const std::uint64_t hostTag = options.hostTag ? makeRobotTag(match::kHostParticipantId) : 0;
-        parts.chassisBuilder = physicsChassisBuilder({options.hostX, options.hostY, 0.f}, hostTag);
+        parts.chassisBuilder = physicsChassisBuilder({options.hostX, options.hostY, options.hostYaw}, hostTag);
         parts.coupling = std::make_unique<PhysicsCouplingDriver>();
         if (options.remoteSupport) parts.remoteChassisFactory = physicsRemoteChassisFactory(drivetrains, tires);
         auto built = SessionBuilder::build(std::move(parts));
