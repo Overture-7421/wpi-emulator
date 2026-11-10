@@ -1,17 +1,6 @@
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#include <tlhelp32.h>
-#endif
-
-#include <doctest/doctest.h>
-
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <filesystem>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -37,33 +26,6 @@ namespace relay = wpiemu::sdk::match::relay;
 namespace proto = wpiemu::sdk::proto;
 
 namespace {
-
-int processThreadCount() {
-#ifdef _WIN32
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-    if (snapshot == INVALID_HANDLE_VALUE) return -1;
-    THREADENTRY32 entry{};
-    entry.dwSize = sizeof entry;
-    int count = 0;
-    if (Thread32First(snapshot, &entry)) {
-        do {
-            if (entry.th32OwnerProcessID == GetCurrentProcessId()) ++count;
-        } while (Thread32Next(snapshot, &entry));
-    }
-    CloseHandle(snapshot);
-    return count;
-#elif defined(__linux__)
-    std::error_code ec;
-    int count = 0;
-    for (const auto& entry : std::filesystem::directory_iterator("/proc/self/task", ec)) {
-        (void)entry;
-        ++count;
-    }
-    return ec ? -1 : count;
-#else
-    return -1;
-#endif
-}
 
 InviteSecret secretN(std::uint8_t n) {
     InviteSecret::Bytes bytes{};
