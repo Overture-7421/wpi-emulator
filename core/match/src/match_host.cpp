@@ -13,6 +13,7 @@
 
 #include "wpiemu/core/match/entity_delta.h"
 #include "wpiemu/core/match/hud_keys.h"
+#include "wpiemu/core/match/robot_appearance.h"
 #include "wpiemu/core/match/snapshot_budget.h"
 #include "wpiemu/core/match/spec_intake.h"
 #include "wpiemu/core/match/wire_frame.h"
@@ -74,6 +75,7 @@ struct Participant {
     std::string name;
     proto::AllianceStation station = proto::AllianceStation::Red1;
     wire::ResumeToken token{};
+    wire::RobotAppearance appearance;      // built once from the accepted spec; sent in every roster
     std::uint64_t linkId = 0;              // the connection serving it; 0 = dropped, resumable
     Clock::time_point detachedAt{};
     std::uint64_t sessionId = proto::kUnspecified;
@@ -235,6 +237,7 @@ struct MatchHost::Impl {
         e.name = truncated(session.hostName(), wire::kMaxNameBytes);
         e.station = session.driverStation().station;
         e.isHost = true;
+        e.appearance = session.hostAppearance();
         return e;
     }
 
@@ -246,6 +249,7 @@ struct MatchHost::Impl {
             e.participantId = id;
             e.name = p.name;
             e.station = p.station;
+            e.appearance = p.appearance;
             if (Connection* c = connectionOf(p)) {
                 if (const auto ls = c->link->linkStats()) {
                     e.pingMs = static_cast<std::uint16_t>(std::min<std::uint32_t>(ls->rttMs, 0xFFFF));
@@ -449,6 +453,7 @@ struct MatchHost::Impl {
             log.info("match", "clamped robot spec of '" + sanitizeName(join.displayName) + "': " + spec.value().clamped[i]);
 
         const auto id = static_cast<wire::ParticipantId>(nextParticipantId);
+        wire::RobotAppearance appearance = appearanceOf(spec.value().config);
         runtime::RemoteRobotRequest request;
         request.participantId = id;
         request.name = join.displayName.empty() ? "Player " + std::to_string(id) : sanitizeName(join.displayName);
@@ -465,6 +470,7 @@ struct MatchHost::Impl {
         p.name = request.name;
         p.station = *station;
         p.token = *token;
+        p.appearance = std::move(appearance);
         p.linkId = c.linkId;
         p.sessionId = newSessionId();
         p.inputBucket.reset(config.inputBurst, t);

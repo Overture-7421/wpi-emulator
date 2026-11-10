@@ -114,6 +114,7 @@ public:
     std::string plugin = "fake_game";
     int year = 2099;
     std::string host = "Host";
+    wire::RobotAppearance hostLook;   // what hostAppearance() reports
     proto::DsState ds;
     std::int64_t step = 5000;
     std::uint64_t tick = 0;
@@ -139,6 +140,7 @@ public:
     std::string gamePluginId() const override { return plugin; }
     int wpilibYear() const override { return year; }
     std::string hostName() const override { return host; }
+    wire::RobotAppearance hostAppearance() const override { return hostLook; }
     std::vector<HudWidgetDescriptor> hudDescriptors() const override { return descriptors; }
     std::int64_t stepUs() const override { return step; }
     std::uint64_t tickIndex() const override { return tick; }
