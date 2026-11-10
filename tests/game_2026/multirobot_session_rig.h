@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <map>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -30,8 +29,8 @@ struct Options {
     int neutralFuel = 360;
     int depotFuel = 24;
     std::uint64_t seed = 1;
-    std::optional<int> capacity;      // plugin defaults when unset
-    std::optional<int> preloadFuel;
+    std::vector<sdk::ZoneConfig> hostZones;           // zones of the host robot (it has none by default)
+    std::map<std::string, int> pluginInts;            // extra integer keys of the plugin section (capacity, preloadFuel...)
 };
 
 class Rig {
@@ -47,8 +46,8 @@ public:
         sdk::Value& section = host.pluginSection(std::string(plugins::game_2026::pluginId())).data;
         section["neutralFuel"] = options.neutralFuel;
         section["depotFuel"] = options.depotFuel;
-        if (options.capacity) section["capacity"] = *options.capacity;
-        if (options.preloadFuel) section["preloadFuel"] = *options.preloadFuel;
+        for (const auto& [key, value] : options.pluginInts) section[key] = value;
+        host.zones = options.hostZones;
         core::runtime::SessionParts parts;
         parts.world = core::physics::createBox3dWorld(host.sim.physics);
         REQUIRE(parts.world != nullptr);

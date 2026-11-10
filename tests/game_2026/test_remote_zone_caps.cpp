@@ -222,8 +222,7 @@ CapOutcome overLimitScenario(int workerCount, int seconds) {
     options.workerCount = workerCount;
     options.neutralFuel = 0;
     options.depotFuel = 0;
-    options.capacity = 500;
-    options.preloadFuel = 500;
+    options.pluginInts = {{"capacity", 500}, {"preloadFuel", 500}};
     Rig rig(options);
     rig.add(1, AllianceStation::Red2, overLimitRobot());
     rig.teleport(1, {dim::kFieldLengthM * 0.5f, dim::kFieldWidthM * 0.5f, 0.04f});
