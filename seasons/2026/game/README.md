@@ -135,7 +135,7 @@ the host robot's: sensors belong to the host's WPILib robot, whatever other robo
 
 In a practice match the host's own robot (participant 0) and every remote robot announced through
 `onRobotAdded` each have their own fuel meter, shot counter and pickup/shooter zone runtimes
-(`Game2026State::RobotState`). A new robot starts with `preloadFuel` (capped by `capacity`); `reset()`
+(`Game2026State::RobotState`, kept in an `sdk::PerRobotState`). A new robot starts with `preloadFuel` (capped by `capacity`); `reset()`
 keeps the roster and restores every robot; removing a robot drops its state (its held fuel is not
 returned to the field) and re-adding it starts fresh. Pickups and shooters of every robot act on the
 one shared fuel pool, so fuel one robot absorbs is gone for the others in the same tick. Scores,

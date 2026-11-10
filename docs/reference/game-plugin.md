@@ -82,6 +82,36 @@ slot. Missing or non-finite values yield idle readings and warnings. This is a v
 model, not ray casting or conveyor simulation; response details belong to the
 [runtime sensor contract](runtime.md).
 
+## Several robots
+
+In a practice match the game state sees the host's own robot and the remote robots through
+[`IRobotDirectory`](../../sdk/include/wpiemu/sdk/game/robot_view.h), reached with `SimContext::robots()`:
+host first, then remote robots by ascending participant id. Each `RobotView` has the participant id, name,
+`station` (and `alliance()`), its physics `body`, `enabled`, `isHost` and, for a remote robot only, `zones`
+(its Join spec), `zoneFlags` (bit `i` = zone `i` of `zones`, 0 while the robot cannot act) and `zonePoses`
+(`zonePose(i)`: the client's clamped pose or the spec pose). The host has no zones in its view: its zones are
+`RobotConfig::zones`, evaluated against its mechanisms. A view and its spans are valid for the tick.
+
+`IGameState` adds three additive hooks, all on the sim thread and never inside `step()` or `publish()`:
+`onRobotAdded` (once per robot after it is in the directory; the host is announced before the first
+`reset()`), `onRobotRemoved` (once, after it left; only the id is left) and `publishRobot` (once per remote
+robot after the runtime added its `RobotSample`; values go through `SnapshotBuilder::setRobotHud`).
+`reset()` applies to the whole game and keeps the roster. Contact and sensor events name a robot through
+`makeRobotTag` / `robotTagParticipant` ([`robot_tags.h`](../../sdk/include/wpiemu/sdk/physics/robot_tags.h)).
+
+[`PerRobotState<T>`](../../sdk/include/wpiemu/sdk/game/per_robot_state.h) keeps plugin state per participant:
+the host state always exists, `add`/`remove` follow the hooks and `forEach` is deterministic (host, then
+ascending id). `EntityGroupSample::ids` is optional, one stable id per position, unique within the group.
+
+`GameMetadata::supportsMultiRobot` (default `false`) states that the plugin's rules react to remote robots. A host
+that starts a practice match can read it from `IGameModule::metadata()` and say that the season has no remote-robot
+rules. A plugin that declares zone kinds must react and set it; the SDK's
+[`remoteRobotContractViolation`](../../sdk/include/wpiemu/sdk/testing/multi_robot_contract.h) checks that for every
+registered plugin. The [guide](../guides/game-plugins.md#support-several-robots) gives the procedure and the
+lessons of the 2026 season: the host stays bit-identical outside the roster, remote zones are flag-driven with a
+shared pose helper, a remote shooter uses a fixed exit speed constant, and a client's zone properties are
+clamped by the plugin with named constants.
+
 ## Sound cues
 
 A plugin declares its own `SoundCueInfo` records through `contributeSoundCues()` and requests a

@@ -22,7 +22,11 @@ Keep the target's SDK-only dependency. Registration, implementation and validati
 - [plugin.h](include/wpiemu/plugins/_template/plugin.h): registration declaration.
 - [plugin_info.h](include/wpiemu/plugins/_template/plugin_info.h) and
   [plugin_info.cpp](src/plugin_info.cpp): identity.
-- [game_module.cpp](src/game_module.cpp): placeholder module, field and game state.
+- [game_module.cpp](src/game_module.cpp): placeholder module, field and game state, including a small
+  multi-robot example (a marker zone kind, per-robot state in `PerRobotState`, `publishRobot`) that the
+  [guide](../../../docs/guides/game-plugins.md#support-several-robots) explains. Keep it when your season has
+  zones that robots act through; the contract test for it is in
+  [test_template_plugin.cpp](../../../tests/plugins/test_template_plugin.cpp).
 
 A season that plays its own sounds adds `assets/sfx/<name>.wav` and declares them with
 `contributeSoundCues()`; the template ships none and is never embedded. See
