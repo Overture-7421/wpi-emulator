@@ -2,6 +2,7 @@
 #include <deque>
 
 #include "match_test_support.h"
+#include "wpiemu/sdk/match/entity_prediction.h"
 
 using namespace match_test;
 
@@ -9,15 +10,16 @@ namespace {
 
 using EntityMap = std::map<std::uint32_t, wire::EntityState>;
 
-// What a game client does with entity deltas: keep the state of recent snapshots by snapshotSeq, apply each delta on the
-// state named by baselineId, acknowledge what it applied.
+// What a game client does with entity deltas: keep the state of recent snapshots by snapshotSeq (every entity with the sim
+// time of the snapshot that upserted it), apply each delta on the state named by baselineId, acknowledge what it applied.
+// view() is the picture at the sim time of the newest snapshot: every entity extrapolated with the shared SDK model.
 class DeltaClient {
 public:
     bool apply(const wire::MatchSnapshot& s) {
         if (seen_ && !wire::seqNewer(s.snapshotSeq, latest_)) return false;   // latest wins
-        std::map<std::uint16_t, EntityMap> next;
+        std::map<std::uint16_t, HeldMap> next;
         for (const wire::EntityDelta& d : s.entityDeltas) {
-            EntityMap base;
+            HeldMap base;
             if (d.baselineId != wire::kNoBaseline) {
                 const auto it = states_.find(d.baselineId);
                 if (it == states_.end()) return false;   // the baseline is gone: apply nothing, acknowledge nothing
@@ -25,7 +27,7 @@ public:
                 if (g != it->second.end()) base = g->second;
             }
             for (const std::uint32_t id : d.removed) base.erase(id);
-            for (const wire::EntityState& e : d.upserted) base[e.id] = e;
+            for (const wire::EntityState& e : d.upserted) base[e.id] = {e, s.simTimeUs};
             next[d.groupId] = std::move(base);
         }
         states_[s.snapshotSeq] = std::move(next);
@@ -35,24 +37,50 @@ public:
             order_.pop_front();
         }
         latest_ = s.snapshotSeq;
+        latestTimeUs_ = s.simTimeUs;
         seen_ = true;
         return true;
     }
-    const EntityMap& view(std::uint16_t group) const {
-        static const EntityMap empty;
+    EntityMap view(std::uint16_t group) const {
+        EntityMap out;
         const auto it = states_.find(latest_);
-        if (it == states_.end()) return empty;
+        if (it == states_.end()) return out;
         const auto g = it->second.find(group);
-        return g == it->second.end() ? empty : g->second;
+        if (g == it->second.end()) return out;
+        for (const auto& [id, held] : g->second) {
+            wire::EntityState shown = wire::predictEntity(held.state, latestTimeUs_ - held.stampUs);
+            shown.vxCms = shown.vyCms = shown.vzCms = 0;   // the picture is a position
+            shown.ballistic = false;
+            out[id] = shown;
+        }
+        return out;
     }
     std::uint32_t latest() const { return latest_; }
 
 private:
-    std::map<std::uint32_t, std::map<std::uint16_t, EntityMap>> states_;
+    struct Held {
+        wire::EntityState state;
+        std::int64_t stampUs = 0;
+    };
+    using HeldMap = std::map<std::uint32_t, Held>;
+    std::map<std::uint32_t, std::map<std::uint16_t, HeldMap>> states_;
     std::deque<std::uint32_t> order_;
     std::uint32_t latest_ = 0;
+    std::int64_t latestTimeUs_ = 0;
     bool seen_ = false;
 };
+
+// Every entity of `truth` is shown within `cm` of it (a rest-state upsert is exact, so this is the rest tolerance).
+bool sameEntities(const EntityMap& shown, const EntityMap& truth, int cm) {
+    if (shown.size() != truth.size()) return false;
+    for (const auto& [id, e] : truth) {
+        const auto it = shown.find(id);
+        if (it == shown.end()) return false;
+        const int dx = it->second.xCm - e.xCm, dy = it->second.yCm - e.yCm, dz = it->second.zCm - e.zCm;
+        if (dx * dx + dy * dy + dz * dz > cm * cm) return false;
+    }
+    return true;
+}
 
 // A session with `count` fuel pieces (stable ids 1..count) that a test moves around.
 struct FuelSession : FakeSession {
@@ -354,8 +382,8 @@ TEST_CASE("match host deltas: a client converges on the truth under 30 percent l
         if (i % 3 == 0) jiggle();
         run.tick();
     }
-    for (int i = 0; i < 400; ++i) run.tick();   // the fuel rests: the client must settle exactly on the truth
-    CHECK(run.dc.view(0) == s.truth());
+    for (int i = 0; i < 400; ++i) run.tick();   // the fuel rests: the client must settle on the truth
+    CHECK(sameEntities(run.dc.view(0), s.truth(), 1));   // within the 1 cm an entity at rest is held to
     CHECK(run.received.size() > 120);   // 240 sent at 60 Hz, 70 percent arrive
     CHECK(h.host->stats().acksIgnored + h.host->stats().acks > 50);
 }
@@ -421,7 +449,7 @@ TEST_CASE("match host deltas: robots and info always fit the budget, entity chan
     // The fuel rests: every client catches up completely, a few entities per snapshot.
     for (int i = 0; i < 400; ++i)
         for (DeltaRun* run : {runs[0].get(), runs[3].get()}) run->tick();
-    CHECK(runs[0]->dc.view(0) == s.truth());
+    CHECK(sameEntities(runs[0]->dc.view(0), s.truth(), 1));
 }
 
 TEST_CASE("match host snapshots: the worst case without entities fits the budget") {

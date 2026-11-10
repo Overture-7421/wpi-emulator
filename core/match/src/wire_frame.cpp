@@ -68,7 +68,7 @@ std::optional<float> hudWireValue(const sdk::Value& value) {
 }
 
 WireFrame buildWireFrame(const sdk::ISimSnapshot& snapshot, const HudKeyTable& hudKeys, const wire::MatchInfo& info,
-                         const ZoneRestPoses& zoneRestPoses) {
+                         const ZoneRestPoses& zoneRestPoses, EntityMotionTracker* motion) {
     WireFrame frame;
     frame.tick = snapshot.tick();
     frame.simTimeUs = snapshot.simTimeUs();
@@ -111,19 +111,25 @@ WireFrame buildWireFrame(const sdk::ISimSnapshot& snapshot, const HudKeyTable& h
         }
         EntityGroupFrame out;
         out.groupId = static_cast<std::uint16_t>(g);
-        out.entities.reserve(group.ids.size());
-        for (std::size_t i = 0; i < group.ids.size(); ++i) {
+        // Ascending id, duplicates dropped; the raw positions (metres) travel with their entity for the motion tracker.
+        std::vector<std::size_t> order(group.ids.size());
+        for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+        std::sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) { return group.ids[a] < group.ids[b]; });
+        order.erase(std::unique(order.begin(), order.end(), [&](std::size_t a, std::size_t b) { return group.ids[a] == group.ids[b]; }),
+                    order.end());
+        std::vector<sdk::Vec3> raw;
+        out.entities.reserve(order.size());
+        raw.reserve(order.size());
+        for (const std::size_t i : order) {
             wire::EntityState e;
             e.id = group.ids[i];
             e.xCm = wire::quantizeCentiI16(group.positions[i].x);
             e.yCm = wire::quantizeCentiI16(group.positions[i].y);
             e.zCm = wire::quantizeCentiI16(group.positions[i].z);
             out.entities.push_back(e);
+            raw.push_back(group.positions[i]);
         }
-        std::sort(out.entities.begin(), out.entities.end(), [](const wire::EntityState& a, const wire::EntityState& b) { return a.id < b.id; });
-        out.entities.erase(std::unique(out.entities.begin(), out.entities.end(),
-                                       [](const wire::EntityState& a, const wire::EntityState& b) { return a.id == b.id; }),
-                           out.entities.end());
+        if (motion != nullptr) motion->observe(out.groupId, frame.simTimeUs, raw, out.entities);
         frame.groups.push_back(std::move(out));
     }
     return frame;

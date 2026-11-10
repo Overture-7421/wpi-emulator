@@ -11,6 +11,7 @@
 // The model client counts the AGE of an entity update as the sim time between two updates of the same entity that moved in
 // between (the staleness a client would extrapolate or interpolate over).
 #include <cinttypes>
+#include <fstream>
 #include <sstream>
 
 #include "../runtime/remote_robot_rig.h"
@@ -158,7 +159,8 @@ struct Result {
     double measureS = 0;
     double snapshotHz = 0;                     // received per client
     std::uint16_t hostRateHz = 0;
-    Stat moving, fuel, upserts, removals, bytes, ageMs, ageSnapshots, firstUpdateMs, behind;
+    Stat moving, fuel, upserts, removals, bytes, ageMs, ageSnapshots, firstUpdateMs, behind, errCm, errRestCm, badMoving;
+    std::uint64_t missingMoving = 0;
     Stat simTickMs, hostTickEndMs;
     std::size_t starvedIds = 0;
     std::uint64_t starvedEvents = 0;
@@ -241,6 +243,9 @@ Result runScenario(const Scenario& sc) {
     }
 
     // ---- the run ----
+    std::ofstream traceOut;   // TEMP trace
+    std::uint64_t lastTraceTick = ~0ull;
+    if (const auto p = wpiemu::sdk::readEnvironment("WPIEMU_STRESS_TRACE"); p.has_value() && !p->empty()) traceOut.open(*p);
     std::vector<double> simTickMs, hostTickEndMs;
     std::uint64_t tickNo = 0;
     const auto step = [&](bool firing, bool measuring) {
@@ -255,6 +260,16 @@ Result runScenario(const Scenario& sc) {
         const Clock::time_point t2 = Clock::now();
         REQUIRE(h.host->waitOutboundIdle(3s));
         const double tapMs = std::chrono::duration<double, std::milli>(tap.takeTapTime()).count();
+        if (traceOut.is_open()) {
+            if (const auto snap = tap.lastSnapshot(); snap != nullptr && snap->tick() != lastTraceTick) {
+                lastTraceTick = snap->tick();
+                for (const sdk::EntityGroupSample& g : snap->entityGroups()) {
+                    if (g.group != "fuel") continue;
+                    for (std::size_t i = 0; i < g.ids.size() && i < g.positions.size(); ++i)
+                        traceOut << snap->simTimeUs() << ',' << g.ids[i] << ',' << g.positions[i].x << ',' << g.positions[i].y << ',' << g.positions[i].z << '\n';
+                }
+            }
+        }
         for (const auto& c : clients) c->pump(measuring, kRobots);
         if (measuring) {
             simTickMs.push_back(msBetween(t0, t1));
@@ -308,8 +323,12 @@ Result runScenario(const Scenario& sc) {
     r.name = sc.net.name + (std::string(", ") + aimName(sc.aim));
     r.measureS = sc.measureS;
     r.convergedAfterS = convergedAfterS;
-    std::vector<double> moving, fuel, upserts, removals, bytes, ageMs, ageSnaps, firstMs, behind;
+    std::vector<double> moving, fuel, upserts, removals, bytes, ageMs, ageSnaps, firstMs, behind, errCm, errRest, badMoving;
     for (const ClientMetrics& m : perClient) {
+        append(errCm, m.errCm);
+        append(errRest, m.errRestCm);
+        append(badMoving, m.badMoving);
+        r.missingMoving += m.missingMoving;
         append(moving, m.moving);
         append(fuel, m.fuelOnField);
         append(upserts, m.upserts);
@@ -342,6 +361,9 @@ Result runScenario(const Scenario& sc) {
     r.ageSnapshots = statOf(ageSnaps);
     r.firstUpdateMs = statOf(firstMs);
     r.behind = statOf(behind);
+    r.errCm = statOf(errCm);
+    r.errRestCm = statOf(errRest);
+    r.badMoving = statOf(badMoving);
     r.simTickMs = statOf(simTickMs);
     r.hostTickEndMs = statOf(hostTickEndMs);
     r.snapshotHz = static_cast<double>(r.totals.received) / static_cast<double>(kRemotes) / sc.measureS;
@@ -373,6 +395,7 @@ Result runScenario(const Scenario& sc) {
             for (const sdk::HudValue& hv : robot.hud)
                 if (hv.key == g26::hud::kShots) r.shots += static_cast<std::uint64_t>(hv.value.asInt());
     }
+    if (traceOut.is_open()) traceOut.close();
     return r;
 }
 
@@ -397,10 +420,18 @@ std::string format(const Result& r, double expectedShots) {
     std::snprintf(buf, sizeof buf, "  truncated snapshots %" PRIu64 " of %" PRIu64 " sent, changes deferred %" PRIu64 ", over budget %" PRIu64 "\n",
                   r.host.snapshotsTruncated, r.host.snapshotsSent, r.host.entityChangesDeferred, r.host.snapshotsOverBudget);
     out << buf;
+    std::snprintf(buf, sizeof buf, "  changes sent by reason: new %" PRIu64 ", prediction off %" PRIu64 ", keyframe %" PRIu64 ", removal %" PRIu64 "\n",
+                  r.host.entityNewSent, r.host.entityErrorSent, r.host.entityKeyframesSent, r.host.entityRemovalsSent);
+    out << buf;
     out << line3("update age of a moving entity", r.ageMs, "ms");
     out << line3("  the same in snapshots", r.ageSnapshots, "snapshots");
     out << line3("spawn to first update", r.firstUpdateMs, "ms");
     out << line3("entities behind the truth / snapshot", r.behind, "");
+    out << line3("shown error of a moving entity", r.errCm, "cm", "(vs the truth at the snapshot time)");
+    out << line3("shown error of an entity at rest", r.errRestCm, "cm");
+    out << line3("moving entities shown > 10 cm off", r.badMoving, "/ snapshot");
+    std::snprintf(buf, sizeof buf, "  moving entities the client holds no state for: %" PRIu64 "\n", r.missingMoving);
+    out << buf;
     std::snprintf(buf, sizeof buf, "  starved (moving, not updated > 500 ms): %zu distinct entities, %" PRIu64 " (snapshot, entity) events, max staleness %.0f ms,"
                   " most at rest for 1.5 s and still wrong %zu\n",
                   r.starvedIds, r.starvedEvents, r.maxStaleMs, r.maxStuck);

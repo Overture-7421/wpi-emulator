@@ -1,6 +1,7 @@
 #include "match_codec.h"
 
 #include <array>
+#include <limits>
 #include <new>
 #include <string>
 #include <type_traits>
@@ -38,8 +39,6 @@ constexpr std::size_t kMatchInputMinBytes = 2 + 4 + 8 + 1 + 4;
 constexpr std::size_t kWheelWireStateBytes = 2 + 2;
 constexpr std::size_t kHudValueBytes = 2 + 4;
 constexpr std::size_t kRobotWireStateMinBytes = 2 + 2 + 4 + 4 + 2 + 2 + 2 + 2 + 1 + 4 + 1;
-constexpr std::size_t kEntityStateBytes = 4 + 2 + 2 + 2;
-constexpr std::size_t kRemovedEntityBytes = 4;
 constexpr std::size_t kEntityDeltaMinBytes = 2 + 2 + 4 + 1 + 1;
 
 template <class C, class A>
@@ -201,21 +200,120 @@ void fields(C& c, M& r) {
     });
 }
 
-template <class C, Is<match::EntityState> M>
-void fields(C& c, M& e) {
-    c.u32(e.id);
-    c.i16(e.xCm);
-    c.i16(e.yCm);
-    c.i16(e.zCm);
+// Entity ids travel as gaps over ascending ids (the first one absolute, then id - previous - 1), which need the previous id and
+// so are read into plain wire records first and integrated afterwards; the same records are built before writing. An upsert's
+// head is (gap << 2 | flags).
+constexpr std::uint64_t kEntityBallisticBit = 1;
+constexpr std::uint64_t kEntityVelocityBit = 2;
+constexpr std::size_t kRemovedEntityMinBytes = 1;
+constexpr std::size_t kUpsertedEntityMinBytes = 1 + 2 + 2 + 2;
+
+struct IdGapWire {
+    std::uint64_t gap = 0;
+};
+
+struct UpsertedEntityWire {
+    std::uint64_t head = 0;
+    std::int16_t xCm = 0, yCm = 0, zCm = 0;
+    std::int16_t vxCms = 0, vyCms = 0, vzCms = 0;
+};
+
+template <class C, class V>
+void varintField(C& c, V& v) {
+    if constexpr (std::is_same_v<C, Writer>) c.varint(v);
+    else v = c.varint();
 }
 
+template <class C, Is<IdGapWire> M>
+void fields(C& c, M& g) {
+    varintField(c, g.gap);
+}
+
+template <class C, Is<UpsertedEntityWire> M>
+void fields(C& c, M& u) {
+    varintField(c, u.head);
+    c.i16(u.xCm);
+    c.i16(u.yCm);
+    c.i16(u.zCm);
+    if ((u.head & kEntityVelocityBit) == 0) return;
+    c.i16(u.vxCms);
+    c.i16(u.vyCms);
+    c.i16(u.vzCms);
+}
+
+// Integrates the gaps of ascending ids; false when an id would not fit 32 bits.
+template <class Gap>
+bool nextEntityId(std::uint32_t& id, bool first, Gap gap) {
+    constexpr std::uint64_t kMaxId = std::numeric_limits<std::uint32_t>::max();
+    if (gap > kMaxId) return false;
+    const std::uint64_t next = first ? gap : static_cast<std::uint64_t>(id) + gap + 1;
+    if (next > kMaxId) return false;
+    id = static_cast<std::uint32_t>(next);
+    return true;
+}
+
+// The ids of removals and upserts of a delta are strictly ascending (sdk entityDeltaIdsAscending): anything else is a
+// malformed frame (and unencodable).
 template <class C, Is<match::EntityDelta> M>
 void fields(C& c, M& d) {
     c.record([&] {
         c.u16(d.groupId);
         c.u32(d.baselineId);
-        c.list(d.removed, match::kMaxEntityDeltaEntries, kRemovedEntityBytes);
-        c.list(d.upserted, match::kMaxEntityDeltaEntries, kEntityStateBytes);
+        if constexpr (std::is_same_v<C, Writer>) {
+            if (!match::entityDeltaIdsAscending(d)) {
+                c.fail("entity ids not strictly ascending");
+                return;
+            }
+            std::vector<IdGapWire> removed;
+            removed.reserve(d.removed.size());
+            for (std::size_t i = 0; i < d.removed.size(); ++i)
+                removed.push_back({i == 0 ? d.removed[0] : static_cast<std::uint64_t>(d.removed[i]) - d.removed[i - 1] - 1});
+            std::vector<UpsertedEntityWire> upserted;
+            upserted.reserve(d.upserted.size());
+            for (std::size_t i = 0; i < d.upserted.size(); ++i) {
+                const match::EntityState& e = d.upserted[i];
+                UpsertedEntityWire u;
+                const std::uint64_t gap = i == 0 ? e.id : static_cast<std::uint64_t>(e.id) - d.upserted[i - 1].id - 1;
+                const bool moving = e.vxCms != 0 || e.vyCms != 0 || e.vzCms != 0;
+                u.head = (gap << 2) | (e.ballistic ? kEntityBallisticBit : 0) | (moving ? kEntityVelocityBit : 0);
+                u.xCm = e.xCm;
+                u.yCm = e.yCm;
+                u.zCm = e.zCm;
+                u.vxCms = e.vxCms;
+                u.vyCms = e.vyCms;
+                u.vzCms = e.vzCms;
+                upserted.push_back(u);
+            }
+            c.list(removed, match::kMaxEntityDeltaEntries, kRemovedEntityMinBytes);
+            c.list(upserted, match::kMaxEntityDeltaEntries, kUpsertedEntityMinBytes);
+        } else {
+            std::vector<IdGapWire> removed;
+            std::vector<UpsertedEntityWire> upserted;
+            c.list(removed, match::kMaxEntityDeltaEntries, kRemovedEntityMinBytes);
+            c.list(upserted, match::kMaxEntityDeltaEntries, kUpsertedEntityMinBytes);
+            if (!c.ok()) return;
+            std::uint32_t id = 0;
+            d.removed.clear();
+            for (std::size_t i = 0; i < removed.size(); ++i) {
+                if (!nextEntityId(id, i == 0, removed[i].gap)) return c.fail("entity id out of range");
+                d.removed.push_back(id);
+            }
+            d.upserted.clear();
+            for (std::size_t i = 0; i < upserted.size(); ++i) {
+                const UpsertedEntityWire& u = upserted[i];
+                if (!nextEntityId(id, i == 0, u.head >> 2)) return c.fail("entity id out of range");
+                match::EntityState e;
+                e.id = id;
+                e.xCm = u.xCm;
+                e.yCm = u.yCm;
+                e.zCm = u.zCm;
+                e.vxCms = u.vxCms;
+                e.vyCms = u.vyCms;
+                e.vzCms = u.vzCms;
+                e.ballistic = (u.head & kEntityBallisticBit) != 0;
+                d.upserted.push_back(e);
+            }
+        }
     });
 }
 

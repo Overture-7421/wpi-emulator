@@ -10,10 +10,13 @@
 // and remembers, per entity group, the entity state of the newest snapshot the client acknowledged
 // (MatchSnapshotAck::snapshotSeq). An EntityDelta carries `baselineId` = that acknowledged snapshotSeq, or kNoBaseline
 // for the full state; the upserts and removals are relative to the entity state the client holds for that snapshotSeq.
-// Entities not mentioned are unchanged since the baseline (the host may omit moving entities to fit
-// kSnapshotBudgetBytes; they then catch up in a later snapshot). The client keeps the states of its recent snapshots keyed
-// by snapshotSeq, applies the delta on the one named by baselineId, stores the result under the new snapshotSeq and
-// acknowledges it. If the client no longer holds the baseline it acks nothing newer and the host falls back to full state.
+// Entities not mentioned keep their baseline update and are EXTRAPOLATED from it (entity_prediction.h): the host only
+// upserts an entity whose extrapolation would be wrong by more than its threshold, or that has not been confirmed for a
+// keyframe interval (a few seconds even for an entity at rest). The host may omit due upserts to fit kSnapshotBudgetBytes;
+// they then catch up in a later snapshot. The client keeps the states of its recent snapshots (each entity with the
+// simTimeUs of the snapshot that upserted it) keyed by snapshotSeq, applies the delta on the one named by baselineId, stores
+// the result under the new snapshotSeq and acknowledges it. If the client no longer holds the baseline it acks nothing
+// newer and the host falls back to full state.
 
 #include <cstdint>
 #include <string>
@@ -83,25 +86,42 @@ struct RobotWireState {
 };
 
 // One numerous thing (a fuel piece), identified by a stable id that survives the whole match. Position is
-// quantizeCentiI16 centimetres in the field frame.
+// quantizeCentiI16 centimetres in the field frame, velocity is whole cm/s (field frame, saturating), and `ballistic` says
+// the entity is in free flight (gravity applies to z). The state is the entity at the sim time of the snapshot that carries
+// it; between updates both sides extrapolate it with predictEntity (entity_prediction.h), so an entity that moves as
+// predicted needs no new update.
 struct EntityState {
     std::uint32_t id = 0;
     std::int16_t xCm = 0;
     std::int16_t yCm = 0;
     std::int16_t zCm = 0;
+    std::int16_t vxCms = 0;
+    std::int16_t vyCms = 0;
+    std::int16_t vzCms = 0;
+    bool ballistic = false;
 
     bool operator==(const EntityState&) const = default;
 };
 
-// The changes of one entity group (matches an entity group of the telemetry snapshot) against `baselineId`.
+// The changes of one entity group (matches an entity group of the telemetry snapshot) against `baselineId`. Removals are
+// how a client learns an entity is gone (it despawned or left the field): an id in `removed` is deleted from the baseline
+// state. Both lists are in strictly ascending id order (the wire sends the gaps between ids).
 struct EntityDelta {
     std::uint16_t groupId = 0;
     std::uint32_t baselineId = kNoBaseline;  // snapshotSeq acknowledged by the client, or kNoBaseline for full state
-    std::vector<std::uint32_t> removed;      // <= kMaxEntityDeltaEntries
-    std::vector<EntityState> upserted;       // <= kMaxEntityDeltaEntries
+    std::vector<std::uint32_t> removed;      // <= kMaxEntityDeltaEntries, strictly ascending
+    std::vector<EntityState> upserted;       // <= kMaxEntityDeltaEntries, strictly ascending by id
 
     bool operator==(const EntityDelta&) const = default;
 };
+
+inline bool entityDeltaIdsAscending(const EntityDelta& d) {
+    for (std::size_t i = 1; i < d.removed.size(); ++i)
+        if (d.removed[i - 1] >= d.removed[i]) return false;
+    for (std::size_t i = 1; i < d.upserted.size(); ++i)
+        if (d.upserted[i - 1].id >= d.upserted[i].id) return false;
+    return true;
+}
 
 struct MatchSnapshot {
     std::uint64_t sessionId = proto::kUnspecified;
@@ -144,7 +164,8 @@ inline bool fitsLimits(const MatchSnapshot& s) {
             !zonePosesWellFormed(r.zonePoses, kMaxSnapshotZonePosesPerRobot))
             return false;
     for (const EntityDelta& d : s.entityDeltas)
-        if (d.removed.size() > kMaxEntityDeltaEntries || d.upserted.size() > kMaxEntityDeltaEntries) return false;
+        if (d.removed.size() > kMaxEntityDeltaEntries || d.upserted.size() > kMaxEntityDeltaEntries || !entityDeltaIdsAscending(d))
+            return false;
     return true;
 }
 

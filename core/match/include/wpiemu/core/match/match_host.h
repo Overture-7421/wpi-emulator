@@ -40,6 +40,7 @@
 #include <vector>
 
 #include "wpiemu/core/config/config_pipeline.h"
+#include "wpiemu/core/match/entity_delta.h"
 #include "wpiemu/core/match/host_session.h"
 #include "wpiemu/core/match/peer_outbox.h"
 #include "wpiemu/core/match/snapshot_rate.h"
@@ -75,6 +76,7 @@ struct MatchHostConfig {
     SnapshotRateConfig rate;
     std::uint16_t inputRateHz = sdk::match::kDefaultInputRateHz;      // stated in JoinAccept
     std::size_t snapshotBudgetBytes = sdk::match::kSnapshotBudgetBytes;
+    EntityPolicy entity;   // when an entity update is due and how due updates are ranked (entity_delta.h)
     // HUD key of the game's match phase as a text value; copied into MatchInfo::phaseKey when set. Empty = none.
     std::string phaseHudKey;
     // Extra HUD keys for the key table next to the plugin's descriptors (hud_keys.h).
@@ -126,6 +128,13 @@ struct MatchHostStats {
     std::uint64_t snapshotsSent = 0;
     std::uint64_t snapshotsTruncated = 0;     // entity changes were left for later snapshots to fit the budget
     std::uint64_t entityChangesDeferred = 0;
+    // Entity changes actually sent, by why they were due (entity_delta.h): a removal, an entity the client held nothing for, a
+    // prediction that was off, a keyframe re-confirmation. Counted once per snapshot they are in (an unacknowledged change is
+    // due again and counts again).
+    std::uint64_t entityRemovalsSent = 0;
+    std::uint64_t entityNewSent = 0;
+    std::uint64_t entityErrorSent = 0;
+    std::uint64_t entityKeyframesSent = 0;
     std::uint64_t snapshotsOverBudget = 0;    // robots + info alone exceeded the budget (they are always sent)
     std::uint64_t snapshotsDroppedSlow = 0;   // unreliable snapshots dropped from a slow client's queue
     std::uint64_t hudKeysUnknown = 0;

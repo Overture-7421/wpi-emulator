@@ -30,7 +30,8 @@ std::size_t encodedSize(const MatchSnapshot& s) {
 
 MatchSnapshot snapshotOf(std::size_t robots, std::size_t wheels, std::size_t hud, std::size_t groups,
                          std::size_t removedPerGroup, std::size_t upsertedPerGroup, std::size_t gameHud,
-                         std::size_t phaseKeyChars, std::size_t movedZones = 0, std::size_t firstRobotWithMovedZones = 0) {
+                         std::size_t phaseKeyChars, std::size_t movedZones = 0, std::size_t firstRobotWithMovedZones = 0,
+                         std::uint32_t idStride = 1, bool moving = false) {
     MatchSnapshot s = test_ipc::sampleMatchSnapshot();
     s.info.phaseKey.assign(phaseKeyChars, 'p');
     s.robots.clear();
@@ -56,8 +57,18 @@ MatchSnapshot snapshotOf(std::size_t robots, std::size_t wheels, std::size_t hud
         EntityDelta d;
         d.groupId = static_cast<std::uint16_t>(g);
         d.baselineId = 4320;
-        d.removed.assign(removedPerGroup, 7u);
-        d.upserted.assign(upsertedPerGroup, EntityState{1, 100, -200, 5});
+        // Ascending ids, `idStride` apart (the wire sends the gaps, so the stride sets the size of each id).
+        for (std::size_t i = 0; i < removedPerGroup; ++i) d.removed.push_back(static_cast<std::uint32_t>(i) * idStride + 1);
+        for (std::size_t i = 0; i < upsertedPerGroup; ++i) {
+            EntityState e{static_cast<std::uint32_t>(i) * idStride + 1, 100, -200, 5};
+            if (moving) {
+                e.vxCms = 800;
+                e.vyCms = -300;
+                e.vzCms = 450;
+                e.ballistic = true;
+            }
+            d.upserted.push_back(e);
+        }
         s.entityDeltas.push_back(std::move(d));
     }
     s.gameHud.assign(gameHud, HudValue{3, 1.5f});
@@ -82,7 +93,8 @@ TEST_CASE("match snapshot size: the typical snapshot fits the budget") {
 
 TEST_CASE("match snapshot size: the worst case encodes and round-trips, far above the budget the host trims to") {
     const MatchSnapshot worst = snapshotOf(kMaxRobotsPerMatch, kMaxWheelsPerRobot, kMaxHudValuesPerRobot, kMaxEntityGroups,
-                                           kMaxEntityDeltaEntries, kMaxEntityDeltaEntries, kMaxGameHudValues, kMaxNameBytes);
+                                           kMaxEntityDeltaEntries, kMaxEntityDeltaEntries, kMaxGameHudValues, kMaxNameBytes, 0, 0,
+                                           4'000'000, true);
     REQUIRE(fitsLimits(worst));
     const std::size_t bytes = encodedSize(worst);
     std::printf("[snapshot size] worst case (6x8 wheels, 8 hud, 8 groups x 1024+1024 entries): %zu bytes\n", bytes);
@@ -129,11 +141,19 @@ TEST_CASE("match snapshot size: a zone pose costs 13 bytes and an empty list one
     CHECK(encodedSize(snapshotOf(3, 4, 2, 1, 0, 5, 0, 0, 4)) == none + 3 * 4 * 13);
 }
 
-TEST_CASE("match snapshot size: each entity upsert costs 10 bytes and each wheel 4, so the host can budget by counting") {
+TEST_CASE("match snapshot size: an entity upsert costs 7 bytes at rest and 13 moving, a removal 1, a wheel 4, so the host can budget") {
     const std::size_t base = encodedSize(snapshotOf(2, 4, 2, 1, 0, 0, 0, 0));
-    CHECK(encodedSize(snapshotOf(2, 4, 2, 1, 0, 10, 0, 0)) == base + 10 * 10);
+    // Consecutive ids: one byte of id gap and flags, then 3 x i16 position (and 3 x i16 velocity when moving).
+    CHECK(encodedSize(snapshotOf(2, 4, 2, 1, 0, 10, 0, 0)) == base + 10 * 7);
+    CHECK(encodedSize(snapshotOf(2, 4, 2, 1, 0, 10, 0, 0, 0, 0, 1, true)) == base + 10 * 13);
     CHECK(encodedSize(snapshotOf(2, 6, 2, 1, 0, 0, 0, 0)) == base + 2 * 2 * 4);
-    CHECK(encodedSize(snapshotOf(2, 4, 2, 1, 5, 0, 0, 0)) == base + 5 * 4);
+    CHECK(encodedSize(snapshotOf(2, 4, 2, 1, 5, 0, 0, 0)) == base + 5 * 1);
+    // A gap of 99 ids needs two bytes (the head is gap << 2 | flags, 7 bits per byte): the cost is the gap, not the id.
+    const std::size_t spread = encodedSize(snapshotOf(2, 4, 2, 1, 0, 10, 0, 0, 0, 0, 100, false));
+    CHECK(spread > base + 10 * 7);
+    CHECK(spread <= base + 10 * 9);
+    // The old fixed layout was 4 + 6 = 10 bytes per upsert and 4 per removal.
+    CHECK(base + 10 * 10 > encodedSize(snapshotOf(2, 4, 2, 1, 0, 10, 0, 0)));
 }
 
 namespace {
