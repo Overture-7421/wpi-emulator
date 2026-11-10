@@ -27,6 +27,13 @@ wpiemu_target_defaults(wpiemu_relay_probe)
 
 # The relay image is built from a relay-only tree; the desktop package never ships the server.
 if(WPIEMU_RELAY_ONLY)
+    # The image's runtime base can ship an older libstdc++ than the compiler that built the binary, so the C++ runtime is
+    # linked in; only libc (same Ubuntu release in both stages) stays dynamic.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        foreach(_relay_exe wpiemu_relay wpiemu_relay_probe)
+            target_link_options(${_relay_exe} PRIVATE -static-libstdc++ -static-libgcc)
+        endforeach()
+    endif()
     install(TARGETS wpiemu_relay wpiemu_relay_probe RUNTIME DESTINATION bin COMPONENT Relay)
 endif()
 
