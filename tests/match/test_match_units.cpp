@@ -6,6 +6,7 @@
 #include "match_test_support.h"
 #include "wpiemu/sdk/physics/remote_spec_limits.h"
 #include "wpiemu/core/match/entity_delta.h"
+#include "wpiemu/core/match/entity_motion.h"
 #include "wpiemu/core/match/hud_keys.h"
 #include "wpiemu/core/match/peer_outbox.h"
 #include "wpiemu/core/match/snapshot_budget.h"
@@ -422,6 +423,38 @@ TEST_CASE("wire frame: groups without stable ids are skipped, non-finite values 
     CHECK(frame.robots[0].xMm == 0);   // +inf is not a position: 0
     CHECK(hudWireValue(Value(std::string("text"))) == std::nullopt);
     CHECK(hudWireValue(Value(true)) == 1.f);
+}
+
+TEST_CASE("wire frame: with a motion tracker the entities carry the velocity derived from successive frames") {
+    EntityMotionTracker motion;
+    const auto frameAt = [&](std::int64_t timeUs, float x, float z) {
+        SimSnapshotData d;
+        d.simTimeUs = timeUs;
+        EntityGroupSample fuel;
+        fuel.ids = {4};
+        fuel.positions = {{x, 2.f, z}};
+        d.entityGroups = {fuel};
+        const SimSnapshot snap(std::move(d));
+        return buildWireFrame(snap, HudKeyTable{}, {}, {}, &motion);
+    };
+    const WireFrame first = frameAt(10'000, 1.0f, 0.075f);
+    REQUIRE(first.groups.size() == 1);
+    CHECK(first.groups[0].entities[0].vxCms == 0);   // nothing to difference yet
+    CHECK(first.groups[0].unsettled == std::vector<std::uint8_t>{0});
+    const WireFrame second = frameAt(26'000, 1.08f, 0.075f);   // 8 cm in 16 ms = 5 m/s
+    CHECK(std::abs(second.groups[0].entities[0].vxCms - 500) <= 1);
+    CHECK(second.groups[0].entities[0].xCm == 108);
+    CHECK_FALSE(second.groups[0].entities[0].ballistic);
+    // Without a tracker nothing is derived.
+    SimSnapshotData d;
+    EntityGroupSample fuel;
+    fuel.ids = {4};
+    fuel.positions = {{3.f, 2.f, 0.075f}};
+    d.entityGroups = {fuel};
+    const SimSnapshot plain(std::move(d));
+    const WireFrame without = buildWireFrame(plain, HudKeyTable{}, {});
+    CHECK(without.groups[0].entities[0].vxCms == 0);
+    CHECK(without.groups[0].unsettled.empty());
 }
 
 namespace {

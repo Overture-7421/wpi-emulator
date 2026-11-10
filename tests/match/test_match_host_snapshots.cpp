@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <deque>
 
+#include "entity_memory.h"
 #include "match_test_support.h"
 #include "wpiemu/sdk/match/entity_prediction.h"
 
@@ -10,77 +11,17 @@ namespace {
 
 using EntityMap = std::map<std::uint32_t, wire::EntityState>;
 
-// What a game client does with entity deltas: keep the state of recent snapshots by snapshotSeq (every entity with the sim
-// time of the snapshot that upserted it), apply each delta on the state named by baselineId, acknowledge what it applied.
-// view() is the picture at the sim time of the newest snapshot: every entity extrapolated with the shared SDK model.
+// What a game client does with entity deltas (tests/match/entity_memory.h is the one reference implementation of the contract
+// in sdk/match/snapshot_messages.h). view() is the picture at the sim time of the newest snapshot.
 class DeltaClient {
 public:
-    bool apply(const wire::MatchSnapshot& s) {
-        if (seen_ && !wire::seqNewer(s.snapshotSeq, latest_)) return false;   // latest wins
-        std::map<std::uint16_t, HeldMap> next;
-        for (const wire::EntityDelta& d : s.entityDeltas) {
-            HeldMap base;
-            if (d.baselineId != wire::kNoBaseline) {
-                const auto it = states_.find(d.baselineId);
-                if (it == states_.end()) return false;   // the baseline is gone: apply nothing, acknowledge nothing
-                const auto g = it->second.find(d.groupId);
-                if (g != it->second.end()) base = g->second;
-            }
-            for (const std::uint32_t id : d.removed) base.erase(id);
-            for (const wire::EntityState& e : d.upserted) base[e.id] = {e, s.simTimeUs};
-            next[d.groupId] = std::move(base);
-        }
-        states_[s.snapshotSeq] = std::move(next);
-        order_.push_back(s.snapshotSeq);
-        while (order_.size() > 32) {
-            states_.erase(order_.front());
-            order_.pop_front();
-        }
-        latest_ = s.snapshotSeq;
-        latestTimeUs_ = s.simTimeUs;
-        seen_ = true;
-        return true;
-    }
-    EntityMap view(std::uint16_t group) const {
-        EntityMap out;
-        const auto it = states_.find(latest_);
-        if (it == states_.end()) return out;
-        const auto g = it->second.find(group);
-        if (g == it->second.end()) return out;
-        for (const auto& [id, held] : g->second) {
-            wire::EntityState shown = wire::predictEntity(held.state, latestTimeUs_ - held.stampUs);
-            shown.vxCms = shown.vyCms = shown.vzCms = 0;   // the picture is a position
-            shown.ballistic = false;
-            out[id] = shown;
-        }
-        return out;
-    }
-    std::uint32_t latest() const { return latest_; }
+    bool apply(const wire::MatchSnapshot& s) { return memory_.apply(s) == EntityMemory::Result::Applied; }
+    EntityMap view(std::uint16_t group) const { return memory_.picture(group); }
+    std::uint32_t latest() const { return memory_.latest(); }
 
 private:
-    struct Held {
-        wire::EntityState state;
-        std::int64_t stampUs = 0;
-    };
-    using HeldMap = std::map<std::uint32_t, Held>;
-    std::map<std::uint32_t, std::map<std::uint16_t, HeldMap>> states_;
-    std::deque<std::uint32_t> order_;
-    std::uint32_t latest_ = 0;
-    std::int64_t latestTimeUs_ = 0;
-    bool seen_ = false;
+    EntityMemory memory_;
 };
-
-// Every entity of `truth` is shown within `cm` of it (a rest-state upsert is exact, so this is the rest tolerance).
-bool sameEntities(const EntityMap& shown, const EntityMap& truth, int cm) {
-    if (shown.size() != truth.size()) return false;
-    for (const auto& [id, e] : truth) {
-        const auto it = shown.find(id);
-        if (it == shown.end()) return false;
-        const int dx = it->second.xCm - e.xCm, dy = it->second.yCm - e.yCm, dz = it->second.zCm - e.zCm;
-        if (dx * dx + dy * dy + dz * dz > cm * cm) return false;
-    }
-    return true;
-}
 
 // A session with `count` fuel pieces (stable ids 1..count) that a test moves around.
 struct FuelSession : FakeSession {
@@ -372,18 +313,30 @@ TEST_CASE("match host deltas: a client converges on the truth under 30 percent l
     REQUIRE(c.join(c.joinMessage("A", swerveSpec(), s)));
     DeltaRun run{s, h, c, {}, 0, {}};
     std::uint32_t lcg = 12345;
+    std::uint32_t nextId = 1000;
     const auto jiggle = [&] {
         for (int k = 0; k < 20; ++k) {
             lcg = lcg * 1664525u + 1013904223u;
-            s.move(lcg % 120, static_cast<float>((lcg >> 8) % 7) * 0.02f - 0.06f);
+            s.move(lcg % s.fuel().ids.size(), static_cast<float>((lcg >> 8) % 7) * 0.02f - 0.06f);
         }
+    };
+    // Fuel leaves the field and new fuel appears all the time: whatever is still in flight when an entity is gone must not
+    // outlive it at the client (no ghosts), even with updates, acknowledgements and removals lost.
+    const auto churn = [&] {
+        lcg = lcg * 1664525u + 1013904223u;
+        const std::size_t victim = lcg % s.fuel().ids.size();
+        s.fuel().ids.erase(s.fuel().ids.begin() + static_cast<std::ptrdiff_t>(victim));
+        s.fuel().positions.erase(s.fuel().positions.begin() + static_cast<std::ptrdiff_t>(victim));
+        s.fuel().ids.push_back(nextId++);
+        s.fuel().positions.push_back({static_cast<float>(lcg % 400) * 0.01f, static_cast<float>((lcg >> 12) % 300) * 0.01f, 0.1f});
     };
     for (int i = 0; i < 400; ++i) {
         if (i % 3 == 0) jiggle();
+        if (i % 2 == 0) churn();
         run.tick();
     }
     for (int i = 0; i < 400; ++i) run.tick();   // the fuel rests: the client must settle on the truth
-    CHECK(sameEntities(run.dc.view(0), s.truth(), 1));   // within the 1 cm an entity at rest is held to
+    CHECK(sameEntities(run.dc.view(0), s.truth(), 1));   // within the 1 cm an entity at rest is held to, and nothing extra
     CHECK(run.received.size() > 120);   // 240 sent at 60 Hz, 70 percent arrive
     CHECK(h.host->stats().acksIgnored + h.host->stats().acks > 50);
 }

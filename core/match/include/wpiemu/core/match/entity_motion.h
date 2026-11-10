@@ -28,14 +28,20 @@ namespace wpiemu::core::match {
 class EntityMotionTracker {
 public:
     static constexpr std::int64_t kMaxGapUs = 250'000;
-    static constexpr double kBallisticToleranceG = 0.35;   // |az + g| below this fraction of g counts as free flight
+    static constexpr double kBallisticToleranceG = 0.35;   // |az + g| below this fraction of g makes an entity fly
+    static constexpr double kStayBallisticToleranceG = 0.8;   // ... and below this fraction keeps a flying one flying
     static constexpr double kUnknownBallisticVzMps = 0.3;
     static constexpr double kMaxPlausibleSpeedMps = 50.0;   // faster is a teleport or a recycled id: velocity unknown
+    static constexpr double kKinkMps = 1.0;                 // a velocity change gravity does not explain: a collision or a bounce
 
     // `entities` (ascending id, positions already quantized) and `rawPositions` (metres, same order) describe one group at
     // `simTimeUs`; the velocity and ballistic fields of `entities` are filled in. Forgets entities that are gone.
+    // `unsettled` (same order as `entities`) is set to 1 for an entity whose velocity is not yet to be trusted for ONE frame:
+    // it appeared in this frame (when the group was tracked before), or a collision or bounce happened inside the interval
+    // that ended at this frame, so the averaged velocity mixes the velocity before and after it. The velocity of the next
+    // frame is clean, so the host holds the entity's update back by that one frame instead of sending it twice.
     void observe(std::uint16_t groupId, std::int64_t simTimeUs, std::span<const sdk::Vec3> rawPositions,
-                 std::vector<sdk::match::EntityState>& entities);
+                 std::vector<sdk::match::EntityState>& entities, std::vector<std::uint8_t>& unsettled);
     void reset() { groups_.clear(); }
 
 private:
@@ -46,6 +52,9 @@ private:
         bool hasVelocity = false;   // averageVelocity (over the interval ending at timeUs) is known
         sdk::Vec3 averageVelocity;
         std::int64_t midUs = 0;     // middle of that interval
+        bool unsettled = false;     // reported unsettled in that frame
+        bool kinked = false;        // a collision or bounce was detected in that frame
+        bool ballistic = false;     // classified as in free flight in that frame
     };
 
     std::map<std::uint16_t, std::vector<Track>> groups_;

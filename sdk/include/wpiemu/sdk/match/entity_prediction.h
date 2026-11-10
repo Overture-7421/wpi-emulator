@@ -35,6 +35,9 @@ inline constexpr std::int64_t kEntityGravityCmps2 = 981;
 inline constexpr std::int16_t kEntityFloorCm = 0;
 inline constexpr std::int64_t kEntityPredictHorizonUs = 2'000'000;
 inline constexpr std::int64_t kEntityBlendUs = 100'000;
+// An update counts as IN FLIGHT for this long after the snapshot that carried it (see snapshot_messages.h): the host does not
+// repeat it and the client keeps it ahead of the older version its baseline holds.
+inline constexpr std::int64_t kEntityInFlightUs = 150'000;
 
 namespace detail {
 

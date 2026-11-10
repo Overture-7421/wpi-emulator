@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "../game_2026/multirobot_session_rig.h"
+#include "entity_memory.h"
 #include "match_test_support.h"
 #include "wpiemu/plugins/game_2026/types.h"
 #include "wpiemu/sdk/core/environment.h"
@@ -60,6 +61,8 @@ inline bool envFlag(const char* name) {
 }
 inline bool reportRequested() { return envFlag("WPIEMU_STRESS_REPORT"); }
 inline bool fullRunRequested() { return envFlag("WPIEMU_STRESS"); }
+// Runs the scenarios against the host configured as it was before entity prediction (no gates): the comparison baseline.
+inline bool legacyRequested() { return envFlag("WPIEMU_STRESS_LEGACY"); }
 
 // ---- the fuel truth ---------------------------------------------------------------------------------------------------
 
@@ -105,7 +108,6 @@ public:
             if (it->tick == tick) return &*it;
         return nullptr;
     }
-    const TruthFrame* newestTruth() const { return frames_.empty() ? nullptr : &frames_.back(); }
     std::shared_ptr<const sdk::ISimSnapshot> lastSnapshot() const { return lastBuild_; }
     std::chrono::nanoseconds takeTapTime() {
         const auto t = tapTime_;
@@ -194,7 +196,6 @@ public:
     static constexpr std::int64_t kStuckUs = 1'500'000;
     static constexpr double kBehindCm = 5.0;     // shown further than this from the truth = behind (the host's due threshold)
     static constexpr double kBadErrorCm = 10.0;
-    static constexpr std::size_t kHeldHistory = 64;
 
     ModelClient(mt::Harness& h, const sdk::testing::ImpairmentProfile& profile, std::uint64_t seed, TruthTap& tap)
         : h_(h), tap_(tap), sc_(h, profile, seed) {}
@@ -232,19 +233,15 @@ public:
     std::size_t stuckNow() const { return stuck_; }
     const ClientMetrics& metrics() const { return metrics_; }
     ClientMetrics takeMetrics() { return std::exchange(metrics_, ClientMetrics{}); }
-    std::size_t heldCount() const { return held_.empty() ? 0 : held_.rbegin()->second.size(); }
+    std::size_t heldCount() const { return latest_.size(); }
 
 private:
     // What the client holds for an entity: the update and the sim time of the snapshot that carried it.
-    struct Held {
-        wire::EntityState e;
-        std::int64_t stampUs = 0;
-        bool operator==(const Held&) const = default;
-    };
-    using State = std::unordered_map<std::uint32_t, Held>;
+    using Held = mt::EntityMemory::Held;
+    using State = mt::EntityMemory::Group;
 
     // The entity as the client shows it at sim time `now`: the update extrapolated by the shared SDK model.
-    static wire::EntityState shownAt(const Held& h, std::int64_t now) { return wire::predictEntity(h.e, now - h.stampUs); }
+    static wire::EntityState shownAt(const Held& h, std::int64_t now) { return mt::EntityMemory::shown(h, now); }
     static double distanceCm(const wire::EntityState& a, const wire::EntityState& b) {
         const double dx = a.xCm - b.xCm, dy = a.yCm - b.yCm, dz = a.zCm - b.zCm;
         return std::sqrt(dx * dx + dy * dy + dz * dz);
@@ -271,28 +268,17 @@ private:
         }
         if (s.tick > hostTick_) hostTick_ = s.tick;
 
-        State state;
         const wire::EntityDelta* delta = s.entityDeltas.empty() ? nullptr : &s.entityDeltas.front();
-        if (delta != nullptr && delta->baselineId != wire::kNoBaseline) {
-            const auto base = held_.find(delta->baselineId);
-            if (base == held_.end()) {
-                if (measuring) ++metrics_.unappliable;
-                return;   // no ack: the host falls back to full state
-            }
-            state = base->second;
-        } else if (delta != nullptr && measuring) {
-            ++metrics_.fullStates;
-        } else if (delta == nullptr && !held_.empty()) {
-            state = latest_;
+        if (memory_.apply(s) == mt::EntityMemory::Result::UnknownBaseline) {
+            if (measuring) ++metrics_.unappliable;
+            return;   // no ack: the host falls back to full state
         }
+        if (delta != nullptr && delta->baselineId == wire::kNoBaseline && measuring) ++metrics_.fullStates;
         haveSeq_ = true;
         lastSeq_ = s.snapshotSeq;
-        if (delta != nullptr) {
-            for (const std::uint32_t r : delta->removed) {
-                state.erase(r);
-                track_.erase(r);
-            }
-        }
+        State state = memory_.group(delta != nullptr ? delta->groupId : 0);
+        if (delta != nullptr)
+            for (const std::uint32_t r : delta->removed) track_.erase(r);
 
         const TruthFrame* truth = tap_.truthAt(s.tick);
         const std::int64_t now = s.simTimeUs;
@@ -317,10 +303,9 @@ private:
             for (const wire::EntityState& u : delta->upserted) {
                 const auto before = latest_.find(u.id);
                 const bool known = before != latest_.end();
-                const bool teleported = known && (std::abs(before->second.e.xCm - u.xCm) > 100 || std::abs(before->second.e.yCm - u.yCm) > 100);
+                const bool teleported = known && (std::abs(before->second.state.xCm - u.xCm) > 100 || std::abs(before->second.state.yCm - u.yCm) > 100);
                 // An upsert is redundant when the client's extrapolation already put the entity within a centimetre of it.
                 const bool redundant = known && !teleported && distanceCm(shownAt(before->second, now), u) < 1.0;
-                state[u.id] = {u, now};
                 Track& t = track_[u.id];
                 if (teleported) t = Track{};   // a recycled id: a new entity
                 if (redundant) {
@@ -371,9 +356,7 @@ private:
         if (measuring) metrics_.maxStuck = std::max<std::size_t>(metrics_.maxStuck, stuck);
         if (measuring && truth != nullptr) measureError(*truth, state, now);
 
-        held_[s.snapshotSeq] = state;
         latest_ = std::move(state);
-        while (held_.size() > kHeldHistory) held_.erase(held_.begin());
         (void)sc_.client->send(wire::MatchSnapshotAck{s.sessionId, s.runEpoch, s.snapshotSeq});
 
         if (!measuring) return;
@@ -427,8 +410,8 @@ private:
     std::uint64_t hostTick_ = 0;
     bool haveSeq_ = false;
     std::uint32_t lastSeq_ = 0;
-    std::map<std::uint32_t, State> held_;   // entity state per received snapshotSeq (the client's baselines)
-    State latest_;                          // the state of the newest applied snapshot
+    mt::EntityMemory memory_;               // what the client holds: the reference implementation of the entity contract
+    State latest_;                          // the picture after the newest applied snapshot
     std::unordered_map<std::uint32_t, Track> track_;
     std::size_t lagging_ = 0;
     std::size_t stuck_ = 0;

@@ -28,6 +28,7 @@ std::int64_t isqrt(std::int64_t v) {
 }
 
 struct Upsert {
+    int tier = 0;   // 0: the client's picture is wrong, 1: only a keyframe is due (insurance, sent with what is left)
     std::int64_t score = 0;
     std::uint16_t groupId = 0;
     EntityChangeReason reason = EntityChangeReason::New;
@@ -56,6 +57,12 @@ bool moves(const EntityState& e) { return e.ballistic || e.vxCms != 0 || e.vyCms
 
 // A client that holds nothing for an entity is as wrong as it can be: it ranks like a miss of this many centimetres.
 constexpr std::int64_t kNewEntityErrorCm = 100;
+// Rank of a keyframe that waited overdueFactor keyframe intervals: as if its picture were this far off.
+constexpr std::int64_t kOverdueErrorCm = 20;
+
+bool isUnsettled(const EntityGroupFrame* group, std::size_t index) {
+    return group != nullptr && index < group->unsettled.size() && group->unsettled[index] != 0;
+}
 
 }  // namespace
 
@@ -70,12 +77,25 @@ EntityPlan EntityDeltaEncoder::plan(std::span<const EntityGroupFrame> current, s
     EntityPlan plan;
     const Entry* base = acked_ != sdk::match::kNoBaseline ? find(acked_) : nullptr;
     if (base != nullptr) plan.baselineId = acked_;
+    const bool withBaseline = base != nullptr;
     const std::span<const HeldGroup> baseline = base != nullptr ? std::span<const HeldGroup>(base->state) : std::span<const HeldGroup>();
 
     for (const EntityGroupFrame& g : current) plan.groupIds.push_back(g.groupId);
     for (const HeldGroup& g : baseline) plan.groupIds.push_back(g.groupId);
+    for (const auto& [key, removalSeq] : known_) plan.groupIds.push_back(key.first);
     std::sort(plan.groupIds.begin(), plan.groupIds.end());
     plan.groupIds.erase(std::unique(plan.groupIds.begin(), plan.groupIds.end()), plan.groupIds.end());
+
+    // The update sent last for an entity, if it is in flight (sent in a snapshot the acknowledgement of which is still on its
+    // way): the squared error of its extrapolation, or -1 when there is none.
+    const auto inFlightErrorSq = [&](std::uint16_t gid, const EntityState& truth) -> std::int64_t {
+        if (!withBaseline || !policy_.suppressInFlight) return -1;
+        const auto it = pending_.find({gid, truth.id});
+        if (it == pending_.end()) return -1;
+        const Pending& p = it->second;
+        if (!sdk::match::seqNewer(p.seq, acked_) || simTimeUs - p.stampUs >= sdk::match::kEntityInFlightUs) return -1;
+        return distanceSq(truth, sdk::match::predictEntity(p.state, simTimeUs - p.stampUs));
+    };
 
     std::vector<EntityChange> removals;
     std::vector<Upsert> upserts;
@@ -86,45 +106,73 @@ EntityPlan EntityDeltaEncoder::plan(std::span<const EntityGroupFrame> current, s
         const std::span<const EntityState> c = cur != nullptr ? std::span<const EntityState>(cur->entities) : std::span<const EntityState>();
         const std::span<const HeldEntity> b = old != nullptr ? std::span<const HeldEntity>(old->entities) : std::span<const HeldEntity>();
         std::size_t removed = 0, i = 0, j = 0;
+        const auto addRemoval = [&](std::uint32_t id) {
+            if (removed++ < cap) {
+                EntityChange r;
+                r.groupId = gid;
+                r.removal = true;
+                r.reason = EntityChangeReason::Removal;
+                r.state.id = id;
+                removals.push_back(r);
+            } else {
+                ++plan.omittedByCap;
+            }
+        };
         while (i < c.size() || j < b.size()) {
             const bool onlyBase = i >= c.size() || (j < b.size() && b[j].state.id < c[i].id);
             const bool onlyCur = j >= b.size() || (i < c.size() && c[i].id < b[j].state.id);
             if (onlyBase) {
-                if (removed++ < cap) {
-                    EntityChange r;
-                    r.groupId = gid;
-                    r.removal = true;
-                    r.reason = EntityChangeReason::Removal;
-                    r.state.id = b[j].state.id;
-                    removals.push_back(r);
-                } else {
-                    ++plan.omittedByCap;
-                }
-                ++j;
+                ++j;   // gone from the world: the known entities below tell the client
             } else if (onlyCur) {
-                const std::int64_t score = (kNewEntityErrorCm + kErrorFloorCm) * policy_.ageScaleUs / (1 + bandOf(c[i], anchors));
-                upserts.push_back({score, gid, EntityChangeReason::New, c[i]});
+                const bool settled = !isUnsettled(cur, i);   // else wait one frame for a clean velocity: a new entity not yet shown costs 1 frame
+                const std::int64_t threshold = moves(c[i]) ? policy_.errorThresholdCm : policy_.restErrorThresholdCm;
+                const std::int64_t flightSq = inFlightErrorSq(gid, c[i]);
+                if (settled && (flightSq < 0 || flightSq > threshold * threshold)) {
+                    const std::int64_t score = (kNewEntityErrorCm + kErrorFloorCm) * policy_.ageScaleUs / (1 + bandOf(c[i], anchors));
+                    upserts.push_back({0, score, gid, EntityChangeReason::New, c[i]});
+                }
                 ++i;
             } else {
                 const HeldEntity& held = b[j];
                 const std::int64_t ageUs = std::max<std::int64_t>(0, simTimeUs - held.stampUs);
                 const EntityState shown = sdk::match::predictEntity(held.state, ageUs);
-                const std::int64_t errSq = distanceSq(c[i], shown);
+                const std::int64_t flightSq = inFlightErrorSq(gid, c[i]);
+                // With an update in flight the client either has it or, if it was lost, gets it again when it expires: only its
+                // error counts (a right one stands in for the baseline's version, a wrong one must be replaced even if the
+                // baseline's is right, the client uses the newer). Otherwise the baseline's version decides.
+                const bool hasFlight = flightSq >= 0;
+                const std::int64_t errSq = hasFlight ? flightSq : distanceSq(c[i], shown);
                 const bool truthMoves = moves(c[i]);
-                const std::int64_t threshold = truthMoves ? policy_.errorThresholdCm : policy_.restErrorThresholdCm;
+                std::int64_t threshold = truthMoves ? policy_.errorThresholdCm : policy_.restErrorThresholdCm;
+                if (isUnsettled(cur, i)) threshold = std::max<std::int64_t>(threshold, policy_.unsettledErrorCm);
                 const bool off = errSq > threshold * threshold;
                 const std::int64_t keyframeUs = truthMoves || moves(held.state) ? policy_.keyframeMovingUs : policy_.keyframeRestUs;
-                const bool keyframe = ageUs >= keyframeUs;
+                const bool keyframe = !hasFlight && ageUs >= keyframeUs;
                 if (off || keyframe) {
-                    const std::int64_t score = (isqrt(errSq) + kErrorFloorCm) * (ageUs + policy_.ageScaleUs) / (1 + bandOf(c[i], anchors));
-                    upserts.push_back({score, gid, off ? EntityChangeReason::Error : EntityChangeReason::Keyframe, c[i]});
+                    // A keyframe that is long overdue (the budget kept it waiting) joins the ranks of the wrong pictures at the
+                    // weight of a modest error, so it cannot wait forever yet never pushes a new or really wrong entity aside.
+                    const bool overdue = !off && ageUs >= policy_.overdueFactor * keyframeUs;
+                    const std::int64_t score = overdue ? (kOverdueErrorCm + kErrorFloorCm) * policy_.ageScaleUs / (1 + bandOf(c[i], anchors))
+                                                       : (isqrt(errSq) + kErrorFloorCm) * (ageUs + policy_.ageScaleUs) / (1 + bandOf(c[i], anchors));
+                    const int tier = off || overdue ? 0 : 1;
+                    upserts.push_back({tier, score, gid, off ? EntityChangeReason::Error : EntityChangeReason::Keyframe, c[i]});
                 }
                 ++i;
                 ++j;
             }
         }
+        // Everything the client may hold that the world no longer has is removed, in every snapshot until one that carries the
+        // removal is acknowledged (see `known_`): whatever was upserted at any time, acknowledged or not.
+        for (auto it = known_.lower_bound({gid, 0}); it != known_.end() && it->first.first == gid; ++it) {
+            const std::uint32_t id = it->first.second;
+            const auto inCurrent = std::lower_bound(c.begin(), c.end(), id, [](const EntityState& e, std::uint32_t v) { return e.id < v; });
+            if (inCurrent != c.end() && inCurrent->id == id) continue;
+            const std::uint32_t removalSeq = it->second;
+            if (removalSeq == 0 || sdk::match::seqNewer(removalSeq, acked_)) addRemoval(id);
+        }
     }
     std::sort(upserts.begin(), upserts.end(), [](const Upsert& a, const Upsert& b) {
+        if (a.tier != b.tier) return a.tier < b.tier;
         if (a.score != b.score) return a.score > b.score;
         if (a.groupId != b.groupId) return a.groupId < b.groupId;
         return a.state.id < b.state.id;
@@ -195,6 +243,32 @@ void EntityDeltaEncoder::commit(const EntityPlan& plan, std::size_t count, std::
     history_.push_back(std::move(entry));
     while (history_.size() > kHistory) history_.pop_front();
     if (acked_ != sdk::match::kNoBaseline && find(acked_) == nullptr) acked_ = sdk::match::kNoBaseline;
+
+    // In-flight bookkeeping. A full state (no baseline) makes the client start from nothing, so nothing is in flight then.
+    if (plan.baselineId == sdk::match::kNoBaseline) pending_.clear();
+    for (const EntityDelta& d : sent) {
+        for (const EntityState& e : d.upserted) {
+            pending_[{d.groupId, e.id}] = Pending{e, simTimeUs, snapshotSeq};
+            known_[{d.groupId, e.id}] = 0;
+        }
+        for (const std::uint32_t id : d.removed) {
+            pending_.erase({d.groupId, id});
+            const auto it = known_.find({d.groupId, id});
+            if (it != known_.end() && it->second == 0) it->second = snapshotSeq;
+        }
+    }
+    // A removal the budget left out of this snapshot starts over: acknowledging a later snapshot proves nothing about it.
+    for (std::size_t k = std::min(count, plan.changes.size()); k < plan.changes.size(); ++k) {
+        const EntityChange& c = plan.changes[k];
+        if (!c.removal) continue;
+        const auto it = known_.find({c.groupId, c.state.id});
+        if (it != known_.end()) it->second = 0;
+    }
+    // An update that is no longer in flight (the time is up) is dropped: the entity is then judged against the baseline again.
+    std::erase_if(pending_, [&](const auto& kv) { return simTimeUs - kv.second.stampUs >= sdk::match::kEntityInFlightUs; });
+    // A removal is done when a snapshot that carried it is acknowledged: every snapshot since the first one repeats it.
+    if (acked_ != sdk::match::kNoBaseline)
+        std::erase_if(known_, [&](const auto& kv) { return kv.second != 0 && !sdk::match::seqNewer(kv.second, acked_); });
 }
 
 bool EntityDeltaEncoder::onAck(std::uint32_t snapshotSeq) {
@@ -206,6 +280,8 @@ bool EntityDeltaEncoder::onAck(std::uint32_t snapshotSeq) {
 
 void EntityDeltaEncoder::reset() {
     history_.clear();
+    pending_.clear();
+    known_.clear();
     acked_ = sdk::match::kNoBaseline;
 }
 

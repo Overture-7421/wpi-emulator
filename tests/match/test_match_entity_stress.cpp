@@ -2,16 +2,19 @@
 // 20 balls/s (one shooter zone each, one ball per volley, 8 m/s) through the REAL plugin, SimulationSession and MatchHost over
 // impaired in-memory links, with a model client per remote robot. It answers whether the packet budget (kSnapshotBudgetBytes
 // per snapshot, one snapshot per 1/60 s on a LAN and 1/30 s on a WAN) keeps the fuel the clients hold fresh, and what the host
-// costs the relay. The numbers are the baseline of entity prediction.
+// costs the relay. Its first version measured the host BEFORE entity prediction; the gates below (ImprovementGate) keep the
+// improvement from regressing.
 //
 //   default run   a short variant of both network profiles (always runs, a few seconds)
 //   WPIEMU_STRESS=1         the full 20 s of fire, both aims, both profiles
 //   WPIEMU_STRESS_REPORT=1  prints the measured table on stdout (the numbers are in the doctest output either way)
 //
-// The model client counts the AGE of an entity update as the sim time between two updates of the same entity that moved in
-// between (the staleness a client would extrapolate or interpolate over).
+// The model client (tests/match/entity_memory.h) applies the entity deltas by the contract of sdk/match/snapshot_messages.h and
+// draws every entity extrapolated with the shared model; what it shows is compared with the truth at the time of each snapshot
+// (the SHOWN ERROR). A fuel is STARVED when it moves and is shown more than 5 cm off for over 500 ms. The AGE of an entity
+// update (sim time between two updates of the same entity that moved in between) is reported too: with prediction it is long by
+// design, because an entity that moves as predicted needs no update.
 #include <cinttypes>
-#include <fstream>
 #include <sstream>
 
 #include "../runtime/remote_robot_rig.h"
@@ -196,7 +199,18 @@ Result runScenario(const Scenario& sc) {
     options.hostZones = zonesOf(sc.aim);
     g26session::Rig rig(options);
     TruthTap tap(*rig.session);
-    mt::Harness h(tap);
+    core::match::MatchHostConfig hostConfig;
+    if (legacyRequested()) {
+        // The host as it was before entity prediction: any change of an entity is due, nothing is extrapolated, nothing waits.
+        hostConfig.deriveEntityMotion = false;
+        hostConfig.entity.errorThresholdCm = 0;
+        hostConfig.entity.restErrorThresholdCm = 0;
+        hostConfig.entity.unsettledErrorCm = 0;
+        hostConfig.entity.keyframeMovingUs = std::int64_t{1} << 40;
+        hostConfig.entity.keyframeRestUs = std::int64_t{1} << 40;
+        hostConfig.entity.suppressInFlight = false;
+    }
+    mt::Harness h(tap, hostConfig);
     REQUIRE(g26::registerPlugin(h.kit.plugins).ok());
 
     std::vector<std::unique_ptr<ModelClient>> clients;
@@ -243,9 +257,6 @@ Result runScenario(const Scenario& sc) {
     }
 
     // ---- the run ----
-    std::ofstream traceOut;   // TEMP trace
-    std::uint64_t lastTraceTick = ~0ull;
-    if (const auto p = wpiemu::sdk::readEnvironment("WPIEMU_STRESS_TRACE"); p.has_value() && !p->empty()) traceOut.open(*p);
     std::vector<double> simTickMs, hostTickEndMs;
     std::uint64_t tickNo = 0;
     const auto step = [&](bool firing, bool measuring) {
@@ -260,16 +271,6 @@ Result runScenario(const Scenario& sc) {
         const Clock::time_point t2 = Clock::now();
         REQUIRE(h.host->waitOutboundIdle(3s));
         const double tapMs = std::chrono::duration<double, std::milli>(tap.takeTapTime()).count();
-        if (traceOut.is_open()) {
-            if (const auto snap = tap.lastSnapshot(); snap != nullptr && snap->tick() != lastTraceTick) {
-                lastTraceTick = snap->tick();
-                for (const sdk::EntityGroupSample& g : snap->entityGroups()) {
-                    if (g.group != "fuel") continue;
-                    for (std::size_t i = 0; i < g.ids.size() && i < g.positions.size(); ++i)
-                        traceOut << snap->simTimeUs() << ',' << g.ids[i] << ',' << g.positions[i].x << ',' << g.positions[i].y << ',' << g.positions[i].z << '\n';
-                }
-            }
-        }
         for (const auto& c : clients) c->pump(measuring, kRobots);
         if (measuring) {
             simTickMs.push_back(msBetween(t0, t1));
@@ -395,7 +396,6 @@ Result runScenario(const Scenario& sc) {
             for (const sdk::HudValue& hv : robot.hud)
                 if (hv.key == g26::hud::kShots) r.shots += static_cast<std::uint64_t>(hv.value.asInt());
     }
-    if (traceOut.is_open()) traceOut.close();
     return r;
 }
 
@@ -422,6 +422,12 @@ std::string format(const Result& r, double expectedShots) {
     out << buf;
     std::snprintf(buf, sizeof buf, "  changes sent by reason: new %" PRIu64 ", prediction off %" PRIu64 ", keyframe %" PRIu64 ", removal %" PRIu64 "\n",
                   r.host.entityNewSent, r.host.entityErrorSent, r.host.entityKeyframesSent, r.host.entityRemovalsSent);
+    out << buf;
+    std::snprintf(buf, sizeof buf, "  changes deferred by reason: new %" PRIu64 ", prediction off %" PRIu64 ", keyframe %" PRIu64 ", removal %" PRIu64 "\n",
+                  r.host.entityNewDeferred, r.host.entityErrorDeferred, r.host.entityKeyframesDeferred, r.host.entityRemovalsDeferred);
+    out << buf;
+    std::snprintf(buf, sizeof buf, "  acknowledged baseline lags the snapshot by %.2f snapshots on average (1 = acknowledged in time)\n",
+                  r.host.baselineLagSamples > 0 ? static_cast<double>(r.host.baselineLagSum) / static_cast<double>(r.host.baselineLagSamples) : 0.0);
     out << buf;
     out << line3("update age of a moving entity", r.ageMs, "ms");
     out << line3("  the same in snapshots", r.ageSnapshots, "snapshots");
@@ -450,13 +456,43 @@ std::string format(const Result& r, double expectedShots) {
     out << buf;
     out << line3("host sim tick (800 fuel)", r.simTickMs, "ms", "(budget 5 ms)");
     out << line3("host onTickEnd (snapshots)", r.hostTickEndMs, "ms");
-    std::snprintf(buf, sizeof buf, "  shots fired %" PRIu64 " (about %.0f expected over the whole run), redundant upserts %" PRIu64 " (resent until acknowledged), snapshots unappliable %" PRIu64 ", stale dropped %" PRIu64 "\n",
-                  r.shots, expectedShots, r.totals.redundantUpserts, r.totals.unappliable, r.totals.staleDropped);
+    std::snprintf(buf, sizeof buf, "  shots fired %" PRIu64 " (about %.0f expected over the whole run), redundant upserts %" PRIu64 " (the picture was already right), full-state snapshots %" PRIu64 ", snapshots unappliable %" PRIu64 ", stale dropped %" PRIu64 "\n",
+                  r.shots, expectedShots, r.totals.redundantUpserts, r.totals.fullStates, r.totals.unappliable, r.totals.staleDropped);
     out << buf;
     return out.str();
 }
 
-void gate(const Result& r, bool wan, Aim aim) {
+// What the entity prediction improved. The limits are the regression gates of the improvement: each is far from what the
+// current host measures and far from what the host measured BEFORE entity prediction (every moved entity re-sent in full,
+// nearest to a robot first), which fails them. The baseline columns are from that host with this same scenario and model client
+// (the shown error and the starvation are defined on the client's picture, so they are comparable).
+//
+//   scenario                          baseline: shown error p95 | starved fuel (distinct, events) | max staleness
+//   LAN exchange, short               89.8 cm | 2, 184 | 830 ms         (> 10 cm off, per snapshot p95: 110)
+//   WAN exchange, short               128.6 cm | 137, 1118 | 2780 ms    (132)
+//   LAN exchange, 20 s                119.8 cm | 489, 74621 | 18900 ms  (170)
+//   WAN exchange, 20 s                307.6 cm | 997, 121300 | 18335 ms (261)
+//   LAN fire into the field, 20 s     352.7 cm | 683, 160112 | 6650 ms  (201)
+//   WAN fire into the field, 20 s     386.6 cm | 718, 104098 | 7845 ms  (252)
+// (off-field fire never saturated the budget: its baseline error was 0 and stays within 2 cm.)
+struct ImprovementGate {
+    double errorP95Cm = 0;           // shown error of a moving entity, p95
+    double badMovingP95 = 0;         // moving entities shown more than 10 cm off (or not at all), per snapshot, p95
+    std::size_t starvedIds = 0;      // distinct fuel that was wrong for more than 500 ms while moving
+    std::uint64_t starvedEvents = 0;
+    double maxStaleMs = 0;
+};
+
+ImprovementGate gateOf(bool wan, Aim aim, bool full) {
+    // Off-field fire never saturates the budget (the baseline was exact); under CPU load the WAN link of this in-memory rig can
+    // delay acknowledgements for a moment, so only the error and the starvation are gated there, not the per-snapshot count.
+    if (aim == Aim::OffField) return wan ? ImprovementGate{3.0, 1e9, 0, 0, 800.0} : ImprovementGate{3.0, 20.0, 0, 0, 300.0};
+    if (!full) return wan ? ImprovementGate{35.0, 80.0, 20, 400, 900.0} : ImprovementGate{12.0, 20.0, 0, 0, 300.0};
+    if (aim == Aim::IntoField) return wan ? ImprovementGate{70.0, 180.0, 450, 20000, 4000.0} : ImprovementGate{12.0, 30.0, 0, 0, 500.0};
+    return wan ? ImprovementGate{40.0, 100.0, 200, 5000, 3000.0} : ImprovementGate{12.0, 20.0, 0, 0, 500.0};
+}
+
+void gate(const Result& r, bool wan, Aim aim, bool full) {
     // The budget and what always travels.
     CHECK(r.host.snapshotsOverBudget == 0);
     CHECK(r.host.maxSnapshotBytes <= kSnapshotBudgetBytes);
@@ -467,9 +503,16 @@ void gate(const Result& r, bool wan, Aim aim) {
     CHECK(r.pluginIds);
     CHECK(r.idMismatches == 0);
     CHECK(r.totals.unappliable == 0);
-    // Nothing starves forever: once the shooters stop, everything at rest ends up right on every client. (During sustained fire
-    // the baseline does starve entities for seconds: r.starvedIds and r.maxStaleMs are reported, not gated.)
+    // Nothing starves forever: once the shooters stop, everything at rest ends up right on every client.
     CHECK(r.convergedAfterS >= 0.0);
+    // The improvement of entity prediction (see ImprovementGate).
+    const ImprovementGate limit = gateOf(wan, aim, full);
+    CHECK(r.errCm.p95 <= limit.errorP95Cm);
+    CHECK(r.badMoving.p95 <= limit.badMovingP95);
+    CHECK(r.starvedIds <= limit.starvedIds);
+    CHECK(r.starvedEvents <= limit.starvedEvents);
+    CHECK(r.maxStaleMs <= limit.maxStaleMs);
+    CHECK(r.errRestCm.p95 <= 1.0);   // what rests is shown where it rests
     // The fuel really flew (the scenario measures what it says).
     if (aim == Aim::IntoField) CHECK(r.moving.max > 100.0);   // a burst while the pile grows, then quiet
     else CHECK(r.moving.p50 > 20.0);
@@ -496,7 +539,8 @@ void runAndReport(const Scenario& sc, bool wan) {
     const std::string table = format(r, expected);
     MESSAGE("\n" << table);
     if (reportRequested()) std::fputs(table.c_str(), stdout);
-    gate(r, wan, sc.aim);
+    if (legacyRequested()) return;   // measured for comparison, not gated
+    gate(r, wan, sc.aim, sc.measureS > 5.0);
 }
 
 }  // namespace

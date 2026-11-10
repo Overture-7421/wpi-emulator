@@ -129,7 +129,7 @@ WireFrame buildWireFrame(const sdk::ISimSnapshot& snapshot, const HudKeyTable& h
             out.entities.push_back(e);
             raw.push_back(group.positions[i]);
         }
-        if (motion != nullptr) motion->observe(out.groupId, frame.simTimeUs, raw, out.entities);
+        if (motion != nullptr) motion->observe(out.groupId, frame.simTimeUs, raw, out.entities, out.unsettled);
         frame.groups.push_back(std::move(out));
     }
     return frame;

@@ -10,13 +10,29 @@
 // and remembers, per entity group, the entity state of the newest snapshot the client acknowledged
 // (MatchSnapshotAck::snapshotSeq). An EntityDelta carries `baselineId` = that acknowledged snapshotSeq, or kNoBaseline
 // for the full state; the upserts and removals are relative to the entity state the client holds for that snapshotSeq.
-// Entities not mentioned keep their baseline update and are EXTRAPOLATED from it (entity_prediction.h): the host only
-// upserts an entity whose extrapolation would be wrong by more than its threshold, or that has not been confirmed for a
-// keyframe interval (a few seconds even for an entity at rest). The host may omit due upserts to fit kSnapshotBudgetBytes;
-// they then catch up in a later snapshot. The client keeps the states of its recent snapshots (each entity with the
-// simTimeUs of the snapshot that upserted it) keyed by snapshotSeq, applies the delta on the one named by baselineId, stores
-// the result under the new snapshotSeq and acknowledges it. If the client no longer holds the baseline it acks nothing
-// newer and the host falls back to full state.
+// Entities not mentioned keep their update and are EXTRAPOLATED from it (entity_prediction.h): the host only upserts an
+// entity whose extrapolation would be wrong by more than its threshold, or that has not been confirmed for a keyframe
+// interval (a few seconds even for an entity at rest). The host may omit due upserts to fit kSnapshotBudgetBytes; they then
+// catch up in a later snapshot.
+//
+// CLIENT ENTITY MEMORY. Per entity group the client keeps id -> (EntityState, stampUs), stampUs being the simTimeUs of the
+// snapshot that carried the upsert. For each of its recent snapshots, by snapshotSeq, it records two such maps: the MIRROR
+// (exactly what the host assumes the client holds, the baseline plus the delta) and the DISPLAY (the mirror plus the updates
+// still in flight). Applying a snapshot (newer than the last applied one):
+//   1. the mirror starts as the recorded mirror of `baselineId` (empty for kNoBaseline; a baseline it no longer holds: apply
+//      nothing and acknowledge nothing, the host falls back to full state);
+//   2. delete every id in `removed` from it, then store every upserted entity with stampUs = the snapshot's simTimeUs;
+//   3. the display starts as that mirror and then, unless the delta has no baseline, takes over from the DISPLAY of the
+//      previously APPLIED snapshot every entity that is not in `removed`, whose stampUs is less than kEntityInFlightUs older
+//      than this snapshot's simTimeUs (an update still IN FLIGHT) and newer than the mirror's version (or not in the mirror).
+//      The host does not repeat an update that is in flight, i.e. sent in a snapshot whose acknowledgement has not arrived
+//      yet and that is less than kEntityInFlightUs old; this step keeps such an update from being undone by a snapshot built
+//      on an older baseline. An update that never arrives is sent again when that time is up (the baseline's version is then
+//      what both sides assume);
+//   4. record both, acknowledge the snapshot.
+// The picture drawn is the display of the newest applied snapshot, every entity extrapolated from its own stamp.
+// Removals: the host repeats the removal of every entity it ever upserted and no longer has, in every snapshot, until a
+// snapshot that carries it is acknowledged, whatever the baselines hold; so no entity the host does not have can stay.
 
 #include <cstdint>
 #include <string>

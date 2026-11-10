@@ -813,7 +813,7 @@ struct MatchHost::Impl {
             ZoneRestPoses rest;
             rest[wire::kHostParticipantId] = hostRest;
             for (const auto& [id, p] : parts) rest[id] = p.zoneRest;
-            frame = buildWireFrame(*snap, hudKeys, makeInfo(*snap), rest, &motion);
+            frame = buildWireFrame(*snap, hudKeys, makeInfo(*snap), rest, config.deriveEntityMotion ? &motion : nullptr);
             stats.hudKeysUnknown += frame->hudKeysUnknown;
         }
         return *frame;
@@ -846,6 +846,10 @@ struct MatchHost::Impl {
         s.gameHud = frame.gameHud;
 
         const EntityPlan plan = p.encoder.plan(frame.groups, frame.anchors, frame.simTimeUs);
+        if (plan.baselineId != wire::kNoBaseline) {
+            stats.baselineLagSum += static_cast<std::uint32_t>(s.snapshotSeq - plan.baselineId);
+            ++stats.baselineLagSamples;
+        }
         const SnapshotFit fit = fitSnapshot(s, plan, config.snapshotBudgetBytes, [this](const wire::MatchSnapshot& m) { return encodedSize(m); }, p.entitySize);
         if (fit.coreOverBudget) ++stats.snapshotsOverBudget;
         if (fit.entityChanges < plan.changes.size()) {
@@ -858,6 +862,14 @@ struct MatchHost::Impl {
                 case EntityChangeReason::New: ++stats.entityNewSent; break;
                 case EntityChangeReason::Error: ++stats.entityErrorSent; break;
                 case EntityChangeReason::Keyframe: ++stats.entityKeyframesSent; break;
+            }
+        }
+        for (std::size_t k = fit.entityChanges; k < plan.changes.size(); ++k) {
+            switch (plan.changes[k].reason) {
+                case EntityChangeReason::Removal: ++stats.entityRemovalsDeferred; break;
+                case EntityChangeReason::New: ++stats.entityNewDeferred; break;
+                case EntityChangeReason::Error: ++stats.entityErrorDeferred; break;
+                case EntityChangeReason::Keyframe: ++stats.entityKeyframesDeferred; break;
             }
         }
         stats.maxSnapshotBytes = std::max(stats.maxSnapshotBytes, fit.encodedBytes);
