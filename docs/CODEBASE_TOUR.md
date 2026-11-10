@@ -16,8 +16,12 @@ The [glossary](GLOSSARY.md) defines shared terms. For background on the technolo
 | `sdk/` | Header-only interfaces and shared data types used across module boundaries |
 | `core/runtime/` | Configuration, validation, launcher, device hub, session, runner, and sensors |
 | `core/mechanisms/` | Mechanism templates, motor drives, and physical plants |
-| `core/physics/` | Drivetrains, tire models, chassis, and the Box3D adapter |
-| `ipc/` | Local transport and binary message codec |
+| `core/physics/` | Drivetrains, tire models, chassis, the Box3D adapter, and `WheelSetpointController` for remote robots |
+| `core/match/` | The practice-match server (`MatchHost`): joins, input scheduling, per-client snapshots, entity deltas |
+| `ipc/` | Local transport and binary message codec (also the match and relay messages) |
+| `net/` | ENet and relay transports, invite codes and the end-to-end `SecureTransport` |
+| `relay/` | The relay server (`wpiemu_relay`), its probe, its Dockerfile and tests |
+| `infra/relay/` | Bicep, preflight and bootstrap scripts for the Azure relay (no C++) |
 | `hal_abi/` | Per-HAL-ABI headers, HAL clock and SimDevice constants for the robot-process modules |
 | `halsim_ext/` | Extension loaded into the robot process; HAL timing, message handling, and bridge lifecycle |
 | `bridges/` | HAL, vendor SimDevice, and camera adapters; `builtin_bridges.cpp` aggregates them |
@@ -82,6 +86,33 @@ and [`SessionRunner`](../core/runtime/src/runtime/session_runner.cpp). Focused e
 [`tests/runtime/test_session_runner.cpp`](../tests/runtime/test_session_runner.cpp), and
 [`halsim_ext/tests/test_lockstep.cpp`](../halsim_ext/tests/test_lockstep.cpp).
 See [Architecture](ARCHITECTURE.md#one-simulation-tick) for ownership and the full system-level sequence.
+
+## Follow a remote player's input to a snapshot
+
+In a hosted practice match a game client has no robot process, only a network connection. Follow one
+input from the wire to the world and back:
+
+1. [`MatchHosting`](../app/host/match_hosting.cpp) (composed by `RobotSession` when hosting is on) opens
+   an ENet listener or a relay room from [`net/`](../net/include/wpiemu/net/enet_transport.h) and wraps
+   every accepted peer in [`SecureTransport`](../net/include/wpiemu/net/secure_transport.h) before the
+   host sees it.
+2. A reader thread per client decodes frames into [`MatchHost`](../core/match/src/match_host.cpp)'s inbox.
+   The simulation thread drains it inside `onPoll` (the runner's tick observer): a `Join` goes through
+   [`acceptRemoteSpec`](../core/match/src/spec_intake.cpp) (decode, default, validate, clamp) and
+   `SimulationSession::addRemoteRobot`; a `MatchInputPacket` goes to `submitRemoteInput`.
+3. [`RemoteRobots::beforeStep`](../core/runtime/src/runtime/remote_robots.cpp) applies the input due on
+   this tick; the [`WheelSetpointController`](../core/physics/src/wheel_setpoint_controller.cpp) turns
+   wheel setpoints into motor voltages and the robot's `ChassisSimulator` adds its tire forces before the one
+   world step. `afterStep` completes each remote robot's step.
+4. `onTickEnd` builds a snapshot per client ([`snapshot_budget.cpp`](../core/match/src/snapshot_budget.cpp)
+   fits it to the 1200-byte budget; [`entity_delta.cpp`](../core/match/src/entity_delta.cpp) chooses fuel
+   updates) and queues it on that client's `PeerOutbox`; a sender thread transmits it.
+
+Focused tests are in [`tests/match`](../tests/match) (`test_match_host_join.cpp`,
+`test_match_host_inputs.cpp`, `test_match_host_snapshots.cpp`),
+[`tests/runtime/test_remote_robots_tick.cpp`](../tests/runtime/test_remote_robots_tick.cpp) and
+[`tests/physics/test_wheel_setpoint_controller.cpp`](../tests/physics/test_wheel_setpoint_controller.cpp).
+The wire contract is [Match network](reference/match-network.md).
 
 ## Follow an editor click to `robot.json`
 
