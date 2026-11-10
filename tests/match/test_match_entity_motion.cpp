@@ -183,8 +183,8 @@ TEST_CASE("entity motion: teleports and gaps give no velocity, new entities wait
     CHECK(std::abs(entities[1].vxCms - 667) <= 1);   // 10 cm in 15 ms
 
     // Entity 2 leaves for a frame and comes back: it is new again.
-    entities.erase(entities.begin() + 1);
-    raw.erase(raw.begin() + 1);
+    entities.pop_back();
+    raw.pop_back();
     tracker.observe(0, 1'090'000, raw, entities, unsettled);
     entities.push_back({});
     entities[1].id = 2;

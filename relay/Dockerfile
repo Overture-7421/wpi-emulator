@@ -48,6 +48,12 @@ LABEL org.opencontainers.image.title="wpiemu-relay" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.base.name="ubuntu:24.04"
 
+# The floating base tag can lag behind Ubuntu security updates (Trivy fails the pipeline on fixable HIGH findings), so install them.
+# hadolint ignore=DL3005
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 # A fixed numeric uid/gid lets orchestrators verify "runs as non-root" without resolving names.
 RUN groupadd --system --gid 10001 relay \
     && useradd --system --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin relay

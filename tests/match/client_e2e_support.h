@@ -143,10 +143,11 @@ public:
         std::size_t maxPlayers = 6;
     };
 
-    explicit E2eWorld(Options options = {})
+    explicit E2eWorld(Options options)
         : options_(options), rig(makeRigOptions(options)), adapter(*rig.session), h(adapter, MatchHostConfig{}) {
         REQUIRE(g26::registerPlugin(h.kit.plugins).ok());
     }
+    E2eWorld() : E2eWorld(Options{}) {}
 
     static g26session::Options makeRigOptions(const Options& o) {
         g26session::Options r;

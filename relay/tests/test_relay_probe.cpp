@@ -474,7 +474,7 @@ TEST_CASE("relay probe: the JSON report has the documented shape") {
     CHECK(member(report, "mode").text == "full");
     CHECK(member(report, "relay").text == relayArg(relay.port()));
     CHECK(member(report, "resolvedAddress").text == relayArg(relay.port()));
-    const Json& rtt = member(report, "rttMs");
+    const Json rtt = member(report, "rttMs");
     REQUIRE(rtt.type == Json::Type::Object);
     for (const char* key : {"min", "avg", "p95", "max"}) {
         CHECK_MESSAGE(member(rtt, key).type == Json::Type::Number, key);
@@ -489,7 +489,7 @@ TEST_CASE("relay probe: the JSON report has the documented shape") {
     CHECK(report.get("error") == nullptr);
     CHECK(report.get("invite") == nullptr);
 
-    const Json& steps = member(report, "steps");
+    const Json steps = member(report, "steps");
     REQUIRE(steps.type == Json::Type::Array);
     std::vector<std::string> names;
     for (const Json& step : steps.items) {

@@ -27,7 +27,8 @@ public:
         double snapThreshold = 200.0;  // a gap beyond this is a jump
     };
 
-    explicit TimelineTracker(Config config = {}) : config_(config) {}
+    TimelineTracker() : config_(Config{}) {}
+    explicit TimelineTracker(Config config) : config_(config) {}
 
     void reset(double value) {
         value_ = value;

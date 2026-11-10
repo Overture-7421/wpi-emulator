@@ -289,7 +289,8 @@ jobs:
       - name: Verify the dmg
         if: runner.os == 'macOS'
         run: |
-          dmg="$(ls build/release/pkg/*.dmg | head -n1)"
+          dmgs=(build/release/pkg/*.dmg)
+          dmg="${dmgs[0]}"
           mount="$RUNNER_TEMP/wpiemu-dmg"
           mkdir -p "$mount"
           hdiutil attach "$dmg" -mountpoint "$mount" -nobrowse -readonly
@@ -322,7 +323,8 @@ jobs:
       - name: Verify the client dmg
         if: runner.os == 'macOS'
         run: |
-          dmg="$(ls build/release/pkg-client/*.dmg | head -n1)"
+          dmgs=(build/release/pkg-client/*.dmg)
+          dmg="${dmgs[0]}"
           mount="$RUNNER_TEMP/wpiemu-client-dmg"
           mkdir -p "$mount"
           hdiutil attach "$dmg" -mountpoint "$mount" -nobrowse -readonly
