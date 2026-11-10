@@ -120,21 +120,21 @@ std::string RelayLog::format(LogLevel level, std::string_view event, const LogFi
     return line;
 }
 
-void RelayLog::emit(LogLevel level, std::string_view event, const LogField* fields, std::size_t count) {
+void RelayLog::write(LogLevel level, std::string_view event, const LogField* fields, std::size_t count) {
     sink_(format(level, event, fields, count));
 }
 
 void RelayLog::log(LogLevel level, std::string_view event, std::initializer_list<LogField> fields) {
     if (level < minLevel_) return;
     std::lock_guard lock(mutex_);
-    emit(level, event, fields.begin(), fields.size());
+    write(level, event, fields.begin(), fields.size());
 }
 
 void RelayLog::flushSuppressed(std::int64_t nowMs) {
     std::lock_guard lock(mutex_);
     if (suppressed_ == 0 || nowMs - windowStartMs_ < 1000) return;
     const LogField summary[] = {{"count", suppressed_}};
-    emit(LogLevel::Warn, "log_suppressed", summary, 1);
+    write(LogLevel::Warn, "log_suppressed", summary, 1);
     suppressed_ = 0;
     windowStartMs_ = nowMs;
     windowCount_ = 0;
@@ -147,7 +147,7 @@ void RelayLog::logLimited(LogLevel level, std::string_view event, std::initializ
     if (nowMs - windowStartMs_ >= 1000) {
         if (suppressed_ != 0) {
             const LogField summary[] = {{"count", suppressed_}};
-            emit(LogLevel::Warn, "log_suppressed", summary, 1);
+            write(LogLevel::Warn, "log_suppressed", summary, 1);
             suppressed_ = 0;
         }
         windowStartMs_ = nowMs;
@@ -158,7 +158,7 @@ void RelayLog::logLimited(LogLevel level, std::string_view event, std::initializ
         return;
     }
     ++windowCount_;
-    emit(level, event, fields.begin(), fields.size());
+    write(level, event, fields.begin(), fields.size());
 }
 
 }  // namespace wpiemu::relay

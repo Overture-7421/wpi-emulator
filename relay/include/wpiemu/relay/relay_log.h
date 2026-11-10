@@ -54,7 +54,7 @@ public:
     std::string format(LogLevel level, std::string_view event, const LogField* fields, std::size_t count) const;
 
 private:
-    void emit(LogLevel level, std::string_view event, const LogField* fields, std::size_t count);
+    void write(LogLevel level, std::string_view event, const LogField* fields, std::size_t count);
 
     LogFormat format_;
     Sink sink_;
