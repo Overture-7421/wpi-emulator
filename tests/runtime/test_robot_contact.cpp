@@ -20,7 +20,6 @@ namespace {
 constexpr double kPiRad = 3.14159265358979;
 constexpr float kFrameHeightM = 0.15f;
 constexpr float kClearanceM = 0.03f;
-constexpr float kHullTopM = kClearanceM + kFrameHeightM;          // top of a robot's frame above the floor
 constexpr double kInscribedSumM = 0.3875 + 0.3875;                // two robots' inscribed radii: closer than this = overlapping
 
 // REBUILT bump (field_dimensions.h kBump*): 6.513 in ridge, 15 degree ramps, 73 in wide. Two tilted slabs, as the 2026 field

@@ -171,7 +171,7 @@ TEST_CASE("hosting: a direct match over loopback joins, drives, snapshots, kicks
     SimLoop loop(h.rig, *h.hosting);
     h.hosting->start();
     loop.start();
-    REQUIRE(waitUntil([&] { return h.status()->accepting(); }, 5s));
+    REQUIRE(waitUntil([&] { return h.status()->accepting() && h.status()->phase == host::HostingPhase::Live; }, 5s));
     const auto up = h.status();
     CHECK(up->phase == host::HostingPhase::Live);
     CHECK(up->endpoint.rfind("enet://", 0) == 0);

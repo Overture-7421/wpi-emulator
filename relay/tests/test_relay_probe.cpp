@@ -67,11 +67,12 @@ struct Json {
     double number = 0;
     std::string text;
     std::vector<Json> items;
-    std::vector<std::pair<std::string, Json>> members;
+    std::vector<std::string> keys;     // an object's members: keys[i] names values[i] (a pair of an incomplete Json is not allowed)
+    std::vector<Json> values;
 
     const Json* get(const std::string& key) const {
-        for (const auto& [k, v] : members)
-            if (k == key) return &v;
+        for (std::size_t i = 0; i < keys.size(); ++i)
+            if (keys[i] == key) return &values[i];
         return nullptr;
     }
 };
@@ -138,7 +139,8 @@ private:
                 if (!key || !take(':')) return std::nullopt;
                 auto member = parseValue();
                 if (!member) return std::nullopt;
-                value.members.emplace_back(*key, std::move(*member));
+                value.keys.push_back(std::move(*key));
+                value.values.push_back(std::move(*member));
             } while (take(','));
             if (!take('}')) return std::nullopt;
             return value;

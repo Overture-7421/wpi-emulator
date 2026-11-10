@@ -36,7 +36,7 @@ jobs:
         env:
           PLATFORMS: ${{ inputs.platforms || 'windows,linux,macos' }}
         run: |
-          # macos-15 (Xcode 16, arm64) matches release.yml; macos-14 was retired on 2026-11-02. macos-latest is macOS 26 whose SDK
+          # macos-15 (Xcode 16, arm64) matches release.yml; the older macOS 14 image was retired on 2026-11-02. macos-latest is macOS 26 whose SDK
           # no longer ships the AGL
           # framework that Qt 6.8.3 links against ("ld: framework 'AGL' not found").
           all='[{"name":"windows","os":"windows-2025-vs2026","preset":"windows-vs2022","qt_arch":"win64_msvc2022_64"},

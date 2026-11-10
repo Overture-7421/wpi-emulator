@@ -118,7 +118,7 @@ std::string rttText(const RttSummary& r) {
 
 class Run {
 public:
-    Run(const ProbeOptions& options) : options_(options), start_(Clock::now()), deadline_(start_ + options.timeout) {
+    Run(const ProbeOptions& options) : start_(Clock::now()), deadline_(start_ + options.timeout) {
         result.mode = options.mode;
         result.relay = hostPortText(options.relayHost, options.relayPort);
     }
@@ -146,7 +146,6 @@ public:
     ProbeResult result;
 
 private:
-    const ProbeOptions& options_;
     Clock::time_point start_;
     Clock::time_point deadline_;
 };

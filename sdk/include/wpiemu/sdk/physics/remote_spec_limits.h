@@ -404,7 +404,8 @@ void visitRemoteSpec(V& v, ChassisSpec& c, DrivetrainSpec& d) {
     // Zero means "derive from the box"; anything else must stay near the solid-box value.
     const double boxX = mass * (sy * sy + sz * sz) / 12.0, boxY = mass * (sx * sx + sz * sz) / 12.0,
                  boxZ = mass * (sx * sx + sy * sy) / 12.0;
-    const auto scaled = [&L](double box) { return LimitRange{L.inertiaScale.min * box, L.inertiaScale.max * box}; };
+    const LimitRange inertiaScale = L.inertiaScale;
+    const auto scaled = [inertiaScale](double box) { return LimitRange{inertiaScale.min * box, inertiaScale.max * box}; };
     v.number("chassis.inertiaDiagKgM2.x", c.inertiaDiagKgM2.x, scaled(boxX), 0.f, true);
     v.number("chassis.inertiaDiagKgM2.y", c.inertiaDiagKgM2.y, scaled(boxY), 0.f, true);
     v.number("chassis.inertiaDiagKgM2.z", c.inertiaDiagKgM2.z, scaled(boxZ), 0.f, true);

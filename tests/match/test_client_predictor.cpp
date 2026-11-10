@@ -17,8 +17,6 @@ using wpiemu::core::match::ReconcileKind;
 
 namespace {
 
-constexpr float kDt = 0.005f;
-
 // The authoritative state a host snapshot would carry for `s`: through the wire's quantization, as a client receives it.
 OwnAuthoritative wireRoundTrip(const OwnBodyState& s) {
     wire::RobotWireState r;
