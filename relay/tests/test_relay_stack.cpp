@@ -621,6 +621,32 @@ TEST_CASE("relay stack: a clean host close sends CloseRoom, so the room is gone 
     CHECK(relay.stats().roomsCreated == 2);
 }
 
+TEST_CASE("relay stack: the frames a host sent just before CloseRoom still reach its clients") {
+    // The two ride on different channels (game frames, control): the relay must forward what was queued before it closes the room.
+    StackRelay relay;
+    REQUIRE(relay.started());
+    const Invite invite = newInvite();
+    auto host = startHost(relay, invite.secret);
+    auto joined = joinRaw(relay, invite.room);
+    REQUIRE(joined.ok());
+    auto client = std::move(joined).value();
+    auto peer = acceptPeer(*host);
+    REQUIRE(peer != nullptr);
+
+    constexpr int kFrames = 20;
+    for (int i = 0; i < kFrames; ++i) REQUIRE(peer->send(bytesOf("last-" + std::to_string(i))).ok());
+    host->close();
+    for (int i = 0; i < kFrames; ++i) {
+        Bytes frame;
+        const auto got = client->receive(frame, 5s);
+        REQUIRE_MESSAGE(got.ok(), "the client lost frame " << i << " to the closing room");
+        REQUIRE(got.value());
+        CHECK(frame == bytesOf("last-" + std::to_string(i)));
+    }
+    CHECK(receiveError(*client) == ErrorCode::Disconnected);
+    REQUIRE(waitFor([&] { return relay.stats().roomsClosed == 1; }));
+}
+
 TEST_CASE("relay stack: a host that leaves without CloseRoom keeps the room for its TTL") {
     StackRelay relay;
     REQUIRE(relay.started());
