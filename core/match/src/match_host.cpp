@@ -76,6 +76,7 @@ struct Participant {
     proto::AllianceStation station = proto::AllianceStation::Red1;
     wire::ResumeToken token{};
     wire::RobotAppearance appearance;      // built once from the accepted spec; sent in every roster
+    std::vector<sdk::Pose3> zoneRest;      // appearanceZoneRestPoses(appearance): what snapshot zone poses are relative to
     std::uint64_t linkId = 0;              // the connection serving it; 0 = dropped, resumable
     Clock::time_point detachedAt{};
     std::uint64_t sessionId = proto::kUnspecified;
@@ -471,6 +472,7 @@ struct MatchHost::Impl {
         p.station = *station;
         p.token = *token;
         p.appearance = std::move(appearance);
+        p.zoneRest = wire::appearanceZoneRestPoses(p.appearance);
         p.linkId = c.linkId;
         p.sessionId = newSessionId();
         p.inputBucket.reset(config.inputBurst, t);
@@ -806,7 +808,11 @@ struct MatchHost::Impl {
     const WireFrame& ensureFrame(std::optional<WireFrame>& frame) {
         if (!frame) {
             const std::shared_ptr<const sdk::ISimSnapshot> snap = session.buildSnapshot(state == wire::MatchState::Paused, state != wire::MatchState::Lobby);
-            frame = buildWireFrame(*snap, hudKeys, makeInfo(*snap));
+            const std::vector<sdk::Pose3> hostRest = wire::appearanceZoneRestPoses(session.hostAppearance());
+            ZoneRestPoses rest;
+            rest[wire::kHostParticipantId] = hostRest;
+            for (const auto& [id, p] : parts) rest[id] = p.zoneRest;
+            frame = buildWireFrame(*snap, hudKeys, makeInfo(*snap), rest);
             stats.hudKeysUnknown += frame->hudKeysUnknown;
         }
         return *frame;

@@ -5,7 +5,9 @@
 // client (acknowledgement fields, entity deltas). Quantization uses sdk/match/quantize.h only, so it is deterministic.
 
 #include <cstdint>
+#include <map>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "wpiemu/core/match/entity_delta.h"
@@ -35,6 +37,12 @@ struct WireFrame {
 // carried (nullopt).
 std::optional<float> hudWireValue(const sdk::Value& value);
 
-WireFrame buildWireFrame(const sdk::ISimSnapshot& snapshot, const HudKeyTable& hudKeys, const sdk::match::MatchInfo& info);
+// The rest pose of every zone of a robot (sdk::match::appearanceZoneRestPoses of the appearance the roster carries), by
+// participant id. The robots' RobotWireState::zonePoses list the zones whose effective pose (ZoneState::poseInChassis, the
+// rest pose when unset) differs from it; a robot without an entry lists none.
+using ZoneRestPoses = std::map<sdk::match::ParticipantId, std::span<const sdk::Pose3>>;
+
+WireFrame buildWireFrame(const sdk::ISimSnapshot& snapshot, const HudKeyTable& hudKeys, const sdk::match::MatchInfo& info,
+                         const ZoneRestPoses& zoneRestPoses = {});
 
 }  // namespace wpiemu::core::match
