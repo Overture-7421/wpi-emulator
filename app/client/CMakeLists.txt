@@ -16,6 +16,9 @@ target_link_libraries(wpiemu_app_client
     PRIVATE wpiemu_plugins_builtin)
 wpiemu_target_defaults(wpiemu_app_client)
 set_target_properties(wpiemu_app_client PROPERTIES AUTOMOC ON)
+if(WIN32)
+    target_link_libraries(wpiemu_app_client PRIVATE winmm)   # timeBeginPeriod: the client's worker wakes every ~2 ms
+endif()
 
 qt_add_executable(wpiemu_client main.cpp)
 target_link_libraries(wpiemu_client PRIVATE
