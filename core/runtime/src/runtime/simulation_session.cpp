@@ -3,8 +3,11 @@
 #include <algorithm>
 #include <cmath>
 
+#include "remote_robots.h"
+#include "wheel_sample.h"
 #include "wpiemu/core/config/config_validator.h"
 #include "wpiemu/core/runtime/motion_link_graph.h"
+#include "wpiemu/sdk/game/default_field.h"
 #include "wpiemu/sdk/mechanisms/attachment.h"
 
 namespace wpiemu::core::runtime {
@@ -180,8 +183,10 @@ Status SimulationSession::build(SessionParts& parts) {
     if (!chassis) return makeError(chassis.error().code, "chassis: " + chassis.error().message);
     chassis_ = chassis.value();
     if (coupling_) coupling_->bind(*world_, chassis_.body, chassis_.baseMass);
+    remote_ = std::make_unique<RemoteRobots>(*world_, std::move(parts.remoteChassisFactory), parts.drivetrains, parts.tireModels);
+    remote_->setHost({config_.name, chassis_.body, ds_.station, remoteRobotsEnabled()});
     ctx_ = std::make_unique<SimContext>(SimContextServices{*world_, clock_, hub_, *logger_, config_, rng_, ds_, chassis_.body, nullptr,
-                                                           coupling_ ? &coupling_->service() : nullptr, parts.sounds});
+                                                           coupling_ ? &coupling_->service() : nullptr, parts.sounds, remote_.get()});
 
     if (!config_.drivetrain.spec.wheels.empty()) {
         if (parts.drivetrains == nullptr || parts.tireModels == nullptr)
@@ -242,6 +247,8 @@ Status SimulationSession::build(SessionParts& parts) {
         if (!state) return makeError(state.error().code, "plugin game state: " + state.error().message);
         gameState_ = std::move(state).value();
         ctx_->bindGameState(gameState_.get());
+        // The host robot is on the roster from the start: announce it before the first reset (reset keeps the roster).
+        gameState_->onRobotAdded(*ctx_, remote_->robots().front());
         gameState_->reset(*ctx_);
     }
 
@@ -271,6 +278,8 @@ void SimulationSession::reset() {
     lastVelocity_ = Vec3{};
     brownoutWarned_ = false;
     std::erase_if(sessionWarnings_, [](const HubWarning& w) { return w.code == "brownout"; });
+    remote_->reset();
+    remote_->setHostState(ds_.station, remoteRobotsEnabled());
     if (gameState_) gameState_->reset(*ctx_);
     vision_->reset();
 }
@@ -367,9 +376,16 @@ void SimulationSession::tick(proto::SensorFrame& out, bool fullFrame) {
     double drivetrainCurrentA = 0.0;
     stepDrivetrain(dt, drivetrainCurrentA);
 
+    // Remote robots join the same step: their inputs due this tick are applied and their forces added before the ONE
+    // world step; completeStep follows it. The host drivetrain above has already applied its forces.
+    const bool remoteEnabled = remoteRobotsEnabled();
+    remote_->setHostState(ds_.station, remoteEnabled);
+    remote_->beforeStep(clock_.tickIndex(), clock_.simTimeUs(), remoteEnabled, static_cast<float>(dt));
+
     if (coupling_) coupling_->beforeStep(*world_, chassis_.body, chassis_.baseMass);
     world_->step(static_cast<float>(dt));
     if (coupling_) coupling_->afterStep();
+    remote_->afterStep(static_cast<float>(dt));
 
     if (gameState_) gameState_->step(*ctx_, dt);
     if (module_ != nullptr) module_->onTick(*ctx_, dt);
@@ -407,18 +423,7 @@ std::shared_ptr<const ISimSnapshot> SimulationSession::buildSnapshot(bool paused
     if (drivetrain_) {
         const auto& wheels = drivetrain_->spec().wheels;
         const auto states = drivetrain_->wheelStates();
-        for (std::size_t i = 0; i < wheels.size() && i < states.size(); ++i) {
-            WheelSample w;
-            w.name = wheels[i].name;
-            w.contactPoint = states[i].contactPoint;
-            w.steerAngleRad = states[i].steerAngleRad;
-            w.spinAngleRad = states[i].driveWheelAngleRad;
-            w.normalLoadN = states[i].normalLoadN;
-            w.slipRatio = states[i].slipRatio;
-            w.slipAngleTan = states[i].slipAngleTan;
-            w.airborne = states[i].airborne;
-            d.wheels.push_back(std::move(w));
-        }
+        for (std::size_t i = 0; i < wheels.size() && i < states.size(); ++i) d.wheels.push_back(makeWheelSample(wheels[i], states[i]));
     }
     for (const auto& m : mechanismInstances_) d.mechanisms.push_back(m->state());
     const auto devices = hub_.discovered();
@@ -433,10 +438,64 @@ std::shared_ptr<const ISimSnapshot> SimulationSession::buildSnapshot(bool paused
     d.driverStation = ds_;
     d.physicsStats = world_->stats();
     if (gameState_) gameState_->publish(builder);
+    // The samples come first so that publishRobot can attach each robot's HUD to its own sample.
+    remote_->addSamples(builder);
+    if (gameState_) remote_->publishHud(*gameState_, builder);
     vision_->publish(builder);
     sensors_->publish(builder);
     return builder.build();
 }
+
+// ---- remote robots ---------------------------------------------------------------------------------------------
+
+bool SimulationSession::remoteRobotsEnabled() const { return ds_.enabled && !ds_.eStop && !battery_.brownedOut(); }
+
+FieldFrame SimulationSession::fieldFrame() const {
+    FieldFrame frame = module_ != nullptr ? module_->fieldFrame() : FieldFrame{};
+    if (field_) {
+        frame.lengthM = field_->description().lengthM;
+        frame.widthM = field_->description().widthM;
+    }
+    if (!(frame.lengthM > 0.f) || !(frame.widthM > 0.f)) {
+        frame.lengthM = default_field::kLengthM;
+        frame.widthM = default_field::kWidthM;
+    }
+    return frame;
+}
+
+Status SimulationSession::addRemoteRobot(const RemoteRobotRequest& request) {
+    if (Status s = remote_->validate(request); !s) return s;
+    remote_->setHostState(ds_.station, remoteRobotsEnabled());
+
+    // Clear of the host's start (where reset() will put it) and of the robots already placed.
+    std::vector<StartDisc> occupied = remote_->footprints();
+    const Vec3 hostStart = startOverride_ ? Vec3{startOverride_->xM, startOverride_->yM, 0.f} : chassis_.spawnPose.position;
+    occupied.push_back({hostStart.x, hostStart.y, chassisFootprintRadiusM(config_.chassis)});
+    const RobotStartPose placement =
+        remoteStartPoseClear(fieldFrame(), request.station, chassisFootprintRadiusM(request.spec.chassis), occupied);
+
+    if (Status s = remote_->add(request, placement, clock_.simTimeUs()); !s) return s;
+    if (gameState_) {
+        if (const RobotView* view = remote_->find(request.participantId)) gameState_->onRobotAdded(*ctx_, *view);
+    }
+    return okStatus();
+}
+
+Status SimulationSession::removeRemoteRobot(match::ParticipantId id) {
+    if (!remote_->remove(id)) return makeError(ErrorCode::NotFound, "no remote robot " + std::to_string(id));
+    if (gameState_) gameState_->onRobotRemoved(*ctx_, id);
+    return okStatus();
+}
+
+Result<RemoteInputOutcome> SimulationSession::submitRemoteInput(match::ParticipantId id, const match::MatchInput& input) {
+    return remote_->submit(id, input, clock_.tickIndex(), clock_.fixedStepUs());
+}
+
+std::vector<match::ParticipantId> SimulationSession::remoteRobotIds() const { return remote_->ids(); }
+
+std::optional<RemoteRobotInfo> SimulationSession::remoteRobotInfo(match::ParticipantId id) const { return remote_->info(id); }
+
+const IRobotDirectory& SimulationSession::robots() const { return *remote_; }
 
 
 }  // namespace wpiemu::core::runtime

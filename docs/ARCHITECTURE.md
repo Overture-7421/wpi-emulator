@@ -97,8 +97,10 @@ For tick N:
    tick while another is outstanding.
 2. `SimulationSession` advances mechanisms using the latest actuator outputs and mapped slots.
    Motion-linked axes follow dependency order; mechanisms also submit chassis coupling.
-3. The drivetrain computes wheel forces. Runtime applies chassis/payload coupling, then advances
-   the physics world once.
+3. The drivetrain computes wheel forces. In a practice match every remote robot then applies the input
+   due on this tick, turns its wheel setpoints into motor voltages and adds its own tire forces
+   (in participant order). Runtime applies chassis/payload coupling, then advances the physics world
+   once for every robot; each remote robot completes its step after it.
 4. Game state consumes the resulting world events. The plugin's `onTick` hook follows; game-fed
    sensors then translate published values into device feedback.
 5. Runtime updates IMU and battery feedback, advances its integer clock, and builds a sensor frame.

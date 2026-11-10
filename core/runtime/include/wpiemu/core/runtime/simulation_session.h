@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "wpiemu/core/runtime/device_hub.h"
+#include "wpiemu/core/runtime/remote_robot.h"
 #include "wpiemu/core/runtime/sim_clock.h"
 #include "wpiemu/core/runtime/sensor_system.h"
 #include "wpiemu/core/runtime/vision_system.h"
@@ -81,27 +82,33 @@ struct SessionParts {
     sdk::ISoundCueSink* sounds = nullptr;             // where the game's sound cue requests go (thread-safe); null => discarded
     ChassisBuilder chassisBuilder;                    // empty => buildReferenceChassis
     std::unique_ptr<ICouplingDriver> coupling;        // empty => mechanisms see the SDK null coupling
+    RemoteChassisFactory remoteChassisFactory;        // empty => addRemoteRobot returns ErrorCode::Unsupported
     SessionOptions options;
 };
+
+class RemoteRobots;   // core/runtime internal (src/runtime/remote_robots.h)
 
 // One simulation run: owns the world, chassis, drivetrain, mechanisms, device hub, game state, cameras and runs the
 // per-tick pipeline of ARCHITECTURE section 4. Pure and synchronous: no threads, no I/O, no wall clock, so it is
 // deterministic and unit-testable; SessionRunner adds lock-step I/O around it.
-// Destruction order (reverse of construction): game state, mechanisms, drivetrain, field, world.
-// Threading: sim thread only.
+// Destruction order (reverse of construction): game state, mechanisms, remote robots, drivetrain, field, world.
+// Threading: sim thread only, including every remote robot method: the match host adds and removes robots and submits
+// inputs between ticks, never from another thread and never inside tick().
 class SimulationSession {
 public:
     ~SimulationSession();
     SimulationSession(const SimulationSession&) = delete;
     SimulationSession& operator=(const SimulationSession&) = delete;
 
-    // One tick: mechanisms -> drivetrain -> physics -> game -> egress (IMU, battery) -> SensorFrame.
+    // One tick: mechanisms -> host drivetrain -> remote robots (inputs due, controllers, tire forces) -> physics (ONE
+    // step for every robot) -> remote robots complete -> game -> egress (IMU, battery) -> SensorFrame.
     // The caller has already ingested the previous ActuatorFrame into hub() (ingress) and set the DS state.
     // Fills tick (0-based within the epoch), simTimeUs (after the step), stepUs, battery, samples; the runner stamps identity.
     void tick(sdk::proto::SensorFrame& out, bool fullFrame);
     // Back to t = 0: chassis pose/velocity, drivetrain, mechanisms, game state, clock, RNG, battery. Bindings and
     // discovered devices stay, but cached actuation/feedback is neutralized. Starts a new epoch of tick
-    // numbering; the next sensor frame is full even if the caller requests a delta.
+    // numbering; the next sensor frame is full even if the caller requests a delta. Remote robots return to their
+    // placement at rest with cleared controllers, input queues and counters; the roster stays.
     void reset();
 
     // The chassis pose reset() restores: this x, y and yaw on the built spawn height. nullopt = the configured pose.
@@ -129,6 +136,31 @@ public:
     // Warnings the session raises itself (brownout, unresolved attachments), next to hub().warnings().
     const std::vector<sdk::HubWarning>& sessionWarnings() const { return sessionWarnings_; }
 
+    // ---- remote robots (practice matches) ----------------------------------------------------------------------
+    // Adds an opponent or partner driven by wheel setpoints, between ticks. The spec is validated STRICTLY (sdk::
+    // checkRemoteSpec; clamp first with sdk::clampRemoteSpec if the match host wants leniency) together with the roster
+    // rules; nothing is added on failure. Errors: Unsupported (no RemoteChassisFactory or registries), InvalidArgument
+    // (reserved or bad id, bad spec with its violation codes, unknown drivetrain kind or tire model, zone count),
+    // AlreadyExists (id or station taken by another remote robot), OutOfRange (kMaxRemoteRobots reached).
+    // The robot is placed on its station with remoteStartPoseClear, clear of the host's start and of the other remote
+    // robots; the placement is fixed here and reset() restores it. Calls IGameState::onRobotAdded once it is listed in
+    // robots(). The host robot's station comes from the Driver Station state and is not checked against the remote ones.
+    sdk::Status addRemoteRobot(const RemoteRobotRequest& request);
+    // Removes the robot and its body, then calls IGameState::onRobotRemoved. NotFound for an unknown id.
+    sdk::Status removeRemoteRobot(sdk::match::ParticipantId id);
+    // Queues one input of a remote robot for its target tick: each tick the newest sequence whose targetTick has come
+    // becomes the robot's setpoints, so neither arrival order nor timing before the target tick changes the result.
+    // Errors: NotFound (unknown id), InvalidArgument (wrong wheel count, sequence 0), OutOfRange (target tick more than
+    // kMaxRemoteInputLeadUs ahead); all of them count in RemoteInputStats::rejected. No input for kInputTimeoutUs of
+    // sim time brakes the robot and clears its zone flags; a disabled, e-stopped or browned-out host Driver Station
+    // gives the robot 0 V and zone flags 0 but still consumes inputs (so acknowledgements keep advancing).
+    sdk::Result<RemoteInputOutcome> submitRemoteInput(sdk::match::ParticipantId id, const sdk::match::MatchInput& input);
+    // Remote participants in ascending id order.
+    std::vector<sdk::match::ParticipantId> remoteRobotIds() const;
+    std::optional<RemoteRobotInfo> remoteRobotInfo(sdk::match::ParticipantId id) const;
+    // Host robot first (participant 0), then the remote robots; what the game plugin reads through SimContext::robots().
+    const sdk::IRobotDirectory& robots() const;
+
     // Immutable view for the UI (what the runner hands to the snapshot sink).
     std::shared_ptr<const sdk::ISimSnapshot> buildSnapshot(bool paused, bool robotConnected,
                                                            std::span<const sdk::HubWarning> extraWarnings = {}) const;
@@ -142,6 +174,8 @@ private:
     void stepDrivetrain(double dt, double& currentA);
     void writeImu(double dt);
     void updateBrownoutWarning();
+    bool remoteRobotsEnabled() const;
+    sdk::FieldFrame fieldFrame() const;
 
     sdk::RobotConfig config_;
     SessionOptions options_;
@@ -163,6 +197,7 @@ private:
     std::optional<sdk::RobotStartPose> startOverride_;
     std::unique_ptr<sdk::ITireModel> tire_;
     std::unique_ptr<sdk::IDrivetrain> drivetrain_;
+    std::unique_ptr<RemoteRobots> remote_;           // the roster: remote robots and the directory; destroyed before the world
     std::vector<std::unique_ptr<sdk::IMechanism>> mechanismInstances_;
     std::unique_ptr<Directory> directory_;
     std::unique_ptr<sdk::SimContext> ctx_;
