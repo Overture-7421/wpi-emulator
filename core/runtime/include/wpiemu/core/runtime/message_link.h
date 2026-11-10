@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -25,6 +26,10 @@ public:
     virtual void close() = 0;                                          // any thread; idempotent
     virtual bool connected() const = 0;
     virtual std::string describe() const = 0;
+    // Health of the underlying transport when it can measure it (nullopt otherwise). Any thread.
+    virtual std::optional<sdk::proto::LinkStats> linkStats() const { return std::nullopt; }
+    // Frames that failed to decode and were dropped (only links that tolerate malformed frames count them). Any thread.
+    virtual std::uint64_t malformedFrames() const { return 0; }
 };
 
 // Something that happened on the IPC side, handed to the sim thread.
@@ -71,21 +76,31 @@ public:
                      std::shared_ptr<const sdk::proto::IMessageCodec> codec, MessageInbox& inbox);
     ~ChannelMessageLink() override;
 
+    // By default the first receive or decode error ends the link. With a limit > 0 a frame the codec rejects
+    // (a decode fault: ProtocolError, VersionMismatch, Unsupported or ParseError) is dropped and counted instead, and the link ends once `limit` frames were dropped.
+    // Call before start().
+    void setMalformedFrameLimit(std::size_t limit) { malformedLimit_ = limit; }
     void start();
+    // Sent on the delivery class of the message (sdk::proto::deliveryOf): latest-wins match streams go unreliable.
     sdk::Status send(const sdk::proto::Message& message) override;
     void close() override;
     void shutdown();  // close and join the reader, called only by the owner
     bool connected() const override;
     std::string describe() const override { return description_; }
+    std::optional<sdk::proto::LinkStats> linkStats() const override;
+    std::uint64_t malformedFrames() const override { return malformed_.load(); }
     std::uint64_t id() const { return linkId_; }
 
 private:
     void readLoop(const sdk::StopToken& stop);
 
     std::uint64_t linkId_;
+    std::size_t malformedLimit_ = 0;
+    std::atomic<std::uint64_t> malformed_{0};
     std::string description_;
     std::shared_ptr<MessageInbox::Queue> inbox_;
     sdk::proto::MessageChannel channel_;
+    sdk::proto::ITransport* transport_;  // owned by channel_
     std::mutex sendMutex_;
     std::atomic<bool> started_{false};
     sdk::StoppableThread reader_;
@@ -99,6 +114,8 @@ public:
                       MessageInbox& inbox, sdk::ILogger* logger = nullptr);
     ~MessageLinkAcceptor();
 
+    // ChannelMessageLink::setMalformedFrameLimit for every link accepted from now on.
+    void setMalformedFrameLimit(std::size_t limit) { malformedLimit_ = limit; }
     sdk::Status start();  // listen() + accept thread
     void stop();
     std::string endpoint() const;  // what the robot gets in WPIEMU_IPC (valid after start())
@@ -111,6 +128,7 @@ private:
     MessageInbox& inbox_;
     sdk::ILogger* logger_;
     std::uint64_t nextLinkId_ = 1;
+    std::size_t malformedLimit_ = 0;
     std::vector<std::weak_ptr<ChannelMessageLink>> links_;  // accept thread, then stop() after join
     sdk::StoppableThread thread_;
 };

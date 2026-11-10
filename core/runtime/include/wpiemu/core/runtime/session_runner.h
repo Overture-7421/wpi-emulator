@@ -12,8 +12,10 @@
 #include "wpiemu/core/runtime/message_link.h"
 #include "wpiemu/core/runtime/simulation_session.h"
 #include "wpiemu/sdk/core/clock.h"
+#include "wpiemu/sdk/core/interface.h"
 #include "wpiemu/sdk/core/stoppable_thread.h"
 #include "wpiemu/sdk/ipc/lockstep.h"
+#include "wpiemu/sdk/match/match_protocol.h"
 #include "wpiemu/sdk/telemetry/sim_controller.h"
 
 namespace wpiemu::core::runtime {
@@ -49,6 +51,27 @@ enum class RunnerState {
     Stopped,           // session over (Stop command, extension Stopped); the runner is finished
 };
 
+// What the runner tells its observer (see ISimTickObserver).
+struct RunnerObservation {
+    // The runner state as a practice match shows it: Lobby until the robot's program runs in lock-step (no robot, not
+    // handshaken, armed or program not started, or the session ended), Running, Paused (host paused) or HostStalled
+    // (the robot stopped answering: RunnerState::RobotStalled).
+    sdk::match::MatchState matchState = sdk::match::MatchState::Lobby;
+    std::uint64_t runEpoch = 0;  // SessionRunner::runEpoch(): changes when the world restarts (Reset, BeginLockstep, reconnect)
+};
+
+// Sim-thread callbacks around the runner's loop, for the practice-match host (core/match, MatchHost). Both run on the
+// thread that calls SessionRunner::poll(), never inside SimulationSession::tick().
+class ISimTickObserver {
+    WPIEMU_INTERFACE(ISimTickObserver)
+public:
+    // Every poll() iteration, after inbound events and the watchdog were handled and BEFORE the runner decides to tick.
+    // The match host drains its own inbox here and feeds the session, so what it submits applies to this poll's tick.
+    virtual void onPoll(const RunnerObservation& observation) = 0;
+    // After each tick that was sent to the robot: the session's clock has advanced to the tick's end.
+    virtual void onTickEnd(const RunnerObservation& observation) = 0;
+};
+
 // The lock-step driver around a SimulationSession (ARCHITECTURE 3, 4.1). Runs on the sim thread; the UI talks to it
 // only through the thread-safe ISimController side. Responsibilities:
 //  * handshake (Hello -> HelloAck with sessionId / runEpoch / negotiated watchdog), reconnect = new epoch + reset;
@@ -78,6 +101,9 @@ public:
     void poll(std::chrono::milliseconds maxWait);
     void start();  // poll() loop on an own thread until stop() or the session ends
     void stop();   // joins the thread; does not send Stop to the robot (use control(Stop))
+    // The practice-match host (or any sim-thread listener). Set before start()/the first poll(); the observer must outlive
+    // the runner. Not thread-safe against a running loop.
+    void setTickObserver(ISimTickObserver* observer) { observer_ = observer; }
 
     // ---- observation (any thread) ----
     RunnerState state() const { return state_.load(); }
@@ -125,6 +151,7 @@ private:
     void finish();
     void publishSnapshot(std::chrono::steady_clock::time_point now, bool force);
     sdk::proto::DsState effectiveDs() const;
+    RunnerObservation observation() const;
 
     SimulationSession& session_;
     MessageInbox& inbox_;
@@ -182,6 +209,7 @@ private:
     std::atomic<std::uint64_t> epoch_{0};
     std::atomic<std::uint64_t> dropped_{0};
     sdk::StoppableThread thread_;
+    ISimTickObserver* observer_ = nullptr;
 };
 
 }  // namespace wpiemu::core::runtime

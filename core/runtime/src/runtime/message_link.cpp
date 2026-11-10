@@ -7,6 +7,17 @@ namespace wpiemu::core::runtime {
 
 using namespace wpiemu::sdk;
 
+namespace {
+
+// What the codec reports for a frame that arrived intact from the transport but is not a message we can read; transport
+// failures (Disconnected, IoError, ...) are never tolerated.
+bool isDecodeFault(ErrorCode code) {
+    return code == ErrorCode::ProtocolError || code == ErrorCode::VersionMismatch || code == ErrorCode::Unsupported ||
+           code == ErrorCode::ParseError;
+}
+
+}  // namespace
+
 // ---- MessageInbox -----------------------------------------------------------------------------------------
 
 MessageInbox::MessageInbox() : queue_(std::make_shared<Queue>()) {}
@@ -41,7 +52,8 @@ std::size_t MessageInbox::size() const { return queue_->size(); }
 
 ChannelMessageLink::ChannelMessageLink(std::uint64_t linkId, std::unique_ptr<proto::ITransport> transport,
                                    std::shared_ptr<const proto::IMessageCodec> codec, MessageInbox& inbox)
-    : linkId_(linkId), description_(transport->describe()), inbox_(inbox.queue_), channel_(std::move(transport), std::move(codec)) {}
+    : linkId_(linkId), description_(transport->describe()), inbox_(inbox.queue_), channel_(std::move(transport), std::move(codec)),
+      transport_(&channel_.transport()) {}
 
 ChannelMessageLink::~ChannelMessageLink() { shutdown(); }
 
@@ -57,8 +69,10 @@ void ChannelMessageLink::start() {
 
 Status ChannelMessageLink::send(const proto::Message& message) {
     std::lock_guard lock(sendMutex_);
-    return channel_.send(message);
+    return channel_.send(message, proto::deliveryOf(message));
 }
+
+std::optional<proto::LinkStats> ChannelMessageLink::linkStats() const { return transport_->linkStats(); }
 
 void ChannelMessageLink::close() {
     reader_.requestStop();
@@ -73,7 +87,9 @@ void ChannelMessageLink::readLoop(const StopToken& stop) {
         proto::Message message;
         const Result<bool> got = channel_.receive(message, std::chrono::milliseconds(100));
         if (!got) {
-            reason = got.error().message;
+            const bool malformed = malformedLimit_ > 0 && isDecodeFault(got.error().code);
+            if (malformed && ++malformed_ < malformedLimit_) continue;
+            reason = malformed ? "too many malformed frames: " + got.error().message : got.error().message;
             break;
         }
         if (!got.value()) continue;
@@ -133,6 +149,7 @@ void MessageLinkAcceptor::acceptLoop(const StopToken& stop) {
             break;
         }
         auto link = std::make_shared<ChannelMessageLink>(nextLinkId_++, std::move(accepted).value(), codec_, inbox_);
+        link->setMalformedFrameLimit(malformedLimit_);
         std::erase_if(links_, [](const auto& weak) { return weak.expired(); });
         links_.push_back(link);
         if (logger_ != nullptr) logger_->info("link", "robot connected: " + link->describe());
