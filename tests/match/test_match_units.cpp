@@ -8,6 +8,7 @@
 #include "wpiemu/core/match/entity_delta.h"
 #include "wpiemu/core/match/hud_keys.h"
 #include "wpiemu/core/match/peer_outbox.h"
+#include "wpiemu/core/match/snapshot_budget.h"
 #include "wpiemu/core/match/snapshot_rate.h"
 #include "wpiemu/core/match/spec_intake.h"
 #include "wpiemu/core/match/wire_frame.h"
@@ -310,4 +311,107 @@ TEST_CASE("wire frame: groups without stable ids are skipped, non-finite values 
     CHECK(frame.robots[0].xMm == 0);   // +inf is not a position: 0
     CHECK(hudWireValue(Value(std::string("text"))) == std::nullopt);
     CHECK(hudWireValue(Value(true)) == 1.f);
+}
+
+namespace {
+
+wire::MatchSnapshot coreSnapshot(std::size_t robots, std::size_t hudPerRobot) {
+    wire::MatchSnapshot s;
+    s.sessionId = 1;
+    s.runEpoch = 1;
+    s.snapshotSeq = 1;
+    for (std::size_t r = 0; r < robots; ++r) {
+        wire::RobotWireState robot;
+        robot.participantId = static_cast<wire::ParticipantId>(r);
+        robot.wheels.assign(4, wire::WheelWireState{1234, -4321});
+        for (std::size_t h = 0; h < hudPerRobot; ++h) robot.hud.push_back({static_cast<std::uint16_t>(h + 1), 1.5f});
+        s.robots.push_back(std::move(robot));
+    }
+    for (std::uint16_t h = 1; h <= 4; ++h) s.gameHud.push_back({h, 2.5f});
+    return s;
+}
+
+EntityPlan manyChanges(std::size_t count) {
+    EntityDeltaEncoder enc;
+    std::vector<wire::EntityState> entities;
+    for (std::size_t i = 0; i < count; ++i) entities.push_back(ent(static_cast<std::uint32_t>(i + 1), static_cast<int>(i % 200) * 7, static_cast<int>(i / 200) * 9));
+    return enc.plan(std::vector<EntityGroupFrame>{group(0, std::move(entities))}, {});
+}
+
+}  // namespace
+
+TEST_CASE("snapshot budget: entity changes fill what the core part leaves and never exceed the budget") {
+    const auto codec = std::make_shared<ipc::BinaryMessageCodec>();
+    std::vector<std::byte> scratch;
+    const SnapshotSizer sizeOf = [&](const wire::MatchSnapshot& s) {
+        scratch.clear();
+        REQUIRE(codec->encode(s, scratch).ok());
+        return scratch.size();
+    };
+    const EntityPlan plan = manyChanges(600);
+    for (const std::size_t budget : {800u, 1200u, 1800u}) {
+        wire::MatchSnapshot s = coreSnapshot(6, 4);
+        EntitySizeEstimate estimate;
+        const SnapshotFit fit = fitSnapshot(s, plan, budget, sizeOf, estimate);
+        CAPTURE(budget);
+        CHECK_FALSE(fit.coreOverBudget);
+        CHECK(fit.encodedBytes <= budget);
+        CHECK(fit.encodedBytes == sizeOf(s));
+        CHECK(fit.entityChanges > 0);
+        CHECK(fit.entityChanges < plan.changes.size());
+        CHECK(s.robots.size() == 6);
+        // The prefix is maximal up to the estimate's resolution: ten more changes do not fit.
+        wire::MatchSnapshot more = s;
+        more.entityDeltas = EntityDeltaEncoder::deltas(plan, fit.entityChanges + 10);
+        CHECK(sizeOf(more) > budget);
+    }
+    wire::MatchSnapshot all = coreSnapshot(2, 0);
+    EntitySizeEstimate estimate;
+    CHECK(fitSnapshot(all, manyChanges(5), 1200, sizeOf, estimate).entityChanges == 5);
+}
+
+TEST_CASE("snapshot budget: an oversized core part drops only the HUD, never robots or info") {
+    const auto codec = std::make_shared<ipc::BinaryMessageCodec>();
+    std::vector<std::byte> scratch;
+    const SnapshotSizer sizeOf = [&](const wire::MatchSnapshot& s) {
+        scratch.clear();
+        REQUIRE(codec->encode(s, scratch).ok());
+        return scratch.size();
+    };
+    wire::MatchSnapshot s = coreSnapshot(6, 8);
+    s.info.state = wire::MatchState::Running;
+    s.info.matchTimeS = 77.f;
+    EntitySizeEstimate estimate;
+    const SnapshotFit fit = fitSnapshot(s, manyChanges(50), 300, sizeOf, estimate);
+    CHECK(fit.coreOverBudget);
+    CHECK(fit.hudDropped);
+    CHECK(fit.entityChanges == 0);
+    CHECK(s.robots.size() == 6);
+    CHECK(s.info.matchTimeS == 77.f);
+    for (const wire::RobotWireState& r : s.robots) {
+        CHECK(r.hud.empty());
+        CHECK(r.wheels.size() == 4);
+    }
+    CHECK(fit.encodedBytes == sizeOf(s));
+}
+
+TEST_CASE("snapshot budget: the size is the encoded size, so fields added to a robot are accounted for") {
+    const auto codec = std::make_shared<ipc::BinaryMessageCodec>();
+    std::vector<std::byte> scratch;
+    const EntityPlan plan = manyChanges(400);
+    const auto run = [&](std::size_t extraBytesPerRobot) {
+        const SnapshotSizer sizeOf = [&](const wire::MatchSnapshot& s) {
+            scratch.clear();
+            REQUIRE(codec->encode(s, scratch).ok());
+            return scratch.size() + extraBytesPerRobot * s.robots.size();   // what a new fixed-size field would add
+        };
+        wire::MatchSnapshot s = coreSnapshot(6, 4);
+        EntitySizeEstimate estimate;
+        const SnapshotFit fit = fitSnapshot(s, plan, 1200, sizeOf, estimate);
+        CHECK(fit.encodedBytes <= 1200);
+        return fit.entityChanges;
+    };
+    const std::size_t without = run(0);
+    const std::size_t with = run(4 * 13);   // four zone poses of about 13 bytes
+    CHECK(with < without);
 }
