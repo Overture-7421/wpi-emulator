@@ -300,8 +300,12 @@ inline net::RelayHostOptions hostOptions(const StackRelay& relay, const net::Inv
     return options;
 }
 
-inline std::unique_ptr<net::RelayHostTransport> startHost(const StackRelay& relay, const net::InviteSecret& secret) {
-    auto host = std::make_unique<net::RelayHostTransport>(hostOptions(relay, secret));
+// `freeRoomOnClose` false makes close() leave the room for its TTL, like a host that crashed (true sends CloseRoom).
+inline std::unique_ptr<net::RelayHostTransport> startHost(const StackRelay& relay, const net::InviteSecret& secret,
+                                                          bool freeRoomOnClose = true) {
+    net::RelayHostOptions options = hostOptions(relay, secret);
+    options.closeRoomOnClose = freeRoomOnClose;
+    auto host = std::make_unique<net::RelayHostTransport>(options);
     const sdk::Status listening = host->listen();
     REQUIRE_MESSAGE(listening.ok(), (listening.ok() ? "" : listening.error().message));
     return host;

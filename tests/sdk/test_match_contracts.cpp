@@ -51,6 +51,7 @@ static_assert(alternativeIs<match::relay::JoinRoom, MessageType::JoinRoom>);
 static_assert(alternativeIs<match::relay::JoinResult, MessageType::JoinResult>);
 static_assert(alternativeIs<match::relay::PeerJoined, MessageType::PeerJoined>);
 static_assert(alternativeIs<match::relay::PeerLeft, MessageType::PeerLeft>);
+static_assert(alternativeIs<match::relay::CloseRoom, MessageType::CloseRoom>);
 
 template <class T>
 void checkAlternative(MessageType expected, std::uint16_t value) {
@@ -111,6 +112,7 @@ TEST_CASE("match contracts: every message alternative has its documented type va
     checkAlternative<match::relay::JoinResult>(MessageType::JoinResult, 26);
     checkAlternative<match::relay::PeerJoined>(MessageType::PeerJoined, 27);
     checkAlternative<match::relay::PeerLeft>(MessageType::PeerLeft, 28);
+    checkAlternative<match::relay::CloseRoom>(MessageType::CloseRoom, 29);
 }
 
 TEST_CASE("match contracts: index and type value agree for ALL alternatives and the existing values are unchanged") {
@@ -350,6 +352,10 @@ TEST_CASE("match contracts: room ids and resume tokens") {
     CHECK_FALSE(relay::isValidRoomId("0123ABCDE"));
     CHECK_FALSE(relay::isValidRoomId("0123ABCI"));  // I, L, O, U are not in the alphabet
     CHECK_FALSE(relay::isValidRoomId("0123abcd"));
+    CHECK(relay::isValidRoomId(relay::kRelayPingRoomId));  // reserved, but a valid id
+    CHECK(relay::isPingRoomId("00000000"));
+    CHECK_FALSE(relay::isPingRoomId("00000001"));
+    CHECK_FALSE(relay::isPingRoomId(""));
     ResumeToken token{};
     CHECK_FALSE(hasResumeToken(token));
     token[kResumeTokenBytes - 1] = 1;

@@ -6,8 +6,8 @@
 // that it forwards without parsing, so match protocol changes never need a relay redeploy. No game data is ever in this
 // header. Plain structs; see match_protocol.h and docs for the encryption design.
 //
-// Flow. Host: RegisterRoom -> RoomRegistered | RoomRejected. Client: JoinRoom -> JoinResult (with its peerId). The relay
-// tells the host PeerJoined / PeerLeft. Game channels then carry a 2-byte envelope (little-endian peer id): client -> host
+// Flow. Host: RegisterRoom -> RoomRegistered | RoomRejected; CloseRoom frees the room at once. Client: JoinRoom -> JoinResult (with
+// its peerId). The relay tells the host PeerJoined / PeerLeft. Game channels then carry a 2-byte envelope (little-endian peer id): client -> host
 // frames arrive at the host prefixed with the sender's peerId; host -> client frames are prefixed by the host with the
 // target peerId (the relay strips it) or kRelayBroadcastPeer (every client). A client sends its frames unprefixed.
 //
@@ -50,6 +50,14 @@ inline constexpr std::uint32_t kRelayRoomTtlWithoutHostMs = 30'000;   // a room 
 
 // The alphabet of a room id (Crockford base32: no I, L, O, U).
 inline constexpr const char* kRoomIdAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+// The well-known health-ping room. It is a valid room id that no room ever has: the relay answers a JoinRoom for it with
+// JoinResult{ok = false, NoSuchRoom} without counting a failed join toward the source's lockout, so liveness probes (the
+// relay's --selfcheck, wpiemu_relay_probe) can run as often as they like. RegisterRoom for it is refused and invites never
+// derive it.
+inline constexpr const char* kRelayPingRoomId = "00000000";
+
+inline bool isPingRoomId(const std::string& id) { return id == kRelayPingRoomId; }
 
 inline bool isValidRoomId(const std::string& id) {
     if (id.size() != kRelayRoomIdChars) return false;
@@ -127,6 +135,13 @@ struct JoinResult {
     RelayPeerId peerId = kRelayBroadcastPeer;
 
     bool operator==(const JoinResult&) const = default;
+};
+
+// Host -> relay, after RegisterRoom succeeded on the same connection (that connection IS the authentication): the room is
+// closed at once instead of waiting out kRelayRoomTtlWithoutHostMs. Its clients are disconnected and the host's connection
+// ends. From any other connection it is a control violation.
+struct CloseRoom {
+    bool operator==(const CloseRoom&) const = default;
 };
 
 // Relay -> host.

@@ -63,6 +63,9 @@ struct RelayHostOptions {
     // clients that are still there with PeerJoined, and accept() yields them as NEW virtual peers (same ids, a fresh
     // transport: the encryption handshake runs again). Without autoReregister the first loss is final.
     bool autoReregister = true;
+    // A clean close() (or destruction) of a registered host sends CloseRoom, so the relay frees the room and drops its clients
+    // at once. Turn it off to leave the room for its kRelayRoomTtlWithoutHostMs grace period, as a crashed host would.
+    bool closeRoomOnClose = true;
     std::chrono::milliseconds reconnectBackoffInitial{250};
     std::chrono::milliseconds reconnectBackoffMax{4000};
     std::chrono::milliseconds reconnectGiveUp{2 * sdk::match::relay::kRelayRoomTtlWithoutHostMs};
@@ -94,7 +97,7 @@ RelayHostOptions relayHostOptionsFor(const std::string& relayHost, std::uint16_t
 // reports Disconnected and the new one is accepted (the relay only reuses an id after the old peer left).
 //
 // A virtual peer's close() is local: it discards its buffered frames and stops delivering, it does not remove the client
-// from the relay (the relay has no such message; the client leaves when it closes its own link). Frames of that client are
+// from the relay (the relay has no per-client removal message; the client leaves when it closes its own link). Frames of that client are
 // then dropped until it leaves.
 //
 // Not exposed through ITransport: broadcast. The relay accepts kRelayBroadcastPeer in the envelope to fan one frame out to
@@ -113,7 +116,8 @@ public:
     // "relay://host:port/ROOMID" (what clients connect to once they also hold the invite).
     std::string endpoint() const override;
     sdk::Result<std::unique_ptr<sdk::proto::ITransport>> accept(std::chrono::milliseconds timeout) override;
-    // Disconnects every virtual peer, closes the relay link and joins the threads. Idempotent.
+    // Sends CloseRoom (see RelayHostOptions::closeRoomOnClose), disconnects every virtual peer, closes the relay link and
+    // joins the threads. Idempotent.
     void close() override;
 
     // True while the room is registered on a live relay link.

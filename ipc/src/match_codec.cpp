@@ -355,6 +355,9 @@ void fields(C& c, M& m) {
     c.enumeration(m.reason, 3, "invalid PeerLeftReason");
 }
 
+template <class C, Is<relay::CloseRoom> M>
+void fields(C&, M&) {}
+
 template <class T>
 Result<proto::Message> decodeBody(std::span<const std::byte> body) {
     ReadState state;
@@ -396,6 +399,7 @@ Result<proto::Message> decodeMatchBody(proto::MessageType type, std::span<const 
         case MessageType::JoinResult: return decodeBody<relay::JoinResult>(body);
         case MessageType::PeerJoined: return decodeBody<relay::PeerJoined>(body);
         case MessageType::PeerLeft: return decodeBody<relay::PeerLeft>(body);
+        case MessageType::CloseRoom: return decodeBody<relay::CloseRoom>(body);
         default: break;
     }
     return makeError(ErrorCode::Unsupported, "unknown message type " + std::to_string(static_cast<unsigned>(type)));

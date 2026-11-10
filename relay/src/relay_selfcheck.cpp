@@ -1,7 +1,5 @@
 #include "wpiemu/relay/relay_selfcheck.h"
 
-#include <random>
-
 #include "wpiemu/ipc/binary_codec.h"
 #include "wpiemu/net/control_link.h"
 #include "wpiemu/net/endpoint.h"
@@ -10,19 +8,6 @@
 namespace wpiemu::relay {
 
 namespace rl = sdk::match::relay;
-
-namespace {
-
-std::string randomRoomId() {
-    std::random_device device;
-    std::mt19937_64 rng((static_cast<std::uint64_t>(device()) << 32) ^ device());
-    const std::string alphabet = rl::kRoomIdAlphabet;
-    std::string id;
-    for (std::size_t i = 0; i < rl::kRelayRoomIdChars; ++i) id.push_back(alphabet[rng() % alphabet.size()]);
-    return id;
-}
-
-}  // namespace
 
 SelfCheckResult runSelfCheck(const std::string& host, std::uint16_t port, std::chrono::milliseconds timeout) {
     SelfCheckResult result;
@@ -54,7 +39,7 @@ SelfCheckResult runSelfCheck(const std::string& host, std::uint16_t port, std::c
 
     const ipc::BinaryMessageCodec codec(net::kMaxControlFrameBytes);
     rl::JoinRoom join;
-    join.roomId = randomRoomId();
+    join.roomId = rl::kRelayPingRoomId;
     std::vector<std::byte> frame;
     if (const sdk::Status encoded = codec.encode(join, frame); !encoded) {
         result.detail = "cannot encode JoinRoom: " + encoded.error().message;

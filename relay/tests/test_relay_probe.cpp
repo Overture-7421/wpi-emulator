@@ -449,9 +449,11 @@ TEST_CASE("relay probe: the full probe passes against the real relay and leaves 
     CHECK(run.err.empty());
     CHECK(run.elapsed < 8s);
 
-    // One room, one client, and both are gone again: the host left (the room keeps for its TTL), the client is no peer.
-    REQUIRE(waitFor([&] { return relay.stats().roomsWithoutHost == 1 && relay.stats().peers == 0; }));
+    // One room, one client, and both are gone again at once: the probe's host sent CloseRoom, nothing waits for the TTL.
+    REQUIRE(waitFor([&] { return relay.stats().roomsClosed == 1 && relay.stats().rooms == 0 && relay.stats().peers == 0; }));
     const wr::RelayStats stats = relay.stats();
+    CHECK(stats.roomsWithoutHost == 0);
+    CHECK(stats.pingsAnswered == 1);
     CHECK(stats.roomsCreated == 1);
     CHECK(stats.peersJoined == 1);
     CHECK(stats.framesDroppedTotal() == 0);
@@ -519,8 +521,8 @@ TEST_CASE("relay probe: the invite secret is never printed unless asked for, and
         CHECK_FALSE(contains(run.out, bare));
         CHECK_FALSE(contains(run.out, hexOf(invite.secret.bytes())));
         CHECK(contains(run.out, invite.room));  // the derived room id may be shown
-        // The same invite again: the first run left its room hostless but still registered, and the same host may resume it.
-        REQUIRE(waitFor([&] { return relay.stats().roomsWithoutHost == 1; }));
+        // The probe's host sent CloseRoom, so the room is gone at once and the same invite can be used again.
+        REQUIRE(waitFor([&] { return relay.stats().rooms == 0; }));
     }
     CHECK_FALSE(relay.logs->contains(text));
     CHECK_FALSE(relay.logs->contains(bare));
@@ -577,7 +579,8 @@ TEST_CASE("relay probe: reach and selfcheck create nothing") {
     }
     CHECK(relay.stats().roomsCreated == 0);
     CHECK(relay.stats().peersJoined == 0);
-    CHECK(relay.stats().joinsRejected == 2);  // each probe asked for a room that does not exist
+    CHECK(relay.stats().joinsRejected == 0);  // the health-ping room is answered, not counted as a failed join
+    CHECK(relay.stats().pingsAnswered == 2);
 }
 
 TEST_CASE("relay probe: the count and the payload can be switched off") {
@@ -600,15 +603,20 @@ TEST_CASE("relay probe: the largest reliable payload makes the round trip") {
     CHECK(relay.stats().framesDroppedTotal() == 0);
 }
 
-TEST_CASE("relay probe: a relay that locked the source out is reported as such") {
+TEST_CASE("relay probe: reach never counts toward the lockout, a locked out source is reported as such") {
     StackRelay relay([](wr::RelayOptions& o) {
         o.server.exemptLoopbackFromLockout = false;
         o.server.table.lockoutMaxFailures = 2;
     });
     REQUIRE(relay.started());
-    // Each probe's room-that-cannot-exist join is a failed join of this source: the second one locks it out.
-    CHECK(cli({"--relay", relayArg(relay.port()), "--mode", "reach"}).code == 0);
-    CHECK(cli({"--relay", relayArg(relay.port()), "--mode", "reach"}).code == 0);
+    // Far more probes than the lockout allows: the ping room is not a failed join.
+    for (int i = 0; i < 6; ++i) CHECK(cli({"--relay", relayArg(relay.port()), "--mode", "reach"}).code == 0);
+    CHECK(relay.stats().lockouts == 0);
+    CHECK(relay.stats().pingsAnswered == 6);
+
+    // Real failed joins of this source do lock it out, and the probe says so.
+    for (int i = 0; i < 2; ++i) CHECK_FALSE(joinRaw(relay, "ZZZZZZZZ").ok());
+    REQUIRE(waitFor([&] { return relay.stats().lockouts == 1; }));
     const CliRun locked = cli({"--relay", relayArg(relay.port()), "--mode", "reach"});
     CHECK(locked.code == 1);
     CHECK_MESSAGE(contains(locked.out, "locked"), locked.out);

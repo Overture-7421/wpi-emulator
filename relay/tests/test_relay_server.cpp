@@ -579,3 +579,91 @@ TEST_CASE("relay server: shutdown disconnects everyone and run returns on stop")
     CHECK(returned.load());
     CHECK(idle.network->closed);
 }
+
+TEST_CASE("relay server: CloseRoom from the host frees the room at once and closes its clients") {
+    Harness h;
+    auto host = h.host(roomIdFor(1));
+    auto a = h.client(roomIdFor(1), "10.0.0.2");
+    auto b = h.client(roomIdFor(1), "10.0.0.3");
+    host->takeControl();
+
+    host->sendControl(rl::CloseRoom{});
+    h.pump();
+    CHECK(a->closedByRelay);
+    CHECK(b->closedByRelay);
+    CHECK(host->closedByRelay);
+    const auto stats = h.server->stats();
+    CHECK(stats.rooms == 0);
+    CHECK(stats.roomsWithoutHost == 0);
+    CHECK(stats.peers == 0);
+    CHECK(stats.connections == 0);
+    CHECK(stats.roomsClosed == 1);
+    CHECK(stats.roomsExpired == 0);
+    CHECK(stats.controlViolations == 0);
+
+    // The id is free again and a new host takes it as a fresh room.
+    auto next = h.host(roomIdFor(1), 7, "10.0.0.9");
+    const auto registered = replyOf<rl::RoomRegistered>(*next);
+    REQUIRE(registered.has_value());
+    CHECK_FALSE(registered->resumed);
+    auto late = h.client(roomIdFor(1), "10.0.0.8");
+    CHECK(replyOf<rl::JoinResult>(*late)->ok);
+}
+
+TEST_CASE("relay server: CloseRoom is only valid from the registered host") {
+    Harness h;
+    auto host = h.host(roomIdFor(1));
+    auto client = h.client(roomIdFor(1), "10.0.0.2");
+    auto stranger = h.connect("10.0.0.3");
+
+    stranger->sendControl(rl::CloseRoom{});
+    client->sendControl(rl::CloseRoom{});
+    h.pump();
+    CHECK(stranger->closedByRelay);
+    CHECK(client->closedByRelay);
+    CHECK_FALSE(host->closedByRelay);
+    CHECK(h.server->stats().controlViolations == 2);
+    CHECK(h.server->stats().roomsClosed == 0);
+    CHECK(h.server->stats().rooms == 1);
+    auto another = h.client(roomIdFor(1), "10.0.0.4");
+    CHECK(replyOf<rl::JoinResult>(*another)->ok);  // the room and its host are untouched
+}
+
+TEST_CASE("relay server: the health-ping room is answered NoSuchRoom and never locks a source out") {
+    Harness h;
+    for (int i = 0; i < 40; ++i) {
+        auto peer = h.client(rl::kRelayPingRoomId, "203.0.113.9", 7000 + i);
+        const auto result = replyOf<rl::JoinResult>(*peer);
+        REQUIRE(result.has_value());
+        CHECK_FALSE(result->ok);
+        CHECK(result->reason == rl::JoinRoomFailure::NoSuchRoom);
+        CHECK(result->peerId == rl::kRelayBroadcastPeer);
+    }
+    const auto stats = h.server->stats();
+    CHECK(stats.pingsAnswered == 40);
+    CHECK(stats.joinsRejected == 0);
+    CHECK(stats.lockouts == 0);
+    CHECK(stats.trackedSources == 0);
+    CHECK(stats.rooms == 0);
+    CHECK(stats.roomsCreated == 0);
+
+    // A source that is already locked out is still told so.
+    for (int i = 0; i < 10; ++i) h.client(roomIdFor(50), "203.0.113.9", 8000 + i)->takeControl();
+    auto locked = h.client(rl::kRelayPingRoomId, "203.0.113.9", 9000);
+    CHECK(replyOf<rl::JoinResult>(*locked)->reason == rl::JoinRoomFailure::LockedOut);
+}
+
+TEST_CASE("relay server: registering the health-ping room is refused and creates nothing") {
+    Harness h;
+    for (int i = 0; i < 12; ++i) {
+        auto host = h.host(rl::kRelayPingRoomId, 1, "203.0.113.20", 7000 + i);
+        const auto rejected = replyOf<rl::RoomRejected>(*host);
+        REQUIRE(rejected.has_value());
+        CHECK(rejected->reason == rl::RoomRejectReason::RoomTaken);
+    }
+    const auto stats = h.server->stats();
+    CHECK(stats.rooms == 0);
+    CHECK(stats.roomsCreated == 0);
+    CHECK(stats.lockouts == 0);
+    CHECK(stats.registersRejected == 12);
+}

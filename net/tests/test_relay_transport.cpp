@@ -467,6 +467,59 @@ TEST_CASE("net relay: an expired room or a lost relay disconnects the client") {
     CHECK(waitUntil([&] { return !client->connected(); }, kLong, 2ms));
 }
 
+TEST_CASE("net relay: closing a registered host sends CloseRoom and the room is gone") {
+    Rig rig;
+    auto [client, peer] = joinAndAccept(rig);
+    CHECK(rig.relay.hasRoom(rig.room));
+    rig.host->close();
+    CHECK(waitUntil([&] { return rig.relay.traffic().roomsClosed == 1; }, kLong, 2ms));
+    CHECK(waitUntil([&] { return !rig.relay.hasRoom(rig.room); }, kLong, 2ms));
+    CHECK(receiveError(*client).code == ErrorCode::Disconnected);
+    CHECK(rig.relay.traffic().unexpectedControl == 0);
+    rig.host->close();  // idempotent: no second CloseRoom
+    CHECK(rig.relay.traffic().roomsClosed == 1);
+}
+
+TEST_CASE("net relay: destroying the host transport also frees the room") {
+    FakeRelay fake;
+    const InviteSecret secret = secretN(3);
+    {
+        RelayHostTransport host(fastOptions(fake, secret));
+        REQUIRE(host.listen().ok());
+        CHECK(fake.hasRoom(roomId(secret)));
+    }
+    CHECK(waitUntil([&] { return !fake.hasRoom(roomId(secret)); }, kLong, 2ms));
+    CHECK(fake.traffic().roomsClosed == 1);
+}
+
+TEST_CASE("net relay: closeRoomOnClose false leaves the room for its grace period") {
+    Rig rig([](RelayHostOptions& options) { options.closeRoomOnClose = false; });
+    auto [client, peer] = joinAndAccept(rig);
+    rig.host->close();
+    CHECK(waitUntil([&] { return !rig.relay.hostPresent(rig.room); }, kLong, 2ms));
+    CHECK(rig.relay.hasRoom(rig.room));
+    CHECK(rig.relay.traffic().roomsClosed == 0);
+}
+
+TEST_CASE("net relay: a host that never registered or lost its link sends no CloseRoom") {
+    FakeRelay fake;
+    {
+        RelayHostTransport unlistened(fastOptions(fake, secretN(4)));
+    }
+    RelayHostOptions taken = fastOptions(fake, secretN(5));
+    RelayHostTransport first(taken);
+    REQUIRE(first.listen().ok());
+    {
+        RelayHostOptions imposter = taken;
+        imposter.hostAuth[0] ^= 0x33;
+        imposter.autoReregister = false;
+        RelayHostTransport second(imposter);
+        CHECK(second.listen().error().code == ErrorCode::AlreadyExists);
+    }
+    CHECK(fake.hasRoom(roomId(secretN(5))));  // the refused imposter did not close the real room
+    CHECK(fake.traffic().roomsClosed == 0);
+}
+
 TEST_CASE("net relay: a virtual peer close is local and a closed client stops its peer's frames") {
     Rig rig;
     auto [client, peer] = joinAndAccept(rig);

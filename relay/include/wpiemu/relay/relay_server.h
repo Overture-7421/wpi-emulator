@@ -5,7 +5,8 @@
 // the limits. It never parses game frames and never logs their content.
 //
 // Per connection: Unregistered -> Host(room) | Client(room, peerId). Only RegisterRoom and JoinRoom (control channel 0) are
-// valid from an Unregistered connection; any other control frame, an undecodable or oversize one, or any control frame
+// valid from an Unregistered connection; the only control frame valid from a registered one is CloseRoom from the host (it
+// closes the room at once); any other control frame, an undecodable or oversize one, or any control frame
 // from a registered connection counts as a violation and disconnects the peer. Game frames from an Unregistered
 // connection are dropped and counted. A connection that stays Unregistered is closed after `unregisteredTimeout` (the
 // transport's own unauthenticatedTimeout already drops one that sends nothing at all), and after `maxAttemptsPerConnection`

@@ -932,7 +932,7 @@ TEST_CASE("codec: a newer peer's extra fields inside length-prefixed records are
 
 TEST_CASE("codec: unknown message types are skippable, not fatal") {
     BinaryMessageCodec codec;
-    for (int type : {0, 29, 200, 65535}) {
+    for (int type : {0, 30, 200, 65535}) {
         const auto r = codec.decode(bytesOf({kWireFormatVersion, type & 0xFF, (type >> 8) & 0xFF, 1, 2, 3}));
         REQUIRE_FALSE(r.ok());
         CHECK(r.error().code == ErrorCode::Unsupported);

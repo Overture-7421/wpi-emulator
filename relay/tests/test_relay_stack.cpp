@@ -326,7 +326,7 @@ TEST_CASE("relay stack: duplicate registration is RoomTaken and a wrong hostAuth
     StackRelay relay;
     REQUIRE(relay.started());
     const Invite invite = newInvite();
-    auto host = startHost(relay, invite.secret);
+    auto host = startHost(relay, invite.secret, false);
 
     net::RelayHostOptions imposter = hostOptions(relay, invite.secret);
     imposter.hostAuth[0] ^= 0x5A;
@@ -362,7 +362,7 @@ TEST_CASE("relay stack: a host that leaves and re-registers within the TTL gets 
     StackRelay relay;
     REQUIRE(relay.started());
     const Invite invite = newInvite();
-    auto host = startHost(relay, invite.secret);
+    auto host = startHost(relay, invite.secret, false);
 
     std::vector<std::unique_ptr<proto::ITransport>> clients;
     for (int i = 0; i < 2; ++i) {
@@ -412,7 +412,7 @@ TEST_CASE("relay stack: the TTL without a host closes the room and its clients")
     StackRelay relay([](wr::RelayOptions& o) { o.server.table.roomTtlWithoutHostMs = 500; });
     REQUIRE(relay.started());
     const Invite invite = newInvite();
-    auto host = startHost(relay, invite.secret);
+    auto host = startHost(relay, invite.secret, false);
     auto joined = joinRaw(relay, invite.room);
     REQUIRE(joined.ok());
     auto client = std::move(joined).value();
@@ -544,4 +544,107 @@ TEST_CASE("relay stack: repeated unknown-room joins from loopback are exempt by 
     CHECK(stack.relay.stats().lockouts == 0);
     auto joined = joinRaw(stack.relay, stack.invite.room);
     CHECK_MESSAGE(joined.ok(), (joined.ok() ? "" : joined.error().message));
+}
+
+TEST_CASE("relay stack: the health-ping room never counts as a failed join, even when loopback is not exempt") {
+    StackRelay relay([](wr::RelayOptions& o) {
+        o.server.exemptLoopbackFromLockout = false;
+        o.server.table.lockoutMaxFailures = 3;
+    });
+    REQUIRE(relay.started());
+    for (int i = 0; i < 12; ++i) {
+        const auto attempt = joinRaw(relay, rl::kRelayPingRoomId);
+        REQUIRE_FALSE(attempt.ok());
+        CHECK(attempt.error().code == ErrorCode::NotFound);
+    }
+    CHECK(relay.stats().lockouts == 0);
+    CHECK(relay.stats().pingsAnswered == 12);
+    CHECK(relay.stats().joinsRejected == 0);
+    CHECK(relay.stats().rooms == 0);
+
+    // The real room is reachable straight afterwards.
+    const Invite invite = newInvite();
+    auto host = startHost(relay, invite.secret);
+    auto joined = joinRaw(relay, invite.room);
+    CHECK_MESSAGE(joined.ok(), (joined.ok() ? "" : joined.error().message));
+}
+
+TEST_CASE("relay stack: a host cannot register the health-ping room") {
+    StackRelay relay;
+    REQUIRE(relay.started());
+    const Invite invite = newInvite();
+    net::RelayHostOptions options = hostOptions(relay, invite.secret);
+    options.roomId = rl::kRelayPingRoomId;
+    options.autoReregister = false;
+    net::RelayHostTransport host(options);
+    const sdk::Status status = host.listen();
+    REQUIRE_FALSE(status.ok());
+    CHECK(status.error().code == ErrorCode::AlreadyExists);
+    CHECK(relay.stats().rooms == 0);
+    CHECK(relay.stats().lockouts == 0);
+}
+
+TEST_CASE("relay stack: a clean host close sends CloseRoom, so the room is gone at once and its clients are disconnected") {
+    StackRelay relay;  // the default TTL is 30 s: anything faster than that is CloseRoom
+    REQUIRE(relay.started());
+    const Invite invite = newInvite();
+    auto host = startHost(relay, invite.secret);
+    std::vector<std::unique_ptr<proto::ITransport>> clients;
+    for (int i = 0; i < 2; ++i) {
+        auto joined = joinRaw(relay, invite.room);
+        REQUIRE(joined.ok());
+        clients.push_back(std::move(joined).value());
+        REQUIRE(acceptPeer(*host) != nullptr);
+    }
+    CHECK(relay.stats().rooms == 1);
+
+    host->close();
+    REQUIRE(waitFor([&] { return relay.stats().rooms == 0; }));
+    const wr::RelayStats stats = relay.stats();
+    CHECK(stats.roomsClosed == 1);
+    CHECK(stats.roomsExpired == 0);
+    CHECK(stats.roomsWithoutHost == 0);
+    CHECK(stats.peers == 0);
+    CHECK(stats.controlViolations == 0);
+    for (const auto& client : clients) CHECK(receiveError(*client) == ErrorCode::Disconnected);
+    REQUIRE(waitFor([&] { return relay.stats().connections == 0; }));
+
+    const auto again = joinRaw(relay, invite.room);
+    REQUIRE_FALSE(again.ok());
+    CHECK(again.error().code == ErrorCode::NotFound);  // not HostAbsent: the room does not exist any more
+    CHECK(relay.logs->contains("room_closed"));
+
+    // The same invite hosts a fresh room right away.
+    auto next = startHost(relay, invite.secret);
+    CHECK(next->registered());
+    CHECK(relay.stats().roomsResumed == 0);
+    CHECK(relay.stats().roomsCreated == 2);
+}
+
+TEST_CASE("relay stack: a host that leaves without CloseRoom keeps the room for its TTL") {
+    StackRelay relay;
+    REQUIRE(relay.started());
+    const Invite invite = newInvite();
+    auto host = startHost(relay, invite.secret, false);
+    host->close();
+    host.reset();
+    REQUIRE(waitFor([&] { return relay.stats().roomsWithoutHost == 1; }));
+    CHECK(relay.stats().roomsClosed == 0);
+    const auto absent = joinRaw(relay, invite.room);
+    REQUIRE_FALSE(absent.ok());
+    CHECK(absent.error().code == ErrorCode::Disconnected);  // HostAbsent
+}
+
+TEST_CASE("relay stack: a host that closes while its relay link is down does not need CloseRoom to shut down") {
+    auto relay = std::make_unique<StackRelay>();
+    REQUIRE(relay->started());
+    const Invite invite = newInvite();
+    net::RelayHostOptions options = hostOptions(*relay, invite.secret);
+    options.connectTimeout = 300ms;
+    net::RelayHostTransport host(options);
+    REQUIRE(host.listen().ok());
+    relay.reset();
+    const auto started = std::chrono::steady_clock::now();
+    host.close();
+    CHECK(std::chrono::steady_clock::now() - started < 5s);
 }

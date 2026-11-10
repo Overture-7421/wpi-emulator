@@ -408,8 +408,9 @@ TEST_CASE("relay enet: selfcheck passes against a live relay and changes nothing
     LiveRelay relay;
     const wr::SelfCheckResult result = wr::runSelfCheck("127.0.0.1", relay.port, 2000ms);
     CHECK_MESSAGE(result.ok, result.detail);
-    REQUIRE(relay.waitFor([&] { return relay.server->stats().joinsRejected == 1; }));
+    REQUIRE(relay.waitFor([&] { return relay.server->stats().pingsAnswered == 1; }));
     const auto stats = relay.server->stats();
+    CHECK(stats.joinsRejected == 0);
     CHECK(stats.rooms == 0);
     CHECK(stats.peers == 0);
     CHECK(stats.roomsCreated == 0);

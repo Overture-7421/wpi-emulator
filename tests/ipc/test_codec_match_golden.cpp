@@ -14,7 +14,7 @@ using namespace wpiemu::sdk::proto;
 using wpiemu::test_ipc::matchSamples;
 using wpiemu::test_ipc::NamedMessage;
 
-// The practice-match and relay messages (MessageType 13..28) pinned to hex captured from the codec when it was written.
+// The practice-match and relay messages (MessageType 13..29) pinned to hex captured from the codec when it was written.
 // Layout: docs/reference/extension-ipc.md. These bytes are the compatibility contract between a host, its clients and
 // the relay of different builds: a change here is a protocol change.
 namespace {
@@ -101,6 +101,7 @@ const std::vector<Golden>& goldens() {
         {"JoinResult", "011a000005ffff"},
         {"PeerJoined", "011b000400"},
         {"PeerLeft", "011c00040003"},
+        {"CloseRoom", "011d00"},
     };
     return table;
 }

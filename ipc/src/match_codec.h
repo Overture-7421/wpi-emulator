@@ -1,6 +1,6 @@
 #pragma once
 
-// The match and relay messages (MessageType 13..28) for BinaryMessageCodec: their `fields` functions live in
+// The match and relay messages (MessageType 13..29) for BinaryMessageCodec: their `fields` functions live in
 // match_codec.cpp and use the same wire::Writer/Reader (and so the same hostile-input rules) as the HALSim messages.
 
 #include <cstddef>

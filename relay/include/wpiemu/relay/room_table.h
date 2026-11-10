@@ -15,7 +15,9 @@
 // PeerJoined). The same hostAuth registering while the previous host connection is still considered live takes the room
 // over (the old connection is closed): a host whose network dropped usually reconnects before the old connection times
 // out. A different hostAuth is RoomTaken (live host) or BadAuth (host away). When the TTL expires the room closes and its
-// clients are closed.
+// clients are closed. A live host can also close its room at once with CloseRoom (clients and the host connection are closed
+// the same way). The reserved health-ping room (relay_messages.h) never exists: a JoinRoom for it is answered NoSuchRoom
+// without being logged or counted as a failed join, and RegisterRoom for it is refused (RoomTaken).
 //
 // Limits. Per-source lockout after repeated failed JoinRoom / RegisterRoom (NoSuchRoom, BadAuth, RoomTaken); the tracking
 // table is bounded. Per-peer token bucket (burst = burstMs of credit, never less than one maximum reliable frame) charged
@@ -77,6 +79,7 @@ struct RoomTableConfig {
 enum class DisconnectReason : std::uint8_t {
     HostReplaced,       // the same host registered again from a new connection
     RoomExpired,        // the host did not return within the TTL
+    RoomClosed,         // the host sent CloseRoom
     RateLimited,        // sustained token-bucket violations
     Oversized,          // sustained oversize frames
     LockedOut,          // RegisterRoom from a locked-out source (RoomRejected has no reason for it)
@@ -92,6 +95,7 @@ inline const char* disconnectReasonName(DisconnectReason reason) {
     switch (reason) {
         case DisconnectReason::HostReplaced: return "host_replaced";
         case DisconnectReason::RoomExpired: return "room_expired";
+        case DisconnectReason::RoomClosed: return "room_closed";
         case DisconnectReason::RateLimited: return "rate_limited";
         case DisconnectReason::Oversized: return "oversized";
         case DisconnectReason::LockedOut: return "locked_out";
@@ -137,6 +141,7 @@ struct RoomEvent {
         RoomResumed,
         HostLeft,
         RoomExpired,
+        RoomClosed,
         PeerJoined,
         PeerLeft,
         JoinRejected,
@@ -157,6 +162,7 @@ inline const char* roomEventName(RoomEvent::Kind kind) {
         case RoomEvent::Kind::RoomResumed: return "room_resumed";
         case RoomEvent::Kind::HostLeft: return "host_left";
         case RoomEvent::Kind::RoomExpired: return "room_expired";
+        case RoomEvent::Kind::RoomClosed: return "room_closed";
         case RoomEvent::Kind::PeerJoined: return "peer_joined";
         case RoomEvent::Kind::PeerLeft: return "peer_left";
         case RoomEvent::Kind::JoinRejected: return "join_rejected";
@@ -177,6 +183,9 @@ public:
     // `source` is the lockout key of the remote address (empty: unknown or exempt, never locked out).
     Effects registerRoom(ConnId conn, const std::string& source, const sdk::match::relay::RegisterRoom& request);
     Effects joinRoom(ConnId conn, const std::string& source, const sdk::match::relay::JoinRoom& request);
+    // The host connection `conn` closes its room now: every client and the host connection itself are closed. Any other
+    // connection is a protocol violation.
+    Effects closeRoom(ConnId conn);
     // A registered connection went away (idempotent; unknown connections are ignored).
     Effects onDisconnect(ConnId conn, sdk::match::relay::PeerLeftReason reason = sdk::match::relay::PeerLeftReason::Disconnected);
     // One game frame from `conn`.

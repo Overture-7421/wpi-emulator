@@ -269,6 +269,9 @@ struct RoomTable::Impl {
             ++counters.registersRejected;
             return {CloseConnection{conn, DisconnectReason::ProtocolViolation}};
         }
+        // The health-ping room can never exist; refusing it is not the source's fault, so it is not a failure toward the lockout.
+        if (rl::isPingRoomId(request.roomId))
+            return rejectRegister(conn, rl::RoomRejectReason::RoomTaken, source, false, request.roomId);
 
         const auto found = rooms.find(request.roomId);
         if (found == rooms.end()) {
@@ -318,6 +321,14 @@ struct RoomTable::Impl {
         if (!versionSupported(request.protocolVersion))
             return rejectJoin(conn, rl::JoinRoomFailure::BadVersion, source, false, request.roomId);
 
+        if (rl::isPingRoomId(request.roomId)) {
+            // A health probe: answered like any unknown room but neither logged, counted as a rejected join nor toward the lockout.
+            ++counters.pingsAnswered;
+            Effects effects;
+            addEffect<SendControl>(effects, conn, rl::JoinResult{false, rl::JoinRoomFailure::NoSuchRoom, rl::kRelayBroadcastPeer});
+            return effects;
+        }
+
         const auto found = rl::isValidRoomId(request.roomId) ? rooms.find(request.roomId) : rooms.end();
         if (found == rooms.end()) return rejectJoin(conn, rl::JoinRoomFailure::NoSuchRoom, source, true, request.roomId);
         Room& room = found->second;
@@ -334,6 +345,25 @@ struct RoomTable::Impl {
         Effects effects;
         addEffect<SendControl>(effects, conn, rl::JoinResult{true, rl::JoinRoomFailure::None, peerId});
         addEffect<SendControl>(effects, *room.host, rl::PeerJoined{peerId});
+        return effects;
+    }
+
+    Effects closeRoom(ConnId conn) {
+        const auto it = conns.find(conn);
+        if (it == conns.end() || it->second.role != Role::Host) return violation(conn);
+        const auto roomIt = rooms.find(it->second.room);
+        if (roomIt == rooms.end()) return violation(conn);
+        Room& room = roomIt->second;
+        Effects effects;
+        for (const auto& client : room.clients) {
+            conns.erase(client.second);
+            addEffect<CloseConnection>(effects, client.second, DisconnectReason::RoomClosed);
+        }
+        conns.erase(it);
+        addEffect<CloseConnection>(effects, conn, DisconnectReason::RoomClosed);
+        ++counters.roomsClosed;
+        event(RoomEvent::Kind::RoomClosed, conn, room.id, 0, std::to_string(room.clients.size()));
+        rooms.erase(roomIt);
         return effects;
     }
 
@@ -454,6 +484,7 @@ Effects RoomTable::registerRoom(ConnId conn, const std::string& source, const rl
 Effects RoomTable::joinRoom(ConnId conn, const std::string& source, const rl::JoinRoom& request) {
     return impl_->joinRoom(conn, source, request);
 }
+Effects RoomTable::closeRoom(ConnId conn) { return impl_->closeRoom(conn); }
 Effects RoomTable::onDisconnect(ConnId conn, rl::PeerLeftReason reason) { return impl_->removeConn(conn, reason); }
 RouteResult RoomTable::route(ConnId conn, Delivery delivery, std::span<const std::byte> frame) {
     return impl_->route(conn, delivery, frame);

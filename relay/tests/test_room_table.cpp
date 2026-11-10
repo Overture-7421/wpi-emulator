@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <random>
+#include <set>
 #include <sstream>
 
 #include "relay_test_support.h"
@@ -684,4 +685,125 @@ TEST_CASE("relay table: the same event sequence yields the same decisions") {
     CHECK(first == runScript(42));
     CHECK(first != runScript(43));
     CHECK(first.size() > 1000);
+}
+
+TEST_CASE("relay table: the health-ping room is NoSuchRoom without counting a failure or creating anything") {
+    RoomTableConfig config;
+    config.lockoutMaxFailures = 3;
+    Fixture f(config);
+    for (unsigned i = 0; i < 20; ++i) {
+        const rl::JoinResult result = f.joinResult(100 + i, rl::kRelayPingRoomId, "1.2.3.4");
+        CHECK_FALSE(result.ok);
+        CHECK(result.reason == rl::JoinRoomFailure::NoSuchRoom);
+        CHECK(result.peerId == rl::kRelayBroadcastPeer);
+        CHECK(f.table.roleOf(100 + i) == Role::None);
+    }
+    CHECK_FALSE(f.table.isLockedOut("1.2.3.4"));
+    CHECK(f.table.drainEvents().empty());
+    const auto stats = f.table.stats();
+    CHECK(stats.pingsAnswered == 20);
+    CHECK(stats.joinsRejected == 0);
+    CHECK(stats.lockouts == 0);
+    CHECK(stats.trackedSources == 0);
+    CHECK(stats.rooms == 0);
+    CHECK(f.table.connectionCount() == 0);
+    CHECK_FALSE(f.table.hasRoom(rl::kRelayPingRoomId));
+
+    // An ordinary unknown room right next to it still counts.
+    for (unsigned i = 0; i < 3; ++i) f.joinResult(200 + i, "00000001", "1.2.3.4");
+    CHECK(f.table.isLockedOut("1.2.3.4"));
+    // Locked out sources are told, ping or not.
+    CHECK(f.joinResult(300, rl::kRelayPingRoomId, "1.2.3.4").reason == rl::JoinRoomFailure::LockedOut);
+    // A bad protocol version is still reported as such.
+    const auto effects = f.table.joinRoom(301, "", std::get<rl::JoinRoom>(joinMessage(rl::kRelayPingRoomId, 99)));
+    CHECK(firstOf<rl::JoinResult>(controlsTo(effects, 301))->reason == rl::JoinRoomFailure::BadVersion);
+}
+
+TEST_CASE("relay table: registering the health-ping room is refused for every host and every auth") {
+    RoomTableConfig config;
+    config.lockoutMaxFailures = 3;
+    Fixture f(config);
+    for (std::uint8_t auth = 1; auth <= 10; ++auth) {
+        const auto reply = f.registerHost(10 + auth, rl::kRelayPingRoomId, auth, "5.6.7.8");
+        REQUIRE(reply.has_value());
+        REQUIRE(std::holds_alternative<rl::RoomRejected>(*reply));
+        CHECK(std::get<rl::RoomRejected>(*reply).reason == rl::RoomRejectReason::RoomTaken);
+        CHECK(f.table.roleOf(10 + auth) == Role::None);
+    }
+    CHECK_FALSE(f.table.hasRoom(rl::kRelayPingRoomId));
+    CHECK_FALSE(f.table.isLockedOut("5.6.7.8"));
+    CHECK(f.table.stats().roomsCreated == 0);
+    CHECK(f.table.stats().registersRejected == 10);
+    CHECK(f.table.connectionCount() == 0);
+    // Joining it afterwards still finds nothing.
+    CHECK(f.joinResult(99, rl::kRelayPingRoomId).reason == rl::JoinRoomFailure::NoSuchRoom);
+}
+
+TEST_CASE("relay table: CloseRoom closes the clients and the host connection and frees the id and the slot") {
+    RoomTableConfig config;
+    config.maxRooms = 1;
+    Fixture f(config);
+    f.registerHost(1, roomIdFor(1));
+    REQUIRE(f.join(10, roomIdFor(1)) == 1);
+    REQUIRE(f.join(11, roomIdFor(1)) == 2);
+    f.table.drainEvents();
+
+    const auto effects = f.table.closeRoom(1);
+    const auto closes = closesIn(effects);
+    REQUIRE(closes.size() == 3);
+    std::set<ConnId> closed;
+    for (const auto& c : closes) {
+        CHECK(c.reason == DisconnectReason::RoomClosed);
+        closed.insert(c.to);
+    }
+    CHECK(closed == std::set<ConnId>{1, 10, 11});
+    CHECK(controlsTo(effects, 1).empty());
+    CHECK_FALSE(f.table.hasRoom(roomIdFor(1)));
+    CHECK(f.table.connectionCount() == 0);
+    CHECK(f.table.roleOf(1) == Role::None);
+    CHECK(f.table.roleOf(10) == Role::None);
+    const auto stats = f.table.stats();
+    CHECK(stats.roomsClosed == 1);
+    CHECK(stats.roomsExpired == 0);
+    CHECK(stats.rooms == 0);
+    const auto events = f.table.drainEvents();
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].kind == wpiemu::relay::RoomEvent::Kind::RoomClosed);
+    CHECK(events[0].roomId == roomIdFor(1));
+    CHECK(events[0].detail == "2");
+
+    // Late disconnects of the closed connections are ignored, and the single slot is free for another host.
+    CHECK(f.table.onDisconnect(10).empty());
+    CHECK(f.table.onDisconnect(1).empty());
+    const auto again = f.registerHost(2, roomIdFor(1), 9);
+    REQUIRE(again.has_value());
+    CHECK_FALSE(std::get<rl::RoomRegistered>(*again).resumed);
+    CHECK(f.joinResult(12, roomIdFor(1)).ok);
+}
+
+TEST_CASE("relay table: CloseRoom from anything but a registered host is a protocol violation") {
+    Fixture f;
+    f.registerHost(1, roomIdFor(1));
+    REQUIRE(f.join(10, roomIdFor(1)) == 1);
+    for (const ConnId conn : {ConnId{10}, ConnId{500}}) {
+        const auto closes = closesIn(f.table.closeRoom(conn));
+        REQUIRE(closes.size() == 1);
+        CHECK(closes[0].to == conn);
+        CHECK(closes[0].reason == DisconnectReason::ProtocolViolation);
+    }
+    CHECK(f.table.hasRoom(roomIdFor(1)));
+    CHECK(f.table.hostPresent(roomIdFor(1)));
+    CHECK(f.table.clientCount(roomIdFor(1)) == 0);  // the offending client was removed, nothing else
+    CHECK(f.table.stats().roomsClosed == 0);
+}
+
+TEST_CASE("relay table: CloseRoom after a takeover closes the room of the live host only") {
+    Fixture f;
+    f.registerHost(1, roomIdFor(1), 4);
+    REQUIRE(f.join(10, roomIdFor(1)) == 1);
+    f.registerHost(2, roomIdFor(1), 4);  // takeover: connection 1 is replaced
+    CHECK(closesIn(f.table.closeRoom(1)).size() == 1);  // no host any more: a violation, the room stays
+    CHECK(f.table.hasRoom(roomIdFor(1)));
+    CHECK(closesIn(f.table.closeRoom(2)).size() == 2);
+    CHECK_FALSE(f.table.hasRoom(roomIdFor(1)));
 }

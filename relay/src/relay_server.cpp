@@ -203,10 +203,17 @@ struct RelayServer::Impl {
         if (frame.size() > net::kMaxControlFrameBytes) return violation(c, "oversize_control_frame");
         sdk::Result<sdk::proto::Message> decoded = codec.decode(frame);
         if (!decoded) return violation(c, "undecodable_control_frame");
-        if (table.roleOf(c.id) != Role::None) return violation(c, "control_frame_after_registration");
+        const sdk::proto::Message& message = decoded.value();
+        if (table.roleOf(c.id) != Role::None) {
+            if (table.roleOf(c.id) != Role::Host || !std::holds_alternative<rl::CloseRoom>(message))
+                return violation(c, "control_frame_after_registration");
+            Effects closing = table.closeRoom(c.id);
+            execute(closing);
+            logEvents();
+            return;
+        }
 
         Effects effects;
-        const sdk::proto::Message& message = decoded.value();
         if (const auto* reg = std::get_if<rl::RegisterRoom>(&message)) effects = table.registerRoom(c.id, c.lockKey, *reg);
         else if (const auto* join = std::get_if<rl::JoinRoom>(&message)) effects = table.joinRoom(c.id, c.lockKey, *join);
         else return violation(c, "unexpected_control_message");
@@ -334,6 +341,8 @@ struct RelayServer::Impl {
                   {"peersKicked", s.peersKicked},
                   {"roomsCreated", s.roomsCreated},
                   {"roomsExpired", s.roomsExpired},
+                  {"roomsClosed", s.roomsClosed},
+                  {"pingsAnswered", s.pingsAnswered},
                   {"trackedSources", s.trackedSources}});
     }
 

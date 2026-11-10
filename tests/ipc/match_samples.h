@@ -1,6 +1,6 @@
 #pragma once
 
-// One representative instance of every practice-match and relay message (MessageType 13..28), every field set to a
+// One representative instance of every practice-match and relay message (MessageType 13..29), every field set to a
 // non-default value so a dropped or reordered field shows. Shared by the golden, hostile-input and delivery tests.
 
 #include <string>
@@ -266,6 +266,8 @@ inline std::vector<NamedMessage> matchSamples() {
     left.peerId = 4;
     left.reason = PeerLeftReason::Oversized;
     all.push_back({"PeerLeft", left});
+
+    all.push_back({"CloseRoom", CloseRoom{}});
     return all;
 }
 

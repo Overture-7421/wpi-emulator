@@ -46,10 +46,11 @@ inline Bytes encoded(const Message& message) {
     return out;
 }
 
-// A valid room id derived from a number (distinct numbers give distinct ids).
+// A valid room id derived from a number (distinct numbers give distinct ids, none is the reserved health-ping room).
 inline std::string roomIdFor(unsigned n) {
     std::string id(rl::kRelayRoomIdChars, '0');
     const std::string alphabet = rl::kRoomIdAlphabet;
+    ++n;
     for (std::size_t i = 0; i < id.size(); ++i) {
         id[id.size() - 1 - i] = alphabet[n % alphabet.size()];
         n /= static_cast<unsigned>(alphabet.size());

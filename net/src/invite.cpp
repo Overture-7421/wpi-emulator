@@ -76,16 +76,23 @@ bool InviteSecret::isZero() const {
 
 bool InviteSecret::operator==(const InviteSecret& other) const { return constantTimeEqual(bytes_, other.bytes_); }
 
-sdk::Result<InviteSecret> generateInvite() {
-    InviteSecret::Bytes bytes{};
-    if (sdk::Status s = fillRandom(std::as_writable_bytes(std::span(bytes))); !s) {
+sdk::Result<InviteSecret> generateInvite() { return generateInvite(fillRandom, sdk::match::relay::kRelayPingRoomId); }
+
+sdk::Result<InviteSecret> generateInvite(const std::function<sdk::Status(std::span<std::byte>)>& fill,
+                                         std::string_view reservedRoomId) {
+    constexpr int kMaxDraws = 8;
+    for (int draw = 0; draw < kMaxDraws; ++draw) {
+        InviteSecret::Bytes bytes{};
+        if (sdk::Status s = fill(std::as_writable_bytes(std::span(bytes))); !s) {
+            crypto_wipe(bytes.data(), bytes.size());
+            return s.error();
+        }
+        bytes[InviteSecret::kBytes - 1] = static_cast<std::uint8_t>(bytes[InviteSecret::kBytes - 1] & 0xf0);
+        sdk::Result<InviteSecret> secret = InviteSecret::fromBytes(bytes);
         crypto_wipe(bytes.data(), bytes.size());
-        return s.error();
+        if (secret && roomId(secret.value()) != reservedRoomId) return secret;
     }
-    bytes[InviteSecret::kBytes - 1] = static_cast<std::uint8_t>(bytes[InviteSecret::kBytes - 1] & 0xf0);
-    sdk::Result<InviteSecret> secret = InviteSecret::fromBytes(bytes);
-    crypto_wipe(bytes.data(), bytes.size());
-    return secret;
+    return sdk::makeError(sdk::ErrorCode::IoError, "the random source keeps producing the reserved room id");
 }
 
 std::string inviteText(const InviteSecret& secret) {

@@ -179,6 +179,11 @@ struct RelayHostTransport::Impl final : RelayUplink, std::enable_shared_from_thi
         Attempt first = establish();
         if (!first.ok) return first.error;
         listening = true;
+        {
+            // Visible to close() before the supervisor thread has started the session.
+            std::lock_guard lock(linkMutex);
+            currentLink = first.session.link;
+        }
         setState(State::Registered);
         supervisor = std::thread([this, session = std::move(first.session)]() mutable { supervise(std::move(session)); });
         return sdk::okStatus();
@@ -198,9 +203,11 @@ struct RelayHostTransport::Impl final : RelayUplink, std::enable_shared_from_thi
     }
 
     void shutdown() {
+        bool sendCloseRoom = false;
         {
             std::lock_guard lock(mutex);
             stop.store(true);
+            sendCloseRoom = state == State::Registered && options.closeRoomOnClose;
             if (state != State::Dead) {
                 state = State::Dead;
                 deadError = makeError(ErrorCode::Disconnected, "relay host transport closed");
@@ -211,6 +218,10 @@ struct RelayHostTransport::Impl final : RelayUplink, std::enable_shared_from_thi
         {
             std::lock_guard lock(linkMutex);
             link = currentLink;
+        }
+        if (link && sendCloseRoom) {
+            // Best effort: the link flushes what was queued before it disconnects, and the relay expires the room anyway.
+            if (IControlLink* control = controlLinkOf(*link)) (void)detail::sendRelayMessage(*control, relay::CloseRoom{});
         }
         if (link) link->close();
         link.reset();

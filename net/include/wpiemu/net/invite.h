@@ -17,6 +17,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -63,8 +64,11 @@ private:
     Bytes bytes_{};
 };
 
-// A fresh secret from the operating system random source. IoError if it is unavailable (never a weak fallback).
+// A fresh secret from the operating system random source. IoError if it is unavailable (never a weak fallback). The secret
+// never derives the relay's reserved health-ping room id (sdk::match::relay::kRelayPingRoomId): such a draw is replaced.
 sdk::Result<InviteSecret> generateInvite();
+// The same with an explicit random source and reserved room id (tests); a source that keeps producing the reserved id is an IoError.
+sdk::Result<InviteSecret> generateInvite(const std::function<sdk::Status(std::span<std::byte>)>& fill, std::string_view reservedRoomId);
 
 // "XXXXX-XXXXX-XXXXX-XXXXX", upper case.
 std::string inviteText(const InviteSecret& secret);

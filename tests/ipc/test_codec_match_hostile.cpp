@@ -20,7 +20,7 @@ using namespace wpiemu::sdk::proto;
 using wpiemu::test_ipc::matchSamples;
 using wpiemu::test_ipc::NamedMessage;
 
-// Hostile input for the match and relay messages (MessageType 13..28). They share the Writer/Reader of the HALSim
+// Hostile input for the match and relay messages (MessageType 13..29). They share the Writer/Reader of the HALSim
 // protocol, so these tests pin that every list is capped by its contract constant and by the bytes left, every string by
 // its contract limit, every enum by its maximum, and that no byte sequence crashes, throws or hangs the decoder.
 namespace {
@@ -28,7 +28,7 @@ namespace {
 using Bytes = std::vector<std::byte>;
 
 constexpr std::uint16_t kFirstMatchType = 13;
-constexpr std::uint16_t kLastMatchType = 28;
+constexpr std::uint16_t kLastMatchType = 29;
 
 class Builder {
 public:
@@ -194,11 +194,20 @@ TEST_CASE("match hostile: every single-byte mutation decodes to an error or to a
     }
 }
 
-TEST_CASE("match hostile: an empty body is a ProtocolError for every match and relay type") {
+TEST_CASE("match hostile: an empty body is a ProtocolError for every match and relay type with fields") {
     for (std::uint16_t type = kFirstMatchType; type <= kLastMatchType; ++type) {
         CAPTURE(type);
-        CHECK(isProtocolError(decodeNoThrow(frameOf(type, {}))));
+        const bool hasFields = type != static_cast<std::uint16_t>(MessageType::CloseRoom);
+        CHECK(isProtocolError(decodeNoThrow(frameOf(type, {}))) == hasFields);
     }
+}
+
+TEST_CASE("match hostile: CloseRoom has no fields and is exactly its header") {
+    const Bytes encoded = encodeOk(match::relay::CloseRoom{});
+    CHECK(encoded == frameOf(MessageType::CloseRoom, {}));
+    const Result<Message> decoded = decodeNoThrow(encoded);
+    REQUIRE(decoded.ok());
+    CHECK(std::holds_alternative<match::relay::CloseRoom>(decoded.value()));
 }
 
 TEST_CASE("match hostile: list counts above the cap are refused (with enough bytes behind them)") {
@@ -451,9 +460,9 @@ TEST_CASE("match hostile: random bodies of every match type are an error or a va
     }
 }
 
-TEST_CASE("match hostile: unknown message types 29 and above are skippable like any future type") {
+TEST_CASE("match hostile: unknown message types 30 and above are skippable like any future type") {
     const BinaryMessageCodec codec;
-    for (const std::uint16_t type : {std::uint16_t{0}, std::uint16_t{29}, std::uint16_t{30}, std::uint16_t{255},
+    for (const std::uint16_t type : {std::uint16_t{0}, std::uint16_t{30}, std::uint16_t{31}, std::uint16_t{255},
                                      std::uint16_t{256}, std::uint16_t{0x7FFF}, std::uint16_t{0xFFFF}}) {
         CAPTURE(type);
         const Result<Message> r = decodeNoThrow(frameOf(type, Builder().u32(1234).bytes), codec);
@@ -465,7 +474,7 @@ TEST_CASE("match hostile: unknown message types 29 and above are skippable like 
     const auto shared = std::make_shared<BinaryMessageCodec>();
     MessageChannel sender(std::move(pair.a), shared);
     MessageChannel receiver(std::move(pair.b), shared);
-    REQUIRE(sender.transport().send(frameOf(29, Builder().u8(1).bytes)).ok());
+    REQUIRE(sender.transport().send(frameOf(30, Builder().u8(1).bytes)).ok());
     REQUIRE(sender.transport().send(frameOf(500, {})).ok());
     match::relay::PeerLeft left;
     left.peerId = 9;
