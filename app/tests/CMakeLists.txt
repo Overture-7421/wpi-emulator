@@ -9,6 +9,7 @@ add_executable(wpiemu_app_tests
     test_gui_shell.cpp
     test_gui_wizard.cpp
     test_hosting_service.cpp
+    test_host_panel.cpp
     test_project_inspector.cpp
     test_real_host.cpp
     test_robot_basics.cpp

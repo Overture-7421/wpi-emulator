@@ -61,6 +61,12 @@ target_link_libraries(wpiemu_app_common
 target_compile_definitions(wpiemu_app_common PRIVATE WPIEMU_APP_VERSION="${PROJECT_VERSION}")
 wpiemu_target_defaults(wpiemu_app_common)
 
+# The DNS label suffix of the deployed relay (infra/relay dnsLabelSuffix, for example "-a1b2"), baked into release builds so
+# the Production relay preset works without any setting. Empty: the user sets it (relay_endpoints.h).
+set(WPIEMU_RELAY_DNS_SUFFIX "" CACHE STRING "DNS label suffix of the deployed practice-match relay, for example -a1b2")
+if(WPIEMU_RELAY_DNS_SUFFIX)
+    set_property(SOURCE relay_endpoints.cpp APPEND PROPERTY COMPILE_DEFINITIONS "WPIEMU_RELAY_DNS_SUFFIX=\"${WPIEMU_RELAY_DNS_SUFFIX}\"")
+endif()
 # The editor and run view are separate libraries owned by their own streams. The shell adapts the
 # application to the editor's backend interface and hands the run view the shared runtime host; a placeholder
 # page stands in when a page library is not part of the build.

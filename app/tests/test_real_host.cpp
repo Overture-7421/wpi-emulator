@@ -403,11 +403,13 @@ TEST_CASE("real host: a hosted direct match accepts a client in the lobby, shows
     CHECK(up->phase == host::HostingPhase::Lobby);   // the robot program is not running in lock-step yet
     CHECK_FALSE(up->invite.empty());
     CHECK_FALSE(hosting.restartRequired());
+    CHECK_FALSE(hosting.options().phaseHudKey.empty());   // the game's scoreboard phase key reaches the session
+    CHECK(hosting.options().phaseHudKey == phaseHudKeyOf(f.host().scene().hud));
     host::HostingOptions changed = o;
     changed.maxPlayers = 3;
     hosting.setOptions(changed);
     CHECK(hosting.restartRequired());   // applies at the next launch
-    hosting.setOptions(o);
+    hosting.setOptions(*hosting.appliedOptions());
     CHECK_FALSE(hosting.restartRequired());
 
     const std::string endpoint = "enet://127.0.0.1:" + std::to_string(up->port);
@@ -426,12 +428,22 @@ TEST_CASE("real host: a hosted direct match accepts a client in the lobby, shows
     REQUIRE(waitFor([&] { return hosting.status()->roster.size() == 2; }, 5000));
     CHECK(hosting.status()->roster[1].name == "Remote");
     CHECK(hosting.status()->timeScaleLocked);
+    // the run view learns how to draw the new player from the roster, through the host's contract
+    REQUIRE(hosting.status()->roster[1].appearance != nullptr);
+    CHECK_FALSE(hosting.status()->roster[1].appearance->empty());
+    const auto runViewRoster = f.host().matchRoster();
+    REQUIRE(runViewRoster != nullptr);
+    REQUIRE(runViewRoster->size() == 1);
+    CHECK((*runViewRoster)[0].id == id);
+    CHECK((*runViewRoster)[0].name == "Remote");
+    CHECK((*runViewRoster)[0].appearance == hosting.status()->roster[1].appearance);
 
     QSignalSpy kicked(&hosting, &HostingService::kickRequested);
     hosting.kick(id, QStringLiteral("test"));
     CHECK(kicked.count() == 1);
     REQUIRE(client->waitFor([&] { return client->gotControl(sdk::match::MatchControlKind::Kick) || client->closed; }));
     REQUIRE(waitFor([&] { return hosting.status()->roster.size() == 1; }, 5000));
+    CHECK(f.host().matchRoster() == nullptr);   // and the robot leaves the run view
 
     f.host().stop();
     REQUIRE(f.waitProcess(sdk::ProcessState::Exited));

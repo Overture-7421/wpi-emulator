@@ -24,7 +24,8 @@ HostPanelModel::HostPanelModel(HostingService& service, RelayPresets presets, Cl
     if (!clipboard_) clipboard_ = [](const QString& text) { QGuiApplication::clipboard()->setText(text); };
     loadDraft();
     connect(&service_, &HostingService::optionsChanged, this, [this] {
-        if (!applying_ && service_.options() != seen_) loadDraft();   // changed elsewhere; session start/end keep the draft
+        if (applying_) return;   // apply() announces its own change
+        if (service_.options() != seen_) loadDraft();   // changed elsewhere; session start/end keep the draft
         emit changed();
     });
     connect(&service_, &HostingService::statusChanged, this, &HostPanelModel::changed);

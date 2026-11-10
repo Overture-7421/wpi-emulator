@@ -204,7 +204,10 @@ void RealRuntimeHost::launch() {
         o.javaHome = toolchain.javaHome;
         o.wpilibHome = toolchain.wpilibHome;
     }
-    if (options_.hosting) o.hosting = options_.hosting->options();
+    if (options_.hosting) {
+        options_.hosting->setPhaseHudKey(phaseHudKeyOf(scene_.hud));   // the open game's, whatever the preferences held
+        o.hosting = options_.hosting->options();
+    }
     if (options_.tweak) options_.tweak(o);
 
     emitLog(sdk::LogLevel::Info, QStringLiteral("runtime"), tr("Launching the robot with the HALSim extension"));
