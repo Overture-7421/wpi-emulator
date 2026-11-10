@@ -299,7 +299,6 @@ one rule the host also uses.
 
 ### Client behaviour
 
-<!-- core-match-client -->
 `MatchClient` ([`match_client.h`](../../core/match/include/wpiemu/core/match/match_client.h)) is the
 Qt-free client session. It has no threads of its own: the app (or a test) calls `update()` at
 120 Hz or more and binds its UI to the immutable `MatchClientView` it publishes
@@ -343,7 +342,6 @@ Qt-free client session. It has no threads of its own: the app (or a test) calls 
   the status is `Disconnected` and `resume(transport)` rejoins by hand. The host keeps the robot for
   its resume window (30 s); later it is a fresh join.
 
-<!-- client-app -->
 `wpiemu_client` ([`app/client`](../../app/client)) is the app around that session. It adds no
 network logic of its own; the pieces are:
 
