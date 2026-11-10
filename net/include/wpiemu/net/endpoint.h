@@ -26,6 +26,13 @@ struct NetEndpoint {
 
     // InvalidArgument for a bad scheme, host, port or room id.
     static sdk::Result<NetEndpoint> parse(std::string_view text);
+    // The relay's address as a person writes it, "host:port" or "relay://host:port" (surrounding spaces and a trailing
+    // "/anything" are ignored; IPv6 literals use brackets), turned into the relay endpoint of `roomId`. InvalidArgument with
+    // a message fit for the user otherwise.
+    static sdk::Result<NetEndpoint> parseRelayAddress(std::string_view text, std::string_view roomId);
+    // A host's address as a person writes it, "host", "host:port", "[::1]" or "enet://host:port" (spaces ignored). A missing
+    // port is sdk::match::kDefaultDirectPort. InvalidArgument with a message fit for the user otherwise.
+    static sdk::Result<NetEndpoint> parseDirectAddress(std::string_view text);
     // The canonical text; parse(format()) yields an equal endpoint.
     std::string format() const;
 

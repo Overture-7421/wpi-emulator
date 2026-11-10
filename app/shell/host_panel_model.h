@@ -14,7 +14,7 @@
 #include <functional>
 
 #include "common/hosting_service.h"
-#include "common/relay_endpoints.h"
+#include "ui/relay_endpoints.h"
 #include "common/ui_helpers.h"
 
 namespace wpiemu::app {

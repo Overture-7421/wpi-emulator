@@ -44,6 +44,7 @@ inline constexpr std::size_t kMaxGameHudValues = 16;     // game-wide HUD list i
 inline constexpr std::size_t kMaxEntityGroups = 8;       // entity groups (fuel, ...) per snapshot
 inline constexpr std::size_t kMaxEntityDeltaEntries = 1024;  // upserts or removals of one group in one snapshot
 inline constexpr std::size_t kResumeTokenBytes = 16;
+inline constexpr std::uint16_t kDefaultDirectPort = 47300;  // UDP port a direct-connect host listens on unless told otherwise
 
 // Best-effort snapshot size the host aims for per client (the payload before the 24-byte encryption overhead). The host
 // trims entity deltas to fit; it is a budget, not a wire limit.

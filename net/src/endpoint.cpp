@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <vector>
 
+#include "wpiemu/sdk/core/strings.h"
+#include "wpiemu/sdk/match/match_protocol.h"
 #include "wpiemu/sdk/match/relay_messages.h"
 
 namespace wpiemu::net {
@@ -158,6 +160,37 @@ sdk::Result<NetEndpoint> NetEndpoint::parse(std::string_view text) {
     endpoint.roomId = std::string(path.substr(1));
     if (!sdk::match::relay::isValidRoomId(endpoint.roomId)) return bad("malformed room id");
     return endpoint;
+}
+
+sdk::Result<NetEndpoint> NetEndpoint::parseRelayAddress(std::string_view text, std::string_view roomId) {
+    std::string_view rest = sdk::asciiTrim(text);
+    if (rest.empty()) return makeError(ErrorCode::InvalidArgument, "Enter the relay address as host:port.");
+    if (const std::size_t scheme = rest.find("://"); scheme != std::string_view::npos) {
+        if (lower(rest.substr(0, scheme)) != "relay")
+            return makeError(ErrorCode::InvalidArgument, "The relay address must be host:port or relay://host:port.");
+        rest.remove_prefix(scheme + 3);
+    }
+    const std::string authority(rest.substr(0, rest.find('/')));
+    auto parsed = parse("relay://" + authority + "/" + std::string(roomId));
+    if (!parsed) return makeError(ErrorCode::InvalidArgument, "The relay address is not valid: " + parsed.error().message);
+    return parsed;
+}
+
+sdk::Result<NetEndpoint> NetEndpoint::parseDirectAddress(std::string_view text) {
+    std::string_view rest = sdk::asciiTrim(text);
+    if (rest.empty()) return makeError(ErrorCode::InvalidArgument, "Enter the host's address, for example 192.168.1.20:47300.");
+    if (const std::size_t scheme = rest.find("://"); scheme != std::string_view::npos) {
+        if (lower(rest.substr(0, scheme)) != "enet")
+            return makeError(ErrorCode::InvalidArgument, "The host's address must be host:port or enet://host:port.");
+        rest.remove_prefix(scheme + 3);
+    }
+    const std::string authority(rest);
+    const bool bracketed = !authority.empty() && authority.front() == '[';
+    const bool hasPort = bracketed ? authority.find("]:") != std::string::npos : authority.find(':') != std::string::npos;
+    const std::string withPort = hasPort ? authority : authority + ':' + std::to_string(sdk::match::kDefaultDirectPort);
+    auto parsed = parse("enet://" + withPort);
+    if (!parsed) return makeError(ErrorCode::InvalidArgument, "The host's address is not valid: " + parsed.error().message);
+    return parsed;
 }
 
 std::string NetEndpoint::format() const {

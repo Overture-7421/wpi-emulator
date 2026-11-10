@@ -13,7 +13,7 @@
 
 #include "common/app_services.h"
 #include "common/demo_runtime_host.h"
-#include "common/key_value_store.h"
+#include "ui/key_value_store.h"
 #include "common/robot_basics.h"
 #include "common/system_probe.h"
 #include "wpiemu/sdk/testing/wait.h"

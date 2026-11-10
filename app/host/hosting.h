@@ -23,7 +23,7 @@ enum class HostingMode {
     Relay,    // register a room with the relay; clients use only the invite
 };
 
-inline constexpr std::uint16_t kDefaultHostingPort = 47300;
+inline constexpr std::uint16_t kDefaultHostingPort = sdk::match::kDefaultDirectPort;
 inline constexpr std::size_t kMinHostingPlayers = 2;   // the host's own robot and one remote robot
 
 struct HostingOptions {

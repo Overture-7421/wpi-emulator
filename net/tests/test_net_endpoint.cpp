@@ -123,3 +123,51 @@ TEST_CASE("net endpoint: format and parse round trip") {
         CHECK(again.value() == parsed.value());
     }
 }
+
+TEST_CASE("net endpoint: a person's relay address becomes the relay endpoint of the room") {
+    const auto plain = NetEndpoint::parseRelayAddress("relay.example.org:7000", "ABCD1234");
+    REQUIRE(plain.ok());
+    CHECK(plain.value().format() == "relay://relay.example.org:7000/ABCD1234");
+
+    const auto scheme = NetEndpoint::parseRelayAddress("  RELAY://10.1.2.3:9/ignored  ", "ABCD1234");
+    REQUIRE(scheme.ok());
+    CHECK(scheme.value().host == "10.1.2.3");
+    CHECK(scheme.value().roomId == "ABCD1234");
+
+    const auto v6 = NetEndpoint::parseRelayAddress("[::1]:8080", "ABCD1234");
+    REQUIRE(v6.ok());
+    CHECK(v6.value().host == "::1");
+
+    for (const char* bad : {"", "example.org", "example.org:0", "enet://example.org:1", "bad host:1"}) {
+        CAPTURE(bad);
+        const auto r = NetEndpoint::parseRelayAddress(bad, "ABCD1234");
+        CHECK_FALSE(r.ok());
+        if (!r.ok()) CHECK_FALSE(r.error().message.empty());
+    }
+}
+
+TEST_CASE("net endpoint: a person's direct address defaults the port") {
+    const auto bare = NetEndpoint::parseDirectAddress("192.168.1.20");
+    REQUIRE(bare.ok());
+    CHECK(bare.value().format() == "enet://192.168.1.20:47300");
+
+    const auto port = NetEndpoint::parseDirectAddress(" host.example:5000 ");
+    REQUIRE(port.ok());
+    CHECK(port.value().port == 5000);
+
+    const auto scheme = NetEndpoint::parseDirectAddress("enet://10.0.0.2");
+    REQUIRE(scheme.ok());
+    CHECK(scheme.value().port == 47300);
+
+    const auto v6 = NetEndpoint::parseDirectAddress("[::1]");
+    REQUIRE(v6.ok());
+    CHECK(v6.value().format() == "enet://[::1]:47300");
+    const auto v6port = NetEndpoint::parseDirectAddress("[::1]:6000");
+    REQUIRE(v6port.ok());
+    CHECK(v6port.value().port == 6000);
+
+    for (const char* bad : {"", "relay://host:1", "bad host", "host:99999", "[::1"}) {
+        CAPTURE(bad);
+        CHECK_FALSE(NetEndpoint::parseDirectAddress(bad).ok());
+    }
+}

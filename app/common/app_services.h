@@ -7,7 +7,7 @@
 #include "common/build_tools_installer.h"
 #include "common/config_repository.h"
 #include "common/hosting_service.h"
-#include "common/key_value_store.h"
+#include "ui/key_value_store.h"
 #include "common/project_inspector.h"
 #include "common/project_prefs.h"
 #include "common/project_session.h"

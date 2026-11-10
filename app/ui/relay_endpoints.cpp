@@ -1,4 +1,4 @@
-#include "common/relay_endpoints.h"
+#include "ui/relay_endpoints.h"
 
 #include <cctype>
 

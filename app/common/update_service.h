@@ -10,7 +10,7 @@
 #include <functional>
 #include <memory>
 
-#include "common/key_value_store.h"
+#include "ui/key_value_store.h"
 #include "common/system_probe.h"
 #include "common/update_install.h"
 #include "common/update_transport.h"

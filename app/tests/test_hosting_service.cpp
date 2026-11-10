@@ -4,7 +4,7 @@
 #include <QSignalSpy>
 
 #include "common/hosting_service.h"
-#include "common/key_value_store.h"
+#include "ui/key_value_store.h"
 
 using namespace wpiemu::app;
 namespace host = wpiemu::app::host;

@@ -74,7 +74,7 @@ through `HostingService::setOptions`:
 - **Roster**: the host first, then each player with alliance colour and station, ping, loss (a dropped player shows
   Disconnected) and a Kick button (`HostingService::kick`, never for the host).
 
-The relay addresses are presets built by [`relay_endpoints.h`](../../app/common/relay_endpoints.h) from the Bicep naming
+The relay addresses are presets built by [`relay_endpoints.h`](../../app/ui/relay_endpoints.h) from the Bicep naming
 (`wpiemu-relay[-dev]<suffix>.southcentralus.azurecontainer.io:7777`). The DNS suffix of a deployment is a setting, in this
 order: the `WPIEMU_RELAY_DNS_SUFFIX` environment variable (the one `infra/relay/*.bicepparam` reads), the stored
 `hosting/relayDnsSuffix` preference, then the value a release build bakes in with the CMake definition

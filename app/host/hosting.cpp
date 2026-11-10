@@ -3,7 +3,6 @@
 #include <algorithm>
 
 #include "wpiemu/net/endpoint.h"
-#include "wpiemu/sdk/core/strings.h"
 
 namespace wpiemu::app::host {
 
@@ -15,16 +14,8 @@ constexpr const char* kPlaceholderRoom = "11111111";
 }  // namespace
 
 sdk::Result<RelayAddress> parseRelayAddress(const std::string& text) {
-    std::string_view rest = sdk::asciiTrim(text);
-    if (rest.empty()) return sdk::makeError(sdk::ErrorCode::InvalidArgument, "Enter the relay address as host:port.");
-    if (const std::size_t scheme = rest.find("://"); scheme != std::string_view::npos) {
-        if (sdk::asciiLower(rest.substr(0, scheme)) != "relay")
-            return sdk::makeError(sdk::ErrorCode::InvalidArgument, "The relay address must be host:port or relay://host:port.");
-        rest.remove_prefix(scheme + 3);
-    }
-    const std::string authority(rest.substr(0, rest.find('/')));
-    auto parsed = net::NetEndpoint::parse("relay://" + authority + "/" + kPlaceholderRoom);
-    if (!parsed) return sdk::makeError(sdk::ErrorCode::InvalidArgument, "The relay address is not valid: " + parsed.error().message);
+    auto parsed = net::NetEndpoint::parseRelayAddress(text, kPlaceholderRoom);
+    if (!parsed) return parsed.error();
     return RelayAddress{parsed.value().host, parsed.value().port};
 }
 

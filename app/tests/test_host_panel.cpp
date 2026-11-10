@@ -17,7 +17,7 @@
 #include <QTranslator>
 
 #include "common/hosting_service.h"
-#include "common/relay_endpoints.h"
+#include "ui/relay_endpoints.h"
 #include "contract/runtime_host.h"
 #include "gui_support.h"
 #include "shell/host_panel.h"
