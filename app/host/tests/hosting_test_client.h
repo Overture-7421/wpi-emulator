@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -34,11 +35,15 @@ inline bool udpPortIsFree(const std::string& host, std::uint16_t port) {
 
 class HostingTestClient {
 public:
+    // Slips a decorator between the raw transport and the handshake (a tampering or impairing proxy of an end-to-end test).
+    using Wrap = std::function<std::unique_ptr<sdk::proto::ITransport>(std::unique_ptr<sdk::proto::ITransport>)>;
+
     // enet://host:port or relay://host:port/ROOM, then the handshake with `secret`. nullptr with `error` set on failure.
     static std::unique_ptr<HostingTestClient> connect(const std::string& endpoint, const net::InviteSecret& secret,
-                                                      std::string* error = nullptr) {
+                                                      std::string* error = nullptr, const Wrap& wrap = {}) {
         auto raw = openRaw(endpoint, error);
         if (!raw) return nullptr;
+        if (wrap) raw = wrap(std::move(raw));
         auto secured = net::SecureTransport::connectAsClient(std::move(raw), secret, std::chrono::seconds(3));
         if (!secured) return fail(error, secured.error().message);
         return std::unique_ptr<HostingTestClient>(new HostingTestClient(std::move(secured).value()));

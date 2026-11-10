@@ -28,6 +28,19 @@ if(WPIEMU_BUILD_TESTS)
     set_tests_properties(e2e.swerve_sample PROPERTIES LABELS e2e SKIP_RETURN_CODE 77 TIMEOUT 1500)
     add_test(NAME e2e.vision_sample COMMAND wpiemu_e2e_tests "--test-case=e2e: vision sample*")
     set_tests_properties(e2e.vision_sample PROPERTIES LABELS e2e SKIP_RETURN_CODE 77 TIMEOUT 1500)
+    # Practice match: the swerve sample hosting through a relay on loopback with scripted encrypted players (own executable, one
+    # robot launch). Env knobs are listed at the top of tests/e2e_practice_match_test.cpp.
+    add_executable(wpiemu_e2e_match_tests tests/e2e_practice_match_test.cpp)
+    target_link_libraries(wpiemu_e2e_match_tests PRIVATE wpiemu_app_host wpiemu_plugins_builtin wpiemu_seasons_builtin wpiemu_relay_core)
+    target_compile_definitions(wpiemu_e2e_match_tests PRIVATE
+        "WPIEMU_E2E_DEFAULT_PROJECT=\"${CMAKE_SOURCE_DIR}/samples/swerve_robot/java\"")
+    if(TARGET halsim_wpiemu)
+        add_dependencies(wpiemu_e2e_match_tests halsim_wpiemu)
+        target_compile_definitions(wpiemu_e2e_match_tests PRIVATE "WPIEMU_E2E_EXTENSION=\"$<TARGET_FILE:halsim_wpiemu>\"")
+    endif()
+    wpiemu_doctest_target(wpiemu_e2e_match_tests)
+    add_test(NAME e2e.practice_match COMMAND wpiemu_e2e_match_tests)
+    set_tests_properties(e2e.practice_match PROPERTIES LABELS e2e SKIP_RETURN_CODE 77 TIMEOUT 1800)
     # Season probes: every season pack that declares `probes` (a samples folder) gets e2e.season_<year>, e2e.vision_<year>
     # and e2e.vendor_<year>. The tests read their season from the environment (tests/season_probe.h).
     set(_wpiemu_probe_seasons "")
