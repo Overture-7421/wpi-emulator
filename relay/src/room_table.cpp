@@ -16,6 +16,13 @@ namespace {
 
 constexpr std::int64_t kMicro = 1'000'000;
 
+// Appends an effect built in place. push_back(Alternative{...}) builds a temporary variant that GCC 14 at -O3 wrongly
+// reports as maybe-uninitialized / free-nonheap-object when the vector reallocates; constructing in place avoids it.
+template <class T, class... Args>
+void addEffect(Effects& effects, Args&&... args) {
+    effects.emplace_back(std::in_place_type<T>, std::forward<Args>(args)...);
+}
+
 // Credit in micro-bytes so that refills stay integer and deterministic: elapsed microseconds times bytes per second.
 struct TokenBucket {
     bool enabled = false;
@@ -194,7 +201,7 @@ struct RoomTable::Impl {
     // ---- membership ----
     Effects violation(ConnId conn) {
         Effects effects = removeConn(conn, rl::PeerLeftReason::Disconnected);
-        effects.push_back(CloseConnection{conn, DisconnectReason::ProtocolViolation});
+        addEffect<CloseConnection>(effects, conn, DisconnectReason::ProtocolViolation);
         return effects;
     }
 
@@ -210,7 +217,7 @@ struct RoomTable::Impl {
         if (c.role == Role::Client) {
             room.clients.erase(c.peerId);
             event(RoomEvent::Kind::PeerLeft, conn, room.id, c.peerId, {});
-            if (room.host) effects.push_back(SendControl{*room.host, rl::PeerLeft{c.peerId, reason}});
+            if (room.host) addEffect<SendControl>(effects, *room.host, rl::PeerLeft{c.peerId, reason});
         } else if (c.role == Role::Host) {
             room.host.reset();
             room.hostGoneAt = now();
@@ -224,7 +231,7 @@ struct RoomTable::Impl {
         if (countsAsFailure) noteFailure(source, conn);
         event(RoomEvent::Kind::RegisterRejected, conn, roomId, 0, registerRejectName(reason));
         Effects effects;
-        effects.push_back(SendControl{conn, rl::RoomRejected{reason}});
+        addEffect<SendControl>(effects, conn, rl::RoomRejected{reason});
         return effects;
     }
 
@@ -233,7 +240,7 @@ struct RoomTable::Impl {
         if (countsAsFailure) noteFailure(source, conn);
         event(RoomEvent::Kind::JoinRejected, conn, roomId, 0, joinFailureName(reason));
         Effects effects;
-        effects.push_back(SendControl{conn, rl::JoinResult{false, reason, rl::kRelayBroadcastPeer}});
+        addEffect<SendControl>(effects, conn, rl::JoinResult{false, reason, rl::kRelayBroadcastPeer});
         return effects;
     }
 
@@ -291,14 +298,14 @@ struct RoomTable::Impl {
             const ConnId old = *room.host;
             conns.erase(old);
             room.host.reset();
-            effects.push_back(CloseConnection{old, DisconnectReason::HostReplaced});
+            addEffect<CloseConnection>(effects, old, DisconnectReason::HostReplaced);
         }
         room.host = conn;
         newConn(conn, room.id, Role::Host, rl::kRelayHostPeer);
         ++counters.roomsResumed;
         event(RoomEvent::Kind::RoomResumed, conn, room.id, 0, takeover ? "takeover" : "after_absence");
-        effects.push_back(SendControl{conn, rl::RoomRegistered{true, static_cast<std::uint16_t>(config.maxPeersPerRoom)}});
-        for (const auto& entry : room.clients) effects.push_back(SendControl{conn, rl::PeerJoined{entry.first}});
+        addEffect<SendControl>(effects, conn, rl::RoomRegistered{true, static_cast<std::uint16_t>(config.maxPeersPerRoom)});
+        for (const auto& entry : room.clients) addEffect<SendControl>(effects, conn, rl::PeerJoined{entry.first});
         return effects;
     }
 
@@ -325,8 +332,8 @@ struct RoomTable::Impl {
         ++counters.peersJoined;
         event(RoomEvent::Kind::PeerJoined, conn, room.id, peerId, {});
         Effects effects;
-        effects.push_back(SendControl{conn, rl::JoinResult{true, rl::JoinRoomFailure::None, peerId}});
-        effects.push_back(SendControl{*room.host, rl::PeerJoined{peerId}});
+        addEffect<SendControl>(effects, conn, rl::JoinResult{true, rl::JoinRoomFailure::None, peerId});
+        addEffect<SendControl>(effects, *room.host, rl::PeerJoined{peerId});
         return effects;
     }
 
@@ -351,7 +358,7 @@ struct RoomTable::Impl {
             ++counters.peersKicked;
             event(RoomEvent::Kind::PeerKicked, id, room, peer, std::string(dropReasonName(reason)));
             result.effects = removeConn(id, peerLeftReasonOf(reason));
-            result.effects.push_back(CloseConnection{id, reason == DropReason::Oversized ? DisconnectReason::Oversized : DisconnectReason::RateLimited});
+            addEffect<CloseConnection>(result.effects, id, reason == DropReason::Oversized ? DisconnectReason::Oversized : DisconnectReason::RateLimited);
         }
         return result;
     }
@@ -376,10 +383,11 @@ struct RoomTable::Impl {
             SendGame out;
             out.to = *room.host;
             out.delivery = delivery;
-            out.frame.reserve(frame.size() + envelope);
-            out.frame.push_back(static_cast<std::byte>(c.peerId & 0xFF));
-            out.frame.push_back(static_cast<std::byte>(c.peerId >> 8));
-            out.frame.insert(out.frame.end(), frame.begin(), frame.end());
+            // Sized up front and filled by index: reserve() followed by push_back() makes GCC 14 -O3 warn about a free of a non-heap pointer.
+            out.frame.resize(frame.size() + envelope);
+            out.frame[0] = static_cast<std::byte>(c.peerId & 0xFF);
+            out.frame[1] = static_cast<std::byte>(c.peerId >> 8);
+            std::copy(frame.begin(), frame.end(), out.frame.begin() + rl::kRelayEnvelopeBytes);
             ++counters.framesForwarded;
             counters.bytesForwarded += out.frame.size();
             result.effects.push_back(std::move(out));
@@ -423,7 +431,7 @@ struct RoomTable::Impl {
             Room& room = it->second;
             for (const auto& client : room.clients) {
                 conns.erase(client.second);
-                effects.push_back(CloseConnection{client.second, DisconnectReason::RoomExpired});
+                addEffect<CloseConnection>(effects, client.second, DisconnectReason::RoomExpired);
             }
             ++counters.roomsExpired;
             event(RoomEvent::Kind::RoomExpired, 0, id, 0, std::to_string(room.clients.size()));
