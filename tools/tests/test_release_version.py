@@ -126,6 +126,12 @@ class ArtifactTests(unittest.TestCase):
         errors = RV.artifact_errors(self.directory, "0.0.8")
         self.assertEqual(len(errors), 2)
 
+    def test_client_packages_are_named_for_the_version_too(self):
+        self.add("wpi-emulator-client-0.0.8-windows-x64.zip")
+        self.assertEqual(RV.artifact_errors(self.directory, "0.0.8"), [])
+        self.add("wpi-emulator-client-0.0.0-macos-arm64-x64.dmg")
+        self.assertEqual(len(RV.artifact_errors(self.directory, "0.0.8")), 1)
+
     def test_empty_directory_is_reported(self):
         self.assertEqual(len(RV.artifact_errors(self.directory, "0.0.8")), 1)
 

@@ -2,9 +2,11 @@ WPI Emulator - third-party software notices
 ===========================================
 
 This product bundles or links the following third-party components. Review the license terms of each
-component (and refresh this list) before every public release.
+component (and refresh this list) before every public release. The same file ships with the desktop app and
+with the practice-match client; the client carries no WPILib and no robot-project tooling, but does contain
+every other component listed here.
 
-Qt 6 (Core, Gui, Widgets, Quick, Quick3D, Svg and the platform plugins)
+Qt 6 (Core, Gui, Widgets, Network, Quick, QuickWidgets, Quick3D, Multimedia, Svg and the platform plugins)
     Licensed under the GNU LGPL v3 (and other licenses per module). Qt is linked dynamically and the
     shared libraries shipped with this application are unmodified Qt binaries; you may replace them with
     your own build of the same Qt version. Source code and license texts: https://www.qt.io/download-open-source

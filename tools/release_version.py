@@ -81,14 +81,14 @@ def read_project_version(cmake_text: str) -> str:
 
 
 def artifact_errors(directory: Path, version: str) -> list[str]:
-    prefix = f"wpi-emulator-{version}-"
+    prefixes = (f"wpi-emulator-{version}-", f"wpi-emulator-client-{version}-")   # desktop app, practice-match client
     installers = sorted(path for path in directory.iterdir() if path.is_file() and path.suffix in INSTALLER_SUFFIXES)
     if not installers:
         return [f"{directory}: no installers found"]
     errors = []
     for path in installers:
-        if not path.name.startswith(prefix):
-            errors.append(f"{path.name}: not named {prefix}*, so the build did not use version {version}")
+        if not path.name.startswith(prefixes):
+            errors.append(f"{path.name}: not named {prefixes[0]}* or {prefixes[1]}*, so the build did not use version {version}")
         if not path.with_name(path.name + ".sha256").is_file():
             errors.append(f"{path.name}: no .sha256 sidecar")
     return errors

@@ -27,7 +27,9 @@ target_link_libraries(wpiemu_client PRIVATE
     Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::Quick3D Qt6::QuickWidgets)
 target_compile_definitions(wpiemu_client PRIVATE WPIEMU_APP_VERSION="${PROJECT_VERSION}")
 wpiemu_target_defaults(wpiemu_client)
-set_target_properties(wpiemu_client PROPERTIES WIN32_EXECUTABLE OFF)
+set_target_properties(wpiemu_client PROPERTIES
+    WIN32_EXECUTABLE OFF   # stays a console-subsystem exe so `--version` prints (the app is the same); see docs/releasing.md
+    MACOSX_BUNDLE ON)
 
 # ---- tests (sources live in tests/app_client; excluded from the Qt-free wpiemu_tests glob) ----
 if(WPIEMU_BUILD_TESTS AND EXISTS "${PROJECT_SOURCE_DIR}/tests/app_client/CMakeLists.txt")

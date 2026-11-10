@@ -16,11 +16,11 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "CompanyName", "WPI Emulator contributors"
-            VALUE "FileDescription", "WPI Emulator"
+            VALUE "FileDescription", "@WPIEMU_RC_DESCRIPTION@"
             VALUE "FileVersion", "@PROJECT_VERSION@"
-            VALUE "InternalName", "wpiemu_app"
-            VALUE "OriginalFilename", "wpiemu_app.exe"
-            VALUE "ProductName", "WPI Emulator"
+            VALUE "InternalName", "@WPIEMU_RC_TARGET@"
+            VALUE "OriginalFilename", "@WPIEMU_RC_TARGET@.exe"
+            VALUE "ProductName", "@WPIEMU_RC_DESCRIPTION@"
             VALUE "ProductVersion", "@PROJECT_VERSION@"
         END
     END
