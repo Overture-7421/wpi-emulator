@@ -76,6 +76,9 @@ struct HudValue {
 struct ZoneState {
     std::string id;       // ZoneConfig::id
     bool active = false;
+    // Where the zone is, in the chassis frame of its robot: the host robot's zones follow their mechanisms, a remote
+    // robot's are the effective pose its client commanded (clamped). Unset by runtimes that do not report it.
+    std::optional<Pose3> poseInChassis;
 };
 
 // Runtime state of one simulated camera (RobotConfig::cameras).

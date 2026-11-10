@@ -41,19 +41,22 @@ const std::vector<Golden>& goldens() {
          "00010c00010003416d790115000500000c00020003426f620516000a0000"},
         {"Leave", "01110003627965"},
         {"MatchInputPacket",
-         "0112008877665544332211070000000000000003290029000000110400000000000004"
-         "000048410004000050c000f800000000ff7f0000c84200802e0000002900"
-         "2a000000120400000000000004000048410004000050c000f800000000ff7f0000c84200"
-         "802f00000029002b000000130400000000000004000048410004000050c000f800000000"
-         "ff7f0000c842008030000000"},
+         "0112008877665544332211070000000000000003440029000000110400000000000004"
+         "000048410004000050c000f800000000ff7f0000c84200802e00000002012c016afff4"
+         "01004000e00201050080ff7f00000080ff7f000044002a000000120400000000000004"
+         "000048410004000050c000f800000000ff7f0000c84200802f00000002012c016afff4"
+         "01004000e00201050080ff7f00000080ff7f000044002b000000130400000000000004"
+         "000048410004000050c000f800000000ff7f0000c84200803000000002012c016afff4"
+         "01004000e00201050080ff7f00000080ff7f0000"},
         {"MatchSnapshot",
-         "01130088776655443322110700000000000000e110000006120f0000000000300558"
-         "26010000006300000002120f0000000000fdff1300020101010000a5420a70686173"
-         "652e6175746f022c000000dc05000042f5ffffe80350fb480d300202640038ff2c01"
-         "70fe090000000201000000404102000000003f2c000100b80b000084eaffffd00750"
-         "fb480d300202640038ff2c0170fe0a0000000201000000404102000000003f012400"
-         "0100e0100000020b000000160000000221000000640038ff05002c000000d4fe9001"
-         "00000207000000f6420800000080bf"},
+         "01130088776655443322110700000000000000e110000006120f000000000030055826"
+         "010000006300000002120f0000000000fdff1300020101010000a5420a70686173652e"
+         "6175746f0247000000dc05000042f5ffffe80350fb480d300202640038ff2c0170fe09"
+         "0000000201000000404102000000003f0200fa00b5ff800234120000ffff0f18fcd007"
+         "b80b04000500060047000100b80b000084eaffffd00750fb480d300202640038ff2c01"
+         "70fe0a0000000201000000404102000000003f0201f401b5ff800234120000ffff0f18"
+         "fcd007b80b0400050006000124000100e0100000020b00000016000000022100000064"
+         "0038ff05002c000000d4fe900100000207000000f6420800000080bf"},
         {"MatchSnapshotAck", "01140088776655443322110700000000000000e1100000"},
         {"MatchControl",
          "011500038877665544332211080000000000000002004d00000063c5540000000000"
@@ -101,6 +104,13 @@ const Golden& goldenOf(std::string_view name) {
         if (name == g.name) return g;
     FAIL("no golden named " << name);
     return goldens().front();
+}
+
+Message goldenSampleOf(std::string_view name) {
+    for (const NamedMessage& s : matchSamples())
+        if (name == s.name) return s.message;
+    FAIL("no sample named " << name);
+    return {};
 }
 
 }  // namespace
@@ -175,4 +185,53 @@ TEST_CASE("match codec golden: HALSim frames are unchanged by the match types (a
     const Result<Message> back = codec.decode(out);
     REQUIRE(back.ok());
     CHECK(std::holds_alternative<Hello>(back.value()));
+}
+
+TEST_CASE("match codec golden: records written before the zone pose tail decode with no zone poses") {
+    const BinaryMessageCodec codec;
+    // MatchInputPacket and MatchSnapshot as the codec wrote them before the zone pose lists existed.
+    const std::string legacyInput =
+        "0112008877665544332211070000000000000003290029000000110400000000000004"
+        "000048410004000050c000f800000000ff7f0000c84200802e0000002900"
+        "2a000000120400000000000004000048410004000050c000f800000000ff7f0000c84200"
+        "802f00000029002b000000130400000000000004000048410004000050c000f800000000"
+        "ff7f0000c842008030000000";
+    const std::string legacySnapshot =
+        "01130088776655443322110700000000000000e110000006120f0000000000300558"
+        "26010000006300000002120f0000000000fdff1300020101010000a5420a70686173"
+        "652e6175746f022c000000dc05000042f5ffffe80350fb480d300202640038ff2c01"
+        "70fe090000000201000000404102000000003f2c000100b80b000084eaffffd00750"
+        "fb480d300202640038ff2c0170fe0a0000000201000000404102000000003f012400"
+        "0100e0100000020b000000160000000221000000640038ff05002c000000d4fe9001"
+        "00000207000000f6420800000080bf";
+
+    const Result<Message> input = codec.decode(fromHex(legacyInput));
+    REQUIRE(input.ok());
+    auto expectedInput = std::get<match::MatchInputPacket>(goldenSampleOf("MatchInputPacket"));
+    for (match::MatchInput& in : expectedInput.inputs) in.zonePoses.clear();
+    CHECK(std::get<match::MatchInputPacket>(input.value()) == expectedInput);
+
+    const Result<Message> snapshot = codec.decode(fromHex(legacySnapshot));
+    REQUIRE(snapshot.ok());
+    auto expectedSnapshot = std::get<match::MatchSnapshot>(goldenSampleOf("MatchSnapshot"));
+    for (match::RobotWireState& r : expectedSnapshot.robots) r.zonePoses.clear();
+    CHECK(std::get<match::MatchSnapshot>(snapshot.value()) == expectedSnapshot);
+}
+
+TEST_CASE("match codec golden: the zone pose tails are the documented 13-byte entries") {
+    // Count byte then, per entry: index u8, x y z yaw pitch roll as little-endian i16 (see zone_pose_wire.h).
+    match::MatchInputPacket packet;
+    packet.inputs.assign(1, match::MatchInput{});
+    packet.inputs[0].zonePoses = {{2, 1, -1, 256, -256, 0x7FFF, -0x8000}};
+    std::vector<std::byte> out;
+    REQUIRE(BinaryMessageCodec().encode(Message{packet}, out).ok());
+    const std::string hex = toHex(out);
+    CHECK(hex.ends_with("01" "02" "0100" "ffff" "0001" "00ff" "ff7f" "0080"));
+
+    match::MatchSnapshot snapshot;
+    snapshot.robots.assign(1, match::RobotWireState{});
+    snapshot.robots[0].zonePoses = {{15, 0x0102, 0, 0, 0, 0, 0x0304}};
+    out.clear();
+    REQUIRE(BinaryMessageCodec().encode(Message{snapshot}, out).ok());
+    CHECK(toHex(out).find("01" "0f" "0201" "0000" "0000" "0000" "0000" "0403") != std::string::npos);
 }

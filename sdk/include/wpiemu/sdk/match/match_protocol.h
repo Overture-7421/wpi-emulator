@@ -8,6 +8,7 @@
 //   match_control.h      MatchControl (reset, pause, kick, ping)
 //   relay_messages.h     the plaintext relay control messages (they never carry game data)
 //   quantize.h           the fixed-point schemes the snapshot and input fields use
+//   zone_pose_wire.h     ZonePoseInput (a zone's chassis-frame pose on the wire), used by inputs and snapshots
 // All of them are alternatives of proto::Message (ipc/messages.h), encoded by the same BinaryCodec.
 //
 // Run identity. Match frames reuse proto::classifyFrame (ipc/protocol_rules.h) unchanged: `sessionId` is assigned by the
@@ -32,6 +33,7 @@ inline constexpr std::size_t kMaxRobotsPerMatch = 6;     // host robot included
 inline constexpr std::size_t kInputRedundancy = 3;       // inputs repeated in each MatchInputPacket (oldest first)
 inline constexpr std::size_t kMaxWheelsPerRobot = 8;     // same bound the spec clamps use for the wheel count
 inline constexpr std::size_t kMaxZonesPerRobot = 16;     // zone flags use the low bits of a u32
+inline constexpr std::size_t kMaxSnapshotZonePosesPerRobot = 4;  // moved zones one robot reports in a snapshot
 inline constexpr std::size_t kMaxNameBytes = 64;         // display names, plugin ids, roster names
 inline constexpr std::size_t kMaxDetailBytes = 256;      // reject/kick/leave free-text details
 inline constexpr std::size_t kMaxRobotSpecBytes = 64 * 1024;  // JSON robot description in Join

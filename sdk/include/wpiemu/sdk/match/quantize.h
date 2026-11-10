@@ -7,6 +7,7 @@
 //   angle               i16    2*pi/65536 rad (9.6e-5)     any angle, wraps       pi/65536 rad = 4.8e-5 rad, modulo 2*pi
 //   milli (position)    i32    1 mm                        +-2147483 m            0.5 mm
 //   milli (velocity)    i16    1 mm/s or 1 mrad/s          +-32.767 m/s or rad/s  0.5 unit
+//   milli (zone pose)   i16    1 mm (chassis frame)        +-32.767 m             0.5 mm (see zone_pose_wire.h)
 //   centi (entities)    i16    1 cm                        +-327.67 m             0.5 cm
 //
 // Angle: the i16 is a fraction of a full turn, so dequantizeAngle returns [-pi, pi); pi and -pi are the same angle and

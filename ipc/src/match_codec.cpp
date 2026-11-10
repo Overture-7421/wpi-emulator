@@ -32,6 +32,8 @@ using wire::ReadState;
 // Smallest encoding of each list element (records count their 2-byte length prefix).
 constexpr std::size_t kRosterEntryMinBytes = 2 + 2 + 1 + 1 + 2 + 2 + 1;
 constexpr std::size_t kWheelInputBytes = 4 + 2;
+constexpr std::size_t kZonePoseBytes = match::kWireZonePoseBytes;
+// A MatchInput of a writer that predates zonePoses has no tail: the minimum is the record without it.
 constexpr std::size_t kMatchInputMinBytes = 2 + 4 + 8 + 1 + 4;
 constexpr std::size_t kWheelWireStateBytes = 2 + 2;
 constexpr std::size_t kHudValueBytes = 2 + 4;
@@ -72,6 +74,26 @@ void fields(C& c, M& w) {
     c.i16(w.steerAngleQ);
 }
 
+template <class C, Is<match::ZonePoseInput> M>
+void fields(C& c, M& z) {
+    c.u8(z.zoneIndex);
+    c.i16(z.xMm);
+    c.i16(z.yMm);
+    c.i16(z.zMm);
+    c.i16(z.yawQ);
+    c.i16(z.pitchQ);
+    c.i16(z.rollQ);
+}
+
+// Appended tail of the records that carry zone poses: absent in an older record (no overrides), always written. Indices
+// must be strictly increasing and below kMaxZonesPerRobot; anything else is a malformed frame (and unencodable).
+template <class C, class V>
+void zonePoseTail(C& c, V& poses, std::size_t cap) {
+    if (!c.more()) return;
+    c.list(poses, cap, kZonePoseBytes);
+    if (!match::zonePosesWellFormed(poses, cap)) c.fail("zone poses not strictly increasing or index out of range");
+}
+
 template <class C, Is<match::MatchInput> M>
 void fields(C& c, M& in) {
     c.record([&] {
@@ -79,6 +101,7 @@ void fields(C& c, M& in) {
         c.u64(in.targetTick);
         c.list(in.wheels, match::kMaxWheelsPerRobot, kWheelInputBytes);
         c.u32(in.zoneFlags);
+        zonePoseTail(c, in.zonePoses, match::kMaxZonesPerRobot);
     });
 }
 
@@ -119,6 +142,7 @@ void fields(C& c, M& r) {
         c.list(r.wheels, match::kMaxWheelsPerRobot, kWheelWireStateBytes);
         c.u32(r.zoneFlags);
         c.list(r.hud, match::kMaxHudValuesPerRobot, kHudValueBytes);
+        zonePoseTail(c, r.zonePoses, match::kMaxSnapshotZonePosesPerRobot);
     });
 }
 
