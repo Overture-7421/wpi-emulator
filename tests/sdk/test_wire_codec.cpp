@@ -215,7 +215,7 @@ TEST_CASE("wire codec: malformed varints are rejected") {
 }
 
 TEST_CASE("wire codec: strings round trip including empty, embedded NUL and UTF-8") {
-    for (const std::string s : {std::string(), std::string("a"), std::string("a\0b", 3), std::string("caf\xC3\xA9"),
+    for (const std::string& s : {std::string(), std::string("a"), std::string("a\0b", 3), std::string("caf\xC3\xA9"),
                                 std::string(300, 'x')}) {
         std::vector<std::byte> out;
         W(out).str(s);
