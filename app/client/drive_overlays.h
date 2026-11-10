@@ -15,7 +15,17 @@ class QPushButton;
 
 namespace wpiemu::app::client {
 
-class ClientBanner : public QFrame {
+// A rounded, translucent dark card that reads on top of the 3D scene in any theme.
+class OverlayCard : public QFrame {
+    Q_OBJECT
+public:
+    using QFrame::QFrame;
+
+protected:
+    void paintEvent(QPaintEvent*) override;
+};
+
+class ClientBanner : public OverlayCard {
     Q_OBJECT
 public:
     explicit ClientBanner(QWidget* parent = nullptr);
@@ -43,7 +53,7 @@ private:
 // The numbers the overlay shows, as translated lines "label: value" (one per row), for a view. Pure, so it is tested.
 QStringList diagnosticsLines(const core::match::MatchClientView& view);
 
-class DiagnosticsOverlay : public QFrame {
+class DiagnosticsOverlay : public OverlayCard {
     Q_OBJECT
 public:
     explicit DiagnosticsOverlay(QWidget* parent = nullptr);

@@ -56,13 +56,16 @@ QString bannerDetail(const Presentation& p) {
 }
 
 QString fieldErrorText(const JoinFieldError& e) {
-    const QString detail = QString::fromStdString(e.detail);
-    const auto with = [&](const QString& text) { return detail.isEmpty() ? text : text + QStringLiteral(" ") + detail; };
+    // The parsers explain what is wrong in English after their own prefix ("The host's address is not valid: ..."): keep that part.
+    QString reason = QString::fromStdString(e.detail);
+    if (const int colon = reason.lastIndexOf(QStringLiteral(": ")); colon >= 0) reason = reason.mid(colon + 2);
+    const auto with = [&](const QString& text) { return reason.isEmpty() ? text : text + QStringLiteral(" (") + reason + QLatin1Char(')'); };
     if (e.key == "invite.empty") return tr("Paste the invite the host shared (XXXXX-XXXXX-XXXXX-XXXXX).");
-    if (e.key == "invite.format") return with(tr("This is not an invite: it has 20 letters and digits in four groups of five."));
+    if (e.key == "invite.format") return tr("This is not an invite: it has 20 letters and digits, in four groups of five.");
     if (e.key == "direct.address") return with(tr("The host's address is not valid. Use host or host:port."));
     if (e.key == "relay.unconfigured")
-        return tr("This build does not know the relay address. Open Advanced and enter one, or give the host's address for a direct connection.");
+        return tr("This build does not know the relay's address yet. Choose Custom… and enter it, or give the host's address for a direct "
+                  "connection.");
     if (e.key == "relay.address") return with(tr("The relay address is not valid. Use host:port."));
     if (e.key == "name.empty") return tr("Enter the name other players will see.");
     if (e.key == "name.too_long") return tr("The name is too long.");

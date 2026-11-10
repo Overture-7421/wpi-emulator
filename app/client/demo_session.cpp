@@ -67,8 +67,10 @@ void collectKeys(const sdk::HudWidgetDescriptor& d, std::vector<std::pair<std::s
         out.push_back({key, value});
     };
     const bool meter = d.kind == sdk::HudWidgetKind::Meter || d.kind == sdk::HudWidgetKind::Gauge;
-    if (d.kind != sdk::HudWidgetKind::Scoreboard) add(d.valueKey, meter ? static_cast<float>(0.6 * d.maxValue) : 12.f);
-    add(d.maxKey, static_cast<float>(d.maxValue));
+    constexpr float kDemoCapacity = 50.f;
+    if (d.kind != sdk::HudWidgetKind::Scoreboard)
+        add(d.valueKey, meter ? (d.maxKey.empty() ? static_cast<float>(0.6 * d.maxValue) : 0.6f * kDemoCapacity) : 12.f);
+    add(d.maxKey, kDemoCapacity);
     float score = 24.f;
     for (const sdk::HudScoreSide& s : d.sides) {
         add(s.scoreKey, score);

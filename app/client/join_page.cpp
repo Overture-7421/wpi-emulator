@@ -295,8 +295,7 @@ void JoinPage::refreshRelay() {
     const bool custom = in.relay == RelayChoice::Custom;
     customRelay_->setVisible(custom);
     const std::string address = relayAddressOf(in, controller_.relayPresets());
-    relayAddress_->setText(address.empty() ? (custom ? QString() : tr("This build does not know the %1 address; use Custom….")
-                                                                      .arg(relayChoice_->currentText()))
+    relayAddress_->setText(address.empty() ? (custom ? QString() : tr("This build does not know this relay's address yet; choose Custom…."))
                                            : QString::fromStdString(address));
     controller_.setPrefs([&] {
         ClientPrefs p = controller_.prefs();

@@ -3,6 +3,7 @@
 #include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPainter>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QStringList>
@@ -27,15 +28,20 @@ QString toneColor(runview::Tone tone) {
     return QStringLiteral("#9aa4b2");
 }
 
-const char* kCardStyle =
-    "QFrame#%1 { background: rgba(20,24,32,215); border: 1px solid rgba(255,255,255,60); border-radius: 8px; }"
-    "QFrame#%1 QLabel { color: white; background: transparent; }";
+const char* kLightText = "color: white;";
 
 }  // namespace
 
-ClientBanner::ClientBanner(QWidget* parent) : QFrame(parent) {
+void OverlayCard::paintEvent(QPaintEvent*) {
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setBrush(QColor(20, 24, 32, 215));
+    painter.setPen(QColor(255, 255, 255, 60));
+    painter.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 8, 8);
+}
+
+ClientBanner::ClientBanner(QWidget* parent) : OverlayCard(parent) {
     setObjectName(QStringLiteral("client.banner"));
-    setStyleSheet(QString::fromLatin1(kCardStyle).arg(objectName()));
     title_ = new QLabel(this);
     title_->setObjectName(QStringLiteral("client.bannerTitle"));
     QFont f = title_->font();
@@ -48,6 +54,7 @@ ClientBanner::ClientBanner(QWidget* parent) : QFrame(parent) {
     detail_->setObjectName(QStringLiteral("client.bannerDetail"));
     detail_->setAlignment(Qt::AlignCenter);
     detail_->setWordWrap(true);
+    detail_->setStyleSheet(QString::fromLatin1(kLightText));
     busy_ = new QProgressBar(this);
     busy_->setRange(0, 0);
     busy_->setTextVisible(false);
@@ -103,7 +110,8 @@ QStringList diagnosticsLines(const core::match::MatchClientView& view) {
     lines << QStringLiteral("%1: %2").arg(tr("State"), stateWord(view.connection.state));
     lines << QStringLiteral("%1: %2 (%3 %4)").arg(tr("Ping"), ms(d.rttMs), tr("min"), ms(d.rttMinMs));
     lines << QStringLiteral("%1: %2").arg(tr("Jitter"), ms(d.jitterMs));
-    lines << QStringLiteral("%1: %2 ‰ (%3 Hz)").arg(tr("Packet loss"), QString::number(d.lossPermille, 'f', 1), QString::number(d.snapshotRateHz, 'f', 0));
+    lines << QStringLiteral("%1: %2 ‰").arg(tr("Packet loss"), QString::number(d.lossPermille, 'f', 1));
+    lines << QStringLiteral("%1: %2 Hz").arg(tr("Snapshots"), QString::number(d.snapshotRateHz, 'f', 0));
     lines << QStringLiteral("%1: %2").arg(tr("Snapshot age"), ms(d.snapshotAgeMs));
     lines << QStringLiteral("%1: %2").arg(tr("Buffer delay"), ms(d.bufferDelayMs));
     lines << QStringLiteral("%1: %2 cm (p95 %3 cm, %4°)")
@@ -116,11 +124,11 @@ QStringList diagnosticsLines(const core::match::MatchClientView& view) {
     return lines;
 }
 
-DiagnosticsOverlay::DiagnosticsOverlay(QWidget* parent) : QFrame(parent) {
+DiagnosticsOverlay::DiagnosticsOverlay(QWidget* parent) : OverlayCard(parent) {
     setObjectName(QStringLiteral("client.diagnostics"));
-    setStyleSheet(QString::fromLatin1(kCardStyle).arg(objectName()));
     text_ = new QLabel(this);
     text_->setObjectName(QStringLiteral("client.diagnosticsText"));
+    text_->setStyleSheet(QString::fromLatin1(kLightText));
     text_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(10, 8, 10, 8);

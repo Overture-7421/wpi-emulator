@@ -67,7 +67,7 @@ QString argValue(const QStringList& args, const QString& name, const QString& fa
 QString writeDemoRobot(const QString& folder, const cl::ClientServices& services) {
     sdk::RobotConfig robot = cl::demoRobotConfig(services);
     robot.name = "Demo Bot";
-    robot.chassis.massKg = 95.f;
+    robot.chassis.massKg = 160.f;
     const QString path = QDir(folder).filePath(QStringLiteral("robot.json"));
     QFile file(path);
     if (file.open(QIODevice::WriteOnly)) {
@@ -121,6 +121,8 @@ int runWindow(QApplication& app, const QStringList& args, bool demo) {
         if (scenarioName == QLatin1String("join-errors")) page->joinButton()->click();
     }
     if (args.contains(QStringLiteral("--stats")) && window.showingDrive()) window.drivePage()->setDiagnosticsVisible(true);
+    if (argValue(args, QStringLiteral("--camera")) == QLatin1String("home") && window.showingDrive())
+        QTimer::singleShot(200, &window, [&window] { window.drivePage()->scene().resetCamera(); });
 
     const QString shot = argValue(args, QStringLiteral("--screenshot"));
     if (!shot.isEmpty()) {

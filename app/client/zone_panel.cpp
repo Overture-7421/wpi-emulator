@@ -88,6 +88,7 @@ ZonePanel::ZonePanel(ClientController& controller, QWidget* parent) : QFrame(par
                                 "right stick raises it and the triggers turn it."),
                              this);
     hint_->setObjectName(QStringLiteral("client.zoneHint"));
+    hint_->setWordWrap(true);
     layout->addWidget(hint_);
     layout->addStretch(1);
     rebuild();

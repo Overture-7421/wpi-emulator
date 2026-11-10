@@ -97,6 +97,7 @@ void DrivePage::build() {
     who_->setFont(f);
     state_ = new QLabel(this);
     state_->setObjectName(QStringLiteral("client.stateChip"));
+    state_->setContentsMargins(12, 0, 0, 0);
     diagnosticsButton_ = new QToolButton(this);
     diagnosticsButton_->setObjectName(QStringLiteral("client.diagnosticsButton"));
     diagnosticsButton_->setText(tr("Connection stats"));
