@@ -6,8 +6,6 @@
 
 namespace wpiemu::relay {
 
-namespace {
-
 void appendJsonString(std::string& out, std::string_view text) {
     out.push_back('"');
     for (const char c : text) {
@@ -30,6 +28,8 @@ void appendJsonString(std::string& out, std::string_view text) {
     }
     out.push_back('"');
 }
+
+namespace {
 
 // Text format values are quoted only when they need it.
 void appendTextValue(std::string& out, const LogField& field) {

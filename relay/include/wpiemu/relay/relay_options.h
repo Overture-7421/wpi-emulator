@@ -46,6 +46,9 @@ sdk::Result<RelayOptions> parseRelayOptions(const std::vector<std::string>& args
 
 std::string relayUsage();
 
+// The value of an environment variable of this process, nullopt when it is not set (an EnvLookup for parseRelayOptions).
+std::optional<std::string> processEnvironment(const std::string& name);
+
 // The ENet server settings of a production relay (wpiemu_relay and the tests that mirror it use this one function). The
 // relay prepends the 2-byte envelope to a client's frame before it hands it to the host, so the link must carry frames of
 // kRelayMaxReliablePacket / kRelayMaxDatagram PLUS the envelope.

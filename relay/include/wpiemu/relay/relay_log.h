@@ -68,4 +68,7 @@ private:
 
 const char* logLevelName(LogLevel level);
 
+// Appends `text` as a quoted JSON string (control characters escaped).
+void appendJsonString(std::string& out, std::string_view text);
+
 }  // namespace wpiemu::relay

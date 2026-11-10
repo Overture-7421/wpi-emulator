@@ -1,14 +1,13 @@
-#include <cstring>
-#include <iostream>
+// wpiemu_relay_probe: checks a running relay from the outside. See relay/include/wpiemu/relay/relay_probe.h.
 
-#include "wpiemu/relay/module.h"
+#include <iostream>
+#include <string>
+#include <vector>
+
+#include "wpiemu/relay/relay_options.h"
+#include "wpiemu/relay/relay_probe.h"
 
 int main(int argc, char** argv) {
-    if (argc == 2 && std::strcmp(argv[1], "--help") == 0) {
-        std::cout << "usage: wpiemu_relay_probe [--help]\n"
-                  << "  (placeholder: the relay probe is not implemented yet; module " << wpiemu::relay::moduleName() << ")\n";
-        return 0;
-    }
-    std::cerr << "wpiemu_relay_probe: not implemented yet; try --help\n";
-    return 2;
+    const std::vector<std::string> args(argv + 1, argv + argc);
+    return wpiemu::relay::runProbeCli(args, wpiemu::relay::processEnvironment, std::cout, std::cerr, true);
 }
