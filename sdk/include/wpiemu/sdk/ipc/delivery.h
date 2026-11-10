@@ -48,7 +48,8 @@ inline Delivery deliveryOf(const Message& message) {
         case MessageType::JoinRoom:
         case MessageType::JoinResult:
         case MessageType::PeerJoined:
-        case MessageType::PeerLeft: return Delivery::Reliable;
+        case MessageType::PeerLeft:
+        case MessageType::CloseRoom: return Delivery::Reliable;
     }
     return Delivery::Reliable;
 }

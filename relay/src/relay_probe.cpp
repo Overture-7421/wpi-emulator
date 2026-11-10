@@ -172,7 +172,7 @@ std::string adviceFor(const SelfCheckResult& check, const ProbeOptions& options,
     return check.detail;
 }
 
-// Connect and ask for a room that cannot exist. `strict` also requires the answer to be NoSuchRoom.
+// Connect and ask for the reserved health-ping room. `strict` also requires the answer to be NoSuchRoom.
 bool reachStep(Run& run, const ProbeOptions& options, bool strict) {
     const auto since = Clock::now();
     const Milliseconds timeout = std::max(run.left(), Milliseconds{1});
@@ -189,10 +189,10 @@ bool reachStep(Run& run, const ProbeOptions& options, bool strict) {
             return run.record(name, false, since, "this source address is locked out",
                               "the relay locked this network address out after too many failed joins; wait or use another network");
         return run.record(name, false, since, "unexpected answer (reason " + std::to_string(static_cast<int>(answer.reason)) + ")",
-                          "the relay answered a join for a room that cannot exist with an unexpected reason");
+                          "the relay answered a join for the health-ping room with an unexpected reason");
     }
     return run.record(name, true, since,
-                      options.mode == ProbeMode::SelfCheck ? "the relay answered" : "the relay answered NoSuchRoom for a random room" +
+                      options.mode == ProbeMode::SelfCheck ? "the relay answered" : "the relay answered NoSuchRoom for the health-ping room" +
                                                                                        (run.result.resolvedAddress.empty() ? std::string()
                                                                                                                          : " (" + run.result.resolvedAddress + ")"));
 }
@@ -406,7 +406,7 @@ void fullSteps(Run& run, const ProbeOptions& options) {
     client.close();
     hostChannel.close();
     host->close();
-    run.record("leave", true, since, "closed the client and the host");
+    run.record("leave", true, since, "closed the client and the host (the host sent CloseRoom)");
 }
 
 }  // namespace

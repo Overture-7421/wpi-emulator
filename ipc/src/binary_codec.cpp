@@ -382,7 +382,8 @@ Result<Message> BinaryMessageCodec::decode(std::span<const std::byte> frame) con
             case MessageType::JoinRoom:
             case MessageType::JoinResult:
             case MessageType::PeerJoined:
-            case MessageType::PeerLeft: return detail::decodeMatchBody(static_cast<MessageType>(type), body);
+            case MessageType::PeerLeft:
+            case MessageType::CloseRoom: return detail::decodeMatchBody(static_cast<MessageType>(type), body);
         }
     } catch (const std::bad_alloc&) {
         return makeError(ErrorCode::Internal, "out of memory while decoding");

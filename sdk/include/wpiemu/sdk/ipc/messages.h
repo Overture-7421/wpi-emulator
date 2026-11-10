@@ -10,7 +10,7 @@
 //   tick_messages.h      SensorFrame, ActuatorFrame
 //   driver_station.h     DsState and the station numbering
 //   control_messages.h   SimControl, SimControlAck
-//   match/*.h            practice-match and relay control messages (values 13..28; the robot process ignores them)
+//   match/*.h            practice-match and relay control messages (values 13..29; the robot process ignores them)
 // (VisionSetup lives with the camera types in vision/camera_frame.h.) Include a topic header alone when that is all you need.
 //
 // Flow (docs/reference/extension-ipc.md), emulator = clock master:
@@ -64,7 +64,7 @@ enum class MessageType : std::uint16_t {
     SimControlAck = 11,
     VisionSetup = 12,
     // Practice-match protocol (sdk/match/, appended after the HALSim messages; never reorder or renumber).
-    // 13-21 travel inside the end-to-end encrypted match transport, 22-28 are the plaintext relay control messages.
+    // 13-21 travel inside the end-to-end encrypted match transport, 22-29 are the plaintext relay control messages.
     Join = 13,
     JoinAccept = 14,
     JoinReject = 15,
@@ -81,20 +81,21 @@ enum class MessageType : std::uint16_t {
     JoinResult = 26,
     PeerJoined = 27,
     PeerLeft = 28,
+    CloseRoom = 29,
 };
 
 using Message = std::variant<Hello, HelloAck, DeviceAnnounce, LoopbackSet, SensorFrame, ActuatorFrame, DsState,
                              SimControl, Log, Goodbye, SimControlAck, VisionSetup,
-                             // practice match (values 13..28 above)
+                             // practice match (values 13..29 above)
                              match::Join, match::JoinAccept, match::JoinReject, match::Roster, match::Leave,
                              match::MatchInputPacket, match::MatchSnapshot, match::MatchSnapshotAck,
                              match::MatchControl, match::relay::RegisterRoom, match::relay::RoomRegistered,
                              match::relay::RoomRejected, match::relay::JoinRoom, match::relay::JoinResult,
-                             match::relay::PeerJoined, match::relay::PeerLeft>;
+                             match::relay::PeerJoined, match::relay::PeerLeft, match::relay::CloseRoom>;
 
 // The HALSim extension protocol is the first kExtensionMessageCount alternatives; the robot process ignores the rest.
 inline constexpr std::size_t kExtensionMessageCount = 12;
-inline constexpr std::uint16_t kLastMessageTypeValue = static_cast<std::uint16_t>(MessageType::PeerLeft);
+inline constexpr std::uint16_t kLastMessageTypeValue = static_cast<std::uint16_t>(MessageType::CloseRoom);
 static_assert(std::variant_size_v<Message> == kLastMessageTypeValue, "one MessageType value per Message alternative");
 
 // Order of alternatives in `Message` == order of MessageType values minus 1; never reorder.

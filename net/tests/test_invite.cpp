@@ -1,8 +1,11 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <array>
+#include <cstring>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "wpiemu/net/invite.h"
 #include "wpiemu/net/os_random.h"
@@ -130,6 +133,55 @@ TEST_CASE("generated secrets differ, are never zero and keep the trailing bits c
         auto s = generateInvite();
         REQUIRE(s.ok());
         CHECK((s.value().bytes().back() & 0x0f) == 0);
+    }
+}
+
+TEST_CASE("generated invites never derive the reserved health-ping room id") {
+    using sdk::match::relay::kRelayPingRoomId;
+    // An unlucky draw is replaced: the source is asked again until the room id is not the reserved one.
+    std::vector<InviteSecret::Bytes> draws;
+    for (std::uint8_t n = 1; n <= 3; ++n) {
+        InviteSecret::Bytes bytes{};
+        bytes[0] = n;
+        draws.push_back(bytes);
+    }
+    const std::string reserved = roomId(InviteSecret::fromBytes(draws[0]).value());
+    const std::string second = roomId(InviteSecret::fromBytes(draws[1]).value());
+    REQUIRE(reserved != second);
+
+    std::size_t calls = 0;
+    const auto source = [&](std::span<std::byte> out) {
+        const auto& draw = draws[std::min(calls++, draws.size() - 1)];
+        std::memcpy(out.data(), draw.data(), out.size());
+        return sdk::okStatus();
+    };
+    const auto generated = generateInvite(source, reserved);
+    REQUIRE(generated.ok());
+    CHECK(calls == 2);
+    CHECK(roomId(generated.value()) == second);
+    CHECK(roomId(generated.value()) != reserved);
+
+    // A source that only ever produces the reserved id is an error, not an endless loop.
+    calls = 0;
+    const auto stuck = [&](std::span<std::byte> out) {
+        ++calls;
+        std::memcpy(out.data(), draws[0].data(), out.size());
+        return sdk::okStatus();
+    };
+    const auto failed = generateInvite(stuck, reserved);
+    CHECK_FALSE(failed.ok());
+    CHECK(calls <= 16);
+
+    // A failing source is reported as it is.
+    const auto broken = [](std::span<std::byte>) { return sdk::makeError(sdk::ErrorCode::IoError, "no entropy"); };
+    CHECK(generateInvite(broken, reserved).error().code == sdk::ErrorCode::IoError);
+
+    // The real generator only ever yields valid ids other than the ping room.
+    for (int i = 0; i < 200; ++i) {
+        auto s = generateInvite();
+        REQUIRE(s.ok());
+        CHECK(roomId(s.value()) != kRelayPingRoomId);
+        CHECK(sdk::match::relay::isValidRoomId(roomId(s.value())));
     }
 }
 

@@ -3,13 +3,13 @@
 // The relay probe (wpiemu_relay_probe): a black-box check of a RUNNING relay from the outside, as a player's machine would
 // use it. The deploy pipeline runs it against the relay's address after every deployment.
 //
-//   reach      connect over ENet (UDP) and send JoinRoom for a random room that cannot exist; the relay must answer
-//              JoinResult{ok=false, NoSuchRoom}. Proves DNS, UDP reachability and a relay that speaks our protocol;
-//              creates nothing.
+//   reach      connect over ENet (UDP) and send JoinRoom for the reserved health-ping room (kRelayPingRoomId); the relay
+//              must answer JoinResult{ok=false, NoSuchRoom} without counting a failed join toward its lockout. Proves
+//              DNS, UDP reachability and a relay that speaks our protocol; creates nothing.
 //   full       reach, then the whole player path: register a room as a host with a fresh invite (or --invite), join it
 //              as a client, run the encrypted handshake, exchange --count ping/echo messages on both delivery classes
-//              (round-trip times, unreliable loss), round-trip --payload-bytes reliably, and leave cleanly (the room is
-//              not left to expire). At most ONE room is created.
+//              (round-trip times, unreliable loss), round-trip --payload-bytes reliably, and leave cleanly (the host
+//              sends CloseRoom, so the room is freed at once and not left to expire). At most ONE room is created.
 //   selfcheck  what `wpiemu_relay --selfcheck` does: the relay is alive when it answers JoinRoom with any refusal.
 //
 // Exit codes: 0 the probe passed, 1 it ran and failed, 2 usage error. Every step is bounded by one deadline (--timeout-ms);

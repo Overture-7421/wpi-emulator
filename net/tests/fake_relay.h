@@ -50,6 +50,7 @@ struct FakeRelayTraffic {
     std::uint64_t unexpectedControl = 0;  // relay messages a client or host may not send; 0 unless a transport misuses the channel
     std::uint64_t droppedNoHost = 0;
     std::uint64_t registrations = 0;
+    std::uint64_t roomsClosed = 0;        // CloseRoom from a registered host
     std::uint64_t joins = 0;
 };
 
@@ -152,11 +153,7 @@ public:
     // The room's TTL ran out: the room closes and every connection of it is closed.
     void expireRoom(const std::string& roomId) {
         std::lock_guard lock(mutex_);
-        const auto room = rooms_.find(roomId);
-        if (room == rooms_.end()) return;
-        if (room->second.host) closeConn(*room->second.host);
-        for (const auto& entry : room->second.clients) closeConn(entry.second);
-        rooms_.erase(room);
+        closeRoomLocked(roomId);
     }
     // Inject a raw (enveloped) game frame as if a client had sent it, or a control message, at the host.
     void injectGameToHost(const std::string& roomId, relay::RelayPeerId peer, const std::vector<std::byte>& payload,
@@ -298,6 +295,14 @@ private:
         conn.dead = true;
     }
 
+    void closeRoomLocked(const std::string& roomId) {
+        const auto room = rooms_.find(roomId);
+        if (room == rooms_.end()) return;
+        if (room->second.host) closeConn(*room->second.host);
+        for (const auto& entry : room->second.clients) closeConn(entry.second);
+        rooms_.erase(room);
+    }
+
     void onControl(Conn& conn, const Bytes& frame) {
         auto decoded = ipc::BinaryMessageCodec().decode(frame);
         if (!decoded) {
@@ -308,6 +313,9 @@ private:
             onRegister(conn, *reg);
         } else if (const auto* join = std::get_if<relay::JoinRoom>(&decoded.value())) {
             onJoin(conn, *join);
+        } else if (std::holds_alternative<relay::CloseRoom>(decoded.value()) && conn.role == Role::Host) {
+            ++traffic_.roomsClosed;
+            closeRoomLocked(conn.room);
         } else {
             ++traffic_.unexpectedControl;
         }

@@ -55,6 +55,8 @@ struct RelayStats {
     std::uint64_t roomsCreated = 0;
     std::uint64_t roomsResumed = 0;
     std::uint64_t roomsExpired = 0;
+    std::uint64_t roomsClosed = 0;     // closed by their host with CloseRoom
+    std::uint64_t pingsAnswered = 0;   // JoinRoom for the reserved health-ping room (never counted as a failed join)
     std::uint64_t peersJoined = 0;
     std::uint64_t peersKicked = 0;  // disconnected for sustained rate or size violations
     std::uint64_t joinsRejected = 0;
