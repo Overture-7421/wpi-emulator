@@ -34,6 +34,27 @@ when it is missing (`no_extension_for_season`). A refused year handshake reports
 are translated into setup guidance by the run view; extension selection belongs to
 [Runtime](runtime.md#launcher-boundary).
 
+## Hosting a practice match
+
+`host::Options::hosting` (mode `Off`, `Direct` or `Relay`, port, relay address, player count) makes
+`RobotSession` compose a [`MatchHosting`](../../app/host/match_hosting.h) next to the robot link;
+with mode `Off` nothing is created and the session is exactly as before. The robot-process IPC path is
+not touched. `MatchHosting` draws the invite secret (the only place it is shown is
+`HostingStatus::invite`, never logged or persisted), opens the listener (ENet, or a registered relay
+room), wraps **every** accepted peer in `SecureTransport` on a short-lived handshake thread before
+`MatchHost` sees it, and runs as the runner's tick observer on the sim thread. While clients are
+connected the UI's `RobotSession::controller()` holds the time scale at 1x and drops Step
+(`ConstrainedController`; the scale the user asked for returns afterwards). The options are read when
+the robot is launched, so changing them applies at the next launch.
+
+The Qt side is [`HostingService`](../../app/common/hosting_service.h) (`AppServices::hosting()`): it
+owns the persisted options and hands the UI an immutable `HostingStatus` snapshot (phase
+Off, Starting, Lobby, Live, Paused, HostStalled or Error, invite, endpoint, roster with ping and loss,
+constraint flags), and relays kicks. `RealRuntimeHost` publishes the running session's status to it.
+Shutdown closes the room (the relay frees it with `CloseRoom`), tells clients `ServerClosing` and
+removes their robots from the session. The relay and the match protocol are described in
+[Runtime](runtime.md#remote-robots-practice-matches).
+
 ## Editor and run-view contracts
 
 The editor works through `IEditorBackend` and an undoable document; it does not access core,

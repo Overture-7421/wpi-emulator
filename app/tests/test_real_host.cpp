@@ -416,10 +416,11 @@ TEST_CASE("real host: a hosted direct match accepts a client in the lobby, shows
     const sdk::GamePluginRegistry& plugins = f.env.services->plugins();
     const std::string gameId = f.host().scene().gameId.toStdString();
     REQUIRE(plugins.find(gameId) != nullptr);
-    const core::config::RobotConfigCodec codec;
-    const std::string spec = core::config::JsonValueCodec().dump(codec.toValue(defaultRobotConfig(*f.env.services)), false);
+    const wpiemu::core::config::RobotConfigCodec codec;
+    const std::string spec = wpiemu::core::config::JsonValueCodec().dump(codec.toValue(defaultRobotConfig(*f.env.services)), false);
     const bool joined = client->join("Remote", spec, gameId, plugins.find(gameId)->metadata().year);
-    INFO(client->rejection() ? client->rejection()->detail : std::string("no answer"));
+    const auto rejection = client->rejection();
+    INFO((rejection ? rejection->detail : std::string("no answer")));
     REQUIRE(joined);   // the remote robot is a real Box3D body of the session's world
     const sdk::match::ParticipantId id = client->accept->participantId;
     REQUIRE(waitFor([&] { return hosting.status()->roster.size() == 2; }, 5000));
