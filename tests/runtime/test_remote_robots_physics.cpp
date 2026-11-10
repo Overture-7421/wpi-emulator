@@ -370,4 +370,13 @@ TEST_CASE("remote robots: wall time per tick with five remote robots and 200 fue
     const double withRobots = measure(5);
     MESSAGE("ms per tick, host + 200 fuel: ", withoutRobots, "; plus 5 remote robots with 4 wheels: ", withRobots,
             " (remote robots add ", withRobots - withoutRobots, " ms)");
+    // The gate of the plan (docs: remote robots must stay a small share of the 5 ms tick). Generous on purpose: wall time on a
+    // loaded CI machine is noisy; the measured cost is about 0.15 ms.
+    CHECK(std::isfinite(withRobots));
+#ifdef NDEBUG
+    CHECK(withRobots < 2.5);                       // half of the 200 Hz tick budget, with the host and 200 fuel bodies
+    CHECK(withRobots - withoutRobots < 1.25);      // the remote robots alone take at most a quarter of it
+#else
+    CHECK(withRobots < 50.0);
+#endif
 }
