@@ -43,8 +43,6 @@ public:
     // `placement` is where the robot starts and where reset() puts it; `nowUs` starts its input timeout.
     sdk::Status add(const RemoteRobotRequest& request, const sdk::RobotStartPose& placement, sdk::SimTimeUs nowUs);
     bool remove(sdk::match::ParticipantId id);
-    bool contains(sdk::match::ParticipantId id) const { return lookup(id) != nullptr; }
-    std::size_t count() const { return robots_.size(); }
     std::vector<sdk::match::ParticipantId> ids() const;
     std::optional<RemoteRobotInfo> info(sdk::match::ParticipantId id) const;
     // The footprints of the robots present, for placing the next one clear of them.

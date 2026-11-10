@@ -175,7 +175,6 @@ private:
     void writeImu(double dt);
     void updateBrownoutWarning();
     bool remoteRobotsEnabled() const;
-    void refreshRosterHost();
     sdk::FieldFrame fieldFrame() const;
 
     sdk::RobotConfig config_;
