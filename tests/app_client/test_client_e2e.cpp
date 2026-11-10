@@ -152,7 +152,124 @@ bool isLive(const cl::ClientController& c) {
 
 double distance(const sdk::Vec3& a, const sdk::Vec3& b) { return std::hypot(b.x - a.x, b.y - a.y); }
 
+// Wraps the real (encrypted) link so a test can break it like a dropped connection.
+class CuttableTransport final : public sdk::proto::ITransport {
+public:
+    CuttableTransport(std::unique_ptr<sdk::proto::ITransport> inner, std::shared_ptr<std::atomic<bool>> cut)
+        : inner_(std::move(inner)), cut_(std::move(cut)) {}
+
+    sdk::Status send(std::span<const std::byte> frame) override { return gate() ? inner_->send(frame) : lost(); }
+    sdk::Status sendUnreliable(std::span<const std::byte> frame) override { return gate() ? inner_->sendUnreliable(frame) : lost(); }
+    sdk::Result<bool> receive(std::vector<std::byte>& frame, std::chrono::milliseconds timeout) override {
+        if (!gate()) return lost().error();
+        return inner_->receive(frame, timeout);
+    }
+    void close() override { inner_->close(); }
+    bool connected() const override { return !cut_->load() && inner_->connected(); }
+    std::string describe() const override { return "cuttable(" + inner_->describe() + ")"; }
+    std::optional<sdk::proto::LinkStats> linkStats() const override { return inner_->linkStats(); }
+
+private:
+    bool gate() {
+        if (!cut_->load()) return true;
+        inner_->close();
+        return false;
+    }
+    static sdk::Status lost() { return sdk::makeError(sdk::ErrorCode::Disconnected, "the link was cut"); }
+
+    std::unique_ptr<sdk::proto::ITransport> inner_;
+    std::shared_ptr<std::atomic<bool>> cut_;
+};
+
+// Dials like the app does (the invite handshake included) and hands out a switch for the newest link.
+struct CuttableDialer {
+    std::shared_ptr<std::atomic<bool>> latest = std::make_shared<std::atomic<bool>>(false);
+    std::atomic<int> dials{0};
+    std::atomic<bool> refuse{false};   // the network is gone: every dial fails
+    cl::LinkOpener opener() {
+        return [this](const cl::JoinPlan& plan) -> sdk::Result<std::unique_ptr<sdk::proto::ITransport>> {
+            if (refuse) return sdk::makeError(sdk::ErrorCode::Disconnected, "no route to the host");
+            auto link = cl::openSecureLink(plan.endpoint, plan.secret);
+            if (!link) return link.error();
+            ++dials;
+            latest = std::make_shared<std::atomic<bool>>(false);
+            return std::unique_ptr<sdk::proto::ITransport>(std::make_unique<CuttableTransport>(std::move(link).value(), latest));
+        };
+    }
+};
+
 }  // namespace
+
+TEST_CASE("client e2e: a dropped link is redialled with a fresh handshake and the same robot comes back") {
+    HostWorld world;
+    QTemporaryDir dir;
+    const QString robotPath = writeRobot(dir, false);
+    auto services = cl::ClientServices::create().value();
+    app::MemoryKeyValueStore store;
+    FakeInput input;
+    CuttableDialer dialer;
+    cl::ClientSessionOptions options;
+    options.opener = dialer.opener();
+    cl::ClientController controller(*services, store, &input, std::move(options));
+
+    cl::JoinFormInput form;
+    form.invite = world.invite;
+    form.directAddress = world.address();
+    form.displayName = "Flaky Wi-Fi";
+    form.robotPath = robotPath.toStdString();
+    REQUIRE(controller.join(form).ok());
+    REQUIRE(tickUntil(controller, [&] { return isLive(controller); }));
+    const auto id = controller.view()->own.id;
+    CHECK(dialer.dials == 1);
+
+    dialer.latest->store(true);   // the network drops
+    REQUIRE(tickUntil(controller, [&] { return controller.sessionState().status.state != mc::ConnectionState::Live; }, 5s));
+    REQUIRE_MESSAGE(tickUntil(controller, [&] { return isLive(controller) && dialer.dials >= 2; }, 20s),
+                    "did not come back: banner " << static_cast<int>(controller.presentation().banner));
+    CHECK(controller.view()->own.id == id);   // the host kept the robot for its resume window
+    CHECK(world.hosting->status()->joinsAccepted >= 1);
+    CHECK(world.hosting->status()->roster.size() == 2);
+
+    // Driving still works over the new link.
+    const sdk::Vec3 before = controller.view()->own.pose.position;
+    input.forward(1.f);
+    REQUIRE(tickUntil(controller, [&] { return distance(before, controller.view()->own.pose.position) > 0.5; }, 8s));
+}
+
+TEST_CASE("client e2e: when automatic reconnecting gave up, the Reconnect button resumes the match") {
+    HostWorld world;
+    QTemporaryDir dir;
+    const QString robotPath = writeRobot(dir, false);
+    auto services = cl::ClientServices::create().value();
+    app::MemoryKeyValueStore store;
+    FakeInput input;
+    CuttableDialer dialer;
+    cl::ClientSessionOptions options;
+    options.opener = dialer.opener();
+    options.match.maxReconnectAttempts = 1;   // one failed redial and the client gives up
+    cl::ClientController controller(*services, store, &input, std::move(options));
+
+    cl::JoinFormInput form;
+    form.invite = world.invite;
+    form.directAddress = world.address();
+    form.displayName = "Manual";
+    form.robotPath = robotPath.toStdString();
+    REQUIRE(controller.join(form).ok());
+    REQUIRE(tickUntil(controller, [&] { return isLive(controller); }));
+
+    dialer.refuse = true;
+    dialer.latest->store(true);
+    REQUIRE(tickUntil(controller, [&] { return controller.presentation().banner == cl::Banner::LinkLost; }, 10s));
+    CHECK(controller.presentation().screen == cl::Screen::Drive);
+    REQUIRE(controller.presentation().canReconnect);
+    CHECK_FALSE(controller.presentation().controlsEnabled);
+
+    dialer.refuse = false;   // the network is back
+    controller.reconnect();
+    REQUIRE_MESSAGE(tickUntil(controller, [&] { return isLive(controller); }, 20s),
+                    "did not resume: banner " << static_cast<int>(controller.presentation().banner) << " " << controller.presentation().detail);
+    CHECK(dialer.dials >= 2);
+}
 
 TEST_CASE("client e2e: join over the invite handshake, go live, drive the own robot, move a zone, leave") {
     HostWorld world;
