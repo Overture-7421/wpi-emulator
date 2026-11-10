@@ -364,7 +364,14 @@ public:
 
     Status send(std::span<const std::byte> frame) override { return forward(frame, false); }
     Status sendUnreliable(std::span<const std::byte> frame) override { return forward(frame, true); }
-    Result<bool> receive(std::vector<std::byte>& frame, std::chrono::milliseconds timeout) override { return inner_->receive(frame, timeout); }
+    Result<bool> receive(std::vector<std::byte>& frame, std::chrono::milliseconds timeout) override {
+        Result<bool> got = inner_->receive(frame, timeout);
+        if (got && got.value()) {
+            ++framesReceived;
+            bytesReceived += frame.size();
+        }
+        return got;
+    }
     void close() override { inner_->close(); }
     bool connected() const override { return inner_->connected(); }
     std::string describe() const override { return "scripted"; }
@@ -382,11 +389,15 @@ public:
     std::atomic<bool> blockSends{false};
     std::atomic<int> sends{0};
     std::atomic<int> unreliableSends{0};
+    std::atomic<std::uint64_t> bytesSent{0};       // frame bytes handed to the wire by the host (reliable and unreliable)
+    std::atomic<std::uint64_t> framesReceived{0};  // frames that reached the host from the client
+    std::atomic<std::uint64_t> bytesReceived{0};
 
 private:
     Status forward(std::span<const std::byte> frame, bool unreliable) {
         while (blockSends.load() && inner_->connected()) std::this_thread::sleep_for(1ms);
         ++sends;
+        bytesSent += frame.size();
         if (unreliable) ++unreliableSends;
         return unreliable ? inner_->sendUnreliable(frame) : inner_->send(frame);
     }
