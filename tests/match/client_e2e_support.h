@@ -129,6 +129,7 @@ public:
     ClientKit kit;
     std::shared_ptr<CutTransport::Probe> probe;
     std::shared_ptr<std::atomic<std::uint64_t>> hostReceived;
+    std::vector<double> updateUs;   // wall-clock cost of every MatchClient::update()
     std::unique_ptr<mc::MatchClient> client;
     std::size_t links = 0;
 };
@@ -187,7 +188,11 @@ public:
                 h.tickEnd();
             }
             REQUIRE(h.host->waitOutboundIdle(3s));
-            for (const auto& c : clients) c->client->update();
+            for (const auto& c : clients) {
+                const auto t0 = std::chrono::steady_clock::now();
+                c->client->update();
+                c->updateUs.push_back(std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count());
+            }
             if (onSubStep) onSubStep(*this);
         }
         ++steps;

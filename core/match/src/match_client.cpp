@@ -427,6 +427,7 @@ struct MatchClient::Impl {
         if (!sameParticipant || freshParticipant) buildPredictor();
         else if (predictor) {
             predictor->stop();
+            predictor->clearInputs();   // the host's queue of this robot is not the one the client remembers
             predictor->world().clearRemotes();
         }
         if (freshParticipant) leadBias = 0;

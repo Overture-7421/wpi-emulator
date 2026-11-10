@@ -254,6 +254,37 @@ TEST_CASE("own predictor: snapshots from the future or beyond the history are re
     CHECK(p->reconcile(restAt(4, 4, 0), 100, 0, true).kind == ReconcileKind::TooOld);
 }
 
+TEST_CASE("own predictor: a wrong steer angle and wheel spin are restored from the host and smoothed like the pose") {
+    Bench b;
+    auto p = b.make();
+    p->start(restAt(4.f, 4.f, 0.f), 0, 0, true);
+    PredictedInput in = b.input(1, 0, 0.f, 1.0f);   // a strafe: the modules turn to 90 degrees
+    p->stepTick(&in, true);
+    for (int i = 0; i < 59; ++i) p->stepTick(nullptr, true);
+    REQUIRE(p->tick() == 60);
+    const OwnBodyState before = p->newest();
+    CHECK(std::fabs(before.wheels[0].steerAngleRad) > 1.0);
+
+    OwnAuthoritative auth = wireRoundTrip(before);
+    const double steerBefore = before.wheels[0].steerAngleRad, spinBefore = before.wheels[0].driveWheelAngleRad;
+    auth.steerRad[0] += 0.4;
+    auth.spinRad[0] += 1.0;
+    const wpiemu::core::match::OwnShown shownBefore = p->shown(1.0);
+    const wpiemu::core::match::ReconcileResult r = p->reconcile(auth, 60, 1, true);
+    CHECK(r.kind == ReconcileKind::Corrected);
+    CHECK(r.steerErrRad == doctest::Approx(0.4).epsilon(0.02));
+    // The simulation holds the host's angles now (spin is restored too) ...
+    CHECK(p->newest().wheels[0].steerAngleRad == doctest::Approx(steerBefore + 0.4).epsilon(0.01));
+    CHECK(wire::angleDifferenceRad(p->newest().wheels[0].driveWheelAngleRad, spinBefore + 1.0) == doctest::Approx(0.0).epsilon(0.01).scale(1.0));
+    // ... and the picture did not jump: the difference went into the offsets.
+    const wpiemu::core::match::OwnShown shownAfter = p->shown(1.0);
+    CHECK(std::fabs(shownAfter.wheels[0].steerRad - shownBefore.wheels[0].steerRad) < 1e-3);
+    CHECK(std::fabs(shownAfter.wheels[0].spinRad - shownBefore.wheels[0].spinRad) < 1e-3);
+    for (int i = 0; i < 60; ++i) p->decayCorrection(5000);
+    const wpiemu::core::match::OwnShown settled = p->shown(1.0);
+    CHECK(settled.wheels[0].steerRad == doctest::Approx(steerBefore + 0.4).epsilon(0.01));
+}
+
 TEST_CASE("own predictor: shown() interpolates between the last two predicted states") {
     Bench b;
     auto p = b.make();

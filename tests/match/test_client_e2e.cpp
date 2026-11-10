@@ -173,7 +173,7 @@ void printRow(const char* what, const Stat& s, const char* unit) {
 struct DriveResult {
     std::string net;
     double ownLatencyMs = 0, rampMs = 0;
-    Stat ownJump, visualErr, remoteJump, remoteErr, predErr;
+    Stat ownJump, visualErr, remoteJump, remoteErr, predErr, updateCost;
     mc::ClientDiagnostics diag;
     double finalCorrectionMm = 0;
     double finalErrCm = 0;
@@ -181,6 +181,7 @@ struct DriveResult {
 
 DriveResult measure(const Series& s, E2eWorld& world, wire::ParticipantId id) {
     DriveResult r;
+    r.updateCost = statOf(s.c->updateUs);
     r.ownLatencyMs = (s.movedAtS - s.cmdAtS) * 1000.0;
     r.ownJump = statOf(s.ownJumpMm);
     r.visualErr = statOf(s.visualErrCm);
@@ -209,6 +210,7 @@ void report(const char* title, const std::vector<DriveResult>& rows) {
         printRow("prediction error (vs snapshot)", r.predErr, "cm");
         printRow("remote robot jump per frame", r.remoteJump, "mm");
         printRow("remote picture vs host truth", r.remoteErr, "cm");
+        printRow("MatchClient::update() wall time", r.updateCost, "us");
         std::printf("    input to visible motion %.1f ms (local ramp %.1f ms, extra %.1f ms)   at rest: error %.2f cm, correction left %.2f mm\n",
                     r.ownLatencyMs, r.rampMs, r.ownLatencyMs - r.rampMs, r.finalErrCm, r.finalCorrectionMm);
     }
@@ -349,6 +351,7 @@ TEST_CASE("client e2e: a collision with the host's robot is corrected smoothly, 
         CHECK(r.diag.reconciliations >= 1);          // and the client had to be corrected
         CHECK(r.diag.snaps == 0);
         CHECK(r.ownJump.max < 25.0);                // mm in one 5 ms frame: no teleport, the offset is absorbed over ~100 ms
+        CHECK(r.updateCost.p99 < 10'000.0);         // even a replay of 20-60 ticks fits a frame (microseconds of wall time)
         CHECK(r.finalErrCm < (net.rttMs < 10 ? 2.0 : 4.0));   // the picture converged on the host's truth (the robots stay in contact)
         CHECK(r.finalCorrectionMm < 2.0);
         rows.push_back(std::move(r));
@@ -527,4 +530,142 @@ TEST_CASE("client e2e: after a dropped link the client reconnects with its token
     for (const mc::RemoteRobotView& rr : b.client->view()->remotes)
         if (rr.id == idBefore) listed = true;
     CHECK(listed);
+}
+
+TEST_CASE("client e2e: two clients and the host see one world: robots, wheels, zones, fuel and the match state agree") {
+    E2eWorld::Options options;
+    options.neutralFuel = 120;
+    E2eWorld world(options);
+    E2eClient& a = world.addClient("A", lanProfile(), E2eWorld::robotSpec("A", true));
+    E2eClient& b = world.addClient("B", lanProfile(), E2eWorld::robotSpec("B", true));
+    world.run(1.0);
+    const wire::ParticipantId idA = a.id(), idB = b.id();
+    REQUIRE(idA != idB);
+
+    // B moves its shooter zone (zone 1) and switches the pickup (zone 0) on.
+    REQUIRE(b.client->setZonePose(1, {{0.12f, 0.05f, 0.45f}, Quat::fromEuler(0.f, -0.3f, 0.f)}).ok());
+    b.client->setZoneActive(0, true);
+
+    Recorder rec(world);
+    rec.add(a, Plan::slalom);
+    rec.add(b, Plan::circle);
+    rec.drive(6.0);
+    rec.series(0).plan = rec.series(1).plan = [](double) { return sdk::ChassisSpeeds{}; };
+    rec.drive(3.0);
+
+    const auto viewA = a.client->view();
+    const auto viewB = b.client->view();
+    const auto truthSnapshot = world.rig.snapshot();
+    const auto hostPoseOf = [&](wire::ParticipantId id) { return world.truthAt(world.hostTick(), id); };
+
+    for (const auto& [view, self, other] : {std::tuple{viewA, idA, idB}, std::tuple{viewB, idB, idA}}) {
+        // Who is in the match.
+        std::set<wire::ParticipantId> seen;
+        for (const mc::RemoteRobotView& r : view->remotes) {
+            seen.insert(r.id);
+            if (r.id != wire::kHostParticipantId) {
+                REQUIRE(r.appearance);                   // everybody can be drawn (this rig's host has no wheels to describe)
+                CHECK(r.appearance->wheels.size() == 4);
+            }
+            CHECK_FALSE(r.name.empty());
+            const TruthPose t = hostPoseOf(r.id);
+            REQUIRE(t.valid);
+            CHECK(std::hypot(r.pose.position.x - t.x, r.pose.position.y - t.y) < 0.015);
+            CHECK(std::fabs(yawDiff(r.pose.rotation.yaw(), t.yaw)) < 0.01);
+            // The wheels point where the host's wheels point.
+            const sdk::RobotSample* sample = g26session::Rig::sampleOf(*truthSnapshot, r.id);
+            if (r.id != wire::kHostParticipantId) {
+                REQUIRE(sample != nullptr);
+                REQUIRE(r.wheels.size() == sample->wheels.size());
+                for (std::size_t i = 0; i < r.wheels.size(); ++i)
+                    CHECK(std::fabs(yawDiff(r.wheels[i].steerRad, sample->wheels[i].steerAngleRad)) < 0.03);
+            }
+        }
+        CHECK(seen == std::set<wire::ParticipantId>{wire::kHostParticipantId, other});
+        CHECK(view->own.id == self);
+        const TruthPose own = hostPoseOf(self);
+        CHECK(std::hypot(view->own.pose.position.x - own.x, view->own.pose.position.y - own.y) < 0.015);
+        CHECK(view->roster.size() == 3);
+        // The match state is the host's.
+        CHECK(view->hud.state == wire::MatchState::Running);
+        CHECK(view->hud.enabled);
+        CHECK_FALSE(view->hud.game.empty());
+        CHECK(view->connection.state == mc::ConnectionState::Live);
+    }
+
+    // B's moved zone: B sees it, A sees it, and the host simulates it.
+    const auto zoneOfB = [&](const mc::MatchClientView& v) -> const mc::RemoteRobotView* {
+        for (const mc::RemoteRobotView& r : v.remotes)
+            if (r.id == idB) return &r;
+        return nullptr;
+    };
+    const mc::RemoteRobotView* bAsSeenByA = zoneOfB(*viewA);
+    REQUIRE(bAsSeenByA != nullptr);
+    REQUIRE(bAsSeenByA->zonePoses.size() == 2);
+    CHECK((bAsSeenByA->zoneFlags & 1u) == 1u);
+    for (const sdk::Pose3* p : {&bAsSeenByA->zonePoses[1], &viewB->own.zonePoses[1]}) {
+        CHECK(p->position.x == doctest::Approx(0.12f).epsilon(0.02));
+        CHECK(p->position.y == doctest::Approx(0.05f).epsilon(0.05));
+        CHECK(p->position.z == doctest::Approx(0.45f).epsilon(0.02));
+    }
+    const auto info = world.adapter.remoteRobotInfo(idB);
+    REQUIRE(info.has_value());
+    REQUIRE(info->zonePoses.size() == 2);
+    CHECK(info->zonePoses[1].position.x == doctest::Approx(0.12f).epsilon(0.01));
+    CHECK((info->zoneFlags & 1u) == 1u);
+    CHECK((viewB->own.zoneFlags & 1u) == 1u);
+
+    // The fuel both clients hold is the fuel the host has.
+    const sdk::EntityGroupSample* fuel = nullptr;
+    for (const sdk::EntityGroupSample& g : truthSnapshot->entityGroups())
+        if (g.group == "fuel") fuel = &g;
+    REQUIRE(fuel != nullptr);
+    REQUIRE(fuel->ids.size() > 50);
+    for (const auto& view : {viewA, viewB}) {
+        std::map<std::uint32_t, Vec3> held;
+        for (const mc::EntityGroupView& g : view->entities)
+            for (const mc::EntityView& e : g.entities) held[e.id] = {e.x, e.y, e.z};
+        std::size_t missing = 0, off = 0;
+        for (std::size_t i = 0; i < fuel->ids.size(); ++i) {
+            const auto it = held.find(fuel->ids[i]);
+            if (it == held.end()) {
+                ++missing;
+                continue;
+            }
+            const Vec3 d = it->second - fuel->positions[i];
+            if (std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z) > 0.06f) ++off;
+        }
+        if (reportRequested())
+            std::printf("  fuel: host %zu, client holds %zu, missing %zu, more than 6 cm off %zu\n", fuel->ids.size(), held.size(), missing, off);
+        CHECK(missing <= fuel->ids.size() / 50);
+        CHECK(off <= fuel->ids.size() / 20);
+        CHECK(held.size() <= fuel->ids.size() + fuel->ids.size() / 50);
+    }
+}
+
+TEST_CASE("client e2e: five clients and the host on a WAN, the full stress run") {
+    if (!fullRunRequested()) return;
+    E2eWorld::Options options;
+    options.neutralFuel = 200;
+    E2eWorld world(options);
+    std::vector<E2eClient*> clients;
+    for (int i = 0; i < 5; ++i)
+        clients.push_back(&world.addClient(std::string("P") + std::to_string(i + 1), wanProfile(), E2eWorld::robotSpec("P", true)));
+    Recorder rec(world);
+    for (std::size_t i = 0; i < clients.size(); ++i)
+        rec.add(*clients[i], [i](double t) { return Plan::slalom(std::fmod(t + 0.9 * static_cast<double>(i), 6.0)); });
+    rec.drive(20.0);
+    std::vector<DriveResult> rows;
+    for (std::size_t i = 0; i < clients.size(); ++i) {
+        DriveResult r = measure(rec.series(i), world, clients[i]->id());
+        r.net = "player " + std::to_string(i + 1) + " of 5 on the WAN";
+        r.rampMs = localRampMs();
+        rows.push_back(std::move(r));
+    }
+    report("five clients and the host, 20 s", rows);
+    for (const DriveResult& r : rows) {
+        CHECK(r.visualErr.p95 < 8.0);
+        CHECK(r.remoteJump.max < 150.0);
+        CHECK(r.diag.snaps <= 10);
+    }
 }
