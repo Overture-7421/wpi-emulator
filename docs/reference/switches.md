@@ -120,6 +120,26 @@ parser also supports `--help`; the options below are owned by
 | `--light` | Use the light palette. No value. | Dark palette. |
 | `--size <WxH>` | Window size, for example `1500x900`. | `1500x900`. |
 
+## Relay and match networking
+
+The practice-match relay (`wpiemu_relay`) and its probe read these values. The relay's environment
+variables override its command-line options; an invalid value is a startup error (exit code 2) that
+names the setting. The relay guide has the meaning of each limit and how the Bicep sets them: see
+[Relay on Azure](../guides/relay-azure.md#configure-and-operate).
+
+| Name | Classification; scope and accepted value | Default and precedence | Source |
+|---|---|---|---|
+| `WPIEMU_RELAY_PORT` | Relay: UDP port to listen on, and the port `--selfcheck` asks; 1 to 65535. | `7777`. Option `--port`. | [`relay/src/relay_options.cpp`](../../relay/src/relay_options.cpp) |
+| `WPIEMU_RELAY_BIND` | Relay: address to listen on, an IP literal or name. | `::` (dual stack). Option `--bind`. | [`relay/src/relay_options.cpp`](../../relay/src/relay_options.cpp) |
+| `WPIEMU_RELAY_MAX_ROOMS`, `WPIEMU_RELAY_MAX_PEERS` | Relay: rooms at once (1 to 500) and clients per room (1 to 6). | `100` and `6`. Options `--max-rooms`, `--max-peers`. | [`relay/src/relay_options.cpp`](../../relay/src/relay_options.cpp) |
+| `WPIEMU_RELAY_ROOM_TTL_MS` | Relay: how long a room survives without its host, 1000 to 86400000 ms. | `30000`. Option `--room-ttl-ms`. | [`relay/src/relay_options.cpp`](../../relay/src/relay_options.cpp) |
+| `WPIEMU_RELAY_PEER_BYTES_PER_SEC`, `WPIEMU_RELAY_ROOM_BYTES_PER_SEC` | Relay: per-client token bucket (1024 or more) and forwarded bytes per room; 0 derives the room rate from the client rate. | `65536` and `0`. Options `--peer-bytes-per-sec`, `--room-bytes-per-sec`. | [`relay/src/relay_options.cpp`](../../relay/src/relay_options.cpp) |
+| `WPIEMU_RELAY_LOCKOUT_FAILURES`, `WPIEMU_RELAY_LOCKOUT_WINDOW_S`, `WPIEMU_RELAY_LOCKOUT_DURATION_S` | Relay: failed joins or registrations from one source before lockout (0 disables), the window they count in, and how long the source is refused. | `10`, `60` s, `300` s. | [`relay/src/relay_options.cpp`](../../relay/src/relay_options.cpp) |
+| `WPIEMU_RELAY_STATS_INTERVAL_S`, `WPIEMU_RELAY_LOG` | Relay: period of the stats log line (0 disables) and log format `json` or `text`. | `60` and `json`. | [`relay/src/relay_options.cpp`](../../relay/src/relay_options.cpp) |
+| `WPIEMU_RELAY_PROBE_RELAY` | `wpiemu_relay_probe`: the relay as `host:port`. | The `--relay` option wins when both are set. | [`relay/include/wpiemu/relay/relay_probe.h`](../../relay/include/wpiemu/relay/relay_probe.h) |
+| `WPIEMU_RELAY_DNS_SUFFIX` | App and Bicep: DNS label suffix of the deployed relay (a hyphen first, then lower-case letters, digits and hyphens), used to build the Production and Development relay addresses. | App order: this variable, then the stored `hosting/relayDnsSuffix` preference, then the value a release build bakes in with the CMake cache string of the same name. The Bicep parameter files read the same variable. | [`app/common/relay_endpoints.h`](../../app/common/relay_endpoints.h), [`infra/relay/main.dev.bicepparam`](../../infra/relay/main.dev.bicepparam) |
+| `WPIEMU_RELAY_ALERT_EMAIL` | Bicep parameter files only: the budget alert address. | Empty creates no budget. | [`infra/relay/main.dev.bicepparam`](../../infra/relay/main.dev.bicepparam) |
+
 ## Build and packaging variables
 
 These are not runtime app arguments. Use [Building: configure options](../BUILDING.md#configure-options)
@@ -139,6 +159,8 @@ over the declaration's default. Boolean cache options accept CMake boolean value
 | `WPIEMU_WPILIB_SEASON` | CMake cache string selecting the season pack `seasons/<year>`; default is the pack whose manifest sets `"default": true`. | Selects the season pack: its pinned artifact version and, through its HAL ABI profile, Maven coordinates, headers and C++ standard. | [`CMakeLists.txt`](../../CMakeLists.txt), [`halsim_ext/cmake/WpiEmuWpilib.cmake`](../../halsim_ext/cmake/WpiEmuWpilib.cmake) |
 | `WPIEMU_SEASONS` | CMake cache list of extensions to compose; defaults to `WPIEMU_WPILIB_SEASON`. | Semicolon-separated season years, or `all` for every season pack; extra seasons use isolated real-HAL sub-builds. | [`CMakeLists.txt`](../../CMakeLists.txt), [`cmake/WpiEmuSeasons.cmake`](../../cmake/WpiEmuSeasons.cmake) |
 | `WPIEMU_EXTENSION_ONLY` | CMake cache boolean, default `OFF`; build the extension without the app, plugins or physics. | Used by extra-season sub-builds. | [`CMakeLists.txt`](../../CMakeLists.txt) |
+| `WPIEMU_RELAY_ONLY` | CMake cache boolean, default `OFF`; build only `sdk`, `ipc`, `net` and the relay (no core, Box3D, Qt, WPILib or SDL) for the relay container image. | Forces the app and the plugin template off; an error together with `WPIEMU_EXTENSION_ONLY`. | [`CMakeLists.txt`](../../CMakeLists.txt), [`relay/Dockerfile`](../../relay/Dockerfile) |
+| `WPIEMU_FETCH_NET_LIBS` | CMake cache option, default `ON`; fetch and build the pinned ENet6 and Monocypher that `net/` links. | Boolean; not used by extension-only builds. With `OFF` the net module fails to configure. | [`cmake/WpiEmuDependencies.cmake`](../../cmake/WpiEmuDependencies.cmake) |
 | `WPIEMU_REQUIRE_REAL_HAL` | CMake cache boolean, default `OFF`. | `ON` refuses stub extensions at configure time; always enabled for extra seasons. | [`CMakeLists.txt`](../../CMakeLists.txt) |
 | `WPIEMU_WPILIB_ROOT_<year>` | CMake cache path for an extra season's extracted artifacts or Maven cache. | Empty lets that isolated sub-build discover or download its own artifacts; the primary root is never reused across seasons. | [`cmake/WpiEmuSeasons.cmake`](../../cmake/WpiEmuSeasons.cmake) |
 | `WPIEMU_WPILIB_VERSION` | CMake cache string overriding the selected season's WPILib artifact version. | Explicit cache value wins over that profile's pinned version. | [`halsim_ext/cmake/WpiEmuWpilib.cmake`](../../halsim_ext/cmake/WpiEmuWpilib.cmake) |
