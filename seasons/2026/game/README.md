@@ -151,8 +151,14 @@ fuel state. Nearest-first selection and its tie-break are per intake, as for the
 - A zone is active only while its bit in the robot's zone flags is set (bit i = the i-th zone of that
   robot's `zones`, counting zones of other plugins too) and the robot is enabled; the flags never touch
   the host's zones, and zone `activation` conditions are not evaluated.
-- A zone's chassis-frame pose is its rest pose (`sdk::restPoseOfZone`). A zone attached to a mechanism
-  link cannot be resolved without mechanisms and is treated as chassis-attached at its local pose.
+- A zone's chassis-frame pose is the one its client commanded (`RobotView::zonePose`): a remote robot
+  simulates no mechanisms, so its client fakes an extending intake or a turret by MOVING the zone in its
+  input (`MatchInput::zonePoses`, clamped by the session to the robot's reach). Without a commanded pose
+  the zone is at its spec pose (`sdk::remoteZoneSpecPose`; a zone attached to a mechanism link cannot be
+  resolved without mechanisms and is treated as chassis-attached at its local pose). A pickup volume
+  collects fuel where it is NOW, and a shooter's shots start at its CURRENT position and follow its
+  CURRENT orientation (the zone pose rotated by the hood and turret offsets of its properties). The
+  host robot's zones keep following its mechanisms.
 - A shooter leaves at `fixedExitSpeedMps`, or `kRemoteDefaultExitSpeedMps` (8 m/s,
   [`fuel_zones.h`](include/wpiemu/plugins/game_2026/fuel_zones.h)) when that is 0. Elevation is
   `hoodAngleRad` and yaw is `turretYawOffsetRad`; flywheel, hood and turret references are ignored
@@ -162,7 +168,8 @@ fuel state. Nearest-first selection and its tie-break are per intake, as for the
 
 `publishRobot` adds each remote robot's fuel count, capacity and shots (the host's HUD keys) and, in a
 timed match, `game_2026.hub.own.active` for its own alliance to that robot's snapshot sample. The
-runtime already reports the robot's zone states from its flags. The host's values still come from
+runtime already reports the robot's zone states from its flags, with each zone's chassis-frame pose
+(`ZoneState::poseInChassis`; `publish()` adds the host's, resolved through its mechanisms). The host's values still come from
 `publish()`. The alliance of a robot (its station) only matters for that HUD value: scoring follows the
 hub a fuel enters, not who shot it. For the host the station is the Driver Station's. The multi-robot
 tests are in [`tests/game_2026`](../../../tests/game_2026) (`test_multi_robot*.cpp`).

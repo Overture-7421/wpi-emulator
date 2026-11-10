@@ -39,6 +39,7 @@ inline sdk::match::MatchInput sampleMatchInput(std::uint32_t seq) {
     in.targetTick = 1000 + seq;
     in.wheels = {{12.5f, 1024}, {-3.25f, -2048}, {0.f, 32767}, {100.f, -32768}};
     in.zoneFlags = 0x5u + seq;
+    in.zonePoses = {{1, 300, -150, 500, 0x4000, -0x2000, 0x0102}, {5, -32768, 32767, 0, -32768, 32767, 0}};
     return in;
 }
 
@@ -71,6 +72,8 @@ inline sdk::match::MatchSnapshot sampleMatchSnapshot() {
         r.wheels = {{100, -200}, {300, -400}};
         r.zoneFlags = 0x9u + p;
         r.hud = {{1, 12.f}, {2, 0.5f}};
+        r.zonePoses = {{static_cast<std::uint8_t>(p), static_cast<std::int16_t>(250 * (p + 1)), -75, 640, 0x1234, 0, -1},
+                       {15, -1000, 2000, 3000, 4, 5, 6}};
         s.robots.push_back(r);
     }
     EntityDelta d;

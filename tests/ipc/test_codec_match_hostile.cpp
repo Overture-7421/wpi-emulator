@@ -569,3 +569,120 @@ TEST_CASE("match hostile: messages beyond a wire limit are refused on encode and
     // The default-constructed messages carry no room id and are rejected too: a room id is required content.
     rejected(relay::RegisterRoom{}, "RegisterRoom default");
 }
+
+namespace {
+
+Bytes poseBytes(unsigned index) {
+    Builder b;
+    b.u8(index).u16(100).u16(0xFF9C).u16(500).u16(0x4000).u16(0).u16(0xFFFF);
+    return b.bytes;
+}
+
+// A MatchInputPacket frame with one input whose record is `body` (seq, tick, no wheels, flags, then `tail`).
+Bytes packetWithInputTail(const Bytes& tail) {
+    Builder input;
+    input.u32(1).u64(1).varint(0).u32(0).add(tail);
+    return frameOf(MessageType::MatchInputPacket, Builder().u64(1).u64(1).varint(1).record(input.bytes).bytes);
+}
+
+// A snapshot frame with one robot whose record is a robot without wheels and HUD values followed by `tail`.
+Bytes snapshotWithRobotTail(const Bytes& tail) {
+    Builder robot;
+    robot.add(robotBody(0, 0, 0, 0)).add(tail);
+    return Builder().add(emptySnapshotHead()).varint(1).record(robot.bytes).varint(0).varint(0).bytes;
+}
+
+Bytes poseList(const std::vector<unsigned>& indices) {
+    Builder b;
+    b.varint(indices.size());
+    for (const unsigned i : indices) b.add(poseBytes(i));
+    return b.bytes;
+}
+
+}  // namespace
+
+TEST_CASE("match hostile: zone pose lists of an input are bounded, ordered and optional") {
+    using namespace wpiemu::sdk::match;
+    // Absent (an older writer) and empty both mean no overrides.
+    for (const Bytes& tail : {Bytes{}, Bytes{std::byte{0}}}) {
+        const Result<Message> r = decodeNoThrow(packetWithInputTail(tail));
+        REQUIRE(r.ok());
+        CHECK(std::get<MatchInputPacket>(r.value()).inputs.at(0).zonePoses.empty());
+    }
+    // The full list decodes.
+    std::vector<unsigned> all;
+    for (unsigned i = 0; i < kMaxZonesPerRobot; ++i) all.push_back(i);
+    const Result<Message> full = decodeNoThrow(packetWithInputTail(poseList(all)));
+    REQUIRE(full.ok());
+    CHECK(std::get<MatchInputPacket>(full.value()).inputs.at(0).zonePoses.size() == kMaxZonesPerRobot);
+
+    // More than the cap, with all the bytes behind the count.
+    all.push_back(kMaxZonesPerRobot);
+    checkRejected(packetWithInputTail(poseList(all)), "limit");
+    checkRejected(packetWithInputTail(Builder().varint(std::uint64_t{1} << 40).zeros(200).bytes), "limit");
+    // A count the bytes left cannot hold.
+    checkRejected(packetWithInputTail(Builder().varint(3).add(poseBytes(0)).bytes), "frame");
+    // Order and range.
+    checkRejected(packetWithInputTail(poseList({2, 1})), "zone poses");
+    checkRejected(packetWithInputTail(poseList({3, 3})), "zone poses");
+    checkRejected(packetWithInputTail(poseList({0, 5, 4})), "zone poses");
+    checkRejected(packetWithInputTail(poseList({static_cast<unsigned>(kMaxZonesPerRobot)})), "zone poses");
+    checkRejected(packetWithInputTail(poseList({1, 255})), "zone poses");
+    // A truncated pose.
+    Bytes cut = poseList({0});
+    cut.pop_back();
+    checkRejected(packetWithInputTail(cut), "frame");
+}
+
+TEST_CASE("match hostile: zone pose lists of a robot snapshot are bounded by the snapshot cap") {
+    using namespace wpiemu::sdk::match;
+    for (const Bytes& tail : {Bytes{}, Bytes{std::byte{0}}}) {
+        const Result<Message> r = decodeNoThrow(snapshotWithRobotTail(tail));
+        REQUIRE(r.ok());
+        CHECK(std::get<MatchSnapshot>(r.value()).robots.at(0).zonePoses.empty());
+    }
+    const Result<Message> four = decodeNoThrow(snapshotWithRobotTail(poseList({0, 3, 7, 15})));
+    REQUIRE(four.ok());
+    CHECK(std::get<MatchSnapshot>(four.value()).robots.at(0).zonePoses.size() == kMaxSnapshotZonePosesPerRobot);
+    // Above the snapshot cap (though within the input cap), with every byte present.
+    checkRejected(snapshotWithRobotTail(poseList({0, 1, 2, 3, 4})), "limit");
+    checkRejected(snapshotWithRobotTail(Builder().varint(2).add(poseBytes(0)).bytes), "frame");
+    checkRejected(snapshotWithRobotTail(poseList({4, 4})), "zone poses");
+    checkRejected(snapshotWithRobotTail(poseList({9, 2})), "zone poses");
+    checkRejected(snapshotWithRobotTail(poseList({16})), "zone poses");
+}
+
+TEST_CASE("match hostile: zone pose lists beyond their contract are refused on encode") {
+    using namespace wpiemu::sdk::match;
+    const BinaryMessageCodec codec;
+    const auto rejected = [&](const Message& m, const char* what) {
+        CAPTURE(what);
+        Bytes out = {std::byte{9}};
+        const Status status = codec.encode(m, out);
+        CHECK_FALSE(status.ok());
+        CHECK(out == Bytes{std::byte{9}});
+    };
+    const auto inputWith = [](std::vector<ZonePoseInput> poses) {
+        MatchInputPacket p;
+        p.inputs.assign(1, MatchInput{});
+        p.inputs[0].zonePoses = std::move(poses);
+        return Message{p};
+    };
+    const auto snapshotWith = [](std::vector<ZonePoseInput> poses) {
+        MatchSnapshot s;
+        s.robots.assign(1, RobotWireState{});
+        s.robots[0].zonePoses = std::move(poses);
+        return Message{s};
+    };
+    std::vector<ZonePoseInput> tooMany;
+    for (std::size_t i = 0; i <= kMaxZonesPerRobot; ++i) tooMany.push_back({static_cast<std::uint8_t>(i), 0, 0, 0, 0, 0, 0});
+    rejected(inputWith(tooMany), "input list above the cap");
+    rejected(inputWith({{3, 0, 0, 0, 0, 0, 0}, {3, 0, 0, 0, 0, 0, 0}}), "input duplicate index");
+    rejected(inputWith({{4, 0, 0, 0, 0, 0, 0}, {2, 0, 0, 0, 0, 0, 0}}), "input decreasing index");
+    rejected(inputWith({{static_cast<std::uint8_t>(kMaxZonesPerRobot), 0, 0, 0, 0, 0, 0}}), "input index at the cap");
+    tooMany.resize(kMaxSnapshotZonePosesPerRobot + 1);
+    rejected(snapshotWith(tooMany), "snapshot list above the cap");
+    rejected(snapshotWith({{5, 0, 0, 0, 0, 0, 0}, {5, 0, 0, 0, 0, 0, 0}}), "snapshot duplicate index");
+    rejected(snapshotWith({{200, 0, 0, 0, 0, 0, 0}}), "snapshot index out of range");
+    CHECK_FALSE(fitsLimits(std::get<MatchSnapshot>(snapshotWith(tooMany))));
+}

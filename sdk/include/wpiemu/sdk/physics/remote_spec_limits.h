@@ -115,6 +115,16 @@ struct RemoteSpecLimits {
     LimitRange tireLateralScale{0.05, 1.0};
     // Mecanum rollers are at +-45 degrees (0.785 rad); a little margin, never a perpendicular axis.
     LimitRange tireTractionAngleRad{-0.8, 0.8};
+
+    // Zone poses a client may command (clampRemoteZonePose). A zone is a pickup volume or muzzle in the chassis frame, and
+    // the client may move it to fake an extending intake or a turret, so the envelope is the frame box (centred on the
+    // frame, not on the COM) grown by a reach margin in x and y. 0.75 m covers the extension FRC allows beyond the frame
+    // perimeter (12 in = 0.3 m) plus half of a large pickup volume and a turret's lever arm, but keeps a zone from reaching
+    // across the field. Never more than this far, whatever the volume's own size.
+    double zoneReachMarginM = 0.75;
+    // Highest point of a zone above the FLOOR; the lowest is the floor (a zone is never below the carpet). The robot
+    // height limit (heightM.max, 1.5 m) is also the highest a mechanism or muzzle can reasonably sit.
+    double zoneMaxHeightAboveFloorM = 1.5;
 };
 
 inline constexpr RemoteSpecLimits kRemoteSpecLimits{};
@@ -440,6 +450,60 @@ inline RemoteRobotSpec clampRemoteSpec(const ChassisSpec& chassis, const Drivetr
     RemoteRobotSpec out{chassis, drivetrain};
     remote_spec_detail::Clamper clamper;
     remote_spec_detail::visitRemoteSpec(clamper, out.chassis, out.drivetrain);
+    return out;
+}
+
+// A zone pose after the envelope of kRemoteSpecLimits (zoneReachMarginM, zoneMaxHeightAboveFloorM).
+struct ClampedZonePose {
+    Pose3 pose;
+    bool changed = false;     // the position was moved into the envelope, or a part of the pose was unusable
+    bool nonFinite = false;   // a coordinate or the rotation was NaN/inf: the caller should ignore the override
+};
+
+// The chassis-frame box a zone of this robot may be in: the frame box (centre at -comOffset in x and y, since the chassis
+// frame's origin is the COM) grown by the reach margin in x and y; z from the floor (-comHeightM) up to
+// zoneMaxHeightAboveFloorM above it. Orientation is not limited.
+struct ZoneEnvelope {
+    Vec3 min;
+    Vec3 max;
+};
+inline ZoneEnvelope remoteZoneEnvelope(const ChassisSpec& chassis) {
+    const RemoteSpecLimits& L = kRemoteSpecLimits;
+    const float reachX = 0.5f * chassis.sizeM.x + static_cast<float>(L.zoneReachMarginM);
+    const float reachY = 0.5f * chassis.sizeM.y + static_cast<float>(L.zoneReachMarginM);
+    return {Vec3{-chassis.comOffsetM.x - reachX, -chassis.comOffsetM.y - reachY, -chassis.comHeightM},
+            Vec3{-chassis.comOffsetM.x + reachX, -chassis.comOffsetM.y + reachY,
+                 static_cast<float>(L.zoneMaxHeightAboveFloorM) - chassis.comHeightM}};
+}
+
+// Clamps `pose` (chassis frame) into remoteZoneEnvelope(chassis), per axis; the rotation is normalised, never limited. A
+// non-finite position coordinate or rotation (or a zero quaternion) is replaced by the envelope centre / the identity and
+// flagged (`nonFinite` for NaN and infinities, `changed` for every replacement); the pose is then not what the client sent
+// and callers should treat the override as absent. `changed` is false for a pose already inside the envelope, even if its
+// quaternion needed renormalising.
+inline ClampedZonePose clampRemoteZonePose(const ChassisSpec& chassis, const Pose3& pose) {
+    const ZoneEnvelope box = remoteZoneEnvelope(chassis);
+    ClampedZonePose out;
+    const auto axis = [&out](float v, float lo, float hi) {
+        if (!std::isfinite(v)) {
+            out.changed = out.nonFinite = true;
+            return 0.5f * (lo + hi);
+        }
+        const float c = std::clamp(v, lo, hi);
+        if (c != v) out.changed = true;
+        return c;
+    };
+    out.pose.position = {axis(pose.position.x, box.min.x, box.max.x), axis(pose.position.y, box.min.y, box.max.y),
+                         axis(pose.position.z, box.min.z, box.max.z)};
+    const Quat& q = pose.rotation;
+    const float norm = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+    if (!finite(q)) {
+        out.changed = out.nonFinite = true;
+    } else if (!(norm > 0.f) || !std::isfinite(norm)) {
+        out.changed = true;
+    } else {
+        out.pose.rotation = q.normalized();
+    }
     return out;
 }
 

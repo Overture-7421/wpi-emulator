@@ -23,6 +23,7 @@
 #include "wpiemu/sdk/ipc/protocol_rules.h"
 #include "wpiemu/sdk/match/match_protocol.h"
 #include "wpiemu/sdk/match/quantize.h"
+#include "wpiemu/sdk/match/zone_pose_wire.h"
 
 namespace wpiemu::sdk::match {
 
@@ -57,6 +58,14 @@ struct WheelWireState {
 
 // One robot. Field frame (right-handed, +X toward the far wall, +Y left). Position is quantizeMilliI32 millimetres,
 // yaw quantizeAngle, WORLD-frame linear velocity quantizeMilliI16 (mm/s), angular velocity quantizeMilliI16 (mrad/s).
+//
+// `zonePoses` (an appended tail of the length-prefixed record; absent in older records) lists the zones that are NOT at
+// their rest pose, in the CHASSIS frame, so every client sees a moved intake or turret. A zone's rest pose is known to the
+// receiver from the roster appearance (the robot's accepted spec), so only zones whose effective pose differs from it are
+// listed (selectSnapshotZonePoses in zone_pose_wire.h): at most kMaxSnapshotZonePosesPerRobot, active zones first and then
+// the lowest indices when more qualify, strictly increasing zoneIndex. The receiver applies each entry as an override of
+// that zone's rest pose; a zone with no entry is at rest. This holds for the host's robot too (its zones move with its
+// mechanisms). It is the latest state, not a delta: every snapshot lists them all.
 struct RobotWireState {
     ParticipantId participantId = kHostParticipantId;
     std::int32_t xMm = 0;
@@ -68,6 +77,7 @@ struct RobotWireState {
     std::vector<WheelWireState> wheels;  // <= kMaxWheelsPerRobot (empty for the host's robot if it does not publish wheels)
     std::uint32_t zoneFlags = 0;         // bit i = zone i active
     std::vector<HudValue> hud;           // <= kMaxHudValuesPerRobot
+    std::vector<ZonePoseInput> zonePoses;  // <= kMaxSnapshotZonePosesPerRobot, strictly increasing zoneIndex; see above
 
     bool operator==(const RobotWireState&) const = default;
 };
@@ -130,7 +140,9 @@ inline bool fitsLimits(const MatchSnapshot& s) {
         s.gameHud.size() > kMaxGameHudValues || s.info.phaseKey.size() > kMaxNameBytes)
         return false;
     for (const RobotWireState& r : s.robots)
-        if (r.wheels.size() > kMaxWheelsPerRobot || r.hud.size() > kMaxHudValuesPerRobot) return false;
+        if (r.wheels.size() > kMaxWheelsPerRobot || r.hud.size() > kMaxHudValuesPerRobot ||
+            !zonePosesWellFormed(r.zonePoses, kMaxSnapshotZonePosesPerRobot))
+            return false;
     for (const EntityDelta& d : s.entityDeltas)
         if (d.removed.size() > kMaxEntityDeltaEntries || d.upserted.size() > kMaxEntityDeltaEntries) return false;
     return true;

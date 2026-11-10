@@ -16,6 +16,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <vector>
 
 #include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/config/start_position.h"
@@ -97,9 +98,13 @@ struct RemoteInputStats {
     std::uint64_t late = 0;         // QueuedLate
     std::uint64_t duplicate = 0;
     std::uint64_t stale = 0;
-    std::uint64_t rejected = 0;     // wrong wheel count, sequence 0 or a target tick too far ahead
+    std::uint64_t rejected = 0;     // wrong wheel count, malformed zone pose list, sequence 0 or a target tick too far ahead
     std::uint64_t superseded = 0;   // queued but skipped because a newer sequence applied first
     std::uint64_t evicted = 0;      // pushed out of a full queue
+    // Zone pose overrides, counted when the input that carries them APPLIES (so they depend on the target tick only):
+    std::uint64_t zonePosesApplied = 0;   // entries that set a zone's pose (after clamping)
+    std::uint64_t zonePosesClamped = 0;   // of those, entries the envelope moved (sdk::clampRemoteZonePose)
+    std::uint64_t zonePosesIgnored = 0;   // entries for a zone index the robot does not have, or with a non-finite pose
     // The newest input applied (sdk::match::kNoInputSeq / proto::kNoAckTick before any) and the host tick it applied on
     // (what MatchSnapshot::ackInputSeq / ackTick report).
     std::uint32_t lastAppliedSeq = sdk::match::kNoInputSeq;
@@ -118,6 +123,9 @@ struct RemoteRobotInfo {
     RemoteInputStats stats;
     bool enabled = false;           // as of the last tick
     std::uint32_t zoneFlags = 0;    // active zones as the game sees them (0 while disabled or without input)
+    // Effective chassis-frame pose of each zone of the accepted spec (RobotView::zonePoses): the pose the latest applied
+    // input commanded, clamped, else the spec pose.
+    std::vector<sdk::Pose3> zonePoses;
 };
 
 // ---- start placement --------------------------------------------------------------------------------------------

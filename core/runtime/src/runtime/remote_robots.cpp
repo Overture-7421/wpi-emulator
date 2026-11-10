@@ -5,6 +5,7 @@
 #include <string>
 
 #include "wheel_sample.h"
+#include "wpiemu/sdk/game/zone_pose.h"
 #include "wpiemu/sdk/physics/remote_spec_limits.h"
 #include "wpiemu/sdk/physics/robot_tags.h"
 
@@ -138,6 +139,8 @@ Status RemoteRobots::add(const RemoteRobotRequest& request, const RobotStartPose
     robot->placement = placement;
     robot->footprintRadiusM = chassisFootprintRadiusM(request.spec.chassis);
     robot->zoneMask = match::zoneFlagsMask(request.spec.zones.size());
+    for (const ZoneConfig& zone : request.spec.zones) robot->restPoses.push_back(remoteZoneSpecPose(zone));
+    robot->zonePoses = robot->restPoses;
     for (const WheelSpec& w : request.spec.drivetrain.spec.wheels) robot->maxWheelSpeed.push_back(maxWheelSpeedRadPerSec(w));
     robot->chassis = std::move(chassis).value();
     robot->lastInputUs = nowUs;
@@ -175,6 +178,7 @@ std::optional<RemoteRobotInfo> RemoteRobots::info(match::ParticipantId id) const
     out.stats.queueDepth = r->queue.size();
     out.enabled = r->enabled;
     out.zoneFlags = r->activeZoneFlags;
+    out.zonePoses = r->zonePoses;
     return out;
 }
 
@@ -204,6 +208,10 @@ Result<RemoteInputOutcome> RemoteRobots::submit(match::ParticipantId id, const m
                                                          std::to_string(r->chassis->wheelCount()));
     }
     const std::int64_t leadTicks = static_cast<std::int64_t>(input.targetTick - tickNow);
+    if (!match::zonePosesWellFormed(input.zonePoses)) {
+        ++stats.rejected;
+        return makeError(ErrorCode::InvalidArgument, "input zone poses are not strictly increasing or an index is out of range");
+    }
     if (leadTicks > 0 && leadTicks > kMaxRemoteInputLeadUs / std::max<SimTimeUs>(stepUs, 1)) {
         ++stats.rejected;
         return makeError(ErrorCode::OutOfRange, "input targets a tick too far ahead");
@@ -246,6 +254,7 @@ Result<RemoteInputOutcome> RemoteRobots::submit(match::ParticipantId id, const m
     q.seq = input.inputSeq;
     q.targetTick = input.targetTick;
     q.zoneFlags = input.zoneFlags & r->zoneMask;
+    q.zonePoses = input.zonePoses;
     const auto& wheels = r->spec.drivetrain.spec.wheels;
     q.setpoints.reserve(wheels.size());
     for (std::size_t i = 0; i < wheels.size(); ++i) {
@@ -274,6 +283,7 @@ void RemoteRobots::beforeStep(std::uint64_t tick, SimTimeUs nowUs, bool enabled,
             const Queued& q = r.queue[i];
             r.chassis->setSetpoints(q.setpoints);
             r.zoneFlags = q.zoneFlags;
+            applyZonePoses(r, q.zonePoses);
             r.stats.lastAppliedSeq = q.seq;
             r.stats.ackTick = tick;
             ++r.stats.applied;
@@ -291,6 +301,24 @@ void RemoteRobots::beforeStep(std::uint64_t tick, SimTimeUs nowUs, bool enabled,
     refreshViews();
 }
 
+void RemoteRobots::applyZonePoses(Robot& r, const std::vector<match::ZonePoseInput>& overrides) {
+    std::copy(r.restPoses.begin(), r.restPoses.end(), r.zonePoses.begin());
+    for (const match::ZonePoseInput& o : overrides) {
+        if (o.zoneIndex >= r.zonePoses.size()) {
+            ++r.stats.zonePosesIgnored;
+            continue;
+        }
+        const ClampedZonePose clamped = clampRemoteZonePose(r.spec.chassis, match::toPose3(o));
+        if (clamped.nonFinite) {
+            ++r.stats.zonePosesIgnored;
+            continue;
+        }
+        r.zonePoses[o.zoneIndex] = clamped.pose;
+        ++r.stats.zonePosesApplied;
+        if (clamped.changed) ++r.stats.zonePosesClamped;
+    }
+}
+
 void RemoteRobots::afterStep(float dt) {
     for (const auto& r : robots_) r->chassis->completeStep(dt);
 }
@@ -304,6 +332,7 @@ void RemoteRobots::reset() {
         r.anyReceived = false;
         r.newestReceivedSeq = 0;
         r.zoneFlags = 0;
+        std::copy(r.restPoses.begin(), r.restPoses.end(), r.zonePoses.begin());
         r.activeZoneFlags = 0;
         r.lastInputUs = 0;
         r.enabled = false;
@@ -344,6 +373,7 @@ RobotView RemoteRobots::viewOf(const Robot& r) {
     v.body = r.chassis->body();
     v.zones = &r.spec.zones;
     v.zoneFlags = r.activeZoneFlags;
+    v.zonePoses = r.zonePoses;
     v.enabled = r.enabled;
     v.isHost = false;
     return v;
@@ -378,7 +408,7 @@ void RemoteRobots::addSamples(SnapshotBuilder& out) const {
         const auto states = r.chassis->wheelStates();
         for (std::size_t i = 0; i < wheels.size() && i < states.size(); ++i) s.wheels.push_back(makeWheelSample(wheels[i], states[i]));
         for (std::size_t i = 0; i < r.spec.zones.size(); ++i)
-            s.zones.push_back({r.spec.zones[i].id, ((r.activeZoneFlags >> i) & 1u) != 0});
+            s.zones.push_back({r.spec.zones[i].id, ((r.activeZoneFlags >> i) & 1u) != 0, r.zonePoses[i]});
         out.addRobot(std::move(s));
     }
 }

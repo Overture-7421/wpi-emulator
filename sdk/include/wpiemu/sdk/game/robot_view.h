@@ -13,11 +13,13 @@
 //     evaluated from the live mechanisms (evaluateActivation, game/zone_activation.h). `zoneFlags` is unused (0).
 //   - remote robot: `zones` points at the zone configs of its accepted Join spec and `zoneFlags` holds the flags the
 //     client sent with its latest input (bit i = zone i active). The runtime already forces the flags to 0 while the
-//     robot is disabled, e-stopped or the match is paused. There are no mechanism instances: resolve a zone's pose
-//     with restPoseOfZone (game/zone_pose.h).
+//     robot is disabled, e-stopped or the match is paused. There are no mechanism instances: `zonePoses[i]` is where zone
+//     i is NOW in the chassis frame: the pose its client commanded (clamped to the robot's envelope) or, without one, the
+//     zone's spec pose (restPoseOfZone, game/zone_pose.h, with a mechanism-attached zone pinned at its local pose).
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -40,11 +42,20 @@ struct RobotView {
     BodyId body;                                // the robot's rigid body in SimContext::physics()
     const std::vector<ZoneConfig>* zones = nullptr;  // see the file comment; null = none (host: use the config)
     std::uint32_t zoneFlags = 0;                // remote robots only: bit i = zone i active
+    // Remote robots only: the effective chassis-frame pose of zone i (the client's clamped override, else the spec pose),
+    // in the order of `zones`; empty for the host robot. Valid for the tick only, like `zones`.
+    std::span<const Pose3> zonePoses;
     bool enabled = false;                       // the robot may act (match enabled, not e-stopped, not paused)
     bool isHost = false;                        // the host's own WPILib robot (participantId == kHostParticipantId)
 
     Alliance alliance() const { return proto::allianceOf(station); }
     std::size_t zoneCount() const { return zones != nullptr ? zones->size() : 0; }
+    // Remote robots: the effective chassis-frame pose of zone `index` (a client override, else the spec pose); nullopt for
+    // the host robot or an index past the zones.
+    std::optional<Pose3> zonePose(std::size_t index) const {
+        if (index >= zonePoses.size()) return std::nullopt;
+        return zonePoses[index];
+    }
     // Remote robots: the client's flag for zone `index`; false when out of range or past the 32 flag bits.
     bool zoneFlagActive(std::size_t index) const {
         return index < 32 && index < zoneCount() && ((zoneFlags >> index) & 1u) != 0;
