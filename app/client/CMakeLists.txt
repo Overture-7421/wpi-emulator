@@ -28,3 +28,8 @@ target_link_libraries(wpiemu_client PRIVATE
 target_compile_definitions(wpiemu_client PRIVATE WPIEMU_APP_VERSION="${PROJECT_VERSION}")
 wpiemu_target_defaults(wpiemu_client)
 set_target_properties(wpiemu_client PROPERTIES WIN32_EXECUTABLE OFF)
+
+# ---- tests (sources live in tests/app_client; excluded from the Qt-free wpiemu_tests glob) ----
+if(WPIEMU_BUILD_TESTS AND EXISTS "${PROJECT_SOURCE_DIR}/tests/app_client/CMakeLists.txt")
+    add_subdirectory("${PROJECT_SOURCE_DIR}/tests/app_client" "${CMAKE_CURRENT_BINARY_DIR}/tests")
+endif()

@@ -32,6 +32,8 @@ public:
     const sdk::GamePluginRegistry& plugins() const { return plugins_; }
     const std::shared_ptr<const sdk::proto::IMessageCodec>& codec() const { return codec_; }
     const std::shared_ptr<sdk::IWallClock>& clock() const { return clock_; }
+    const sdk::DrivetrainRegistry& drivetrains() const { return drivetrains_; }
+    const sdk::TireModelRegistry& tireModels() const { return tireModels_; }
 
     // The game module a robot description names (empty id: none), nullptr when this build does not have it.
     const sdk::IGameModule* gameOf(const std::string& gamePluginId) const;

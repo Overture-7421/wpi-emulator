@@ -36,6 +36,9 @@ class ClientController : public QObject {
 public:
     ClientController(ClientServices& services, IKeyValueStore& store, IClientInput* input, ClientSessionOptions session = {},
                      QObject* parent = nullptr);
+    // Runs against another session (the scripted one of the demo).
+    ClientController(ClientServices& services, IKeyValueStore& store, IClientInput* input, std::unique_ptr<IClientSession> session,
+                     QObject* parent = nullptr);
     ~ClientController() override;
 
     // ---- settings ----
@@ -82,7 +85,7 @@ public:
     // One UI step: refresh the presentation and the picture, read the joystick, send the command. `dtSeconds` <= 0 measures.
     void tick(double dtSeconds = 0.0);
 
-    ClientSession& session() { return session_; }
+    IClientSession& session() { return session_; }
 
 signals:
     void robotChanged();
@@ -97,7 +100,8 @@ private:
     ClientServices& services_;
     ClientSettings settings_;
     IClientInput* input_;
-    ClientSession session_;
+    std::unique_ptr<IClientSession> ownedSession_;
+    IClientSession& session_;
     ClientPrefs prefs_;
     RobotFileReport robot_;
     Presentation presentation_;

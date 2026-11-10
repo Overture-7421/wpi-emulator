@@ -7,6 +7,7 @@ if(NOT WPIEMU_BUILD_PLUGIN_TEMPLATE)
 endif()
 # Qt UI suites with their own executable and event loop (see app/runview/CMakeLists.txt).
 list(FILTER WPIEMU_TEST_SOURCES EXCLUDE REGEX "/tests/app_runview/")
+list(FILTER WPIEMU_TEST_SOURCES EXCLUDE REGEX "/tests/app_client/")
 
 file(GLOB WPIEMU_HALSIM_EXT_TEST_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/halsim_ext/tests/test_*.cpp")

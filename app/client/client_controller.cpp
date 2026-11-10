@@ -18,8 +18,12 @@ std::filesystem::path pathOf(const QString& text) { return std::filesystem::path
 
 ClientController::ClientController(ClientServices& services, IKeyValueStore& store, IClientInput* input, ClientSessionOptions session,
                                    QObject* parent)
-    : QObject(parent), services_(services), settings_(store), input_(input), session_(services, std::move(session)),
-      prefs_(settings_.load()) {}
+    : ClientController(services, store, input, std::make_unique<ClientSession>(services, std::move(session)), parent) {}
+
+ClientController::ClientController(ClientServices& services, IKeyValueStore& store, IClientInput* input,
+                                   std::unique_ptr<IClientSession> session, QObject* parent)
+    : QObject(parent), services_(services), settings_(store), input_(input), ownedSession_(std::move(session)),
+      session_(*ownedSession_), prefs_(settings_.load()) {}
 
 ClientController::~ClientController() = default;
 

@@ -45,6 +45,32 @@ struct SessionState {
 
 using LinkOpener = std::function<sdk::Result<std::unique_ptr<sdk::proto::ITransport>>(const JoinPlan&)>;
 
+// What the controller needs of a session, so the window can run against the real network session or a scripted one (the demo).
+class IClientSession {
+public:
+    virtual ~IClientSession() = default;
+
+    // Starts (asynchronously) joining with `robot`. Replaces a session in progress.
+    virtual void join(JoinPlan plan, sdk::RobotConfig robot) = 0;
+    // Tells the host, closes the link and returns to Idle; also cancels a dial in progress.
+    virtual void leave() = 0;
+    // After TransportLost or HostSilent: dials the same host again and rejoins with the resume token.
+    virtual void reconnect() = 0;
+
+    virtual SessionState state() const = 0;
+    virtual std::shared_ptr<const core::match::MatchClientView> view() const = 0;
+    virtual std::shared_ptr<const sdk::RobotConfig> acceptedSpec() const = 0;
+    virtual std::shared_ptr<const sdk::FieldDescription> fieldDescription() const = 0;
+    virtual std::string gamePluginId() const = 0;
+
+    // The player's command (see MatchClient). Refused while there is no joined robot.
+    virtual sdk::Status driveRobotRelative(const sdk::ChassisSpeeds& speeds) = 0;
+    virtual sdk::Status driveFieldRelative(const sdk::ChassisSpeeds& fieldSpeeds) = 0;
+    virtual void setZoneFlags(std::uint32_t flags) = 0;
+    virtual sdk::Status setZonePose(std::size_t zone, const sdk::Pose3& chassisPose) = 0;
+    virtual void clearZonePose(std::size_t zone) = 0;
+};
+
 struct ClientSessionOptions {
     LinkOptions link;
     std::chrono::microseconds updateInterval{2000};   // how often the worker calls MatchClient::update()
@@ -53,32 +79,28 @@ struct ClientSessionOptions {
     LinkOpener opener;
 };
 
-class ClientSession {
+class ClientSession final : public IClientSession {
 public:
     explicit ClientSession(const ClientServices& services, ClientSessionOptions options = {}, sdk::ILogger* logger = nullptr);
-    ~ClientSession();
+    ~ClientSession() override;
     ClientSession(const ClientSession&) = delete;
     ClientSession& operator=(const ClientSession&) = delete;
 
-    // Starts (asynchronously) joining with `robot`. Replaces a session in progress.
-    void join(JoinPlan plan, sdk::RobotConfig robot);
-    // Tells the host, closes the link and returns to Idle; also cancels a dial in progress.
-    void leave();
-    // After TransportLost or HostSilent: dials the same host again and rejoins with the resume token.
-    void reconnect();
+    void join(JoinPlan plan, sdk::RobotConfig robot) override;
+    void leave() override;
+    void reconnect() override;
 
-    SessionState state() const;
-    std::shared_ptr<const core::match::MatchClientView> view() const;
-    std::shared_ptr<const sdk::RobotConfig> acceptedSpec() const;
-    std::shared_ptr<const sdk::FieldDescription> fieldDescription() const;
-    std::string gamePluginId() const;
+    SessionState state() const override;
+    std::shared_ptr<const core::match::MatchClientView> view() const override;
+    std::shared_ptr<const sdk::RobotConfig> acceptedSpec() const override;
+    std::shared_ptr<const sdk::FieldDescription> fieldDescription() const override;
+    std::string gamePluginId() const override;
 
-    // The player's command (see MatchClient). Refused while there is no joined robot.
-    sdk::Status driveRobotRelative(const sdk::ChassisSpeeds& speeds);
-    sdk::Status driveFieldRelative(const sdk::ChassisSpeeds& fieldSpeeds);
-    void setZoneFlags(std::uint32_t flags);
-    sdk::Status setZonePose(std::size_t zone, const sdk::Pose3& chassisPose);
-    void clearZonePose(std::size_t zone);
+    sdk::Status driveRobotRelative(const sdk::ChassisSpeeds& speeds) override;
+    sdk::Status driveFieldRelative(const sdk::ChassisSpeeds& fieldSpeeds) override;
+    void setZoneFlags(std::uint32_t flags) override;
+    sdk::Status setZonePose(std::size_t zone, const sdk::Pose3& chassisPose) override;
+    void clearZonePose(std::size_t zone) override;
 
 private:
     struct Impl;
