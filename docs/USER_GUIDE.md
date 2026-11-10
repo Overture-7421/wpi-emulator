@@ -219,14 +219,45 @@ refused when joining.
    stalls or you pause, players see **Paused** or **Host stalled** instead of a frozen picture.
    Quitting the app tells players the room closed.
 
-<!-- client-app: describe the client's join screen, settings and controls here when it is merged. -->
 ### Join a practice match
 
-Players start the game client, load their robot description, enter the invite (any case, dashes
-optional) and, for Direct, the host's address. Their robot appears at its alliance station and responds
-to their gamepad immediately; other robots and fuel are drawn a few tens of milliseconds in the past so
-motion stays smooth. The relay choice (Production by default, Development, or a custom address) is a
-setting.
+Players start the game client (`wpiemu_client`: no WPILib, Java or Gradle), then:
+
+1. **Invite.** Paste the invite the host shared (any case, dashes optional). It is never saved.
+2. **Robot.** Choose the `robot.json` of their project (`.wpiemu/robot.json`) with **Browse…**. The
+   client checks it the way the host will: a file it cannot use lists why, and a robot beyond
+   plausible FRC limits is accepted with a list of the fields the host will adjust. The robot must
+   name the game the host plays (a mismatch is refused with the host's reason).
+3. **Name.** What other players see next to the robot.
+4. **Connect.** The default is the **Production** relay, so nothing else is needed. Under
+   **Advanced**, a **Direct address** (`host`, `host:port`; port 47300 by default) connects straight
+   to the host for a LAN or a forwarded port and overrides the relay, **Relay** chooses Production,
+   Development or **Custom…** (`host:port`), and the stick deadband, top speed and field-relative
+   driving are set. A build that does not know the relay's address yet asks for a custom one or a
+   direct address.
+5. **Join match.** The form stays up, locked, while the client dials and handshakes (a wrong invite
+   fails here, before anything is sent), then the field appears. The station is assigned by the
+   host.
+
+The robot appears at its alliance station and responds to the gamepad or keyboard immediately; other
+robots and fuel are drawn a few tens of milliseconds in the past so motion stays smooth. Drive with
+the left stick (WASD) and turn with the right stick (arrow keys). Each zone has a button (A, B, X, Y,
+LB, RB, ... or Z, X, C, V, Q, E, ...): hold it, or click the zone in the panel to keep it on. Select
+a zone's move handle to drag it with the sliders, or use the d-pad (up is forward), the right stick
+(raise and lower) and the triggers (turn); the host limits each zone to a box around the robot.
+**Connection stats** (`F3`) shows ping, jitter, packet loss, snapshot age, buffer delay and how far
+the prediction was off. **Camera view** switches between the field overview and the driver's view.
+
+The banner over the field says what the match is doing: waiting for the host to start (lobby),
+**Paused** by the host, **Host stalled** when the host's robot stopped answering, reconnecting, or
+why the connection ended (lost, the host stopped responding, you were removed, the host closed the
+match). After a lost link, **Reconnect** rejoins with the same robot while the host still holds it
+(30 s). **Leave match** tells the host and returns to the form. If the host refuses the join, the
+form shows the host's reason (the match is full, a different game or season, a robot description it
+cannot use, an old protocol version).
+
+To look at the client without a host, run `wpiemu_client --demo` (a scripted match; `--scenario`
+picks lobby, live, paused, stalled, reconnecting, lost, kicked or closed).
 
 ### Firewall, routers and blocked networks
 

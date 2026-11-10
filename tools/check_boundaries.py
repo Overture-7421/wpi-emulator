@@ -155,7 +155,7 @@ TARGET_OWNERS = {
     "wpiemu_app_runview": "app/runview",
     "wpiemu_app_client": "app/client",
     "wpiemu_client": "app/client",
-    "wpiemu_app_client_tests": "app/client",
+    "wpiemu_app_client_tests": "tests",
     "wpiemu_app_tests": "app",
     "wpiemu_e2e_tests": "app/host",
     "wpiemu_season_e2e_tests": "app/host",

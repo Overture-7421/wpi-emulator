@@ -19,6 +19,18 @@ is checked before Qt starts and prints the emulator, SDK, IPC protocol, and game
 | `--demo` | Run the simulated-device demo host instead of launching a robot project. No value. | Off; selecting it changes the host mode. | [`app/main.cpp`](../../app/main.cpp) |
 | `--project <folder>` | Open the WPILib project at `<folder>` on startup. | No explicit project; when omitted, restore the last project. When supplied, it takes precedence over restoring the last project. | [`app/main.cpp`](../../app/main.cpp) |
 
+## Game client command line
+
+These options belong to `wpiemu_client` ([`app/client/main.cpp`](../../app/client/main.cpp)). The client keeps its settings under the
+organisation `WpiEmulator` and the application `wpiemu_client`.
+
+| Option | Scope and accepted value | Default and precedence | Source |
+|---|---|---|---|
+| `--version` | Print version/build information and exit without creating a window. | Checked before Qt starts; wins over other arguments. | [`app/client/main.cpp`](../../app/client/main.cpp) |
+| `--demo` | Run a scripted match instead of joining a host; nothing leaves the process and the user's settings are not touched. | Off. | [`app/client/main.cpp`](../../app/client/main.cpp) |
+| `--scenario <name>` | With `--demo`: `join`, `join-errors`, `lobby`, `live`, `paused`, `stalled`, `reconnecting`, `lost`, `kicked` or `closed`. | `live`. | [`app/client/main.cpp`](../../app/client/main.cpp) |
+| `--screenshot <file>`, `--settle <ms>`, `--size <WxH>`, `--park`, `--stats`, `--camera home`, `--gamepad` | With `--demo`: save the window (and the 3D scene as `<file>.scene.png`) after the settle time and exit; the other options size the window, move it off every screen, open the connection stats, show the field overview or enable gamepads. | Settle 2500 ms, size 1500x900. | [`app/client/main.cpp`](../../app/client/main.cpp) |
+
 ## User overrides for a real run
 
 Unset and empty values read through `sdk::readEnvironment` are treated alike. Boolean values

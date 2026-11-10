@@ -64,7 +64,10 @@ reliably. ENet's range-coder compression is on (both ends must agree).
 
 `NetEndpoint::parse` ([`endpoint.h`](../../net/include/wpiemu/net/endpoint.h)) reads
 `enet://host:port` (direct; `[::1]` for IPv6 literals) and `relay://host:port/ROOMID`. Parsing never
-resolves a name or touches the network.
+resolves a name or touches the network. The two apps accept what a person types:
+`NetEndpoint::parseRelayAddress` (`host:port` or `relay://host:port`, with the room id taken from the
+invite) and `NetEndpoint::parseDirectAddress` (`host`, `host:port` or `enet://host:port`; the port
+defaults to `kDefaultDirectPort`, 47300).
 
 ## Invite and encryption
 
@@ -296,19 +299,73 @@ one rule the host also uses.
 
 ### Client behaviour
 
-<!-- core-match-client: the client session is not merged yet; this section is the planned contract. -->
-The client session (planned in `core/match`) predicts the player's own robot immediately in a
-disposable world that holds the field and its own chassis with the same wheel controller, rewinds to
-the authoritative state at `ackTick` on each snapshot and replays unacknowledged inputs, and decays
-visible error over about 100 ms (snapping above about 1 m or 45 degrees). Other robots and fuel are
-interpolated, not predicted: the buffer is adaptive, about
-`clamp(2 x snapshot interval + 3 x measured jitter, 2 x interval, 250 ms)`, so expect roughly 35 to 40 ms
-on a LAN and 60 to 80 ms on a typical WAN. A starved buffer extrapolates for at most 250 ms
-(`kMaxExtrapolationUs`) and then holds. Other robots are not in the prediction world, so contact with
-them is corrected by the host and may visibly snap.
+<!-- core-match-client -->
+`MatchClient` ([`match_client.h`](../../core/match/include/wpiemu/core/match/match_client.h)) is the
+Qt-free client session. It has no threads of its own: the app (or a test) calls `update()` at
+120 Hz or more and binds its UI to the immutable `MatchClientView` it publishes
+([`client_view.h`](../../core/match/include/wpiemu/core/match/client_view.h)). Time is an injected
+`IWallClock`.
 
-<!-- client-app: describe the client executable (join flow, prediction settings) once it is merged. -->
-The user-facing join steps are in the [user guide](../USER_GUIDE.md#join-a-practice-match).
+- **Join.** `connect(transport, robot)` encodes the robot with `RobotConfigCodec` and runs the
+  host's own intake (`acceptRemoteSpec`: decode, defaults, validation, fairness clamps) before it
+  sends anything. A description the host would refuse ends as `Disconnected` with `BadSpec` and no
+  Join on the wire; the fields the host will clamp are listed in `view.specClamps`. `JoinAccept`
+  carries the station, the run identity, the start pose, a resume token and the roster; `JoinReject`
+  ends as `JoinRejected` with the host's `JoinRejectReason` and detail. No answer within 5 s is
+  `JoinTimeout`.
+- **State.** `ConnectionState` is `Connecting`, `Lobby`, `Live`, `Paused`, `HostStalled` or
+  `Disconnected`; a disconnect carries a `DisconnectReason` (`Left`, `JoinRejected`, `JoinTimeout`,
+  `BadSpec`, `Kicked`, `ServerClosing`, `TransportLost`, `HostSilent`, `ProtocolError`). A host that
+  sends nothing for 3 s is `HostSilent`; `Running` snapshots whose sim time stops advancing for
+  0.75 s show `HostStalled`.
+- **Clock and input.** The client pings the host (every 120 ms at first, then every 500 ms) and fits
+  the host's sim time against its own clock. Each input carries the wheel setpoints, the zone flags
+  and any commanded zone poses, stamped with the host tick it should apply on. It is sent at 60 Hz
+  (sooner when the command changes) with the last three repeated, and the lead (3 to 120 ticks)
+  follows the latency and jitter the host reports.
+- **Own robot.** Predicted in a local `PredictionWorld` (the field and its own chassis, with the same
+  wheel controller as the host) that runs ahead of the host by the input lead, rewound to the
+  authoritative state at `ackTick` on every snapshot and replayed, with the visible error decaying
+  over about 100 ms and snapping above about 1 m or 45 degrees. The other robots are kinematic
+  boxes in that world, so the own robot pushes against them.
+- **Others and fuel.** Remote robots are interpolated in the past by an adaptive delay
+  (`clamp(2 x snapshot interval + 3 x measured jitter, 2 x interval, 250 ms)`, so roughly 35 to
+  40 ms on a LAN and 60 to 80 ms on a typical WAN) and extrapolated for at most 250 ms
+  (`kMaxExtrapolationUs`) before they hold. Entities go through the client entity memory and the
+  shared `predictEntity` model.
+- **Diagnostics.** `view.diagnostics` has the round trip (smoothed and minimum), jitter, snapshot
+  loss and age, the interpolation delay, clock drift, the prediction error of the own robot (latest
+  and 95th percentile of the last 128 snapshots), how far the prediction runs ahead, the input lead
+  and counters for reconciliations, snaps, late inputs and entity baseline misses.
+- **Reconnect.** When the link breaks or the host goes silent and the client holds a resume token,
+  `services.reconnect` (the app dials the same endpoint again, handshake included) is retried with a
+  backoff of 250 ms doubling to 4 s, at most 8 attempts, each rejoining with the token. After that
+  the status is `Disconnected` and `resume(transport)` rejoins by hand. The host keeps the robot for
+  its resume window (30 s); later it is a fresh join.
+
+<!-- client-app -->
+`wpiemu_client` ([`app/client`](../../app/client)) is the app around that session. It adds no
+network logic of its own; the pieces are:
+
+| Piece | File | What it does |
+|---|---|---|
+| Join form | [`join_form.h`](../../app/client/join_form.h) | Validates the invite (any case, dashes optional), an optional direct address (`host`, `host:port`, `enet://host:port`; port 47300 when omitted) and the relay choice into a `JoinPlan`, with a stable key for every wrong field. Production is the default relay; Development and a custom `host:port` are under Advanced. A direct address overrides the relay. |
+| Robot file | [`robot_file.h`](../../app/client/robot_file.h) | Reads any `robot.json`, runs the host's own intake on it and reports errors and the fields the host will clamp. |
+| Secure link | [`secure_link.h`](../../app/client/secure_link.h) | Opens `EnetClientTransport` or `RelayClientTransport` (the room id comes from the invite) and wraps it in the `SecureTransport` client handshake keyed by the invite. The relay and the path see only opaque bytes. |
+| Session | [`client_session.h`](../../app/client/client_session.h) | Runs `MatchClient` on a worker thread (so dialling, the handshake and reconnects never block the window), owns the resume and reconnect hooks and publishes `SessionState`. |
+| State machine | [`client_state.h`](../../app/client/client_state.h) | Turns the link phase and `ConnectionState` into the screen (join form until the host accepts, then the drive screen), the banner and the buttons. |
+| Input | [`input_mapping.h`](../../app/client/input_mapping.h) | Joystick to chassis speeds (deadband, scale, optional field-relative), then `MatchClient::driveRobotRelative` or `driveFieldRelative` applies the shared kinematics. Button `i` holds zone `i`; the d-pad, right stick and triggers move the selected zone inside the host's envelope. |
+| Scene feed | [`scene_feed.h`](../../app/client/scene_feed.h) | Adapts the `MatchClientView` to the run view's `ISimSnapshot`, `HostScene` and roster, so the client draws with the same rigs and HUD code as the desktop app. |
+| Settings | [`client_settings.h`](../../app/client/client_settings.h) | Name, direct address, relay choice, last robot file, drive tuning and the stats overlay, through the app's key-value port. The invite is never stored. |
+
+The wire carries no look for entity groups, so every group is drawn as the same small yellow
+sphere (`kEntityRadiusM`, `kEntityColor`). Text HUD values other than the match phase are not on
+the wire either (see the snapshot fields above), so a scoreboard's status lines stay empty. The
+user-facing join steps are in the [user guide](../USER_GUIDE.md#join-a-practice-match). Tests:
+`tests/app_client` has the model tests, the window tests under the offscreen platform and an
+in-process end to end over a real `MatchHosting` with encryption on, including a dropped link that
+resumes. `wpiemu_client --demo [--scenario NAME] [--screenshot FILE]` runs the window against a
+scripted match (nothing leaves the process).
 
 ## Limits and budgets
 

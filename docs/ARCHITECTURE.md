@@ -44,9 +44,10 @@ These are the production dependency rules. Tests may combine modules to verify t
 | `seasons/` | SDK and game plugins | Season packs (`season.json`), built-in plugin registration and the generated season catalog |
 | `app` | SDK, core, IPC, `net`, season and plugin aggregators, Qt | Desktop composition, host (including practice-match hosting), editor, and run view |
 | `app/contract` | SDK and Qt | Host interface shared by editor and run view |
-| `app/ui` | SDK and Qt | Shared Qt support, including 3D scene helpers |
+| `app/ui` | SDK and Qt | Shared Qt support: 3D scene helpers, the key-value settings port and the relay presets |
 | `app/editor` | SDK, Qt, `app/ui` | Editor page |
 | `app/runview` | SDK, Qt, `app/ui`, `app/contract` | Run page |
+| `app/client` | SDK, core, `net`, plugin aggregator, Qt, `app/ui`, `app/contract`, `app/runview` | `wpiemu_client`, the thin practice-match game client: join form, session, drive screen |
 
 Qt stays out of SDK, core, IPC, `net`, `relay`, bridges, and plugins. Box3D and robot-process backend headers do
 not leak into SDK headers. The app registers game plugins through
