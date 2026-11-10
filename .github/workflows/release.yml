@@ -73,7 +73,7 @@ jobs:
         include:
           - { name: windows, os: windows-2025-vs2026, qt_arch: win64_msvc2022_64 }
           - { name: linux, os: ubuntu-24.04, qt_arch: "" }   # glibc supports all season WPILib binaries
-          - { name: macos, os: macos-14, qt_arch: "" }       # Apple Silicon; see docs/releasing.md for universal builds
+          - { name: macos, os: macos-15, qt_arch: "" }       # Apple Silicon; see docs/releasing.md for universal builds
     env:
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}                       # base64 of the Developer ID .p12
