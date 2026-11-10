@@ -118,6 +118,16 @@ ShooterParams parseShooterParams(const sdk::Value& properties) {
     return p;
 }
 
+void clampRemotePickupParams(PickupParams& params) {
+    if (params.intakeRateHz <= 0.0 || params.intakeRateHz > kRemoteMaxIntakeRateHz) params.intakeRateHz = kRemoteMaxIntakeRateHz;
+}
+
+void clampRemoteShooterParams(ShooterParams& params) {
+    params.fireRateHz = std::min(params.fireRateHz, kRemoteMaxFireRateHz);
+    params.parallelBalls = std::min(params.parallelBalls, kRemoteMaxParallelBalls);
+    params.fixedExitSpeedMps = std::min(params.fixedExitSpeedMps, kRemoteMaxExitSpeedMps);
+}
+
 sdk::ZoneKindInfo pickupZoneKind() {
     sdk::ZoneKindInfo k;
     k.kind = kPickupKind;
@@ -157,8 +167,10 @@ void FuelZoneRuntime::warnMissing(sdk::SimContext& ctx, const std::string& mecha
     ctx.logger().warn("plugin.game_2026", "zone '" + config_.id + "' references unknown mechanism '" + mechanism + "'");
 }
 
-PickupZoneRuntime::PickupZoneRuntime(sdk::ZoneConfig config)
-    : FuelZoneRuntime(std::move(config)), params_(parsePickupParams(config_.properties)) {}
+PickupZoneRuntime::PickupZoneRuntime(sdk::ZoneConfig config, bool remote)
+    : FuelZoneRuntime(std::move(config)), params_(parsePickupParams(config_.properties)) {
+    if (remote) clampRemotePickupParams(params_);
+}
 
 void PickupZoneRuntime::update(sdk::SimContext&, const sdk::Pose3& poseInChassis, bool activationHeld, double dt) {
     poseInChassis_ = poseInChassis;
@@ -188,8 +200,10 @@ sdk::Box3 PickupZoneRuntime::zoneInChassis() const {
 ShooterZoneRuntime::ShooterZoneRuntime(sdk::ZoneConfig config, bool remote)
     : FuelZoneRuntime(std::move(config)),
       params_(parseShooterParams(config_.properties)),
-      remote_(remote),
-      budget_(static_cast<double>(params_.parallelBalls)) {}
+      remote_(remote) {
+    if (remote_) clampRemoteShooterParams(params_);
+    budget_ = static_cast<double>(params_.parallelBalls);
+}
 
 void ShooterZoneRuntime::update(sdk::SimContext& ctx, const sdk::Pose3& poseInChassis, bool activationHeld, double dt) {
     poseInChassis_ = poseInChassis;

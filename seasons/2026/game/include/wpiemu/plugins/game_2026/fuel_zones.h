@@ -27,6 +27,20 @@ inline constexpr const char* kShooterKind = "game_2026.shooter";
 // Exit speed of a REMOTE robot's shooter whose `fixedExitSpeedMps` is 0: a remote robot has no flywheel to read.
 inline constexpr double kRemoteDefaultExitSpeedMps = 8.0;
 
+// Limits on a REMOTE robot's zones. Its client chooses the zone properties (at Join), so the plugin bounds them to what a
+// real FRC robot can do; the host robot's zones are never clamped. The property schemas above allow far more for the
+// host (fire rate 200/s, 8 parallel balls, intake unlimited), which would let a client flood the field with fuel.
+//   Fire rate: total fuel per second per shooter zone. The fastest FRC feeders move about 10-20 game pieces/s; 25 leaves
+//   headroom over the host default (10) without letting one robot launch the pool dry in seconds.
+inline constexpr double kRemoteMaxFireRateHz = 25.0;
+//   Parallel balls: a Fuel is 0.15 m across and a robot is about 0.9 m wide, so 3 side by side is the practical maximum.
+inline constexpr int kRemoteMaxParallelBalls = 3;
+//   Intake rate: fuel per second absorbed by one pickup zone (0 = unlimited is not allowed remotely); matches the
+//   shooter rate, since an intake cannot usefully outrun what the robot can launch.
+inline constexpr double kRemoteMaxIntakeRateHz = 25.0;
+//   Exit speed: the fastest FRC shooters launch game pieces at about 20 m/s; far above any shot Fuel needs on this field.
+inline constexpr double kRemoteMaxExitSpeedMps = 20.0;
+
 struct PickupParams {
     double intakeRateHz = 15.0;  // fuel per second; 0 = unlimited
 };
@@ -57,6 +71,10 @@ struct ShooterParams {
 // properties object never produces an unusable runtime.
 PickupParams parsePickupParams(const sdk::Value& properties);
 ShooterParams parseShooterParams(const sdk::Value& properties);
+
+// Applies the kRemoteMax* limits to parsed params (a pickup's 0 = unlimited becomes the limit). Remote zones only.
+void clampRemotePickupParams(PickupParams& params);
+void clampRemoteShooterParams(ShooterParams& params);
 
 sdk::ZoneKindInfo pickupZoneKind();
 sdk::ZoneKindInfo shooterZoneKind();
@@ -91,7 +109,8 @@ private:
 
 class PickupZoneRuntime final : public FuelZoneRuntime, public IFuelIntakePort {
 public:
-    explicit PickupZoneRuntime(sdk::ZoneConfig config);
+    // `remote`: the zone belongs to a remote robot, so its params are clamped by clampRemotePickupParams.
+    explicit PickupZoneRuntime(sdk::ZoneConfig config, bool remote = false);
 
     void update(sdk::SimContext& ctx, const sdk::Pose3& poseInChassis, bool activationHeld, double dtSeconds) override;
 
@@ -112,7 +131,7 @@ class ShooterZoneRuntime final : public FuelZoneRuntime, public IFuelShooterPort
 public:
     // `remote`: the zone belongs to a remote robot, which has no mechanisms. Exit speed is `fixedExitSpeedMps`
     // (kRemoteDefaultExitSpeedMps when 0), elevation and yaw come from `hoodAngleRad` and `turretYawOffsetRad`, and
-    // mechanism references are ignored without warnings.
+    // mechanism references are ignored without warnings. Its params are clamped by clampRemoteShooterParams.
     explicit ShooterZoneRuntime(sdk::ZoneConfig config, bool remote = false);
 
     void update(sdk::SimContext& ctx, const sdk::Pose3& poseInChassis, bool activationHeld, double dtSeconds) override;

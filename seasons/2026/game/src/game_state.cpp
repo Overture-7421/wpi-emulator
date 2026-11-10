@@ -76,7 +76,7 @@ void Game2026State::buildRuntimes(RobotState& robot, const std::vector<sdk::Zone
     for (std::size_t i = 0; i < configs.size(); ++i) {
         const sdk::ZoneConfig& zone = configs[i];
         if (zone.kind == kPickupKind) {
-            auto pickup = std::make_unique<PickupZoneRuntime>(zone);
+            auto pickup = std::make_unique<PickupZoneRuntime>(zone, robot.remote);
             robot.intakes.push_back(pickup.get());
             robot.zones.push_back(std::move(pickup));
         } else if (zone.kind == kShooterKind) {

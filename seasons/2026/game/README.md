@@ -164,6 +164,22 @@ fuel state. Nearest-first selection and its tie-break are per intake, as for the
   `hoodAngleRad` and yaw is `turretYawOffsetRad`; flywheel, hood and turret references are ignored
   and never warn. Fire rate, `parallelBalls`, jitter and the shot budget work as for the host, and
   `inheritRobotVelocity` adds the velocity of the remote robot's own body.
+- **Limits.** The client chooses its zone properties, so a remote robot's zones are clamped when the
+  plugin builds them (a spec changes only at Join; a reset rebuilds them with the same limits). The
+  host robot's zones are never clamped, and values at or below a limit are unchanged. The numbers are the
+  `kRemoteMax*` constants in [`fuel_zones.h`](include/wpiemu/plugins/game_2026/fuel_zones.h), the only place
+  they are defined:
+
+  | Property | Remote limit | Why |
+  |---|---|---|
+  | `fireRateHz` (total per shooter zone) | 25 balls/s | Above the fastest FRC feeders (about 10-20 pieces/s); schema allows 200 |
+  | `parallelBalls` | 3 | Three 0.15 m balls fit side by side in a robot about 0.9 m wide; schema allows 8 |
+  | `fixedExitSpeedMps` | 20 m/s | About the fastest FRC shooter exit speed; schema allows 100 |
+  | pickup `intakeRateHz` | 25 balls/s; 0 (unlimited) becomes 25 | An intake cannot usefully outrun the shooter; schema allows unlimited |
+
+  The shot budget holds at most `parallelBalls + 1` balls, so a remote shooter launches at most 25 balls in
+  any second plus one primed volley. The generic spec clamp (`sdk/include/wpiemu/sdk/physics/remote_spec_limits.h`) does not
+  know these properties: plugin knowledge stays in the plugin.
 - The pose and velocity of a robot come from its physics body, so a shot leaves from its own robot.
 
 `publishRobot` adds each remote robot's fuel count, capacity and shots (the host's HUD keys) and, in a
