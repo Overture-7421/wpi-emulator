@@ -56,18 +56,6 @@ void roomId(C& c, S& id) {
 
 // ---- shared records ---------------------------------------------------------------------------------------
 
-template <class C, Is<match::RosterEntry> M>
-void fields(C& c, M& e) {
-    c.record([&] {
-        c.u16(e.participantId);
-        c.str(e.name, match::kMaxNameBytes, "roster name too long");
-        c.enumeration(e.station, 5, "invalid AllianceStation");
-        c.u16(e.pingMs);
-        c.u16(e.lossPermille);
-        c.boolean(e.isHost);
-    });
-}
-
 template <class C, Is<match::WheelInput> M>
 void fields(C& c, M& w) {
     c.f32(w.wheelSpeedRadPerSec);
@@ -92,6 +80,73 @@ void zonePoseTail(C& c, V& poses, std::size_t cap) {
     if (!c.more()) return;
     c.list(poses, cap, kZonePoseBytes);
     if (!match::zonePosesWellFormed(poses, cap)) c.fail("zone poses not strictly increasing or index out of range");
+}
+
+template <class C, Is<match::AppearancePrimitive> M>
+void fields(C& c, M& p) {
+    c.enumeration(p.kind, 1, "invalid PrimitiveKind");
+    fields(c, p.pose);
+    c.u16(p.extentXMm);
+    c.u16(p.extentYMm);
+    c.u16(p.extentZMm);
+    c.u8(p.r);
+    c.u8(p.g);
+    c.u8(p.b);
+}
+
+template <class C, Is<match::AppearanceWheel> M>
+void fields(C& c, M& w) {
+    c.enumeration(w.kind, 3, "invalid WheelKind");
+    c.boolean(w.steered);
+    c.i16(w.xMm);
+    c.i16(w.yMm);
+    c.i16(w.zMm);
+    c.u16(w.radiusMm);
+    c.u16(w.widthMm);
+}
+
+template <class C, Is<match::AppearanceZone> M>
+void fields(C& c, M& z) {
+    fields(c, z.pose);
+    c.str(z.kind, match::kMaxNameBytes, "zone kind too long");
+    c.u16(z.sizeXMm);
+    c.u16(z.sizeYMm);
+    c.u16(z.sizeZMm);
+    c.boolean(z.onMechanism);
+}
+
+// A nested record of its own, so the appearance can grow fields later. Element indices must equal their positions
+// (appearanceWellFormed); anything else is a malformed frame (and unencodable).
+template <class C, Is<match::RobotAppearance> M>
+void fields(C& c, M& a) {
+    c.record([&] {
+        c.u16(a.sizeXMm);
+        c.u16(a.sizeYMm);
+        c.u16(a.sizeZMm);
+        c.i16(a.centreXMm);
+        c.i16(a.centreYMm);
+        c.i16(a.centreZMm);
+        c.u16(a.comHeightMm);
+        c.list(a.primitives, match::kMaxAppearancePrimitives, match::kWireAppearancePrimitiveBytes);
+        c.list(a.wheels, match::kMaxWheelsPerRobot, match::kWireAppearanceWheelBytes);
+        c.list(a.zones, match::kMaxZonesPerRobot, match::kWireAppearanceZoneMinBytes);
+        if (!match::appearanceWellFormed(a)) c.fail("robot appearance element index out of order");
+    });
+}
+
+// The appearance is an appended tail: absent in an older writer's entry (no appearance), always written.
+template <class C, Is<match::RosterEntry> M>
+void fields(C& c, M& e) {
+    c.record([&] {
+        c.u16(e.participantId);
+        c.str(e.name, match::kMaxNameBytes, "roster name too long");
+        c.enumeration(e.station, 5, "invalid AllianceStation");
+        c.u16(e.pingMs);
+        c.u16(e.lossPermille);
+        c.boolean(e.isHost);
+        if (!c.more()) return;
+        fields(c, e.appearance);
+    });
 }
 
 template <class C, Is<match::MatchInput> M>

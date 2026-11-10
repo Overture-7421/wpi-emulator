@@ -7,7 +7,9 @@
 //      WPILib program, so nothing is mapped;
 //   3. refuse a wheel count outside the limits (spec.too_many, spec.too_few): the setpoints the client sends follow its own
 //      wheel list, so the list is accepted as sent or not at all;
-//   4. clamp everything else to the plausible-FRC ranges (sdk::clampRemoteSpec) and report each clamped field.
+//   4. clamp everything else to the plausible-FRC ranges (sdk::clampRemoteSpec) and report each clamped field;
+//   5. move each zone's own pose into the zone envelope of the clamped chassis (sdk::clampRemoteZonePose), the same bound a
+//      client's commanded zone poses get, so the rest pose a robot's zones have is always inside it.
 // Pure apart from the pipeline's plugin registration (sim thread only, like the rest of the host).
 
 #include <string>

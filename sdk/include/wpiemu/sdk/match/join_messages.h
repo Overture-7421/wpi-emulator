@@ -15,6 +15,7 @@
 #include "wpiemu/sdk/ipc/driver_station.h"
 #include "wpiemu/sdk/ipc/protocol_rules.h"
 #include "wpiemu/sdk/match/match_protocol.h"
+#include "wpiemu/sdk/match/robot_appearance.h"
 
 namespace wpiemu::sdk::match {
 
@@ -48,6 +49,9 @@ struct RosterEntry {
     std::uint16_t pingMs = 0;
     std::uint16_t lossPermille = 0;  // fraction of this participant's packets lost, in 1/1000
     bool isHost = false;
+    // How to draw this participant's robot and where its zones are (robot_appearance.h). Appended record tail, so an older
+    // writer's entry decodes with an empty appearance. The host sends it in every Roster and JoinAccept.
+    RobotAppearance appearance;
 
     bool operator==(const RosterEntry&) const = default;
 };

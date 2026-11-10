@@ -15,6 +15,7 @@
 #include "wpiemu/sdk/core/result.h"
 #include "wpiemu/sdk/game/ui_descriptors.h"
 #include "wpiemu/sdk/ipc/driver_station.h"
+#include "wpiemu/sdk/match/robot_appearance.h"
 #include "wpiemu/sdk/telemetry/snapshot.h"
 
 namespace wpiemu::core::match {
@@ -27,6 +28,8 @@ public:
     virtual int wpilibYear() const = 0;
     // The host robot's display name for the roster.
     virtual std::string hostName() const = 0;
+    // How to draw the host's own robot (its trusted config, see appearanceOf); empty when the session cannot say.
+    virtual sdk::match::RobotAppearance hostAppearance() const { return {}; }
     // The plugin's HUD descriptors: they define the HUD key table (hud_keys.h).
     virtual std::vector<sdk::HudWidgetDescriptor> hudDescriptors() const = 0;
 
@@ -55,6 +58,7 @@ public:
     std::string gamePluginId() const override;
     int wpilibYear() const override;
     std::string hostName() const override { return session_.config().name; }
+    sdk::match::RobotAppearance hostAppearance() const override;
     std::vector<sdk::HudWidgetDescriptor> hudDescriptors() const override;
     std::int64_t stepUs() const override { return session_.clock().fixedStepUs(); }
     std::uint64_t tickIndex() const override { return session_.clock().tickIndex(); }

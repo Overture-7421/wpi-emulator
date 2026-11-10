@@ -1,6 +1,10 @@
 #include "wpiemu/core/match/host_session.h"
 
+#include "wpiemu/core/match/robot_appearance.h"
+
 namespace wpiemu::core::match {
+
+sdk::match::RobotAppearance SimulationMatchSession::hostAppearance() const { return appearanceOf(session_.config()); }
 
 std::string SimulationMatchSession::gamePluginId() const {
     if (const sdk::IGameModule* module = session_.gameModule()) return module->metadata().id;
