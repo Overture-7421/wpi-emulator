@@ -73,6 +73,29 @@ private:
 
 // ---- what a client is built from --------------------------------------------------------------------------------------
 
+// Counts the frames a reader thread took from a link (the end-to-end world waits on it so every run orders alike).
+class CountingTransport final : public proto::ITransport {
+public:
+    CountingTransport(std::unique_ptr<proto::ITransport> inner, std::shared_ptr<std::atomic<std::uint64_t>> received)
+        : inner_(std::move(inner)), received_(std::move(received)) {}
+
+    Status send(std::span<const std::byte> frame) override { return inner_->send(frame); }
+    Status sendUnreliable(std::span<const std::byte> frame) override { return inner_->sendUnreliable(frame); }
+    Result<bool> receive(std::vector<std::byte>& frame, std::chrono::milliseconds timeout) override {
+        Result<bool> got = inner_->receive(frame, timeout);
+        if (got && got.value()) ++*received_;
+        return got;
+    }
+    void close() override { inner_->close(); }
+    bool connected() const override { return inner_->connected(); }
+    std::string describe() const override { return inner_->describe(); }
+    std::optional<proto::LinkStats> linkStats() const override { return inner_->linkStats(); }
+
+private:
+    std::unique_ptr<proto::ITransport> inner_;
+    std::shared_ptr<std::atomic<std::uint64_t>> received_;
+};
+
 struct ClientKit {
     testing::ManualWallClock* clock = nullptr;
     PipelineKit kit;

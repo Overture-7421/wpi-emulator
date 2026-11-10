@@ -138,6 +138,8 @@ struct ClientDiagnostics {
     double predictionErrorP95M = 0.0;   // over the last 128 snapshots
     double predictionErrorYawRad = 0.0;
     double predictionAheadMs = 0.0;     // how far the prediction runs ahead of the host's sim time
+    double predictedTick = 0.0;         // the host tick (fractional) the own robot is drawn at; 0 without prediction
+    std::int64_t hostSimEstimateUs = 0; // the client's estimate of the host's sim time right now (0 until synced)
     int inputLeadTicks = 0;             // the host tick lead the client stamps its inputs with
     int hostReportedLeadTicks = 0;      // what the host measured for the newest input it received
     std::uint64_t snapshotsReceived = 0;

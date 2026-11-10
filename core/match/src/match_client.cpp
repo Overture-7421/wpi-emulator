@@ -34,6 +34,7 @@ using std::chrono::microseconds;
 
 constexpr int kMaxMessagesPerUpdate = 512;
 constexpr std::size_t kPingMemory = 16;
+constexpr std::size_t kPathWindow = 48;
 constexpr std::size_t kErrorWindow = 128;
 
 double wrapPi(double a) { return wire::angleDifferenceRad(a, 0.0); }
@@ -154,6 +155,7 @@ struct MatchClient::Impl {
     std::size_t startupPingsLeft = 0;
     double rttMs = 0.0;
     double rttMinMs = 0.0;
+    std::deque<std::int64_t> pathRtts;   // round trips of the newest pings of this session, microseconds
 
     // ---- prediction ----
     std::unique_ptr<OwnPredictor> predictor;
@@ -414,6 +416,8 @@ struct MatchClient::Impl {
         lastSimAdvanceUs = now;
         lastSnapshotArrivalUs = now;
         pingSent.clear();
+        pathRtts.clear();
+        rttMs = rttMinMs = 0.0;
         startupPingsLeft = config.startupPings;
         nextPingUs = now;
         packet = wire::MatchInputPacket{};
@@ -622,6 +626,8 @@ struct MatchClient::Impl {
                 const double rtt = static_cast<double>(now - sentUs) / 1000.0;
                 rttMs = rttMs == 0.0 ? rtt : rttMs + (rtt - rttMs) / 8.0;
                 rttMinMs = rttMinMs == 0.0 ? rtt : std::min(rttMinMs, rtt);
+                pathRtts.push_back(now - sentUs);
+                while (pathRtts.size() > kPathWindow) pathRtts.pop_front();
                 if (c.runEpoch != proto::kUnspecified && c.runEpoch > epoch) adoptEpoch(c.runEpoch, now);
                 if (c.runEpoch != proto::kUnspecified && c.runEpoch < epoch) return;
                 if (effective == wire::MatchState::Running) clock.addPing(sentUs, now, c.serverSimTimeUs);
@@ -740,8 +746,17 @@ struct MatchClient::Impl {
     }
 
     void updateLead() {
-        const double owdUs = static_cast<double>(clock.minRttUs()) * 0.5;
-        const double wantedUs = owdUs + 2.0 * static_cast<double>(clock.jitterUs());
+        // The path statistics outlive a restart of the clock model (a resume after a pause): they come from every ping.
+        std::int64_t minRtt = clock.minRttUs(), p90 = minRtt;
+        if (!pathRtts.empty()) {
+            std::vector<std::int64_t> sorted(pathRtts.begin(), pathRtts.end());
+            std::sort(sorted.begin(), sorted.end());
+            minRtt = sorted.front();
+            p90 = sorted[std::min(sorted.size() - 1, static_cast<std::size_t>(std::ceil(0.9 * static_cast<double>(sorted.size()))) - 1)];
+        }
+        const double owdUs = static_cast<double>(minRtt) * 0.5;
+        const double jitterUs = static_cast<double>(p90 - minRtt) * 0.5;
+        const double wantedUs = owdUs + 2.0 * jitterUs;
         const int base = static_cast<int>(std::ceil(wantedUs / static_cast<double>(stepUs))) + config.leadMarginTicks;
         leadTicks = std::clamp(base + leadBias, config.minLeadTicks, config.maxLeadTicks);
     }
@@ -1062,8 +1077,11 @@ struct MatchClient::Impl {
         d.predictionErrorM = lastReconcile.posErrM;
         d.predictionErrorYawRad = lastReconcile.yawErrRad;
         d.predictionErrorP95M = percentile95(errors);
-        if (predictor && predictor->started() && clock.synced())
+        if (predictor && predictor->started() && clock.synced()) {
             d.predictionAheadMs = static_cast<double>(static_cast<std::int64_t>(predictor->tick()) * stepUs - clock.serverSimAt(now)) / 1000.0;
+            d.predictedTick = static_cast<double>(predictor->tick()) - 1.0 + frac;
+        }
+        if (clock.synced()) d.hostSimEstimateUs = clock.serverSimAt(now);
         d.inputLeadTicks = leadTicks;
         d.hostReportedLeadTicks = hostReportedLead;
         v->diagnostics = d;
