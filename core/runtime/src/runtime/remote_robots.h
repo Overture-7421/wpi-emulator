@@ -75,6 +75,7 @@ private:
         std::uint32_t seq = 0;
         std::uint64_t targetTick = 0;
         std::uint32_t zoneFlags = 0;
+        std::vector<sdk::match::ZonePoseInput> zonePoses;
         std::vector<sdk::WheelSetpoint> setpoints;
     };
     struct Robot {
@@ -85,6 +86,8 @@ private:
         sdk::RobotStartPose placement;
         float footprintRadiusM = 0.f;
         std::uint32_t zoneMask = 0;
+        std::vector<sdk::Pose3> restPoses;         // the spec pose of each zone
+        std::vector<sdk::Pose3> zonePoses;         // effective pose of each zone; never resized, so views can span it
         std::vector<float> maxWheelSpeed;
         std::unique_ptr<IRemoteChassis> chassis;   // destroyed before the rest (it removes its body from the world)
         std::vector<Queued> queue;                 // ordered by sequence (serial-number order), oldest first
@@ -101,6 +104,7 @@ private:
     const Robot* lookup(sdk::match::ParticipantId id) const;
     void rebuildViews();
     void refreshViews();
+    static void applyZonePoses(Robot& robot, const std::vector<sdk::match::ZonePoseInput>& overrides);
     static sdk::RobotView viewOf(const Robot& robot);
 
     sdk::IPhysicsWorld& world_;
