@@ -249,16 +249,22 @@ struct MatchClient::Impl {
         channel.reset();
         const bool canResume = haveJoin && wire::hasResumeToken(token) && services.reconnect != nullptr;
         if (!canResume) return disconnect(reason, detail);
+        if (!reconnecting) {
+            reconnecting = true;
+            reconnectAttempt = 0;
+            backoffUs = std::chrono::duration_cast<microseconds>(config.reconnectInitialBackoff).count();
+        } else if (reconnectAttempt >= config.maxReconnectAttempts) {
+            return disconnect(DisconnectReason::TransportLost, "could not reconnect after " + std::to_string(reconnectAttempt) + " attempts");
+        }
         joined = false;
-        reconnecting = true;
-        reconnectAttempt = 0;
-        backoffUs = std::chrono::duration_cast<microseconds>(config.reconnectInitialBackoff).count();
-        nextReconnectUs = nowUs();
+        nextReconnectUs = reconnectAttempt == 0 ? nowUs() : nowUs() + backoffUs;
+        if (reconnectAttempt != 0) backoffUs = std::min(backoffUs * 2, std::chrono::duration_cast<microseconds>(config.reconnectMaxBackoff).count());
         ConnectionStatus s;
         s.state = ConnectionState::Connecting;
         s.reason = reason;
         s.detail = detail;
         s.reconnecting = true;
+        s.reconnectAttempt = reconnectAttempt;
         setStatus(std::move(s));
         logWarn("link lost, reconnecting: " + detail);
     }
@@ -712,16 +718,10 @@ struct MatchClient::Impl {
     }
 
     void tryReconnect(std::int64_t now) {
+        ++reconnectAttempt;
         sdk::Result<std::unique_ptr<sdk::proto::ITransport>> link = services.reconnect();
-        if (link && link.value()) {
-            ++reconnectAttempt;
-            if (startJoin(std::move(link).value()).ok()) return;
-        } else {
-            ++reconnectAttempt;
-        }
+        if (link && link.value() && startJoin(std::move(link).value()).ok()) return;
         if (reconnectAttempt >= config.maxReconnectAttempts) {
-            reconnecting = false;
-            haveJoin = true;
             disconnect(DisconnectReason::TransportLost, "could not reconnect after " + std::to_string(reconnectAttempt) + " attempts");
             return;
         }
