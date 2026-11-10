@@ -8,6 +8,8 @@ endif()
 # Qt UI suites with their own executable and event loop (see app/runview/CMakeLists.txt).
 list(FILTER WPIEMU_TEST_SOURCES EXCLUDE REGEX "/tests/app_runview/")
 list(FILTER WPIEMU_TEST_SOURCES EXCLUDE REGEX "/tests/app_client/")
+# The opt-in practice-match end-to-end test has its own executable (tests/match_e2e/CMakeLists.txt).
+list(FILTER WPIEMU_TEST_SOURCES EXCLUDE REGEX "/tests/match_e2e/")
 
 file(GLOB WPIEMU_HALSIM_EXT_TEST_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/halsim_ext/tests/test_*.cpp")
@@ -29,6 +31,8 @@ target_include_directories(wpiemu_tests PRIVATE support "${CMAKE_SOURCE_DIR}/hal
 target_compile_definitions(wpiemu_tests PRIVATE "WPIEMU_SAMPLES_DIR=\"${CMAKE_SOURCE_DIR}/samples\"")
 
 doctest_discover_tests(wpiemu_tests)
+
+add_subdirectory(match_e2e)
 
 # Architecture rule: core/app/sdk never see plugins; plugins only see sdk.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)

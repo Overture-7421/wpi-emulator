@@ -164,6 +164,7 @@ TARGET_OWNERS = {
     "wpiemu_editor_demo": "app/editor",
     "wpiemu_runview_demo": "app/runview",
     "wpiemu_tests": "tests",
+    "wpiemu_e2e_match_tests": "tests",
     "wpiemu_sdk_header_check": "tests",
     "wpiemu_runview_tests": "tests",
     "wpiemu_plugins_builtin": AGGREGATOR,

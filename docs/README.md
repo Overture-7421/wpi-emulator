@@ -18,6 +18,7 @@ simulates the robot; it does not require changes to the robot project.
 | Learning to build a season game plugin | [Implementing a Game Season: FIRST POWER UP on the 2027 ABI](book/README.md) |
 | Hosting a practice match | [User guide: host a practice match](USER_GUIDE.md#host-a-practice-match) → [Match network](reference/match-network.md) |
 | Deploying or operating the relay | [Relay on Azure](guides/relay-azure.md) → [Match network: relay protocol](reference/match-network.md#relay-protocol) |
+| Validating practice matches before a release | [Practice match validation](guides/practice-match-validation.md) → [Relay on Azure](guides/relay-azure.md) |
 
 ## Concepts
 
@@ -54,6 +55,7 @@ These pages explain unfamiliar tools and ideas before the architecture and code 
 - [Game plugins and interactions](guides/game-plugins.md)
 - [Maintenance](guides/maintenance.md)
 - [Mechanisms](guides/mechanisms.md)
+- [Practice match validation](guides/practice-match-validation.md): the practice-match e2e, impaired-network runs and the manual release checklist
 - [Relay on Azure](guides/relay-azure.md): deploy, promote, roll back and self-host the practice-match relay
 - [Simulation strategies](guides/simulation-strategies.md)
 - [Vision](guides/vision.md)

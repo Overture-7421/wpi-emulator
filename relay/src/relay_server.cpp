@@ -207,6 +207,13 @@ struct RelayServer::Impl {
         if (table.roleOf(c.id) != Role::None) {
             if (table.roleOf(c.id) != Role::Host || !std::holds_alternative<rl::CloseRoom>(message))
                 return violation(c, "control_frame_after_registration");
+            // The host's last game frames (ServerClosing) were sent before CloseRoom but wait on the other channel: forward them first.
+            for (std::size_t i = 0; i < config.maxFramesPerConnectionPerPoll; ++i) {
+                Delivery delivery = Delivery::Reliable;
+                const sdk::Result<bool> pending = c.control->receiveGame(gameBuffer, delivery, std::chrono::milliseconds(0));
+                if (!pending || !pending.value()) break;
+                handleGame(c, delivery, gameBuffer);
+            }
             Effects closing = table.closeRoom(c.id);
             execute(closing);
             logEvents();
