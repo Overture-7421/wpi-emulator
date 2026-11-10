@@ -1,7 +1,8 @@
 # Qt support every app layer shares (SDK + Qt only): the host seam (IRuntimeHost, its Qt DTOs and metatypes),
 # conversions from SDK types to Qt Quick 3D and the QML component that owns the single Z-up -> Y-up conversion,
-# plus the text and widget helpers the layers would otherwise copy. The editor, the run view, common, the wizard
-# and the shell link it; it links only the SDK and Qt.
+# the text and widget helpers the layers would otherwise copy, and the settings port (IKeyValueStore) with the practice-match
+# relay presets built on it (the game client uses both and may not link app/common). The editor, the run view, common, the
+# wizard, the shell and the client link it; it links only the SDK and Qt.
 set(CMAKE_AUTOUIC OFF)
 
 qt_add_library(wpiemu_app_ui STATIC

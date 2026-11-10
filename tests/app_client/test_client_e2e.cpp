@@ -222,8 +222,7 @@ TEST_CASE("client e2e: a dropped link is redialled with a fresh handshake and th
     const auto id = controller.view()->own.id;
     CHECK(dialer.dials == 1);
 
-    dialer.latest->store(true);   // the network drops
-    REQUIRE(tickUntil(controller, [&] { return controller.sessionState().status.state != mc::ConnectionState::Live; }, 5s));
+    dialer.latest->store(true);   // the network drops; on a loopback the redial can finish between two UI ticks
     REQUIRE_MESSAGE(tickUntil(controller, [&] { return isLive(controller) && dialer.dials >= 2; }, 20s),
                     "did not come back: banner " << static_cast<int>(controller.presentation().banner));
     CHECK(controller.view()->own.id == id);   // the host kept the robot for its resume window
