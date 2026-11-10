@@ -66,6 +66,8 @@ struct MatchHostConfig {
     std::size_t maxStrikes = 3;                       // malformed frames or protocol violations before a disconnect
     std::uint32_t maxInputsPerSecond = sdk::match::kMaxInputRateHz;   // per client, token bucket
     std::uint32_t inputBurst = 12;
+    std::uint32_t maxPingsPerSecond = 10;             // per client; PingRequests beyond it are dropped unanswered
+    std::uint32_t pingBurst = 5;
     std::size_t joinsPerPoll = 1;                     // joins decoded (JSON + validation) per onPoll: bounds the sim-thread hiccup
     OutboxLimits outbox;
 
@@ -120,6 +122,7 @@ struct MatchHostStats {
     std::uint64_t acks = 0;
     std::uint64_t acksIgnored = 0;            // unknown, older or outside the history
     std::uint64_t pings = 0;
+    std::uint64_t pingsRateLimited = 0;
     std::uint64_t snapshotsSent = 0;
     std::uint64_t snapshotsTruncated = 0;     // entity changes were left for later snapshots to fit the budget
     std::uint64_t entityChangesDeferred = 0;

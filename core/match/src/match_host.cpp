@@ -13,6 +13,7 @@
 
 #include "wpiemu/core/match/entity_delta.h"
 #include "wpiemu/core/match/hud_keys.h"
+#include "wpiemu/core/match/snapshot_budget.h"
 #include "wpiemu/core/match/spec_intake.h"
 #include "wpiemu/core/match/wire_frame.h"
 #include "wpiemu/core/runtime/message_link.h"
@@ -29,7 +30,6 @@ using Clock = std::chrono::steady_clock;
 
 constexpr std::uint64_t kAddedLinkIdBase = std::uint64_t{1} << 62;   // link ids of addConnection (the acceptor counts from 1)
 constexpr std::size_t kMaxLoggedClamps = 8;
-constexpr double kInitialEntityBytes = 9.0;                        // first guess of the encoded size of one entity change
 
 std::string truncated(std::string s, std::size_t max) {
     if (s.size() > max) s.resize(max);
@@ -48,6 +48,27 @@ std::string sanitizeName(std::string name) {
     return name;
 }
 
+// Refills at 'rate' per second up to 'burst'; take() spends one token.
+struct TokenBucket {
+    double tokens = 0.0;
+    Clock::time_point last{};
+
+    void reset(double burst, Clock::time_point t) {
+        tokens = burst;
+        last = t;
+    }
+    bool take(double rate, double burst, Clock::time_point t) {
+        const double elapsed = std::chrono::duration<double>(t - last).count();
+        if (elapsed > 0.0) {
+            tokens = std::min(burst, tokens + elapsed * rate);
+            last = t;
+        }
+        if (tokens < 1.0) return false;
+        tokens -= 1.0;
+        return true;
+    }
+};
+
 struct Participant {
     wire::ParticipantId id = wire::kNoParticipant;
     std::string name;
@@ -60,8 +81,8 @@ struct Participant {
     // inputs
     bool seenInput = false;
     std::uint32_t lastInputSeq = wire::kNoInputSeq;
-    double tokens = 0.0;
-    Clock::time_point lastRefill{};
+    TokenBucket inputBucket;
+    TokenBucket pingBucket;
     std::uint64_t inputsSubmitted = 0;
     std::uint64_t inputsRateLimited = 0;
 
@@ -69,8 +90,7 @@ struct Participant {
     std::uint32_t snapshotSeq = 0;
     std::int64_t lastSlot = -1;
     std::optional<Clock::time_point> lastIdleSend;
-    Clock::time_point nextRateSample{};
-    double entityBytes = kInitialEntityBytes;
+    EntitySizeEstimate entitySize;
     std::uint64_t snapshotsSent = 0;
     EntityDeltaEncoder encoder;
     SnapshotRateSelector rate;
@@ -86,6 +106,7 @@ struct Connection {
     wire::ParticipantId participant = wire::kNoParticipant;
     std::size_t strikes = 0;
     std::uint64_t malformedSeen = 0;
+    bool joinQueued = false;   // its Join waits for a later poll (joinsPerPoll)
     bool closing = false;   // a final message is on its way; everything the peer sends is ignored
     bool doomed = false;    // removed at the next sweep
     std::string doomReason;
@@ -270,9 +291,18 @@ struct MatchHost::Impl {
         conns.emplace(ev.linkId, std::move(c));
     }
 
+    // Frames the link dropped as malformed since the last look (the link ends itself at maxStrikes).
+    void countMalformed(Connection& c) {
+        const std::uint64_t malformed = c.link->malformedFrames();
+        stats.malformedFrames += malformed - c.malformedSeen;
+        c.malformedSeen = malformed;
+    }
+
     void onDisconnected(std::uint64_t linkId, const std::string& why) {
         const auto it = conns.find(linkId);
-        if (it != conns.end()) doom(it->second, why.empty() ? "disconnected" : why);
+        if (it == conns.end()) return;
+        countMalformed(it->second);
+        doom(it->second, why.empty() ? "disconnected" : why);
     }
 
     // Drops doomed connections; a participant that held one becomes resumable.
@@ -437,10 +467,9 @@ struct MatchHost::Impl {
         p.token = *token;
         p.linkId = c.linkId;
         p.sessionId = newSessionId();
-        p.tokens = config.inputBurst;
-        p.lastRefill = t;
+        p.inputBucket.reset(config.inputBurst, t);
+        p.pingBucket.reset(config.pingBurst, t);
         p.rate = SnapshotRateSelector(config.rate);
-        p.nextRateSample = t;
         c.participant = id;
         Participant& stored = parts.emplace(id, std::move(p)).first->second;
         ++stats.joinsAccepted;
@@ -468,8 +497,8 @@ struct MatchHost::Impl {
         p.linkId = c.linkId;
         p.token = *token;
         p.sessionId = newSessionId();
-        p.tokens = config.inputBurst;
-        p.lastRefill = t;
+        p.inputBucket.reset(config.inputBurst, t);
+        p.pingBucket.reset(config.pingBurst, t);
         resetPeerStream(p);
         c.participant = p.id;
         ++stats.resumes;
@@ -480,17 +509,6 @@ struct MatchHost::Impl {
     }
 
     // ---- inputs, acks, pings ----
-    bool takeInputToken(Participant& p, Clock::time_point t) {
-        const double elapsed = std::chrono::duration<double>(t - p.lastRefill).count();
-        if (elapsed > 0.0) {
-            p.tokens = std::min<double>(config.inputBurst, p.tokens + elapsed * config.maxInputsPerSecond);
-            p.lastRefill = t;
-        }
-        if (p.tokens < 1.0) return false;
-        p.tokens -= 1.0;
-        return true;
-    }
-
     // False when the frame must be ignored (stale epoch or another connection's frame); NewerEpoch is a violation.
     bool acceptFrame(Connection& c, const Participant& p, std::uint64_t frameSession, std::uint64_t frameEpoch) {
         switch (proto::classifyFrame(frameSession, frameEpoch, p.sessionId, epoch.load())) {
@@ -515,7 +533,7 @@ struct MatchHost::Impl {
                 ++stats.inputsRedundant;
                 continue;
             }
-            if (!takeInputToken(p, t)) {
+            if (!p.inputBucket.take(config.maxInputsPerSecond, config.inputBurst, t)) {
                 ++stats.inputsRateLimited;
                 ++p.inputsRateLimited;
                 continue;
@@ -538,12 +556,16 @@ struct MatchHost::Impl {
         else ++stats.acksIgnored;
     }
 
-    void onControl(Connection& c, Participant& p, const wire::MatchControl& ctl) {
+    void onControl(Connection& c, Participant& p, const wire::MatchControl& ctl, Clock::time_point t) {
         if (ctl.kind != wire::MatchControlKind::PingRequest) return strike(c, "a client sent a host control message");
         // Pings are answered whatever the epoch (a client re-syncing after a Reset needs them); only another
         // connection's session is ignored.
         if (ctl.sessionId != proto::kUnspecified && ctl.sessionId != p.sessionId) {
             ++stats.framesForeignSession;
+            return;
+        }
+        if (!p.pingBucket.take(config.maxPingsPerSecond, config.pingBurst, t)) {
+            ++stats.pingsRateLimited;
             return;
         }
         ++stats.pings;
@@ -569,8 +591,11 @@ struct MatchHost::Impl {
         if (c.doomed || c.closing) return;
         c.lastRx = t;
         if (auto* join = std::get_if<wire::Join>(&message)) {
-            if (joinsThisPoll >= config.joinsPerPoll) pendingJoins.emplace_back(c.linkId, std::move(*join));
-            else {
+            if (c.participant != wire::kNoParticipant || c.joinQueued) return strike(c, "Join after the connection already joined");
+            if (joinsThisPoll >= config.joinsPerPoll) {
+                c.joinQueued = true;
+                pendingJoins.emplace_back(c.linkId, std::move(*join));
+            } else {
                 ++joinsThisPoll;
                 onJoin(c, std::move(*join), t);
             }
@@ -580,7 +605,7 @@ struct MatchHost::Impl {
         if (p == nullptr) return strike(c, "message before Join");
         if (auto* in = std::get_if<wire::MatchInputPacket>(&message)) onInput(c, *p, *in, t);
         else if (auto* ack = std::get_if<wire::MatchSnapshotAck>(&message)) onAck(c, *p, *ack);
-        else if (auto* ctl = std::get_if<wire::MatchControl>(&message)) onControl(c, *p, *ctl);
+        else if (auto* ctl = std::get_if<wire::MatchControl>(&message)) onControl(c, *p, *ctl, t);
         else if (auto* leave = std::get_if<wire::Leave>(&message)) onLeave(c, *p, *leave);
         else strike(c, "unexpected message type");
     }
@@ -592,6 +617,7 @@ struct MatchHost::Impl {
             const auto it = conns.find(linkId);
             if (it == conns.end() || it->second.doomed || it->second.closing) continue;
             ++joinsThisPoll;
+            it->second.joinQueued = false;
             onJoin(it->second, std::move(join), t);
         }
         runtime::InboundEvent ev;
@@ -730,15 +756,11 @@ struct MatchHost::Impl {
     void runTimeouts(Clock::time_point t) {
         for (auto& [id, c] : conns) {
             if (c.doomed) continue;
-            const std::uint64_t malformed = c.link->malformedFrames();
-            if (malformed != c.malformedSeen) {
-                stats.malformedFrames += malformed - c.malformedSeen;
-                c.malformedSeen = malformed;
-            }
+            countMalformed(c);
             if (c.closing) {
                 if (t - c.closingSince > config.joinTimeout) doom(c, "close timed out");
             } else if (c.participant == wire::kNoParticipant) {
-                if (t - c.connectedAt > config.joinTimeout) {
+                if (!c.joinQueued && t - c.connectedAt > config.joinTimeout) {
                     ++stats.joinTimeouts;
                     doom(c, "no Join within the join timeout");
                 }
@@ -784,9 +806,9 @@ struct MatchHost::Impl {
         return *frame;
     }
 
-    std::size_t encodedSize(const proto::Message& message) {
+    std::size_t encodedSize(const wire::MatchSnapshot& snapshot) {
         scratch.clear();
-        if (!services.codec->encode(message, scratch)) return config.snapshotBudgetBytes + 1;
+        if (!services.codec->encode(snapshot, scratch)) return config.snapshotBudgetBytes + 1;
         return scratch.size();
     }
 
@@ -810,57 +832,15 @@ struct MatchHost::Impl {
         s.robots = frame.robots;
         s.gameHud = frame.gameHud;
 
-        const std::size_t budget = config.snapshotBudgetBytes;
         const EntityPlan plan = p.encoder.plan(frame.groups, frame.anchors);
-        const auto withChanges = [&](std::size_t n) {
-            s.entityDeltas = EntityDeltaEncoder::deltas(plan, n);
-            return encodedSize(message);
-        };
-        const std::size_t baseSize = withChanges(0);
-        std::size_t size = baseSize;
-        if (baseSize > budget) {
-            ++stats.snapshotsOverBudget;
-            for (wire::RobotWireState& r : s.robots) r.hud.clear();
-            size = withChanges(0);
-            if (size > budget) {
-                s.gameHud.clear();
-                size = withChanges(0);
-            }
-        }
-        const std::size_t base = size;
-
-        std::size_t fit = 0, fitSize = base;
-        const std::size_t total = plan.changes.size();
-        if (total > 0 && base < budget) {
-            const double est = std::max(1.0, p.entityBytes);
-            std::size_t hi = total + 1;
-            auto n = std::min(total, static_cast<std::size_t>(static_cast<double>(budget - base) / est));
-            for (int iteration = 0; iteration < 4; ++iteration) {
-                n = std::min(n, hi - 1);
-                if (n <= fit) break;
-                const std::size_t sz = withChanges(n);
-                if (sz <= budget) {
-                    fit = n;
-                    fitSize = sz;
-                    if (n == total) break;
-                    const auto more = static_cast<std::size_t>(static_cast<double>(budget - sz) / est);
-                    if (more == 0) break;
-                    n += more;
-                } else {
-                    hi = n;
-                    const auto less = static_cast<std::size_t>(std::ceil(static_cast<double>(sz - budget) / est));
-                    n = n > less ? n - less : 0;
-                }
-            }
-            if (fit > 0) p.entityBytes = 0.5 * p.entityBytes + 0.5 * (static_cast<double>(fitSize - base) / static_cast<double>(fit));
-        }
-        s.entityDeltas = EntityDeltaEncoder::deltas(plan, fit);
-        if (fit < total) {
+        const SnapshotFit fit = fitSnapshot(s, plan, config.snapshotBudgetBytes, [this](const wire::MatchSnapshot& m) { return encodedSize(m); }, p.entitySize);
+        if (fit.coreOverBudget) ++stats.snapshotsOverBudget;
+        if (fit.entityChanges < plan.changes.size()) {
             ++stats.snapshotsTruncated;
-            stats.entityChangesDeferred += total - fit;
+            stats.entityChangesDeferred += plan.changes.size() - fit.entityChanges;
         }
-        stats.maxSnapshotBytes = std::max(stats.maxSnapshotBytes, fitSize);
-        p.encoder.commit(plan, fit, s.snapshotSeq);
+        stats.maxSnapshotBytes = std::max(stats.maxSnapshotBytes, fit.encodedBytes);
+        p.encoder.commit(plan, fit.entityChanges, s.snapshotSeq);
         ++p.snapshotsSent;
         ++stats.snapshotsSent;
         send(c, std::move(message));
