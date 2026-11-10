@@ -21,11 +21,16 @@ For a complete worked season example, see [Implementing a Game Season](book/READ
 | Add a configurable editor field | SDK `PropertySchema` builders and typed `ConfigBindings` | [Editor properties](guides/editor-properties.md) | [Application](reference/app.md) |
 | Add motor constants or a motor behavior | Shared SDK `motors::presets()` table, or inject an `IMotorModel` at its composition point | [Mechanisms: motor data and behavior](guides/mechanisms.md#motor-data-and-behavior) | [Mechanisms](reference/mechanisms.md) |
 | Add drivetrain, tire, physics, or transport behavior | The corresponding SDK strategy interface and registry or composition root | [Simulation strategies](guides/simulation-strategies.md) | [Physics](reference/physics.md) or [Extension and IPC](reference/extension-ipc.md) |
+| Change the practice-match protocol, its encryption, or the relay | SDK `match` messages and limits, the shared codec, a `net/` transport or decorator, or `relay/`; never a second wire format | [Relay on Azure](guides/relay-azure.md) | [Match network](reference/match-network.md) |
+| Change what a remote player's robot may be or do (fairness clamps, zone poses, wheel setpoint control) | `remote_spec_limits.h` (one table), `MatchHost` spec intake, `WheelSetpointController` | [Game plugins: support several robots](guides/game-plugins.md#support-several-robots) | [Match network](reference/match-network.md#joining) and [Runtime](reference/runtime.md#remote-robots-practice-matches) |
 
 ## Keep the seam intact
 
 - Plugins depend only on SDK. The app uses the plugin aggregator; it does not link a season.
 - Bridges depend only on SDK and their own backend. The extension uses the bridge aggregator.
+- The practice-match protocol is SDK data encoded by the shared codec; `net/` and `relay/` carry it and
+  never parse game frames in the relay. The host app owns the world: do not add authoritative state to
+  a client or the relay.
 - A motor's physical constants are not a controller bridge. A configured intake is not
   automatically a new mechanism class.
 - Preserve the owning reference's units, identities, lifecycle, and failure behavior. Do not infer
