@@ -2,7 +2,7 @@
 
 // Plugin-private contract between the 2026 zone runtimes (fuel_zones.h: pickup / shooter) and the game
 // state: the zones decide WHEN (active / feeding) and WHERE (volume / muzzle) from the robot's
-// mechanisms; the game state owns the fuel and the meter and acts on it.
+// mechanisms (a remote robot's zone flags); the game state owns the fuel and each robot's meter and acts on it.
 
 #include "wpiemu/sdk/config/value_codec.h"
 #include "wpiemu/sdk/core/math.h"

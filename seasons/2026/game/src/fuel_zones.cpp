@@ -185,14 +185,32 @@ sdk::Box3 PickupZoneRuntime::zoneInChassis() const {
     return z;
 }
 
-ShooterZoneRuntime::ShooterZoneRuntime(sdk::ZoneConfig config)
+ShooterZoneRuntime::ShooterZoneRuntime(sdk::ZoneConfig config, bool remote)
     : FuelZoneRuntime(std::move(config)),
       params_(parseShooterParams(config_.properties)),
+      remote_(remote),
       budget_(static_cast<double>(params_.parallelBalls)) {}
 
 void ShooterZoneRuntime::update(sdk::SimContext& ctx, const sdk::Pose3& poseInChassis, bool activationHeld, double dt) {
     poseInChassis_ = poseInChassis;
     active_ = activationHeld;
+    bool referencesValid = true;
+    if (remote_) {
+        exitSpeedMps_ = params_.fixedExitSpeedMps > 0.0 ? params_.fixedExitSpeedMps : kRemoteDefaultExitSpeedMps;
+        elevationRad_ = std::clamp(params_.hoodAngleRad, -kMaxElevationRad, kMaxElevationRad);
+        yawRad_ = params_.turretYawOffsetRad;
+    } else {
+        referencesValid = readMechanisms(ctx);
+    }
+    feeding_ = referencesValid && activationHeld && exitSpeedMps_ >= params_.minExitSpeedMps && exitSpeedMps_ > 0.0;
+
+    // Token bucket: primed while idle so the first volley leaves as soon as the shooter starts firing.
+    const double n = static_cast<double>(params_.parallelBalls);
+    if (!feeding_) budget_ = n;
+    else budget_ = std::min(n + 1.0, budget_ + params_.fireRateHz * dt);
+}
+
+bool ShooterZoneRuntime::readMechanisms(sdk::SimContext& ctx) {
     sdk::IMechanismDirectory* dir = ctx.mechanisms();
 
     bool referencesValid = true;
@@ -226,13 +244,7 @@ void ShooterZoneRuntime::update(sdk::SimContext& ctx, const sdk::Pose3& poseInCh
         const sdk::MechanismReading turret = read(params_.turretMechanism, params_.turretValue);
         if (turret.hasValue) yawRad_ += params_.turretGain * turret.value;
     }
-
-    feeding_ = referencesValid && activationHeld && exitSpeedMps_ >= params_.minExitSpeedMps && exitSpeedMps_ > 0.0;
-
-    // Token bucket: primed while idle so the first volley leaves as soon as the shooter starts firing.
-    const double n = static_cast<double>(params_.parallelBalls);
-    if (!feeding_) budget_ = n;
-    else budget_ = std::min(n + 1.0, budget_ + params_.fireRateHz * dt);
+    return referencesValid;
 }
 
 int ShooterZoneRuntime::shotBudget() const {
