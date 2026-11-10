@@ -17,7 +17,7 @@ param startDate string
 @minLength(3)
 param alertEmail string
 
-resource budget 'Microsoft.Consumption/budgets@2024-08-01' = {
+resource budget 'Microsoft.Consumption/budgets@2026-06-01' = {
   name: budgetName
   properties: {
     category: 'Cost'

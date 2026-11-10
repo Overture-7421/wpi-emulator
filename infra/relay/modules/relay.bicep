@@ -60,7 +60,7 @@ resource workspace 'Microsoft.OperationalInsights/workspaces@2025-02-01' existin
   name: logAnalyticsWorkspaceName
 }
 
-resource relay 'Microsoft.ContainerInstance/containerGroups@2023-05-01' = {
+resource relay 'Microsoft.ContainerInstance/containerGroups@2025-09-01' = {
   name: containerGroupName
   location: location
   tags: tags
