@@ -27,6 +27,7 @@ These records explain adopted design constraints, not implementation inventories
 | [0016](0016-robot-setup-lives-in-the-project.md) | Robot setup lives in the project |
 | [0017](0017-multi-season-wpilib.md) | One isolated HALSim extension per WPILib season |
 | [0018](0018-season-packs.md) | Season packs describe WPILib support as data |
+| [0019](0019-practice-matches.md) | Practice matches: a host-authoritative world, end-to-end encrypted, through an Azure relay |
 
 ## Maintaining the set
 
