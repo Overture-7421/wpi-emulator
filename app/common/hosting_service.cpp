@@ -48,6 +48,12 @@ void HostingService::setOptions(const host::HostingOptions& options) {
     emit optionsChanged();
 }
 
+void HostingService::setPhaseHudKey(const std::string& key) {
+    host::HostingOptions next = options_;
+    next.phaseHudKey = key;
+    setOptions(next);
+}
+
 void HostingService::kick(sdk::match::ParticipantId participant, const QString& reason) {
     if (!status_->hosting() || participant == sdk::match::kHostParticipantId) return;
     emit kickRequested(participant, reason);

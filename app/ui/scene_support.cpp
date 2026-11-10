@@ -39,6 +39,10 @@ sdk::Vec3 wheelCylinderSize(const sdk::WheelSpec& w) {
 
 QColor defaultColor() { return QColor(QString::fromLatin1(sdk::kDefaultPrimitiveColor)); }
 
+QColor allianceColor(sdk::Alliance alliance) {
+    return alliance == sdk::Alliance::Red ? QColor(QStringLiteral("#e5484d")) : QColor(QStringLiteral("#4f8cff"));
+}
+
 QColor parseColor(const std::string& css, const QColor& fallback) {
     const QColor c(QString::fromStdString(css));
     return c.isValid() ? c : fallback;

@@ -55,6 +55,7 @@ public:
     HostScene scene() const override { return scene_; }
     std::shared_ptr<const sdk::ISimSnapshot> latestSnapshot() const override;
     QString startPosition() const override { return startSelection_.id(); }
+    std::shared_ptr<const MatchRoster> matchRoster() const override { return roster_; }
     void setProject(const HostProject& project) override;
 
     // The extension that would be launched (empty when it cannot be found).
@@ -81,6 +82,7 @@ private:
     void sendBeginIfReady();
     void emitLog(sdk::LogLevel level, const QString& source, const QString& text);
     void releaseSession();
+    void refreshRoster();
     std::optional<sdk::RobotStartPose> resolveStartPlacement() const;
 
     host::Registries registries_;
@@ -97,6 +99,7 @@ private:
     std::shared_ptr<const sdk::FieldDescription> field_;
     std::string fieldPluginId_;
     StartPositionSelection startSelection_;
+    std::shared_ptr<const MatchRoster> roster_;
 
     std::unique_ptr<host::RobotSession> session_;
     std::shared_ptr<const sdk::ISimSnapshot> lastSnapshot_;

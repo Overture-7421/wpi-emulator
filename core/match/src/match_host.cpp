@@ -76,6 +76,7 @@ struct Participant {
     proto::AllianceStation station = proto::AllianceStation::Red1;
     wire::ResumeToken token{};
     wire::RobotAppearance appearance;      // built once from the accepted spec; sent in every roster
+    std::shared_ptr<const wire::RobotAppearance> appearanceShared;   // the same, for ParticipantInfo
     std::vector<sdk::Pose3> zoneRest;      // appearanceZoneRestPoses(appearance): what snapshot zone poses are relative to
     std::uint64_t linkId = 0;              // the connection serving it; 0 = dropped, resumable
     Clock::time_point detachedAt{};
@@ -472,6 +473,7 @@ struct MatchHost::Impl {
         p.name = request.name;
         p.station = *station;
         p.token = *token;
+        p.appearanceShared = std::make_shared<const wire::RobotAppearance>(appearance);
         p.appearance = std::move(appearance);
         p.zoneRest = wire::appearanceZoneRestPoses(p.appearance);
         p.linkId = c.linkId;
@@ -1007,6 +1009,7 @@ std::vector<ParticipantInfo> MatchHost::participants() const {
         i.inputsRateLimited = p.inputsRateLimited;
         i.snapshotsSent = p.snapshotsSent;
         i.baselineId = p.encoder.baselineId();
+        i.appearance = p.appearanceShared;
         out.push_back(std::move(i));
     }
     return out;

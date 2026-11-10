@@ -11,6 +11,7 @@ add_library(wpiemu_app_common STATIC
     project_prefs.cpp
     project_session.cpp
     recent_projects.cpp
+    relay_endpoints.cpp
     real_runtime_host.cpp
     robot_basics.cpp
     system_probe.cpp
@@ -37,6 +38,8 @@ add_library(wpiemu_app_common STATIC
     ../wizard/wizard_view_model.cpp
     # The application shell sources live in ../shell and are compiled into this library.
     ../shell/about_dialog.cpp
+    ../shell/host_panel.cpp
+    ../shell/host_panel_model.cpp
     ../shell/main_window.cpp
     ../shell/mode_switcher.cpp
     ../shell/page_factory.cpp

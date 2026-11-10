@@ -20,6 +20,8 @@ Item {
         }
 
         ZUpWorld {
+            id: world
+
             PerspectiveCamera {
                 id: cam
                 position: scene.cameraPosition
@@ -66,6 +68,39 @@ Item {
                     Repeater3D {
                         model: scene.zones
                         delegate: PartModel {}
+                    }
+                }
+            }
+
+            // The other robots of a hosted practice match: one node per participant, placed by its pose in the field frame.
+            Repeater3D {
+                model: scene.remoteRobots
+                delegate: Node {
+                    required property vector3d robotPosition
+                    required property quaternion robotRotation
+                    required property bool robotShown
+                    required property var robotParts
+                    required property var zoneParts
+                    required property var markerParts
+
+                    visible: robotShown
+                    position: robotPosition
+                    rotation: robotRotation
+
+                    Repeater3D {
+                        model: robotParts
+                        delegate: PartModel {}
+                    }
+                    Repeater3D {
+                        model: markerParts
+                        delegate: PartModel {}
+                    }
+                    Node {
+                        visible: scene.zonesVisible
+                        Repeater3D {
+                            model: zoneParts
+                            delegate: PartModel {}
+                        }
                     }
                 }
             }
@@ -123,6 +158,44 @@ Item {
 
     onHeightChanged: scene.setViewHeight(height)
     Component.onCompleted: scene.setViewHeight(height)
+
+    // Name labels of the other robots of a hosted match, projected from the scene so they stay readable at any zoom.
+    Repeater {
+        model: scene.remoteRobots
+        delegate: Rectangle {
+            id: tag
+            required property string robotName
+            required property string stationLabel
+            required property color allianceColor
+            required property vector3d labelPosition
+            required property bool robotShown
+
+            // Depends on the camera properties so the label follows an orbit or zoom.
+            readonly property vector3d screen: {
+                const moved = [scene.cameraPosition, scene.cameraRotation, scene.cameraFov, view.width, view.height]
+                return view.mapFrom3DScene(world.mapPositionToScene(labelPosition))
+            }
+
+            visible: robotShown && screen.z > 0
+            x: screen.x - width / 2
+            y: screen.y - height
+            width: caption.implicitWidth + 14
+            height: caption.implicitHeight + 6
+            radius: height / 2
+            color: Qt.rgba(theme.panel.r, theme.panel.g, theme.panel.b, 0.82)
+            border.color: allianceColor
+            border.width: 2
+
+            Text {
+                id: caption
+                anchors.centerIn: parent
+                text: tag.robotName + " · " + tag.stationLabel
+                color: theme.text
+                font.pixelSize: 12
+                font.bold: true
+            }
+        }
+    }
 
     // Game-plugin HUD: generic renderer of HudWidgetDescriptors.
     Item {

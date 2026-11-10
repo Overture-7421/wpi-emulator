@@ -310,6 +310,7 @@ struct MatchHosting::Impl {
             r.pingMs = p.rttMs;
             r.lossPermille = p.lossPermille;
             r.snapshotRateHz = p.snapshotRateHz;
+            r.appearance = p.appearance;
             roster.push_back(std::move(r));
         }
         std::lock_guard lock(mutex);

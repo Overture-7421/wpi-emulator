@@ -31,6 +31,10 @@ public:
     // Ok when a launch with options() could start hosting; otherwise the message to show next to the settings.
     sdk::Status validate() const { return host::validateHosting(options_); }
 
+    // The game's match phase key, which a hosted match copies into its snapshots: stored with the options so the running
+    // session and the preferences agree (RealRuntimeHost sets it from the open project's game).
+    void setPhaseHudKey(const std::string& key);
+
     // The latest status of the running session; never null (phase Off when not hosting).
     std::shared_ptr<const host::HostingStatus> status() const { return status_; }
     // The options the running session was launched with (nullopt when no session runs).

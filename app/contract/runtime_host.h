@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "contract/match_roster.h"
 #include "wpiemu/sdk/config/robot_config.h"
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/game/default_field.h"
@@ -159,6 +160,14 @@ inline HostScene makeHostScene(const HostProject& project) {
     return scene;
 }
 
+// The HUD key of the game's match phase, which a hosted match copies into its snapshots: the text value the game's
+// scoreboard shows in its centre (HudWidgetDescriptor::valueKey of a Scoreboard). Empty when the game shows none.
+inline std::string phaseHudKeyOf(const std::vector<sdk::HudWidgetDescriptor>& hud) {
+    for (const sdk::HudWidgetDescriptor& w : hud)
+        if (w.kind == sdk::HudWidgetKind::Scoreboard && !w.valueKey.empty()) return w.valueKey;
+    return {};
+}
+
 // Everything that actually runs the simulation, as the UI sees it. Real implementation: launches the robot with the
 // HALSim extension and drives the sim thread (core). DemoRuntimeHost: scripted stand-in used by `--demo` and tests.
 // The editor and the run view share ONE host, so a device discovered in the editor is the same device the run view
@@ -178,6 +187,8 @@ public:
     // Id of the selected RobotConfig::startPositions entry; empty = the robot setup's default start. The host keeps it
     // across robot-code restarts and clears it on a project switch or when the entry disappears.
     virtual QString startPosition() const = 0;
+    // The other participants of a hosted practice match; null (the default) when no match is being hosted.
+    virtual std::shared_ptr<const MatchRoster> matchRoster() const { return nullptr; }
 
 public slots:
     // launch(): starts the robot code once (idempotent while one is alive). The single instance detects devices
@@ -202,6 +213,8 @@ signals:
     void statusChanged();
     void sceneChanged();
     void startPositionChanged();
+    // Somebody joined or left the hosted match, or a robot's appearance changed (see matchRoster()).
+    void matchRosterChanged();
     void snapshotPublished();
     void logLine(const wpiemu::app::HostLogLine& line);
     // The game (or the host) asked for a sound cue to be played: an id from sdk::commonSoundCues() or the scene's

@@ -154,6 +154,89 @@ sdk::RobotConfig FakeRunBackend::makeDemoConfig() {
     return c;
 }
 
+sdk::match::RobotAppearance FakeRunBackend::makeDemoAppearance() {
+    const sdk::RobotConfig config = makeDemoConfig();
+    std::vector<sdk::Vec3> hubs;
+    for (const sdk::WheelSpec& w : config.drivetrain.spec.wheels)
+        hubs.push_back({w.positionM.x, w.positionM.y, w.positionM.z - config.chassis.comHeightM});
+    std::vector<sdk::ZoneConfig> zones;
+    for (sdk::ZoneConfig zone : config.zones) {
+        zone.attachment = {};   // a remote robot has no mechanisms: its zones sit on the chassis
+        zones.push_back(std::move(zone));
+    }
+    return sdk::match::makeRobotAppearance(config.chassis, config.drivetrain.spec.wheels, hubs, zones);
+}
+
+void FakeRunBackend::announceRoster() {
+    emit matchRosterChanged();
+}
+
+void FakeRunBackend::addRemoteRobot(sdk::match::ParticipantId id, const QString& name, sdk::proto::AllianceStation station,
+                                    std::shared_ptr<const sdk::match::RobotAppearance> appearance) {
+    auto next = std::make_shared<MatchRoster>(roster_ ? *roster_ : MatchRoster{});
+    std::erase_if(*next, [id](const RemoteParticipant& p) { return p.id == id; });
+    RemoteParticipant p;
+    p.id = id;
+    p.name = name.toStdString();
+    p.station = station;
+    p.appearance = appearance ? std::move(appearance) : std::make_shared<const sdk::match::RobotAppearance>(makeDemoAppearance());
+    next->push_back(std::move(p));
+    roster_ = std::move(next);
+    announceRoster();
+}
+
+void FakeRunBackend::removeRemoteRobot(sdk::match::ParticipantId id) {
+    if (!roster_) return;
+    auto next = std::make_shared<MatchRoster>(*roster_);
+    if (std::erase_if(*next, [id](const RemoteParticipant& p) { return p.id == id; }) == 0) return;
+    roster_ = next->empty() ? nullptr : std::shared_ptr<const MatchRoster>(std::move(next));
+    announceRoster();
+}
+
+void FakeRunBackend::addRemoteSamples(sdk::SimSnapshotData& d) const {
+    if (!roster_) return;
+    const double t = sdk::usToSeconds(simUs_);
+    for (const RemoteParticipant& p : *roster_) {
+        if (!p.appearance) continue;
+        const sdk::match::RobotAppearance& a = *p.appearance;
+        const double phase = 0.9 * static_cast<double>(p.id);
+        const double angle = 0.35 * t + phase;
+        constexpr float kRadiusM = 2.6f;
+        sdk::RobotSample s;
+        s.participantId = p.id;
+        s.name = p.name;
+        s.station = p.station;
+        s.body.name = "chassis";
+        const float yaw = static_cast<float>(angle) + sdk::kPiF * 0.5f;
+        s.body.pose = {{8.2f + kRadiusM * std::cos(static_cast<float>(angle)), 4.1f + kRadiusM * std::sin(static_cast<float>(angle)),
+                        static_cast<float>(a.comHeightMm) * 0.001f},
+                       sdk::Quat::fromYaw(yaw)};
+        const std::vector<sdk::WheelSpec> wheels = sdk::match::toWheelSpecs(a);
+        for (std::size_t i = 0; i < wheels.size(); ++i) {
+            sdk::WheelSample w;
+            w.name = "remote" + std::to_string(i);   // the client's own names: the rig pairs by position
+            w.contactPoint = s.body.pose.transformPoint({wheels[i].positionM.x, wheels[i].positionM.y, -s.body.pose.position.z});
+            w.contactPoint.z = 0.f;
+            w.steerAngleRad = wheels[i].steered ? 0.5 * std::sin(0.8 * t + phase) : 0.0;
+            w.spinAngleRad = 6.0 * t + phase;
+            s.wheels.push_back(std::move(w));
+        }
+        const std::vector<sdk::Pose3> rest = sdk::match::appearanceZoneRestPoses(a);
+        for (std::size_t i = 0; i < rest.size(); ++i) {
+            sdk::ZoneState z;
+            z.id = "remote_zone" + std::to_string(i);
+            z.active = std::sin(1.3 * t + phase + static_cast<double>(i)) > 0.0;
+            if (i == 0) {   // the first zone slides forward and back, like an intake extending
+                sdk::Pose3 moved = rest[0];
+                moved.position.x += 0.25f * (0.5f + 0.5f * std::sin(static_cast<float>(1.3 * t + phase)));
+                z.poseInChassis = moved;
+            }
+            s.zones.push_back(std::move(z));
+        }
+        d.remoteRobots.push_back(std::move(s));
+    }
+}
+
 FakeRunBackend::FakeRunBackend(Options options, QObject* parent) : IRuntimeHost(parent), options_(options), timer_(this) {
     scene_.config = std::make_shared<const sdk::RobotConfig>(makeDemoConfig());
     scene_.field = std::make_shared<const sdk::FieldDescription>(demo::field());
@@ -613,6 +696,7 @@ void FakeRunBackend::publish() {
         emit soundCue(QString::fromUtf8(sdk::sound_cue::kEndGame.data(), static_cast<qsizetype>(sdk::sound_cue::kEndGame.size())));
     lastMatchTimeS_ = ds_.matchTimeS;
 
+    addRemoteSamples(d);
     d.batteryVoltageV = sdk::kNominalBatteryVoltageV - 0.9 * (std::hypot(static_cast<double>(vel_.x), static_cast<double>(vel_.y)) / 3.5) - (flywheel_ > 1.f ? 0.5 : 0.0);
     d.driverStation = ds_;
     d.physicsStats.bodies = 2 + static_cast<int>(balls_.size());

@@ -146,6 +146,9 @@ struct ParticipantInfo {
     std::uint64_t inputsRateLimited = 0;
     std::uint64_t snapshotsSent = 0;
     std::uint32_t baselineId = sdk::match::kNoBaseline;   // snapshotSeq the client's entity state is relative to
+    // The roster appearance (how to draw the robot): one object per participant for its whole stay, so a UI can tell
+    // whether it changed by comparing pointers.
+    std::shared_ptr<const sdk::match::RobotAppearance> appearance;
 };
 
 class MatchHost final : public runtime::ISimTickObserver {

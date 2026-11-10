@@ -6,12 +6,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "wpiemu/sdk/core/result.h"
 #include "wpiemu/sdk/ipc/driver_station.h"
 #include "wpiemu/sdk/match/match_protocol.h"
+#include "wpiemu/sdk/match/robot_appearance.h"
 
 namespace wpiemu::app::host {
 
@@ -75,7 +77,9 @@ struct HostingParticipant {
     std::uint32_t pingMs = 0;        // the transport's smoothed round trip (0 for the host)
     std::uint32_t lossPermille = 0;  // recent packet loss, parts per thousand (1000 while dropped)
     std::uint16_t snapshotRateHz = 0;
-
+    // How to draw this participant's robot (the host's accepted spec; null for the host itself and until known). Shared
+    // between statuses, so equal pointers mean an unchanged robot.
+    std::shared_ptr<const sdk::match::RobotAppearance> appearance;
     bool operator==(const HostingParticipant&) const = default;
 };
 

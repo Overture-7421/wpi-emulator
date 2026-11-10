@@ -13,18 +13,21 @@
 namespace wpiemu::app::runview {
 namespace {
 
-const sdk::MechanismState* findState(const sdk::ISimSnapshot* snapshot, std::string_view id) {
-    if (snapshot == nullptr) return nullptr;
-    for (const auto& m : snapshot->mechanisms())
+const sdk::MechanismState* findState(std::span<const sdk::MechanismState> mechanisms, std::string_view id) {
+    for (const auto& m : mechanisms)
         if (m.id == id) return &m;
     return nullptr;
 }
 
-sdk::LinkPoseSource linkSource(const sdk::RobotConfig& config, const sdk::ISimSnapshot* snapshot) {
-    return [&config, snapshot](std::string_view mechanism, std::string_view link) -> std::optional<sdk::Pose3> {
+std::span<const sdk::MechanismState> mechanismsOf(const sdk::ISimSnapshot* snapshot) {
+    return snapshot != nullptr ? snapshot->mechanisms() : std::span<const sdk::MechanismState>{};
+}
+
+sdk::LinkPoseSource linkSource(const sdk::RobotConfig& config, std::span<const sdk::MechanismState> mechanisms) {
+    return [&config, mechanisms](std::string_view mechanism, std::string_view link) -> std::optional<sdk::Pose3> {
         if (config.findMechanism(mechanism) == nullptr) return std::nullopt;
         if (link == sdk::kRootLink) return sdk::Pose3{};
-        if (const sdk::MechanismState* st = findState(snapshot, mechanism))
+        if (const sdk::MechanismState* st = findState(mechanisms, mechanism))
             for (const auto& l : st->links)
                 if (l.name == link) return l.pose;
         return sdk::Pose3{};  // unknown / not yet published: rest pose
@@ -81,7 +84,8 @@ void RobotRig::setConfig(std::shared_ptr<const sdk::RobotConfig> config) {
     }
     staticCount_ = parts_.size();
 
-    for (const auto& w : config_->drivetrain.spec.wheels) {
+    for (std::size_t wheelIndex = 0; wheelIndex < config_->drivetrain.spec.wheels.size(); ++wheelIndex) {
+        const auto& w = config_->drivetrain.spec.wheels[wheelIndex];
         ScenePart tire;
         tire.name = w.name;
         tire.shape = sdk::PrimitiveKind::Cylinder;
@@ -96,6 +100,7 @@ void RobotRig::setConfig(std::shared_ptr<const sdk::RobotConfig> config) {
         Binding b;
         b.kind = Binding::Kind::Wheel;
         b.owner = w.name;
+        b.wheelIndex = wheelIndex;
         b.wheelRadius = w.radiusM;
         b.local = tire.pose;
         parts_.push_back(std::move(tire));
@@ -120,10 +125,20 @@ void RobotRig::setConfig(std::shared_ptr<const sdk::RobotConfig> config) {
 }
 
 bool RobotRig::update(const sdk::ISimSnapshot* snapshot) {
+    Input input;
+    if (snapshot != nullptr) {
+        input.chassis = &snapshot->chassis();
+        input.wheels = snapshot->wheels();
+        input.mechanisms = snapshot->mechanisms();
+    }
+    return update(input);
+}
+
+bool RobotRig::update(const Input& input) {
     changed_.assign(parts_.size(), 0);
     if (!config_) return false;
-    const sdk::LinkPoseSource source = linkSource(*config_, snapshot);
-    const sdk::Pose3 chassisInv = snapshot != nullptr ? snapshot->chassis().pose.inverse() : sdk::Pose3{};
+    const sdk::LinkPoseSource source = linkSource(*config_, input.mechanisms);
+    const sdk::Pose3 chassisInv = input.chassis != nullptr ? input.chassis->pose.inverse() : sdk::Pose3{};
     bool any = false;
 
     for (std::size_t i = staticCount_; i < parts_.size(); ++i) {
@@ -135,14 +150,22 @@ bool RobotRig::update(const sdk::ISimSnapshot* snapshot) {
             case Binding::Kind::WheelMarker: {
                 sdk::Vec3 hub = b.local.position;
                 float steer = 0.f, spin = 0.f;
-                if (snapshot != nullptr) {
-                    for (const auto& w : snapshot->wheels()) {
-                        if (w.name != b.owner) continue;
-                        if (!w.airborne) hub = chassisInv.transformPoint(w.contactPoint + sdk::Vec3{0.f, 0.f, b.wheelRadius});
-                        steer = static_cast<float>(w.steerAngleRad);
-                        spin = static_cast<float>(w.spinAngleRad);
-                        break;
+                const sdk::WheelSample* sample = nullptr;
+                if (input.chassis != nullptr) {
+                    if (input.wheelsByIndex) {
+                        if (b.wheelIndex < input.wheels.size()) sample = &input.wheels[b.wheelIndex];
+                    } else {
+                        for (const auto& w : input.wheels)
+                            if (w.name == b.owner) {
+                                sample = &w;
+                                break;
+                            }
                     }
+                }
+                if (sample != nullptr) {
+                    if (!sample->airborne) hub = chassisInv.transformPoint(sample->contactPoint + sdk::Vec3{0.f, 0.f, b.wheelRadius});
+                    steer = static_cast<float>(sample->steerAngleRad);
+                    spin = static_cast<float>(sample->spinAngleRad);
                 }
                 next.position = hub;
                 // Cylinder axis (local Z) -> chassis +Y, steered about chassis Z, spun about its own axle.
@@ -152,7 +175,7 @@ bool RobotRig::update(const sdk::ISimSnapshot* snapshot) {
             }
             case Binding::Kind::Mechanism: {
                 // All of a mechanism's shapes move together with its first (moving) link; without one they stay on the root.
-                if (const sdk::MechanismState* st = findState(snapshot, b.owner); st != nullptr && !st->links.empty())
+                if (const sdk::MechanismState* st = findState(input.mechanisms, b.owner); st != nullptr && !st->links.empty())
                     b.link = st->links.front().name;
                 const auto linkInChassis = sdk::resolveLinkPoseInChassis(*config_, b.owner, b.link, source);
                 next = (linkInChassis ? *linkInChassis : sdk::Pose3{}) * b.local;
@@ -176,6 +199,7 @@ struct ZoneBinding {
     std::string mechanism;
     std::string link = sdk::kRootLink;
     sdk::Pose3 local;
+    std::size_t zoneIndex = static_cast<std::size_t>(-1);
 };
 
 void collectPanelBindings(const sdk::RobotConfig& config, const std::vector<sdk::EditorPanelDescriptor>& panels,
@@ -210,10 +234,12 @@ void collectPanelBindings(const sdk::RobotConfig& config, const std::vector<sdk:
 
 void collectZoneBindings(const sdk::RobotConfig& config, const std::vector<sdk::ZoneKindInfo>& kinds,
                          std::vector<ZoneBinding>& out) {
-    for (const auto& zone : config.zones) {
+    for (std::size_t index = 0; index < config.zones.size(); ++index) {
+        const auto& zone = config.zones[index];
         const auto kind = std::find_if(kinds.begin(), kinds.end(), [&](const sdk::ZoneKindInfo& k) { return k.kind == zone.kind; });
         if (kind == kinds.end()) continue;
         ZoneBinding b;
+        b.zoneIndex = index;
         b.overlay.id = zone.id;
         b.overlay.label = zone.label.empty() ? zone.id : zone.label;
         b.overlay.color = kind->color;
@@ -260,7 +286,7 @@ std::vector<ZoneOverlay> resolveZoneOverlays(const sdk::RobotConfig& config,
                                              const sdk::ISimSnapshot* snapshot) {
     std::vector<ZoneBinding> bindings;
     collectPanelBindings(config, panels, bindings);
-    const sdk::LinkPoseSource source = linkSource(config, snapshot);
+    const sdk::LinkPoseSource source = linkSource(config, mechanismsOf(snapshot));
     std::vector<ZoneOverlay> out;
     out.reserve(bindings.size());
     for (auto& b : bindings) {
@@ -274,7 +300,7 @@ std::vector<ZoneOverlay> resolveRobotZones(const sdk::RobotConfig& config, const
                                            const sdk::ISimSnapshot* snapshot) {
     std::vector<ZoneBinding> bindings;
     collectZoneBindings(config, kinds, bindings);
-    const sdk::LinkPoseSource source = linkSource(config, snapshot);
+    const sdk::LinkPoseSource source = linkSource(config, mechanismsOf(snapshot));
     std::vector<ZoneOverlay> out;
     out.reserve(bindings.size());
     for (auto& b : bindings) {
@@ -303,6 +329,7 @@ void ZoneRig::setScene(std::shared_ptr<const sdk::RobotConfig> config, std::vect
         b.mechanism = zb.mechanism;
         b.link = zb.link;
         b.local = zb.local;
+        b.zoneIndex = zb.zoneIndex;
         b.firstPart = parts_.size();
         auto addPart = [&](sdk::Vec3 size) {
             ScenePart p;
@@ -332,10 +359,26 @@ void ZoneRig::setScene(std::shared_ptr<const sdk::RobotConfig> config, std::vect
     changed_.assign(parts_.size(), 1);
 }
 
+const sdk::ZoneState* ZoneRig::findZoneState(const Input& input, const Binding& binding, const std::string& id) {
+    if (input.byIndex) return binding.zoneIndex < input.zones.size() ? &input.zones[binding.zoneIndex] : nullptr;
+    for (const auto& z : input.zones)
+        if (z.id == id) return &z;
+    return nullptr;
+}
+
 bool ZoneRig::update(const sdk::ISimSnapshot* snapshot) {
+    Input input;
+    if (snapshot != nullptr) {
+        input.mechanisms = snapshot->mechanisms();
+        input.zones = snapshot->zones();
+    }
+    return update(input);
+}
+
+bool ZoneRig::update(const Input& input) {
     changed_.assign(parts_.size(), 0);
     if (!config_) return false;
-    const sdk::LinkPoseSource source = linkSource(*config_, snapshot);
+    const sdk::LinkPoseSource source = linkSource(*config_, input.mechanisms);
     bool any = false;
 
     for (std::size_t i = 0; i < overlays_.size(); ++i) {
@@ -348,8 +391,9 @@ bool ZoneRig::update(const sdk::ISimSnapshot* snapshot) {
             const auto resolved = sdk::resolveLinkPoseInChassis(*config_, b.mechanism, b.link, source);
             if (resolved) frame = *resolved;
         }
-        z.pose = frame * b.local;
-        z.active = z.tracksState && zoneActive(snapshot, z.id);
+        const sdk::ZoneState* state = z.tracksState ? findZoneState(input, b, z.id) : nullptr;
+        z.pose = input.reportedPoses && state != nullptr && state->poseInChassis ? *state->poseInChassis : frame * b.local;
+        z.active = state != nullptr && state->active;
 
         const float opacity = !z.tracksState ? 0.28f
                               : z.muzzle     ? (z.active ? kActiveMuzzleOpacity : kInactiveMuzzleOpacity)

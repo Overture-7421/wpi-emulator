@@ -39,7 +39,26 @@ RealRuntimeHost::RealRuntimeHost(host::Registries registries, RealRuntimeOptions
         connect(options_.hosting, &HostingService::kickRequested, this, [this](quint16 participant, const QString& reason) {
             if (session_) session_->kickParticipant(participant, reason.toStdString());
         });
+        connect(options_.hosting, &HostingService::statusChanged, this, &RealRuntimeHost::refreshRoster);
     }
+}
+
+// The remote participants of the hosting status, as the run view's contract describes them.
+void RealRuntimeHost::refreshRoster() {
+    MatchRoster next;
+    for (const host::HostingParticipant& p : options_.hosting->status()->roster) {
+        if (p.isHost) continue;
+        RemoteParticipant r;
+        r.id = p.id;
+        r.name = p.name;
+        r.station = p.station;
+        r.connected = p.connected;
+        r.appearance = p.appearance;
+        next.push_back(std::move(r));
+    }
+    if (next.empty() ? roster_ == nullptr : (roster_ != nullptr && *roster_ == next)) return;
+    roster_ = next.empty() ? nullptr : std::make_shared<const MatchRoster>(std::move(next));
+    emit matchRosterChanged();
 }
 
 RealRuntimeHost::~RealRuntimeHost() {
@@ -116,6 +135,7 @@ void RealRuntimeHost::setProject(const HostProject& project) {
     if (startSelection_.reconcile(config_.get(), sameProject)) emit startPositionChanged();
     if (session_ && !startSelection_.id().isEmpty()) session_->controller().setStartPlacement(resolveStartPlacement());
     scene_ = makeHostScene(project);
+    if (options_.hosting) options_.hosting->setPhaseHudKey(phaseHudKeyOf(scene_.hud));
     gamePluginId_.clear();
     if (game != nullptr) {
         gamePluginId_ = game->metadata().id;
