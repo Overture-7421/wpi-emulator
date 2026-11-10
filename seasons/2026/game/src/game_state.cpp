@@ -425,7 +425,11 @@ void Game2026State::stepHumanPlayers(sdk::SimContext& ctx, double dt) {
 
 void Game2026State::refreshPositions() {
     fuelPositions_.clear();
-    pool_.forEach([&](std::uint32_t, const sdk::Vec3& p) { fuelPositions_.push_back(p); });
+    fuelIds_.clear();
+    pool_.forEach([&](std::uint32_t id, const sdk::Vec3& p) {
+        fuelPositions_.push_back(p);
+        fuelIds_.push_back(pool_.entityId(id));
+    });
 }
 
 std::optional<std::string> Game2026State::gameSpecificMessage() const {
@@ -448,6 +452,7 @@ void Game2026State::publish(sdk::SnapshotBuilder& out) const {
     fuel.radiusM = dim::kFuelRadiusM;
     fuel.color = "#ffd000";
     fuel.positions = fuelPositions_;
+    fuel.ids = fuelIds_;
     out.addEntityGroup(std::move(fuel));
     for (const std::unique_ptr<FuelZoneRuntime>& zone : host_.zones)
         out.addZone({zone->id(), zone->active(), zone->poseInChassis()});

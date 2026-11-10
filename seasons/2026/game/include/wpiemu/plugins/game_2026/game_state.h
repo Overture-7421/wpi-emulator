@@ -171,6 +171,7 @@ private:
     std::vector<SensorHit> hits_;
     std::vector<std::uint32_t> scratchIds_;
     std::vector<sdk::Vec3> fuelPositions_;
+    std::vector<std::uint32_t> fuelIds_;   // parallel to fuelPositions_: FuelPool::entityId, the telemetry entity id
 };
 
 }  // namespace wpiemu::plugins::game_2026

@@ -57,6 +57,7 @@ std::uint32_t FuelPool::spawn(const sdk::Vec3& position, const SpawnOptions& opt
     Slot& slot = slots_[id - 1];
     slot.body = body;
     slot.shape = shape;
+    slot.entityId = nextEntityId_++;
     slot.alive = true;
     slot.ghost = ghost;
     slot.ghostUntilUs = options.ghostUntilUs;
@@ -79,6 +80,7 @@ void FuelPool::clear() {
     slots_.clear();
     freeList_.clear();
     alive_ = 0;
+    nextEntityId_ = 1;
 }
 
 void FuelPool::updateGhosts(sdk::SimTimeUs nowUs) {
