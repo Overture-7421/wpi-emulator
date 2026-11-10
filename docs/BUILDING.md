@@ -226,6 +226,11 @@ Vision also needs ntcore. For C++, use `samples\vision_robot\cpp` and set the la
 prerequisites were missing; a skip does not verify integration. Even a passing sample
 test covers only that project and setup, not every robot or physical hardware.
 
+The practice-match test hosts the swerve sample through a relay on loopback with scripted
+encrypted players (`ctest -R "^e2e[.]practice_match$"`); its phases, the impaired-network run
+and the checks only a person can do are in
+[Practice match validation](guides/practice-match-validation.md).
+
 For the pinned 2027 preview vendors, use a dual-season build and JDK 25:
 
 ```powershell

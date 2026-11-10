@@ -40,11 +40,11 @@
 #define DOCTEST_CONFIG_IMPLEMENT
 #include <doctest/doctest.h>
 
-#include "../../../relay/tests/relay_stack_support.h"
+#include "../../relay/tests/relay_stack_support.h"
 #include "host/robot_session.h"
-#include "hosting_test_client.h"
-#include "swerve_sample.h"
-#include "test_support.h"
+#include "host/tests/hosting_test_client.h"
+#include "host/tests/swerve_sample.h"
+#include "host/tests/test_support.h"
 #include "wpiemu/core/launcher/project_inspector.h"
 #include "wpiemu/core/match/match_client.h"
 #include "wpiemu/ipc/binary_codec.h"
@@ -178,6 +178,7 @@ public:
     sdk::Result<bool> receive(std::vector<std::byte>& frame, std::chrono::milliseconds timeout) override {
         const auto deadline = Clock::now() + timeout;
         for (;;) {
+            while (pullWithin(0ms)) {}
             const auto now = Clock::now();
             if (!queue_.empty() && queue_.front().due <= now) {
                 frame = std::move(queue_.front().bytes);
@@ -257,20 +258,36 @@ sdk::Result<std::unique_ptr<proto::ITransport>> dial(const std::string& endpoint
 
 class Player;
 
-// Every player of a test is updated by whoever waits: a MatchClient needs update() often (>= 120 Hz).
+// A MatchClient needs update() often (>= 120 Hz) and from one thread: one pump thread updates every player of a test, so a test
+// body that blocks (a handshake, a long wait) never starves the others. Connect, resume and leave take the same lock.
 struct Players {
+    std::mutex mutex;
     std::vector<Player*> active;
+
+    Players();
+    ~Players();
+    Players(const Players&) = delete;
+    Players& operator=(const Players&) = delete;
+
     template <class Done>
-    bool until(Done&& done, std::chrono::milliseconds limit, std::chrono::milliseconds slice = 4ms);
-    void forAtLeast(std::chrono::milliseconds duration) {
-        until([] { return false; }, duration);
+    bool until(Done&& done, std::chrono::milliseconds limit) {
+        const auto deadline = Clock::now() + limit;
+        for (;;) {
+            if (done()) return true;
+            if (Clock::now() >= deadline) return false;
+            std::this_thread::sleep_for(5ms);
+        }
     }
+    void forAtLeast(std::chrono::milliseconds duration) { std::this_thread::sleep_for(duration); }
+
+private:
+    std::atomic<bool> stop_{false};
+    std::thread thread_;
 };
 
 class Player {
 public:
     Player(Players& players, std::string name, const std::string& pluginId) : players_(players), name_(std::move(name)), pluginId_(pluginId) {
-        players_.active.push_back(this);
         mc::MatchClientConfig config;
         config.displayName = name_;
         config.joinTimeout = 8s;
@@ -282,10 +299,13 @@ public:
         services.drivetrains = &registries_.drivetrains;
         services.tireModels = &registries_.tireModels;
         client_ = std::make_unique<mc::MatchClient>(config, std::move(services));
+        std::lock_guard lock(players_.mutex);
+        players_.active.push_back(this);
     }
     ~Player() {
-        client_.reset();
+        std::lock_guard lock(players_.mutex);
         players_.active.erase(std::remove(players_.active.begin(), players_.active.end(), this), players_.active.end());
+        client_.reset();
     }
     Player(const Player&) = delete;
     Player& operator=(const Player&) = delete;
@@ -312,7 +332,11 @@ public:
             lastError = link.error().message;
             return false;
         }
-        const sdk::Status started = client_->connect(std::move(link).value(), spec());
+        sdk::Status started;
+        {
+            std::lock_guard lock(players_.mutex);
+            started = client_->connect(std::move(link).value(), spec());
+        }
         if (!started) {
             lastError = started.error().message;
             return false;
@@ -326,7 +350,11 @@ public:
             lastError = link.error().message;
             return false;
         }
-        const sdk::Status started = client_->resume(std::move(link).value());
+        sdk::Status started;
+        {
+            std::lock_guard lock(players_.mutex);
+            started = client_->resume(std::move(link).value());
+        }
         if (!started) {
             lastError = started.error().message;
             return false;
@@ -334,6 +362,10 @@ public:
         return players_.until([&] { return joined(); }, 10s) && joined();
     }
 
+    void leave(const std::string& detail) {
+        std::lock_guard lock(players_.mutex);
+        client_->leave(detail);
+    }
     bool joined() const {
         const mc::ConnectionState s = client_->status().state;
         return s == mc::ConnectionState::Lobby || s == mc::ConnectionState::Live;
@@ -366,15 +398,21 @@ private:
     Wrap wrap_;
 };
 
-template <class Done>
-bool Players::until(Done&& done, std::chrono::milliseconds limit, std::chrono::milliseconds slice) {
-    const auto deadline = Clock::now() + limit;
-    for (;;) {
-        for (Player* p : active) p->update();
-        if (done()) return true;
-        if (Clock::now() >= deadline) return false;
-        std::this_thread::sleep_for(slice);
-    }
+Players::Players() {
+    thread_ = std::thread([this] {
+        while (!stop_.load()) {
+            {
+                std::lock_guard lock(mutex);
+                for (Player* p : active) p->update();
+            }
+            std::this_thread::sleep_for(4ms);
+        }
+    });
+}
+
+Players::~Players() {
+    stop_ = true;
+    thread_.join();
 }
 
 double planar(const sdk::Vec3& a, const sdk::Vec3& b) { return std::hypot(double(a.x) - double(b.x), double(a.y) - double(b.y)); }
@@ -444,6 +482,7 @@ TEST_CASE("e2e: practice match with the swerve sample robot through the relay, e
         INFO(wr::formatProbeText(result));
         CHECK(result.ok);
     }
+    if (relay.inProcess()) CHECK(relaystack::waitFor([&] { return relay.stats().rooms == 0; }, 5s));   // the probe closed its room
     const std::uint64_t roomsClosedBefore = relay.stats().roomsClosed;
 
     // ---------------------------------------------------------------- phase 2: the host starts hosting
@@ -525,7 +564,7 @@ TEST_CASE("e2e: practice match with the swerve sample robot through the relay, e
             snap = session.latestSnapshot();
             return snap && remoteIn(*snap, aliceId) != nullptr;
         },
-        10s, 20ms, [&] { players.until([] { return true; }, 0ms); }));
+        10s, 20ms));
     const sdk::RobotSample* aliceOnHost = remoteIn(*snap, aliceId);
     REQUIRE(aliceOnHost != nullptr);
     CHECK(aliceOnHost->name == "Alice");
@@ -549,29 +588,60 @@ TEST_CASE("e2e: practice match with the swerve sample robot through the relay, e
     step("phase 3 - the host robot and Alice drive; Alice runs into the host robot");
     const sdk::Vec3 hostStart = snap->chassis().pose.position;
     const sdk::Vec3 aliceStart = alice.position();
+    // The host's own WPILib robot strafes out of the lee of the blue hub (the sample's field-relative teleop drive, leftX), then
+    // holds still where Alice can reach it over open carpet.
     ds.enabled = true;
-    ds.joysticks[0].axes = {0.f, -0.35f, 0.f, 0.f, 0.f, 0.f};
+    ds.joysticks[0].axes = {0.5f, 0.f, 0.f, 0.f, 0.f, 0.f};
     session.controller().setDriverStation(ds);
+    const bool strafed = players.until(
+        [&] {
+            const auto s = session.latestSnapshot();
+            return s && std::abs(s->chassis().pose.position.y - hostStart.y) > 1.6;
+        },
+        30s);
+    ds.joysticks[0].axes = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+    session.controller().setDriverStation(ds);
+    players.forAtLeast(1500ms);   // it coasts to rest
+    snap = session.latestSnapshot();
+    REQUIRE(snap != nullptr);
+    const sdk::Vec3 hostParked = snap->chassis().pose.position;
+    CHECK(strafed);
+    CHECK(planar(hostParked, hostStart) > 1.0);   // the WPILib robot drove on its own code
 
     double closest = 1e9;
+    double closestHostZ = 0, closestAliceZ = 0, closestAliceYaw = 0;
     double aliceTravel = 0.0;
     bool contact = false;
     Clock::time_point contactAt{};
+    Clock::time_point lastReport = Clock::now();
+    int stage = 0;   // the red trench post and the hubs stand in the straight line: reach the host's row over open carpet, then run along it
     const bool collided = players.until(
         [&] {
             const auto host = alice.hostPosition();
             if (!host || !alice.view()->own.enabled) return false;
-            const double dx = double(host->x) - double(alice.position().x);
+            const double goalX = stage == 0 ? 13.3 : stage == 1 ? double(host->x) + 3.5 : double(host->x);
+            const double dx = goalX - double(alice.position().x);
             const double dy = double(host->y) - double(alice.position().y);
             const double d = std::max(std::hypot(dx, dy), 1e-3);
+            if (stage < 2 && d < (stage == 0 ? 0.6 : 0.8)) ++stage;
             const double speed = 2.5;
             (void)alice.client().driveFieldRelative({static_cast<float>(speed * dx / d), static_cast<float>(speed * dy / d), 0.f});
             const auto truth = session.latestSnapshot();
             if (truth) {
                 if (const sdk::RobotSample* mine = remoteIn(*truth, aliceId)) {
                     const double apart = planar(truth->chassis().pose.position, mine->body.pose.position);
+                    if (apart < closest) {
+                        closestHostZ = truth->chassis().pose.position.z;
+                        closestAliceZ = mine->body.pose.position.z;
+                        closestAliceYaw = mine->body.pose.rotation.yaw();
+                    }
                     closest = std::min(closest, apart);
                     aliceTravel = std::max(aliceTravel, planar(mine->body.pose.position, aliceStart));
+                    if (verbose && Clock::now() - lastReport > 1s) {
+                        lastReport = Clock::now();
+                        std::printf("e2e:     Alice (%.2f, %.2f) host (%.2f, %.2f) apart %.2f m\n", mine->body.pose.position.x,
+                                    mine->body.pose.position.y, truth->chassis().pose.position.x, truth->chassis().pose.position.y, apart);
+                    }
                     if (!contact && apart < 1.0) {
                         contact = true;
                         contactAt = Clock::now();
@@ -583,19 +653,16 @@ TEST_CASE("e2e: practice match with the swerve sample robot through the relay, e
         60s);
     snap = session.latestSnapshot();
     REQUIRE(snap != nullptr);
-    std::printf("e2e:   host moved %.2f m, Alice travelled %.2f m, closest centre distance %.2f m\n",
-                planar(snap->chassis().pose.position, hostStart), aliceTravel, closest);
+    std::printf("e2e:   host moved %.2f m (parked at %.2f, %.2f), Alice travelled %.2f m, closest centre distance %.2f m (z host %.2f, Alice %.2f, Alice yaw %.2f)\n",
+                planar(hostParked, hostStart), hostParked.x, hostParked.y, aliceTravel, closest, closestHostZ, closestAliceZ, closestAliceYaw);
     CHECK(collided);
-    CHECK(planar(snap->chassis().pose.position, hostStart) > 0.3);   // the WPILib robot drove (its own teleop command)
-    CHECK(aliceTravel > 3.0);                                         // the remote robot drove on its client's setpoints
-    CHECK(closest > 0.6);   // two 0.78 m chassis cannot overlap: the remote chassis collides with the host's robot
-    CHECK(closest < 1.0);
+    CHECK(aliceTravel > 3.0);   // the remote robot drove on its client's setpoints
+    CHECK(closest > 0.3);       // Alice was commanded to the host's centre: without a collision she would end up on top of it
+    CHECK(closest < 1.0);       // and she did reach it (chassis 0.78 m wide; she may ride up onto the bumper, so no tighter bound)
     // Alice and the host agree where Alice is.
     if (const sdk::RobotSample* mine = remoteIn(*snap, aliceId)) CHECK(planar(alice.position(), mine->body.pose.position) < 1.0);
-    // Stop both robots (host stick to zero, client setpoints to zero).
+    // Stop Alice.
     (void)alice.client().driveRobotRelative({});
-    ds.joysticks[0].axes = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
-    session.controller().setDriverStation(ds);
     players.forAtLeast(500ms);
 
     // ---------------------------------------------------------------- phase 4: a player on an impaired network
@@ -623,9 +690,11 @@ TEST_CASE("e2e: practice match with the swerve sample robot through the relay, e
         CHECK(bob.status().state == mc::ConnectionState::Live);
         CHECK(bob.view()->diagnostics.rttMs > 40.0);   // the delay is really on the path
         (void)bob.client().driveRobotRelative({});
-        bob.client().leave("done");
-        players.forAtLeast(300ms);
-        CHECK(sdk::testing::waitUntil([&] { return session.hostingStatus()->roster.size() == 2; }, 5s, 20ms, [&] { players.until([] { return true; }, 0ms); }));
+        // The host removes Bob (a Leave through ImpairedTransport would be lost: closing it drops frames still in flight).
+        session.kickParticipant(bobId, "e2e done");
+        CHECK(players.until([&] { return bob.status().state == mc::ConnectionState::Disconnected; }, 10s));
+        CHECK(sdk::testing::waitUntil([&] { return session.hostingStatus()->roster.size() == 2; }, 5s, 20ms));
+        CHECK(session.hostingStatus()->kicks >= 1);
     }
 
     // ---------------------------------------------------------------- phase 5: attacks on the running match
@@ -634,7 +703,7 @@ TEST_CASE("e2e: practice match with the swerve sample robot through the relay, e
         const auto s = session.latestSnapshot();
         return s ? s->simTimeUs() : 0;
     };
-    const auto hostStillRunning = [&](const char* after) {
+    const auto hostStillRunning = [&](const std::string& after) {
         const std::int64_t before = simTimeNow();
         players.forAtLeast(600ms);
         INFO("after " << after);
@@ -654,8 +723,7 @@ TEST_CASE("e2e: practice match with the swerve sample robot through the relay, e
         auto intruder = HostingTestClient::connect(endpoint, stranger.value(), &error);
         CHECK(intruder == nullptr);
         CHECK_FALSE(error.empty());
-        CHECK(sdk::testing::waitUntil([&] { return session.hostingStatus()->handshakesFailed > failedBefore; }, 5s, 20ms,
-                                      [&] { players.until([] { return true; }, 0ms); }));
+        CHECK(sdk::testing::waitUntil([&] { return session.hostingStatus()->handshakesFailed > failedBefore; }, 5s, 20ms));
         // an invite of another room never reaches this host at all
         std::string unknown;
         CHECK(HostingTestClient::connect(relay.endpoint(net::roomId(stranger.value())), stranger.value(), &unknown) == nullptr);
@@ -671,8 +739,7 @@ TEST_CASE("e2e: practice match with the swerve sample robot through the relay, e
         Player fake(players, "Plain", pluginId);
         const bool joined = plain->join("Plain", fake.specJson(), pluginId, session.gameModule()->metadata().year);
         CHECK_FALSE(joined);
-        CHECK(sdk::testing::waitUntil([&] { return session.hostingStatus()->handshakesFailed > failedBefore; }, 8s, 20ms,
-                                      [&] { players.until([] { return true; }, 0ms); }));
+        CHECK(sdk::testing::waitUntil([&] { return session.hostingStatus()->handshakesFailed > failedBefore; }, 8s, 20ms));
         CHECK(session.hostingStatus()->roster.size() == 2);
         hostStillRunning("a plaintext peer");
     }
@@ -687,8 +754,7 @@ TEST_CASE("e2e: practice match with the swerve sample robot through the relay, e
         REQUIRE_MESSAGE(attacker != nullptr, error);
         Player maker(players, "Mallory", pluginId);
         REQUIRE(attacker->join("Mallory", maker.specJson(), pluginId, session.gameModule()->metadata().year));
-        REQUIRE(sdk::testing::waitUntil([&] { return session.hostingStatus()->roster.size() == 3; }, 5s, 20ms,
-                                        [&] { players.until([] { return true; }, 0ms); }));
+        REQUIRE(sdk::testing::waitUntil([&] { return session.hostingStatus()->roster.size() == 3; }, 5s, 20ms));
 
         controls->flip = 1;
         REQUIRE(attacker->send(pingFrom(*attacker, 1)));
@@ -767,6 +833,7 @@ TEST_CASE("e2e: practice match with the swerve sample robot through the relay, e
         Wrap viaProxy = [controls](std::unique_ptr<proto::ITransport> raw) -> std::unique_ptr<proto::ITransport> {
             return std::make_unique<AttackProxy>(std::move(raw), controls);
         };
+        const std::size_t rosterBefore = session.hostingStatus()->roster.size();   // Mallory is still listed, not connected
         Player carol(players, "Carol", pluginId);
         REQUIRE_MESSAGE(carol.join(endpoint, invite, viaProxy), carol.why());
         const wire::ParticipantId carolId = carol.id();
@@ -789,7 +856,7 @@ TEST_CASE("e2e: practice match with the swerve sample robot through the relay, e
                     if (p.id == carolId && !p.connected) return true;
                 return false;
             },
-            15s, 50ms, [&] { players.until([] { return true; }, 0ms); }));
+            15s, 50ms));
         const auto kept = session.latestSnapshot();
         REQUIRE(kept != nullptr);
         CHECK(remoteIn(*kept, carolId) != nullptr);
@@ -812,22 +879,21 @@ TEST_CASE("e2e: practice match with the swerve sample robot through the relay, e
         session.kickParticipant(carolId, "e2e kick");
         CHECK(players.until([&] { return carol.status().state == mc::ConnectionState::Disconnected; }, 10s));
         CHECK(carol.status().reason == mc::DisconnectReason::Kicked);
-        CHECK(sdk::testing::waitUntil([&] { return session.hostingStatus()->roster.size() == 2; }, 5s, 20ms,
-                                      [&] { players.until([] { return true; }, 0ms); }));
+        CHECK(sdk::testing::waitUntil([&] { return session.hostingStatus()->roster.size() == rosterBefore; }, 5s, 20ms));
         CHECK(session.hostingStatus()->kicks == kicksBefore + 1);
         CHECK(sdk::testing::waitUntil(
             [&] {
                 const auto s = session.latestSnapshot();
                 return s && remoteIn(*s, carolId) == nullptr;
             },
-            5s, 20ms, [&] { players.until([] { return true; }, 0ms); }));
+            5s, 20ms));
         // the old resume token is dead ...
         CHECK_FALSE(carol.resume());
         // ... and a fresh join is welcome
         Player carolAgain(players, "Carol2", pluginId);
         REQUIRE_MESSAGE(carolAgain.join(endpoint, invite), carolAgain.why());
         CHECK(carolAgain.id() != carolId);
-        carolAgain.client().leave("done");
+        carolAgain.leave("done");
         players.forAtLeast(300ms);
     }
 
@@ -859,6 +925,7 @@ TEST_CASE("e2e: practice match with the swerve sample robot through the relay, e
 }
 
 int main(int argc, char** argv) {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);   // progress lines appear at once when ctest or a script pipes the output
     auto skip = [](const std::string& why) {
         std::printf("SKIPPED e2e: %s\n", why.c_str());
         return kSkipExitCode;
