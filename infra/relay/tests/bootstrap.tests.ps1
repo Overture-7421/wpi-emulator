@@ -236,6 +236,10 @@ $script:FakeGh = {
     if ($cmd -match $script:RawGhMutation) { $g.Raw.Add($cmd) }
     if ($cmd -match '^auth status') { if ($g.Authed) { return New-Ok 'Logged in' } else { return New-Fail 'You are not logged into any GitHub hosts. To log in, run: gh auth login' } }
     if ($cmd -match '^api users/(\S+) --jq') { return New-Ok '4242' }
+    if ($cmd -match '^api repos/[^/]+/[^/]+ --jq') {
+        if ($g.ContainsKey('Repo') -and $g.Repo) { return New-Ok (ConvertTo-Js $g.Repo) }
+        return New-Fail 'gh: Not Found (HTTP 404)'
+    }
     if ($cmd -match '^api -X PUT repos/[^/]+/[^/]+/environments/(\S+)') {
         $name = $Matches[1]
         $body = if ($GhArgs -contains '--input') { Read-JsonArg (Get-Opt $GhArgs '--input') } else { $null }
@@ -745,6 +749,96 @@ Invoke-Test 'explicit -DnsSuffix and -Repository/-Environment parameters flow in
     $subjects = @($script:World.Creds[$DevClient] | ForEach-Object { $_.subject }) + @($script:World.Creds[$ProdClient] | ForEach-Object { $_.subject })
     Assert-Equal ($subjects -join ',') 'repo:acme/robot:environment:d,repo:acme/robot:environment:p' 'subjects follow the parameters'
     Assert-Equal ($subjects -join ',') 'repo:acme/robot:environment:d,repo:acme/robot:environment:p' 'subjects follow the parameters'
+}
+
+$ImmutableDev = 'repo:Overture-7421@62272836/wpi-emulator@1421809256:environment:relay-dev'
+$ImmutableProd = 'repo:Overture-7421@62272836/wpi-emulator@1421809256:environment:relay-prod'
+$ImmutablePr = 'repo:Overture-7421@62272836/wpi-emulator@1421809256:pull_request'
+
+function Get-CredentialSubjects { @($DevClient, $ProdClient, $PrClient | ForEach-Object { @($script:World.Creds[$_]) | ForEach-Object { $_.subject } }) }
+function Get-SubjectPrecondition { param($R) @($R.Run.Preconditions | Where-Object { $_.Id -eq 'oidc-subject' }) }
+
+Invoke-Test 'a repository created on or after 2026-07-15 gets the immutable OIDC subjects GitHub emits' {
+    New-World
+    $script:World.Gh.Repo = @{ ownerId = 62272836; id = 1421809256; createdAt = '2026-10-16T07:32:04Z' }
+    $r = Invoke-Run @{ Apply = $true }
+    Assert-Equal $r.ExitCode 0 'exit code 0'
+    Assert-Equal (Get-CredentialSubjects) @($ImmutableDev, $ImmutableProd, $ImmutablePr) 'immutable subjects on all three apps'
+    $p = Get-SubjectPrecondition $r
+    Assert-Equal $p.Count 1 'one oidc-subject precondition'
+    Assert-Equal $p[0].Status 'PASS' 'reported as PASS'
+    Assert-True ($p[0].Message -like '*repo:Overture-7421@62272836/wpi-emulator@1421809256*') 'the message names the subject prefix'
+    Assert-Equal $script:World.Gh.Raw.Count 0 'reading the repository mutates nothing on GitHub'
+}
+
+Invoke-Test 'a repository created before 2026-07-15 keeps name-based subjects until it opts in' {
+    New-World
+    $script:World.Gh.Repo = @{ ownerId = 62272836; id = 1421809256; createdAt = '2025-03-01T00:00:00Z' }
+    $r = Invoke-Run @{ Apply = $true }
+    Assert-Equal (Get-CredentialSubjects) @('repo:Overture-7421/wpi-emulator:environment:relay-dev', 'repo:Overture-7421/wpi-emulator:environment:relay-prod', 'repo:Overture-7421/wpi-emulator:pull_request') 'name-based subjects'
+    Assert-Equal (Get-SubjectPrecondition $r)[0].Status 'PASS' 'a known old repository is not a warning'
+}
+
+Invoke-Test '-SubjectFormat Immutable forces the ids form for an old repository' {
+    New-World
+    $script:World.Gh.Repo = @{ ownerId = 62272836; id = 1421809256; createdAt = '2025-03-01T00:00:00Z' }
+    $r = Invoke-Run @{ Apply = $true; SubjectFormat = 'Immutable' }
+    Assert-Equal (Get-CredentialSubjects) @($ImmutableDev, $ImmutableProd, $ImmutablePr) 'immutable subjects'
+}
+
+Invoke-Test '-SubjectFormat Named ignores what gh says and never asks' {
+    New-World
+    $script:World.Gh.Repo = @{ ownerId = 62272836; id = 1421809256; createdAt = '2026-10-16T07:32:04Z' }
+    $r = Invoke-Run @{ Apply = $true; SubjectFormat = 'Named' }
+    Assert-Equal (Get-CredentialSubjects)[0] 'repo:Overture-7421/wpi-emulator:environment:relay-dev' 'name-based subject'
+    Assert-Equal @($script:World.Gh.Calls | Where-Object { $_ -match '^api repos/[^/]+/[^/]+ --jq' }).Count 0 'gh was not asked for the repository'
+}
+
+Invoke-Test '-OwnerId and -RepositoryId give immutable subjects without asking gh' {
+    New-World
+    $r = Invoke-Run @{ Apply = $true; OwnerId = '62272836'; RepositoryId = '1421809256' }
+    Assert-Equal $r.ExitCode 0 'exit code 0'
+    Assert-Equal (Get-CredentialSubjects) @($ImmutableDev, $ImmutableProd, $ImmutablePr) 'immutable subjects from the given ids'
+    Assert-Equal @($script:World.Gh.Calls | Where-Object { $_ -match '^api repos/[^/]+/[^/]+ --jq' }).Count 0 'gh was not asked for the repository'
+}
+
+Invoke-Test 'Auto falls back to name-based subjects with a warning when gh cannot read the repository' {
+    New-World
+    $r = Invoke-Run @{ Apply = $true }
+    Assert-Equal $r.ExitCode 0 'still exits 0'
+    Assert-Equal (Get-CredentialSubjects)[0] 'repo:Overture-7421/wpi-emulator:environment:relay-dev' 'name-based subject'
+    $p = Get-SubjectPrecondition $r
+    Assert-Equal $p[0].Status 'WARN' 'a WARN precondition'
+    Assert-True ($p[0].Message -like '*AADSTS700213*-SubjectFormat Immutable*') 'the warning says how to recover'
+}
+
+Invoke-Test '-SubjectFormat Immutable without readable ids is a precondition failure (exit 2, nothing changed)' {
+    New-World
+    $r = Invoke-Run @{ Apply = $true; SubjectFormat = 'Immutable' }
+    Assert-Equal $r.ExitCode 2 'exit code 2'
+    Assert-Equal (Get-SubjectPrecondition $r)[0].Status 'FAIL' 'oidc-subject FAIL'
+    Assert-Equal $r.Executed.Count 0 'no mutating call'
+    Assert-Equal @($script:World.Raw).Count 0 'raw az saw no mutation'
+}
+
+Invoke-Test '-OwnerId without -RepositoryId is a usage error' {
+    New-World
+    $r = Invoke-Run @{ OwnerId = '62272836' }
+    Assert-Equal $r.ExitCode 2 'exit code 2'
+    Assert-Equal $script:World.Calls.Count 0 'usage errors never reach az'
+}
+
+Invoke-Test 're-running with immutable subjects updates the existing name-based credentials in place' {
+    New-World
+    $null = Invoke-Run @{ Apply = $true; SubjectFormat = 'Named' }
+    Assert-Equal (Get-CredentialSubjects)[0] 'repo:Overture-7421/wpi-emulator:environment:relay-dev' 'first run left name-based credentials'
+    $script:World.Gh.Repo = @{ ownerId = 62272836; id = 1421809256; createdAt = '2026-10-16T07:32:04Z' }
+    $r = Invoke-Run @{ Apply = $true; Step = @('FederatedCredentials') }
+    Assert-Equal $r.ExitCode 0 'exit code 0'
+    Assert-Equal @($r.Executed | Where-Object { $_ -match '^ad app federated-credential update' }).Count 3 'three credentials updated'
+    Assert-Equal @($r.Executed | Where-Object { $_ -match '^ad app federated-credential create' }).Count 0 'none created again'
+    Assert-Equal (Get-CredentialSubjects) @($ImmutableDev, $ImmutableProd, $ImmutablePr) 'every credential now holds the immutable subject'
+    Assert-Equal @($script:World.Creds[$DevClient]).Count 1 'still one credential per app'
 }
 
 Invoke-Test '-ConfigureGitHub refuses when gh is not authenticated (exit 2, nothing changed)' {

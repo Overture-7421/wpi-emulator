@@ -25,6 +25,10 @@ Steps (-Step, default All, run in this order; a failed step makes its dependents
                           deploy-dev:  repo:<owner>/<repo>:environment:relay-dev
                           deploy-prod: repo:<owner>/<repo>:environment:relay-prod
                           what-if:     repo:<owner>/<repo>:pull_request
+                        GitHub emits the IMMUTABLE form repo:<owner>@<ownerId>/<repo>@<repoId>:... for repositories created
+                        on or after 2026-07-15 (and older ones that opted in), so the subjects above are built with the
+                        ids in that case (see -SubjectFormat). A credential whose subject differs from the token's fails
+                        the login with AADSTS700213.
   RoleAssignments       Least-privilege Azure roles, only at resource-group scope (never subscription scope):
                           deploy-dev SP, DEV RG only, and deploy-prod SP, PROD RG only: Contributor (deploys ACR,
                             identity, Log Analytics, ACI, budget), plus Role Based Access Control Administrator WITH AN
@@ -103,6 +107,18 @@ Region of the resource groups. Default southcentralus.
 
 .PARAMETER Repository
 GitHub repository as owner/name. Default Overture-7421/wpi-emulator.
+
+.PARAMETER SubjectFormat
+Form of the GitHub OIDC subject the federated credentials trust. Auto (default) reads the owner id, repository id and
+creation date with `gh api repos/<repository>` and uses Immutable for repositories created on or after 2026-07-15, else
+Named; when gh cannot read them it falls back to Named with a warning. Immutable is repo:<owner>@<ownerId>/<repo>@<repoId>,
+Named is repo:<owner>/<repo>. Immutable needs the ids from gh or from -OwnerId and -RepositoryId.
+
+.PARAMETER OwnerId
+Numeric GitHub id of the repository owner, for -SubjectFormat Immutable without gh. Give it together with -RepositoryId.
+
+.PARAMETER RepositoryId
+Numeric GitHub id of the repository, for -SubjectFormat Immutable without gh. Give it together with -OwnerId.
 
 .PARAMETER DevEnvironment
 GitHub environment name for dev. Default relay-dev.
@@ -192,6 +208,12 @@ param(
     [string]$Location,
     [ValidatePattern('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')]
     [string]$Repository,
+    [ValidateSet('Auto', 'Immutable', 'Named')]
+    [string]$SubjectFormat,
+    [ValidatePattern('^[0-9]+$')]
+    [string]$OwnerId,
+    [ValidatePattern('^[0-9]+$')]
+    [string]$RepositoryId,
     [ValidatePattern('^[A-Za-z0-9_. -]+$')]
     [string]$DevEnvironment,
     [ValidatePattern('^[A-Za-z0-9_. -]+$')]
@@ -334,6 +356,7 @@ function Resolve-BootstrapOptions {
         Apply = $false; Force = $false; Remove = $false; RemoveResourceGroups = $false
         Step = @('All'); SubscriptionId = ''; Location = 'southcentralus'
         Repository = 'Overture-7421/wpi-emulator'
+        SubjectFormat = 'Auto'; OwnerId = ''; RepositoryId = ''
         DevEnvironment = 'relay-dev'; ProdEnvironment = 'relay-prod'
         DevResourceGroup = 'rg-wpiemu-relay-dev'; ProdResourceGroup = 'rg-wpiemu-relay-prod'
         AppNamePrefix = 'wpiemu-relay-deploy'; PrAppName = 'wpiemu-relay-whatif'
@@ -357,6 +380,7 @@ function Resolve-BootstrapOptions {
     if ($o.Remove -and $o.ConfigureGitHub) { throw [System.ArgumentException]::new('-ConfigureGitHub cannot be combined with -Remove (delete GitHub environments and variables in the UI).') }
     if ($o.DevResourceGroup -eq $o.ProdResourceGroup) { throw [System.ArgumentException]::new('Dev and prod must use different resource groups.') }
     if ($o.DevEnvironment -eq $o.ProdEnvironment) { throw [System.ArgumentException]::new('Dev and prod must use different GitHub environments.') }
+    if ([bool]$o.OwnerId -ne [bool]$o.RepositoryId) { throw [System.ArgumentException]::new('-OwnerId and -RepositoryId go together.') }
     foreach ($id in $o.DelegatedRoleIds) {
         if ($id -notmatch '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$') { throw [System.ArgumentException]::new("DelegatedRoleIds entry '$id' is not a GUID.") }
     }
@@ -531,20 +555,21 @@ function Get-ResourceGroupSpecs {
 
 function Get-AppConfigs {
     $o = $script:Run.Options
+    $prefix = if ($script:Run.SubjectPrefix) { $script:Run.SubjectPrefix } else { "repo:$($o.Repository)" }
     $apps = @(
         [pscustomobject]@{
             Key = 'dev'; DisplayName = "$($o.AppNamePrefix)-dev"
-            Credentials = @([pscustomobject]@{ Name = "github-$($o.DevEnvironment)"; Subject = "repo:$($o.Repository):environment:$($o.DevEnvironment)" })
+            Credentials = @([pscustomobject]@{ Name = "github-$($o.DevEnvironment)"; Subject = "${prefix}:environment:$($o.DevEnvironment)" })
         },
         [pscustomobject]@{
             Key = 'prod'; DisplayName = "$($o.AppNamePrefix)-prod"
-            Credentials = @([pscustomobject]@{ Name = "github-$($o.ProdEnvironment)"; Subject = "repo:$($o.Repository):environment:$($o.ProdEnvironment)" })
+            Credentials = @([pscustomobject]@{ Name = "github-$($o.ProdEnvironment)"; Subject = "${prefix}:environment:$($o.ProdEnvironment)" })
         }
     )
     if (-not $o.SkipPrIdentity) {
         $apps += [pscustomobject]@{
             Key = 'pr'; DisplayName = $o.PrAppName
-            Credentials = @([pscustomobject]@{ Name = 'github-pull-request'; Subject = "repo:$($o.Repository):pull_request" })
+            Credentials = @([pscustomobject]@{ Name = 'github-pull-request'; Subject = "${prefix}:pull_request" })
         }
     }
     $apps
@@ -1196,6 +1221,65 @@ function Test-BootstrapPermissions {
         $ok
     }
 
+# GitHub puts the owner and repository ids into the OIDC subject (repo:<owner>@<ownerId>/<repo>@<repoId>:...) for repositories
+# created on or after this date, and for older ones that opted in. A federated credential must match the subject GitHub emits.
+$script:ImmutableSubjectsSince = [datetime]::new(2026, 7, 15, 0, 0, 0, [System.DateTimeKind]::Utc)
+
+# Sets $script:Run.SubjectPrefix (the part of every credential subject before ":environment:..." or ":pull_request"). False
+# (with a FAIL precondition) only when Immutable was demanded and the ids are unavailable.
+function Resolve-OidcSubjectPrefix {
+    $o = $script:Run.Options
+    $named = "repo:$($o.Repository)"
+    $script:Run.SubjectPrefix = $named
+    if ($o.SubjectFormat -eq 'Named') {
+        Add-Precondition 'oidc-subject' 'PASS' "Name-based OIDC subjects ($named), as requested."
+        return $true
+    }
+
+    $ownerId = [string]$o.OwnerId
+    $repoId = [string]$o.RepositoryId
+    $createdAt = $null
+    $why = ''
+    if (-not $ownerId) {
+        $canGh = ($null -ne $script:GhRunner) -or [bool](Get-Command gh -ErrorAction SilentlyContinue)
+        if (-not $canGh) { $why = 'the GitHub CLI (gh) is not on PATH' }
+        else {
+            $r = Read-Gh @('api', "repos/$($o.Repository)", '--jq', '{ownerId: .owner.id, id: .id, createdAt: .created_at}')
+            if ($r.Ok -and $null -ne $r.Data) {
+                $ownerId = [string](Get-Prop $r.Data 'ownerId' '')
+                $repoId = [string](Get-Prop $r.Data 'id' '')
+                $created = Get-Prop $r.Data 'createdAt' $null
+                if ($created -is [datetime]) { $createdAt = $created.ToUniversalTime() }
+                elseif ($created) {
+                    $parsed = [datetime]::MinValue
+                    if ([datetime]::TryParse([string]$created, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]'AssumeUniversal,AdjustToUniversal', [ref]$parsed)) { $createdAt = $parsed }
+                }
+            }
+            else { $why = "gh api repos/$($o.Repository) failed: $($r.Error)" }
+        }
+    }
+    $haveIds = $ownerId -match '^[0-9]+$' -and $repoId -match '^[0-9]+$'
+    if (-not $haveIds -and -not $why) { $why = "gh returned no numeric owner and repository id for $($o.Repository)" }
+
+    $immutable = $o.SubjectFormat -eq 'Immutable' -or [bool]$o.OwnerId -or ($haveIds -and $null -ne $createdAt -and $createdAt -ge $script:ImmutableSubjectsSince)
+    if ($immutable -and -not $haveIds) {
+        Add-Precondition 'oidc-subject' 'FAIL' "Immutable OIDC subjects need the owner and repository ids, which could not be read ($why). Pass -OwnerId and -RepositoryId (gh api repos/$($o.Repository) --jq '.owner.id, .id'), or -SubjectFormat Named."
+        return $false
+    }
+    if ($immutable) {
+        $parts = $o.Repository -split '/', 2
+        $script:Run.SubjectPrefix = "repo:$($parts[0])@$ownerId/$($parts[1])@$repoId"
+        Add-Precondition 'oidc-subject' 'PASS' "Immutable OIDC subjects ($($script:Run.SubjectPrefix)), the form GitHub emits for repositories created on or after 2026-07-15."
+    }
+    elseif ($haveIds) {
+        Add-Precondition 'oidc-subject' 'PASS' "Name-based OIDC subjects ($named): the repository was created before 2026-07-15. If it opted in to immutable subjects, use -SubjectFormat Immutable."
+    }
+    else {
+        Add-Precondition 'oidc-subject' 'WARN' "Could not read the repository ids ($why), so the OIDC subjects are name-based ($named). If a workflow login fails with AADSTS700213 and a subject like repo:<owner>@<id>/<repo>@<id>:..., re-run with -SubjectFormat Immutable (and -OwnerId/-RepositoryId when gh is unavailable)."
+    }
+    $true
+}
+
 function Test-Preconditions {
     $o = $script:Run.Options
 
@@ -1243,6 +1327,7 @@ function Test-Preconditions {
     if (-not $ok) { return $false }
 
     if (-not $o.SkipPermissionCheck -and -not (Test-BootstrapPermissions $acct.Data)) { return $false }
+    if (-not (Resolve-OidcSubjectPrefix)) { return $false }
 
     if ($o.ConfigureGitHub) {
         $gh = Invoke-Tool -Tool gh -ToolArgs @('auth', 'status')
@@ -1282,7 +1367,7 @@ function Invoke-Bootstrap {
         Planned = [System.Collections.Generic.List[object]]::new()
         Executed = [System.Collections.Generic.List[object]]::new()
         Preconditions = [System.Collections.Generic.List[object]]::new()
-        Apps = @{}; ReviewerIds = @{}; Promotion = ''
+        Apps = @{}; ReviewerIds = @{}; Promotion = ''; SubjectPrefix = ''
         Failed = [System.Collections.Generic.HashSet[string]]::new()
         ExitCode = 0
     }
@@ -1389,7 +1474,7 @@ function Get-FinalReport {
         if (-not $o.ConfigureGitHub) { $next.Add('Configure GitHub with the commands below, or re-run with -ConfigureGitHub -ProdReviewers <login> -AlertEmail <email> (needs gh auth login).') }
         $promo = @($r.Items | Where-Object { $_.Step -eq 'GrantPromotion' -and $_.Status -eq 'Skipped' }).Count
         if ($promo -gt 0) { $next.Add('After the first dev infrastructure deployment creates the dev registry, run: pwsh infra/relay/bootstrap.ps1 -Step GrantPromotion -Apply') }
-        $next.Add('Federated credentials can take a minute to propagate: if the first workflow login fails with AADSTS70025/AADSTS700213, wait and re-run it.')
+        $next.Add('Federated credentials can take a minute to propagate: if the first workflow login fails with AADSTS70025/AADSTS700213, wait and re-run it. If it keeps failing, the message names the subject GitHub presented: it must equal a credential subject above (see -SubjectFormat).')
     }
     [pscustomobject]@{
         Mode           = if ($o.Apply) { 'Apply' } else { 'DryRun' }

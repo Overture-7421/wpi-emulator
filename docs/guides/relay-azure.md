@@ -121,7 +121,8 @@ Azure and GitHub, so a person runs them, never an agent or CI.
    `pwsh infra/relay/bootstrap.ps1 -Apply -ConfigureGitHub -ProdReviewers <login> -AlertEmail <address>`
    (after `gh auth login`). It creates both resource groups; **three** Entra app registrations with
    one GitHub OIDC federated credential each (`wpiemu-relay-deploy-dev` for `environment:relay-dev`,
-   `wpiemu-relay-deploy-prod` for `environment:relay-prod`, and `wpiemu-relay-whatif` for pull requests);
+   `wpiemu-relay-deploy-prod` for `environment:relay-prod`, and `wpiemu-relay-whatif` for pull requests,
+   each with the subject form GitHub emits for the repository: see Troubleshooting);
    Contributor plus a role-assignment right limited by an ABAC condition to AcrPull, each deploy identity
    on its **own** resource group only; the what-if identity with Reader plus a custom what-if role on dev;
    and the GitHub environments and variables below. One app per environment matters: a token only has to
@@ -204,6 +205,14 @@ is not set up.
 - **`LockedOut`:** that address had 10 failed joins in 60 s; it clears after 5 minutes.
 - **A pipeline's Azure step cannot log in:** the environment's `AZURE_CLIENT_ID` must be the app whose
   federated subject is that environment; re-run `bootstrap.ps1` as a dry run to compare.
+- **`AADSTS700213: No matching federated identity record found for presented assertion subject`:** the
+  message names the subject GitHub presented. GitHub emits the immutable form
+  `repo:<owner>@<ownerId>/<repo>@<repoId>:...` for repositories created on or after 2026-07-15 and for older
+  ones that opted in; a credential made for `repo:<owner>/<repo>:...` never matches it. `bootstrap.ps1`
+  reads the ids with `gh api repos/<repository>` and picks the form (`-SubjectFormat Auto`); without `gh`
+  it falls back to the name-based form with a warning. Re-run it with `-SubjectFormat Immutable` (and
+  `-OwnerId`/`-RepositoryId` when `gh` is unavailable): it updates the credentials in place. If the subject
+  is right and the error remains, wait a minute: new credentials take time to propagate.
 - **Region or quota failure in `preflight.ps1`:** it lists the nearest passing regions; changing the
   region changes `location` in the parameter files and the `AZURE_LOCATION` variable.
 
