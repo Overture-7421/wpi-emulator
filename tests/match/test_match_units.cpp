@@ -6,12 +6,14 @@
 #include "match_test_support.h"
 #include "wpiemu/sdk/physics/remote_spec_limits.h"
 #include "wpiemu/core/match/entity_delta.h"
+#include "wpiemu/core/match/entity_motion.h"
 #include "wpiemu/core/match/hud_keys.h"
 #include "wpiemu/core/match/peer_outbox.h"
 #include "wpiemu/core/match/snapshot_budget.h"
 #include "wpiemu/core/match/snapshot_rate.h"
 #include "wpiemu/core/match/spec_intake.h"
 #include "wpiemu/core/match/wire_frame.h"
+#include "wpiemu/sdk/match/entity_prediction.h"
 
 using namespace match_test;
 
@@ -19,6 +21,15 @@ namespace {
 
 wire::EntityState ent(std::uint32_t id, int x, int y = 0, int z = 0) {
     return {id, static_cast<std::int16_t>(x), static_cast<std::int16_t>(y), static_cast<std::int16_t>(z)};
+}
+
+wire::EntityState entv(std::uint32_t id, int x, int y, int z, int vx, int vy, int vz, bool ballistic) {
+    wire::EntityState e = ent(id, x, y, z);
+    e.vxCms = static_cast<std::int16_t>(vx);
+    e.vyCms = static_cast<std::int16_t>(vy);
+    e.vzCms = static_cast<std::int16_t>(vz);
+    e.ballistic = ballistic;
+    return e;
 }
 
 EntityGroupFrame group(std::uint16_t id, std::vector<wire::EntityState> entities) {
@@ -55,7 +66,7 @@ TEST_CASE("entity deltas: with no baseline the plan is the full state, nearest t
     EntityDeltaEncoder enc;
     const std::vector<EntityGroupFrame> current{group(0, {ent(1, 900), ent(2, 50), ent(3, 450), ent(4, 60)})};
     const std::vector<RobotAnchor> anchors{{0, 0}};
-    const EntityPlan plan = enc.plan(current, anchors);
+    const EntityPlan plan = enc.plan(current, anchors, 0);
     CHECK(plan.baselineId == wire::kNoBaseline);
     REQUIRE(plan.changes.size() == 4);
     // Bands are 2 m: ids 2 and 4 (0.5 m, 0.6 m) share band 0 and are ordered by id, then 3 (4.5 m), then 1 (9 m).
@@ -68,42 +79,45 @@ TEST_CASE("entity deltas: with no baseline the plan is the full state, nearest t
     CHECK(EntityDeltaEncoder::deltas(plan, 99)[0].upserted.size() == 4);
 }
 
-TEST_CASE("entity deltas: against a baseline only changes are listed, removals first, then the most moved in a band") {
+TEST_CASE("entity deltas: against a baseline only due changes are listed, removals first, then the worst error first") {
     EntityDeltaEncoder enc;
     const std::vector<RobotAnchor> anchors{{0, 0}};
     const std::vector<EntityGroupFrame> first{group(0, {ent(1, 10), ent(2, 20), ent(3, 30), ent(4, 40), ent(5, 50)})};
-    EntityPlan p1 = enc.plan(first, anchors);
-    enc.commit(p1, p1.changes.size(), 1);
+    EntityPlan p1 = enc.plan(first, anchors, 0);
+    enc.commit(p1, p1.changes.size(), 1, 0);
     REQUIRE(enc.onAck(1));
     CHECK(enc.baselineId() == 1);
 
-    const std::vector<EntityGroupFrame> second{group(0, {ent(1, 11), ent(2, 20), ent(3, 80), ent(5, 50), ent(6, 5)})};   // 4 gone, 6 new
-    const EntityPlan p2 = enc.plan(second, anchors);
+    // 100 ms later: 1 moved 1 cm (within the 1 cm tolerance at rest), 3 moved 50 cm, 4 is gone, 6 is new.
+    const std::vector<EntityGroupFrame> second{group(0, {ent(1, 11), ent(2, 20), ent(3, 80), ent(5, 50), ent(6, 5)})};
+    const EntityPlan p2 = enc.plan(second, anchors, 100'000);
     CHECK(p2.baselineId == 1);
-    REQUIRE(p2.changes.size() == 4);
+    REQUIRE(p2.changes.size() == 3);
     CHECK(p2.changes[0].removal);
     CHECK(p2.changes[0].state.id == 4);
-    CHECK(p2.changes[1].state.id == 6);   // a new entity counts as the largest move
-    CHECK(p2.changes[2].state.id == 3);   // moved 50 cm
-    CHECK(p2.changes[3].state.id == 1);   // moved 1 cm
+    CHECK(p2.changes[1].state.id == 6);   // a new entity ranks above any real error
+    CHECK(p2.changes[2].state.id == 3);
     const auto deltas = EntityDeltaEncoder::deltas(p2, 3);
     CHECK(deltas[0].baselineId == 1);
     CHECK(deltas[0].removed == std::vector<std::uint32_t>{4});
-    CHECK(deltas[0].upserted.size() == 2);
+    REQUIRE(deltas[0].upserted.size() == 2);
+    CHECK(deltas[0].upserted[0].id == 3);   // the wire lists are ascending by id whatever the send order was
+    CHECK(deltas[0].upserted[1].id == 6);
+    CHECK(wire::entityDeltaIdsAscending(deltas[0]));
 }
 
 TEST_CASE("entity deltas: what was committed is the next baseline, truncated changes stay pending") {
     EntityDeltaEncoder enc;
     const std::vector<EntityGroupFrame> world{group(0, {ent(1, 10), ent(2, 20), ent(3, 30)})};
-    EntityPlan p1 = enc.plan(world, {});
-    enc.commit(p1, 2, 1);   // only two of three fit
+    EntityPlan p1 = enc.plan(world, {}, 0);
+    enc.commit(p1, 2, 1, 0);   // only two of three fit
     REQUIRE(enc.onAck(1));
-    const EntityPlan p2 = enc.plan(world, {});
+    const EntityPlan p2 = enc.plan(world, {}, 5'000);
     CHECK(p2.baselineId == 1);
     CHECK(p2.changes.size() == 1);   // the third is still missing at the client
-    enc.commit(p2, 1, 2);
+    enc.commit(p2, 1, 2, 5'000);
     REQUIRE(enc.onAck(2));
-    CHECK(enc.plan(world, {}).changes.empty());
+    CHECK(enc.plan(world, {}, 10'000).changes.empty());
 }
 
 TEST_CASE("entity deltas: acknowledgements and the bounded history") {
@@ -111,8 +125,8 @@ TEST_CASE("entity deltas: acknowledgements and the bounded history") {
     const std::vector<EntityGroupFrame> world{group(0, {ent(1, 10)})};
     CHECK_FALSE(enc.onAck(1));   // nothing sent yet
     for (std::uint32_t seq = 1; seq <= 40; ++seq) {
-        EntityPlan p = enc.plan(world, {});
-        enc.commit(p, p.changes.size(), seq);
+        EntityPlan p = enc.plan(world, {}, seq * 1000);
+        enc.commit(p, p.changes.size(), seq, seq * 1000);
         if (seq == 1) CHECK(enc.onAck(1));
     }
     CHECK(enc.historySize() == EntityDeltaEncoder::kHistory);
@@ -131,19 +145,117 @@ TEST_CASE("entity deltas: a group that vanished is removed entity by entity, and
     std::vector<wire::EntityState> many;
     for (std::uint32_t i = 1; i <= 1500; ++i) many.push_back(ent(i, static_cast<int>(i % 300)));
     const std::vector<EntityGroupFrame> world{group(0, many), group(3, {ent(1, 1)})};
-    EntityPlan p1 = enc.plan(world, {});
+    EntityPlan p1 = enc.plan(world, {}, 0);
     CHECK(p1.omittedByCap == 1500 - wire::kMaxEntityDeltaEntries);
     CHECK(p1.changes.size() == wire::kMaxEntityDeltaEntries + 1);
     for (const wire::EntityDelta& d : EntityDeltaEncoder::deltas(p1, p1.changes.size())) CHECK(d.upserted.size() <= wire::kMaxEntityDeltaEntries);
-    enc.commit(p1, p1.changes.size(), 1);
+    enc.commit(p1, p1.changes.size(), 1, 0);
     REQUIRE(enc.onAck(1));
 
     const std::vector<EntityGroupFrame> later{group(0, many)};   // group 3 is gone
-    const EntityPlan p2 = enc.plan(later, {});
+    const EntityPlan p2 = enc.plan(later, {}, 16'000);
     CHECK(p2.groupIds == std::vector<std::uint16_t>{0, 3});
     bool removedGroup3 = false;
     for (const EntityChange& c : p2.changes) removedGroup3 = removedGroup3 || (c.removal && c.groupId == 3 && c.state.id == 1);
     CHECK(removedGroup3);
+}
+
+namespace {
+
+// One entity under the policy: sent at stamp 0 in snapshot 1 (acknowledged), planned again `laterUs` later with `truth`.
+EntityPlan planAgainst(const wire::EntityState& sent, const wire::EntityState& truth, std::int64_t laterUs, const EntityPolicy& policy = {}) {
+    EntityDeltaEncoder enc(policy);
+    EntityPlan p1 = enc.plan(std::vector<EntityGroupFrame>{group(0, {sent})}, {}, 0);
+    enc.commit(p1, p1.changes.size(), 1, 0);
+    REQUIRE(enc.onAck(1));
+    return enc.plan(std::vector<EntityGroupFrame>{group(0, {truth})}, {}, laterUs);
+}
+
+}  // namespace
+
+TEST_CASE("entity deltas: an entity that moves as predicted is not resent, one that deviates is") {
+    // A ball in flight: 400 cm/s toward +x, 600 cm/s up, from z = 100 cm.
+    const wire::EntityState sent = entv(7, 0, 0, 100, 400, 0, 600, true);
+    const auto truthAfter = [&](std::int64_t us) { return wire::predictEntity(sent, us); };
+    for (const std::int64_t us : {16'000, 100'000, 400'000, 900'000}) {
+        CAPTURE(us);
+        wire::EntityState truth = truthAfter(us);
+        CHECK(planAgainst(sent, truth, us).changes.empty());
+        truth.xCm = static_cast<std::int16_t>(truth.xCm + 4);   // within the 5 cm threshold
+        CHECK(planAgainst(sent, truth, us).changes.empty());
+        truth.xCm = static_cast<std::int16_t>(truth.xCm + 2);   // 6 cm off
+        CHECK(planAgainst(sent, truth, us).changes.size() == 1);
+    }
+    // Without the model (velocity 0, not ballistic) the same ball would need an update at every snapshot.
+    wire::EntityState blind = sent;
+    blind.vxCms = blind.vyCms = blind.vzCms = 0;
+    blind.ballistic = false;
+    CHECK(planAgainst(blind, truthAfter(100'000), 100'000).changes.size() == 1);
+}
+
+TEST_CASE("entity deltas: keyframes re-confirm entities, moving ones sooner than the ones at rest") {
+    const wire::EntityState rest = ent(1, 100, 200, 7);
+    const wire::EntityState moving = entv(2, 100, 200, 7, 50, 0, 0, false);
+    EntityPolicy policy;
+    CHECK(planAgainst(rest, rest, policy.keyframeRestUs - 1).changes.empty());
+    const EntityPlan restDue = planAgainst(rest, rest, policy.keyframeRestUs);
+    REQUIRE(restDue.changes.size() == 1);
+    CHECK(restDue.changes[0].reason == EntityChangeReason::Keyframe);
+    // A rolling ball predicted exactly is quiet until its keyframe (1 s).
+    CHECK(planAgainst(moving, wire::predictEntity(moving, 900'000), 900'000).changes.empty());
+    const EntityPlan movingDue = planAgainst(moving, wire::predictEntity(moving, policy.keyframeMovingUs), policy.keyframeMovingUs);
+    REQUIRE(movingDue.changes.size() == 1);
+    CHECK(movingDue.changes[0].reason == EntityChangeReason::Keyframe);
+    // Custom policy values are honoured.
+    policy.keyframeRestUs = 500'000;
+    policy.errorThresholdCm = 0;
+    policy.restErrorThresholdCm = 0;
+    CHECK(planAgainst(rest, rest, 499'000, policy).changes.empty());
+    CHECK(planAgainst(rest, rest, 500'000, policy).changes.size() == 1);
+    wire::EntityState nudged = rest;
+    nudged.xCm += 1;
+    CHECK(planAgainst(rest, nudged, 16'000, policy).changes.size() == 1);
+    // At rest the default tolerance is one centimetre, so an entity ends up within a centimetre of where it really is.
+    CHECK(planAgainst(rest, nudged, 16'000).changes.empty());
+    nudged.xCm += 1;
+    CHECK(planAgainst(rest, nudged, 16'000).changes.size() == 1);
+}
+
+TEST_CASE("entity deltas: the priority is error times age over the distance band, so nothing starves") {
+    EntityDeltaEncoder enc;
+    const std::vector<RobotAnchor> anchors{{0, 0}};
+    // id 1 and id 3 (the same, but 10 m from the robot) are confirmed at 3.4 s; id 2 was last confirmed at 0.
+    const std::vector<EntityGroupFrame> start{group(0, {ent(1, 0), ent(2, 0), ent(3, 1000)})};
+    EntityPlan p1 = enc.plan(start, anchors, 0);
+    enc.commit(p1, p1.changes.size(), 1, 0);
+    REQUIRE(enc.onAck(1));
+    const std::vector<EntityGroupFrame> mid{group(0, {ent(1, 50), ent(2, 0), ent(3, 1050)})};
+    EntityPlan p2 = enc.plan(mid, anchors, 3'400'000);
+    REQUIRE(p2.changes.size() == 2);   // 1 and 3 moved; 2 did not and its keyframe is not due
+    enc.commit(p2, p2.changes.size(), 2, 3'400'000);
+    REQUIRE(enc.onAck(2));
+    // At 3.5 s: id 1 and 3 are 100 cm off after 0.1 s, id 2 is only 8 cm off but has waited 3.5 s.
+    const std::vector<EntityGroupFrame> late{group(0, {ent(1, 150), ent(2, 8), ent(3, 1150)})};
+    const EntityPlan p3 = enc.plan(late, anchors, 3'500'000);
+    REQUIRE(p3.changes.size() == 3);
+    // priority = (error + 3) * (age + 0.25 s) / (1 + band): id 2 11 * 3.75 = 41.3, id 1 103 * 0.35 = 36.1, id 3 36.1 / 6 = 6.
+    CHECK(p3.changes[0].state.id == 2);
+    CHECK(p3.changes[1].state.id == 1);
+    CHECK(p3.changes[2].state.id == 3);
+}
+
+TEST_CASE("entity deltas: velocity, flight and the stamp of an update survive the baseline round trip") {
+    EntityDeltaEncoder enc;
+    const wire::EntityState flying = entv(9, 10, 20, 150, -300, 40, 250, true);
+    EntityPlan p1 = enc.plan(std::vector<EntityGroupFrame>{group(0, {flying})}, {}, 1'000'000);
+    REQUIRE(EntityDeltaEncoder::deltas(p1, 1)[0].upserted.size() == 1);
+    CHECK(EntityDeltaEncoder::deltas(p1, 1)[0].upserted[0] == flying);
+    enc.commit(p1, 1, 1, 1'000'000);
+    REQUIRE(enc.onAck(1));
+    // The stamp is the sim time of the snapshot that carried it: 250 ms later the prediction still holds the ball...
+    CHECK(enc.plan(std::vector<EntityGroupFrame>{group(0, {wire::predictEntity(flying, 250'000)})}, {}, 1'250'000).changes.empty());
+    // ...and the same truth against a prediction that started at another stamp is off: the stamp matters.
+    CHECK(enc.plan(std::vector<EntityGroupFrame>{group(0, {wire::predictEntity(flying, 250'000)})}, {}, 2'000'000).changes.size() == 1);
 }
 
 TEST_CASE("snapshot rate: hysteresis and sampling") {
@@ -313,6 +425,38 @@ TEST_CASE("wire frame: groups without stable ids are skipped, non-finite values 
     CHECK(hudWireValue(Value(true)) == 1.f);
 }
 
+TEST_CASE("wire frame: with a motion tracker the entities carry the velocity derived from successive frames") {
+    EntityMotionTracker motion;
+    const auto frameAt = [&](std::int64_t timeUs, float x, float z) {
+        SimSnapshotData d;
+        d.simTimeUs = timeUs;
+        EntityGroupSample fuel;
+        fuel.ids = {4};
+        fuel.positions = {{x, 2.f, z}};
+        d.entityGroups = {fuel};
+        const SimSnapshot snap(std::move(d));
+        return buildWireFrame(snap, HudKeyTable{}, {}, {}, &motion);
+    };
+    const WireFrame first = frameAt(10'000, 1.0f, 0.075f);
+    REQUIRE(first.groups.size() == 1);
+    CHECK(first.groups[0].entities[0].vxCms == 0);   // nothing to difference yet
+    CHECK(first.groups[0].unsettled == std::vector<std::uint8_t>{0});
+    const WireFrame second = frameAt(26'000, 1.08f, 0.075f);   // 8 cm in 16 ms = 5 m/s
+    CHECK(std::abs(second.groups[0].entities[0].vxCms - 500) <= 1);
+    CHECK(second.groups[0].entities[0].xCm == 108);
+    CHECK_FALSE(second.groups[0].entities[0].ballistic);
+    // Without a tracker nothing is derived.
+    SimSnapshotData d;
+    EntityGroupSample fuel;
+    fuel.ids = {4};
+    fuel.positions = {{3.f, 2.f, 0.075f}};
+    d.entityGroups = {fuel};
+    const SimSnapshot plain(std::move(d));
+    const WireFrame without = buildWireFrame(plain, HudKeyTable{}, {});
+    CHECK(without.groups[0].entities[0].vxCms == 0);
+    CHECK(without.groups[0].unsettled.empty());
+}
+
 namespace {
 
 wire::MatchSnapshot coreSnapshot(std::size_t robots, std::size_t hudPerRobot) {
@@ -335,7 +479,7 @@ EntityPlan manyChanges(std::size_t count) {
     EntityDeltaEncoder enc;
     std::vector<wire::EntityState> entities;
     for (std::size_t i = 0; i < count; ++i) entities.push_back(ent(static_cast<std::uint32_t>(i + 1), static_cast<int>(i % 200) * 7, static_cast<int>(i / 200) * 9));
-    return enc.plan(std::vector<EntityGroupFrame>{group(0, std::move(entities))}, {});
+    return enc.plan(std::vector<EntityGroupFrame>{group(0, std::move(entities))}, {}, 0);
 }
 
 }  // namespace

@@ -145,7 +145,7 @@ struct MatchHost::Impl {
     sdk::NullLogger nullLogger;
     sdk::ILogger& log;
     HudKeyTable hudKeys;
-
+    EntityMotionTracker motion;   // velocity and flight state of the entities, fed by every wire frame (sim thread)
     runtime::MessageInbox inbox;
     std::unique_ptr<runtime::MessageLinkAcceptor> acceptor;
     std::atomic<std::uint64_t> nextAddedLinkId{kAddedLinkIdBase};
@@ -481,6 +481,7 @@ struct MatchHost::Impl {
         p.inputBucket.reset(config.inputBurst, t);
         p.pingBucket.reset(config.pingBurst, t);
         p.rate = SnapshotRateSelector(config.rate);
+        p.encoder = EntityDeltaEncoder(config.entity);
         c.participant = id;
         Participant& stored = parts.emplace(id, std::move(p)).first->second;
         ++stats.joinsAccepted;
@@ -815,7 +816,7 @@ struct MatchHost::Impl {
             ZoneRestPoses rest;
             rest[wire::kHostParticipantId] = hostRest;
             for (const auto& [id, p] : parts) rest[id] = p.zoneRest;
-            frame = buildWireFrame(*snap, hudKeys, makeInfo(*snap), rest);
+            frame = buildWireFrame(*snap, hudKeys, makeInfo(*snap), rest, config.deriveEntityMotion ? &motion : nullptr);
             stats.hudKeysUnknown += frame->hudKeysUnknown;
         }
         return *frame;
@@ -847,15 +848,35 @@ struct MatchHost::Impl {
         s.robots = frame.robots;
         s.gameHud = frame.gameHud;
 
-        const EntityPlan plan = p.encoder.plan(frame.groups, frame.anchors);
+        const EntityPlan plan = p.encoder.plan(frame.groups, frame.anchors, frame.simTimeUs);
+        if (plan.baselineId != wire::kNoBaseline) {
+            stats.baselineLagSum += static_cast<std::uint32_t>(s.snapshotSeq - plan.baselineId);
+            ++stats.baselineLagSamples;
+        }
         const SnapshotFit fit = fitSnapshot(s, plan, config.snapshotBudgetBytes, [this](const wire::MatchSnapshot& m) { return encodedSize(m); }, p.entitySize);
         if (fit.coreOverBudget) ++stats.snapshotsOverBudget;
         if (fit.entityChanges < plan.changes.size()) {
             ++stats.snapshotsTruncated;
             stats.entityChangesDeferred += plan.changes.size() - fit.entityChanges;
         }
+        for (std::size_t k = 0; k < fit.entityChanges; ++k) {
+            switch (plan.changes[k].reason) {
+                case EntityChangeReason::Removal: ++stats.entityRemovalsSent; break;
+                case EntityChangeReason::New: ++stats.entityNewSent; break;
+                case EntityChangeReason::Error: ++stats.entityErrorSent; break;
+                case EntityChangeReason::Keyframe: ++stats.entityKeyframesSent; break;
+            }
+        }
+        for (std::size_t k = fit.entityChanges; k < plan.changes.size(); ++k) {
+            switch (plan.changes[k].reason) {
+                case EntityChangeReason::Removal: ++stats.entityRemovalsDeferred; break;
+                case EntityChangeReason::New: ++stats.entityNewDeferred; break;
+                case EntityChangeReason::Error: ++stats.entityErrorDeferred; break;
+                case EntityChangeReason::Keyframe: ++stats.entityKeyframesDeferred; break;
+            }
+        }
         stats.maxSnapshotBytes = std::max(stats.maxSnapshotBytes, fit.encodedBytes);
-        p.encoder.commit(plan, fit.entityChanges, s.snapshotSeq);
+        p.encoder.commit(plan, fit.entityChanges, s.snapshotSeq, frame.simTimeUs);
         ++p.snapshotsSent;
         ++stats.snapshotsSent;
         send(c, std::move(message));

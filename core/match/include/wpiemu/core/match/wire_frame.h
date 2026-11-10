@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "wpiemu/core/match/entity_delta.h"
+#include "wpiemu/core/match/entity_motion.h"
 #include "wpiemu/core/match/hud_keys.h"
 #include "wpiemu/sdk/match/input_messages.h"
 #include "wpiemu/sdk/match/snapshot_messages.h"
@@ -42,7 +43,9 @@ std::optional<float> hudWireValue(const sdk::Value& value);
 // rest pose when unset) differs from it; a robot without an entry lists none.
 using ZoneRestPoses = std::map<sdk::match::ParticipantId, std::span<const sdk::Pose3>>;
 
+// `motion` (optional) derives the velocity and flight state of the entities from the positions of successive frames; without
+// it every entity has velocity 0 and is not ballistic.
 WireFrame buildWireFrame(const sdk::ISimSnapshot& snapshot, const HudKeyTable& hudKeys, const sdk::match::MatchInfo& info,
-                         const ZoneRestPoses& zoneRestPoses = {});
+                         const ZoneRestPoses& zoneRestPoses = {}, EntityMotionTracker* motion = nullptr);
 
 }  // namespace wpiemu::core::match

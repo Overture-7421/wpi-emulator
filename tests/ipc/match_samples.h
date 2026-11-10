@@ -140,7 +140,7 @@ inline sdk::match::MatchSnapshot sampleMatchSnapshot() {
     d.groupId = 1;
     d.baselineId = 4320;
     d.removed = {11, 22};
-    d.upserted = {{33, 100, -200, 5}, {44, -300, 400, 0}};
+    d.upserted = {{33, 100, -200, 5, 120, -80, 310, true}, {44, -300, 400, 0, 0, 0, 0, false}};
     s.entityDeltas.push_back(d);
     s.gameHud = {{7, 123.f}, {8, -1.f}};
     return s;

@@ -263,6 +263,117 @@ TEST_CASE("match hostile: list counts above the cap are refused (with enough byt
     }
 }
 
+namespace {
+
+// A MatchSnapshot with no robots, one entity delta (groupId 1, baseline 0) with the given body after the baseline, no game HUD.
+Bytes snapshotWithDelta(const Bytes& deltaBodyAfterBaseline) {
+    const Bytes head = emptySnapshotHead();
+    Builder delta;
+    delta.u16(1).u32(0).add(deltaBodyAfterBaseline);
+    return Builder().add(head).varint(0).varint(1).record(delta.bytes).varint(0).bytes;
+}
+
+const match::EntityDelta& onlyDelta(const Result<Message>& r) {
+    REQUIRE(r.ok());
+    const auto& snapshot = std::get<match::MatchSnapshot>(r.value());
+    REQUIRE(snapshot.entityDeltas.size() == 1);
+    return snapshot.entityDeltas[0];
+}
+
+Status encodeStatus(const Message& m) {
+    const BinaryMessageCodec codec;
+    Bytes out;
+    return codec.encode(m, out);
+}
+
+}  // namespace
+
+TEST_CASE("match hostile: entity ids are gap coded over ascending ids and a flag byte carries flight and velocity") {
+    using namespace wpiemu::sdk::match;
+    // removed 3, 4, 10 (first absolute, then id - previous - 1); upserts id 7 (ballistic + velocity) and id 9 (neither).
+    Builder body;
+    body.varint(3).varint(3).varint(0).varint(5);
+    body.varint(2);
+    body.varint((7u << 2) | 3u).u16(100).u16(0xFF38).u16(5).u16(300).u16(0xFFFF).u16(7);   // x=100 y=-200 z=5 v=(300,-1,7)
+    body.varint((1u << 2) | 0u).u16(1).u16(2).u16(3);                                      // id 9 = 7 + 1 + 1
+    const Result<Message> r = decodeNoThrow(snapshotWithDelta(body.bytes));
+    const EntityDelta& d = onlyDelta(r);
+    CHECK(d.removed == std::vector<std::uint32_t>{3, 4, 10});
+    REQUIRE(d.upserted.size() == 2);
+    CHECK(d.upserted[0] == EntityState{7, 100, -200, 5, 300, -1, 7, true});
+    CHECK(d.upserted[1] == EntityState{9, 1, 2, 3, 0, 0, 0, false});
+    checkDecodedInvariants(r.value());
+}
+
+TEST_CASE("match hostile: entity ids that wrap 32 bits or do not fit a gap are malformed") {
+    const std::uint64_t maxId = std::numeric_limits<std::uint32_t>::max();
+    // The first id is absolute and must fit 32 bits.
+    checkRejected(snapshotWithDelta(Builder().varint(1).varint(maxId + 1).varint(0).bytes), "entity id");
+    // maxId followed by any gap overflows.
+    checkRejected(snapshotWithDelta(Builder().varint(2).varint(maxId).varint(0).varint(0).bytes), "entity id");
+    // The same for upserts (head = gap << 2).
+    checkRejected(snapshotWithDelta(Builder().varint(0).varint(1).varint((maxId + 1) << 2).zeros(6).bytes), "entity id");
+    checkRejected(snapshotWithDelta(Builder().varint(0).varint(2).varint(maxId << 2).zeros(6).varint(0).zeros(6).bytes), "entity id");
+    // A gap of 2^63 or more cannot be a 32 bit id gap; the head varint itself is fine, the value is refused.
+    checkRejected(snapshotWithDelta(Builder().varint(1).varint(std::uint64_t{1} << 63).varint(0).bytes), "entity id");
+    // The largest id is accepted.
+    const Result<Message> top = decodeNoThrow(snapshotWithDelta(Builder().varint(1).varint(maxId).varint(0).bytes));
+    CHECK(onlyDelta(top).removed == std::vector<std::uint32_t>{std::numeric_limits<std::uint32_t>::max()});
+}
+
+TEST_CASE("match hostile: a velocity flag promises three more fields, so a truncated entity is malformed") {
+    // head with the velocity bit, then the position and only two velocity components.
+    Builder body;
+    body.varint(0).varint(1).varint(2u).u16(1).u16(2).u16(3).u16(4).u16(5);
+    checkRejected(snapshotWithDelta(body.bytes), "truncated");
+    // The same entity without the velocity bit is complete.
+    Builder complete;
+    complete.varint(0).varint(1).varint(0u).u16(1).u16(2).u16(3);
+    CHECK(decodeNoThrow(snapshotWithDelta(complete.bytes)).ok());
+}
+
+TEST_CASE("match hostile: entity ids that are not strictly ascending cannot be encoded") {
+    using namespace wpiemu::sdk::match;
+    const auto snapshotOfDelta = [](EntityDelta d) {
+        MatchSnapshot s;
+        s.entityDeltas.push_back(std::move(d));
+        return Message{s};
+    };
+    EntityDelta ok;
+    ok.removed = {1, 5, 9};
+    ok.upserted = {EntityState{2}, EntityState{3}};
+    CHECK(encodeStatus(snapshotOfDelta(ok)).ok());
+    EntityDelta duplicate = ok;
+    duplicate.removed = {1, 5, 5};
+    CHECK_FALSE(encodeStatus(snapshotOfDelta(duplicate)).ok());
+    EntityDelta descending = ok;
+    descending.removed = {9, 5};
+    CHECK_FALSE(encodeStatus(snapshotOfDelta(descending)).ok());
+    EntityDelta upsertDuplicate = ok;
+    upsertDuplicate.upserted = {EntityState{4}, EntityState{4}};
+    CHECK_FALSE(encodeStatus(snapshotOfDelta(upsertDuplicate)).ok());
+    EntityDelta upsertDescending = ok;
+    upsertDescending.upserted = {EntityState{4}, EntityState{3}};
+    CHECK_FALSE(encodeStatus(snapshotOfDelta(upsertDescending)).ok());
+    CHECK_FALSE(fitsLimits(std::get<MatchSnapshot>(snapshotOfDelta(upsertDescending))));
+    EntityDelta limit = ok;
+    limit.removed.clear();
+    for (std::uint32_t i = 0; i <= kMaxEntityDeltaEntries; ++i) limit.removed.push_back(i);
+    CHECK_FALSE(encodeStatus(snapshotOfDelta(limit)).ok());
+    // The ids may sit at the very ends of the 32 bit range.
+    EntityDelta ends;
+    ends.removed = {0, std::numeric_limits<std::uint32_t>::max()};
+    ends.upserted = {EntityState{0}, EntityState{std::numeric_limits<std::uint32_t>::max()}};
+    const Message extreme = snapshotOfDelta(ends);
+    REQUIRE(encodeStatus(extreme).ok());
+    const BinaryMessageCodec codec;
+    Bytes out;
+    REQUIRE(codec.encode(extreme, out).ok());
+    const Result<Message> back = decodeNoThrow(out);
+    REQUIRE(back.ok());
+    CHECK(onlyDelta(back) == ends);
+}
+
 TEST_CASE("match hostile: list counts the frame cannot hold are refused without allocating them") {
     using namespace wpiemu::sdk::match;
     const Builder ids = Builder().u64(1).u64(1);

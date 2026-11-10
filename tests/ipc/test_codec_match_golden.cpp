@@ -86,8 +86,8 @@ const std::vector<Golden>& goldens() {
          "0000000201000000404102000000003f0200fa00b5ff800234120000ffff0f18fcd007"
          "b80b04000500060047000100b80b000084eaffffd00750fb480d300202640038ff2c01"
          "70fe0a0000000201000000404102000000003f0201f401b5ff800234120000ffff0f18"
-         "fcd007b80b0400050006000124000100e0100000020b00000016000000022100000064"
-         "0038ff05002c000000d4fe900100000207000000f6420800000080bf"},
+         "fcd007b80b04000500060001" "1f000100e0100000020b0a02870164"
+         "0038ff05007800b0ff360128d4fe90010000" "0207000000f6420800000080bf"},
         {"MatchSnapshotAck", "01140088776655443322110700000000000000e1100000"},
         {"MatchControl",
          "011500038877665544332211080000000000000002004d00000063c5540000000000"
@@ -233,9 +233,9 @@ TEST_CASE("match codec golden: records written before the zone pose tail decode 
         "26010000006300000002120f0000000000fdff1300020101010000a5420a70686173"
         "652e6175746f022c000000dc05000042f5ffffe80350fb480d300202640038ff2c01"
         "70fe090000000201000000404102000000003f2c000100b80b000084eaffffd00750"
-        "fb480d300202640038ff2c0170fe0a0000000201000000404102000000003f012400"
-        "0100e0100000020b000000160000000221000000640038ff05002c000000d4fe9001"
-        "00000207000000f6420800000080bf";
+        "fb480d300202640038ff2c0170fe0a0000000201000000404102000000003f011f00"
+        "0100e0100000020b0a028701640038ff0500" "7800b0ff3601" "28d4fe90010000"
+        "0207000000f6420800000080bf";
 
     const Result<Message> input = codec.decode(fromHex(legacyInput));
     REQUIRE(input.ok());
@@ -266,6 +266,31 @@ TEST_CASE("match codec golden: the zone pose tails are the documented 13-byte en
     out.clear();
     REQUIRE(BinaryMessageCodec().encode(Message{snapshot}, out).ok());
     CHECK(toHex(out).find("01" "0f" "0201" "0000" "0000" "0000" "0000" "0403") != std::string::npos);
+}
+
+TEST_CASE("match codec golden: the entity delta is gap coded ids with a flag byte and optional velocity") {
+    // Per delta: group u16, baseline u32, removed count then gaps, upserted count then per entity head = (id gap << 2 | flags)
+    // with bit 0 ballistic and bit 1 velocity present, x y z as i16 cm and, only with the velocity bit, vx vy vz as i16 cm/s.
+    match::MatchSnapshot snapshot;
+    match::EntityDelta d;
+    d.groupId = 1;
+    d.baselineId = 7;
+    d.removed = {11, 22};
+    d.upserted = {{33, 100, -200, 5, 120, -80, 310, true}, {44, -300, 400, 0, 0, 0, 0, false}, {50, 1, 2, 3, 0, 0, -5, false}};
+    snapshot.entityDeltas.push_back(d);
+    std::vector<std::byte> out;
+    REQUIRE(BinaryMessageCodec().encode(Message{snapshot}, out).ok());
+    const std::string expectedDelta =
+        "2c00" "0100" "07000000"                       // record length, group, baseline
+        "02" "0b" "0a"                                 // removed 11 and 22 (the second is 10 after the first + 1)
+        "03"                                           // three upserts
+        "8701" "6400" "38ff" "0500" "7800" "b0ff" "3601"   // id 33: gap 33, ballistic + velocity
+        "28" "d4fe" "9001" "0000"                      // id 44: gap 10, at rest
+        "16" "0100" "0200" "0300" "0000" "0000" "fbff";    // id 50: gap 5 << 2 | velocity
+    CHECK(toHex(out).find(expectedDelta) != std::string::npos);
+    const Result<Message> back = BinaryMessageCodec().decode(out);
+    REQUIRE(back.ok());
+    CHECK(std::get<match::MatchSnapshot>(back.value()) == snapshot);
 }
 
 TEST_CASE("match codec golden: roster entries written before the appearance tail decode with no appearance") {

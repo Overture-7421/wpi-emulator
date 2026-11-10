@@ -10,10 +10,29 @@
 // and remembers, per entity group, the entity state of the newest snapshot the client acknowledged
 // (MatchSnapshotAck::snapshotSeq). An EntityDelta carries `baselineId` = that acknowledged snapshotSeq, or kNoBaseline
 // for the full state; the upserts and removals are relative to the entity state the client holds for that snapshotSeq.
-// Entities not mentioned are unchanged since the baseline (the host may omit moving entities to fit
-// kSnapshotBudgetBytes; they then catch up in a later snapshot). The client keeps the states of its recent snapshots keyed
-// by snapshotSeq, applies the delta on the one named by baselineId, stores the result under the new snapshotSeq and
-// acknowledges it. If the client no longer holds the baseline it acks nothing newer and the host falls back to full state.
+// Entities not mentioned keep their update and are EXTRAPOLATED from it (entity_prediction.h): the host only upserts an
+// entity whose extrapolation would be wrong by more than its threshold, or that has not been confirmed for a keyframe
+// interval (a few seconds even for an entity at rest). The host may omit due upserts to fit kSnapshotBudgetBytes; they then
+// catch up in a later snapshot.
+//
+// CLIENT ENTITY MEMORY. Per entity group the client keeps id -> (EntityState, stampUs), stampUs being the simTimeUs of the
+// snapshot that carried the upsert. For each of its recent snapshots, by snapshotSeq, it records two such maps: the MIRROR
+// (exactly what the host assumes the client holds, the baseline plus the delta) and the DISPLAY (the mirror plus the updates
+// still in flight). Applying a snapshot (newer than the last applied one):
+//   1. the mirror starts as the recorded mirror of `baselineId` (empty for kNoBaseline; a baseline it no longer holds: apply
+//      nothing and acknowledge nothing, the host falls back to full state);
+//   2. delete every id in `removed` from it, then store every upserted entity with stampUs = the snapshot's simTimeUs;
+//   3. the display starts as that mirror and then, unless the delta has no baseline, takes over from the DISPLAY of the
+//      previously APPLIED snapshot every entity that is not in `removed`, whose stampUs is less than kEntityInFlightUs older
+//      than this snapshot's simTimeUs (an update still IN FLIGHT) and newer than the mirror's version (or not in the mirror).
+//      The host does not repeat an update that is in flight, i.e. sent in a snapshot whose acknowledgement has not arrived
+//      yet and that is less than kEntityInFlightUs old; this step keeps such an update from being undone by a snapshot built
+//      on an older baseline. An update that never arrives is sent again when that time is up (the baseline's version is then
+//      what both sides assume);
+//   4. record both, acknowledge the snapshot.
+// The picture drawn is the display of the newest applied snapshot, every entity extrapolated from its own stamp.
+// Removals: the host repeats the removal of every entity it ever upserted and no longer has, in every snapshot, until a
+// snapshot that carries it is acknowledged, whatever the baselines hold; so no entity the host does not have can stay.
 
 #include <cstdint>
 #include <string>
@@ -83,25 +102,42 @@ struct RobotWireState {
 };
 
 // One numerous thing (a fuel piece), identified by a stable id that survives the whole match. Position is
-// quantizeCentiI16 centimetres in the field frame.
+// quantizeCentiI16 centimetres in the field frame, velocity is whole cm/s (field frame, saturating), and `ballistic` says
+// the entity is in free flight (gravity applies to z). The state is the entity at the sim time of the snapshot that carries
+// it; between updates both sides extrapolate it with predictEntity (entity_prediction.h), so an entity that moves as
+// predicted needs no new update.
 struct EntityState {
     std::uint32_t id = 0;
     std::int16_t xCm = 0;
     std::int16_t yCm = 0;
     std::int16_t zCm = 0;
+    std::int16_t vxCms = 0;
+    std::int16_t vyCms = 0;
+    std::int16_t vzCms = 0;
+    bool ballistic = false;
 
     bool operator==(const EntityState&) const = default;
 };
 
-// The changes of one entity group (matches an entity group of the telemetry snapshot) against `baselineId`.
+// The changes of one entity group (matches an entity group of the telemetry snapshot) against `baselineId`. Removals are
+// how a client learns an entity is gone (it despawned or left the field): an id in `removed` is deleted from the baseline
+// state. Both lists are in strictly ascending id order (the wire sends the gaps between ids).
 struct EntityDelta {
     std::uint16_t groupId = 0;
     std::uint32_t baselineId = kNoBaseline;  // snapshotSeq acknowledged by the client, or kNoBaseline for full state
-    std::vector<std::uint32_t> removed;      // <= kMaxEntityDeltaEntries
-    std::vector<EntityState> upserted;       // <= kMaxEntityDeltaEntries
+    std::vector<std::uint32_t> removed;      // <= kMaxEntityDeltaEntries, strictly ascending
+    std::vector<EntityState> upserted;       // <= kMaxEntityDeltaEntries, strictly ascending by id
 
     bool operator==(const EntityDelta&) const = default;
 };
+
+inline bool entityDeltaIdsAscending(const EntityDelta& d) {
+    for (std::size_t i = 1; i < d.removed.size(); ++i)
+        if (d.removed[i - 1] >= d.removed[i]) return false;
+    for (std::size_t i = 1; i < d.upserted.size(); ++i)
+        if (d.upserted[i - 1].id >= d.upserted[i].id) return false;
+    return true;
+}
 
 struct MatchSnapshot {
     std::uint64_t sessionId = proto::kUnspecified;
@@ -144,7 +180,8 @@ inline bool fitsLimits(const MatchSnapshot& s) {
             !zonePosesWellFormed(r.zonePoses, kMaxSnapshotZonePosesPerRobot))
             return false;
     for (const EntityDelta& d : s.entityDeltas)
-        if (d.removed.size() > kMaxEntityDeltaEntries || d.upserted.size() > kMaxEntityDeltaEntries) return false;
+        if (d.removed.size() > kMaxEntityDeltaEntries || d.upserted.size() > kMaxEntityDeltaEntries || !entityDeltaIdsAscending(d))
+            return false;
     return true;
 }
 

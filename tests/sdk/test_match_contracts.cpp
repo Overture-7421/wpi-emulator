@@ -324,8 +324,35 @@ TEST_CASE("match contracts: fitsLimits rejects over-long lists") {
     CHECK_FALSE(fitsLimits(snapshot));
     snapshot.robots[0].wheels.clear();
     snapshot.entityDeltas.resize(1);
-    snapshot.entityDeltas[0].upserted.resize(kMaxEntityDeltaEntries + 1);
-    CHECK_FALSE(fitsLimits(snapshot));
+    for (std::uint32_t i = 0; i <= kMaxEntityDeltaEntries; ++i) snapshot.entityDeltas[0].upserted.push_back(EntityState{i});
+    CHECK_FALSE(fitsLimits(snapshot));   // one too many, ids ascending
+    snapshot.entityDeltas[0].upserted.pop_back();
+    CHECK(fitsLimits(snapshot));
+}
+
+TEST_CASE("match contracts: entity ids of a delta are strictly ascending and the prediction state has sane defaults") {
+    EntityDelta d;
+    CHECK(entityDeltaIdsAscending(d));
+    d.removed = {2, 9, 10};
+    d.upserted = {EntityState{1}, EntityState{5}, EntityState{6}};
+    CHECK(entityDeltaIdsAscending(d));
+    d.removed = {2, 2};
+    CHECK_FALSE(entityDeltaIdsAscending(d));
+    d.removed = {9, 2};
+    CHECK_FALSE(entityDeltaIdsAscending(d));
+    d.removed = {2};
+    d.upserted = {EntityState{5}, EntityState{5}};
+    CHECK_FALSE(entityDeltaIdsAscending(d));
+    d.upserted = {EntityState{6}, EntityState{5}};
+    CHECK_FALSE(entityDeltaIdsAscending(d));
+    MatchSnapshot s;
+    s.entityDeltas.push_back(d);
+    CHECK_FALSE(fitsLimits(s));
+    const EntityState e;
+    CHECK(e.vxCms == 0);
+    CHECK(e.vyCms == 0);
+    CHECK(e.vzCms == 0);
+    CHECK_FALSE(e.ballistic);
 }
 
 TEST_CASE("match contracts: zone flags and wheel speed helpers") {
