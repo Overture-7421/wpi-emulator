@@ -7,6 +7,17 @@ namespace wpiemu::core::runtime {
 
 using namespace wpiemu::sdk;
 
+namespace {
+
+// What the codec reports for a frame that arrived intact from the transport but is not a message we can read; transport
+// failures (Disconnected, IoError, ...) are never tolerated.
+bool isDecodeFault(ErrorCode code) {
+    return code == ErrorCode::ProtocolError || code == ErrorCode::VersionMismatch || code == ErrorCode::Unsupported ||
+           code == ErrorCode::ParseError;
+}
+
+}  // namespace
+
 // ---- MessageInbox -----------------------------------------------------------------------------------------
 
 MessageInbox::MessageInbox() : queue_(std::make_shared<Queue>()) {}
@@ -76,7 +87,7 @@ void ChannelMessageLink::readLoop(const StopToken& stop) {
         proto::Message message;
         const Result<bool> got = channel_.receive(message, std::chrono::milliseconds(100));
         if (!got) {
-            const bool malformed = malformedLimit_ > 0 && got.error().code == ErrorCode::ProtocolError;
+            const bool malformed = malformedLimit_ > 0 && isDecodeFault(got.error().code);
             if (malformed && ++malformed_ < malformedLimit_) continue;
             reason = malformed ? "too many malformed frames: " + got.error().message : got.error().message;
             break;

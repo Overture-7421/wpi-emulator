@@ -77,7 +77,7 @@ public:
     ~ChannelMessageLink() override;
 
     // By default the first receive or decode error ends the link. With a limit > 0 a frame the codec rejects
-    // (ErrorCode::ProtocolError) is dropped and counted instead, and the link ends once `limit` frames were dropped.
+    // (a decode fault: ProtocolError, VersionMismatch, Unsupported or ParseError) is dropped and counted instead, and the link ends once `limit` frames were dropped.
     // Call before start().
     void setMalformedFrameLimit(std::size_t limit) { malformedLimit_ = limit; }
     void start();
