@@ -17,7 +17,7 @@ list(APPEND WPIEMU_TEST_SOURCES
 get_property(_wpiemu_builtin_plugin_targets GLOBAL PROPERTY WPIEMU_BUILTIN_PLUGIN_TARGETS)
 add_executable(wpiemu_tests ${WPIEMU_TEST_SOURCES} $<TARGET_OBJECTS:wpiemu_sdk_header_check>)
 target_link_libraries(wpiemu_tests PRIVATE
-    wpiemu_sdk wpiemu_core wpiemu_match wpiemu_ipc wpiemu_halsim_core wpiemu_app_host
+    wpiemu_sdk wpiemu_core wpiemu_match wpiemu_ipc wpiemu_net wpiemu_relay_core wpiemu_halsim_core wpiemu_app_host
     wpiemu_bridges_hal wpiemu_bridges_vendor wpiemu_bridges_vision
     wpiemu_plugins_builtin wpiemu_seasons_builtin ${_wpiemu_builtin_plugin_targets})
 if(WPIEMU_BUILD_PLUGIN_TEMPLATE)

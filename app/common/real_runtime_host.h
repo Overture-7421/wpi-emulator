@@ -8,6 +8,7 @@
 
 #include "contract/runtime_host.h"
 #include "contract/start_position_selection.h"
+#include "common/hosting_service.h"
 #include "host/robot_session.h"
 
 namespace wpiemu::app {
@@ -32,6 +33,9 @@ struct RealRuntimeOptions {
     std::function<int()> physicsWorkers;
     // Test / advanced hook: adjusts the options of every run just before it starts.
     std::function<void(host::Options&)> tweak;
+    // Practice matches: the preferences every launch reads (Options::hosting) and the place the running session's hosting status
+    // and kick requests go through. Null = never hosts.
+    HostingService* hosting = nullptr;
 };
 
 // The real simulation host: validates the model, builds the physics world and the game plugin session, launches the

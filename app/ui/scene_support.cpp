@@ -20,8 +20,7 @@ SceneBoxOrCylinder describePrimitive(const sdk::PrimitiveSpec& p) {
 }
 
 sdk::Pose3 chassisHullLocalPose(const sdk::ChassisSpec& ch) {
-    return sdk::Pose3{sdk::Vec3{-ch.comOffsetM.x, -ch.comOffsetM.y, ch.groundClearanceM + ch.sizeM.z * 0.5f - ch.comHeightM},
-                      sdk::Quat{}};
+    return sdk::Pose3{sdk::chassisFrameBoxCentre(ch), sdk::Quat{}};
 }
 
 SceneBoxOrCylinder describeChassisNose(const sdk::ChassisSpec& ch, float zInBody, std::string color) {

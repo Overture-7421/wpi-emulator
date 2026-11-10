@@ -9,6 +9,9 @@
 #include <optional>
 
 #include "common/real_runtime_host.h"
+#include "host/tests/hosting_test_client.h"
+#include "wpiemu/core/config/json_codec.h"
+#include "wpiemu/core/config/robot_config_codec.h"
 #include "contract/start_position_selection.h"
 #include "gui_support.h"
 #include "scoped_env.h"
@@ -354,4 +357,83 @@ TEST_CASE("real host e2e (opt-in): the shell discovers the devices of a real rob
     host.stop();
     REQUIRE(waitFor([&] { return !host.status().active(); }, 30000));
     CHECK(host.status().process == sdk::ProcessState::Exited);
+}
+
+// ---- practice matches: the real host hosting a match while the (fake) robot build is still running ----
+
+TEST_CASE("real host: hosting off leaves the launch and the hosting service untouched") {
+    RealFixture f(kWaitScript);
+    HostingService& hosting = f.env.services->hosting();
+    CHECK(hosting.options().mode == host::HostingMode::Off);
+    f.host().launch();
+    CHECK(f.host().status().process == sdk::ProcessState::Starting);
+    CHECK(hosting.status()->phase == host::HostingPhase::Off);
+    CHECK(hosting.status()->invite.empty());
+    CHECK_FALSE(hosting.restartRequired());
+    REQUIRE(hosting.appliedOptions().has_value());
+    CHECK(hosting.appliedOptions()->mode == host::HostingMode::Off);
+    f.host().stop();
+    REQUIRE(f.waitProcess(sdk::ProcessState::Exited));
+    CHECK_FALSE(hosting.appliedOptions().has_value());
+}
+
+TEST_CASE("real host: invalid hosting options refuse the launch with a message, before any robot starts") {
+    RealFixture f(kWaitScript);
+    host::HostingOptions o;
+    o.mode = host::HostingMode::Relay;   // no relay address
+    f.env.services->hosting().setOptions(o);
+    f.host().launch();
+    REQUIRE(f.waitProcess(sdk::ProcessState::FailedToStart));
+    CHECK(f.host().status().detail.contains("hosting"));
+    CHECK(f.env.services->hosting().status()->phase == host::HostingPhase::Off);
+}
+
+TEST_CASE("real host: a hosted direct match accepts a client in the lobby, shows it, kicks it and frees the port on stop") {
+    RealFixture f(kWaitScript);
+    HostingService& hosting = f.env.services->hosting();
+    host::HostingOptions o;
+    o.mode = host::HostingMode::Direct;
+    o.bindHost = "127.0.0.1";
+    o.port = 0;
+    hosting.setOptions(o);
+
+    f.host().launch();
+    REQUIRE(waitFor([&] { return hosting.status()->accepting(); }, 20000));
+    const auto up = hosting.status();
+    CHECK(up->phase == host::HostingPhase::Lobby);   // the robot program is not running in lock-step yet
+    CHECK_FALSE(up->invite.empty());
+    CHECK_FALSE(hosting.restartRequired());
+    host::HostingOptions changed = o;
+    changed.maxPlayers = 3;
+    hosting.setOptions(changed);
+    CHECK(hosting.restartRequired());   // applies at the next launch
+    hosting.setOptions(o);
+    CHECK_FALSE(hosting.restartRequired());
+
+    const std::string endpoint = "enet://127.0.0.1:" + std::to_string(up->port);
+    auto client = host::testing::HostingTestClient::connect(endpoint, up->invite);
+    REQUIRE(client != nullptr);
+    const sdk::GamePluginRegistry& plugins = f.env.services->plugins();
+    const std::string gameId = f.host().scene().gameId.toStdString();
+    REQUIRE(plugins.find(gameId) != nullptr);
+    const core::config::RobotConfigCodec codec;
+    const std::string spec = core::config::JsonValueCodec().dump(codec.toValue(defaultRobotConfig(*f.env.services)), false);
+    const bool joined = client->join("Remote", spec, gameId, plugins.find(gameId)->metadata().year);
+    INFO(client->rejection() ? client->rejection()->detail : std::string("no answer"));
+    REQUIRE(joined);   // the remote robot is a real Box3D body of the session's world
+    const sdk::match::ParticipantId id = client->accept->participantId;
+    REQUIRE(waitFor([&] { return hosting.status()->roster.size() == 2; }, 5000));
+    CHECK(hosting.status()->roster[1].name == "Remote");
+    CHECK(hosting.status()->timeScaleLocked);
+
+    QSignalSpy kicked(&hosting, &HostingService::kickRequested);
+    hosting.kick(id, QStringLiteral("test"));
+    CHECK(kicked.count() == 1);
+    REQUIRE(client->waitFor([&] { return client->gotControl(sdk::match::MatchControlKind::Kick) || client->closed; }));
+    REQUIRE(waitFor([&] { return hosting.status()->roster.size() == 1; }, 5000));
+
+    f.host().stop();
+    REQUIRE(f.waitProcess(sdk::ProcessState::Exited));
+    CHECK(hosting.status()->phase == host::HostingPhase::Off);
+    CHECK(host::testing::udpPortIsFree("127.0.0.1", up->port));   // the port was released
 }

@@ -2,9 +2,12 @@
 # (RealRuntimeHost) and by the opt-in end-to-end test; contains no widgets and no season knowledge.
 find_package(Threads REQUIRED)
 add_library(wpiemu_app_host STATIC
+    constrained_controller.cpp
+    hosting.cpp
+    match_hosting.cpp
     robot_session.cpp)
 target_include_directories(wpiemu_app_host PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
-target_link_libraries(wpiemu_app_host PUBLIC wpiemu_core wpiemu_ipc wpiemu_sdk Threads::Threads)
+target_link_libraries(wpiemu_app_host PUBLIC wpiemu_core wpiemu_match wpiemu_ipc wpiemu_net wpiemu_sdk Threads::Threads)
 wpiemu_target_defaults(wpiemu_app_host)
 
 if(WPIEMU_BUILD_TESTS)

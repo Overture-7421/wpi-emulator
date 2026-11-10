@@ -440,7 +440,8 @@ struct MatchHost::Impl {
         if (wire::hasResumeToken(join.resumeToken) && kickedTokens.count(join.resumeToken) != 0)
             return rejectJoin(c, wire::JoinRejectReason::Kicked, "removed by the host");
 
-        if (parts.size() + 1 >= wire::kMaxRobotsPerMatch) return rejectJoin(c, wire::JoinRejectReason::RoomFull, "the match is full");
+        const std::size_t playerCap = std::min(config.maxPlayers, wire::kMaxRobotsPerMatch);
+        if (parts.size() + 1 >= playerCap) return rejectJoin(c, wire::JoinRejectReason::RoomFull, "the match is full");
         if (services.specPipeline == nullptr) return rejectJoin(c, wire::JoinRejectReason::BadSpec, "the host cannot read robot descriptions");
         const std::optional<wire::ResumeToken> token = newToken();
         if (!token || nextParticipantId >= wire::kNoParticipant)
@@ -993,6 +994,14 @@ std::vector<ParticipantInfo> MatchHost::participants() const {
         i.name = p.name;
         i.station = p.station;
         i.connected = p.linkId != 0;
+        if (Connection* c = impl_->connectionOf(p)) {
+            if (const auto ls = c->link->linkStats()) {
+                i.rttMs = ls->rttMs;
+                i.lossPermille = std::min<std::uint32_t>(ls->lossPermille, 1000);
+            }
+        } else {
+            i.lossPermille = 1000;
+        }
         i.snapshotRateHz = p.rate.hz();
         i.inputsSubmitted = p.inputsSubmitted;
         i.inputsRateLimited = p.inputsRateLimited;
