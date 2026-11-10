@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "wpiemu/net/enet_transport.h"
 #include "wpiemu/relay/relay_log.h"
 #include "wpiemu/relay/relay_server.h"
 #include "wpiemu/sdk/core/result.h"
@@ -44,5 +45,10 @@ using EnvLookup = std::function<std::optional<std::string>(const std::string& na
 sdk::Result<RelayOptions> parseRelayOptions(const std::vector<std::string>& args, const EnvLookup& env);
 
 std::string relayUsage();
+
+// The ENet server settings of a production relay (wpiemu_relay and the tests that mirror it use this one function). The
+// relay prepends the 2-byte envelope to a client's frame before it hands it to the host, so the link must carry frames of
+// kRelayMaxReliablePacket / kRelayMaxDatagram PLUS the envelope.
+net::EnetServerOptions transportOptionsFor(const RelayOptions& options);
 
 }  // namespace wpiemu::relay

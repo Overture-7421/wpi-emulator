@@ -71,11 +71,7 @@ std::optional<std::string> environment(const std::string& name) {
 int runRelay(const relay::RelayOptions& options) {
     auto log = std::make_shared<relay::RelayLog>(options.logFormat);
 
-    net::EnetServerOptions transport;
-    transport.bindHost = options.bindHost;
-    transport.port = options.port;
-    transport.maxPeers = options.maxConnections;
-    auto server = std::make_unique<net::EnetServerTransport>(transport);
+    auto server = std::make_unique<net::EnetServerTransport>(relay::transportOptionsFor(options));
 
     const relay::RoomTableConfig& t = options.server.table;
     log->log(relay::LogLevel::Info, "starting",

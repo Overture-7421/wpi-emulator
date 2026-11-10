@@ -355,8 +355,8 @@ TEST_CASE("relay server: oversize datagrams are dropped and counted") {
     auto host = h.host(roomIdFor(1));
     auto client = h.client(roomIdFor(1));
     host->takeControl();
+    client->sendGame(Delivery::Unreliable, payload(rl::kRelayMaxDatagram + 1));
     client->sendGame(Delivery::Unreliable, payload(rl::kRelayMaxDatagram));
-    client->sendGame(Delivery::Unreliable, payload(rl::kRelayMaxDatagram - rl::kRelayEnvelopeBytes));
     h.pump();
     CHECK(host->takeGame().size() == 1);
     CHECK(h.server->stats().dropped(DropReason::Oversized) == 1);

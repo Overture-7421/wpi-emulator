@@ -13,7 +13,7 @@ namespace wpiemu::relay {
 // Why a game frame was not forwarded.
 enum class DropReason : std::uint8_t {
     Unregistered = 0,  // the sender has not completed RegisterRoom / JoinRoom
-    Oversized,         // above kRelayMaxDatagram (unreliable, envelope included) or kRelayMaxReliablePacket (reliable)
+    Oversized,         // above kRelayMaxDatagram or kRelayMaxReliablePacket (a host frame counts its envelope, a client frame does not)
     RateLimited,       // the sender's token bucket was empty
     RoomByteCap,       // the room's byte budget was empty
     TooShort,          // a host frame without the envelope (or with nothing after it)

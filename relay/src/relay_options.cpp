@@ -159,4 +159,14 @@ sdk::Result<RelayOptions> parseRelayOptions(const std::vector<std::string>& args
     return options;
 }
 
+net::EnetServerOptions transportOptionsFor(const RelayOptions& options) {
+    net::EnetServerOptions transport;
+    transport.bindHost = options.bindHost;
+    transport.port = options.port;
+    transport.maxPeers = options.maxConnections;
+    transport.maxReliableFrameBytes = options.server.table.maxReliableBytes + rl::kRelayEnvelopeBytes;
+    transport.maxUnreliableFrameBytes = options.server.table.maxDatagramBytes + rl::kRelayEnvelopeBytes;
+    return transport;
+}
+
 }  // namespace wpiemu::relay

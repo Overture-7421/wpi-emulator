@@ -354,23 +354,28 @@ TEST_CASE("relay table: the host never receives frames of a room it does not own
     CHECK(games[0].to == 11);
 }
 
-TEST_CASE("relay table: size caps apply to the envelope-included datagram and to reliable packets") {
+TEST_CASE("relay table: size caps apply to a client's frame as sent and to a host's frame with its envelope") {
     RoomTableConfig config;
     config.peerBytesPerSecond = 0;  // no rate limit here
     Fixture f(config);
     f.registerHost(1, roomIdFor(1));
     f.join(11, roomIdFor(1));
 
-    // A client datagram plus the 2-byte envelope must fit kRelayMaxDatagram.
-    CHECK_FALSE(f.table.route(11, Delivery::Unreliable, payload(rl::kRelayMaxDatagram - rl::kRelayEnvelopeBytes)).dropped.has_value());
-    CHECK(f.table.route(11, Delivery::Unreliable, payload(rl::kRelayMaxDatagram - rl::kRelayEnvelopeBytes + 1)).dropped == DropReason::Oversized);
+    // A client may use the full limits: the relay adds the envelope toward the host.
+    const auto fromClient = f.table.route(11, Delivery::Unreliable, payload(rl::kRelayMaxDatagram));
+    CHECK_FALSE(fromClient.dropped.has_value());
+    const auto games = gamesIn(fromClient.effects);
+    REQUIRE(games.size() == 1);
+    CHECK(games[0].frame.size() == rl::kRelayMaxDatagram + rl::kRelayEnvelopeBytes);
+    CHECK(f.table.route(11, Delivery::Unreliable, payload(rl::kRelayMaxDatagram + 1)).dropped == DropReason::Oversized);
     // A host datagram carries the envelope itself.
     CHECK_FALSE(f.table.route(1, Delivery::Unreliable, withEnvelope(1, payload(rl::kRelayMaxDatagram - rl::kRelayEnvelopeBytes))).dropped.has_value());
     CHECK(f.table.route(1, Delivery::Unreliable, withEnvelope(1, payload(rl::kRelayMaxDatagram - rl::kRelayEnvelopeBytes + 1))).dropped == DropReason::Oversized);
     // Reliable.
-    CHECK_FALSE(f.table.route(11, Delivery::Reliable, payload(rl::kRelayMaxReliablePacket - rl::kRelayEnvelopeBytes)).dropped.has_value());
-    CHECK(f.table.route(11, Delivery::Reliable, payload(rl::kRelayMaxReliablePacket)).dropped == DropReason::Oversized);
-    CHECK(f.table.route(1, Delivery::Reliable, withEnvelope(1, payload(rl::kRelayMaxReliablePacket))).dropped == DropReason::Oversized);
+    CHECK_FALSE(f.table.route(11, Delivery::Reliable, payload(rl::kRelayMaxReliablePacket)).dropped.has_value());
+    CHECK(f.table.route(11, Delivery::Reliable, payload(rl::kRelayMaxReliablePacket + 1)).dropped == DropReason::Oversized);
+    CHECK_FALSE(f.table.route(1, Delivery::Reliable, withEnvelope(1, payload(rl::kRelayMaxReliablePacket - rl::kRelayEnvelopeBytes))).dropped.has_value());
+    CHECK(f.table.route(1, Delivery::Reliable, withEnvelope(1, payload(rl::kRelayMaxReliablePacket - rl::kRelayEnvelopeBytes + 1))).dropped == DropReason::Oversized);
     CHECK(f.table.stats().dropped(DropReason::Oversized) == 4);
 }
 
@@ -464,8 +469,8 @@ TEST_CASE("relay table: a peer that keeps violating the limits is disconnected")
     Fixture f(config);
     f.registerHost(1, roomIdFor(1));
     f.join(11, roomIdFor(1));
-    for (int i = 0; i < 5; ++i) CHECK(f.table.route(11, Delivery::Unreliable, payload(rl::kRelayMaxDatagram)).effects.empty());
-    const auto kick = f.table.route(11, Delivery::Unreliable, payload(rl::kRelayMaxDatagram));
+    for (int i = 0; i < 5; ++i) CHECK(f.table.route(11, Delivery::Unreliable, payload(rl::kRelayMaxDatagram + 1)).effects.empty());
+    const auto kick = f.table.route(11, Delivery::Unreliable, payload(rl::kRelayMaxDatagram + 1));
     const auto closes = closesIn(kick.effects);
     REQUIRE(closes.size() == 1);
     CHECK(closes[0].to == 11);
@@ -485,7 +490,7 @@ TEST_CASE("relay table: drops spread over time do not disconnect") {
     f.join(11, roomIdFor(1));
     for (int i = 0; i < 50; ++i) {
         f.clock->advance(300ms);
-        CHECK(f.table.route(11, Delivery::Unreliable, payload(rl::kRelayMaxDatagram)).effects.empty());
+        CHECK(f.table.route(11, Delivery::Unreliable, payload(rl::kRelayMaxDatagram + 1)).effects.empty());
     }
     CHECK(f.table.roleOf(11) == Role::Client);
 }

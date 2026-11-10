@@ -363,9 +363,11 @@ struct RoomTable::Impl {
         Room& room = rooms.at(c.room);
         const bool fromClient = c.role == Role::Client;
 
+        // A client sends its frame unprefixed and may use the full limits (the host link is sized for the envelope added
+        // on forwarding); a host frame carries its own envelope, so its payload is at most limit - envelope.
         const std::size_t limit = delivery == Delivery::Unreliable ? config.maxDatagramBytes : config.maxReliableBytes;
         const std::size_t envelope = fromClient ? rl::kRelayEnvelopeBytes : 0;
-        if (frame.size() + envelope > limit) return strike(id, c, DropReason::Oversized);
+        if (frame.size() > limit) return strike(id, c, DropReason::Oversized);
         if (!c.bucket.take(frame.size(), now())) return strike(id, c, DropReason::RateLimited);
         counters.bytesReceived += frame.size();
 
