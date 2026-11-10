@@ -30,6 +30,15 @@ void fillZones(wire::RobotWireState& out, std::span<const sdk::ZoneState> zones)
         if (zones[i].active) out.zoneFlags |= wire::zoneFlagBit(i);
 }
 
+void fillZonePoses(wire::RobotWireState& out, std::span<const sdk::ZoneState> zones, const ZoneRestPoses& restPoses) {
+    const auto rest = restPoses.find(out.participantId);
+    if (rest == restPoses.end() || rest->second.empty()) return;
+    std::vector<sdk::Pose3> effective(rest->second.begin(), rest->second.end());
+    for (std::size_t i = 0; i < zones.size() && i < effective.size(); ++i)
+        if (zones[i].poseInChassis) effective[i] = *zones[i].poseInChassis;
+    out.zonePoses = wire::selectSnapshotZonePoses(rest->second, effective, out.zoneFlags);
+}
+
 void fillHud(std::vector<wire::HudValue>& out, std::span<const sdk::HudValue> hud, const HudKeyTable& keys, std::size_t cap,
              std::size_t& unknown) {
     for (const sdk::HudValue& h : hud) {
@@ -58,7 +67,8 @@ std::optional<float> hudWireValue(const sdk::Value& value) {
     return static_cast<float>(d);
 }
 
-WireFrame buildWireFrame(const sdk::ISimSnapshot& snapshot, const HudKeyTable& hudKeys, const wire::MatchInfo& info) {
+WireFrame buildWireFrame(const sdk::ISimSnapshot& snapshot, const HudKeyTable& hudKeys, const wire::MatchInfo& info,
+                         const ZoneRestPoses& zoneRestPoses) {
     WireFrame frame;
     frame.tick = snapshot.tick();
     frame.simTimeUs = snapshot.simTimeUs();
@@ -69,6 +79,7 @@ WireFrame buildWireFrame(const sdk::ISimSnapshot& snapshot, const HudKeyTable& h
     fillBody(host, snapshot.chassis());
     fillWheels(host, snapshot.wheels());
     fillZones(host, snapshot.zones());
+    fillZonePoses(host, snapshot.zones(), zoneRestPoses);
     frame.robots.push_back(std::move(host));
 
     std::vector<const sdk::RobotSample*> remotes;
@@ -82,6 +93,7 @@ WireFrame buildWireFrame(const sdk::ISimSnapshot& snapshot, const HudKeyTable& h
         fillBody(out, r->body);
         fillWheels(out, r->wheels);
         fillZones(out, r->zones);
+        fillZonePoses(out, r->zones, zoneRestPoses);
         fillHud(out.hud, r->hud, hudKeys, wire::kMaxHudValuesPerRobot, frame.hudKeysUnknown);
         frame.robots.push_back(std::move(out));
     }

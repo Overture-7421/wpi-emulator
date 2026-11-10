@@ -109,6 +109,7 @@ public:
         std::vector<wire::MatchInput> inputs;
         Pose3 pose;
         Vec3 velocity;
+        std::vector<ZoneState> zones;   // what the snapshot reports for this robot's zones
     };
 
     std::string plugin = "fake_game";
@@ -126,6 +127,7 @@ public:
     std::vector<HudWidgetDescriptor> descriptors;
     BodySample hostBody;
     std::vector<WheelSample> hostWheels;
+    std::vector<ZoneState> hostZones;
     std::optional<Error> addFailure;
     std::vector<wire::ParticipantId> removed;
     int builds = 0;
@@ -194,6 +196,7 @@ public:
         d.robotConnected = robotConnected;
         d.chassis = hostBody;
         d.wheels = hostWheels;
+        d.zones = hostZones;
         d.driverStation = ds;
         d.entityGroups = groups;
         d.hud = hud;
@@ -205,6 +208,7 @@ public:
             s.hud = robotHud;
             s.body.pose = r.pose;
             s.body.linearVelocity = r.velocity;
+            s.zones = r.zones;
             for (std::size_t w = 0; w < r.request.spec.drivetrain.spec.wheels.size(); ++w) {
                 WheelSample ws;
                 ws.steerAngleRad = 0.1 * static_cast<double>(w);
