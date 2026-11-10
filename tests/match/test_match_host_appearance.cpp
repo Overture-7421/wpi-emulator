@@ -159,6 +159,58 @@ TEST_CASE("match host: spec intake moves out-of-envelope zones in and reports th
     CHECK(ok.value().config.zones[0].local.position.x == doctest::Approx(0.4f));
 }
 
+TEST_CASE("match host: spec intake clamps zone sizes, reports them and leaves sizes in range alone") {
+    PipelineKit kit;
+    addFakeGame(kit);
+    RobotConfig big = swerveSpec("Big");
+    big.gamePluginId = "fake_game";
+    big.zones = {zoneAt("huge", {0.4f, 0.f, 0.1f}, {80.f, 0.3f, 0.001f}), zoneAt("fine", {0.4f, 0.f, 0.1f}, {0.3f, 1.5f, 0.02f})};
+    const sdk::Result<AcceptedSpec> accepted = acceptRemoteSpec(specJson(big), kit.pipeline);
+    REQUIRE(accepted.ok());
+    const AcceptedSpec& spec = accepted.value();
+    REQUIRE(spec.config.zones.size() == 2);
+    CHECK(spec.config.zones[0].sizeM.x == doctest::Approx(1.5f));
+    CHECK(spec.config.zones[0].sizeM.y == doctest::Approx(0.3f));
+    CHECK(spec.config.zones[0].sizeM.z == doctest::Approx(0.02f));
+    CHECK(spec.config.zones[1].sizeM.x == doctest::Approx(0.3f));
+    CHECK(spec.config.zones[1].sizeM.y == doctest::Approx(1.5f));
+    CHECK(spec.config.zones[1].sizeM.z == doctest::Approx(0.02f));
+    int sizeLines = 0;
+    for (const std::string& line : spec.clamped) {
+        if (line.find("zones[0].sizeM") == 0) ++sizeLines;
+        CHECK(line.find("zones[1]") == std::string::npos);
+        CHECK(line.find(".local") == std::string::npos);
+    }
+    CHECK(sizeLines == 1);
+}
+
+TEST_CASE("match host: the roster appearance carries the clamped zone size the session simulates") {
+    FakeSession s;
+    Harness h(s);
+    addFakeGame(h.kit);
+    RobotConfig spec = swerveSpec("Huge");
+    spec.gamePluginId = "fake_game";
+    spec.zones = {zoneAt("intake", {0.4f, 0.f, 0.1f}, {30.f, 0.6f, 12.f})};
+    TestClient c(h);
+    REQUIRE(c.join(c.joinMessage("Huge", spec, s)));
+    REQUIRE(c.accept->roster.size() == 2);
+    const wire::RobotAppearance& a = c.accept->roster[1].appearance;
+    REQUIRE(a.zones.size() == 1);
+    CHECK(a.zones[0].sizeXMm == 1500);
+    CHECK(a.zones[0].sizeYMm == 600);
+    CHECK(a.zones[0].sizeZMm == 1500);
+
+    REQUIRE(s.robots.count(1) == 1);
+    const std::vector<ZoneConfig>& zones = s.robots.at(1).request.spec.zones;
+    REQUIRE(zones.size() == 1);
+    CHECK(zones[0].sizeM.x == doctest::Approx(1.5f));
+    CHECK(zones[0].sizeM.z == doctest::Approx(1.5f));
+    CHECK(a == core::match::appearanceOf(s.robots.at(1).request.spec));
+    const ZoneConfig back = wire::toZoneConfig(a.zones[0]);
+    CHECK(back.sizeM.x == doctest::Approx(zones[0].sizeM.x));
+    CHECK(back.sizeM.z == doctest::Approx(zones[0].sizeM.z));
+}
+
 TEST_CASE("match host: every roster after a join or a leave carries every appearance") {
     FakeSession s;
     Harness h(s);

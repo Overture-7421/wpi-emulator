@@ -28,15 +28,19 @@ bool ignoredForRemote(const sdk::Issue& issue) {
 
 std::string describe(const sdk::SpecViolation& v) { return v.path + ": " + v.message; }
 
-// A zone's own pose is bounded like a pose its client commands later (clampRemoteZonePose), so the rest pose the host
-// simulates, the one the roster appearance carries and the one a client falls back to are one pose inside the envelope.
-void clampZonePoses(AcceptedSpec& spec) {
+// A zone's own pose and volume are bounded like a pose its client commands later (clampRemoteZonePose), so the rest pose and
+// size the host simulates, the ones the roster appearance carries and the ones a client falls back to are one pose and one
+// size inside the envelope.
+void clampZones(AcceptedSpec& spec) {
     for (std::size_t i = 0; i < spec.config.zones.size(); ++i) {
         sdk::ZoneConfig& zone = spec.config.zones[i];
+        const std::string base = "zones[" + std::to_string(i) + "]";
         const sdk::ClampedZonePose clamped = sdk::clampRemoteZonePose(spec.config.chassis, zone.local);
-        if (clamped.changed)
-            spec.clamped.push_back("zones[" + std::to_string(i) + "].local: moved into the allowed envelope around the frame");
+        if (clamped.changed) spec.clamped.push_back(base + ".local: moved into the allowed envelope around the frame");
         zone.local = clamped.pose;
+        const sdk::ClampedZoneSize size = sdk::clampRemoteZoneSize(zone.sizeM);
+        if (size.changed) spec.clamped.push_back(base + ".sizeM: moved into the allowed zone size range");
+        zone.sizeM = size.size;
     }
 }
 
@@ -82,7 +86,7 @@ sdk::Result<AcceptedSpec> acceptRemoteSpec(std::string_view json, const config::
             return sdk::makeError(ErrorCode::InvalidArgument, joinDetail(lines));
         }
     }
-    clampZonePoses(out);
+    clampZones(out);
     return out;
 }
 

@@ -74,7 +74,7 @@ Result<ChassisInfo> buildReferenceChassis(IPhysicsWorld& world, const ChassisSpe
 
     ShapeDesc hull;
     hull.geometry = BoxShape{chassis.sizeM * 0.5f};
-    hull.local.position = Vec3{-chassis.comOffsetM.x, -chassis.comOffsetM.y, chassis.groundClearanceM + chassis.sizeM.z * 0.5f - chassis.comHeightM};
+    hull.local.position = chassisFrameBoxCentre(chassis);
     hull.material = chassis.material;
     hull.category = layer::Robot;
     hull.mask = kHullMask;

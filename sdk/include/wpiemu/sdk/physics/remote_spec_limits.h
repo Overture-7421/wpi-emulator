@@ -125,6 +125,11 @@ struct RemoteSpecLimits {
     // Highest point of a zone above the FLOOR; the lowest is the floor (a zone is never below the carpet). The robot
     // height limit (heightM.max, 1.5 m) is also the highest a mechanism or muzzle can reasonably sit.
     double zoneMaxHeightAboveFloorM = 1.5;
+    // Full extent of a zone's volume along each axis (clampRemoteZoneSize). Kind-agnostic: a game plugin reads ZoneConfig::sizeM
+    // as it sees fit (a pickup box, a hit box, ...), so this only bounds what any kind can claim. A volume never needs to be
+    // larger than the biggest frame side (footprintM.max, 1.5 m: the reach margin above already bounds where it is) and one
+    // thinner than 2 cm cannot hold a game piece.
+    LimitRange zoneSizeM{0.02, 1.5};
 };
 
 inline constexpr RemoteSpecLimits kRemoteSpecLimits{};
@@ -504,6 +509,30 @@ inline ClampedZonePose clampRemoteZonePose(const ChassisSpec& chassis, const Pos
     } else {
         out.pose.rotation = q.normalized();
     }
+    return out;
+}
+
+// A zone's volume extents after kRemoteSpecLimits.zoneSizeM.
+struct ClampedZoneSize {
+    Vec3 size;
+    bool changed = false;    // an axis was moved into the range
+    bool nonFinite = false;  // an axis was NaN/inf: it became the minimum, so a malformed size claims no volume
+};
+
+// Clamps each axis of a zone's full extents into kRemoteSpecLimits.zoneSizeM; `changed` is false for a size already in range.
+inline ClampedZoneSize clampRemoteZoneSize(const Vec3& size) {
+    const LimitRange& range = kRemoteSpecLimits.zoneSizeM;
+    ClampedZoneSize out;
+    const auto axis = [&](float v) {
+        if (!std::isfinite(v)) {
+            out.changed = out.nonFinite = true;
+            return static_cast<float>(range.min);
+        }
+        const float c = std::clamp(v, static_cast<float>(range.min), static_cast<float>(range.max));
+        if (c != v) out.changed = true;
+        return c;
+    };
+    out.size = {axis(size.x), axis(size.y), axis(size.z)};
     return out;
 }
 

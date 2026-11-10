@@ -9,7 +9,9 @@
 //      wheel list, so the list is accepted as sent or not at all;
 //   4. clamp everything else to the plausible-FRC ranges (sdk::clampRemoteSpec) and report each clamped field;
 //   5. move each zone's own pose into the zone envelope of the clamped chassis (sdk::clampRemoteZonePose), the same bound a
-//      client's commanded zone poses get, so the rest pose a robot's zones have is always inside it.
+//      client's commanded zone poses get, so the rest pose a robot's zones have is always inside it, and clamp each zone's
+//      volume extents (sdk::clampRemoteZoneSize) so no client can claim an oversized pickup volume; the clamped zones are
+//      what the session simulates and what the roster appearance carries.
 // Pure apart from the pipeline's plugin registration (sim thread only, like the rest of the host).
 
 #include <string>

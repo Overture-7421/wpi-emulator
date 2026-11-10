@@ -28,6 +28,14 @@ struct ChassisSpec {
     std::vector<PrimitiveSpec> primitives;   // extra visual / collision primitives (frame, bumpers, ...)
 };
 
+// Centre of the frame box in the COM-origin chassis frame: the COM is offset from the box centre by comOffsetM (xy), and
+// the box bottom is groundClearanceM above the floor, which is comHeightM below the COM. The one definition the physics
+// hull, the reference chassis, the inertia and the robot appearance share.
+inline Vec3 chassisFrameBoxCentre(const ChassisSpec& chassis) {
+    return {-chassis.comOffsetM.x, -chassis.comOffsetM.y,
+            chassis.groundClearanceM + 0.5f * chassis.sizeM.z - chassis.comHeightM};
+}
+
 enum class WheelKind { Standard, Omni, Mecanum, Swerve };
 
 // The persisted key of a wheel kind ("standard", "omni", "mecanum", "swerve") and its inverse; nullopt for an unknown key.

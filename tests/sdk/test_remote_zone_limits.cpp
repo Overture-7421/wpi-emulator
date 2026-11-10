@@ -140,3 +140,66 @@ TEST_CASE("zone pose limits: non-finite input is flagged and replaced by a finit
     CHECK(zero.changed);
     CHECK(zero.pose.rotation.w == 1.f);
 }
+
+TEST_CASE("zone size limits: the table range is 2 cm to 1.5 m") {
+    CHECK(kRemoteSpecLimits.zoneSizeM.min == doctest::Approx(0.02));
+    CHECK(kRemoteSpecLimits.zoneSizeM.max == doctest::Approx(1.5));
+}
+
+TEST_CASE("zone size limits: a size inside the range is unchanged, including exactly on the bounds") {
+    for (const Vec3& s : {Vec3{0.3f, 0.3f, 0.3f}, Vec3{0.02f, 1.5f, 0.75f}, Vec3{1.5f, 1.5f, 1.5f}, Vec3{0.02f, 0.02f, 0.02f}}) {
+        const ClampedZoneSize r = clampRemoteZoneSize(s);
+        CHECK_FALSE(r.changed);
+        CHECK_FALSE(r.nonFinite);
+        CHECK(r.size.x == s.x);
+        CHECK(r.size.y == s.y);
+        CHECK(r.size.z == s.z);
+    }
+}
+
+TEST_CASE("zone size limits: each axis is clamped on its own and reported") {
+    ClampedZoneSize r = clampRemoteZoneSize({50.f, 0.3f, 0.3f});
+    CHECK(r.changed);
+    CHECK_FALSE(r.nonFinite);
+    CHECK(r.size.x == doctest::Approx(1.5f));
+    CHECK(r.size.y == 0.3f);
+    CHECK(r.size.z == 0.3f);
+    r = clampRemoteZoneSize({0.3f, 0.f, 0.3f});
+    CHECK(r.changed);
+    CHECK(r.size.y == doctest::Approx(0.02f));
+    r = clampRemoteZoneSize({0.3f, 0.3f, -4.f});
+    CHECK(r.changed);
+    CHECK(r.size.z == doctest::Approx(0.02f));
+    r = clampRemoteZoneSize({1.5001f, 0.0199f, 1e9f});
+    CHECK(r.changed);
+    CHECK(r.size.x == doctest::Approx(1.5f));
+    CHECK(r.size.y == doctest::Approx(0.02f));
+    CHECK(r.size.z == doctest::Approx(1.5f));
+}
+
+TEST_CASE("zone size limits: a non-finite axis becomes the minimum and is flagged") {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    for (const Vec3& s : {Vec3{nan, 0.3f, 0.3f}, Vec3{0.3f, inf, 0.3f}, Vec3{0.3f, 0.3f, -inf}}) {
+        const ClampedZoneSize r = clampRemoteZoneSize(s);
+        CHECK(r.nonFinite);
+        CHECK(r.changed);
+        CHECK(std::isfinite(r.size.x + r.size.y + r.size.z));
+        CHECK(r.size.x >= 0.02f);
+        CHECK(r.size.x <= 1.5f);
+    }
+    CHECK(clampRemoteZoneSize({nan, 0.3f, 0.3f}).size.x == doctest::Approx(0.02f));
+    CHECK(clampRemoteZoneSize({0.3f, 0.3f, inf}).size.z == doctest::Approx(0.02f));
+}
+
+TEST_CASE("chassis frame box centre: the COM-origin position of the box the hull and the appearance share") {
+    ChassisSpec c;
+    c.sizeM = {0.7f, 0.6f, 0.2f};
+    c.comHeightM = 0.3f;
+    c.groundClearanceM = 0.04f;
+    c.comOffsetM = {0.05f, -0.1f, 9.f};   // the COM offset z is ignored
+    const Vec3 centre = chassisFrameBoxCentre(c);
+    CHECK(centre.x == doctest::Approx(-0.05f));
+    CHECK(centre.y == doctest::Approx(0.1f));
+    CHECK(centre.z == doctest::Approx(0.04f + 0.1f - 0.3f));
+}

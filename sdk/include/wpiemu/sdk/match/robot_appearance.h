@@ -188,10 +188,11 @@ inline RobotAppearance makeRobotAppearance(const ChassisSpec& chassis, std::span
     out.sizeXMm = quantizeMilliU16(chassis.sizeM.x);
     out.sizeYMm = quantizeMilliU16(chassis.sizeM.y);
     out.sizeZMm = quantizeMilliU16(chassis.sizeM.z);
-    // The frame box centre in the COM-origin chassis frame (core/physics hullCenterLocal).
-    out.centreXMm = quantizeMilliI16(-chassis.comOffsetM.x);
-    out.centreYMm = quantizeMilliI16(-chassis.comOffsetM.y);
-    out.centreZMm = quantizeMilliI16(chassis.groundClearanceM + 0.5f * chassis.sizeM.z - chassis.comHeightM);
+    // The frame box centre in the COM-origin chassis frame (chassisFrameBoxCentre, the physics hull's).
+    const Vec3 centre = chassisFrameBoxCentre(chassis);
+    out.centreXMm = quantizeMilliI16(centre.x);
+    out.centreYMm = quantizeMilliI16(centre.y);
+    out.centreZMm = quantizeMilliI16(centre.z);
     out.comHeightMm = quantizeMilliU16(chassis.comHeightM);
     const std::size_t prims = std::min(chassis.primitives.size(), kMaxAppearancePrimitives);
     for (std::size_t i = 0; i < prims; ++i) out.primitives.push_back(makeAppearancePrimitive(i, chassis.primitives[i]));
