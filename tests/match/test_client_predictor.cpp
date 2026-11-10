@@ -285,6 +285,45 @@ TEST_CASE("own predictor: a wrong steer angle and wheel spin are restored from t
     CHECK(settled.wheels[0].steerRad == doctest::Approx(steerBefore + 0.4).epsilon(0.01));
 }
 
+TEST_CASE("prediction world: an unknown drivetrain is an error, remote bodies follow the roster") {
+    Bench b;
+    RobotConfig bad = b.spec;
+    bad.drivetrain.spec.kind = "no_such_drivetrain";
+    PredictionWorldArgs args{bad, nullptr, b.kit.drivetrains, b.kit.tires, {}, RobotStartPose{4.f, 4.f, 0.f}, 1, 5};
+    CHECK_FALSE(PredictionWorld::create(args).ok());
+
+    auto world = PredictionWorld::create(PredictionWorldArgs{b.spec, nullptr, b.kit.drivetrains, b.kit.tires, {}, RobotStartPose{4.f, 4.f, 0.f}, 1, 5});
+    REQUIRE(world.ok());
+    PredictionWorld& w = *world.value();
+    CHECK(w.wheelCount() == 4);
+    CHECK(w.remoteCount() == 0);
+    wire::RobotAppearance look;
+    look.sizeXMm = look.sizeYMm = 700;
+    look.sizeZMm = 120;
+    w.setRemote(3, look, {{8.f, 4.f, 0.2f}, sdk::Quat{}}, {}, 0.f);
+    w.setRemote(3, look, {{8.1f, 4.f, 0.2f}, sdk::Quat{}}, {1.f, 0.f, 0.f}, 0.f);   // the same body, moved
+    CHECK(w.remoteCount() == 1);
+    look.sizeXMm = 900;                                                             // a new look is a new body
+    w.setRemote(3, look, {{8.1f, 4.f, 0.2f}, sdk::Quat{}}, {}, 0.f);
+    CHECK(w.remoteCount() == 1);
+    w.setRemote(4, look, {{9.f, 4.f, 0.2f}, sdk::Quat{}}, {}, 0.f);
+    CHECK(w.remoteCount() == 2);
+    w.removeRemote(3);
+    CHECK(w.remoteCount() == 1);
+    w.clearRemotes();
+    CHECK(w.remoteCount() == 0);
+
+    // The robot can be captured and put back exactly.
+    const OwnBodyState s = w.capture();
+    CHECK(s.wheels.size() == 4);
+    OwnBodyState moved = s;
+    moved.pose.position.x += 1.f;
+    REQUIRE(w.restore(moved).ok());
+    CHECK(w.capture().pose.position.x == doctest::Approx(moved.pose.position.x));
+    moved.wheels.pop_back();
+    CHECK_FALSE(w.restore(moved).ok());
+}
+
 TEST_CASE("own predictor: shown() interpolates between the last two predicted states") {
     Bench b;
     auto p = b.make();

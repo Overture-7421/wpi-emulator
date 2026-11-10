@@ -344,6 +344,30 @@ TEST_CASE("match client frames: a snapshot of a newer epoch than announced is ad
     CHECK(r.state() == mc::ConnectionState::Live);
 }
 
+TEST_CASE("match client clock: a host whose sim time runs 0.06 percent fast is tracked and the estimate stays inside 3 ms") {
+    Rig r;
+    r.connect();
+    r.host.accept(wire::MatchState::Running);
+    std::int64_t sim = 0;
+    double worstMs = 0;
+    for (int i = 0; i < 1600; ++i) {   // 8 s
+        r.clock.advance(5ms);
+        sim += 5003;               // the host's second is 600 ppm longer than the client's
+        r.tick = static_cast<std::uint64_t>(sim / 5000);
+        r.host.answerPings(sim, r.tick);
+        REQUIRE(r.host.send(r.host.snapshot(r.tick, wire::MatchState::Running)).ok());
+        r.client->update();
+        if (i > 1200) {
+            const auto d = r.client->view()->diagnostics;
+            worstMs = std::max(worstMs, std::fabs(static_cast<double>(d.hostSimEstimateUs - sim)) / 1000.0);
+        }
+    }
+    const auto d = r.client->view()->diagnostics;
+    CHECK(d.clockDriftPpm > 350.0);
+    CHECK(d.clockDriftPpm < 850.0);
+    CHECK(worstMs < 3.0);
+}
+
 TEST_CASE("match client acknowledgements: every applied snapshot is acknowledged, latest wins") {
     Rig r;
     r.connect();
