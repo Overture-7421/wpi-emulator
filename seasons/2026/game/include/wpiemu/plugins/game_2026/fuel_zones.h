@@ -5,7 +5,8 @@
 //   "game_2026.pickup"  a volume on the robot that absorbs fuel into the meter while its activation holds
 //   "game_2026.shooter" a muzzle that launches fuel bodies while its activation holds and the flywheel is up to speed
 // "When" is the zone's ZoneActivation (conditions on other mechanisms' published values, evaluated by the game
-// state with sdk::evaluateActivation); "where" is its resolved pose in the chassis frame. The runtimes only add
+// state with sdk::evaluateActivation; for a remote robot, the client's zone flag); "where" is its resolved pose in
+// the chassis frame. The runtimes only add
 // what is specific to fuel: the pickup rate limit, the shooter's exit speed / aim from its flywheel, hood and
 // turret references, and the shot budget. The game state owns the fuel and the meter and acts through the ports.
 
@@ -22,6 +23,9 @@ namespace wpiemu::plugins::game_2026 {
 
 inline constexpr const char* kPickupKind = "game_2026.pickup";
 inline constexpr const char* kShooterKind = "game_2026.shooter";
+
+// Exit speed of a REMOTE robot's shooter whose `fixedExitSpeedMps` is 0: a remote robot has no flywheel to read.
+inline constexpr double kRemoteDefaultExitSpeedMps = 8.0;
 
 struct PickupParams {
     double intakeRateHz = 15.0;  // fuel per second; 0 = unlimited
@@ -104,7 +108,10 @@ private:
 
 class ShooterZoneRuntime final : public FuelZoneRuntime, public IFuelShooterPort {
 public:
-    explicit ShooterZoneRuntime(sdk::ZoneConfig config);
+    // `remote`: the zone belongs to a remote robot, which has no mechanisms. Exit speed is `fixedExitSpeedMps`
+    // (kRemoteDefaultExitSpeedMps when 0), elevation and yaw come from `hoodAngleRad` and `turretYawOffsetRad`, and
+    // mechanism references are ignored without warnings.
+    explicit ShooterZoneRuntime(sdk::ZoneConfig config, bool remote = false);
 
     void update(sdk::SimContext& ctx, const sdk::Pose3& poseInChassis, bool activationHeld, double dtSeconds) override;
 
@@ -120,7 +127,11 @@ public:
     double yawRad() const { return yawRad_; }
 
 private:
+    // Host robot: exit speed, elevation and yaw from the live mechanisms; false when a named one is missing.
+    bool readMechanisms(sdk::SimContext& ctx);
+
     ShooterParams params_;
+    bool remote_ = false;
     double exitSpeedMps_ = 0.0;
     double elevationRad_ = 0.0;
     double yawRad_ = 0.0;
