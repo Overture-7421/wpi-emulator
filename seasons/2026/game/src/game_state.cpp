@@ -162,9 +162,11 @@ void Game2026State::stepZones(sdk::SimContext& ctx, double dt) {
             FuelZoneRuntime& zone = *robot.zones[i];
             const sdk::ZoneConfig& cfg = zone.config();
             if (robot.remote) {
-                // No mechanisms: active iff the client's flag is set and the robot may act; chassis-frame rest pose.
+                // No mechanisms: active iff the client's flag is set and the robot may act; the pose is the one its client
+                // commanded this tick (clamped by the session), else the zone's spec pose.
                 const bool held = frame.view != nullptr && frame.view->enabled && frame.view->zoneFlagActive(robot.zoneBits[i]);
-                zone.update(ctx, sdk::restPoseOfZone(cfg).value_or(cfg.local), held, dt);
+                const std::optional<sdk::Pose3> moved = frame.view != nullptr ? frame.view->zonePose(robot.zoneBits[i]) : std::nullopt;
+                zone.update(ctx, moved.value_or(sdk::remoteZoneSpecPose(cfg)), held, dt);
                 continue;
             }
             sdk::Pose3 attachment;  // the chassis frame unless attached to a mechanism link that can be resolved
@@ -447,7 +449,8 @@ void Game2026State::publish(sdk::SnapshotBuilder& out) const {
     fuel.color = "#ffd000";
     fuel.positions = fuelPositions_;
     out.addEntityGroup(std::move(fuel));
-    for (const std::unique_ptr<FuelZoneRuntime>& zone : host_.zones) out.addZone({zone->id(), zone->active()});
+    for (const std::unique_ptr<FuelZoneRuntime>& zone : host_.zones)
+        out.addZone({zone->id(), zone->active(), zone->poseInChassis()});
 
     out.setHud(hud::kFuelCount, host_.meter);
     out.setHud(hud::kFuelCapacity, config_.capacity);

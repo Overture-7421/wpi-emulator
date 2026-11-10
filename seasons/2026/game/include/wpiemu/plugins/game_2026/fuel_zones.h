@@ -65,13 +65,15 @@ std::vector<sdk::ZoneKindInfo> zoneKinds();
 // Per-session state of one owned zone.
 class FuelZoneRuntime {
 public:
-    explicit FuelZoneRuntime(sdk::ZoneConfig config) : config_(std::move(config)) {}
+    explicit FuelZoneRuntime(sdk::ZoneConfig config) : config_(std::move(config)), poseInChassis_(config_.local) {}
     virtual ~FuelZoneRuntime() = default;
 
     const sdk::ZoneConfig& config() const { return config_; }
     const std::string& id() const { return config_.id; }
     // The zone's activation currently holds (what the snapshot publishes).
     bool active() const { return active_; }
+    // Where the zone was at the last update (its config's local pose before the first one), in the chassis frame.
+    const sdk::Pose3& poseInChassis() const { return poseInChassis_; }
 
     // One warning per unknown mechanism id for the lifetime of the zone.
     void warnMissing(sdk::SimContext& ctx, const std::string& mechanism);
