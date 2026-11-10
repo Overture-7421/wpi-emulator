@@ -1,0 +1,65 @@
+name: Relay container
+
+# Reusable by relay-ci (every change) and relay-deploy (the image that is deployed). It holds no credentials and never logs in to
+# Azure or a registry: lint the Dockerfile, build the image, run it (relay/tests/container_smoke.ps1) and scan it. With
+# save_image the scanned image is uploaded as the artifact "relay-image" so the deploy job pushes exactly what was scanned.
+
+on:
+  workflow_call:
+    inputs:
+      save_image:
+        description: "Upload the built image as the artifact relay-image (docker save)."
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: wpiemu-relay:build
+  # Pinned tools run as containers instead of third-party actions.   Trivy 0.69.3 is the version the March 2026 supply-chain
+    # advisory (GHSA-69fq-xp46-6x23) names as safe (0.69.4 was malicious); bump deliberately and pin by digest once reviewed.
+  HADOLINT_IMAGE: hadolint/hadolint:v2.12.0
+  TRIVY_IMAGE: ghcr.io/aquasecurity/trivy:0.69.3
+
+jobs:
+  container:
+    name: lint, build, smoke test and scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: hadolint
+        run: docker run --rm -i "$HADOLINT_IMAGE" hadolint --failure-threshold warning - < relay/Dockerfile
+
+      - name: Build the image
+        run: |
+          docker build -f relay/Dockerfile -t "$IMAGE" \
+            --build-arg "REVISION=${GITHUB_SHA}" \
+            --build-arg "SOURCE_URL=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            .
+
+      - name: Container smoke test (starts, passes --selfcheck, stops cleanly on SIGTERM)
+        shell: pwsh
+        run: ./relay/tests/container_smoke.ps1 -SkipBuild -Image $env:IMAGE
+
+      - name: Export the image for the scan
+        run: docker save "$IMAGE" -o relay-image.tar
+
+      - name: Trivy scan (fails on fixable HIGH or CRITICAL vulnerabilities)
+        run: |
+          docker run --rm -v "$PWD:/work:ro" "$TRIVY_IMAGE" image \
+            --input /work/relay-image.tar --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            --exit-code 1 --no-progress
+
+      - name: Upload the scanned image
+        if: inputs.save_image
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay-image
+          path: relay-image.tar
+          retention-days: 1
+          if-no-files-found: error

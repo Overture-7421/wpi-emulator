@@ -1,0 +1,271 @@
+name: Relay deploy environment
+
+# One environment's deployment, called by relay-deploy.yml for relay-dev and for relay-prod. Everything that needs Azure happens in
+# ONE job bound to the GitHub Environment, so the relay-prod approval is asked once and the OIDC subject is
+# repo:<owner>/<repo>:environment:<name>, which is what infra/relay/bootstrap.ps1 federated (one Entra app per environment).
+#
+# Flow: infra without the relay (creates the registry) -> get the image into THIS environment's registry (push the scanned image,
+# import a verified digest from dev, or reuse a digest already there) -> deploy the relay by DIGEST -> probe it from outside ->
+# remember the digest as known good. When the deploy or the probe fails, the previous known-good digest is deployed again.
+# Known good is a tag on the resource group (relayKnownGoodDigest): small, queryable, and the deploy identity may write it.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "GitHub Environment: relay-dev or relay-prod."
+        type: string
+        required: true
+      image_artifact:
+        description: "Artifact that holds a freshly built image (docker save) to push to this registry; empty when not building."
+        type: string
+        default: ""
+      image_digest:
+        description: "sha256:<64 hex> of an image that already is in this environment's registry, or of the one to promote."
+        type: string
+        default: ""
+      source:
+        description: "Promotion only: the dev record {registryName, resourceGroup, loginServer, digest} to import image_digest from."
+        type: string
+        default: ""
+      record_verified:
+        description: "Upload the relay-verified-<digest> artifact that lets prod promote this digest (dev only)."
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: deploy ${{ inputs.environment }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: relay-deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TARGET_ENVIRONMENT: ${{ inputs.environment }}
+      IMAGE_ARTIFACT: ${{ inputs.image_artifact }}
+      INPUT_DIGEST: ${{ inputs.image_digest }}
+      SOURCE_JSON: ${{ inputs.source }}
+      RESOURCE_GROUP: ${{ vars.RELAY_RESOURCE_GROUP }}
+      SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      WPIEMU_RELAY_DNS_SUFFIX: ${{ vars.RELAY_DNS_SUFFIX }}
+      WPIEMU_RELAY_ALERT_EMAIL: ${{ vars.RELAY_ALERT_EMAIL }}
+      IMAGE_REPOSITORY: wpiemu-relay
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - id: target
+        name: Resolve and validate the target
+        run: |
+          case "$TARGET_ENVIRONMENT" in
+            relay-dev) target=dev ;;
+            relay-prod) target=prod ;;
+            *) echo "::error::unknown environment '$TARGET_ENVIRONMENT'"; exit 1 ;;
+          esac
+          for name in RESOURCE_GROUP SUBSCRIPTION_ID WPIEMU_RELAY_DNS_SUFFIX WPIEMU_RELAY_ALERT_EMAIL; do
+            if [ -z "${!name}" ]; then
+              echo "::error::the variable for $name is not set in the $TARGET_ENVIRONMENT environment (run infra/relay/bootstrap.ps1 -ConfigureGitHub)"
+              exit 1
+            fi
+          done
+          if [ -n "$INPUT_DIGEST" ] && ! [[ "$INPUT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::image digest must be sha256:<64 lower-case hex>"; exit 1
+          fi
+          if [ -z "$IMAGE_ARTIFACT" ] && [ -z "$INPUT_DIGEST" ]; then
+            echo "::error::nothing to deploy: pass an image artifact or an image digest"; exit 1
+          fi
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+
+      - name: Download the scanned image
+        if: inputs.image_artifact != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.image_artifact }}
+          path: image
+
+      - name: Azure login (OIDC, this environment's deploy identity)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - id: infra
+        name: Deploy infrastructure without the relay (creates the registry first)
+        env:
+          TARGET: ${{ steps.target.outputs.target }}
+        run: |
+          az deployment group create --resource-group "$RESOURCE_GROUP" \
+            --name "relay-infra-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --parameters "infra/relay/main.${TARGET}.bicepparam" \
+            --parameters deployRelay=false \
+            --query properties.outputs -o json > infra-outputs.json
+          echo "acr_name=$(jq -r '.acrName.value' infra-outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "login_server=$(jq -r '.acrLoginServer.value' infra-outputs.json)" >> "$GITHUB_OUTPUT"
+
+      - id: known_good
+        name: Read the previous known-good digest (the rollback target)
+        run: |
+          prev="$(az group show --name "$RESOURCE_GROUP" --query 'tags.relayKnownGoodDigest' -o tsv 2>/dev/null || true)"
+          [[ "$prev" =~ ^sha256:[0-9a-f]{64}$ ]] || prev=""
+          echo "digest=$prev" >> "$GITHUB_OUTPUT"
+          echo "previous known-good digest: ${prev:-none}"
+
+      - id: image
+        name: Put the image into this environment's registry (by digest)
+        env:
+          ACR_NAME: ${{ steps.infra.outputs.acr_name }}
+          LOGIN_SERVER: ${{ steps.infra.outputs.login_server }}
+        run: |
+          az acr login --name "$ACR_NAME"
+          if [ -n "$IMAGE_ARTIFACT" ]; then
+            docker load -i image/relay-image.tar
+            docker tag wpiemu-relay:build "$LOGIN_SERVER/$IMAGE_REPOSITORY:$GITHUB_SHA"
+            docker push "$LOGIN_SERVER/$IMAGE_REPOSITORY:$GITHUB_SHA"
+            digest="$(az acr repository show --name "$ACR_NAME" --image "$IMAGE_REPOSITORY:$GITHUB_SHA" --query digest -o tsv)"
+          elif [ -n "$SOURCE_JSON" ]; then
+            # Promotion copies the manifest byte for byte, so the digest that was verified in dev is the digest that runs in prod.
+            src_registry="$(jq -r '.registryName' <<< "$SOURCE_JSON")"
+            src_group="$(jq -r '.resourceGroup' <<< "$SOURCE_JSON")"
+            src_login="$(jq -r '.loginServer' <<< "$SOURCE_JSON")"
+            src_digest="$(jq -r '.digest' <<< "$SOURCE_JSON")"
+            [[ "$src_registry" =~ ^[a-z0-9]{5,50}$ ]] || { echo "::error::bad source registry name"; exit 1; }
+            [[ "$src_group" =~ ^[-A-Za-z0-9_.()]+$ ]] || { echo "::error::bad source resource group"; exit 1; }
+            [[ "$src_login" == "$src_registry".azurecr.io ]] || { echo "::error::bad source login server"; exit 1; }
+            [ "$src_digest" = "$INPUT_DIGEST" ] || { echo "::error::source record is for a different digest"; exit 1; }
+            az acr import --name "$ACR_NAME" \
+              --registry "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$src_group/providers/Microsoft.ContainerRegistry/registries/$src_registry" \
+              --source "$src_login/$IMAGE_REPOSITORY@$INPUT_DIGEST" \
+              --image "$IMAGE_REPOSITORY:promoted-${INPUT_DIGEST:7:12}" --force
+            digest="$(az acr repository show --name "$ACR_NAME" --image "$IMAGE_REPOSITORY@$INPUT_DIGEST" --query digest -o tsv)"
+          else
+            digest="$(az acr repository show --name "$ACR_NAME" --image "$IMAGE_REPOSITORY@$INPUT_DIGEST" --query digest -o tsv)"
+          fi
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::could not resolve the image digest ('$digest')"; exit 1; }
+          if [ -n "$INPUT_DIGEST" ] && [ "$digest" != "$INPUT_DIGEST" ]; then
+            echo "::error::registry digest $digest differs from the requested $INPUT_DIGEST"; exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "image: $LOGIN_SERVER/$IMAGE_REPOSITORY@$digest"
+
+      - id: deploy
+        name: Deploy the relay by digest
+        env:
+          TARGET: ${{ steps.target.outputs.target }}
+          RELAY_IMAGE: ${{ steps.infra.outputs.login_server }}/wpiemu-relay@${{ steps.image.outputs.digest }}
+        run: |
+          az deployment group create --resource-group "$RESOURCE_GROUP" \
+            --name "relay-app-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --parameters "infra/relay/main.${TARGET}.bicepparam" \
+            --parameters deployRelay=true --parameters "relayImage=$RELAY_IMAGE" \
+            --query properties.outputs -o json > app-outputs.json
+          echo "endpoint=$(jq -r '.relayEndpoint.value' app-outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "fqdn=$(jq -r '.relayFqdn.value' app-outputs.json)" >> "$GITHUB_OUTPUT"
+
+      - id: verify
+        name: Verify with wpiemu_relay_probe from outside Azure
+        env:
+          ENDPOINT: ${{ steps.deploy.outputs.endpoint }}
+          RELAY_IMAGE: ${{ steps.infra.outputs.login_server }}/wpiemu-relay@${{ steps.image.outputs.digest }}
+        run: |
+          # The probe in the deployed image is the probe that checks it: pulled by digest from this environment's registry.
+          docker pull "$RELAY_IMAGE"
+          probe() { docker run --rm --entrypoint wpiemu_relay_probe "$RELAY_IMAGE" --relay "$ENDPOINT" "$@"; }
+          # The container and its DNS name need up to a few minutes: reach (one refused lookup, creates nothing) until it answers.
+          reached=false
+          for attempt in $(seq 1 16); do
+            if probe --mode reach --timeout-ms 8000; then reached=true; break; fi
+            echo "attempt $attempt: the relay does not answer yet, retrying in 15 s"
+            sleep 15
+          done
+          if [ "$reached" != true ]; then echo "::error::the relay at $ENDPOINT never answered"; exit 1; fi
+          probe --mode full --count 20 --payload-bytes 65536 --timeout-ms 20000 --json | tee probe.json
+          jq -e '.ok == true' probe.json > /dev/null
+
+      - id: record
+        name: Record the verified digest as known good
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          az tag update --resource-id "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP" \
+            --operation Merge --tags "relayKnownGoodDigest=$DIGEST" > /dev/null
+          echo "hex=${DIGEST#sha256:}" >> "$GITHUB_OUTPUT"
+
+      - name: Write the record that lets prod promote this digest
+        if: inputs.record_verified
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+          REGISTRY_NAME: ${{ steps.infra.outputs.acr_name }}
+          LOGIN_SERVER: ${{ steps.infra.outputs.login_server }}
+        run: |
+          jq -n --arg digest "$DIGEST" --arg registryName "$REGISTRY_NAME" --arg loginServer "$LOGIN_SERVER" \
+            --arg resourceGroup "$RESOURCE_GROUP" --arg commit "$GITHUB_SHA" --arg runId "$GITHUB_RUN_ID" \
+            '{digest: $digest, registryName: $registryName, loginServer: $loginServer, resourceGroup: $resourceGroup, commit: $commit, runId: $runId}' \
+            > verified.json
+
+      - name: Upload the verified record
+        if: inputs.record_verified
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay-verified-${{ steps.record.outputs.hex }}
+          path: verified.json
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Roll back to the previous known-good digest
+        if: >-
+          failure()
+          && steps.known_good.outputs.digest != ''
+          && steps.known_good.outputs.digest != steps.image.outputs.digest
+          && (steps.deploy.outcome == 'failure' || steps.verify.outcome == 'failure')
+        env:
+          TARGET: ${{ steps.target.outputs.target }}
+          PREVIOUS_DIGEST: ${{ steps.known_good.outputs.digest }}
+          RELAY_IMAGE: ${{ steps.infra.outputs.login_server }}/wpiemu-relay@${{ steps.known_good.outputs.digest }}
+        run: |
+          echo "::warning::rolling back to $PREVIOUS_DIGEST"
+          az deployment group create --resource-group "$RESOURCE_GROUP" \
+            --name "relay-rollback-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --parameters "infra/relay/main.${TARGET}.bicepparam" \
+            --parameters deployRelay=true --parameters "relayImage=$RELAY_IMAGE" \
+            --query properties.outputs -o json > rollback-outputs.json
+          endpoint="$(jq -r '.relayEndpoint.value' rollback-outputs.json)"
+          docker pull "$RELAY_IMAGE"
+          for _ in $(seq 1 16); do
+            if docker run --rm --entrypoint wpiemu_relay_probe "$RELAY_IMAGE" --relay "$endpoint" --mode reach --timeout-ms 8000; then
+              echo "rolled back to $PREVIOUS_DIGEST"
+              echo "## Rolled back to \`$PREVIOUS_DIGEST\` after a failed deployment" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::the rollback to $PREVIOUS_DIGEST did not answer either"
+          exit 1
+
+      - name: Summary
+        if: always()
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+          ENDPOINT: ${{ steps.deploy.outputs.endpoint }}
+          PREVIOUS_DIGEST: ${{ steps.known_good.outputs.digest }}
+          OUTCOME: ${{ job.status }}
+        run: |
+          {
+            echo "## Relay ${TARGET_ENVIRONMENT}: ${OUTCOME}"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Image digest | \`${DIGEST:-n/a}\` |"
+            echo "| Endpoint | \`${ENDPOINT:-n/a}\` |"
+            echo "| Previous known good | \`${PREVIOUS_DIGEST:-none}\` |"
+            echo "| Commit | \`${GITHUB_SHA}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

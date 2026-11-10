@@ -1,0 +1,131 @@
+name: Relay deploy
+
+# Push to main (relay, net, sdk, ipc or infra changes): build, scan and deploy DEV.
+# Run workflow (workflow_dispatch) with environment=dev: rebuild dev from main, or redeploy a digest that is already in the dev
+# registry (also the manual rollback: pass the previous known-good digest). With environment=prod: PROD, which promotes a digest
+# that passed verification in dev (image_digest is required; prod never rebuilds) and needs the relay-prod approval.
+# Deployments run only from main. infra/relay/bootstrap.ps1 does the one-time setup (environments, identities, variables).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "relay/**"
+      - "net/**"
+      - "sdk/**"
+      - "ipc/**"
+      - "infra/relay/**"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "versions.json"
+      - ".dockerignore"
+      - ".github/workflows/relay-*.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy (prod needs the relay-prod approval)"
+        type: choice
+        options: [dev, prod]
+        default: dev
+      image_digest:
+        description: "sha256:<64 hex> in the dev registry. Required for prod (a digest verified in dev); for dev empty rebuilds from main."
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      target: ${{ steps.plan.outputs.target }}
+      build: ${{ steps.plan.outputs.build }}
+      digest: ${{ steps.plan.outputs.digest }}
+      source: ${{ steps.plan.outputs.source }}
+    steps:
+      - id: plan
+        name: Choose the environment and check that prod gets a digest verified in dev
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_ENVIRONMENT: ${{ inputs.environment }}
+          INPUT_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::relay deployments run only from main (this run is on $GITHUB_REF)"; exit 1
+          fi
+          target=dev; build=true; digest=""; source=""
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            target="$INPUT_ENVIRONMENT"
+            digest="$INPUT_DIGEST"
+          fi
+          if [ -n "$digest" ] && ! [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::image_digest must be sha256:<64 lower-case hex>"; exit 1
+          fi
+          if [ -n "$digest" ]; then build=false; fi
+          if [ "$target" = "prod" ]; then
+            if [ -z "$digest" ]; then echo "::error::prod needs image_digest, a digest that passed verification in dev"; exit 1; fi
+            hex="${digest#sha256:}"
+            run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=relay-verified-${hex}&per_page=100" \
+              --jq '[.artifacts[] | select(.expired == false and .workflow_run.head_branch == "main")] | sort_by(.created_at) | last | .workflow_run.id // empty')"
+            if [ -z "$run_id" ]; then
+              echo "::error::$digest has no verification record from a dev deployment on main: deploy it to dev first (the record expires after 90 days)"
+              exit 1
+            fi
+            gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name "relay-verified-${hex}" --dir verified
+            source="$(jq -c . verified/verified.json)"
+            [ "$(jq -r '.digest' <<< "$source")" = "$digest" ] || { echo "::error::the verification record is for another digest"; exit 1; }
+          fi
+          {
+            echo "target=$target"
+            echo "build=$build"
+            echo "digest=$digest"
+            echo "source=$source"
+          } >> "$GITHUB_OUTPUT"
+          echo "environment: $target, build: $build, digest: ${digest:-built by this run}"
+
+  build:
+    name: build and scan the image
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    uses: ./.github/workflows/relay-container.yml
+    with:
+      save_image: true
+    permissions:
+      contents: read
+
+  deploy-dev:
+    name: dev
+    needs: [plan, build]
+    if: >-
+      !cancelled()
+      && needs.plan.outputs.target == 'dev'
+      && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    uses: ./.github/workflows/relay-deploy-environment.yml
+    with:
+      environment: relay-dev
+      image_artifact: ${{ needs.plan.outputs.build == 'true' && 'relay-image' || '' }}
+      image_digest: ${{ needs.plan.outputs.digest }}
+      record_verified: true
+    permissions:
+      contents: read
+      id-token: write
+
+  deploy-prod:
+    name: prod
+    needs: plan
+    if: needs.plan.outputs.target == 'prod'
+    uses: ./.github/workflows/relay-deploy-environment.yml
+    with:
+      environment: relay-prod
+      image_digest: ${{ needs.plan.outputs.digest }}
+      source: ${{ needs.plan.outputs.source }}
+    permissions:
+      contents: read
+      id-token: write
