@@ -53,13 +53,6 @@ param relayEnvironment array
 @description('Name of the Log Analytics workspace (in this resource group) that receives the container logs.')
 param logAnalyticsWorkspaceName string
 
-@description('''Liveness probe command. wpiemu_relay --selfcheck asks the running relay about a random, non-existent room and
-expects a refusal, so it creates no room and changes no state. It reads WPIEMU_RELAY_PORT from the container environment.''')
-param livenessCommand array = [
-  'wpiemu_relay'
-  '--selfcheck'
-]
-
 @description('Tags applied to the container group.')
 param tags object
 
@@ -123,11 +116,16 @@ resource relay 'Microsoft.ContainerInstance/containerGroups@2023-05-01' = {
               memoryInGB: json(memoryGb)
             }
           }
+          // wpiemu_relay --selfcheck asks the running relay about a random, non-existent room and expects a refusal, so it
+          // creates no room and changes no state; it reads WPIEMU_RELAY_PORT from the container environment.
           // The check takes under 2 s. A 30 s period keeps the probe's own failed lookups well below the relay's
           // failed-join lockout (10 per 60 s per source); three misses (about 90 s) restart the container.
           livenessProbe: {
             exec: {
-              command: livenessCommand
+              command: [
+                'wpiemu_relay'
+                '--selfcheck'
+              ]
             }
             initialDelaySeconds: 15
             periodSeconds: 30
