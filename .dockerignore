@@ -1,0 +1,21 @@
+# Allow-list for `docker build -f relay/Dockerfile .` (build context = repository root). Everything is excluded except what the
+# relay-only configure reads: the root CMakeLists, versions.json, cmake/, the sdk, ipc, net and relay sources, and the season
+# manifests (cmake/WpiEmuVersions.cmake reads seasons/<year>/season.json and seasons/abi/*.json even in relay-only builds).
+# Keeps .git, build trees, the app, the game plugins and the docs out of the context (small, cache-stable, no secrets).
+*
+
+!CMakeLists.txt
+!versions.json
+!cmake
+!sdk
+!ipc
+!net
+!relay
+!seasons/*/season.json
+!seasons/abi/*.json
+
+# Tests are not built in the image.
+**/tests
+**/build*
+**/*.md
+relay/Dockerfile
