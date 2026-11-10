@@ -21,6 +21,65 @@ inline sdk::match::ResumeToken sampleResumeToken() {
     return token;
 }
 
+// A representative appearance: every field non-default, two primitives (box and cylinder), four wheels (all kinds), three zones.
+inline sdk::match::RobotAppearance sampleAppearance(std::uint16_t seed) {
+    using namespace sdk::match;
+    RobotAppearance a;
+    a.sizeXMm = static_cast<std::uint16_t>(700 + seed);
+    a.sizeYMm = 650;
+    a.sizeZMm = 120;
+    a.centreXMm = -50;
+    a.centreYMm = 25;
+    a.centreZMm = -100;
+    a.comHeightMm = 200;
+    AppearancePrimitive box;
+    box.kind = sdk::PrimitiveKind::Box;
+    box.pose = {0, 10, -20, 30, 0x4000, 0, 0x0102};
+    box.extentXMm = 800;
+    box.extentYMm = 40;
+    box.extentZMm = 90;
+    box.r = 0xFF;
+    box.g = 0x33;
+    box.b = 0x00;
+    AppearancePrimitive cylinder;
+    cylinder.kind = sdk::PrimitiveKind::Cylinder;
+    cylinder.pose = {1, -300, 0, 450, 0, -0x2000, 0};
+    cylinder.extentXMm = 100;
+    cylinder.extentYMm = 100;
+    cylinder.extentZMm = 250;
+    cylinder.r = 0x01;
+    cylinder.g = 0x02;
+    cylinder.b = 0x03;
+    a.primitives = {box, cylinder};
+    const sdk::WheelKind kinds[] = {sdk::WheelKind::Standard, sdk::WheelKind::Omni, sdk::WheelKind::Mecanum, sdk::WheelKind::Swerve};
+    for (std::size_t i = 0; i < 4; ++i) {
+        AppearanceWheel w;
+        w.kind = kinds[i];
+        w.steered = i == 3;
+        w.xMm = static_cast<std::int16_t>((i % 2 == 0) ? 250 : -250);
+        w.yMm = static_cast<std::int16_t>((i < 2) ? 250 : -250);
+        w.zMm = -170;
+        w.radiusMm = static_cast<std::uint16_t>(50 + i);
+        w.widthMm = 38;
+        a.wheels.push_back(w);
+    }
+    AppearanceZone intake;
+    intake.pose = {0, 400, -50, 100, 0x0102, 0, 0};
+    intake.kind = "game_2026.pickup";
+    intake.sizeXMm = 300;
+    intake.sizeYMm = 600;
+    intake.sizeZMm = 150;
+    AppearanceZone muzzle;
+    muzzle.pose = {1, -100, 0, 500, 0, -0x1000, 0};
+    muzzle.kind = "game_2026.shooter";
+    muzzle.sizeXMm = 65535;
+    muzzle.onMechanism = true;
+    AppearanceZone plain;
+    plain.pose = {2, 0, 0, 0, 0, 0, 0};
+    a.zones = {intake, muzzle, plain};
+    return a;
+}
+
 inline sdk::match::RosterEntry sampleRosterEntry(sdk::match::ParticipantId id, const char* name,
                                                  sdk::proto::AllianceStation station, bool host) {
     sdk::match::RosterEntry e;
@@ -30,6 +89,7 @@ inline sdk::match::RosterEntry sampleRosterEntry(sdk::match::ParticipantId id, c
     e.pingMs = static_cast<std::uint16_t>(20 + id);
     e.lossPermille = static_cast<std::uint16_t>(5 * id);
     e.isHost = host;
+    e.appearance = sampleAppearance(id);
     return e;
 }
 

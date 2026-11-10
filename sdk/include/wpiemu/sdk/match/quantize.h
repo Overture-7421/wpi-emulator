@@ -8,6 +8,7 @@
 //   milli (position)    i32    1 mm                        +-2147483 m            0.5 mm
 //   milli (velocity)    i16    1 mm/s or 1 mrad/s          +-32.767 m/s or rad/s  0.5 unit
 //   milli (zone pose)   i16    1 mm (chassis frame)        +-32.767 m             0.5 mm (see zone_pose_wire.h)
+//   milli (extent)      u16    1 mm (sizes, radii)         0..65.535 m            0.5 mm (see robot_appearance.h)
 //   centi (entities)    i16    1 cm                        +-327.67 m             0.5 cm
 //
 // Angle: the i16 is a fraction of a full turn, so dequantizeAngle returns [-pi, pi); pi and -pi are the same angle and
@@ -56,6 +57,7 @@ Int saturatingRound(double scaled) {
 // Milli units (x1000): positions as i32 millimetres, velocities as i16 mm/s and mrad/s.
 inline std::int32_t quantizeMilliI32(double value) { return detail::saturatingRound<std::int32_t>(value * 1000.0); }
 inline std::int16_t quantizeMilliI16(double value) { return detail::saturatingRound<std::int16_t>(value * 1000.0); }
+inline std::uint16_t quantizeMilliU16(double value) { return detail::saturatingRound<std::uint16_t>(value * 1000.0); }
 inline double dequantizeMilli(std::int32_t q) { return static_cast<double>(q) / 1000.0; }
 
 // Centi units (x100): entity positions as i16 centimetres.

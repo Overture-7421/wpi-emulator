@@ -31,14 +31,45 @@ const std::vector<Golden>& goldens() {
          "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf197b2263686173736973223a7b226d6173"
          "734b67223a35307d7d"},
         {"JoinAccept",
-         "010e000300887766554433221107000000000000000488130000000000001e005a"
-         "000000c03f000010c00000003f00000000000000000000803e0000403fa0a1a2a3"
-         "a4a5a6a7a8a9aaabacadaeaf01393000000000000048d9ad0300000000020d0000"
-         "0004486f73740014000000010c000300035a65640417000f0000"},
+         "010e000300887766554433221107000000000000000488130000000000001e005a00"
+         "0000c03f000010c00000003f00000000000000000000803e0000403fa0a1a2a3a4a5"
+         "a6a7a8a9aaabacadaeaf01393000000000000048d9ad030000000002de0000000448"
+         "6f7374001400000001cf00bc028a027800ceff19009cffc8000200000a00ecff1e00"
+         "004000000201200328005a00ff33000101d4fe0000c201000000e0000064006400fa"
+         "00010203040000fa00fa0056ff32002600010006fffa0056ff330026000200fa0006"
+         "ff56ff34002600030106ff06ff56ff3500260003009001ceff640002010000000010"
+         "67616d655f323032362e7069636b75702c015802960000019cff0000f401000000f0"
+         "00001167616d655f323032362e73686f6f746572ffff000000000102000000000000"
+         "0000000000000000000000000000dd000300035a65640417000f0000cf00bf028a02"
+         "7800ceff19009cffc8000200000a00ecff1e00004000000201200328005a00ff3300"
+         "0101d4fe0000c201000000e0000064006400fa00010203040000fa00fa0056ff3200"
+         "2600010006fffa0056ff330026000200fa0006ff56ff34002600030106ff06ff56ff"
+         "3500260003009001ceff64000201000000001067616d655f323032362e7069636b75"
+         "702c015802960000019cff0000f401000000f000001167616d655f323032362e7368"
+         "6f6f746572ffff0000000001020000000000000000000000000000000000000000"},
         {"JoinReject", "010f00041b726f626f742e6472697665747261696e2e776865656c436f756e74"},
         {"Roster",
-         "01100008070605040302010900000000000000030d00000004486f737400140000"
-         "00010c00010003416d790115000500000c00020003426f620516000a0000"},
+         "0110000807060504030201090000000000000003de00000004486f73740014000000"
+         "01cf00bc028a027800ceff19009cffc8000200000a00ecff1e000040000002012003"
+         "28005a00ff33000101d4fe0000c201000000e0000064006400fa00010203040000fa"
+         "00fa0056ff32002600010006fffa0056ff330026000200fa0006ff56ff3400260003"
+         "0106ff06ff56ff3500260003009001ceff64000201000000001067616d655f323032"
+         "362e7069636b75702c015802960000019cff0000f401000000f000001167616d655f"
+         "323032362e73686f6f746572ffff0000000001020000000000000000000000000000"
+         "000000000000dd00010003416d79011500050000cf00bd028a027800ceff19009cff"
+         "c8000200000a00ecff1e00004000000201200328005a00ff33000101d4fe0000c201"
+         "000000e0000064006400fa00010203040000fa00fa0056ff32002600010006fffa00"
+         "56ff330026000200fa0006ff56ff34002600030106ff06ff56ff3500260003009001"
+         "ceff64000201000000001067616d655f323032362e7069636b75702c015802960000"
+         "019cff0000f401000000f000001167616d655f323032362e73686f6f746572ffff00"
+         "00000001020000000000000000000000000000000000000000dd00020003426f6205"
+         "16000a0000cf00be028a027800ceff19009cffc8000200000a00ecff1e0000400000"
+         "0201200328005a00ff33000101d4fe0000c201000000e0000064006400fa00010203"
+         "040000fa00fa0056ff32002600010006fffa0056ff330026000200fa0006ff56ff34"
+         "002600030106ff06ff56ff3500260003009001ceff64000201000000001067616d65"
+         "5f323032362e7069636b75702c015802960000019cff0000f401000000f000001167"
+         "616d655f323032362e73686f6f746572ffff00000000010200000000000000000000"
+         "00000000000000000000"},
         {"Leave", "01110003627965"},
         {"MatchInputPacket",
          "0112008877665544332211070000000000000003440029000000110400000000000004"
@@ -234,4 +265,87 @@ TEST_CASE("match codec golden: the zone pose tails are the documented 13-byte en
     out.clear();
     REQUIRE(BinaryMessageCodec().encode(Message{snapshot}, out).ok());
     CHECK(toHex(out).find("01" "0f" "0201" "0000" "0000" "0000" "0000" "0403") != std::string::npos);
+}
+
+TEST_CASE("match codec golden: roster entries written before the appearance tail decode with no appearance") {
+    const BinaryMessageCodec codec;
+    // Roster and JoinAccept as the codec wrote them before RosterEntry::appearance existed.
+    const std::string legacyRoster =
+        "01100008070605040302010900000000000000030d00000004486f737400140000"
+        "00010c00010003416d790115000500000c00020003426f620516000a0000";
+    const std::string legacyAccept =
+        "010e000300887766554433221107000000000000000488130000000000001e005a"
+        "000000c03f000010c00000003f00000000000000000000803e0000403fa0a1a2a3"
+        "a4a5a6a7a8a9aaabacadaeaf01393000000000000048d9ad0300000000020d0000"
+        "0004486f73740014000000010c000300035a65640417000f0000";
+
+    const Result<Message> roster = codec.decode(fromHex(legacyRoster));
+    REQUIRE(roster.ok());
+    auto expectedRoster = std::get<match::Roster>(goldenSampleOf("Roster"));
+    for (match::RosterEntry& e : expectedRoster.entries) e.appearance = {};
+    CHECK(std::get<match::Roster>(roster.value()) == expectedRoster);
+
+    const Result<Message> accept = codec.decode(fromHex(legacyAccept));
+    REQUIRE(accept.ok());
+    auto expectedAccept = std::get<match::JoinAccept>(goldenSampleOf("JoinAccept"));
+    for (match::RosterEntry& e : expectedAccept.roster) e.appearance = {};
+    CHECK(std::get<match::JoinAccept>(accept.value()) == expectedAccept);
+}
+
+TEST_CASE("match codec golden: the appearance tail is the documented record") {
+    // Hand-verified layout (see robot_appearance.h), all little-endian:
+    //   record length u16, chassis size x y z u16, centre x y z i16, COM height u16,
+    //   primitives: count, each kind u8, pose (index u8, x y z yaw pitch roll i16), extent x y z u16, r g b,
+    //   wheels: count, each kind u8, steered u8, hub x y z i16, radius u16, width u16,
+    //   zones: count, each pose (13 bytes), kind (length, bytes), size x y z u16, on-mechanism u8.
+    match::RosterEntry entry;
+    entry.appearance.sizeXMm = 0x0102;
+    entry.appearance.sizeYMm = 0x0304;
+    entry.appearance.sizeZMm = 5;
+    entry.appearance.centreXMm = -1;
+    entry.appearance.centreYMm = 2;
+    entry.appearance.centreZMm = -3;
+    entry.appearance.comHeightMm = 0x0A0B;
+    match::AppearancePrimitive prim;
+    prim.kind = PrimitiveKind::Cylinder;
+    prim.pose = {0, 1, -1, 256, -256, 0x7FFF, -0x8000};
+    prim.extentXMm = 0x10;
+    prim.extentYMm = 0x20;
+    prim.extentZMm = 0x30;
+    prim.r = 0xA1;
+    prim.g = 0xB2;
+    prim.b = 0xC3;
+    entry.appearance.primitives = {prim};
+    match::AppearanceWheel wheel;
+    wheel.kind = WheelKind::Swerve;
+    wheel.steered = true;
+    wheel.xMm = 0x0100;
+    wheel.yMm = -2;
+    wheel.zMm = 3;
+    wheel.radiusMm = 0x33;
+    wheel.widthMm = 0x26;
+    entry.appearance.wheels = {wheel};
+    match::AppearanceZone zone;
+    zone.pose = {0, 0x0102, 0, 0, 0, 0, 0x0304};
+    zone.kind = "ab";
+    zone.sizeXMm = 1;
+    zone.sizeYMm = 2;
+    zone.sizeZMm = 3;
+    zone.onMechanism = true;
+    entry.appearance.zones = {zone};
+
+    match::Roster roster;
+    roster.entries = {entry};
+    std::vector<std::byte> out;
+    REQUIRE(BinaryMessageCodec().encode(Message{roster}, out).ok());
+    const std::string expected =
+        "4b00"                                              // record length: 14 + 24 + 13 + 24 = 75
+        "0201" "0403" "0500" "ffff" "0200" "fdff" "0b0a"    // chassis box, centre, COM height
+        "01" "01" "00" "0100" "ffff" "0001" "00ff" "ff7f" "0080" "1000" "2000" "3000" "a1b2c3"  // 1 primitive
+        "01" "03" "01" "0001" "feff" "0300" "3300" "2600"   // 1 wheel
+        "01" "00" "0201" "0000" "0000" "0000" "0000" "0403" "02" "6162" "0100" "0200" "0300" "01";  // 1 zone
+    CHECK(toHex(out).ends_with(expected));
+    const Result<Message> back = BinaryMessageCodec().decode(out);
+    REQUIRE(back.ok());
+    CHECK(std::get<match::Roster>(back.value()) == roster);
 }

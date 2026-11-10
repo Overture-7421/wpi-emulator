@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <random>
@@ -685,4 +686,139 @@ TEST_CASE("match hostile: zone pose lists beyond their contract are refused on e
     rejected(snapshotWith({{5, 0, 0, 0, 0, 0, 0}, {5, 0, 0, 0, 0, 0, 0}}), "snapshot duplicate index");
     rejected(snapshotWith({{200, 0, 0, 0, 0, 0, 0}}), "snapshot index out of range");
     CHECK_FALSE(fitsLimits(std::get<MatchSnapshot>(snapshotWith(tooMany))));
+}
+
+namespace {
+
+// Roster frames with one entry that carries `appearance` as its record tail.
+Bytes primitiveBytes(unsigned kind, unsigned index) { return Builder().u8(kind).add(poseBytes(index)).zeros(9).bytes; }
+Bytes wheelBytes(unsigned kind) { return Builder().u8(kind).u8(0).zeros(10).bytes; }
+Bytes zoneBytes(unsigned index, const std::string& kind) {
+    return Builder().add(poseBytes(index)).str(kind).zeros(6).u8(0).bytes;
+}
+
+template <class Make>
+Bytes listOf(std::size_t n, Make make) {
+    Builder b;
+    b.varint(n);
+    for (std::size_t i = 0; i < n; ++i) b.add(make(i));
+    return b.bytes;
+}
+
+Bytes appearanceBody(const Bytes& primitives, const Bytes& wheels, const Bytes& zones) {
+    Builder b;
+    b.zeros(match::kWireAppearanceChassisBytes).add(primitives).add(wheels).add(zones);
+    return b.bytes;
+}
+
+Bytes rosterWithAppearanceRecord(const Bytes& appearanceRecordBody) {
+    Builder entry;
+    entry.u16(1).str("a").u8(0).u16(0).u16(0).u8(0).record(appearanceRecordBody);
+    return frameOf(MessageType::Roster, Builder().u64(1).u64(1).varint(1).record(entry.bytes).bytes);
+}
+
+const Bytes kNoElements = Builder().varint(0).bytes;
+
+}  // namespace
+
+TEST_CASE("match hostile: a roster appearance is optional, bounded, ordered and its enums are bounded") {
+    using namespace wpiemu::sdk::match;
+    const auto primitives = [](std::size_t n) { return listOf(n, [](std::size_t i) { return primitiveBytes(0, static_cast<unsigned>(i)); }); };
+    const auto wheels = [](std::size_t n) { return listOf(n, [](std::size_t) { return wheelBytes(0); }); };
+    const auto zones = [](std::size_t n) {
+        return listOf(n, [](std::size_t i) { return zoneBytes(static_cast<unsigned>(i), std::string(kMaxNameBytes, 'z')); });
+    };
+
+    // An entry of an older writer has no appearance tail; an empty appearance is valid too.
+    {
+        Builder entry;
+        entry.u16(1).str("a").u8(0).u16(0).u16(0).u8(0);
+        const Result<Message> legacy = decodeNoThrow(
+            frameOf(MessageType::Roster, Builder().u64(1).u64(1).varint(1).record(entry.bytes).bytes));
+        REQUIRE(legacy.ok());
+        CHECK(std::get<Roster>(legacy.value()).entries.at(0).appearance == RobotAppearance{});
+        const Result<Message> empty =
+            decodeNoThrow(rosterWithAppearanceRecord(appearanceBody(kNoElements, kNoElements, kNoElements)));
+        REQUIRE(empty.ok());
+        CHECK(std::get<Roster>(empty.value()).entries.at(0).appearance.empty());
+    }
+    // Every list at its cap, the longest zone kind: decodes and is well formed.
+    {
+        const Result<Message> full = decodeNoThrow(
+            rosterWithAppearanceRecord(appearanceBody(primitives(kMaxAppearancePrimitives), wheels(kMaxWheelsPerRobot), zones(kMaxZonesPerRobot))));
+        REQUIRE(full.ok());
+        const RobotAppearance& a = std::get<Roster>(full.value()).entries.at(0).appearance;
+        CHECK(a.primitives.size() == kMaxAppearancePrimitives);
+        CHECK(a.wheels.size() == kMaxWheelsPerRobot);
+        CHECK(a.zones.size() == kMaxZonesPerRobot);
+        CHECK(a.zones.back().kind.size() == kMaxNameBytes);
+        CHECK(appearanceWellFormed(a));
+    }
+    // A later version may grow the appearance record: unknown trailing bytes are skipped.
+    {
+        Bytes grown = appearanceBody(primitives(1), wheels(2), zones(1));
+        for (int i = 0; i < 7; ++i) grown.push_back(std::byte{0xAB});
+        const Result<Message> r = decodeNoThrow(rosterWithAppearanceRecord(grown));
+        REQUIRE(r.ok());
+        CHECK(std::get<Roster>(r.value()).entries.at(0).appearance.wheels.size() == 2);
+    }
+
+    // Above the caps, with every byte behind the count.
+    checkRejected(rosterWithAppearanceRecord(appearanceBody(primitives(kMaxAppearancePrimitives + 1), kNoElements, kNoElements)), "limit");
+    checkRejected(rosterWithAppearanceRecord(appearanceBody(kNoElements, wheels(kMaxWheelsPerRobot + 1), kNoElements)), "limit");
+    checkRejected(rosterWithAppearanceRecord(appearanceBody(kNoElements, kNoElements, zones(kMaxZonesPerRobot + 1))), "limit");
+    checkRejected(rosterWithAppearanceRecord(appearanceBody(Builder().varint(std::uint64_t{1} << 40).zeros(200).bytes, kNoElements, kNoElements)), "limit");
+    // Counts the bytes left cannot hold.
+    checkRejected(rosterWithAppearanceRecord(appearanceBody(Builder().varint(3).add(primitiveBytes(0, 0)).bytes, kNoElements, kNoElements)), "frame");
+    checkRejected(rosterWithAppearanceRecord(appearanceBody(kNoElements, Builder().varint(4).zeros(20).bytes, kNoElements)), "frame");
+    checkRejected(rosterWithAppearanceRecord(appearanceBody(kNoElements, kNoElements, Builder().varint(2).add(zoneBytes(0, "")).bytes)), "frame");
+
+    // An element's index must equal its position.
+    checkRejected(rosterWithAppearanceRecord(appearanceBody(Builder().varint(1).add(primitiveBytes(0, 1)).bytes, kNoElements, kNoElements)), "appearance");
+    checkRejected(rosterWithAppearanceRecord(appearanceBody(Builder().varint(2).add(primitiveBytes(0, 1)).add(primitiveBytes(0, 0)).bytes, kNoElements, kNoElements)), "appearance");
+    checkRejected(rosterWithAppearanceRecord(appearanceBody(kNoElements, kNoElements, Builder().varint(1).add(zoneBytes(2, "")).bytes)), "appearance");
+    checkRejected(rosterWithAppearanceRecord(appearanceBody(kNoElements, kNoElements, Builder().varint(2).add(zoneBytes(0, "")).add(zoneBytes(0, "")).bytes)), "appearance");
+    checkRejected(rosterWithAppearanceRecord(appearanceBody(kNoElements, kNoElements, Builder().varint(1).add(zoneBytes(200, "")).bytes)), "appearance");
+
+    // Enums and strings.
+    checkRejected(rosterWithAppearanceRecord(appearanceBody(Builder().varint(1).add(primitiveBytes(2, 0)).bytes, kNoElements, kNoElements)), "PrimitiveKind");
+    checkRejected(rosterWithAppearanceRecord(appearanceBody(kNoElements, Builder().varint(1).add(wheelBytes(4)).bytes, kNoElements)), "WheelKind");
+    checkRejected(rosterWithAppearanceRecord(appearanceBody(kNoElements, kNoElements, Builder().varint(1).add(zoneBytes(0, std::string(kMaxNameBytes + 1, 'z'))).bytes)), "zone kind");
+
+    // A truncated appearance record, and one that claims more than the entry holds.
+    Bytes cut = appearanceBody(primitives(1), wheels(1), zones(1));
+    cut.pop_back();
+    checkRejected(rosterWithAppearanceRecord(cut), "frame");
+    Builder liar;
+    liar.u16(1).str("a").u8(0).u16(0).u16(0).u8(0).u16(9000).zeros(20);
+    checkRejected(frameOf(MessageType::Roster, Builder().u64(1).u64(1).varint(1).record(liar.bytes).bytes), "record");
+}
+
+TEST_CASE("match hostile: an appearance beyond its contract is refused on encode") {
+    using namespace wpiemu::sdk::match;
+    const BinaryMessageCodec codec;
+    const auto rejected = [&](const std::function<void(RobotAppearance&)>& edit, const char* what) {
+        CAPTURE(what);
+        RosterEntry entry = test_ipc::sampleRosterEntry(2, "x", proto::AllianceStation::Red2, false);
+        edit(entry.appearance);
+        Roster roster;
+        roster.entries = {entry};
+        Bytes out = {std::byte{9}};
+        const Status status = codec.encode(Message{roster}, out);
+        CHECK_FALSE(status.ok());
+        CHECK(out == Bytes{std::byte{9}});
+        JoinAccept accept;
+        accept.roster = {entry};
+        CHECK_FALSE(codec.encode(Message{accept}, out).ok());
+    };
+    rejected([](RobotAppearance& a) { a.primitives.assign(kMaxAppearancePrimitives + 1, AppearancePrimitive{}); }, "primitives above the cap");
+    rejected([](RobotAppearance& a) { a.wheels.assign(kMaxWheelsPerRobot + 1, AppearanceWheel{}); }, "wheels above the cap");
+    rejected([](RobotAppearance& a) { a.zones.assign(kMaxZonesPerRobot + 1, AppearanceZone{}); }, "zones above the cap");
+    rejected([](RobotAppearance& a) { a.zones[1].pose.zoneIndex = 0; }, "zone index is not its position");
+    rejected([](RobotAppearance& a) { a.primitives[0].pose.zoneIndex = 4; }, "primitive index is not its position");
+    rejected([](RobotAppearance& a) { a.zones[0].kind.assign(kMaxNameBytes + 1, 'k'); }, "zone kind too long");
+    Bytes ok;
+    Roster valid;
+    valid.entries = {test_ipc::sampleRosterEntry(2, "x", proto::AllianceStation::Red2, false)};
+    CHECK(codec.encode(Message{valid}, ok).ok());
 }

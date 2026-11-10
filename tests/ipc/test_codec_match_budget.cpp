@@ -135,3 +135,89 @@ TEST_CASE("match snapshot size: each entity upsert costs 10 bytes and each wheel
     CHECK(encodedSize(snapshotOf(2, 6, 2, 1, 0, 0, 0, 0)) == base + 2 * 2 * 4);
     CHECK(encodedSize(snapshotOf(2, 4, 2, 1, 5, 0, 0, 0)) == base + 5 * 4);
 }
+
+namespace {
+
+RobotAppearance appearanceOfSize(std::size_t primitives, std::size_t wheels, std::size_t zones, std::size_t kindChars) {
+    RobotAppearance a = test_ipc::sampleAppearance(1);
+    a.primitives.resize(primitives);
+    for (std::size_t i = 0; i < primitives; ++i) a.primitives[i].pose.zoneIndex = static_cast<std::uint8_t>(i);
+    a.wheels.assign(wheels, AppearanceWheel{WheelKind::Swerve, true, 250, -250, -170, 50, 38});
+    a.zones.clear();
+    for (std::size_t i = 0; i < zones; ++i) {
+        AppearanceZone z;
+        z.pose = {static_cast<std::uint8_t>(i), 400, -50, 100, 0x0102, 0, 0};
+        z.kind.assign(kindChars, 'k');
+        z.sizeXMm = 300;
+        z.sizeYMm = 600;
+        z.sizeZMm = 150;
+        a.zones.push_back(std::move(z));
+    }
+    return a;
+}
+
+// Roster with `robots` entries (6-character names) whose appearance has the given list sizes, and the JoinAccept around it.
+std::size_t rosterBytes(std::size_t robots, const RobotAppearance& appearance, std::size_t* joinAcceptBytes = nullptr) {
+    const BinaryMessageCodec codec;
+    Roster roster;
+    for (std::size_t i = 0; i < robots; ++i) {
+        RosterEntry e = test_ipc::sampleRosterEntry(static_cast<ParticipantId>(i), "Robot1", AllianceStation::Red1, i == 0);
+        e.appearance = appearance;
+        roster.entries.push_back(std::move(e));
+    }
+    std::vector<std::byte> out;
+    const Status status = codec.encode(Message{roster}, out);
+    REQUIRE_MESSAGE(status.ok(), (status.ok() ? "" : status.error().message));
+    const Result<Message> back = codec.decode(out);
+    REQUIRE(back.ok());
+    CHECK(std::get<Roster>(back.value()) == roster);
+    if (joinAcceptBytes != nullptr) {
+        JoinAccept accept;
+        accept.roster = roster.entries;
+        std::vector<std::byte> acceptOut;
+        REQUIRE(codec.encode(Message{accept}, acceptOut).ok());
+        *joinAcceptBytes = acceptOut.size();
+    }
+    return out.size();
+}
+
+constexpr std::size_t kRosterHeaderBytes = 3 + 8 + 8 + 1;  // frame header, session, epoch, entry count
+// One entry: record prefix, id, name (length + 6), station, ping, loss, host flag, appearance record.
+constexpr std::size_t kEntryFixedBytes = 2 + 2 + 1 + 6 + 1 + 2 + 2 + 1;
+
+std::size_t appearanceBytes(std::size_t primitives, std::size_t wheels, std::size_t zones, std::size_t kindChars) {
+    return 2 + kWireAppearanceChassisBytes + 1 + primitives * kWireAppearancePrimitiveBytes + 1 +
+           wheels * kWireAppearanceWheelBytes + 1 + zones * (kWireAppearanceZoneMinBytes + kindChars);
+}
+
+}  // namespace
+
+TEST_CASE("roster size: an appearance costs a computable number of bytes per entry") {
+    for (const std::size_t kind : {std::size_t{0}, std::size_t{16}}) {
+        const RobotAppearance a = appearanceOfSize(3, 5, 2, kind);
+        CHECK(rosterBytes(4, a) == kRosterHeaderBytes + 4 * (kEntryFixedBytes + appearanceBytes(3, 5, 2, kind)));
+    }
+    // No appearance: just the (empty) record, as in a host that does not describe robots.
+    CHECK(rosterBytes(2, RobotAppearance{}) == kRosterHeaderBytes + 2 * (kEntryFixedBytes + appearanceBytes(0, 0, 0, 0)));
+}
+
+TEST_CASE("roster size: 6 robots x 8 wheels x 4 zones is a few kilobytes, far below the reliable packet limit") {
+    // The worst case the product allows: 8 primitives, 8 wheels, 4 zones with 20-character kinds on each of 6 robots.
+    std::size_t acceptBytes = 0;
+    const std::size_t typical = rosterBytes(kMaxRobotsPerMatch, appearanceOfSize(8, 8, 4, 20), &acceptBytes);
+    std::printf("[roster size] 6 robots x 8 wheels x 4 zones x 8 primitives: Roster %zu bytes, JoinAccept %zu bytes "
+                "(reliable limit %zu)\n",
+                typical, acceptBytes, relay::kRelayMaxReliablePacket);
+    CHECK(typical == kRosterHeaderBytes + 6 * (kEntryFixedBytes + appearanceBytes(8, 8, 4, 20)));
+    CHECK(typical <= 4 * 1024);
+    CHECK(acceptBytes <= 4 * 1024 + 128);
+    CHECK(typical * 16 < relay::kRelayMaxReliablePacket);
+
+    // And every list at its wire cap with the longest kinds: the absolute worst case still fits, with room.
+    const std::size_t absolute = rosterBytes(
+        kMaxRobotsPerMatch, appearanceOfSize(kMaxAppearancePrimitives, kMaxWheelsPerRobot, kMaxZonesPerRobot, kMaxNameBytes), &acceptBytes);
+    std::printf("[roster size] absolute worst case (every cap): Roster %zu bytes, JoinAccept %zu bytes\n", absolute, acceptBytes);
+    CHECK(absolute <= 16 * 1024);
+    CHECK(acceptBytes <= 16 * 1024 + 128);
+    CHECK(absolute * 4 < relay::kRelayMaxReliablePacket);
+}
