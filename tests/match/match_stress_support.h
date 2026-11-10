@@ -4,10 +4,8 @@
 // host over impaired in-memory links, remote shooters driven by model clients that apply the entity deltas the way a game
 // client does and measure how fresh the fuel they hold is.
 //
-//   FuelIdTap    IMatchHostSession over the real session. It records the TRUTH (id and quantized position of every fuel at
-//                every snapshot the host builds) and adds the stable fuel ids to the entity group when the plugin does not
-//                publish them (a test-side stand-in so the host's delta encoder is exercised; it takes them from the physics
-//                world, where the plugin stores them in the shape tags).
+//   TruthTap     IMatchHostSession over the real session. It records the TRUTH (id and quantized position of every fuel at
+//                every snapshot the host builds, with the ids the plugin publishes) and changes nothing.
 //   ModelClient  a joined client: sends inputs, applies snapshots and entity deltas on the baseline they name, acknowledges
 //                them, and measures the staleness of what it holds against the truth.
 
@@ -62,7 +60,7 @@ inline bool envFlag(const char* name) {
 inline bool reportRequested() { return envFlag("WPIEMU_STRESS_REPORT"); }
 inline bool fullRunRequested() { return envFlag("WPIEMU_STRESS"); }
 
-// ---- the fuel truth and the id tap ------------------------------------------------------------------------------------
+// ---- the fuel truth ---------------------------------------------------------------------------------------------------
 
 struct TruthFrame {
     std::uint64_t tick = 0;
@@ -71,9 +69,9 @@ struct TruthFrame {
     std::size_t moving = 0;                    // entities whose quantized position differs from the previous frame (or are new)
 };
 
-class FuelIdTap final : public core::match::IMatchHostSession {
+class TruthTap final : public core::match::IMatchHostSession {
 public:
-    explicit FuelIdTap(core::runtime::SimulationSession& session) : session_(session), inner_(session) {}
+    explicit TruthTap(core::runtime::SimulationSession& session) : inner_(session) {}
 
     std::string gamePluginId() const override { return inner_.gamePluginId(); }
     int wpilibYear() const override { return inner_.wpilibYear(); }
@@ -94,13 +92,11 @@ public:
 
     std::shared_ptr<const sdk::ISimSnapshot> buildSnapshot(bool paused, bool robotConnected) override {
         const SteadyClock::time_point t0 = SteadyClock::now();
-        const std::shared_ptr<const sdk::ISimSnapshot> real = inner_.buildSnapshot(paused, robotConnected);
-        sdk::SimSnapshotData d = copyOf(*real);
-        record(d);
-        const std::shared_ptr<const sdk::ISimSnapshot> out = std::make_shared<const sdk::SimSnapshot>(std::move(d));
+        std::shared_ptr<const sdk::ISimSnapshot> snapshot = inner_.buildSnapshot(paused, robotConnected);
+        record(*snapshot);
         tapTime_ += SteadyClock::now() - t0;
-        lastBuild_ = out;
-        return out;
+        lastBuild_ = snapshot;
+        return snapshot;
     }
 
     const TruthFrame* truthAt(std::uint64_t tick) const {
@@ -118,61 +114,15 @@ public:
     std::size_t idMismatches() const { return idMismatches_; }
 
 private:
-    static sdk::SimSnapshotData copyOf(const sdk::ISimSnapshot& s) {
-        sdk::SimSnapshotData d;
-        d.tick = s.tick();
-        d.simTimeUs = s.simTimeUs();
-        d.paused = s.paused();
-        d.robotConnected = s.robotConnected();
-        d.chassis = s.chassis();
-        d.bodies.assign(s.bodies().begin(), s.bodies().end());
-        d.wheels.assign(s.wheels().begin(), s.wheels().end());
-        d.entityGroups.assign(s.entityGroups().begin(), s.entityGroups().end());
-        d.mechanisms.assign(s.mechanisms().begin(), s.mechanisms().end());
-        d.hud.assign(s.hud().begin(), s.hud().end());
-        d.zones.assign(s.zones().begin(), s.zones().end());
-        d.cameras.assign(s.cameras().begin(), s.cameras().end());
-        d.sensors.assign(s.sensors().begin(), s.sensors().end());
-        d.devices.assign(s.devices().begin(), s.devices().end());
-        d.warnings.assign(s.warnings().begin(), s.warnings().end());
-        d.batteryVoltageV = s.batteryVoltageV();
-        d.driverStation = s.driverStation();
-        d.physicsStats = s.physicsStats();
-        d.remoteRobots.assign(s.remoteRobots().begin(), s.remoteRobots().end());
-        if (s.matchInfo() != nullptr) d.matchInfo = *s.matchInfo();
-        return d;
-    }
-
-    // Fills the ids of the fuel group (physics shape tags) and records the truth frame.
-    void record(sdk::SimSnapshotData& d) {
+    // Records the truth frame from the entity ids the plugin published.
+    void record(const sdk::ISimSnapshot& snapshot) {
         TruthFrame frame;
-        frame.tick = d.tick;
-        frame.simTimeUs = d.simTimeUs;
-        for (sdk::EntityGroupSample& g : d.entityGroups) {
+        frame.tick = snapshot.tick();
+        frame.simTimeUs = snapshot.simTimeUs();
+        for (const sdk::EntityGroupSample& g : snapshot.entityGroups()) {
             if (g.group != "fuel") continue;
-            if (!g.ids.empty()) {
-                pluginIds_ = true;
-            } else {
-                std::vector<sdk::ShapeId> shapes;
-                sdk::IPhysicsWorld& world = session_.world();
-                world.overlapSphere({8.f, 4.f, 0.f}, 60.f, ~std::uint64_t{0}, shapes);
-                std::vector<std::pair<std::uint32_t, sdk::Vec3>> found;
-                for (const sdk::ShapeId shape : shapes) {
-                    const std::uint64_t tag = world.shapeTag(shape);
-                    if (plugins::game_2026::tagKind(tag) != plugins::game_2026::EntityKind::Fuel) continue;
-                    found.emplace_back(plugins::game_2026::tagId(tag), world.pose(world.shapeBody(shape)).position);
-                }
-                std::sort(found.begin(), found.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-                bool consistent = found.size() == g.positions.size();
-                for (std::size_t i = 0; consistent && i < found.size(); ++i)
-                    consistent = wire::quantizeCentiI16(found[i].second.x) == wire::quantizeCentiI16(g.positions[i].x) &&
-                                 wire::quantizeCentiI16(found[i].second.y) == wire::quantizeCentiI16(g.positions[i].y);
-                if (consistent) {
-                    for (const auto& f : found) g.ids.push_back(f.first);
-                } else {
-                    ++idMismatches_;
-                }
-            }
+            if (!g.ids.empty()) pluginIds_ = true;
+            if (g.ids.empty() || !sdk::entityIdsConsistent(g)) ++idMismatches_;
             for (std::size_t i = 0; i < g.ids.size() && i < g.positions.size(); ++i) {
                 wire::EntityState e;
                 e.id = g.ids[i];
@@ -199,7 +149,6 @@ private:
         return moving;
     }
 
-    core::runtime::SimulationSession& session_;
     core::match::SimulationMatchSession inner_;
     std::deque<TruthFrame> frames_;
     std::shared_ptr<const sdk::ISimSnapshot> lastBuild_;
@@ -239,7 +188,7 @@ public:
     static constexpr std::int64_t kStuckUs = 1'500'000;
     static constexpr std::size_t kHeldHistory = 64;
 
-    ModelClient(mt::Harness& h, const sdk::testing::ImpairmentProfile& profile, std::uint64_t seed, FuelIdTap& tap)
+    ModelClient(mt::Harness& h, const sdk::testing::ImpairmentProfile& profile, std::uint64_t seed, TruthTap& tap)
         : h_(h), tap_(tap), sc_(h, profile, seed) {}
 
     mt::ScriptedTransport& hostEnd() { return *sc_.transport; }
@@ -415,7 +364,7 @@ private:
     }
 
     mt::Harness& h_;
-    FuelIdTap& tap_;
+    TruthTap& tap_;
     mt::ScriptedClient sc_;
     std::uint32_t seq_ = 0;
     wire::MatchInputPacket packet_;

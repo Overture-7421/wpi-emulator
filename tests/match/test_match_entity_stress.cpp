@@ -193,7 +193,7 @@ Result runScenario(const Scenario& sc) {
     options.pluginInts = {{"capacity", kMeterFuel}, {"preloadFuel", kMeterFuel}, {"maxFuelOnField", kFuelCap}};
     options.hostZones = zonesOf(sc.aim);
     g26session::Rig rig(options);
-    FuelIdTap tap(*rig.session);
+    TruthTap tap(*rig.session);
     mt::Harness h(tap);
     REQUIRE(g26::registerPlugin(h.kit.plugins).ok());
 
@@ -387,7 +387,7 @@ std::string format(const Result& r, double expectedShots) {
     char buf[320];
     out << "== " << r.name << " (" << r.measureS << " s measured, " << kRobots << " robots, 20 balls/s each) ==\n";
     std::snprintf(buf, sizeof buf, "  snapshots/s per client %.1f (host rate %u Hz), plugin publishes entity ids: %s\n", r.snapshotHz,
-                  r.hostRateHz, r.pluginIds ? "yes" : "NO (test tap adds them)");
+                  r.hostRateHz, r.pluginIds ? "YES" : "NO");
     out << buf;
     out << line3("fuel bodies on field", r.fuel, "");
     out << line3("moving entities / snapshot", r.moving, "(truth: changed since previous snapshot)");
@@ -433,6 +433,7 @@ void gate(const Result& r, bool wan, Aim aim) {
     CHECK(r.totals.received > 20);
     CHECK(r.totals.incomplete == 0);   // every snapshot carries all six robots and a Running info
     CHECK(r.totals.noTruth == 0);
+    CHECK(r.pluginIds);
     CHECK(r.idMismatches == 0);
     CHECK(r.totals.unappliable == 0);
     // Nothing starves forever: once the shooters stop, everything at rest ends up right on every client. (During sustained fire
