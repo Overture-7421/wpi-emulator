@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=WPI Emulator Client
+GenericName=FRC practice-match client
+Comment=Join a practice match hosted from WPI Emulator
+Exec=wpiemu_client
+Icon=wpiemu-client
+Terminal=false
+Categories=Development;Education;
+Keywords=FRC;WPILib;robot;simulation;practice match;
+StartupWMClass=wpiemu_client

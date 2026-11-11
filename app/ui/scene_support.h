@@ -12,6 +12,8 @@
 
 #include "wpiemu/sdk/core/geometry.h"
 #include "wpiemu/sdk/core/math.h"
+#include "wpiemu/sdk/game/alliance.h"
+#include "wpiemu/sdk/ipc/driver_station.h"
 #include "wpiemu/sdk/physics/chassis_spec.h"
 
 namespace wpiemu::app::ui {
@@ -51,6 +53,10 @@ inline sdk::Vec3 wheelHubLocalPosition(const sdk::ChassisSpec& ch, const sdk::Wh
 
 // The colour of sdk::kDefaultPrimitiveColor.
 QColor defaultColor();
+
+// The colour a robot's alliance is drawn in (field markers, name labels, roster rows).
+QColor allianceColor(sdk::Alliance alliance);
+inline QColor allianceColor(sdk::proto::AllianceStation station) { return allianceColor(sdk::proto::allianceOf(station)); }
 
 // A CSS colour name or "#rrggbb" string, `fallback` when it is empty or not a colour.
 QColor parseColor(const std::string& css, const QColor& fallback = defaultColor());

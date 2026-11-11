@@ -19,7 +19,9 @@ endforeach()
 set(CMAKE_AUTOUIC OFF)
 add_subdirectory(host)
 add_subdirectory(common)
-
+if(TARGET wpiemu_net AND TARGET wpiemu_app_runview AND TARGET wpiemu_match)
+    add_subdirectory(client)
+endif()
 qt_add_executable(wpiemu_app main.cpp)
 target_link_libraries(wpiemu_app PRIVATE
     wpiemu_app_common

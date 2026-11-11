@@ -12,6 +12,7 @@
 #include "wpiemu/plugins/game_2026/game_values.h"
 #include "wpiemu/plugins/game_2026/plugin_info.h"
 #include "wpiemu/sdk/game/zone_activation.h"
+#include "wpiemu/sdk/game/zone_pose.h"
 #include "wpiemu/sdk/ipc/driver_station.h"
 #include "wpiemu/sdk/mechanisms/mechanism.h"
 
@@ -61,46 +62,107 @@ Game2026State::Game2026State(sdk::SimContext& ctx, GameConfig config, FieldLayou
     : config_(std::move(config)), layout_(std::move(layout)),
       pool_(ctx.physics(), config_.fuel, config_.maxFuelOnField),
       hub_(config_.enforceHubShifts, config_.firstInactive) {
-    buildZones(ctx);
+    buildHostZones(ctx);
 }
 
 std::string_view Game2026State::pluginId() const { return game_2026::pluginId(); }
 
-void Game2026State::buildZones(sdk::SimContext& ctx) {
-    zones_.clear();
-    intakes_.clear();
-    shooters_.clear();
-    for (const sdk::ZoneConfig& zone : ctx.config().zones) {
+void Game2026State::buildRuntimes(RobotState& robot, const std::vector<sdk::ZoneConfig>& configs) {
+    robot.zones.clear();
+    robot.zoneBits.clear();
+    robot.intakes.clear();
+    robot.shooters.clear();
+    for (std::size_t i = 0; i < configs.size(); ++i) {
+        const sdk::ZoneConfig& zone = configs[i];
         if (zone.kind == kPickupKind) {
-            auto pickup = std::make_unique<PickupZoneRuntime>(zone);
-            intakes_.push_back(pickup.get());
-            zones_.push_back(std::move(pickup));
+            auto pickup = std::make_unique<PickupZoneRuntime>(zone, robot.remote);
+            robot.intakes.push_back(pickup.get());
+            robot.zones.push_back(std::move(pickup));
         } else if (zone.kind == kShooterKind) {
-            auto shooter = std::make_unique<ShooterZoneRuntime>(zone);
-            shooters_.push_back(shooter.get());
-            zones_.push_back(std::move(shooter));
+            auto shooter = std::make_unique<ShooterZoneRuntime>(zone, robot.remote);
+            robot.shooters.push_back(shooter.get());
+            robot.zones.push_back(std::move(shooter));
+        } else {
+            continue;
         }
+        robot.zoneBits.push_back(i);
     }
+}
+
+void Game2026State::buildHostZones(sdk::SimContext& ctx) { buildRuntimes(robots_.host(), ctx.config().zones); }
+
+void Game2026State::resetRobot(RobotState& robot) {
+    if (robot.remote) buildRuntimes(robot, robot.zoneConfigs);
+    robot.meter = std::min(config_.preloadFuel, config_.capacity);
+    robot.shots = 0;
+}
+
+const Game2026State::RobotState* Game2026State::robot(sdk::ParticipantId id) const { return robots_.find(id); }
+
+std::vector<sdk::ParticipantId> Game2026State::robotIds() const { return robots_.ids(); }
+
+void Game2026State::onRobotAdded(sdk::SimContext&, const sdk::RobotView& robot) {
+    if (robot.isHost || robot.participantId == sdk::match::kHostParticipantId) return;  // the host is always present
+    RobotState state;
+    state.id = robot.participantId;
+    state.remote = true;
+    if (robot.zones != nullptr) state.zoneConfigs = *robot.zones;
+    buildRuntimes(state, state.zoneConfigs);
+    state.meter = std::min(config_.preloadFuel, config_.capacity);
+    robots_.add(robot.participantId, std::move(state));
+}
+
+void Game2026State::onRobotRemoved(sdk::SimContext&, sdk::ParticipantId participant) { robots_.remove(participant); }
+
+// Resolves where every robot is this tick, in the order they act.
+void Game2026State::collectFrames(sdk::SimContext& ctx) {
+    frames_.clear();
+    robots_.forEach([&](sdk::ParticipantId, RobotState& state) {
+        RobotFrame frame;
+        frame.state = &state;
+        if (!state.remote) {
+            frame.body = ctx.chassisBody();
+            frame.present = true;
+        } else if (const sdk::RobotView* view = ctx.robots().find(state.id)) {
+            frame.view = view;
+            frame.body = view->body;
+            frame.present = true;
+        }
+        frame.pose = frame.body.valid() ? ctx.physics().pose(frame.body) : sdk::Pose3{};
+        frames_.push_back(frame);
+    });
 }
 
 void Game2026State::stepZones(sdk::SimContext& ctx, double dt) {
     sdk::IMechanismDirectory* dir = ctx.mechanisms();
     std::vector<std::string> missing;
-    for (const std::unique_ptr<FuelZoneRuntime>& zone : zones_) {
-        const sdk::ZoneConfig& cfg = zone->config();
-        sdk::Pose3 attachment;  // the chassis frame unless attached to a mechanism link that can be resolved
-        if (!cfg.attachment.onChassis() && dir != nullptr)
-            if (const auto p = dir->linkPoseInChassis(cfg.attachment.parentMechanismId, cfg.attachment.parentLink))
-                attachment = *p;
-        missing.clear();
-        const bool held = sdk::evaluateActivation(cfg.activation, dir, &missing);
-        for (const std::string& mechanism : missing) zone->warnMissing(ctx, mechanism);
-        zone->update(ctx, attachment * cfg.local, held, dt);
+    for (const RobotFrame& frame : frames_) {
+        RobotState& robot = *frame.state;
+        for (std::size_t i = 0; i < robot.zones.size(); ++i) {
+            FuelZoneRuntime& zone = *robot.zones[i];
+            const sdk::ZoneConfig& cfg = zone.config();
+            if (robot.remote) {
+                // No mechanisms: active iff the client's flag is set and the robot may act; the pose is the one its client
+                // commanded this tick (clamped by the session), else the zone's spec pose.
+                const bool held = frame.view != nullptr && frame.view->enabled && frame.view->zoneFlagActive(robot.zoneBits[i]);
+                const std::optional<sdk::Pose3> moved = frame.view != nullptr ? frame.view->zonePose(robot.zoneBits[i]) : std::nullopt;
+                zone.update(ctx, moved.value_or(sdk::remoteZoneSpecPose(cfg)), held, dt);
+                continue;
+            }
+            sdk::Pose3 attachment;  // the chassis frame unless attached to a mechanism link that can be resolved
+            if (!cfg.attachment.onChassis() && dir != nullptr)
+                if (const auto p = dir->linkPoseInChassis(cfg.attachment.parentMechanismId, cfg.attachment.parentLink))
+                    attachment = *p;
+            missing.clear();
+            const bool held = sdk::evaluateActivation(cfg.activation, dir, &missing);
+            for (const std::string& mechanism : missing) zone.warnMissing(ctx, mechanism);
+            zone.update(ctx, attachment * cfg.local, held, dt);
+        }
     }
 }
 
 void Game2026State::reset(sdk::SimContext& ctx) {
-    buildZones(ctx);
+    buildHostZones(ctx);
     pool_.clear();
     pending_.clear();
     hits_.clear();
@@ -110,19 +172,13 @@ void Game2026State::reset(sdk::SimContext& ctx) {
     matchTimed_ = false;
     matchResult_ = false;
     resultCuePending_ = false;
-    meter_ = std::min(config_.preloadFuel, config_.capacity);
-    shots_ = 0;
+    robots_.forEach([this](sdk::ParticipantId, RobotState& robot) { resetRobot(robot); });
     lost_ = 0;
     for (OutpostState& o : outposts_) o = OutpostState{config_.outpostChuteFuel, 0.0};
 
     for (const sdk::Vec3& p : initialFuelPositions(config_, layout_)) pool_.spawn(p, {});
     refreshPositions();
 }
-
-sdk::Pose3 Game2026State::chassisPose(sdk::SimContext& ctx) const {
-    return ctx.chassisBody().valid() ? ctx.physics().pose(ctx.chassisBody()) : sdk::Pose3{};
-}
-
 void Game2026State::step(sdk::SimContext& ctx, double dt) {
     const sdk::proto::DsState& ds = ctx.driverStation();
     ownAlliance_ = sdk::proto::allianceOf(ds.station);
@@ -155,9 +211,10 @@ void Game2026State::step(sdk::SimContext& ctx, double dt) {
 
     handleSensorEvents(ctx);
     despawnOutOfPlay(ctx);
+    collectFrames(ctx);
     stepZones(ctx, dt);
-    stepShooters(ctx);
-    stepIntakes(ctx);
+    for (const RobotFrame& frame : frames_) stepShooters(ctx, frame);
+    for (const RobotFrame& frame : frames_) stepIntakes(frame);
     stepRecycling(ctx, dt);
     stepHumanPlayers(ctx, dt);
     refreshPositions();
@@ -215,17 +272,18 @@ void Game2026State::despawnOutOfPlay(sdk::SimContext&) {
     }
 }
 
-void Game2026State::stepShooters(sdk::SimContext& ctx) {
-    if (shooters_.empty()) return;
-    const sdk::Pose3 chassis = chassisPose(ctx);
+void Game2026State::stepShooters(sdk::SimContext& ctx, const RobotFrame& frame) {
+    RobotState& robot = *frame.state;
+    if (robot.shooters.empty()) return;
+    const sdk::Pose3& chassis = frame.pose;
     const sdk::SimTimeUs now = ctx.clock().simTimeUs();
     const sdk::SimTimeUs ghostUntil = config_.shotGhostS > 0.f ? now + sdk::secondsToUs(config_.shotGhostS) : 0;
     const float spacing = 2.f * dim::kFuelRadiusM + 0.01f;
 
-    for (IFuelShooterPort* shooter : shooters_) {
-        if (meter_ <= 0) break;
+    for (IFuelShooterPort* shooter : robot.shooters) {
+        if (robot.meter <= 0) break;
         if (!shooter->feeding()) continue;
-        const int shots = std::min(shooter->shotBudget(), meter_);
+        const int shots = std::min(shooter->shotBudget(), robot.meter);
         if (shots <= 0) continue;
         const ShotSolution sol = shooter->solution();
         const sdk::Vec3 muzzle = chassis.transformPoint(sol.muzzleInChassis);
@@ -243,8 +301,8 @@ void Game2026State::stepShooters(sdk::SimContext& ctx) {
             const sdk::Vec3 spawnPos = muzzle - baseDir * (spacing * static_cast<float>(row)) + lateral * offset;
 
             sdk::Vec3 robotVelocity;
-            if (sol.inheritRobotVelocity && ctx.chassisBody().valid())
-                robotVelocity = ctx.physics().pointVelocity(ctx.chassisBody(), spawnPos);
+            if (sol.inheritRobotVelocity && frame.body.valid())
+                robotVelocity = ctx.physics().pointVelocity(frame.body, spawnPos);
 
             sdk::Vec3 dir = baseDir;
             if (sol.aimJitterRad > 0.0) {
@@ -262,23 +320,24 @@ void Game2026State::stepShooters(sdk::SimContext& ctx) {
             if (pool_.spawn(spawnPos, options) == 0) break;
             ++fired;
         }
-        meter_ -= fired;
-        shots_ += fired;
+        robot.meter -= fired;
+        robot.shots += fired;
         shooter->consumeShots(fired);
     }
 }
 
-void Game2026State::stepIntakes(sdk::SimContext& ctx) {
-    if (intakes_.empty()) return;
-    const sdk::Pose3 chassis = chassisPose(ctx);
+void Game2026State::stepIntakes(const RobotFrame& frame) {
+    RobotState& robot = *frame.state;
+    if (robot.intakes.empty()) return;
+    const sdk::Pose3& chassis = frame.pose;
     struct Candidate {
         float distSq;
         std::uint32_t id;
     };
     std::vector<Candidate> candidates;
 
-    for (IFuelIntakePort* intake : intakes_) {
-        const int room = config_.capacity - meter_;
+    for (IFuelIntakePort* intake : robot.intakes) {
+        const int room = config_.capacity - robot.meter;
         if (room <= 0) break;
         if (!intake->pickupActive()) continue;
         const int budget = std::min(intake->pickupBudget(), room);
@@ -299,7 +358,7 @@ void Game2026State::stepIntakes(sdk::SimContext& ctx) {
         });
         const int taken = std::min(budget, static_cast<int>(candidates.size()));
         for (int i = 0; i < taken; ++i) pool_.despawn(candidates[static_cast<std::size_t>(i)].id);
-        meter_ += taken;
+        robot.meter += taken;
         intake->consumePickups(taken);
     }
 }
@@ -346,7 +405,11 @@ void Game2026State::stepHumanPlayers(sdk::SimContext& ctx, double dt) {
 
 void Game2026State::refreshPositions() {
     fuelPositions_.clear();
-    pool_.forEach([&](std::uint32_t, const sdk::Vec3& p) { fuelPositions_.push_back(p); });
+    fuelIds_.clear();
+    pool_.forEach([&](std::uint32_t id, const sdk::Vec3& p) {
+        fuelPositions_.push_back(p);
+        fuelIds_.push_back(pool_.entityId(id));
+    });
 }
 
 std::optional<std::string> Game2026State::gameSpecificMessage() const {
@@ -355,10 +418,10 @@ std::optional<std::string> Game2026State::gameSpecificMessage() const {
 }
 
 std::optional<double> Game2026State::gameValue(std::string_view id) const {
-    if (id == game_value::kFuelCount) return static_cast<double>(meter_);
+    if (id == game_value::kFuelCount) return static_cast<double>(robots_.host().meter);
     if (id == game_value::kFuelCapacity) return static_cast<double>(config_.capacity);
     if (id == game_value::kFuelFraction)
-        return config_.capacity > 0 ? static_cast<double>(meter_) / config_.capacity : 0.0;
+        return config_.capacity > 0 ? static_cast<double>(robots_.host().meter) / config_.capacity : 0.0;
     return std::nullopt;
 }
 
@@ -369,13 +432,15 @@ void Game2026State::publish(sdk::SnapshotBuilder& out) const {
     fuel.radiusM = dim::kFuelRadiusM;
     fuel.color = "#ffd000";
     fuel.positions = fuelPositions_;
+    fuel.ids = fuelIds_;
     out.addEntityGroup(std::move(fuel));
-    for (const std::unique_ptr<FuelZoneRuntime>& zone : zones_) out.addZone({zone->id(), zone->active()});
+    for (const std::unique_ptr<FuelZoneRuntime>& zone : robots_.host().zones)
+        out.addZone({zone->id(), zone->active(), zone->poseInChassis()});
 
-    out.setHud(hud::kFuelCount, meter_);
+    out.setHud(hud::kFuelCount, robots_.host().meter);
     out.setHud(hud::kFuelCapacity, config_.capacity);
     out.setHud(hud::kFuelOnField, static_cast<int>(fuelPositions_.size()));
-    out.setHud(hud::kShots, shots_);
+    out.setHud(hud::kShots, robots_.host().shots);
     if (matchTimed_ || matchResult_) {
         out.setHud(hud::kScoreRed, hub_.score(Alliance::Red).points());
         out.setHud(hud::kScoreBlue, hub_.score(Alliance::Blue).points());
@@ -398,6 +463,15 @@ void Game2026State::publish(sdk::SnapshotBuilder& out) const {
     }
     out.setHud(hud::kOutpostRed, outposts_[index(Alliance::Red)].stock);
     out.setHud(hud::kOutpostBlue, outposts_[index(Alliance::Blue)].stock);
+}
+
+void Game2026State::publishRobot(sdk::SnapshotBuilder& out, const sdk::RobotView& view) const {
+    const RobotState* robot = this->robot(view.participantId);
+    if (robot == nullptr || !robot->remote) return;
+    out.setRobotHud(robot->id, hud::kFuelCount, robot->meter);
+    out.setRobotHud(robot->id, hud::kFuelCapacity, config_.capacity);
+    out.setRobotHud(robot->id, hud::kShots, robot->shots);
+    if (matchTimed_) out.setRobotHud(robot->id, hud::kHubOwnActive, hub_.active(view.alliance()));
 }
 
 }  // namespace wpiemu::plugins::game_2026

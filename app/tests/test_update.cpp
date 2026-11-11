@@ -6,7 +6,7 @@
 #include <map>
 #include <vector>
 
-#include "common/key_value_store.h"
+#include "ui/key_value_store.h"
 #include "common/update_install.h"
 #include "common/update_offer.h"
 #include "common/update_service.h"

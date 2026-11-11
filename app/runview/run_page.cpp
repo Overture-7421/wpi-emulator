@@ -138,6 +138,7 @@ void RunPage::build() {
     connect(&host_, &IRuntimeHost::statusChanged, this, &RunPage::applyStatus);
     connect(&host_, &IRuntimeHost::sceneChanged, this, &RunPage::onSceneChanged);
     connect(&host_, &IRuntimeHost::startPositionChanged, this, &RunPage::rebuildStartMenu);
+    connect(&host_, &IRuntimeHost::matchRosterChanged, this, [this] { scene_.setMatchRoster(host_.matchRoster()); });
     connect(&host_, &IRuntimeHost::logLine, console_, &ConsolePanel::append);
     connect(&ds_, &DriverStationModel::stateReady, &host_, &IRuntimeHost::setDriverStation);
     connect(&ds_, &DriverStationModel::sfxRequested, &sfx_, &SfxPlayer::play);
@@ -170,6 +171,7 @@ void RunPage::build() {
     dsTimer_->start();
 
     onSceneChanged();
+    scene_.setMatchRoster(host_.matchRoster());
     applyStatus();
     setConsoleVisible(true);
 }

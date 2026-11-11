@@ -204,7 +204,7 @@ RobotSession::RobotSession() {
 namespace {
 
 Result<std::unique_ptr<runtime::SimulationSession>> buildSession(const Registries& reg, RobotConfig config, ILogger& logger, ISoundCueSink& sounds,
-                                                                  const FieldDescription* field) {
+                                                                  const FieldDescription* field, bool remoteRobots) {
     runtime::SessionParts parts;
     parts.world = core::physics::createBox3dWorld(config.sim.physics);
     if (!parts.world) return makeError(ErrorCode::Internal, "the physics world could not be created (invalid physics settings)");
@@ -223,6 +223,8 @@ Result<std::unique_ptr<runtime::SimulationSession>> buildSession(const Registrie
     parts.sounds = &sounds;
     parts.chassisBuilder = runtime::physicsChassisBuilder(placement);
     parts.coupling = std::make_unique<runtime::PhysicsCouplingDriver>();
+    // Practice matches: remote robots are real Box3D bodies in this world (wheels, tires and motors as the local robot's).
+    if (remoteRobots) parts.remoteChassisFactory = runtime::physicsRemoteChassisFactory(*reg.drivetrains, *reg.tireModels);
     return runtime::SessionBuilder::build(std::move(parts));
 }
 
@@ -237,6 +239,10 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     ILogger& log = *self->logger_;
     self->options_ = options;
     self->status_.mode = options.mode;
+    if (options.hosting.mode != HostingMode::Off) {
+        if (const Status hostable = validateHosting(options.hosting); !hostable)
+            return makeError(hostable.error().code, "Practice match hosting cannot start: " + hostable.error().message);
+    }
 
     // ---- project, toolchain and extension: cheap checks first, with actionable messages ----
     std::error_code ec;
@@ -289,7 +295,8 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
 
     // ---- simulation session ----
     const std::shared_ptr<const FieldDescription> field = describeField(module);
-    auto built = buildSession(reg, cfg, log, self->cues_, field.get());
+    const bool hosted = options.hosting.mode != HostingMode::Off;
+    auto built = buildSession(reg, cfg, log, self->cues_, field.get(), hosted);
     if (!built && options.mode == SessionMode::Armed) {
         // An armed session only needs the device hub until the simulation starts: fall back to the bare chassis when the full model cannot be built.
         log.warn("session", "the robot model could not be built (" + built.error().message + "); discovering with an empty model");
@@ -298,7 +305,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
         bare.drivetrain.spec.wheels.clear();
         bare.drivetrain.mappings.clear();
         bare.chassis = sdk::ChassisSpec{};
-        built = buildSession(reg, std::move(bare), log, self->cues_, field.get());
+        built = buildSession(reg, std::move(bare), log, self->cues_, field.get(), hosted);
     }
     if (!built) return makeError(built.error().code, "The simulation could not be built: " + built.error().message);
     self->session_ = std::move(built).value();
@@ -309,7 +316,7 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     const ipc::ConnectionEndpoint endpoint = ipc::ConnectionEndpoint::generate();
     auto server = ipc::makeLocalServer(endpoint);
     if (!server) return makeError(server.error().code, "cannot open the IPC endpoint: " + server.error().message);
-    self->acceptor_ = std::make_unique<runtime::RobotLinkAcceptor>(std::move(server).value(), std::make_shared<ipc::BinaryMessageCodec>(), self->inbox_, &log);
+    self->acceptor_ = std::make_unique<runtime::MessageLinkAcceptor>(std::move(server).value(), std::make_shared<ipc::BinaryMessageCodec>(), self->inbox_, &log);
     if (Status s = self->acceptor_->start(); !s) return makeError(s.error().code, "cannot listen for the robot: " + s.error().message);
     self->endpoint_ = self->acceptor_->endpoint();
 
@@ -326,6 +333,22 @@ Result<std::unique_ptr<RobotSession>> RobotSession::start(const Registries& reg,
     if (projectReport) ro.photonVersion = projectReport.value().photonLibVersion();
     self->runner_ = std::make_unique<runtime::SessionRunner>(*self->session_, self->inbox_, self->slot_, log, ro);
     self->runner_->setDriverStation(options.driverStation);
+    if (hosted) {
+        // The UI's controller now filters what clients cannot follow (time scale, Step); the match host drives the constraints.
+        self->constrained_ = std::make_unique<ConstrainedController>(*self->runner_, options.timeScale);
+        self->hostSession_ = std::make_unique<core::match::SimulationMatchSession>(*self->session_);
+        MatchHostingServices services;
+        services.session = self->hostSession_.get();
+        services.pipeline = reg.pipeline;
+        services.logger = &log;
+        ConstrainedController* constrained = self->constrained_.get();
+        services.onConstraints = [constrained](const core::match::HostConstraints& c) { constrained->apply(c.lockTimeScale, c.stepDisallowed); };
+        auto hosting = MatchHosting::create(options.hosting, std::move(services));
+        if (!hosting) return makeError(hosting.error().code, "Practice match hosting cannot start: " + hosting.error().message);
+        self->hosting_ = std::move(hosting).value();
+        self->runner_->setTickObserver(self->hosting_.get());
+        self->hosting_->start();
+    }
     self->runner_->start();
 
     // ---- robot launch ----
@@ -497,8 +520,20 @@ void RobotSession::teardown() {
     // Stop accepting and join IPC producers before disposing of their consumer / pending owners.
     if (acceptor_) acceptor_->stop();
     if (runner_) runner_->stop();
+    // The sim thread has ended, so the match host may now remove its robots from the session and close the room.
+    if (hosting_) hosting_->shutdown();
     inbox_.close();
     teardownDone_ = true;
+}
+
+std::shared_ptr<const HostingStatus> RobotSession::hostingStatus() const {
+    if (hosting_) return hosting_->status();
+    static const std::shared_ptr<const HostingStatus> off = std::make_shared<const HostingStatus>();
+    return off;
+}
+
+void RobotSession::kickParticipant(sdk::match::ParticipantId participant, std::string detail) {
+    if (hosting_) hosting_->kick(participant, std::move(detail));
 }
 
 void RobotSession::waitUntilFinished() {

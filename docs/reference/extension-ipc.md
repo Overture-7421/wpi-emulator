@@ -51,8 +51,11 @@ shipped codec is `wpiemu-binary-1`; wire-format and handshake protocol versions 
 Integers are little-endian, floating values use IEEE-754 bit patterns, booleans are one byte,
 and variable-length counts use bounded LEB128. Device descriptors, signal specifications
 and joystick records have `u16` byte-length prefixes. Field order is defined by the codec,
-not by C++ struct layout. PhotonVision packets use different layouts even where scalar
-helpers are shared.
+not by C++ struct layout. The symmetric writer and reader that apply those rules (varints,
+bounded lists and enums, length-prefixed records, the 1 MiB string cap) live in the SDK as
+`sdk/include/wpiemu/sdk/core/wire_codec.h`, with the shared `Vec3`, `Quat` and `Pose3` fields in
+`sdk/include/wpiemu/sdk/core/wire_fields.h`, so every wire format encodes with the same code. PhotonVision
+packets use different layouts even where scalar helpers are shared.
 
 The default payload limit is 8 MiB and the string limit is 1 MiB; lists also have per-type
 limits. A malformed message is a protocol error; an unknown wire format is a version
@@ -64,6 +67,19 @@ wakes blocked operations, and complete buffered frames are returned before disco
 A failed or timed-out stream write closes the connection: a partial frame cannot safely be
 retried. Send timeout is separate from the negotiated robot watchdog. A server accept timeout
 is not a disconnect; keep the listener and accept again.
+
+### Practice-match messages share the codec
+
+The practice-match and relay messages are further alternatives of the same `proto::Message` and are
+encoded by the same codec (message types 13 to 29, listed in [Match network](match-network.md#messages)).
+The HALSim extension protocol is the first twelve alternatives (`kExtensionMessageCount`); the robot
+process acts only on those, and the local runner ignores an unexpected type with a warning. The match
+messages never travel on the robot IPC link: they use ENet transports in `net/`.
+
+Two additions make that possible without changing the local protocol. `ITransport::sendUnreliable`
+defaults to the reliable send, so pipes and in-memory transports are unchanged; only the ENet adapter has
+a lossy channel. `sdk::proto::deliveryOf` gives each message its delivery class (every extension message is
+reliable because it rides a lock-step stream; only match inputs, snapshots and acknowledgements are not).
 
 ## Handshake and identity
 

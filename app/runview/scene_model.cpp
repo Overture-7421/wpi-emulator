@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstring>
 
+#include "ui/qt_text.h"
 #include "ui/scene_support.h"
 
 namespace wpiemu::app::runview {
@@ -212,6 +213,101 @@ void EntityGroupModel::update(std::span<const sdk::EntityGroupSample> groups) {
     }
 }
 
+// ---- RemoteRobotModel --------------------------------------------------------------------------
+RemoteRobotModel::RemoteRobotModel(QObject* parent) : QAbstractListModel(parent) {}
+
+int RemoteRobotModel::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : static_cast<int>(rows_.size()); }
+
+QVariant RemoteRobotModel::data(const QModelIndex& index, int role) const {
+    if (!index.isValid() || index.row() < 0 || index.row() >= rowCount()) return {};
+    const auto row = static_cast<std::size_t>(index.row());
+    const RemoteRig& rig = rigs_.at(row);
+    switch (role) {
+        case ParticipantRole: return static_cast<int>(rig.id());
+        case NameRole: return QString::fromStdString(rig.name());
+        case StationRole: return ui::stationText(rig.station());
+        case ColorRole: return ui::allianceColor(rig.station());
+        case PositionRole: return toQt(rig.pose().position);
+        case RotationRole: return toQt(rig.pose().rotation);
+        case ShownRole: return rig.present();
+        case ConnectedRole: return rig.connected();
+        case LabelPositionRole: return toQt(rig.pose().transformPoint(rig.labelAnchor()));
+        case RobotPartsRole: return QVariant::fromValue(static_cast<QObject*>(rows_[row].robot));
+        case ZonePartsRole: return QVariant::fromValue(static_cast<QObject*>(rows_[row].zones));
+        case MarkerPartsRole: return QVariant::fromValue(static_cast<QObject*>(rows_[row].marker));
+        default: return {};
+    }
+}
+
+QHash<int, QByteArray> RemoteRobotModel::roleNames() const {
+    return {{ParticipantRole, "participantId"}, {NameRole, "robotName"},     {StationRole, "stationLabel"},
+            {ColorRole, "allianceColor"},       {PositionRole, "robotPosition"}, {RotationRole, "robotRotation"},
+            {ShownRole, "robotShown"},          {ConnectedRole, "robotConnected"}, {LabelPositionRole, "labelPosition"},
+            {RobotPartsRole, "robotParts"},     {ZonePartsRole, "zoneParts"},   {MarkerPartsRole, "markerParts"}};
+}
+
+void RemoteRobotModel::releaseRows() {
+    for (Row& row : rows_)
+        for (PartListModel* m : {row.robot, row.zones, row.marker}) m->deleteLater();
+    rows_.clear();
+}
+
+void RemoteRobotModel::rebuild() {
+    beginResetModel();
+    releaseRows();
+    for (std::size_t i = 0; i < rigs_.size(); ++i) {
+        const RemoteRig& rig = rigs_.at(i);
+        Row row;
+        row.robot = new PartListModel(this);
+        row.robot->setParts(rig.robot().parts());
+        row.zones = new PartListModel(this);
+        row.zones->setParts(rig.zones().parts());
+        row.marker = new PartListModel(this);
+        ScenePart marker = rig.marker();
+        marker.color = ui::allianceColor(rig.station()).name().toStdString();
+        row.marker->setParts({marker});
+        rows_.push_back(row);
+    }
+    endResetModel();
+}
+
+void RemoteRobotModel::setZoneKinds(std::vector<sdk::ZoneKindInfo> kinds) {
+    const RemoteRigSet::RosterDiff diff = rigs_.setZoneKinds(std::move(kinds));
+    if (diff.any()) rebuild();
+}
+
+void RemoteRobotModel::setRoster(std::shared_ptr<const MatchRoster> roster) {
+    const RemoteRigSet::RosterDiff diff = rigs_.setRoster(std::move(roster));
+    if (!diff.removed.empty() || !diff.added.empty()) {
+        rebuild();
+    } else if (diff.identityChanged && !rows_.empty()) {
+        for (std::size_t i = 0; i < rows_.size(); ++i) {
+            const RemoteRig& rig = rigs_.at(i);
+            ScenePart marker = rig.marker();
+            marker.color = ui::allianceColor(rig.station()).name().toStdString();
+            rows_[i].marker->setParts({marker});
+        }
+        emit dataChanged(index(0), index(rowCount() - 1), {NameRole, StationRole, ColorRole, ConnectedRole});
+    }
+}
+
+void RemoteRobotModel::update(std::span<const sdk::RobotSample> samples) {
+    if (!rigs_.update(samples)) return;
+    const auto& changes = rigs_.changes();
+    for (std::size_t i = 0; i < changes.size() && i < rows_.size(); ++i) {
+        const RemoteRig::Changes& c = changes[i];
+        if (!c.any()) continue;
+        const RemoteRig& rig = rigs_.at(i);
+        if (c.robotParts) rows_[i].robot->updatePoses(rig.robot().parts(), rig.robot().changed());
+        if (c.zoneParts) rows_[i].zones->updatePoses(rig.zones().parts(), rig.zones().changed());
+        const QModelIndex idx = index(static_cast<int>(i));
+        QList<int> roles;
+        if (c.presence) roles << ShownRole;
+        if (c.pose) roles << PositionRole << RotationRole << LabelPositionRole;
+        if (!roles.isEmpty()) emit dataChanged(idx, idx, roles);
+    }
+}
+
 // ---- ViewportTheme -----------------------------------------------------------------------------
 ViewportTheme::ViewportTheme(QObject* parent) : QObject(parent) { setPalette(QPalette()); }
 
@@ -270,7 +366,10 @@ void SceneModel::setSceneInfo(const HostScene& info) {
     tagRig_.setLayout(info_.tags);
     tags_.setParts(tagRig_.parts());
     tagMarkers_.setDecals(tagRig_.decals());
+    remote_.setZoneKinds(info_.zoneKinds);
 }
+
+void SceneModel::setMatchRoster(std::shared_ptr<const MatchRoster> roster) { remote_.setRoster(std::move(roster)); }
 
 void SceneModel::setZonesVisible(bool v) {
     if (v == zonesVisible_) return;
@@ -362,11 +461,15 @@ void SceneModel::update(const sdk::ISimSnapshot* snapshot) {
         entities_.update(snapshot->entityGroups());
         updateZones(snapshot);
         updateVision(snapshot);
-    } else if (robotVisible_) {
-        cameraRig_.setRobot(std::nullopt);
-        robotVisible_ = false;
-        emit poseChanged();
-        entities_.update({});
+        remote_.update(snapshot->remoteRobots());
+    } else {
+        remote_.update({});
+        if (robotVisible_) {
+            cameraRig_.setRobot(std::nullopt);
+            robotVisible_ = false;
+            emit poseChanged();
+            entities_.update({});
+        }
     }
 }
 

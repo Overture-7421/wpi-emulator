@@ -14,11 +14,6 @@ constexpr float kSettleMarginM = 0.002f;
 
 bool positive(const Vec3& v) { return v.x > 0.f && v.y > 0.f && v.z > 0.f && std::isfinite(v.x + v.y + v.z); }
 
-Vec3 hullCenterLocal(const ChassisSpec& c) {
-    // Frame box centre in the COM-origin body frame: the COM is offset from the box centre by comOffsetM (xy).
-    return {-c.comOffsetM.x, -c.comOffsetM.y, c.groundClearanceM + 0.5f * c.sizeM.z - c.comHeightM};
-}
-
 ShapeDesc robotShape(const ChassisSpec& chassis, std::uint64_t tag) {
     ShapeDesc d;
     d.material = chassis.material;
@@ -49,7 +44,7 @@ MassProperties chassisMassProperties(const ChassisSpec& c) {
     }
     const float k = c.massKg / 12.f;
     const Vec3 s = c.sizeM;
-    const Vec3 d = hullCenterLocal(c);
+    const Vec3 d = chassisFrameBoxCentre(c);
     mp.inertiaDiagLocal = {k * (s.y * s.y + s.z * s.z) + c.massKg * (d.y * d.y + d.z * d.z),
                            k * (s.x * s.x + s.z * s.z) + c.massKg * (d.x * d.x + d.z * d.z),
                            k * (s.x * s.x + s.y * s.y) + c.massKg * (d.x * d.x + d.y * d.y)};
@@ -104,7 +99,7 @@ Result<ChassisBody> buildChassisBody(IPhysicsWorld& world, const ChassisSpec& ch
 
     ShapeDesc hull = robotShape(chassis, options.userTag);
     hull.geometry = BoxShape{chassis.sizeM * 0.5f};
-    hull.local = Pose3{hullCenterLocal(chassis), Quat::identity()};
+    hull.local = Pose3{chassisFrameBoxCentre(chassis), Quat::identity()};
     out.hull = world.addShape(out.body, hull);
     if (!out.hull.valid()) return makeError(ErrorCode::Internal, "physics world refused the chassis hull");
 

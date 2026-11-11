@@ -4,6 +4,10 @@ name: Release
 #   Windows  wpi-emulator-<ver>-windows-x64.exe (NSIS installer) + .zip (portable)
 #   macOS    wpi-emulator-<ver>-macos-arm64-x64.dmg (universal; signed + notarized when the Apple secrets exist)
 #   Linux    wpi-emulator-<ver>-linux-x86_64.AppImage
+# and, next to each, the practice-match client (no JDK or WPILib; join a match hosted from the app):
+#   Windows  wpi-emulator-client-<ver>-windows-x64.zip (portable)
+#   macOS    wpi-emulator-client-<ver>-macos-arm64-x64.dmg
+#   Linux    wpi-emulator-client-<ver>-linux-x86_64.AppImage
 # The committed project version (0.0.0) is a placeholder: every build job rewrites it in its own checkout, so nothing
 # is pushed to main. Only a run on main drafts the release; other refs just upload the artifacts.
 # See docs/releasing.md for the design, the secrets, and how to run each step locally.
@@ -69,7 +73,7 @@ jobs:
         include:
           - { name: windows, os: windows-2025-vs2026, qt_arch: win64_msvc2022_64 }
           - { name: linux, os: ubuntu-24.04, qt_arch: "" }   # glibc supports all season WPILib binaries
-          - { name: macos, os: macos-14, qt_arch: "" }       # Apple Silicon; see docs/releasing.md for universal builds
+          - { name: macos, os: macos-15, qt_arch: "" }       # Apple Silicon; see docs/releasing.md for universal builds
     env:
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}                       # base64 of the Developer ID .p12
@@ -137,8 +141,13 @@ jobs:
             build/release/seasons/*/_wpilib/downloads
           key: wpilib-multi-${{ hashFiles('seasons/*/season.json') }}-${{ matrix.name }}
 
+      # RELAY_DNS_SUFFIX is a repository (or organisation) variable, not a secret: the public relay DNS label suffix that
+      # infra/relay/bootstrap.ps1 prints and stores. It is baked into the app and the client so the Production and
+      # Development relay presets resolve; without it the presets are empty and players must type a relay address.
       - name: Configure
         shell: bash
+        env:
+          RELAY_DNS_SUFFIX: ${{ vars.RELAY_DNS_SUFFIX }}
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
             gen=(-G "Visual Studio 18 2026" -A x64)
@@ -148,13 +157,22 @@ jobs:
           else
             gen=(-G "Ninja Multi-Config")
           fi
+          relay=()
+          if [ -z "$RELAY_DNS_SUFFIX" ]; then
+            echo "::warning::The RELAY_DNS_SUFFIX repository variable is not set: this release has no built-in relay presets."
+          elif [[ "$RELAY_DNS_SUFFIX" =~ ^-[a-z0-9-]{1,39}$ ]]; then
+            relay=(-DWPIEMU_RELAY_DNS_SUFFIX="$RELAY_DNS_SUFFIX")
+          else
+            echo "::error::RELAY_DNS_SUFFIX must be a hyphen followed by lower-case letters, digits and hyphens (for example -a1b2)."
+            exit 1
+          fi
           cmake -S . -B build/release "${gen[@]}" \
             -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR//\\//}" \
             -DWPIEMU_BUILD_TESTS=ON \
             -DWPIEMU_SEASONS=all \
             -DWPIEMU_WARNINGS_AS_ERRORS=ON \
             -DWPIEMU_WPILIB_DOWNLOAD=ON \
-            -DWPIEMU_RUNVIEW_FETCH_SDL2=ON 2>&1 | tee configure.log
+            -DWPIEMU_RUNVIEW_FETCH_SDL2=ON "${relay[@]}" 2>&1 | tee configure.log
 
       # Never ship a halsim_wpiemu stub by accident (WPILib download failed => the extension refuses to load).
       - name: Require the real HALSim extension
@@ -182,6 +200,12 @@ jobs:
         working-directory: build/release
         run: cpack -C Release -B "$PWD/pkg"
 
+      - name: Package the client (ZIP)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: build/release
+        run: cpack --config CPackClientConfig.cmake -C Release -B "$PWD/pkg-client"
+
       - name: Verify the Windows installer
         if: runner.os == 'Windows'
         shell: pwsh
@@ -208,6 +232,28 @@ jobs:
           if ($runtime -lt $min) { throw "bin\msvcp140.dll is $runtime, older than the $min WPILib needs" }
           Start-Process "$dest\Uninstall.exe" -ArgumentList '/S', "_?=$dest" -Wait
 
+      - name: Verify the Windows client package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $zip = (Get-ChildItem build/release/pkg-client -Filter *.zip | Select-Object -First 1).FullName
+          $dest = Join-Path $env:RUNNER_TEMP 'wpiemu-client-unzipped'
+          Expand-Archive -Path $zip -DestinationPath $dest
+          $root = (Get-ChildItem $dest -Directory | Select-Object -First 1).FullName
+          $min = [version](Get-Content versions.json -Raw | ConvertFrom-Json).msvcRuntimeMin
+          # System PATH only: proves the Qt runtime is deployed with the client and not picked up from the runner's Qt.
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          & "$root\bin\wpiemu_client.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "wpiemu_client --version failed ($LASTEXITCODE)" }
+          foreach ($f in @('plugins\platforms\qwindows.dll', 'qml\QtQuick3D\qquick3dplugin.dll', 'bin\qt.conf', 'bin\msvcp140.dll',
+                           'THIRD-PARTY-NOTICES.txt')) {
+            if (-not (Test-Path "$root\$f")) { throw "missing in the client package: $f" }
+          }
+          if (Test-Path "$root\extensions") { throw "the client package must not carry the HALSim extension" }
+          if (Test-Path "$root\bin\wpiemu_app.exe") { throw "the client package must not carry the desktop app" }
+          $runtime = [version](Get-Item "$root\bin\msvcp140.dll").VersionInfo.ProductVersion
+          if ($runtime -lt $min) { throw "bin\msvcp140.dll is $runtime, older than the $min the client needs" }
+
       # ---------------------------------------------------------------- macOS
       - name: Import the Developer ID certificate
         if: runner.os == 'macOS' && env.MACOS_CERTIFICATE != '' && env.MACOS_SIGN_IDENTITY != ''
@@ -230,15 +276,21 @@ jobs:
         working-directory: build/release
         run: cpack -C Release -G DragNDrop -B "$PWD/pkg"
 
+      - name: Package the client (dmg)
+        if: runner.os == 'macOS'
+        working-directory: build/release
+        run: cpack --config CPackClientConfig.cmake -C Release -G DragNDrop -B "$PWD/pkg-client"
+
       - name: Notarize
         if: runner.os == 'macOS'
         run: |
-          for dmg in build/release/pkg/*.dmg; do bash packaging/macos/notarize.sh "$dmg"; done
+          for dmg in build/release/pkg/*.dmg build/release/pkg-client/*.dmg; do bash packaging/macos/notarize.sh "$dmg"; done
 
       - name: Verify the dmg
         if: runner.os == 'macOS'
         run: |
-          dmg="$(ls build/release/pkg/*.dmg | head -n1)"
+          dmgs=(build/release/pkg/*.dmg)
+          dmg="${dmgs[0]}"
           mount="$RUNNER_TEMP/wpiemu-dmg"
           mkdir -p "$mount"
           hdiutil attach "$dmg" -mountpoint "$mount" -nobrowse -readonly
@@ -268,6 +320,26 @@ jobs:
           if [ -n "$bad" ]; then echo "::error::unbundled dependencies:"; echo "$bad"; exit 1; fi
           hdiutil detach "$mount"
 
+      - name: Verify the client dmg
+        if: runner.os == 'macOS'
+        run: |
+          dmgs=(build/release/pkg-client/*.dmg)
+          dmg="${dmgs[0]}"
+          mount="$RUNNER_TEMP/wpiemu-client-dmg"
+          mkdir -p "$mount"
+          hdiutil attach "$dmg" -mountpoint "$mount" -nobrowse -readonly
+          app="$mount/wpiemu_client.app"
+          exe="$app/Contents/MacOS/wpiemu_client"
+          python packaging/macos/check_minimum_os.py "$app"
+          env -i PATH=/usr/bin:/bin "$exe" --version
+          archs="$(lipo -archs "$exe")"
+          case "$archs" in *arm64*x86_64*|*x86_64*arm64*) ;; *) echo "::error::$exe is not universal ($archs)"; exit 1 ;; esac
+          find "$app/Contents/Resources/qml/QtQuick3D" -iname '*quick3dplugin*' -print -quit | grep -q .
+          test ! -e "$app/Contents/PlugIns/wpiemu"   # no HALSim extension in the client
+          bad="$(otool -arch all -L "$exe" | grep -E '^[[:space:]]' | awk '{print $1}' | grep -v -E '^(@rpath|@executable_path|@loader_path|/usr/lib/|/System/)' || true)"
+          if [ -n "$bad" ]; then echo "::error::unbundled dependencies:"; echo "$bad"; exit 1; fi
+          hdiutil detach "$mount"
+
       # ---------------------------------------------------------------- Linux
       - name: Package (AppImage)
         if: runner.os == 'Linux'
@@ -277,15 +349,28 @@ jobs:
           SKIP_BUILD: "1"
         run: bash packaging/linux/build-appimage.sh
 
+      - name: Package the client (AppImage)
+        if: runner.os == 'Linux'
+        env:
+          PACKAGE: client
+          BUILD_DIR: ${{ github.workspace }}/build/release
+          OUT_DIR: ${{ github.workspace }}/build/release/pkg-client
+          SKIP_BUILD: "1"
+        run: bash packaging/linux/build-appimage.sh
+
       # All signing and stapling must precede this final digest generation/verification.
       - name: Final artifact checksums
         run: |
-          python tools/package_checksums.py build/release/pkg
-          python tools/package_checksums.py build/release/pkg --verify
+          for dir in build/release/pkg build/release/pkg-client; do
+            python tools/package_checksums.py "$dir"
+            python tools/package_checksums.py "$dir" --verify
+          done
 
       # The installer names come from the version the build used: they prove the release version took effect.
       - name: Installers carry the release version
-        run: python tools/release_version.py artifacts build/release/pkg "$RELEASE_VERSION"
+        run: |
+          python tools/release_version.py artifacts build/release/pkg "$RELEASE_VERSION"
+          python tools/release_version.py artifacts build/release/pkg-client "$RELEASE_VERSION"
         shell: bash
 
       - name: Upload artifacts
@@ -298,6 +383,17 @@ jobs:
             build/release/pkg/*.dmg
             build/release/pkg/*.AppImage
             build/release/pkg/*.sha256
+          if-no-files-found: error
+
+      - name: Upload the client artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wpi-emulator-client-${{ matrix.name }}
+          path: |
+            build/release/pkg-client/*.zip
+            build/release/pkg-client/*.dmg
+            build/release/pkg-client/*.AppImage
+            build/release/pkg-client/*.sha256
           if-no-files-found: error
 
   publish:

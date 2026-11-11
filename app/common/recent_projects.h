@@ -3,7 +3,7 @@
 #include <QObject>
 #include <QStringList>
 
-#include "common/key_value_store.h"
+#include "ui/key_value_store.h"
 
 namespace wpiemu::app {
 

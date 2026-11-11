@@ -8,6 +8,8 @@
 
 #include <string>
 
+#include "wpiemu/sdk/ipc/driver_station.h"
+
 namespace wpiemu::app::ui {
 
 // SDK names, labels and messages are UTF-8 std::string.
@@ -23,5 +25,8 @@ struct Tr {
 // Local wall-clock time of a Unix time in milliseconds: "HH:mm:ss" and "HH:mm:ss.zzz".
 QString clockText(qint64 msSinceEpoch);
 QString clockTextMs(qint64 msSinceEpoch);
+
+// "Red 1" ... "Blue 3", translated (context "Station").
+QString stationText(sdk::proto::AllianceStation station);
 
 }  // namespace wpiemu::app::ui

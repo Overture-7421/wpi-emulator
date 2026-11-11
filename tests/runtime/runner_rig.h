@@ -21,14 +21,7 @@ using namespace wpiemu::sdk;
 using namespace wpiemu::core::runtime;
 using namespace std::chrono_literals;
 
-class ManualClock final : public IWallClock {
-public:
-    std::chrono::steady_clock::time_point now() const override { return t_; }
-    void advance(std::chrono::milliseconds d) { t_ += d; }
-
-private:
-    std::chrono::steady_clock::time_point t_ = std::chrono::steady_clock::time_point{} + 10s;
-};
+using ManualClock = testing::ManualWallClock;
 
 // The robot-process side, pumped by Rig::run, that announces the devices of sampleConfig().
 struct RigExtension : testing::FakeExtension {
@@ -49,7 +42,7 @@ struct Rig {
     ManualClock clock;
     std::unique_ptr<SessionRunner> runner;
     std::shared_ptr<testing::MemoryMessageCodec> codec = std::make_shared<testing::MemoryMessageCodec>();
-    std::shared_ptr<ChannelRobotLink> link;
+    std::shared_ptr<ChannelMessageLink> link;
     std::unique_ptr<RigExtension> ext;
     std::uint64_t nextLinkId = 1;
 
@@ -83,7 +76,7 @@ struct Rig {
 
     void connect() {
         auto pair = testing::makeInMemoryTransportPair();
-        link = std::make_shared<ChannelRobotLink>(nextLinkId++, std::move(pair.a), codec, inbox);
+        link = std::make_shared<ChannelMessageLink>(nextLinkId++, std::move(pair.a), codec, inbox);
         InboundEvent ev;
         ev.kind = InboundEvent::Kind::Connected;
         ev.linkId = link->id();

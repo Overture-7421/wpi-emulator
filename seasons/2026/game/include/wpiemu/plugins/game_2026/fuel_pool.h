@@ -2,7 +2,9 @@
 
 // Fuel bodies: spawn / despawn / sleeping configuration on top of IPhysicsWorld. Slots are reused;
 // a fuel id (slot index + 1) is stable for the life of that fuel and is carried in the physics
-// userTag so sensor events map back to it. RAII: destruction removes every body.
+// userTag so sensor events map back to it. Because slots are reused, a fuel also has an entity id: a counter that is
+// never reused until clear(), published in telemetry (EntityGroupSample::ids) so a recycled slot is a new entity.
+// RAII: destruction removes every body.
 
 #include <cstdint>
 #include <vector>
@@ -36,6 +38,8 @@ public:
 
     bool alive(std::uint32_t id) const;
     sdk::Vec3 position(std::uint32_t id) const;
+    // The entity id (>= 1) of a live fuel, unique among every fuel spawned since the last clear(); 0 for a dead slot.
+    std::uint32_t entityId(std::uint32_t id) const { return alive(id) ? slots_[id - 1].entityId : 0; }
     sdk::BodyId bodyOf(std::uint32_t id) const { return alive(id) ? slots_[id - 1].body : sdk::BodyId{}; }
     std::size_t count() const { return alive_; }
 
@@ -50,6 +54,7 @@ private:
     struct Slot {
         sdk::BodyId body;
         sdk::ShapeId shape;
+        std::uint32_t entityId = 0;
         bool alive = false;
         bool ghost = false;
         sdk::SimTimeUs ghostUntilUs = 0;
@@ -62,6 +67,7 @@ private:
     std::vector<Slot> slots_;
     std::vector<std::uint32_t> freeList_;
     std::size_t alive_ = 0;
+    std::uint32_t nextEntityId_ = 1;
 };
 
 }  // namespace wpiemu::plugins::game_2026

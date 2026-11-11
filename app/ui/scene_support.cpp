@@ -20,8 +20,7 @@ SceneBoxOrCylinder describePrimitive(const sdk::PrimitiveSpec& p) {
 }
 
 sdk::Pose3 chassisHullLocalPose(const sdk::ChassisSpec& ch) {
-    return sdk::Pose3{sdk::Vec3{-ch.comOffsetM.x, -ch.comOffsetM.y, ch.groundClearanceM + ch.sizeM.z * 0.5f - ch.comHeightM},
-                      sdk::Quat{}};
+    return sdk::Pose3{sdk::chassisFrameBoxCentre(ch), sdk::Quat{}};
 }
 
 SceneBoxOrCylinder describeChassisNose(const sdk::ChassisSpec& ch, float zInBody, std::string color) {
@@ -39,6 +38,10 @@ sdk::Vec3 wheelCylinderSize(const sdk::WheelSpec& w) {
 }
 
 QColor defaultColor() { return QColor(QString::fromLatin1(sdk::kDefaultPrimitiveColor)); }
+
+QColor allianceColor(sdk::Alliance alliance) {
+    return alliance == sdk::Alliance::Red ? QColor(QStringLiteral("#e5484d")) : QColor(QStringLiteral("#4f8cff"));
+}
 
 QColor parseColor(const std::string& css, const QColor& fallback) {
     const QColor c(QString::fromStdString(css));

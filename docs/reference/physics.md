@@ -79,7 +79,10 @@ blue wall, centered across the field, facing +X.
 drivetrain kinds are `swerve`, `tank` and `mecanum`. Tank grouping is caller wiring,
 not a fixed wheel count. Swerve integrates continuous azimuth motion. Mecanum defaults
 to the X layout: FL/RR -45°, FR/RL +45°, unless a nonzero `tractionAngleRad`
-overrides it. Roller wheels cap lateral scale at 0.15.
+overrides it. [`mecanumWheels()`](../../sdk/include/wpiemu/sdk/physics/wheel_layout.h) builds that
+layout for the setup wizard (rollers on `fl` and `br` at -45°, `fr` and `bl` at +45°); it once used the
+opposite diagonal, which leaves a square robot's roller axes without a torque arm so it could not
+rotate. Roller wheels cap lateral scale at 0.15.
 
 Normal loads are estimated over grounded wheels using a quasi-static minimum-norm
 balance:
@@ -117,6 +120,55 @@ or regenerated power. `WheelCommand` carries voltage only: **0 V brakes** and do
 not represent a disconnected or coasting controller. Steering has no tire-scrub
 torque or steer-current limit. One-way follower traction is approximate and adds no
 reflected drive load; see [motion links](mechanisms.md#one-way-motion-links).
+
+## Wheel setpoint controller
+
+A robot that has no WPILib program behind it, such as a remote player's robot in a
+[practice match](match-network.md), is driven through the same motor, current-limit, tire and
+steering-lag path as the local robot. A client sends **commanded wheel setpoints** (target wheel
+speed and steer angle per wheel), and
+[`WheelSetpointController`](../../core/physics/include/wpiemu/core/physics/wheel_setpoint_controller.h)
+turns them into the `WheelCommand` voltages the drivetrain expects. The client computes setpoints from
+chassis speeds with the shared SDK module
+[`drive_kinematics.h`](../../sdk/include/wpiemu/sdk/physics/drive_kinematics.h) (swerve, tank and mecanum,
+wheel-speed desaturation, swerve module flip); the server never needs it. The controller is pure and
+deterministic: no
+clock, randomness or allocation in `step()`, and it keeps no loop state.
+
+- **Drive.** `V = gear * setpoint / kv + Kp * (setpoint - measured wheel speed)`, clamped to the
+  motor's nominal voltage. The feed-forward is the motor's back-EMF at the commanded speed
+  (`MotorSpec::kvRadPerSecPerVolt` and `driveGearRatio`). `Kp` comes from the wheel's reflected inertia so
+  the discrete loop gain per step is `driveLoopGain` (0.8, below 1), so an unloaded wheel does not
+  overshoot. Every drive motor on the wheel gets the same voltage.
+- **Steer.** `V = Kp * wrap(setpoint - angle) - Kd * omega`, clamped to the steer motor's nominal
+  voltage. The error is wrapped to (-pi, pi], so a module takes the short way round. The gains model
+  the module as a second-order system with natural frequency 30 rad/s and damping ratio 1.1 (no
+  overshoot, about 0.2 s to settle a large turn); the motor's own back-EMF damping counts toward the
+  ratio and the explicit damping term is capped so the loop stays stable at the design step.
+- **Disabled, e-stopped, paused or silent.** Zero voltage on every motor: the drive motors brake through
+  their back-EMF and the modules go limp. After 250 ms without an input the runtime brakes instead
+  (zero speeds, steer targets kept).
+- **Step limit.** The gains are designed for steps of at most 5 ms (`designDtS`); a larger step weakens
+  the stability margin. A setpoint span of the wrong size is ignored and counted, a non-finite speed
+  becomes 0 and a non-finite angle keeps the previous target.
+
+Because motor voltage goes through the normal drivetrain, current limits, back-EMF, wheel inertia and
+steering lag match the local robot. Tests
+([`test_wheel_setpoint_controller.cpp`](../../tests/physics/test_wheel_setpoint_controller.cpp)) check
+step responses of the gains.
+
+## Several robots in one step
+
+In a practice match the host's robot and each remote robot share one world and one `step()`. The order in
+`SimulationSession::tick` is: mechanisms; the host drivetrain's tire forces; then for each remote robot (in
+participant order) the input due on this tick is applied, `WheelSetpointController::step` computes voltages
+from the previous tick's wheel states and `ChassisSimulator::prepareStep` applies its tire forces; then
+the host's chassis and payload coupling; the single world step; the host coupling's `afterStep`; and
+`completeStep` for every remote robot, which updates its wheel states. Remote robots have no mechanisms and
+no battery model of their own: they draw nothing from the host's battery, and they are disabled while the
+host is browned out. Robot shapes carry a per-robot tag
+(`makeRobotTag`), so contact events name the robots involved. See
+[Runtime](runtime.md#remote-robots-practice-matches) for admission, placement and input scheduling.
 
 ## Chassis coupling
 

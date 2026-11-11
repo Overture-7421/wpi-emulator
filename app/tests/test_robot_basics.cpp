@@ -267,7 +267,7 @@ TEST_CASE("default wizard wheels sit at golden hubs for every drivetrain kind") 
     const sdk::RobotConfig mecanum = buildRobotConfig(defaultBasicsFor(sdk::drivetrain_kind::kMecanum), {});
     check(mecanum, {{"fl", 0.2921f, 0.3156f}, {"fr", 0.2921f, -0.3156f}, {"bl", -0.2921f, 0.3156f}, {"br", -0.2921f, -0.3156f}},
           sdk::WheelKind::Mecanum, false);
-    const float angles[] = {0.7853982f, -0.7853982f, -0.7853982f, 0.7853982f};
+    const float angles[] = {-0.7853982f, 0.7853982f, 0.7853982f, -0.7853982f};
     for (std::size_t i = 0; i < 4; ++i) {
         const auto& w = mecanum.drivetrain.spec.wheels[i];
         CHECK(w.tire.tractionAngleRad == doctest::Approx(angles[i]));

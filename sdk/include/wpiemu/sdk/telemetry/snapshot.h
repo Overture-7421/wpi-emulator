@@ -23,6 +23,8 @@
 #include "wpiemu/sdk/core/value.h"
 #include "wpiemu/sdk/devices/discovered_device.h"
 #include "wpiemu/sdk/ipc/driver_station.h"
+#include "wpiemu/sdk/match/match_protocol.h"
+#include "wpiemu/sdk/match/snapshot_messages.h"
 #include "wpiemu/sdk/mechanisms/mechanism_state.h"
 #include "wpiemu/sdk/physics/physics_types.h"
 
@@ -54,7 +56,16 @@ struct EntityGroupSample {
     Vec3 halfExtentsM;             // box
     std::string color = "#ffd000";
     std::vector<Vec3> positions;
+    // OPTIONAL stable id of each entity, parallel to `positions` (an id never changes for the life of the entity
+    // within a match, and is unique within the group). Empty = unidentified (the group cannot be delta-encoded for
+    // a match). A non-empty list must have exactly positions.size() entries: see entityIdsConsistent.
+    std::vector<std::uint32_t> ids;
 };
+
+// The invariant of EntityGroupSample::ids: absent, or one id per position.
+inline bool entityIdsConsistent(const EntityGroupSample& group) {
+    return group.ids.empty() || group.ids.size() == group.positions.size();
+}
 
 struct HudValue {
     std::string key;   // matches HudWidgetDescriptor::valueKey
@@ -65,6 +76,9 @@ struct HudValue {
 struct ZoneState {
     std::string id;       // ZoneConfig::id
     bool active = false;
+    // Where the zone is, in the chassis frame of its robot: the host robot's zones follow their mechanisms, a remote
+    // robot's are the effective pose its client commanded (clamped). Unset by runtimes that do not report it.
+    std::optional<Pose3> poseInChassis = std::nullopt;
 };
 
 // Runtime state of one simulated camera (RobotConfig::cameras).
@@ -80,6 +94,19 @@ struct SensorState {
     std::string id;                      // SensorConfig::id
     std::optional<double> sourceValue;   // the game value it read this tick; nullopt = source unavailable
     double reading = 0.0;                // what the robot sees: metres (Distance) or 1/0 digital level (BeamBreak)
+};
+
+// One REMOTE robot of a practice match (the host's own robot is the chassis()/wheels()/zones()/hud() of the snapshot).
+// Same pieces the host robot has, so the UI renders it with the same rig code.
+struct RobotSample {
+    match::ParticipantId participantId = match::kHostParticipantId;
+    std::string name;
+    proto::AllianceStation station = proto::AllianceStation::Red1;
+    BodySample body;                 // the chassis: pose and velocities in the field frame
+    std::vector<WheelSample> wheels;
+    std::vector<ZoneState> zones;    // in the robot's own zone order (its Join spec)
+    std::vector<HudValue> hud;       // per-robot HUD (IGameState::publishRobot)
+    bool isHost = false;             // true only if a runtime chooses to describe the host robot this way
 };
 
 class ISimSnapshot {
@@ -102,6 +129,11 @@ public:
     virtual std::span<const CameraState> cameras() const { return {}; }
     // State of the robot's sensors (empty when none are configured).
     virtual std::span<const SensorState> sensors() const { return {}; }
+    // The OTHER robots of a practice match (never the host's own robot, which is chassis()/wheels()/zones()/hud()).
+    // Empty outside a match.
+    virtual std::span<const RobotSample> remoteRobots() const { return {}; }
+    // State of the practice match this snapshot belongs to; nullptr = no match session. Valid as long as the snapshot.
+    virtual const match::MatchInfo* matchInfo() const { return nullptr; }
     virtual std::span<const DiscoveredDevice> devices() const = 0;
     virtual std::span<const HubWarning> warnings() const = 0;
 
@@ -137,6 +169,8 @@ struct SimSnapshotData {
     double batteryVoltageV = 12.6;
     proto::DsState driverStation;
     PhysicsStats physicsStats;
+    std::vector<RobotSample> remoteRobots;
+    std::optional<match::MatchInfo> matchInfo;   // nullopt = no match session
 };
 
 class SimSnapshot final : public ISimSnapshot {
@@ -156,6 +190,8 @@ public:
     std::span<const ZoneState> zones() const override { return d_.zones; }
     std::span<const CameraState> cameras() const override { return d_.cameras; }
     std::span<const SensorState> sensors() const override { return d_.sensors; }
+    std::span<const RobotSample> remoteRobots() const override { return d_.remoteRobots; }
+    const match::MatchInfo* matchInfo() const override { return d_.matchInfo ? &*d_.matchInfo : nullptr; }
     std::span<const DiscoveredDevice> devices() const override { return d_.devices; }
     std::span<const HubWarning> warnings() const override { return d_.warnings; }
     double batteryVoltageV() const override { return d_.batteryVoltageV; }
@@ -176,6 +212,21 @@ public:
     void addZone(ZoneState z) { data_.zones.push_back(std::move(z)); }
     void addCamera(CameraState c) { data_.cameras.push_back(std::move(c)); }
     void addSensor(SensorState s) { data_.sensors.push_back(std::move(s)); }
+    // Remote robots of a practice match (the runtime adds them before IGameState::publishRobot runs).
+    void addRobot(RobotSample r) { data_.remoteRobots.push_back(std::move(r)); }
+    void setMatchInfo(match::MatchInfo info) { data_.matchInfo = std::move(info); }
+    // Sets HUD value `key` of the remote robot `participant` (what IGameState::publishRobot uses). Returns false, and
+    // does nothing, when no robot with that id was added.
+    bool setRobotHud(match::ParticipantId participant, std::string key, Value value) {
+        for (RobotSample& r : data_.remoteRobots) {
+            if (r.participantId != participant) continue;
+            for (HudValue& h : r.hud)
+                if (h.key == key) { h.value = std::move(value); return true; }
+            r.hud.push_back({std::move(key), std::move(value)});
+            return true;
+        }
+        return false;
+    }
     EntityGroupSample& addEntityGroup(EntityGroupSample g) {
         data_.entityGroups.push_back(std::move(g));
         return data_.entityGroups.back();

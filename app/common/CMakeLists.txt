@@ -3,8 +3,8 @@ add_library(wpiemu_app_common STATIC
     app_settings.cpp
     config_repository.cpp
     demo_runtime_host.cpp
+    hosting_service.cpp
     icon_provider.cpp
-    key_value_store.cpp
     project_inspector.cpp
     project_path.cpp
     project_prefs.cpp
@@ -36,6 +36,8 @@ add_library(wpiemu_app_common STATIC
     ../wizard/wizard_view_model.cpp
     # The application shell sources live in ../shell and are compiled into this library.
     ../shell/about_dialog.cpp
+    ../shell/host_panel.cpp
+    ../shell/host_panel_model.cpp
     ../shell/main_window.cpp
     ../shell/mode_switcher.cpp
     ../shell/page_factory.cpp

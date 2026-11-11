@@ -14,6 +14,7 @@
 #include "wpiemu/sdk/core/ids.h"
 #include "wpiemu/sdk/core/logger.h"
 #include "wpiemu/sdk/core/rng.h"
+#include "wpiemu/sdk/game/robot_view.h"
 #include "wpiemu/sdk/game/sound_cue.h"
 #include "wpiemu/sdk/mechanisms/physics_coupling.h"
 
@@ -41,6 +42,7 @@ struct SimContextServices {
     IMechanismDirectory* mechanisms = nullptr;  // null until mechanisms are built
     IMechanismPhysicsCoupling* coupling = nullptr;  // null => SimContext::coupling() is a null object
     ISoundCueSink* sounds = nullptr;      // null => requested sound cues are discarded
+    IRobotDirectory* robots = nullptr;    // null => SimContext::robots() is an empty null object
 };
 
 class SimContext {
@@ -73,17 +75,26 @@ public:
     // Asks the app to play the sound cue `id` (see game/sound_cue.h), stamped with the current simulation time.
     void requestSound(std::string_view id) { sounds().post({std::string(id), s_.clock.simTimeUs()}); }
 
+    // Never null: an empty directory when the runtime bound none (a session without a roster). The robots of the
+    // session, valid until the next tick or roster change (see game/robot_view.h).
+    const IRobotDirectory& robots() const {
+        if (s_.robots != nullptr) return *s_.robots;
+        return nullRobots_;
+    }
+
     // Runtime only: bind once the game state exists / mechanisms are built.
     void bindGameState(IGameState* state) { gameState_ = state; }
     void bindMechanisms(IMechanismDirectory* directory) { s_.mechanisms = directory; }
     void bindCoupling(IMechanismPhysicsCoupling* coupling) { s_.coupling = coupling; }
     void bindChassisBody(BodyId body) { s_.chassisBody = body; }
+    void bindRobots(IRobotDirectory* robots) { s_.robots = robots; }
 
 private:
     SimContextServices s_;
     IGameState* gameState_ = nullptr;
     NullMechanismPhysicsCoupling nullCoupling_;
     NullSoundCueSink nullSounds_;
+    NullRobotDirectory nullRobots_;
 };
 
 }  // namespace wpiemu::sdk

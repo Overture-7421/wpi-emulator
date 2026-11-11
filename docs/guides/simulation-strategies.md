@@ -92,11 +92,18 @@ not collision fidelity. Backend limitations belong in the physics reference.
 
 1. Implement `ITransport` or `IMessageCodec` behind the SDK interfaces under
    [SDK IPC headers](../../sdk/include/wpiemu/sdk/ipc), then supply it at both peers' composition roots.
-   Follow [`ipc`](../../ipc/src) rather than bypassing framing/handshake in a bridge.
+   Follow [`ipc`](../../ipc/src) rather than bypassing framing/handshake in a bridge. A transport
+   with a lossy channel also overrides `sendUnreliable`; the default sends reliably, and
+   `deliveryOf` in [`delivery.h`](../../sdk/include/wpiemu/sdk/ipc/delivery.h) names each message's
+   class. Test loss, reordering and latency with `ImpairedTransport`
+   ([`impaired_transport.h`](../../sdk/include/wpiemu/sdk/testing/impaired_transport.h)) and a
+   `ManualWallClock`, without sleeping.
 2. For a message field, find its struct through
    [`messages.h`](../../sdk/include/wpiemu/sdk/ipc/messages.h) and update its shared `fields`
-   function in [`binary_codec.cpp`](../../ipc/src/binary_codec.cpp).
-   Preserve current optional-tail guards and extend golden bytes, round-trip and truncation tests.
+   function in [`binary_codec.cpp`](../../ipc/src/binary_codec.cpp), which uses the SDK
+   [`Writer` and `Reader`](../../sdk/include/wpiemu/sdk/core/wire_codec.h).
+   Preserve current optional-tail guards and extend golden bytes
+   ([`test_codec_golden.cpp`](../../tests/ipc/test_codec_golden.cpp)), round-trip and truncation tests.
 3. Update callers together under the single pre-release contract policy. Optional-tail decoder
    behavior is not a promise of supported cross-version interoperability.
 4. Test failures on both peers, stale sessions/epochs, reset acknowledgements, one-outstanding-tick

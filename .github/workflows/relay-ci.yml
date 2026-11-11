@@ -1,0 +1,174 @@
+name: Relay CI
+
+on:
+  pull_request:
+    paths:
+      - "relay/**"
+      - "net/**"
+      - "sdk/**"
+      - "ipc/**"
+      - "infra/relay/**"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "versions.json"
+      - ".dockerignore"
+      - ".github/workflows/relay-*.yml"
+  push:
+    branches: [main]
+    paths:
+      - "relay/**"
+      - "net/**"
+      - "sdk/**"
+      - "ipc/**"
+      - "infra/relay/**"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "versions.json"
+      - ".dockerignore"
+      - ".github/workflows/relay-*.yml"
+
+concurrency:
+  group: relay-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    name: infra and workflow checks (no Azure login)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: pins
+        name: Read Python pin
+        run: echo "python=$(python3 -c 'import json; print(json.load(open("versions.json"))["python"])')" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ steps.pins.outputs.python }}
+      - name: Workflow lint tests (environments, permissions, forks, digests)
+        run: |
+          python -m pip install "pyyaml>=6,<7"
+          python -m unittest discover -s infra/relay/tests -p "test_*.py" -v
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo:ro" -w /repo rhysd/actionlint:1.7.12 -color
+      - name: Bicep build and lint of main.bicep with the dev and prod parameter files
+        shell: pwsh
+        run: ./infra/relay/tests/bicep.tests.ps1
+      - name: Preflight script tests (az faked, no Azure)
+        shell: pwsh
+        run: ./infra/relay/tests/preflight.tests.ps1
+      - name: Bootstrap script tests (az and gh faked, no Azure or GitHub)
+        shell: pwsh
+        run: ./infra/relay/tests/bootstrap.tests.ps1
+
+  relay-tests:
+    name: relay and net tests (Linux, relay-only build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CC: gcc-14
+      CXX: g++-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install the toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++-14 ninja-build
+      - name: Configure (WPIEMU_RELAY_ONLY, so sdk, ipc, net and relay only)
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 \
+            -DWPIEMU_RELAY_ONLY=ON -DWPIEMU_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build build --target wpiemu_relay wpiemu_relay_probe wpiemu_relay_tests wpiemu_net_tests --parallel
+      - name: Relay tests
+        run: ./build/bin/wpiemu_relay_tests
+      - name: Net tests
+        run: ./build/bin/wpiemu_net_tests
+
+  container:
+    name: container (hadolint, build, smoke, Trivy)
+    uses: ./.github/workflows/relay-container.yml
+    permissions:
+      contents: read
+
+  whatif:
+    name: what-if against dev (same-repository pull requests only)
+    needs: offline
+    # A fork's pull_request run gets no OIDC token and no secrets from GitHub; this condition also keeps the job from being
+    # scheduled for forks and Dependabot, and skips it until the what-if identity has been set up (bootstrap.ps1).
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
+      && vars.AZURE_PR_CLIENT_ID != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION || 'southcentralus' }}
+      RESOURCE_GROUP: ${{ vars.RELAY_PR_RESOURCE_GROUP }}
+      WPIEMU_RELAY_DNS_SUFFIX: ${{ vars.RELAY_DNS_SUFFIX }}
+      WPIEMU_RELAY_ALERT_EMAIL: ${{ vars.RELAY_ALERT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Azure login (OIDC, read-only what-if identity)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_PR_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # The what-if identity only has Reader and what-if on the dev resource group, so subscription-wide checks such as provider
+      # registration or quota may be denied: this step reports and never fails the pull request.
+      - name: Preflight (advisory)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $out = & ./infra/relay/preflight.ps1 -Location $env:AZURE_LOCATION 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          "## Preflight (advisory, exit $code)`n`n``````text`n$out`n```````n" | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
+          exit $code
+
+      - name: What-if of main.bicep against the dev resource group
+        run: |
+          # A what-if normally needs the permissions of a real deployment (write on every resource and nested module in the
+          # template). ProviderNoRbac still validates the template against the resource providers but checks only read access,
+          # so this identity stays read-only (Azure CLI 2.76 or later).
+          az_version="$(az version --query '"azure-cli"' -o tsv)"
+          if [ "$(printf '%s\n2.76.0\n' "$az_version" | sort -V | head -n1)" != "2.76.0" ]; then
+            echo "::error::Azure CLI $az_version has no --validation-level; 2.76.0 or later is needed for a read-only what-if"
+            exit 1
+          fi
+          # Preview the relay too when it exists: keep its current image so the preview shows only what this change alters.
+          image="$(az container list --resource-group "$RESOURCE_GROUP" --query '[0].containers[0].image' -o tsv 2>/dev/null || true)"
+          args=(--parameters infra/relay/main.dev.bicepparam)
+          if [ -n "$image" ] && [ "$image" != "None" ]; then
+            args+=(--parameters deployRelay=true "relayImage=$image")
+          fi
+          az deployment group what-if --resource-group "$RESOURCE_GROUP" --validation-level ProviderNoRbac \
+            "${args[@]}" --no-pretty-print --only-show-errors -o json > whatif.json
+          {
+            echo "## What-if: main.bicep against ${RESOURCE_GROUP}"
+            echo
+            echo "| Change | Resources |"
+            echo "|---|---|"
+            jq -r '.changes | group_by(.changeType) | map("| \(.[0].changeType) | \(length) |") | .[]' whatif.json
+            echo
+            echo "### Changed resources"
+            jq -r '.changes[] | select(.changeType != "NoChange" and .changeType != "Ignore") |
+                   "- **\(.changeType)** `\(.resourceId | split("/providers/") | last)`" +
+                   (if .delta then ": " + ([.delta[]?.path] | join(", ")) else "" end)' whatif.json
+          } >> "$GITHUB_STEP_SUMMARY"

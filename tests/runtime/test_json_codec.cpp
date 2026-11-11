@@ -111,6 +111,26 @@ TEST_CASE("json: doubles use the shortest round-trip form") {
     }
 }
 
+TEST_CASE("json: doubles are written the same on every platform (to_chars and the stream fallback agree)") {
+    // The shorter of the fixed and the scientific form wins, fixed on a tie: a 900 kg mass must read "900.0", not "9e+02".
+    CHECK(formatDouble(900.0) == "900.0");
+    CHECK(formatDouble(500.0) == "500.0");
+    CHECK(formatDouble(100000.0) == "1e+05");
+    CHECK(formatDouble(120000.0) == "120000.0");
+    CHECK(formatDouble(1250.0) == "1250.0");
+    CHECK(formatDouble(0.5) == "0.5");
+    CHECK(formatDouble(0.001) == "0.001");
+    CHECK(formatDouble(0.0001) == "1e-04");
+    CHECK(formatDouble(0.00001) == "1e-05");
+    CHECK(formatDouble(120000000.0) == "1.2e+08");
+    CHECK(formatDouble(123456789.0) == "123456789.0");
+    CHECK(formatDouble(1e21) == "1e+21");
+    CHECK(formatDouble(-250.0) == "-250.0");
+    CHECK(formatDouble(123456789.12345679) == "123456789.12345679");
+    CHECK(formatDouble(2.2250738585072014e-308) == "2.2250738585072014e-308");
+    CHECK(formatDouble(1.7976931348623157e308) == "1.7976931348623157e+308");
+}
+
 TEST_CASE("json: dump compact and pretty round-trip") {
     Value v = Value::makeObject();
     v["name"] = "robot \"x\"\n";

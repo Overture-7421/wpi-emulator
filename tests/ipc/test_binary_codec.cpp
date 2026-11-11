@@ -7,6 +7,8 @@
 #include <string_view>
 
 #include "wpiemu/ipc/binary_codec.h"
+#include "wpiemu/sdk/core/wire_codec.h"
+#include "match_samples.h"
 
 using namespace wpiemu;
 using namespace wpiemu::ipc;
@@ -246,9 +248,11 @@ std::vector<Message> allSamples() {
     lb.loopback = {DeviceId{1}, DeviceId{9}, DeviceId{4000000000u}};
     Goodbye bye;
     bye.reason = "done";
-    return {sampleHello(),   sampleHelloAck(), sampleAnnounce(), lb,  sampleSensor(), sampleActuator(),
-            sampleDs(),      sampleControl(),  sampleControlAck(), log, bye, sampleVisionSetup(),
-            sensorWithVision()};
+    std::vector<Message> all = {sampleHello(),   sampleHelloAck(), sampleAnnounce(), lb,  sampleSensor(), sampleActuator(),
+                                sampleDs(),      sampleControl(),  sampleControlAck(), log, bye, sampleVisionSetup(),
+                                sensorWithVision()};
+    for (const test_ipc::NamedMessage& m : test_ipc::matchSamples()) all.push_back(m.message);
+    return all;
 }
 
 bool sameSamples(const std::vector<SignalSample>& a, const std::vector<SignalSample>& b) { return a == b; }
@@ -838,7 +842,7 @@ TEST_CASE("codec: encode appends and never disturbs earlier bytes, failures leav
     CHECK(out.size() == 2 + 3 + 2);
 
     Goodbye huge;
-    huge.reason.assign(kMaxStringBytes + 1, 'x');
+    huge.reason.assign(wire::kMaxStringBytes + 1, 'x');
     const std::size_t before = out.size();
     const Status s = BinaryMessageCodec().encode(huge, out);
     CHECK_FALSE(s.ok());
@@ -928,7 +932,7 @@ TEST_CASE("codec: a newer peer's extra fields inside length-prefixed records are
 
 TEST_CASE("codec: unknown message types are skippable, not fatal") {
     BinaryMessageCodec codec;
-    for (int type : {0, 13, 200, 65535}) {
+    for (int type : {0, 30, 200, 65535}) {
         const auto r = codec.decode(bytesOf({kWireFormatVersion, type & 0xFF, (type >> 8) & 0xFF, 1, 2, 3}));
         REQUIRE_FALSE(r.ok());
         CHECK(r.error().code == ErrorCode::Unsupported);

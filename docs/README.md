@@ -16,6 +16,9 @@ simulates the robot; it does not require changes to the robot project.
 | Diagnosing or maintaining a build | [Maintenance guide](guides/maintenance.md) → the relevant reference |
 | Preparing a new WPILib season | [WPILib upgrade guide](guides/wpilib-upgrade.md) → [releasing](releasing.md) |
 | Learning to build a season game plugin | [Implementing a Game Season: FIRST POWER UP on the 2027 ABI](book/README.md) |
+| Hosting a practice match | [User guide: host a practice match](USER_GUIDE.md#host-a-practice-match) → [Match network](reference/match-network.md) |
+| Deploying or operating the relay | [Relay on Azure](guides/relay-azure.md) → [Match network: relay protocol](reference/match-network.md#relay-protocol) |
+| Validating practice matches before a release | [Practice match validation](guides/practice-match-validation.md) → [Relay on Azure](guides/relay-azure.md) |
 
 ## Concepts
 
@@ -36,6 +39,7 @@ These pages explain unfamiliar tools and ideas before the architecture and code 
 - [Mechanisms](reference/mechanisms.md)
 - [Physics](reference/physics.md)
 - [Extension and IPC](reference/extension-ipc.md)
+- [Match network](reference/match-network.md): practice-match protocol, encryption, relay protocol and trust model
 - [Bridges](reference/bridges.md)
 - [Game plugins](reference/game-plugin.md)
 - [Season packs](reference/seasons.md)
@@ -51,6 +55,8 @@ These pages explain unfamiliar tools and ideas before the architecture and code 
 - [Game plugins and interactions](guides/game-plugins.md)
 - [Maintenance](guides/maintenance.md)
 - [Mechanisms](guides/mechanisms.md)
+- [Practice match validation](guides/practice-match-validation.md): the practice-match e2e, impaired-network runs and the manual release checklist
+- [Relay on Azure](guides/relay-azure.md): deploy, promote, roll back and self-host the practice-match relay
 - [Simulation strategies](guides/simulation-strategies.md)
 - [Vision](guides/vision.md)
 - [WPILib season upgrade](guides/wpilib-upgrade.md)

@@ -11,6 +11,8 @@
 #   WPIEMU_WPILIB_DOWNLOAD  ON (default): fetch WPILib headers/libs from frcmaven; the extension becomes a stub if
 #                           that fails (halsim_ext/cmake/WpiEmuWpilib.cmake). Set OFF to stay offline.
 #   WPIEMU_FETCH_SDL2       ON (default): build SDL2 (static) for gamepad support; OFF: keyboard joystick only
+#   PACKAGE        app (default): the WPI Emulator desktop app. client: the practice-match client (no extension, no
+#                  WPILib); it installs the CMake component "Client" and its dist directory defaults to $BUILD_DIR/dist-client
 #   SKIP_BUILD=1   reuse an existing build in $BUILD_DIR
 #
 # Needs: cmake >= 3.25, ninja, a C++20 compiler, curl, sha256sum, and the Qt runtime libraries' system
@@ -20,10 +22,21 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PACKAGE="${PACKAGE:-app}"
+case "$PACKAGE" in
+    app)
+        EXE=wpiemu_app; BUILD_TARGETS=(wpiemu_app halsim_wpiemu); APPDIR_NAME=AppDir; DIST_NAME=dist
+        DESKTOP_FILE=wpiemu.desktop; ICON_FILE=wpiemu.png; ARTIFACT_PREFIX=wpi-emulator; INSTALL_COMPONENT=() ;;
+    client)
+        EXE=wpiemu_client; BUILD_TARGETS=(wpiemu_client); APPDIR_NAME=AppDir-client; DIST_NAME=dist-client
+        DESKTOP_FILE=wpiemu-client.desktop; ICON_FILE=wpiemu-client.png; ARTIFACT_PREFIX=wpi-emulator-client
+        INSTALL_COMPONENT=(--component Client) ;;
+    *) echo "error: PACKAGE must be app or client" >&2; exit 1 ;;
+esac
 BUILD_DIR="${BUILD_DIR:-$ROOT/build/appimage}"
-OUT_DIR="${OUT_DIR:-$BUILD_DIR/dist}"
+OUT_DIR="${OUT_DIR:-$BUILD_DIR/$DIST_NAME}"
 TOOLS_DIR="${TOOLS_DIR:-$BUILD_DIR/tools}"
-APPDIR="$BUILD_DIR/AppDir"
+APPDIR="$BUILD_DIR/$APPDIR_NAME"
 WPILIB_DOWNLOAD="${WPIEMU_WPILIB_DOWNLOAD:-ON}"
 FETCH_SDL2="${WPIEMU_FETCH_SDL2:-ON}"
 
@@ -88,7 +101,7 @@ if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
     cmake "${cmake_args[@]}"
 
     step "build (Release)"
-    cmake --build "$BUILD_DIR" --config Release --target wpiemu_app halsim_wpiemu
+    cmake --build "$BUILD_DIR" --config Release --target "${BUILD_TARGETS[@]}"
 fi
 
 VERSION="$(sed -n 's/^CMAKE_PROJECT_VERSION:[A-Z]*=//p' "$BUILD_DIR/CMakeCache.txt")"
@@ -100,12 +113,14 @@ WPILIB_SEASONS="$(sed -n 's/^WPIEMU_SEASONS:STRING=//p' "$BUILD_DIR/CMakeCache.t
 
 step "install into $APPDIR/usr"
 rm -rf "$APPDIR"
-cmake --install "$BUILD_DIR" --config Release --prefix "$APPDIR/usr"
-[[ -x "$APPDIR/usr/bin/wpiemu_app" ]] || die "wpiemu_app was not installed"
-EXT="$(find "$APPDIR/usr/lib/wpiemu" -name 'libhalsim_wpiemu.so' -print -quit 2>/dev/null || true)"
-[[ -n "$EXT" ]] || die "libhalsim_wpiemu.so was not installed to usr/lib/wpiemu"
-mkdir -p "$APPDIR/apprun-hooks"
-install -m 0644 "$ROOT/packaging/linux/apprun-hooks/wpiemu.sh" "$APPDIR/apprun-hooks/wpiemu.sh"
+cmake --install "$BUILD_DIR" --config Release --prefix "$APPDIR/usr" "${INSTALL_COMPONENT[@]}"
+[[ -x "$APPDIR/usr/bin/$EXE" ]] || die "$EXE was not installed"
+if [[ "$PACKAGE" == "app" ]]; then
+    EXT="$(find "$APPDIR/usr/lib/wpiemu" -name 'libhalsim_wpiemu.so' -print -quit 2>/dev/null || true)"
+    [[ -n "$EXT" ]] || die "libhalsim_wpiemu.so was not installed to usr/lib/wpiemu"
+    mkdir -p "$APPDIR/apprun-hooks"
+    install -m 0644 "$ROOT/packaging/linux/apprun-hooks/wpiemu.sh" "$APPDIR/apprun-hooks/wpiemu.sh"
+fi
 
 # ---- bundle Qt + build the AppImage -------------------------------------------------------------------------------------
 step "linuxdeploy"
@@ -132,15 +147,15 @@ rm -f "$OUT_DIR"/*.AppImage
         --exclude-library 'libntcore.so*' \
         --exclude-library 'libwpinet.so*' \
         --exclude-library 'libdatalog.so*' \
-        --executable "$APPDIR/usr/bin/wpiemu_app" \
-        --desktop-file "$APPDIR/usr/share/applications/wpiemu.desktop" \
-        --icon-file "$APPDIR/usr/share/icons/hicolor/256x256/apps/wpiemu.png" \
+        --executable "$APPDIR/usr/bin/$EXE" \
+        --desktop-file "$APPDIR/usr/share/applications/$DESKTOP_FILE" \
+        --icon-file "$APPDIR/usr/share/icons/hicolor/256x256/apps/$ICON_FILE" \
         --output appimage
 )
 
 built="$(find "$OUT_DIR" -maxdepth 1 -name '*.AppImage' -print -quit)"
 [[ -n "$built" ]] || die "linuxdeploy did not produce an AppImage"
-FINAL="$OUT_DIR/wpi-emulator-$VERSION-linux-x86_64.AppImage"
+FINAL="$OUT_DIR/$ARTIFACT_PREFIX-$VERSION-linux-x86_64.AppImage"
 mv -f "$built" "$FINAL"
 chmod +x "$FINAL"
 (cd "$OUT_DIR" && sha256sum "$(basename "$FINAL")" > "$(basename "$FINAL").sha256")

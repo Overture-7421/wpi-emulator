@@ -101,7 +101,8 @@ This is an intentionally bounded model, not full field CAD or every rule interac
   and throwing are not simulated.
 - Pickup has no jamming or mouth-contact model. Shooting has no hopper, indexer or flywheel
   compression model.
-- Inventory belongs to the single simulated robot, not an alliance of robots.
+- Inventory belongs to one robot: the host robot or one remote robot of a practice match (see
+  [Several robots](#several-robots)), never to an alliance.
 - Bump ramps preserve slope and ridge height but extend to the carpet without an edge step, so
   their footprint is deeper than nominal.
 
@@ -127,7 +128,69 @@ The plugin exposes these live numeric values to generic Distance and BeamBreak s
 | `game_2026.fuel.fraction` | ratio | Count divided by capacity; zero when capacity is zero |
 
 The IDs and units are declared in [`game_values.cpp`](src/game_values.cpp); live values are
-returned by `Game2026State::gameValue()` in [`game_state.cpp`](src/game_state.cpp).
+returned by `Game2026State::gameValue()` in [`game_state.cpp`](src/game_state.cpp). They are always
+the host robot's: sensors belong to the host's WPILib robot, whatever other robots are in the match.
+
+## Several robots
+
+In a practice match the host's own robot (participant 0) and every remote robot announced through
+`onRobotAdded` each have their own fuel meter, shot counter and pickup/shooter zone runtimes
+(`Game2026State::RobotState`, kept in an `sdk::PerRobotState`). A new robot starts with `preloadFuel` (capped by `capacity`); `reset()`
+keeps the roster and restores every robot; removing a robot drops its state (its held fuel is not
+returned to the field) and re-adding it starts fresh. Pickups and shooters of every robot act on the
+one shared fuel pool, so fuel one robot absorbs is gone for the others in the same tick. Scores,
+hubs, outposts, human players and the match clock stay alliance-wide and shared.
+
+**Order.** Each tick, robots act in a fixed order: the host first, then remote robots by ascending
+participant id (not join order). Zones update for every robot, then all shooters fire, then all
+intakes absorb. Shots draw from the shared context RNG in that order, so the same inputs give the same
+fuel state. Nearest-first selection and its tie-break are per intake, as for the host.
+
+**Remote robots** have no mechanisms, only the zones of their Join spec:
+
+- A zone is active only while its bit in the robot's zone flags is set (bit i = the i-th zone of that
+  robot's `zones`, counting zones of other plugins too) and the robot is enabled; the flags never touch
+  the host's zones, and zone `activation` conditions are not evaluated.
+- A zone's chassis-frame pose is the one its client commanded (`RobotView::zonePose`): a remote robot
+  simulates no mechanisms, so its client fakes an extending intake or a turret by MOVING the zone in its
+  input (`MatchInput::zonePoses`, clamped by the session to the robot's reach). Without a commanded pose
+  the zone is at its spec pose (`sdk::remoteZoneSpecPose`; a zone attached to a mechanism link cannot be
+  resolved without mechanisms and is treated as chassis-attached at its local pose). A pickup volume
+  collects fuel where it is NOW, and a shooter's shots start at its CURRENT position and follow its
+  CURRENT orientation (the zone pose rotated by the hood and turret offsets of its properties). The
+  host robot's zones keep following its mechanisms.
+- A shooter leaves at `fixedExitSpeedMps`, or `kRemoteDefaultExitSpeedMps` (8 m/s,
+  [`fuel_zones.h`](include/wpiemu/plugins/game_2026/fuel_zones.h)) when that is 0. Elevation is
+  `hoodAngleRad` and yaw is `turretYawOffsetRad`; flywheel, hood and turret references are ignored
+  and never warn. Fire rate, `parallelBalls`, jitter and the shot budget work as for the host, and
+  `inheritRobotVelocity` adds the velocity of the remote robot's own body.
+- **Limits.** The client chooses its zone properties, so a remote robot's zones are clamped when the
+  plugin builds them (a spec changes only at Join; a reset rebuilds them with the same limits). The
+  host robot's zones are never clamped, and values at or below a limit are unchanged. The numbers are the
+  `kRemoteMax*` constants in [`fuel_zones.h`](include/wpiemu/plugins/game_2026/fuel_zones.h), the only place
+  they are defined:
+
+  | Property | Remote limit | Why |
+  |---|---|---|
+  | `fireRateHz` (total per shooter zone) | 25 balls/s | Above the fastest FRC feeders (about 10-20 pieces/s); schema allows 200 |
+  | `parallelBalls` | 3 | Three 0.15 m balls fit side by side in a robot about 0.9 m wide; schema allows 8 |
+  | `fixedExitSpeedMps` | 20 m/s | About the fastest FRC shooter exit speed; schema allows 100 |
+  | pickup `intakeRateHz` | 25 balls/s; 0 (unlimited) becomes 25 | An intake cannot usefully outrun the shooter; schema allows unlimited |
+
+  The shot budget holds at most `parallelBalls + 1` balls, so a remote shooter launches at most 25 balls in
+  any second plus one primed volley. The generic spec clamp (`sdk/include/wpiemu/sdk/physics/remote_spec_limits.h`) does not
+  know these properties: plugin knowledge stays in the plugin.
+- The pose and velocity of a robot come from its physics body, so a shot leaves from its own robot.
+
+`publishRobot` adds each remote robot's fuel count, capacity and shots (the host's HUD keys) and, in a
+timed match, `game_2026.hub.own.active` for its own alliance to that robot's snapshot sample. The
+runtime already reports the robot's zone states from its flags, with each zone's chassis-frame pose
+(`ZoneState::poseInChassis`; `publish()` adds the host's, resolved through its mechanisms). The host's values still come from
+`publish()`. The alliance of a robot (its station) only matters for that HUD value: scoring follows the
+hub a fuel enters, not who shot it. For the host the station is the Driver Station's. The multi-robot
+tests are in [`tests/game_2026`](../../../tests/game_2026) (`test_multi_robot*.cpp`). Fuel reaches clients as an
+entity group with stable ids and its HUD values as plugin keys; see the
+[match network reference](../../../docs/reference/match-network.md#entity-contract).
 
 ## Sound cues
 

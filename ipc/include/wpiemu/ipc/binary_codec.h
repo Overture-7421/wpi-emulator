@@ -1,7 +1,8 @@
 #pragma once
 
 // Concrete IMessageCodec: compact, little-endian, versioned binary serialisation of every
-// sdk proto:: message (see docs/reference/extension-ipc.md for the byte layout).
+// sdk proto:: message, the HALSim extension messages and the practice-match and relay messages alike
+// (see docs/reference/extension-ipc.md for the byte layout).
 //
 //   frame = u8 wireFormat | u16 messageType | body
 //
@@ -27,7 +28,6 @@ namespace wpiemu::ipc {
 
 inline constexpr std::uint8_t kWireFormatVersion = 1;
 inline constexpr std::size_t kDefaultMaxFrameBytes = std::size_t{8} << 20;
-inline constexpr std::size_t kMaxStringBytes = std::size_t{1} << 20;
 
 class BinaryMessageCodec final : public sdk::proto::IMessageCodec {
 public:

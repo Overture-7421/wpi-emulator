@@ -99,6 +99,8 @@ Pass these options to `cmake --preset`, not `cmake --build`.
 | `WPIEMU_WPILIB_SEASON` | The season whose manifest sets `"default": true` | Select a season pack from `seasons/`. |
 | `WPIEMU_SEASONS` | The selected build season | Semicolon-separated extensions to compose, or `all` for every season pack. Extra seasons use isolated, Qt-free sub-builds and must have real HAL artifacts. |
 | `WPIEMU_EXTENSION_ONLY` | OFF | Build just the extension and its real-HAL tests, without app, physics or plugins. |
+| `WPIEMU_RELAY_ONLY` | OFF | Build only `sdk`, `ipc`, `net` and the relay (no core, Box3D, Qt, WPILib, SDL or plugin template): the relay container image. Turns the app off and cannot be combined with `WPIEMU_EXTENSION_ONLY`. |
+| `WPIEMU_FETCH_NET_LIBS` | ON | Fetch and build the pinned ENet6 and Monocypher that `net/` needs. Not used by extension-only builds; with it OFF the net module cannot configure. |
 | `WPIEMU_REQUIRE_REAL_HAL` | OFF | Fail configuration instead of producing a stub when HAL is missing. |
 | `WPIEMU_WPILIB_ROOT` | auto | Use a Maven cache, year directory, or extracted artifacts. Also read from the environment. |
 | `WPIEMU_WPILIB_VERSION` | the selected season's pin | Override the profile's WPILib artifact version. |
@@ -163,6 +165,29 @@ CTest provides offscreen Qt settings and the Windows Qt DLL path for UI suites t
 `QT_QPA_PLATFORM=offscreen` and the kit's `bin` directory on `PATH`. Doctest accepts
 `--test-case="exact case name"`.
 
+## Relay and networking tests
+
+The networking and relay modules have their own doctest executables, registered with CTest by
+test-case name: `wpiemu_net_tests` (ENet transports, invite codes, `SecureTransport`, relay transports) and
+`wpiemu_relay_tests` (rooms, limits, server, probe, a real-UDP loopback stack). Match host, entity and
+remote-robot tests are part of `wpiemu_tests` (`tests/match`, `tests/runtime`, `tests/physics`). A
+Qt-free relay-only tree builds and tests the two networking executables without Box3D, Qt or WPILib,
+which is what `relay-ci` does on Linux (GCC 14):
+
+```sh
+cmake -S . -B build/relay -G Ninja -DCMAKE_BUILD_TYPE=Release -DWPIEMU_RELAY_ONLY=ON -DWPIEMU_WARNINGS_AS_ERRORS=ON
+cmake --build build/relay --target wpiemu_relay wpiemu_relay_probe wpiemu_relay_tests wpiemu_net_tests --parallel
+./build/relay/bin/wpiemu_relay_tests
+./build/relay/bin/wpiemu_net_tests
+```
+
+The container image builds the same way. With Docker and PowerShell 7,
+`pwsh relay/tests/container_smoke.ps1` builds [`relay/Dockerfile`](../relay/Dockerfile), runs the
+image, waits for `wpiemu_relay --selfcheck`, runs the probe inside it and checks a clean stop. The
+infrastructure scripts have their own PowerShell tests (`infra/relay/tests/*.tests.ps1`, no Azure login)
+and a Python workflow lint (`python -m unittest discover -s infra/relay/tests -p "test_*.py"`, which needs
+PyYAML); see the [relay guide](guides/relay-azure.md).
+
 ## What a passing test proves
 
 A unit test proves the behavior covered by its assertions under that test's conditions.
@@ -200,6 +225,11 @@ Vision also needs ntcore. For C++, use `samples\vision_robot\cpp` and set the la
 `WPIEMU_E2E_VERBOSE=1` to show robot output. A skipped test means its opt-in or
 prerequisites were missing; a skip does not verify integration. Even a passing sample
 test covers only that project and setup, not every robot or physical hardware.
+
+The practice-match test hosts the swerve sample through a relay on loopback with scripted
+encrypted players (`ctest -R "^e2e[.]practice_match$"`); its phases, the impaired-network run
+and the checks only a person can do are in
+[Practice match validation](guides/practice-match-validation.md).
 
 For the pinned 2027 preview vendors, use a dual-season build and JDK 25:
 

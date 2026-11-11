@@ -11,6 +11,7 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QUrl>
 
 #include "common/ui_helpers.h"
@@ -57,6 +58,7 @@ MainWindow::MainWindow(AppServices& services, ShellController& controller, const
     stack_->addWidget(pages_.run);
     modeSwitcher_ = new ModeSwitcher(ui_);
     setCentralWidget(stack_);
+    buildHostDock();
 
     buildActions();
     buildMenus();
@@ -113,6 +115,22 @@ MainWindow::MainWindow(AppServices& services, ShellController& controller, const
     refreshIcons();
     refresh();
     refreshUpdate();
+}
+
+// The practice-match panel lives in a dock on the right, hidden until the user opens it from the View menu.
+void MainWindow::buildHostDock() {
+    hostModel_ = new HostPanelModel(services_.hosting(), relayPresets(services_.store()), {}, this);
+    auto* scroll = new QScrollArea;
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    hostPanel_ = new HostPanel(*hostModel_, ui_);
+    scroll->setWidget(hostPanel_);
+    hostDock_ = new QDockWidget(tr("Practice match"), this);
+    hostDock_->setObjectName(QStringLiteral("HostDock"));
+    hostDock_->setWidget(scroll);
+    hostDock_->setMinimumWidth(360);
+    addDockWidget(Qt::RightDockWidgetArea, hostDock_);
+    hostDock_->hide();
 }
 
 void MainWindow::centerModeSwitcher() {
@@ -200,6 +218,10 @@ void MainWindow::buildMenus() {
     if (!pages_.runViewActions.isEmpty()) {
         view->addSeparator();
         view->addActions(pages_.runViewActions);
+    }
+    if (!services_.demo()) {   // the scripted demo host cannot host a match
+        view->addSeparator();
+        view->addAction(hostDock_->toggleViewAction());
     }
 
     QMenu* help = menuBar()->addMenu(tr("&Help"));

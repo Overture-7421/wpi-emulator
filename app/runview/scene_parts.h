@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -36,9 +37,20 @@ struct ScenePart {
 // of a mechanism follow its first link (the moving part), or stay on the mechanism root when it has none.
 class RobotRig {
 public:
+    // What a pose update reads: the chassis pose (nullptr = identity), the wheel samples and the mechanism states.
+    // `wheelsByIndex` pairs the i-th wheel of the config with the i-th sample instead of matching names (a remote
+    // robot's samples carry the names of its own spec, its appearance only positions).
+    struct Input {
+        const sdk::BodySample* chassis = nullptr;
+        std::span<const sdk::WheelSample> wheels;
+        std::span<const sdk::MechanismState> mechanisms;
+        bool wheelsByIndex = false;
+    };
+
     void setConfig(std::shared_ptr<const sdk::RobotConfig> config);
     // Recomputes every part's pose for `snapshot` (nullptr = rest pose). Returns true if any pose changed.
     bool update(const sdk::ISimSnapshot* snapshot);
+    bool update(const Input& input);
 
     const std::vector<ScenePart>& parts() const { return parts_; }
     // Parts [0, staticCount) never move (chassis frame primitives).
@@ -50,6 +62,7 @@ private:
     struct Binding {
         enum class Kind { Static, Wheel, WheelMarker, Mechanism } kind = Kind::Static;
         std::string owner;        // mechanism id / wheel name
+        std::size_t wheelIndex = 0;   // position of the wheel in the drivetrain
         std::string link = sdk::kRootLink;   // mechanism link
         sdk::Pose3 local;         // primitive pose in the owner frame
         float wheelRadius = 0.05f;
@@ -90,10 +103,22 @@ std::vector<ZoneOverlay> resolveRobotZones(const sdk::RobotConfig& config, const
 // per snapshot without allocating and report which parts changed (pose or active state).
 class ZoneRig {
 public:
+    // What a zone update reads: the mechanism states (zones on mechanisms follow their link) and the zone states.
+    // `byIndex` pairs the i-th zone of the config with the i-th state instead of matching ids, and `reportedPoses` moves
+    // a zone to the pose its state reports (poseInChassis) when it has one: how a remote robot's zones are driven. A
+    // zone the state does not move stays at its configured pose.
+    struct Input {
+        std::span<const sdk::MechanismState> mechanisms;
+        std::span<const sdk::ZoneState> zones;
+        bool byIndex = false;
+        bool reportedPoses = false;
+    };
+
     void setScene(std::shared_ptr<const sdk::RobotConfig> config, std::vector<sdk::EditorPanelDescriptor> panels,
                   std::vector<sdk::ZoneKindInfo> kinds);
     // Returns true if any part changed. nullptr = rest pose, every zone inactive.
     bool update(const sdk::ISimSnapshot* snapshot);
+    bool update(const Input& input);
 
     const std::vector<ScenePart>& parts() const { return parts_; }
     // Grouping label of each part (the zone / overlay label), for the per-zone visibility toggles.
@@ -108,7 +133,10 @@ private:
         std::string link = sdk::kRootLink;
         sdk::Pose3 local;
         std::size_t firstPart = 0;
+        std::size_t zoneIndex = static_cast<std::size_t>(-1);   // index in RobotConfig::zones; -1 for a panel overlay
     };
+    static const sdk::ZoneState* findZoneState(const Input& input, const Binding& binding, const std::string& id);
+
     std::shared_ptr<const sdk::RobotConfig> config_;
     std::vector<ZoneOverlay> overlays_;
     std::vector<Binding> bindings_;

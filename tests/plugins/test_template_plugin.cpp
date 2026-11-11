@@ -4,7 +4,9 @@
 #include "wpiemu/plugins/_template/plugin_info.h"
 #include "wpiemu/sdk/game/plugin_registry.h"
 #include "wpiemu/sdk/telemetry/snapshot.h"
+#include "wpiemu/sdk/testing/fake_robot_directory.h"
 #include "wpiemu/sdk/testing/fake_sim_environment.h"
+#include "wpiemu/sdk/testing/multi_robot_contract.h"
 
 using namespace wpiemu;
 
@@ -80,4 +82,75 @@ TEST_CASE("template plugin steps resets and isolates per-session HUD state") {
     first.value()->step(env.ctx, env.clock.fixedStepSeconds());
     CHECK(ticks(*first.value()) == 1);
     CHECK(ticks(*second.value()) == 0);
+}
+
+TEST_CASE("template plugin meets the multi robot contract") {
+    sdk::GamePluginRegistry registry;
+    REQUIRE(plugins::_template::registerPlugin(registry).ok());
+    auto* module = registry.find("_template");
+    REQUIRE(module != nullptr);
+    CHECK(module->metadata().supportsMultiRobot);
+    const std::string violation = sdk::testing::remoteRobotContractViolation(*module);
+    CHECK_MESSAGE(violation.empty(), violation);
+}
+
+TEST_CASE("template plugin keeps per-robot state for remote robots and drops it on removal") {
+    sdk::GamePluginRegistry registry;
+    REQUIRE(plugins::_template::registerPlugin(registry).ok());
+    auto* module = registry.find("_template");
+    REQUIRE(module != nullptr);
+    sdk::testing::FakeSimEnvironment env;
+    sdk::testing::FakeRobotDirectory directory;
+    env.ctx.bindRobots(&directory);
+    auto created = module->createGameState(env.ctx);
+    REQUIRE(created.ok());
+    sdk::IGameState& state = *created.value();
+    state.reset(env.ctx);
+
+    const auto kinds = module->contributeZoneKinds();
+    REQUIRE(kinds.size() == 1);
+    CHECK(sdk::ownsPluginId("_template", kinds.front().kind));
+    std::vector<sdk::ZoneConfig> zones(1);
+    zones.front().id = "marker";
+    zones.front().kind = kinds.front().kind;
+    sdk::RobotView view;
+    view.participantId = 4;
+    view.station = sdk::proto::AllianceStation::Blue2;
+    view.zones = &zones;
+    view.zoneFlags = 1;
+    view.enabled = true;
+    directory.add(view);
+    state.onRobotAdded(env.ctx, directory.list.front());
+
+    const auto hud = [&](const char* key) {
+        sdk::SnapshotBuilder out;
+        sdk::RobotSample sample;
+        sample.participantId = 4;
+        out.addRobot(sample);
+        state.publishRobot(out, directory.list.front());
+        const auto snapshot = out.build();
+        const sdk::Value* value = nullptr;
+        for (const sdk::HudValue& h : snapshot->remoteRobots().front().hud)
+            if (h.key == key) value = &h.value;
+        return value != nullptr ? *value : sdk::Value{};
+    };
+    for (int i = 0; i < 3; ++i) state.step(env.ctx, env.clock.fixedStepSeconds());
+    CHECK(hud("_template.marker_ticks").asInt() == 3);
+    CHECK(hud("_template.alliance").asString() == "blue");
+
+    directory.list.front().zoneFlags = 0;  // the client released the zone
+    state.step(env.ctx, env.clock.fixedStepSeconds());
+    CHECK(hud("_template.marker_ticks").asInt() == 3);
+
+    state.reset(env.ctx);  // clears per-robot state, the robot stays on the roster
+    CHECK(hud("_template.marker_ticks").asInt() == 0);
+
+    directory.remove(4);
+    state.onRobotRemoved(env.ctx, 4);
+    sdk::SnapshotBuilder out;
+    sdk::RobotSample sample;
+    sample.participantId = 4;
+    out.addRobot(sample);
+    state.publishRobot(out, view);
+    CHECK(out.build()->remoteRobots().front().hud.empty());
 }

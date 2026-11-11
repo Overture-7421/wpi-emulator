@@ -11,6 +11,9 @@ Rules (see docs/ARCHITECTURE.md):
   * The distinct bridges/ seam may see bridge modules; only halsim_ext may link it.
     Unknown first-party targets fail closed, including implementation subtargets.
   * Non-app headers must not use identifiers that Qt turns into macros (signals, slots, emit, foreach).
+  * Practice matches: net sees sdk and ipc, relay sees sdk, ipc and net, app/client sees sdk, core, net, the plugin
+    aggregator, app/ui, app/runview and the contract. core/match is part of core (SDK only: its transports are injected
+    as sdk ITransport interfaces). Only net may link or include ENet6 and Monocypher (wpiemu_third_party_*).
   * Inside app/, the host contract, the shared UI scene support and the page libraries (editor, run view) see only
     the SDK, their allowed siblings (the page libraries link app/ui; the run view also the contract) and the shared
     Qt-free headers; the shell, wizard and common layers sit above them.
@@ -41,25 +44,31 @@ CMAKE_NAMES = {"CMakeLists.txt"}
 CMAKE_EXTS = {".cmake"}
 
 # Top-level directories that are not scanned.
-IGNORED_TOP = {"docs", "spikes", "packaging", "tools", "cmake", "build", "out", "node_modules"}
+IGNORED_TOP = {"docs", "spikes", "packaging", "tools", "cmake", "build", "out", "node_modules", "infra"}
 IGNORED_PARTS = {"_deps", ".fetchcontent-cache", ".git", ".github", ".vs", ".idea"}
 
 # app/ is split by directory so its internal layering is enforced too (see docs/reference/app.md): the host contract,
 # the shared scene support (ui) and the page libraries link only the SDK (plus Qt and, for pages, ui and the contract);
 # common/host/wizard/shell compose them.
-APP_DIRS = ("common", "host", "shell", "wizard", "editor", "runview", "contract", "ui")
+APP_DIRS = ("common", "host", "shell", "wizard", "editor", "runview", "contract", "ui", "client")
 APP_ALL = {f"app/{d}" for d in APP_DIRS}
 # Qt-free header-only helpers that live in app/common but are shared with the page libraries; they are checked as
 # their own owner (SDK only) and every app layer may include them.
 SHARED_APP_HEADERS = {"app/common/orbit_camera.h", "app/common/camera_frustum.h"}
 SHARED_APP = "app/shared"
+# ENet6 and Monocypher: only the net module links or includes them (the relay and the app go through wpiemu_net).
+THIRD_PARTY_NET = "third_party_net"
+THIRD_PARTY_NET_INCLUDE_RE = re.compile(r"^(?:enet6?/|monocypher\.h$)")
 
 # owner -> owners it may reference (itself is always allowed).
 ALLOWED: dict[str, set[str]] = {
     "sdk": set(),
     "core": {"sdk"},
     "ipc": {"sdk"},
-    "hal_abi": set(),   # per-HAL-ABI headers; they include WPILib, so only robot-process modules may use them
+    # Practice matches: net encodes with ipc's BinaryCodec; core/match stays core (SDK only) and gets its transports injected.
+    "net": {"sdk", "ipc", THIRD_PARTY_NET},
+    "relay": {"sdk", "ipc", "net"},
+    "hal_abi": set(),    # per-HAL-ABI headers; they include WPILib, so only robot-process modules may use them
     "halsim_ext": {"sdk", "ipc", "bridges", "hal_abi"},
     "bridges": {"sdk", "bridges/hal", "bridges/vendor", "bridges/vision"},
     "bridges/hal": {"sdk", "hal_abi"},
@@ -72,7 +81,8 @@ ALLOWED: dict[str, set[str]] = {
     "app/ui": {"sdk"},
     "app/editor": {"sdk", "app/ui", SHARED_APP},
     "app/runview": {"sdk", "app/contract", "app/ui", SHARED_APP},
-    "app/host": {"sdk", "core", "ipc", "plugins"},
+    "app/host": {"sdk", "core", "ipc", "net", "plugins"},
+    "app/client": {"sdk", "core", "net", "plugins", "app/contract", "app/ui", "app/runview", SHARED_APP},
     "app/common": {"sdk", "core", "ipc", "plugins", "app/host", "app/contract", "app/ui", SHARED_APP},
     "app/wizard": {"sdk", "core", "ipc", "app/common", "app/contract", "app/ui", SHARED_APP},
     "app/shell": {"sdk", "core", "ipc", "app/common", "app/contract", "app/editor", "app/runview", "app/ui", "app/wizard",
@@ -86,7 +96,7 @@ PLUGIN_ALLOWED = {"sdk"}
 AGGREGATOR = "plugins"
 AGGREGATOR_ALLOWED = {"sdk", AGGREGATOR, "plugins/*"}
 
-MODULE_OWNERS = ["sdk", "core", "ipc", "hal_abi", "halsim_ext", "bridges", "bridges/hal", "bridges/vendor", "bridges/vision", "app",
+MODULE_OWNERS = ["sdk", "core", "ipc", "net", "relay", "hal_abi", "halsim_ext", "bridges", "bridges/hal", "bridges/vendor", "bridges/vision", "app",
                  SHARED_APP, *sorted(APP_ALL)]
 
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]', re.MULTILINE)
@@ -112,6 +122,17 @@ TARGET_OWNERS = {
     "wpiemu_sdk": "sdk",
     "wpiemu_core": "core",
     "wpiemu_ipc": "ipc",
+    "wpiemu_net": "net",
+    "wpiemu_net_tests": "net",
+    "wpiemu_relay_core": "relay",
+    "wpiemu_relay": "relay",
+    "wpiemu_relay_probe": "relay",
+    "wpiemu_relay_tests": "relay",
+    # core/match is part of core; its unit tests are built into wpiemu_tests.
+    "wpiemu_match": "core",
+    # Imported third-party targets declared in cmake/WpiEmuDependencies.cmake; only the net module may link them.
+    "wpiemu_third_party_enet": THIRD_PARTY_NET,
+    "wpiemu_third_party_monocypher": THIRD_PARTY_NET,
     "wpiemu_hal_abi": "hal_abi",
     "halsim_wpiemu": "halsim_ext",
     "wpiemu_halsim_core": "halsim_ext",
@@ -132,6 +153,9 @@ TARGET_OWNERS = {
     "wpiemu_app_host": "app/host",
     "wpiemu_app_editor": "app/editor",
     "wpiemu_app_runview": "app/runview",
+    "wpiemu_app_client": "app/client",
+    "wpiemu_client": "app/client",
+    "wpiemu_app_client_tests": "tests",
     "wpiemu_app_tests": "app",
     "wpiemu_e2e_tests": "app/host",
     "wpiemu_season_e2e_tests": "app/host",
@@ -140,6 +164,7 @@ TARGET_OWNERS = {
     "wpiemu_editor_demo": "app/editor",
     "wpiemu_runview_demo": "app/runview",
     "wpiemu_tests": "tests",
+    "wpiemu_e2e_match_tests": "tests",
     "wpiemu_sdk_header_check": "tests",
     "wpiemu_runview_tests": "tests",
     "wpiemu_plugins_builtin": AGGREGATOR,
@@ -183,7 +208,7 @@ def owner_of_path(rel: str) -> str | None:
         if len(parts) >= 3 and parts[1] in APP_DIRS:
             return f"app/{parts[1]}"
         return "app"
-    if parts[0] in ("sdk", "core", "ipc", "halsim_ext", "hal_abi"):
+    if parts[0] in ("sdk", "core", "ipc", "net", "relay", "halsim_ext", "hal_abi"):
         return parts[0]
     return None
 
@@ -261,7 +286,7 @@ def classify_include(src_rel: str, target: str, quoted: bool, known: set[str]) -
             return "plugins/_template" if parts[1] == "_template" else f"plugins/game_{parts[1]}"
         if len(parts) >= 3 and parts[0] == "bridges":
             return f"bridges/{parts[1]}"
-        if len(parts) >= 2 and quoted and parts[0] in ("core", "app", "ipc", "sdk", "halsim_ext", "hal_abi"):
+        if len(parts) >= 2 and quoted and parts[0] in ("core", "app", "ipc", "net", "relay", "sdk", "halsim_ext", "hal_abi"):
             # An include inside app/ that matched nothing above is generated or third-party, not another module.
             if parts[0] == "app" and src_rel.startswith("app/"):
                 continue
@@ -278,6 +303,11 @@ def scan_source(rel: str, text: str, known: set[str]) -> list[str]:
     for m in INCLUDE_RE.finditer(text):
         quoted = m.group(1) == '"'
         target = m.group(2)
+        if owner != "net" and THIRD_PARTY_NET_INCLUDE_RE.match(target):
+            line = text.count("\n", 0, m.start()) + 1
+            errors.append(f"{rel}:{line}: '{owner}' must not include '{target}' (ENet and Monocypher belong to 'net'); "
+                          f"use the wpiemu/net headers")
+            continue
         dep = classify_include(rel, target, quoted, known)
         if dep is None or (permits(allowed, dep) and not (dep in (AGGREGATOR, "bridges") and owner != dep)):
             continue
@@ -502,6 +532,14 @@ def self_test() -> int:
         "app/editor/model/config_ops.h",
         "app/runview/run_page.h",
         "app/wizard/wizard_dialog.h",
+        "net/include/wpiemu/net/module.h",
+        "net/src/module.cpp",
+        "relay/include/wpiemu/relay/module.h",
+        "relay/src/server.cpp",
+        "core/match/include/wpiemu/core/match/module.h",
+        "core/match/src/module.cpp",
+        "ipc/include/wpiemu/ipc/protocol.h",
+        "app/client/client_module.h",
     }
     cases = [
         # (rel, text, expected_error_count)
@@ -573,6 +611,46 @@ def self_test() -> int:
         ("app/ui/scene_support.cpp", '#include "wpiemu/core/c.h"\n', 1),
         ("app/contract/runtime_host.cpp", '#include "ui/scene_support.h"\n', 1),
         ("app/host/robot_session.cpp", '#include "ui/scene_support.h"\n', 1),
+        # practice matches: net sees sdk + ipc, relay sees sdk + ipc + net, core/match stays inside core (SDK only)
+        ("net/src/module.cpp", '#include "wpiemu/net/module.h"\n#include <wpiemu/sdk/a.h>\n#include "wpiemu/ipc/protocol.h"\n', 0),
+        ("net/src/module.cpp", '#include <enet6/enet.h>\n#include <monocypher.h>\n#include <vector>\n', 0),
+        ("net/src/module.cpp", '#include "wpiemu/core/c.h"\n', 1),
+        ("net/src/module.cpp", '#include "wpiemu/relay/module.h"\n', 1),
+        ("net/include/wpiemu/net/module.h", '#include "wpiemu/plugins/game_2026/p.h"\n', 1),
+        ("net/include/wpiemu/net/module.h", '#include "wpiemu/hal_abi/hal_includes.h"\n', 1),
+        ("relay/src/server.cpp", '#include "wpiemu/relay/module.h"\n#include "wpiemu/net/module.h"\n#include "wpiemu/ipc/protocol.h"\n#include <wpiemu/sdk/a.h>\n', 0),
+        ("relay/src/server.cpp", '#include <enet6/enet.h>\n', 1),
+        ("relay/src/server.cpp", '#include <monocypher.h>\n', 1),
+        ("relay/src/server.cpp", '#include "wpiemu/core/c.h"\n', 1),
+        ("relay/src/server.cpp", '#include "wpiemu/core/match/module.h"\n', 1),
+        ("core/src/c.cpp", '#include "wpiemu/net/module.h"\n', 1),
+        ("core/src/c.cpp", '#include "wpiemu/ipc/protocol.h"\n', 1),
+        ("core/src/c.cpp", '#include <enet6/enet.h>\n', 1),
+        ("core/match/src/module.cpp", '#include "wpiemu/core/match/module.h"\n#include "wpiemu/core/c.h"\n#include <wpiemu/sdk/a.h>\n', 0),
+        ("core/match/src/module.cpp", '#include "wpiemu/net/module.h"\n', 1),
+        ("core/match/src/module.cpp", '#include "wpiemu/ipc/protocol.h"\n', 1),
+        ("core/match/include/wpiemu/core/match/module.h", '#include "wpiemu/relay/module.h"\n', 1),
+        ("sdk/include/wpiemu/sdk/a.h", '#include "wpiemu/net/module.h"\n', 1),
+        ("ipc/include/wpiemu/ipc/protocol.h", '#include "wpiemu/net/module.h"\n', 1),
+        ("seasons/2026/game/src/p.cpp", '#include "wpiemu/net/module.h"\n', 1),
+        ("seasons/builtin_plugins.cpp", '#include "wpiemu/net/module.h"\n', 1),
+        ("halsim_ext/src/a.cpp", '#include "wpiemu/net/module.h"\n', 1),
+        ("bridges/vision/src/a.cpp", '#include "wpiemu/net/module.h"\n', 1),
+        ("app/common/app_services.cpp", '#include "wpiemu/net/module.h"\n', 1),
+        ("app/host/robot_session.cpp", '#include "wpiemu/net/module.h"\n#include "wpiemu/core/c.h"\n', 0),
+        ("app/host/robot_session.cpp", '#include <enet6/enet.h>\n', 1),
+        ("app/client/client_module.cpp",
+         '#include "client/client_module.h"\n#include "wpiemu/net/module.h"\n#include "wpiemu/core/c.h"\n#include "wpiemu/core/match/module.h"\n'
+         '#include "contract/runtime_host.h"\n#include "ui/scene_support.h"\n#include "runview/run_page.h"\n#include "common/orbit_camera.h"\n'
+         '#include <wpiemu/sdk/a.h>\n', 0),
+        ("app/client/client_module.cpp", '#include "wpiemu/ipc/protocol.h"\n', 1),
+        ("app/client/client_module.cpp", '#include "wpiemu/relay/module.h"\n', 1),
+        ("app/client/client_module.cpp", '#include "common/app_services.h"\n#include "host/robot_session.h"\n#include "shell/page_factory.h"\n', 3),
+        ("app/client/client_module.cpp", '#include "editor/editor_page.h"\n#include "wizard/wizard_dialog.h"\n', 2),
+        ("app/client/client_module.cpp", '#include "wpiemu/plugins/game_2026/p.h"\n#include <monocypher.h>\n', 2),
+        ("app/main.cpp", '#include "client/client_module.h"\n', 0),
+        ("app/runview/run_page.cpp", '#include "client/client_module.h"\n#include "wpiemu/net/module.h"\n', 2),
+        ("app/shell/page_factory.cpp", '#include "client/client_module.h"\n', 1),
     ]
     failures = 0
     for rel, text, expected in cases:
@@ -710,6 +788,58 @@ def self_test() -> int:
          "target_link_libraries(wpiemu_app_common PUBLIC wpiemu_sdk wpiemu_app_ui)\n", 0),
         ("app/runview/CMakeLists.txt",
          "add_library(wpiemu_app_ui STATIC a.cpp)\n", 1),
+        # practice matches
+        ("net/CMakeLists.txt",
+         "add_library(wpiemu_net STATIC a.cpp)\nadd_library(wpiemu::net ALIAS wpiemu_net)\n"
+         "target_link_libraries(wpiemu_net PUBLIC wpiemu_sdk wpiemu_ipc Threads::Threads PRIVATE wpiemu_third_party_enet wpiemu_third_party_monocypher)\n"
+         "add_executable(wpiemu_net_tests a.cpp)\ntarget_link_libraries(wpiemu_net_tests PRIVATE wpiemu_sdk wpiemu_ipc wpiemu_net)\n", 0),
+        ("net/CMakeLists.txt", "target_link_libraries(wpiemu_net PUBLIC wpiemu_core)\n", 1),
+        ("net/CMakeLists.txt", "target_link_libraries(wpiemu_net PUBLIC wpiemu_relay_core)\n", 1),
+        ("net/CMakeLists.txt", "target_link_libraries(wpiemu_net PRIVATE wpiemu_match wpiemu_app_host)\n", 2),
+        ("net/CMakeLists.txt", "target_link_libraries(wpiemu_net PRIVATE wpiemu_wpilib_hal wpiemu_hal_abi)\n", 2),
+        ("net/CMakeLists.txt", "target_include_directories(wpiemu_net PUBLIC ../ipc/include)\n", 1),
+        ("net/CMakeLists.txt", "add_library(wpiemu_net_extra STATIC a.cpp)\n", 1),
+        ("relay/CMakeLists.txt",
+         "add_library(wpiemu_relay_core STATIC a.cpp)\nadd_library(wpiemu::relay_core ALIAS wpiemu_relay_core)\n"
+         "target_link_libraries(wpiemu_relay_core PUBLIC wpiemu_sdk wpiemu_ipc wpiemu_net Threads::Threads)\n"
+         "add_executable(wpiemu_relay main.cpp)\ntarget_link_libraries(wpiemu_relay PRIVATE wpiemu_relay_core wpiemu_net)\n"
+         "add_executable(wpiemu_relay_probe main.cpp)\ntarget_link_libraries(wpiemu_relay_probe PRIVATE wpiemu_relay_core)\n"
+         "add_executable(wpiemu_relay_tests t.cpp)\ntarget_link_libraries(wpiemu_relay_tests PRIVATE wpiemu_net wpiemu_relay_core)\n", 0),
+        ("relay/CMakeLists.txt", "target_link_libraries(wpiemu_relay_core PRIVATE wpiemu_third_party_enet)\n", 1),
+        ("relay/CMakeLists.txt", "target_link_libraries(wpiemu_relay PRIVATE wpiemu_third_party_monocypher)\n", 1),
+        ("relay/CMakeLists.txt", "target_link_libraries(wpiemu_relay_probe PRIVATE enet6 wpiemu_third_party_enet)\n", 1),
+        ("relay/CMakeLists.txt", "target_link_libraries(wpiemu_relay_core PUBLIC wpiemu_core wpiemu_match)\n", 2),
+        ("relay/CMakeLists.txt", "target_link_libraries(wpiemu_relay PRIVATE wpiemu_app_client wpiemu_halsim_core)\n", 2),
+        ("core/match/CMakeLists.txt",
+         "add_library(wpiemu_match STATIC a.cpp)\nadd_library(wpiemu::match ALIAS wpiemu_match)\n"
+         "target_link_libraries(wpiemu_match PUBLIC wpiemu_sdk wpiemu_core)\n", 0),
+        ("core/match/CMakeLists.txt", "target_link_libraries(wpiemu_match PUBLIC wpiemu_net)\n", 1),
+        ("core/match/CMakeLists.txt", "target_link_libraries(wpiemu_match PUBLIC wpiemu_ipc)\n", 1),
+        ("core/match/CMakeLists.txt", "target_link_libraries(wpiemu_match PRIVATE wpiemu_third_party_enet)\n", 1),
+        ("core/CMakeLists.txt", "target_link_libraries(wpiemu_core PUBLIC wpiemu_net)\n", 1),
+        ("sdk/CMakeLists.txt", "target_link_libraries(wpiemu_sdk INTERFACE wpiemu_net)\n", 1),
+        ("ipc/CMakeLists.txt", "target_link_libraries(wpiemu_ipc PUBLIC wpiemu_sdk wpiemu_net)\n", 1),
+        ("seasons/2026/game/CMakeLists.txt", "target_link_libraries(wpiemu_plugin_game_2026 PUBLIC wpiemu_net wpiemu_match)\n", 2),
+        ("halsim_ext/CMakeLists.txt", "target_link_libraries(halsim_wpiemu PRIVATE wpiemu_net)\n", 1),
+        ("bridges/vision/CMakeLists.txt", "target_link_libraries(wpiemu_bridges_vision PUBLIC wpiemu_third_party_enet)\n", 1),
+        ("app/host/CMakeLists.txt",
+         "target_link_libraries(wpiemu_app_host PUBLIC wpiemu_core wpiemu_ipc wpiemu_net wpiemu_sdk)\n", 0),
+        ("app/host/CMakeLists.txt", "target_link_libraries(wpiemu_app_host PUBLIC wpiemu_third_party_enet)\n", 1),
+        ("app/common/CMakeLists.txt", "target_link_libraries(wpiemu_app_common PUBLIC wpiemu_third_party_monocypher)\n", 1),
+        ("app/client/CMakeLists.txt",
+         "qt_add_library(wpiemu_app_client STATIC a.cpp)\n"
+         "target_link_libraries(wpiemu_app_client PUBLIC wpiemu_sdk wpiemu_core wpiemu_match wpiemu_net wpiemu_app_ui wpiemu_app_runview Qt6::Core PRIVATE wpiemu_plugins_builtin)\n"
+         "qt_add_executable(wpiemu_client main.cpp)\n"
+         "target_link_libraries(wpiemu_client PRIVATE wpiemu_app_client wpiemu_core wpiemu_net wpiemu_sdk wpiemu_plugins_builtin Qt6::Core)\n", 0),
+        ("app/client/CMakeLists.txt", "target_link_libraries(wpiemu_app_client PUBLIC wpiemu_ipc)\n", 1),
+        ("app/client/CMakeLists.txt", "target_link_libraries(wpiemu_client PRIVATE wpiemu_third_party_enet wpiemu_relay_core)\n", 2),
+        ("app/client/CMakeLists.txt", "target_link_libraries(wpiemu_app_client PUBLIC wpiemu_app_common wpiemu_app_host wpiemu_app_editor)\n", 3),
+        ("app/client/CMakeLists.txt", "target_link_libraries(wpiemu_client PRIVATE wpiemu_plugin_game_2026 wpiemu_seasons_builtin)\n", 1),
+        ("app/client/CMakeLists.txt", "add_library(wpiemu_app_extra STATIC a.cpp)\n", 1),
+        ("app/CMakeLists.txt", "target_link_libraries(wpiemu_app PRIVATE wpiemu_app_client)\n", 0),
+        ("app/runview/CMakeLists.txt", "target_link_libraries(wpiemu_app_runview PUBLIC wpiemu_app_client wpiemu_net)\n", 2),
+        ("app/client/CMakeLists.txt", "add_library(wpiemu_app_ui STATIC a.cpp)\n", 1),
+        ("tests/CMakeLists.txt", "target_link_libraries(wpiemu_tests PRIVATE wpiemu_match wpiemu_net)\n", 0),
     ]
     for rel, text, expected in cmake_cases:
         got = len(scan_cmake(rel, text))

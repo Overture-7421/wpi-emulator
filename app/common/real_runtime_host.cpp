@@ -35,6 +35,30 @@ RealRuntimeHost::RealRuntimeHost(host::Registries registries, RealRuntimeOptions
     : IProjectRuntimeHost(parent), registries_(registries), options_(std::move(options)) {
     timer_.setInterval(std::max(5, options_.pollIntervalMs));
     connect(&timer_, &QTimer::timeout, this, &RealRuntimeHost::pump);
+    if (options_.hosting) {
+        connect(options_.hosting, &HostingService::kickRequested, this, [this](quint16 participant, const QString& reason) {
+            if (session_) session_->kickParticipant(participant, reason.toStdString());
+        });
+        connect(options_.hosting, &HostingService::statusChanged, this, &RealRuntimeHost::refreshRoster);
+    }
+}
+
+// The remote participants of the hosting status, as the run view's contract describes them.
+void RealRuntimeHost::refreshRoster() {
+    MatchRoster next;
+    for (const host::HostingParticipant& p : options_.hosting->status()->roster) {
+        if (p.isHost) continue;
+        RemoteParticipant r;
+        r.id = p.id;
+        r.name = p.name;
+        r.station = p.station;
+        r.connected = p.connected;
+        r.appearance = p.appearance;
+        next.push_back(std::move(r));
+    }
+    if (next.empty() ? roster_ == nullptr : (roster_ != nullptr && *roster_ == next)) return;
+    roster_ = next.empty() ? nullptr : std::make_shared<const MatchRoster>(std::move(next));
+    emit matchRosterChanged();
 }
 
 RealRuntimeHost::~RealRuntimeHost() {
@@ -95,6 +119,7 @@ void RealRuntimeHost::releaseSession() {
     for (const sdk::SessionLogEntry& e : session_->takeLogs(5000)) emit logLine(toHostLogLine(e));
     lastSnapshot_ = session_->latestSnapshot();
     session_.reset();
+    if (options_.hosting) options_.hosting->sessionEnded();
 }
 
 void RealRuntimeHost::setProject(const HostProject& project) {
@@ -110,6 +135,7 @@ void RealRuntimeHost::setProject(const HostProject& project) {
     if (startSelection_.reconcile(config_.get(), sameProject)) emit startPositionChanged();
     if (session_ && !startSelection_.id().isEmpty()) session_->controller().setStartPlacement(resolveStartPlacement());
     scene_ = makeHostScene(project);
+    if (options_.hosting) options_.hosting->setPhaseHudKey(phaseHudKeyOf(scene_.hud));
     gamePluginId_.clear();
     if (game != nullptr) {
         gamePluginId_ = game->metadata().id;
@@ -178,9 +204,14 @@ void RealRuntimeHost::launch() {
         o.javaHome = toolchain.javaHome;
         o.wpilibHome = toolchain.wpilibHome;
     }
+    if (options_.hosting) {
+        options_.hosting->setPhaseHudKey(phaseHudKeyOf(scene_.hud));   // the open game's, whatever the preferences held
+        o.hosting = options_.hosting->options();
+    }
     if (options_.tweak) options_.tweak(o);
 
     emitLog(sdk::LogLevel::Info, QStringLiteral("runtime"), tr("Launching the robot with the HALSim extension"));
+    const host::HostingOptions hosting = o.hosting;
     auto started = host::RobotSession::start(registries_, *config_, std::move(o));
     if (!started) {
         failToStart(qs(started.error().message));
@@ -189,6 +220,10 @@ void RealRuntimeHost::launch() {
     session_ = std::move(started).value();
     launchedConfig_ = config_;
     lastSnapshot_.reset();
+    if (options_.hosting) {
+        options_.hosting->sessionStarted(hosting);
+        options_.hosting->publish(session_->hostingStatus());
+    }
     setStatus(toHostStatus(session_->status()));
     emit snapshotPublished();
     timer_.start();
@@ -290,6 +325,7 @@ void RealRuntimeHost::pump() {
     for (const sdk::SoundCue& cue : session_->takeSoundCues()) emit soundCue(QString::fromStdString(cue.id));
     const sdk::SessionStatus s = session_->status();
     setStatus(toHostStatus(s));
+    if (options_.hosting) options_.hosting->publish(session_->hostingStatus());
     sendBeginIfReady();
     if (auto snapshot = session_->latestSnapshot(); snapshot && snapshot != lastSnapshot_) {
         lastSnapshot_ = std::move(snapshot);

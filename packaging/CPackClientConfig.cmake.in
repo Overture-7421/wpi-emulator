@@ -1,0 +1,15 @@
+# Generated from packaging/CPackClientConfig.cmake.in by cmake/WpiEmuInstall.cmake: the CPack configuration of the
+# practice-match client packages. Run with `cpack --config CPackClientConfig.cmake -C Release -B <output directory>`.
+include("@CMAKE_BINARY_DIR@/CPackConfig.cmake")
+
+set(CPACK_GENERATOR "@WPIEMU_CLIENT_PACKAGE_GENERATOR@")
+set(CPACK_PACKAGE_NAME "WPI Emulator Client")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Join a WPI Emulator practice match")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "WPI Emulator Client")
+set(CPACK_PACKAGE_FILE_NAME "@WPIEMU_CLIENT_PACKAGE_FILE_NAME@")
+set(CPACK_DMG_VOLUME_NAME "WPI Emulator Client @PROJECT_VERSION@")
+
+# Only the Client component, installed as one monolithic package (no per-component archives).
+set(CPACK_INSTALL_CMAKE_PROJECTS "@CMAKE_BINARY_DIR@;@PROJECT_NAME@;Client;/")
+unset(CPACK_COMPONENTS_ALL)
+set(CPACK_ARCHIVE_COMPONENT_INSTALL OFF)

@@ -2,9 +2,11 @@ WPI Emulator - third-party software notices
 ===========================================
 
 This product bundles or links the following third-party components. Review the license terms of each
-component (and refresh this list) before every public release.
+component (and refresh this list) before every public release. The same file ships with the desktop app and
+with the practice-match client; the client carries no WPILib and no robot-project tooling, but does contain
+every other component listed here.
 
-Qt 6 (Core, Gui, Widgets, Quick, Quick3D, Svg and the platform plugins)
+Qt 6 (Core, Gui, Widgets, Network, Quick, QuickWidgets, Quick3D, Multimedia, Svg and the platform plugins)
     Licensed under the GNU LGPL v3 (and other licenses per module). Qt is linked dynamically and the
     shared libraries shipped with this application are unmodified Qt binaries; you may replace them with
     your own build of the same Qt version. Source code and license texts: https://www.qt.io/download-open-source
@@ -14,6 +16,51 @@ Box3D (physics)
 
 SDL2 (optional gamepad input, only when built with WPIEMU_RUNVIEW_FETCH_SDL2=ON)
     https://www.libsdl.org - statically linked, zlib license.
+
+ENet6 (practice-match networking transport)
+    https://github.com/SirLynix/enet6 - statically linked, MIT license (a fork of https://github.com/lsalzman/enet):
+
+    Copyright (c) 2002-2024 Lee Salzman
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+    associated documentation files (the "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
+    following conditions:
+
+    The above copyright notice and this permission notice shall be included in all copies or substantial
+    portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+    LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+    EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+    IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR
+    THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Monocypher (practice-match transport encryption: X25519, BLAKE2b, XChaCha20-Poly1305)
+    https://github.com/LoupVaillant/Monocypher - statically linked. Dual-licensed BSD 2-Clause or CC0 1.0
+    (public domain dedication); this product uses it under the BSD 2-Clause license:
+
+    Copyright (c) 2017-2023, Loup Vaillant
+    Copyright (c) 2017-2019, Michael Savage
+    Copyright (c) 2017-2023, Fabio Scotoni
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without modification, are permitted provided
+    that the following conditions are met:
+    1. Redistributions of source code must retain the above copyright notice, this list of conditions and the
+       following disclaimer.
+    2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and
+       the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED
+    WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+    PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY
+    DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+    PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+    HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+    NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
 
 WPILib (wpiHal / wpiutil headers and import libraries; used to build halsim_wpiemu)
     https://github.com/wpilibsuite/allwpilib - BSD 3-Clause. The WPILib libraries themselves are not

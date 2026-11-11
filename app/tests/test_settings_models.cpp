@@ -4,7 +4,7 @@
 #include <QTemporaryDir>
 
 #include "common/app_settings.h"
-#include "common/key_value_store.h"
+#include "ui/key_value_store.h"
 #include "common/project_path.h"
 #include "common/project_prefs.h"
 #include "common/recent_projects.h"

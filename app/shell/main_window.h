@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QAction>
+#include <QDockWidget>
 #include <QLabel>
 #include <QMainWindow>
 #include <QMenu>
@@ -11,6 +12,7 @@
 
 #include "common/app_services.h"
 #include "common/ui_resources.h"
+#include "shell/host_panel.h"
 #include "shell/mode_switcher.h"
 #include "shell/page_factory.h"
 #include "shell/shell_controller.h"
@@ -64,6 +66,8 @@ public:
     UpdateButton* updateButton() const { return updateButton_; }
     QAction* checkUpdatesAction() const { return checkUpdatesAction_; }
     QAction* updateAction() const { return updateAction_; }
+    QDockWidget* hostDock() const { return hostDock_; }
+    HostPanel* hostPanel() const { return hostPanel_; }
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -72,6 +76,7 @@ protected:
 
 private:
     void buildActions();
+    void buildHostDock();
     void centerModeSwitcher();
     bool eventFilter(QObject* watched, QEvent* event) override;
     void buildMenus();
@@ -112,6 +117,9 @@ private:
     QAction* updateAction_ = nullptr;
     UpdateButton* updateButton_ = nullptr;
     QMenu* recentMenu_ = nullptr;
+    HostPanelModel* hostModel_ = nullptr;
+    HostPanel* hostPanel_ = nullptr;
+    QDockWidget* hostDock_ = nullptr;
 
 };
 

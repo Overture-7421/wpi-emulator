@@ -23,3 +23,7 @@ process or UI dependencies.
 
 Current lifecycle and ownership rules are in [Runtime](../reference/runtime.md) and
 [Application](../reference/app.md).
+
+**Note (practice matches).** One local robot is still the only robot with a WPILib program. A practice
+match adds wheel-level remote robots to the same simulation, owned by the host
+(see [0019](0019-practice-matches.md)); `SimulationSession` stays the single owner of the world.

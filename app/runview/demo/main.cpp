@@ -2,7 +2,8 @@
 //   wpiemu_runview_demo --scenario running|practice|... --camera driver --screenshot out.png [--size 1500x900] [--state]
 // --state opens the Robot state window (and saves it next to the screenshot as out.png.state.png).
 // --camera accepts home, driver, blue1..blue3 or red1..red3; --no-follow disables Driver POV tracking.
-// Scenarios: idle, starting, running, crash, timeout, mismatch, failed.
+// Scenarios: idle, starting, running, match, crash, timeout, mismatch, failed.
+// match shows a hosted practice match: three scripted remote robots drive round the field.
 
 #include <QApplication>
 #include <QDir>
@@ -99,6 +100,15 @@ int main(int argc, char* argv[]) {
         QTimer::singleShot(kScenarioActionDelayMs, &app, [&] {
             page.driverStation().setDsMode(DsMode::Practice);
             page.driverStation().setEnabled(true);
+        });
+    } else if (scenario == QLatin1String("match")) {
+        // A hosted practice match: three remote players drive round the field while the local robot is driven.
+        backend.addRemoteRobot(1, QStringLiteral("Iron Owls"), wpiemu::sdk::proto::AllianceStation::Blue1);
+        backend.addRemoteRobot(2, QStringLiteral("Red Rockets"), wpiemu::sdk::proto::AllianceStation::Red2);
+        backend.addRemoteRobot(3, QStringLiteral("Gearheads"), wpiemu::sdk::proto::AllianceStation::Blue3);
+        QTimer::singleShot(kScenarioActionDelayMs, &app, [&] {
+            page.driverStation().setEnabled(true);
+            page.handleKey(Qt::Key_W, true);
         });
     } else if (scenario == QLatin1String("crash")) {
         QTimer::singleShot(kScenarioActionDelayMs, &app, [&] { backend.simulateCrash(1); });

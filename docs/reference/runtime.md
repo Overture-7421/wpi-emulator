@@ -137,6 +137,46 @@ solving an electrical feedback loop within one tick. Brownout disables the outgo
 Station state; recovery requires voltage at least 0.5 V above the configured threshold.
 See [BatteryModel](../../core/runtime/src/runtime/battery_model.cpp).
 
+## Remote robots (practice matches)
+
+`SimulationSession::addRemoteRobot` adds an opponent or partner that has no WPILib program, between ticks and on
+the simulation thread only (the same rule covers `removeRemoteRobot`, `submitRemoteInput`, `remoteRobotIds` and
+`remoteRobotInfo`). The composition root enables it by putting `physicsRemoteChassisFactory(drivetrains, tireModels)`
+from [physics_wiring.h](../../core/runtime/include/wpiemu/core/runtime/physics_wiring.h) into
+`SessionParts::remoteChassisFactory`; without it `addRemoteRobot` returns `Unsupported`. Runtime sources never include
+physics headers: the factory builds a `physics::ChassisSimulator` (hull, bumpers, wheel pads, registered drivetrain and
+tire model) plus a `physics::WheelSetpointController` behind the `IRemoteChassis` seam in
+[remote_robot.h](../../core/runtime/include/wpiemu/core/runtime/remote_robot.h).
+
+- **Admission.** The spec is checked strictly with `sdk::checkRemoteSpec` (an `InvalidArgument` message lists the
+  violation codes; clamp first with `sdk::clampRemoteSpec` to be lenient). Unknown drivetrain kinds and tire models, a
+  duplicate participant id or station, more than `kMaxRemoteRobots` (5, the host's robot being the sixth) and more than
+  `match::kMaxZonesPerRobot` zones are refused and leave the session unchanged.
+- **Placement.** `remoteStartPose` puts blue robots facing +X and red robots facing -X at `min(2 m, 15% of the length)`
+  from their wall, stations 1 to 3 spread across the width as the Driver Station numbers them. The session slides a robot
+  away from its wall until it clears the host's start and the robots already placed (`remoteStartPoseClear`).
+  `reset()` returns every remote robot to its placement at rest and clears its controller, queue and counters; the roster
+  stays.
+- **Inputs.** `submitRemoteInput` queues a `match::MatchInput` for its `targetTick` in a per-robot queue of at most
+  `kMaxQueuedRemoteInputs` entries ordered by `inputSeq`. Each tick the newest sequence whose target tick has come
+  applies and supersedes older ones, so arrival order and wall time cannot change a run. A wheel-count mismatch, sequence
+  0 or a target more than `kMaxRemoteInputLeadUs` ahead is rejected; late, duplicate and stale inputs are counted in
+  `RemoteInputStats`, next to `lastAppliedSeq`, `ackTick` and the signed lead error. Wheel speeds go through
+  `match::sanitizedWheelSpeed` and steer angles through `match::dequantizeAngle`.
+- **Gating.** A remote robot is enabled only while the host Driver Station is enabled, not e-stopped and the host battery
+  is not browned out; otherwise it gets 0 V and its zone flags read 0. After `match::kInputTimeoutUs` of simulated
+  time without an input it brakes and its zone flags read 0.
+- **Game and snapshot.** Each robot's shapes carry `sdk::makeRobotTag(participantId)` ([robot_tags.h](../../sdk/include/wpiemu/sdk/physics/robot_tags.h)), so
+  contact events name the robots involved. `SimulationSession::robots()` is the `IRobotDirectory` the game reads through
+  `SimContext::robots()` (host first, then remote robots by id), and the `IGameState` robot hooks follow the order in
+  [game_state.h](../../sdk/include/wpiemu/sdk/game/game_state.h). A snapshot carries one `RobotSample` per remote robot.
+- **Who calls it.** In a hosted match the practice-match server (`MatchHost`, `core/match`) is the caller: it
+  runs as the runner's tick observer on the simulation thread, decodes a client's `Join` with the normal
+  configuration pipeline, **clamps** the spec to the plausible-FRC table (`kRemoteSpecLimits`) before this
+  strict admission, and queues each input through `submitRemoteInput`. The wire protocol, encryption and trust
+  model are in [Match network](match-network.md); how it is hosted from the app is in
+  [Application](app.md#hosting-a-practice-match).
+
 ## Physical start placement
 
 `startPose`, when present, is a finite field-frame position `(xM, yM, headingRad)`. It changes

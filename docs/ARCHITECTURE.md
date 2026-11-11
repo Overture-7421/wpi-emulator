@@ -30,8 +30,10 @@ These are the production dependency rules. Tests may combine modules to verify t
 | Module | May depend on | Owns |
 |---|---|---|
 | `sdk` | C++ standard library | Header-only interfaces, values, registries (game plugins, seasons), protocol types, and fakes |
-| `core` | SDK; Box3D privately | Configuration/runtime, mechanisms, plants, and physics adapter |
+| `core` | SDK; Box3D privately | Configuration/runtime, mechanisms, plants, physics adapter, and the practice-match server (`core/match`) |
 | `ipc` | SDK | Local transport and message codec |
+| `net` | SDK, IPC; ENet and Monocypher privately | ENet and relay transports, invite codes and the end-to-end `SecureTransport` |
+| `relay` | SDK, IPC, `net` | The relay server, its probe and tests (`wpiemu_relay`) |
 | `hal_abi` | WPILib headers | Per-HAL-ABI includes, HAL clock and SimDevice constants for robot-process modules |
 | `bridges/hal` | SDK, `hal_abi`; HAL headers inside its binding | WPILib HAL device families; per-ABI sources in `abi/<abi>` |
 | `bridges/vendor` | SDK, `hal_abi`; backend headers inside the module | Vendor devices exposed through SimDevices |
@@ -40,13 +42,14 @@ These are the production dependency rules. Tests may combine modules to verify t
 | `halsim_ext` | SDK, IPC, bridge aggregator, `hal_abi`, WPILib HAL | Robot-process extension; per-ABI platform calls in `src/hal/abi/<abi>` |
 | Each `seasons/<year>/game` | SDK only | One game's field, entities, rules, and metadata |
 | `seasons/` | SDK and game plugins | Season packs (`season.json`), built-in plugin registration and the generated season catalog |
-| `app` | SDK, core, IPC, season and plugin aggregators, Qt | Desktop composition, host, editor, and run view |
+| `app` | SDK, core, IPC, `net`, season and plugin aggregators, Qt | Desktop composition, host (including practice-match hosting), editor, and run view |
 | `app/contract` | SDK and Qt | Host interface shared by editor and run view |
-| `app/ui` | SDK and Qt | Shared Qt support, including 3D scene helpers |
+| `app/ui` | SDK and Qt | Shared Qt support: 3D scene helpers, the key-value settings port and the relay presets |
 | `app/editor` | SDK, Qt, `app/ui` | Editor page |
 | `app/runview` | SDK, Qt, `app/ui`, `app/contract` | Run page |
+| `app/client` | SDK, core, `net`, plugin aggregator, Qt, `app/ui`, `app/contract`, `app/runview` | `wpiemu_client`, the thin practice-match game client: join form, session, drive screen |
 
-Qt stays out of SDK, core, IPC, bridges, and plugins. Box3D and robot-process backend headers do
+Qt stays out of SDK, core, IPC, `net`, `relay`, bridges, and plugins. Box3D and robot-process backend headers do
 not leak into SDK headers. The app registers game plugins through
 [`seasons/builtin_plugins.cpp`](../seasons/builtin_plugins.cpp) and WPILib season profiles through
 the catalog generated from the season manifests; the extension registers adapters
@@ -64,6 +67,26 @@ year: each season builds its own HALSim extension, and only robot-process code i
 the per-ABI sources. A season therefore needs a game plugin only for game rules; a platform-only season
 runs core-only.
 
+## Who owns the simulated world
+
+**The host desktop app, and only it.** Even in a practice match with remote players there is one
+Box3D world, owned by the host's `SimulationSession` on the simulation thread. The server is
+authoritative; nobody else holds authoritative state.
+
+| Party | Owns | Does not own |
+|---|---|---|
+| Host app (simulation thread) | The physics world, the host's real WPILib robot, every remote robot's chassis and wheel controller, game state, sim clock, tick order, match rules (through the host Driver Station), roster and epoch | |
+| Game client | Its own input, a disposable prediction world that authoritative state overwrites, interpolation and rendering | Other robots, game pieces, scores, match time |
+| Relay | The room table | Any simulation or readable game data (traffic is end-to-end encrypted) |
+
+`MatchHost` (`core/match`) is a game server that only feeds the session scheduled inputs through its
+inbox and reads snapshots; it does not own the world. It runs as the runner's tick observer on the
+simulation thread, while connection reader threads and per-client sender threads handle I/O, so the
+simulation never blocks on a network peer. The world still advances only while the host's robot is in
+lock-step. Clients trust the host. See [Match network](reference/match-network.md) for the protocol,
+encryption and trust model, and [Runtime](reference/runtime.md#remote-robots-practice-matches) for how
+remote robots are simulated.
+
 ## Processes and threads
 
 `AppServices` composes the app. The editor and run view share one `IRuntimeHost`.
@@ -80,6 +103,7 @@ watchdog handling, and pacing. See the [application contract](reference/app.md) 
 | Extension clock thread | Applies device feedback, advances HAL timing, and collects robot outputs. |
 | Extension IPC workers | Move messages to and from queues; they do not mutate the simulated world. |
 | Extension watchdog | Recovers independently of bridge locks when the emulator stalls or disappears. |
+| Match I/O threads | When hosting: one ENet pump thread per transport, a reader thread and a sender thread per client. They move messages and never touch the session or HAL callbacks. `MatchHost` itself runs on the simulation thread through the runner's tick observer. |
 
 `SimulationSession` creates no threads and performs no I/O. `SessionRunner` owns the simulation
 thread and applies queued UI/control commands there. During lock-step, bridge work happens around
@@ -97,8 +121,10 @@ For tick N:
    tick while another is outstanding.
 2. `SimulationSession` advances mechanisms using the latest actuator outputs and mapped slots.
    Motion-linked axes follow dependency order; mechanisms also submit chassis coupling.
-3. The drivetrain computes wheel forces. Runtime applies chassis/payload coupling, then advances
-   the physics world once.
+3. The drivetrain computes wheel forces. In a practice match every remote robot then applies the input
+   due on this tick, turns its wheel setpoints into motor voltages and adds its own tire forces
+   (in participant order). Runtime applies chassis/payload coupling, then advances the physics world
+   once for every robot; each remote robot completes its step after it.
 4. Game state consumes the resulting world events. The plugin's `onTick` hook follows; game-fed
    sensors then translate published values into device feedback.
 5. Runtime updates IMU and battery feedback, advances its integer clock, and builds a sensor frame.
@@ -118,6 +144,10 @@ The UI receives immutable snapshots; it does not participate in the tick. See
 carried by frames and controls. A reset starts a new epoch; reconnect creates a new session and
 epoch. Tick numbers can restart, so they are not identities on their own. Reject frames for other
 sessions and stale epochs.
+
+Practice-match frames follow the same rule with their own identity: the host assigns a `sessionId` to
+each client connection and bumps `runEpoch` on every reset, and a client rejoins after a drop with its
+resume token. The robot watchdog is untouched; if it fires, clients see `HostStalled`.
 
 Control command IDs and acknowledgments make retries safe: a command must not be applied twice.
 Reset clears simulation signal history and starts the next sensor frame with a full baseline, but

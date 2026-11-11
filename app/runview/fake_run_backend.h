@@ -54,6 +54,15 @@ public:
 
     static sdk::RobotConfig makeDemoConfig();   // the demo robot; its zones and sensors use the demo game's ids
 
+    // ---- practice-match demo: scripted remote robots (driven round the field, wheels turning, intake zone sliding) ----
+    // The appearance of the demo opponents: the demo robot's frame and wheels with an intake and a shooter zone on the chassis.
+    static sdk::match::RobotAppearance makeDemoAppearance();
+    // Adds a remote participant (or replaces the one with that id) and announces the new roster.
+    void addRemoteRobot(sdk::match::ParticipantId id, const QString& name, sdk::proto::AllianceStation station,
+                        std::shared_ptr<const sdk::match::RobotAppearance> appearance = nullptr);
+    void removeRemoteRobot(sdk::match::ParticipantId id);
+    std::shared_ptr<const MatchRoster> matchRoster() const override { return roster_; }
+
 public slots:
     void launch() override;
     void startSimulation() override;
@@ -83,8 +92,11 @@ private:
     void resetWorld();
     void publish();
     void scatterBalls();
+    void addRemoteSamples(sdk::SimSnapshotData& d) const;
+    void announceRoster();
 
     Options options_;
+    std::shared_ptr<const MatchRoster> roster_;
     QTimer timer_;
     std::mt19937 rng_{1};
     HostStatus status_;

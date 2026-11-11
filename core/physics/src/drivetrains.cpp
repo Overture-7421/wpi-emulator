@@ -106,6 +106,30 @@ void TractionDrivetrain::reset() {
     accelX_ = accelY_ = 0.f;
 }
 
+bool TractionDrivetrain::restoreWheelKinematics(std::span<const WheelKinematics> wheels) {
+    if (wheels.size() != wheels_.size()) return false;
+    for (const WheelKinematics& k : wheels)
+        if (!std::isfinite(k.driveWheelAngleRad) || !std::isfinite(k.driveWheelOmegaRadPerSec) ||
+            !std::isfinite(k.steerAngleRad) || !std::isfinite(k.steerOmegaRadPerSec))
+            return false;
+    for (std::size_t i = 0; i < wheels_.size(); ++i) {
+        Wheel& w = wheels_[i];
+        WheelState& st = states_[i];
+        w.omega = wheels[i].driveWheelOmegaRadPerSec;
+        st.driveWheelAngleRad = wheels[i].driveWheelAngleRad;
+        st.driveWheelOmegaRadPerSec = w.omega;
+        if (!w.policy.steered) continue;
+        w.steerOmega = wheels[i].steerOmegaRadPerSec;
+        st.steerAngleRad = wheels[i].steerAngleRad;
+        st.steerOmegaRadPerSec = w.steerOmega;
+    }
+    if (world_->isValid(body_)) {
+        lastVelocity_ = world_->linearVelocity(body_);
+        hasLastVelocity_ = true;
+    }
+    return true;
+}
+
 WheelDrive TractionDrivetrain::driveFor(const Wheel& w, const WheelCommand& cmd, double& supplyCurrentA) const {
     const WheelSpec& s = *w.spec;
     const double gear = std::max(s.driveGearRatio, 1e-6f);

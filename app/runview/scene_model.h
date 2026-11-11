@@ -13,13 +13,16 @@
 #include <QSet>
 #include <QtQuick3D/qquick3dinstancing.h>
 
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
 
 #include "common/orbit_camera.h"
+#include "contract/match_roster.h"
 #include "contract/runtime_host.h"
 #include "camera_rig.h"
+#include "remote_rigs.h"
 #include "scene_parts.h"
 
 namespace wpiemu::app::runview {
@@ -121,6 +124,47 @@ private:
     std::vector<Group> groups_;
 };
 
+// One row per remote robot of a hosted practice match, in roster order: where it is, who it is and its drawable parts (each
+// row's part lists are models of their own, for nested Repeater3Ds). Rows are added and removed as participants join and
+// leave; a robot the latest snapshot does not describe is hidden (`shown` false) rather than removed.
+class RemoteRobotModel : public QAbstractListModel {
+    Q_OBJECT
+public:
+    enum Role {
+        ParticipantRole = Qt::UserRole + 1, NameRole, StationRole, ColorRole, PositionRole, RotationRole, ShownRole, ConnectedRole,
+        LabelPositionRole, RobotPartsRole, ZonePartsRole, MarkerPartsRole
+    };
+
+    explicit RemoteRobotModel(QObject* parent = nullptr);
+    int rowCount(const QModelIndex& parent = {}) const override;
+    QVariant data(const QModelIndex& index, int role) const override;
+    QHash<int, QByteArray> roleNames() const override;
+
+    void setZoneKinds(std::vector<sdk::ZoneKindInfo> kinds);
+    void setRoster(std::shared_ptr<const MatchRoster> roster);
+    // Moves every robot to its sample (nothing = none is shown).
+    void update(std::span<const sdk::RobotSample> samples);
+
+    const RemoteRigSet& rigs() const { return rigs_; }
+    // The row's part lists (null for an invalid row), for tests and the scene.
+    PartListModel* robotParts(int row) const { return rowAt(row) ? rowAt(row)->robot : nullptr; }
+    PartListModel* zoneParts(int row) const { return rowAt(row) ? rowAt(row)->zones : nullptr; }
+    PartListModel* markerParts(int row) const { return rowAt(row) ? rowAt(row)->marker : nullptr; }
+
+private:
+    struct Row {
+        PartListModel* robot = nullptr;
+        PartListModel* zones = nullptr;
+        PartListModel* marker = nullptr;
+    };
+    const Row* rowAt(int row) const { return row >= 0 && static_cast<std::size_t>(row) < rows_.size() ? &rows_[static_cast<std::size_t>(row)] : nullptr; }
+    void rebuild();
+    void releaseRows();
+
+    RemoteRigSet rigs_;
+    std::vector<Row> rows_;
+};
+
 // Colours and fonts the QML layer needs, derived from the widget palette (light / dark aware).
 class ViewportTheme : public QObject {
     Q_OBJECT
@@ -188,6 +232,7 @@ class SceneModel : public QObject {
     Q_PROPERTY(QObject* tags READ tags CONSTANT)
     Q_PROPERTY(QObject* tagMarkers READ tagMarkers CONSTANT)
     Q_PROPERTY(QObject* entityGroups READ entityGroups CONSTANT)
+    Q_PROPERTY(QObject* remoteRobots READ remoteRobots CONSTANT)
     Q_PROPERTY(QVector3D chassisPosition READ chassisPosition NOTIFY poseChanged)
     Q_PROPERTY(QQuaternion chassisRotation READ chassisRotation NOTIFY poseChanged)
     Q_PROPERTY(bool robotVisible READ robotVisible NOTIFY poseChanged)
@@ -204,6 +249,8 @@ public:
     explicit SceneModel(QObject* parent = nullptr);
 
     void setSceneInfo(const HostScene& info);
+    // The other participants of a hosted match (nullptr = none); their robots appear and disappear with it.
+    void setMatchRoster(std::shared_ptr<const MatchRoster> roster);
     void update(const sdk::ISimSnapshot* snapshot);
 
     QObject* fieldParts() { return &field_; }
@@ -212,6 +259,8 @@ public:
     QObject* tags() { return &tags_; }
     QObject* tagMarkers() { return &tagMarkers_; }
     QObject* entityGroups() { return &entities_; }
+    QObject* remoteRobots() { return &remote_; }
+    RemoteRobotModel& remoteModel() { return remote_; }
     PartListModel& robotModel() { return robot_; }
     EntityGroupModel& entityModel() { return entities_; }
     RobotRig& rig() { return rig_; }
@@ -275,6 +324,7 @@ private:
     PartListModel tags_;
     TagMarkerModel tagMarkers_;
     EntityGroupModel entities_;
+    RemoteRobotModel remote_;
     RobotRig rig_;
     CameraRig cameraRig_;
     float viewHeightPx_ = 720.f;

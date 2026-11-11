@@ -33,6 +33,7 @@ public:
         m.description = "FRC 2026 REBUILT: fuel, hubs with active/inactive shifts, bumps, trenches, towers.";
         m.pluginVersion = 1;
         m.minSdkMajor = 1;
+        m.supportsMultiRobot = true;
         return m;
     }
 

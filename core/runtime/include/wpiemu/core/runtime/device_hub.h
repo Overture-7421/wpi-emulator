@@ -20,7 +20,7 @@ namespace wpiemu::core::runtime {
 // data plane between mechanisms and the raw per-device signals of the IPC frames.
 //
 // Threading: SIM THREAD ONLY (sdk contract). The IPC thread never touches the hub: it posts messages into a
-// MessageInbox (robot_link.h) which the sim thread drains into onAnnounce / onActuatorFrame at the start of a tick.
+// MessageInbox (message_link.h) which the sim thread drains into onAnnounce / onActuatorFrame at the start of a tick.
 // Everything the UI needs is copied into the immutable ISimSnapshot.
 //
 // Behaviour (ARCHITECTURE 4, device_identity.h):
