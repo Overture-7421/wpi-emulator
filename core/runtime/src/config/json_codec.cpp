@@ -1,9 +1,12 @@
 #include "wpiemu/core/config/json_codec.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
+#include <iomanip>
 #include <locale>
 #include <sstream>
 #include <system_error>
@@ -43,18 +46,31 @@ std::string formatShortest(double d) {
     const auto res = std::to_chars(buf, buf + sizeof(buf), d);
     return std::string(buf, res.ptr);
 #else
-    for (int precision = 1; precision <= 17; ++precision) {
+    // std::to_chars writes the shorter of the fixed and the scientific form of the fewest round-tripping digits, fixed when
+    // they tie ("900", not "9e+02"). Do the same, so a file reads the same on every platform.
+    if (!std::isfinite(d)) {
         std::ostringstream out;
         out.imbue(std::locale::classic());
-        out.precision(precision);
         out << d;
+        return out.str();
+    }
+    for (int digits = 1; digits <= 17; ++digits) {
+        std::ostringstream sci;
+        sci.imbue(std::locale::classic());
+        sci << std::scientific << std::setprecision(digits - 1) << d;
+        const std::string sciText = sci.str();
         double back = 0.0;
-        if (parseDouble(out.str(), back) && back == d) return out.str();
+        if (!parseDouble(sciText, back) || back != d) continue;
+        const int exponent = std::atoi(sciText.c_str() + sciText.find('e') + 1);
+        std::ostringstream fixed;
+        fixed.imbue(std::locale::classic());
+        fixed << std::fixed << std::setprecision(std::max(0, digits - 1 - exponent)) << d;
+        const std::string fixedText = fixed.str();
+        return fixedText.size() <= sciText.size() ? fixedText : sciText;
     }
     std::ostringstream out;
     out.imbue(std::locale::classic());
-    out.precision(17);
-    out << d;
+    out << std::scientific << std::setprecision(16) << d;
     return out.str();
 #endif
 }
