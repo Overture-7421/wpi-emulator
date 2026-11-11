@@ -478,6 +478,11 @@ packets.
   secret, and a virtual peer the host closes after a failed handshake is not removed from the relay
   until that client leaves, so someone who learns or guesses a room id can fill its 6 client slots
   and make joins fail. The per-source lockout slows guessing; it does not stop it.
+- **A deleted relay's name can be claimed.** The relay's DNS label uses the `Unsecure` reuse policy so
+  the name stays predictable, which means anyone can register the same label after the relay is
+  deleted. A client that dials the old name would reach a stranger's relay, which sees only the room id
+  and ciphertext (it cannot read or forge game data) but can refuse or stall the match. Retire a relay
+  by changing the name the apps use, not by deleting it quietly.
 - **Availability.** Relay or network failure ends the match; one relay instance has no redundancy and
   an update restarts it. The host can be stalled by its own robot.
 - **Blocked UDP.** Both direct connect and the relay need outbound UDP. A school or corporate network
