@@ -160,10 +160,10 @@ jobs:
           relay=()
           if [ -z "$RELAY_DNS_SUFFIX" ]; then
             echo "::warning::The RELAY_DNS_SUFFIX repository variable is not set: this release has no built-in relay presets."
-          elif [[ "$RELAY_DNS_SUFFIX" =~ ^-[a-z0-9-]{1,39}$ ]]; then
+          elif [[ "$RELAY_DNS_SUFFIX" =~ ^[a-z0-9-]{1,40}$ && "$RELAY_DNS_SUFFIX" != *- ]]; then
             relay=(-DWPIEMU_RELAY_DNS_SUFFIX="$RELAY_DNS_SUFFIX")
           else
-            echo "::error::RELAY_DNS_SUFFIX must be a hyphen followed by lower-case letters, digits and hyphens (for example -a1b2)."
+            echo "::error::RELAY_DNS_SUFFIX must be 1 to 40 lower-case letters, digits and hyphens, not ending in a hyphen (for example 47c926)."
             exit 1
           fi
           cmake -S . -B build/release "${gen[@]}" \

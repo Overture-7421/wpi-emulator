@@ -22,7 +22,8 @@ param environmentName string
 param namePrefix string = 'wpiemu-relay'
 
 @description('''Suffix that makes the DNS label unique: ACI labels are global per region. The label is <namePrefix><suffix> in prod and
-<namePrefix>-dev<suffix> in dev, so start the suffix with a hyphen (for example "-a1b2") and use lower-case letters, digits and hyphens.''')
+<namePrefix>-dev<suffix> in dev (for example "47c926" or "-a1b2"). Use lower-case letters, digits and hyphens, and do not end with a
+hyphen. The apps build the relay address from the same suffix (app/ui/relay_endpoints.h).''')
 @minLength(1)
 @maxLength(30)
 param dnsLabelSuffix string

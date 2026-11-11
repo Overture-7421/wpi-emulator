@@ -41,8 +41,8 @@ re-created container can get another IP.
 | `budget` | Monthly budget with an email at 80 percent actual and 100 percent forecast, created only when `alertEmail` is set |
 
 The image is pulled by **digest** with the managed identity. Parameters: `location` (default
-`southcentralus`), `environmentName`, `dnsLabelSuffix` (ACI labels are global per region, so start the
-suffix with a hyphen), `relayImage`, `deployRelay`, `udpPort` (default 7777), `cpu`, `memoryGb` and the
+`southcentralus`), `environmentName`, `dnsLabelSuffix` (ACI labels are global per region; bootstrap picks six
+hex characters such as `47c926`, and the apps use the same suffix to build the relay address), `relayImage`, `deployRelay`, `udpPort` (default 7777), `cpu`, `memoryGb` and the
 relay limits. `deployRelay=false` creates the registry, identity, logs and budget so an image can be
 pushed first; the second pass passes `relayImage` and creates the container group. The label reuse
 policy is `Unsecure`, the only one that keeps the name `<label>.southcentralus.azurecontainer.io`
