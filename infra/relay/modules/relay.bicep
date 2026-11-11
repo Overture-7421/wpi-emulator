@@ -19,14 +19,17 @@ param registryLoginServer string
 @description('Resource id of the user-assigned managed identity that holds AcrPull on the registry.')
 param identityId string
 
-@description('DNS name label; the FQDN is <label>.<region>.azurecontainer.io.')
+@description('DNS name label; the FQDN is <label>.<region>.azurecontainer.io with the Unsecure reuse policy, and <label>.<hash>.<region>.azurecontainer.io with any other.')
 @minLength(1)
 @maxLength(63)
 param dnsNameLabel string
 
-@description('''Who may re-use the DNS label after the container group is deleted. ResourceGroupReuse lets this resource group
-re-create the same label (a redeploy after teardown keeps the FQDN) while preventing another resource group or tenant from taking
-it over (subdomain takeover). NoReuse would force a new label after every teardown; Unsecure allows anyone to take it.''')
+@description('''Who may re-use the DNS label after the container group is deleted. Unsecure is the default because it is the only
+policy that keeps the FQDN predictable: every other policy inserts a hash label (<label>.<hash>.<region>.azurecontainer.io), but the
+apps build the relay name from the suffix alone (app/ui/relay_endpoints.h), so a hashed name never resolves for them. The price is
+that anyone can claim the label after the relay is deleted. That cannot expose game data (traffic is end-to-end encrypted and the
+relay sees only the room id and ciphertext) but a squatter could deny service, so treat deleting a relay as retiring its name. The
+policy cannot be changed in place: a container group has to be deleted and re-created.''')
 @allowed([
   'NoReuse'
   'ResourceGroupReuse'
@@ -34,7 +37,7 @@ it over (subdomain takeover). NoReuse would force a new label after every teardo
   'TenantReuse'
   'Unsecure'
 ])
-param dnsNameLabelReusePolicy string = 'ResourceGroupReuse'
+param dnsNameLabelReusePolicy string = 'Unsecure'
 
 @description('UDP port the relay listens on and the container group exposes.')
 @minValue(1)

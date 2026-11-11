@@ -45,7 +45,11 @@ The image is pulled by **digest** with the managed identity. Parameters: `locati
 suffix with a hyphen), `relayImage`, `deployRelay`, `udpPort` (default 7777), `cpu`, `memoryGb` and the
 relay limits. `deployRelay=false` creates the registry, identity, logs and budget so an image can be
 pushed first; the second pass passes `relayImage` and creates the container group. The label reuse
-policy is `ResourceGroupReuse`, so a redeploy keeps its FQDN but no other resource group can take it.
+policy is `Unsecure`, the only one that keeps the name `<label>.southcentralus.azurecontainer.io`
+(every other policy inserts a hash label, which the apps' relay presets do not know). Anyone can claim
+the label after the relay is deleted; that cannot expose game data, which is encrypted end to end, but
+it could deny service, so deleting a relay retires its name. A container group's policy cannot change
+in place: delete the group and deploy again.
 [`main.dev.bicepparam`](../../infra/relay/main.dev.bicepparam) and
 [`main.prod.bicepparam`](../../infra/relay/main.prod.bicepparam) read `WPIEMU_RELAY_DNS_SUFFIX` and
 `WPIEMU_RELAY_ALERT_EMAIL` from the environment.
