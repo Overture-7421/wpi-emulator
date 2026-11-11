@@ -195,6 +195,16 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("az deployment group create", self.raw["relay-ci.yml"])
         self.assertIn("what-if", self.raw["relay-ci.yml"])
 
+    def test_what_if_checks_read_access_only_so_the_identity_stays_read_only(self):
+        # Without --validation-level ProviderNoRbac a what-if demands write access on every resource of the template (the
+        # nested modules included), which a read-only identity does not have.
+        steps = self.docs["relay-ci.yml"]["jobs"]["whatif"]["steps"]
+        step = next(s for s in steps if "what-if" in str(s.get("run", "")) and "az deployment group what-if" in str(s.get("run", "")))
+        command = " ".join(str(step["run"]).replace("\\\n", " ").split())
+        self.assertIn("az deployment group what-if", command)
+        self.assertIn("--validation-level ProviderNoRbac", command)
+        self.assertIn("2.76.0", command)
+
     def test_ci_triggers_and_paths(self):
         on = triggers(self.docs["relay-ci.yml"])
         self.assertEqual(set(on), {"pull_request", "push"})

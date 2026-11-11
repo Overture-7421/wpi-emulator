@@ -213,6 +213,11 @@ is not set up.
   it falls back to the name-based form with a warning. Re-run it with `-SubjectFormat Immutable` (and
   `-OwnerId`/`-RepositoryId` when `gh` is unavailable): it updates the credentials in place. If the subject
   is right and the error remains, wait a minute: new credentials take time to propagate.
+- **The what-if job fails with `Authorization failed for template resource ... Microsoft.Resources/deployments/write`
+  (or `.../registries/write` and similar):** a what-if needs the permissions of a real deployment unless it
+  runs with `--validation-level ProviderNoRbac`, which checks read access only (Azure CLI 2.76 or later).
+  `relay-ci` passes that flag so the what-if identity can stay read-only (Reader plus the custom what-if role
+  on the dev resource group); do not widen that identity to make a what-if pass.
 - **Region or quota failure in `preflight.ps1`:** it lists the nearest passing regions; changing the
   region changes `location` in the parameter files and the `AZURE_LOCATION` variable.
 

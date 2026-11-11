@@ -144,13 +144,21 @@ jobs:
 
       - name: What-if of main.bicep against the dev resource group
         run: |
+          # A what-if normally needs the permissions of a real deployment (write on every resource and nested module in the
+          # template). ProviderNoRbac still validates the template against the resource providers but checks only read access,
+          # so this identity stays read-only (Azure CLI 2.76 or later).
+          az_version="$(az version --query '"azure-cli"' -o tsv)"
+          if [ "$(printf '%s\n2.76.0\n' "$az_version" | sort -V | head -n1)" != "2.76.0" ]; then
+            echo "::error::Azure CLI $az_version has no --validation-level; 2.76.0 or later is needed for a read-only what-if"
+            exit 1
+          fi
           # Preview the relay too when it exists: keep its current image so the preview shows only what this change alters.
           image="$(az container list --resource-group "$RESOURCE_GROUP" --query '[0].containers[0].image' -o tsv 2>/dev/null || true)"
           args=(--parameters infra/relay/main.dev.bicepparam)
           if [ -n "$image" ] && [ "$image" != "None" ]; then
             args+=(--parameters deployRelay=true "relayImage=$image")
           fi
-          az deployment group what-if --resource-group "$RESOURCE_GROUP" \
+          az deployment group what-if --resource-group "$RESOURCE_GROUP" --validation-level ProviderNoRbac \
             "${args[@]}" --no-pretty-print --only-show-errors -o json > whatif.json
           {
             echo "## What-if: main.bicep against ${RESOURCE_GROUP}"
