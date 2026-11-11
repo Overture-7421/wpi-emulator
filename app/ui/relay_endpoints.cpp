@@ -12,7 +12,9 @@
 namespace wpiemu::app {
 
 bool isValidRelayDnsSuffix(const std::string& suffix) {
-    if (suffix.size() < 2 || suffix.size() > 40 || suffix.front() != '-') return false;
+    // The label is <prefix>[-dev]<suffix>, so the suffix needs no hyphen of its own; it only must not end in one (a DNS label
+    // cannot) and must fit, with the prefix, in a 63-character label.
+    if (suffix.empty() || suffix.size() > 40 || suffix.back() == '-') return false;
     for (const char c : suffix)
         if (!(std::islower(static_cast<unsigned char>(c)) || std::isdigit(static_cast<unsigned char>(c)) || c == '-')) return false;
     return true;

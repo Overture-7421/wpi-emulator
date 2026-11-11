@@ -7,7 +7,7 @@ param location = 'southcentralus'
 param environmentName = 'prod'
 param namePrefix = 'wpiemu-relay'
 
-// Unique DNS label suffix (ACI labels are global per region), e.g. '-a1b2'. FQDN: wpiemu-relay<suffix>.southcentralus.azurecontainer.io
+// Unique DNS label suffix (ACI labels are global per region), e.g. '47c926'. FQDN: wpiemu-relay<suffix>.southcentralus.azurecontainer.io
 param dnsLabelSuffix = readEnvironmentVariable('WPIEMU_RELAY_DNS_SUFFIX', 'REPLACE_ME')
 
 // First pass creates the registry only. The pipeline passes the real image digest and deployRelay=true.

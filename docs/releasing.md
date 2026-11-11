@@ -190,8 +190,9 @@ and the client itself has no updater.
 
 The relay presets of a packaged client (and app) come from the CMake cache string `WPIEMU_RELAY_DNS_SUFFIX`, baked in at
 build time. The release workflow reads it from the repository variable `RELAY_DNS_SUFFIX` (a plain variable, not a secret; the relay
-bootstrap script stores it, see [Azure relay](guides/relay-azure.md)), validates it as a hyphen followed by lower-case letters,
-digits and hyphens, and warns when it is unset: such a release has empty relay presets and players type a relay address.
+bootstrap script stores it, see [Azure relay](guides/relay-azure.md)), validates it as 1 to 40 lower-case letters, digits and
+hyphens that does not end in a hyphen (bootstrap picks six hex characters such as `47c926`), and warns when it is unset: such a
+release has empty relay presets and players type a relay address.
 
 ## Packaging settings
 

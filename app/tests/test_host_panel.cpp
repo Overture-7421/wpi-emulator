@@ -99,9 +99,16 @@ bool marked(const QString& text) { return text.contains(QChar(0x00AB)); }
 // ---- relay endpoints -------------------------------------------------------------------------------------------------------
 
 TEST_CASE("relay endpoints: production and development follow the Bicep naming and need a valid suffix") {
+    // A suffix with a leading hyphen and one without both build the label the same way: <prefix>[-dev]<suffix>.
     CHECK(relayEndpointFor(RelayChoice::Production, "-a1b2") == "wpiemu-relay-a1b2.southcentralus.azurecontainer.io:7777");
     CHECK(relayEndpointFor(RelayChoice::Development, "-a1b2") == "wpiemu-relay-dev-a1b2.southcentralus.azurecontainer.io:7777");
-    for (const char* bad : {"", "a1b2", "-", "-A1B2", "-a_b", "-a b", "-a1b2.evil.example"}) {
+    CHECK(relayEndpointFor(RelayChoice::Production, "a1b2") == "wpiemu-relaya1b2.southcentralus.azurecontainer.io:7777");
+    // The suffix of the deployed relay (bootstrap.ps1 picks six hex characters): these are the names Azure gave the relays.
+    CHECK(relayEndpointFor(RelayChoice::Development, "47c926") == "wpiemu-relay-dev47c926.southcentralus.azurecontainer.io:7777");
+    CHECK(relayEndpointFor(RelayChoice::Production, "47c926") == "wpiemu-relay47c926.southcentralus.azurecontainer.io:7777");
+    const std::string longest(40, 'a'), tooLong(41, 'a');
+    for (const char* good : {"a", "47c926", "-a1b2", "a-b", longest.c_str()}) CHECK(isValidRelayDnsSuffix(good));
+    for (const char* bad : {"", "-", "a-", "-a1b2-", "A1B2", "-A1B2", "-a_b", "-a b", "-a1b2.evil.example", "47c926.evil", tooLong.c_str()}) {
         CHECK_FALSE(isValidRelayDnsSuffix(bad));
         CHECK(relayEndpointFor(RelayChoice::Production, bad).empty());
     }

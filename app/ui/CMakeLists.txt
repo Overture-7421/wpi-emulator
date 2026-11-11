@@ -18,9 +18,9 @@ target_link_libraries(wpiemu_app_ui PUBLIC wpiemu_sdk Qt6::Core Qt6::Gui Qt6::Wi
 wpiemu_target_defaults(wpiemu_app_ui)
 set_target_properties(wpiemu_app_ui PROPERTIES AUTOMOC ON)
 
-# The DNS label suffix of the deployed relay (infra/relay dnsLabelSuffix, for example "-a1b2"), baked into release builds so
+# The DNS label suffix of the deployed relay (infra/relay dnsLabelSuffix, for example "47c926"), baked into release builds so
 # the Production relay preset works without any setting. Empty: the user sets it (relay_endpoints.h).
-set(WPIEMU_RELAY_DNS_SUFFIX "" CACHE STRING "DNS label suffix of the deployed practice-match relay, for example -a1b2")
+set(WPIEMU_RELAY_DNS_SUFFIX "" CACHE STRING "DNS label suffix of the deployed practice-match relay, for example 47c926")
 if(WPIEMU_RELAY_DNS_SUFFIX)
     set_property(SOURCE relay_endpoints.cpp APPEND PROPERTY COMPILE_DEFINITIONS "WPIEMU_RELAY_DNS_SUFFIX=\"${WPIEMU_RELAY_DNS_SUFFIX}\"")
 endif()

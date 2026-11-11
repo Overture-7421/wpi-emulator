@@ -3,7 +3,8 @@
 // Where the practice-match relay runs. The two Azure relays (infra/relay/main.bicep) are reachable at
 //   production:  wpiemu-relay<suffix>.southcentralus.azurecontainer.io:7777
 //   development: wpiemu-relay-dev<suffix>.southcentralus.azurecontainer.io:7777
-// where <suffix> is the deployment's `dnsLabelSuffix` (a hyphen and a few characters that make the DNS label unique). The
+// where <suffix> is the deployment's `dnsLabelSuffix` (a few lower-case letters, digits and hyphens that make the DNS label unique;
+// bootstrap.ps1 picks six hex characters such as "47c926", and a leading hyphen such as "-a1b2" works the same). The
 // suffix is not known to a build until the relay is deployed, so it is a setting: the environment variable
 // WPIEMU_RELAY_DNS_SUFFIX (the one the Bicep parameters read), then the stored preference "hosting/relayDnsSuffix", then the
 // value a release build bakes in (CMake: WPIEMU_RELAY_DNS_SUFFIX, empty by default). Without any of them the presets are
@@ -39,7 +40,7 @@ struct RelayPresets {
     const std::string& endpointOf(RelayChoice choice) const { return choice == RelayChoice::Development ? development : production; }
 };
 
-// A DNS label suffix as the Bicep parameter documents it: a hyphen first, then lower-case letters, digits and hyphens.
+// A DNS label suffix as the Bicep parameter documents it: 1 to 40 lower-case letters, digits and hyphens, not ending in a hyphen.
 bool isValidRelayDnsSuffix(const std::string& suffix);
 // "wpiemu-relay[-dev]<suffix>.southcentralus.azurecontainer.io:7777"; empty for an invalid suffix.
 std::string relayEndpointFor(RelayChoice choice, const std::string& dnsSuffix);

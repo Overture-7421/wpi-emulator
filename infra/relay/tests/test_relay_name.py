@@ -33,6 +33,30 @@ def app_constant(name):
 
 
 class RelayNameTests(unittest.TestCase):
+    def test_release_suffix_rule_accepts_what_bootstrap_generates(self):
+        # bootstrap.ps1 derives the default suffix as 6 lower-case hex characters, with no hyphen; the release workflow validates
+        # the repository variable that bootstrap publishes, so a rule that demanded a leading hyphen failed the first release.
+        release = read(ROOT / ".github" / "workflows" / "release.yml")
+        rule = re.search(r'"\$RELAY_DNS_SUFFIX" =~ (\^\[a-z0-9-\]\{1,(\d+)\}\$) && "\$RELAY_DNS_SUFFIX" != \*-', release)
+        self.assertIsNotNone(rule, "the RELAY_DNS_SUFFIX check in release.yml changed shape: update this test with it")
+        pattern = re.compile(rule.group(1))
+        for suffix in ("47c926", "a", "-a1b2", "a-b", "a" * int(rule.group(2))):
+            self.assertTrue(pattern.match(suffix) and not suffix.endswith("-"), suffix)
+        for suffix in ("", "A1", "a_b", "a b", "a.b", "a" * (int(rule.group(2)) + 1)):
+            self.assertFalse(pattern.match(suffix), suffix)
+        bootstrap = read(ROOT / "infra" / "relay" / "bootstrap.ps1")
+        self.assertIn("Substring(0, 6)", bootstrap[bootstrap.index("function Get-DefaultDnsSuffix"):])
+
+    def test_app_suffix_rule_matches_the_release_rule(self):
+        source = read(ROOT / "app" / "ui" / "relay_endpoints.cpp")
+        limit = re.search(r"suffix\.size\(\) > (\d+)", source)
+        self.assertIsNotNone(limit)
+        release = read(ROOT / ".github" / "workflows" / "release.yml")
+        self.assertIn("{1,%s}" % limit.group(1), release)
+        self.assertIn("suffix.back() == '-'", source)
+        # no leading-hyphen requirement: that is what bootstrap's own suffix lacks
+        self.assertNotIn("suffix.front()", source)
+
     def test_label_policy_keeps_the_fqdn_free_of_a_hash(self):
         self.assertEqual(bicep_default(read(RELAY_BICEP), "dnsNameLabelReusePolicy"), "Unsecure",
                          "any other reuse policy makes Azure insert a hash label the apps cannot build")
